@@ -16,7 +16,7 @@ Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
 
 1. `RenderModelLoader` parses movie `frames.json` / `members.json`
 2. `MoviePlayer` advances the playhead at score FPS
-3. `StageCanvas._draw` composites sprites (matte ink flood-fill for transparent casts)
+3. `StageCanvas._draw` composites sprites (near-white chroma key for transparent casts)
 4. Clicks resolve `sprite.on_click.nav` → label jump or `goto_movie`
 5. `GameState` owns adventure globals; Save Editor reads/writes the same dict
 

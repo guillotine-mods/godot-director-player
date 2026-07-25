@@ -45,7 +45,7 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 
 - BMPs loaded via `FileAccess` + `load_bmp_from_buffer` (export-safe; ignores broken `importer="keep"` stubs).
 - Transparent inks: 1, 8, 9, 36, 39 (masked with `ink & 0x3f`).
-- Matte: edge flood-fill of near-white paper.
+- Matte: global near-white chroma key, including enclosed letter interiors.
 - Sprites drawn low→high channel; inventory icons use reg-point on slot center.
 
 ## Controls
