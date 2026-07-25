@@ -38,6 +38,10 @@ const MOVIE_ALIASES := {
 
 const MAX_GUARD_HOLD_MS := 20000.0
 const MAX_SCORE_STEPS_PER_TICK := 3
+const DAY1_TRANSITION_REDIRECTS := {
+	"stairsclimbup": "lighttop",
+}
+const DAY1_DYNAMIC_REDIRECT_SCRIPT := 207
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
@@ -109,6 +113,8 @@ func game_step() -> void:
 		return
 
 	var frame: Dictionary = loader.get_frame(frame_index)
+	if _try_day1_transition_redirect(frame):
+		return
 	var nav: Variant = frame.get("nav", null)
 	var action: Dictionary = NavActions.resolve(nav, loader, frame_index)
 
@@ -152,6 +158,27 @@ func game_step() -> void:
 			_goto_from_action(action)
 		_:
 			_advance_or_hold()
+
+
+func _try_day1_transition_redirect(frame: Dictionary) -> bool:
+	if loader.movie_name.to_lower() != "day1":
+		return false
+	if frame.get("frame_script") != DAY1_DYNAMIC_REDIRECT_SCRIPT:
+		return false
+
+	var transition := marker_name_for_frame(frame_index).to_lower()
+	var destination := _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
+	if destination == "":
+		return false
+
+	var destination_frame := loader.resolve_label(destination, false)
+	if destination_frame < 0:
+		nav_event.emit('Day 1 transition: %s → missing label "%s"' % [transition, destination])
+		return false
+
+	enter_frame(destination_frame)
+	nav_event.emit("Day 1 transition: %s → %s" % [transition, destination])
+	return true
 
 
 func _advance_or_hold() -> void:
