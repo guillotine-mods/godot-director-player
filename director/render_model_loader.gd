@@ -187,8 +187,11 @@ func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
 	if cast_lib == 1:
 		return {}
 	var cache_key := "%d:%d" % [cast_lib, cast_id]
+	var local_member: Variant = members.get(member_key(cast_lib, cast_id), {})
+	if typeof(local_member) == TYPE_DICTIONARY and not local_member.is_empty():
+		return _cache_missing_film_loop(cache_key)
 	if _film_loop_cache.has(cache_key):
-		return (_film_loop_cache[cache_key] as Dictionary).duplicate(true)
+		return _film_loop_cache[cache_key]
 	if _missing_film_loop_keys.has(cache_key):
 		return {}
 
@@ -215,7 +218,7 @@ func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
 	var resolved_loop: Dictionary = film_loop.duplicate(true)
 	resolved_loop["_registry_cast_name"] = cast_name
 	_film_loop_cache[cache_key] = resolved_loop
-	return resolved_loop.duplicate(true)
+	return resolved_loop
 
 
 func _cache_missing_film_loop(cache_key: String) -> Dictionary:
