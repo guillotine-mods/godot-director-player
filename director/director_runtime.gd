@@ -82,6 +82,7 @@ var _time_ms: float = 0.0
 var _movie_transition_attempt_generation: int = 0
 var _pending_day1_transition: String = ""
 var _pending_day1_destination: String = ""
+var _film_loop_channels: Dictionary = {}
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -111,6 +112,7 @@ func _mark_movie_transition_attempted() -> void:
 func _mark_movie_loaded() -> void:
 	_accum_ms = 0.0
 	_clear_pending_day1_transition()
+	_film_loop_channels.clear()
 
 
 func tick(delta: float) -> void:
@@ -246,6 +248,7 @@ func enter_frame(index: int) -> void:
 	frame_index = clampi(index, 0, loader.frames.size() - 1)
 	frame_entered_ms = _time_ms
 	var frame: Dictionary = loader.get_frame(frame_index)
+	_sync_film_loop_channels(frame)
 	var fps := float(frame.get("fps", 0))
 	if fps > 0.0:
 		current_fps = fps
@@ -255,6 +258,71 @@ func enter_frame(index: int) -> void:
 	GameState.remember_location(loader.movie_name, label_near_frame(frame_index), frame_index)
 	frame_changed.emit(frame_index)
 	redraw_requested.emit()
+
+
+func _sync_film_loop_channels(frame: Dictionary) -> void:
+	var active_channels: Dictionary = {}
+	var sprites_value: Variant = frame.get("sprites", [])
+	if typeof(sprites_value) != TYPE_ARRAY:
+		_film_loop_channels = active_channels
+		return
+
+	for sprite_value in sprites_value:
+		if typeof(sprite_value) != TYPE_DICTIONARY:
+			continue
+		var sprite: Dictionary = sprite_value
+		if not sprite.has("channel") or not sprite.has("cast_lib") or not sprite.has("cast_id"):
+			continue
+		var channel := int(sprite.channel)
+		var cast_lib := int(sprite.cast_lib)
+		var cast_id := int(sprite.cast_id)
+		var film_loop := loader.get_film_loop(cast_lib, cast_id)
+		var loop_frame_count := _film_loop_frame_count(film_loop)
+		if loop_frame_count == 0:
+			continue
+
+		var previous_value: Variant = _film_loop_channels.get(channel, {})
+		var previous: Dictionary = previous_value if typeof(previous_value) == TYPE_DICTIONARY else {}
+		var same_loop := (
+			int(previous.get("cast_lib", -1)) == cast_lib
+			and int(previous.get("cast_id", -1)) == cast_id
+		)
+		var loop_frame := 0
+		if same_loop:
+			loop_frame = clampi(int(previous.get("frame", 0)), 0, loop_frame_count - 1)
+			if int(previous.get("score_frame", -1)) != frame_index:
+				if bool(film_loop.get("looping", false)):
+					loop_frame = (loop_frame + 1) % loop_frame_count
+				else:
+					loop_frame = mini(loop_frame + 1, loop_frame_count - 1)
+		active_channels[channel] = {
+			"cast_lib": cast_lib,
+			"cast_id": cast_id,
+			"frame": loop_frame,
+			"score_frame": frame_index,
+		}
+
+	_film_loop_channels = active_channels
+
+
+func _film_loop_frame_count(film_loop: Dictionary) -> int:
+	var frames_value: Variant = film_loop.get("frames", [])
+	if typeof(frames_value) != TYPE_ARRAY:
+		return 0
+	var loop_frames: Array = frames_value
+	if loop_frames.is_empty():
+		return 0
+	for loop_frame in loop_frames:
+		if typeof(loop_frame) != TYPE_DICTIONARY:
+			return 0
+	return loop_frames.size()
+
+
+func film_loop_frame(channel: int) -> int:
+	var state_value: Variant = _film_loop_channels.get(channel, {})
+	if typeof(state_value) != TYPE_DICTIONARY:
+		return 0
+	return maxi(0, int((state_value as Dictionary).get("frame", 0)))
 
 
 func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {}) -> bool:
