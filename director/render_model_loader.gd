@@ -5,10 +5,24 @@ extends RefCounted
 const INDEX_PATH := "res://assets/render_model/index.json"
 const CAST_REGISTRY_PATH := "res://assets/render_model/cast_registry.json"
 const MODEL_ROOT := "res://assets/render_model"
-## Director ink types that key a background as transparent (web player parity).
-## 1=Transparent, 8=Matte, 9=Mask, 36=Background Transparent, 39=Ghost-ish in some exports.
-const TRANSPARENT_INKS := [1, 8, 9, 36, 39]
+## How a sprite's ink keys out its paper colour.
+##
+## Director draws these two differently and the difference is visible: Matte
+## removes only the paper region reachable from the bitmap's edge, so white
+## enclosed by artwork stays opaque, while Background Transparent keys the paper
+## colour across the whole bitmap, interior pockets included. Ink 36 is by far
+## the most common ink in this game (roughly 49k sprite records in DAY1 against
+## 15k for ink 8) and it is what characters use, so treating it as Matte left
+## white patches wherever the paper was enclosed by artwork.
+enum Transparency { NONE, MATTE, BACKGROUND }
+
+## 8=Matte, 9=Mask key only the edge-reachable paper.
+const MATTE_INKS := [8, 9]
+## 1=Transparent, 36=Background Transparent, 39=Ghost-ish in some exports.
+const BACKGROUND_INKS := [1, 36, 39]
 const MATTE_TOLERANCE := 14.0 / 255.0
+## Paper is near-white; at or above this in all three channels counts as paper.
+const PAPER_MIN_BYTE := 241
 
 var index: Dictionary = {}
 var cast_registry: Dictionary = {}
@@ -278,9 +292,13 @@ func _cache_missing_registry_member(cache_key: String) -> Dictionary:
 	return {}
 
 
-func get_registry_texture(cast_name: String, cast_id: int, use_matte: bool = false) -> Texture2D:
+func get_registry_texture(
+	cast_name: String,
+	cast_id: int,
+	mode: Transparency = Transparency.NONE
+) -> Texture2D:
 	var normalized_cast_name := cast_name.strip_edges().to_lower()
-	var cache_key := "%s:%d:%s" % [normalized_cast_name, cast_id, "matte" if use_matte else "plain"]
+	var cache_key := "%s:%d:%d" % [normalized_cast_name, cast_id, int(mode)]
 	if _registry_texture_cache.has(cache_key):
 		return _registry_texture_cache[cache_key]
 	if _missing_registry_texture_keys.has(cache_key):
@@ -295,8 +313,7 @@ func get_registry_texture(cast_name: String, cast_id: int, use_matte: bool = fal
 	var img := _load_bmp(abs_path)
 	if img == null:
 		return _cache_missing_registry_texture(cache_key)
-	if use_matte:
-		_apply_matte(img)
+	_apply_transparency(img, mode)
 	var texture := ImageTexture.create_from_image(img)
 	_registry_texture_cache[cache_key] = texture
 	return texture
@@ -382,12 +399,17 @@ func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 	return {}
 
 
-func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Texture2D:
-	var key := "%d:%d" % [cast_lib, cast_id]
-	if use_matte and _matte_cache.has(key):
-		return _matte_cache[key]
-	if not use_matte and _texture_cache.has(key):
-		return _texture_cache[key]
+func get_texture(
+	cast_lib: int,
+	cast_id: int,
+	mode: Transparency = Transparency.NONE
+) -> Texture2D:
+	# Keyed by mode: the same member can be drawn opaque in one room and keyed
+	# in another, so a single cache slot per member would leak the wrong image.
+	var key := "%d:%d:%d" % [cast_lib, cast_id, int(mode)]
+	var cache: Dictionary = _texture_cache if mode == Transparency.NONE else _matte_cache
+	if cache.has(key):
+		return cache[key]
 
 	var member := get_member(cast_lib, cast_id)
 	if member.is_empty():
@@ -399,14 +421,10 @@ func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Textur
 	var img := _load_bmp(abs_path)
 	if img == null:
 		return null
-	if use_matte:
-		_apply_matte(img)
-		var tex := ImageTexture.create_from_image(img)
-		_matte_cache[key] = tex
-		return tex
-	var plain := ImageTexture.create_from_image(img)
-	_texture_cache[key] = plain
-	return plain
+	_apply_transparency(img, mode)
+	var tex := ImageTexture.create_from_image(img)
+	cache[key] = tex
+	return tex
 
 
 func _resolve_bitmap_path(member: Dictionary, warn_on_registry_missing: bool = true) -> String:
@@ -572,5 +590,42 @@ func _matte_try_enqueue(
 	stack.append(Vector2i(x, y))
 
 
-static func is_transparent_ink(ink: int) -> bool:
-	return (ink & 0x3f) in TRANSPARENT_INKS
+static func transparency_for_ink(ink: int) -> Transparency:
+	var masked := ink & 0x3f
+	if masked in BACKGROUND_INKS:
+		return Transparency.BACKGROUND
+	if masked in MATTE_INKS:
+		return Transparency.MATTE
+	return Transparency.NONE
+
+
+func _apply_transparency(img: Image, mode: Transparency) -> void:
+	match mode:
+		Transparency.MATTE:
+			_apply_matte(img)
+		Transparency.BACKGROUND:
+			_apply_background_key(img)
+		_:
+			pass
+
+
+func _apply_background_key(img: Image) -> void:
+	## Director "Background Transparent": every paper-coloured pixel drops out,
+	## not only the ones the edge flood-fill can reach.
+	##
+	## Works on the raw buffer rather than get_pixel/set_pixel because this
+	## touches every pixel of bitmaps up to 640x400.
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	var data := img.get_data()
+	var i := 0
+	var n := data.size()
+	while i + 3 < n:
+		if (
+			data[i] >= PAPER_MIN_BYTE
+			and data[i + 1] >= PAPER_MIN_BYTE
+			and data[i + 2] >= PAPER_MIN_BYTE
+		):
+			data[i + 3] = 0
+		i += 4
+	img.set_data(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8, data)

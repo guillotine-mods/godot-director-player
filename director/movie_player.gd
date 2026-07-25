@@ -228,7 +228,7 @@ func _draw_film_loop(
 		var child_texture: Texture2D = runtime.loader.get_registry_texture(
 			registry_cast_name,
 			child_cast_id,
-			RenderModelLoader.is_transparent_ink(child_ink),
+			RenderModelLoader.transparency_for_ink(child_ink),
 		)
 		if child_texture == null:
 			continue
@@ -274,7 +274,7 @@ func _log_frame_texture_stats(tag: String) -> void:
 		var tex: Texture2D = runtime.loader.get_texture(
 			int(sprite.get("cast_lib", 1)),
 			int(sprite.get("cast_id", 0)),
-			RenderModelLoader.is_transparent_ink(int(sprite.get("ink", 0)))
+			RenderModelLoader.transparency_for_ink(int(sprite.get("ink", 0)))
 		)
 		if tex:
 			ok += 1
@@ -408,8 +408,14 @@ func draw_current_frame(canvas: Control) -> void:
 				continue
 
 		var ink: int = int(sprite.get("ink", 0))
-		var use_matte: bool = RenderModelLoader.is_transparent_ink(ink) or not inv.is_empty()
-		var tex: Texture2D = runtime.loader.get_texture(draw_lib, cast_id, use_matte)
+		# Inventory icons are drawn on paper and always key out, whatever the
+		# score ink on the slot channel happens to be.
+		var mode: RenderModelLoader.Transparency = (
+			RenderModelLoader.Transparency.BACKGROUND
+			if not inv.is_empty()
+			else RenderModelLoader.transparency_for_ink(ink)
+		)
+		var tex: Texture2D = runtime.loader.get_texture(draw_lib, cast_id, mode)
 		if tex == null:
 			continue
 
@@ -439,7 +445,13 @@ func draw_current_frame(canvas: Control) -> void:
 			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
 	if puppet.active:
-		var ptex: Texture2D = runtime.loader.get_texture(puppet.cast_lib, puppet.cast_id, true)
+		# Piposh is a character on paper: key the paper out everywhere, not just
+		# where the flood fill can reach in from the edge.
+		var ptex: Texture2D = runtime.loader.get_texture(
+			puppet.cast_lib,
+			puppet.cast_id,
+			RenderModelLoader.Transparency.BACKGROUND
+		)
 		if ptex:
 			var pmember: Dictionary = runtime.loader.get_member(puppet.cast_lib, puppet.cast_id)
 			var prect: Rect2 = puppet.draw_rect(pmember, ptex, sx, sy)

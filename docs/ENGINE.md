@@ -73,8 +73,19 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 ## Graphics
 
 - BMPs loaded via `FileAccess` + `load_bmp_from_buffer` (export-safe; ignores broken `importer="keep"` stubs).
-- Transparent inks: 1, 8, 9, 36, 39 (masked with `ink & 0x3f`).
-- Matte: edge flood-fill of near-white paper.
+- Ink decides how the paper colour is keyed out (masked with `ink & 0x3f`).
+  Director treats these two differently and it shows:
+  - **8, 9** (Matte, Mask) — flood-fill near-white paper inward from the bitmap
+    edge. White enclosed by artwork stays opaque, which is correct for Matte.
+  - **1, 36, 39** (Transparent, Background Transparent) — key every
+    paper-coloured pixel, interior pockets included.
+  Ink 36 dominates this game (~49k sprite records in DAY1 against ~15k for
+  ink 8) and is what characters use, so applying the edge fill to it left white
+  patches: 105 of 150 sampled `wonder` character sprites carry white the fill
+  cannot reach, up to 1023 pixels on one. The puppet and inventory icons always
+  use the background key.
+- Textures cache per (member, mode); the same member can be opaque in one room
+  and keyed in another.
 - Sprites drawn low→high channel; inventory icons use reg-point on slot center.
 - `assets/render_model/cast_registry.json` is generated data owned by
   `tools/generate_cast_registry.py`. Movie-local `members.json` entries win;
