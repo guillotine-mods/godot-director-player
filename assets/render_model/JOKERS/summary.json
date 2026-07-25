@@ -1,0 +1,15 @@
+{
+  "movie": "JOKERS",
+  "score_chunk": "SCVW-1890.bin",
+  "frame_count": 4,
+  "member_count": 600,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": null
+}

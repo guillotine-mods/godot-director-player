@@ -1,0 +1,59 @@
+{
+  "movie": "ALLIN",
+  "score_chunk": "VWSC-677.bin",
+  "frame_count": 1438,
+  "member_count": 614,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "fat",
+      "path": "macintosh hd:pip2 full:fat.cst"
+    },
+    "3": {
+      "name": "hatuli",
+      "path": "macintosh hd:pip2 full:hatuli.cst"
+    },
+    "4": {
+      "name": "hezi",
+      "path": "macintosh hd:pip2 full:hezi.cst"
+    },
+    "5": {
+      "name": "tofi",
+      "path": "macintosh hd:pip2 full:tofi.cst"
+    },
+    "6": {
+      "name": "rinati",
+      "path": "macintosh hd:pip2 full:rinati.cst"
+    },
+    "7": {
+      "name": "manager",
+      "path": "macintosh hd:pip2 full:manager.cst"
+    },
+    "8": {
+      "name": "mogul",
+      "path": "macintosh hd:pip2 full:mogul.cst"
+    },
+    "9": {
+      "name": "ishurun",
+      "path": "macintosh hd:pip2 full:ishurun.cst"
+    },
+    "10": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-672.bin",
+    "left": 16,
+    "top": 60,
+    "right": 656,
+    "bottom": 540,
+    "width": 640,
+    "height": 480
+  }
+}

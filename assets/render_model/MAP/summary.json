@@ -1,0 +1,27 @@
+{
+  "movie": "MAP",
+  "score_chunk": "VWSC-184.bin",
+  "frame_count": 81,
+  "member_count": 102,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-179.bin",
+    "left": 192,
+    "top": 144,
+    "right": 832,
+    "bottom": 624,
+    "width": 640,
+    "height": 480
+  }
+}

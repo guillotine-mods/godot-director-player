@@ -1,0 +1,35 @@
+{
+  "movie": "MRFDAY1",
+  "score_chunk": "VWSC-243.bin",
+  "frame_count": 957,
+  "member_count": 582,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "hezi",
+      "path": "macintosh hd:pip2 full:hezi.cst"
+    },
+    "3": {
+      "name": "black",
+      "path": "macintosh hd:pip2 full:black.cst"
+    },
+    "4": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-238.bin",
+    "left": 192,
+    "top": 144,
+    "right": 832,
+    "bottom": 624,
+    "width": 640,
+    "height": 480
+  }
+}

@@ -1,0 +1,578 @@
+{
+  "movie": "HATSIKUM",
+  "decoded_bitmap_count": 28,
+  "bitmaps": {
+    "1": {
+      "movie": "HATSIKUM",
+      "cast_id": 1,
+      "cast_resource_id": 24,
+      "bitd_resource_id": 283,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "2": {
+      "movie": "HATSIKUM",
+      "cast_id": 2,
+      "cast_resource_id": 28,
+      "bitd_resource_id": 284,
+      "path": "./bitmaps/cast_0002.bmp",
+      "width": 172,
+      "height": 131,
+      "decoded_bytes": 22532,
+      "row_stride_source": 172,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 94,
+      "reg_offset_y": 59
+    },
+    "4": {
+      "movie": "HATSIKUM",
+      "cast_id": 4,
+      "cast_resource_id": 27,
+      "bitd_resource_id": 285,
+      "path": "./bitmaps/cast_0004.bmp",
+      "width": 58,
+      "height": 105,
+      "decoded_bytes": 6090,
+      "row_stride_source": 58,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 53
+    },
+    "5": {
+      "movie": "HATSIKUM",
+      "cast_id": 5,
+      "cast_resource_id": 26,
+      "bitd_resource_id": 286,
+      "path": "./bitmaps/cast_0005.bmp",
+      "width": 58,
+      "height": 105,
+      "decoded_bytes": 6090,
+      "row_stride_source": 58,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 29,
+      "reg_offset_y": 53
+    },
+    "6": {
+      "movie": "HATSIKUM",
+      "cast_id": 6,
+      "cast_resource_id": 51,
+      "bitd_resource_id": 287,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 342,
+      "height": 13,
+      "decoded_bytes": 4446,
+      "row_stride_source": 342,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 171,
+      "reg_offset_y": 6
+    },
+    "7": {
+      "movie": "HATSIKUM",
+      "cast_id": 7,
+      "cast_resource_id": 55,
+      "bitd_resource_id": 288,
+      "path": "./bitmaps/cast_0007.bmp",
+      "width": 198,
+      "height": 13,
+      "decoded_bytes": 2574,
+      "row_stride_source": 198,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 99,
+      "reg_offset_y": 6
+    },
+    "8": {
+      "movie": "HATSIKUM",
+      "cast_id": 8,
+      "cast_resource_id": 25,
+      "bitd_resource_id": 289,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 189,
+      "height": 13,
+      "decoded_bytes": 2470,
+      "row_stride_source": 190,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 94,
+      "reg_offset_y": 6
+    },
+    "17": {
+      "movie": "HATSIKUM",
+      "cast_id": 17,
+      "cast_resource_id": 87,
+      "bitd_resource_id": 290,
+      "path": "./bitmaps/cast_0017.bmp",
+      "width": 97,
+      "height": 265,
+      "decoded_bytes": 25970,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 264
+    },
+    "18": {
+      "movie": "HATSIKUM",
+      "cast_id": 18,
+      "cast_resource_id": 7,
+      "bitd_resource_id": 291,
+      "path": "./bitmaps/cast_0018.bmp",
+      "width": 85,
+      "height": 262,
+      "decoded_bytes": 22532,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 262
+    },
+    "19": {
+      "movie": "HATSIKUM",
+      "cast_id": 19,
+      "cast_resource_id": 86,
+      "bitd_resource_id": 292,
+      "path": "./bitmaps/cast_0019.bmp",
+      "width": 111,
+      "height": 263,
+      "decoded_bytes": 29456,
+      "row_stride_source": 112,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 263
+    },
+    "20": {
+      "movie": "HATSIKUM",
+      "cast_id": 20,
+      "cast_resource_id": 90,
+      "bitd_resource_id": 293,
+      "path": "./bitmaps/cast_0020.bmp",
+      "width": 98,
+      "height": 261,
+      "decoded_bytes": 25578,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 260
+    },
+    "21": {
+      "movie": "HATSIKUM",
+      "cast_id": 21,
+      "cast_resource_id": 96,
+      "bitd_resource_id": 294,
+      "path": "./bitmaps/cast_0021.bmp",
+      "width": 85,
+      "height": 262,
+      "decoded_bytes": 22532,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 261
+    },
+    "22": {
+      "movie": "HATSIKUM",
+      "cast_id": 22,
+      "cast_resource_id": 109,
+      "bitd_resource_id": 295,
+      "path": "./bitmaps/cast_0022.bmp",
+      "width": 116,
+      "height": 258,
+      "decoded_bytes": 29928,
+      "row_stride_source": 116,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 93,
+      "reg_offset_y": 257
+    },
+    "23": {
+      "movie": "HATSIKUM",
+      "cast_id": 23,
+      "cast_resource_id": 94,
+      "bitd_resource_id": 296,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 86,
+      "height": 260,
+      "decoded_bytes": 22360,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 259
+    },
+    "24": {
+      "movie": "HATSIKUM",
+      "cast_id": 24,
+      "cast_resource_id": 69,
+      "bitd_resource_id": 297,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 86,
+      "height": 260,
+      "decoded_bytes": 22360,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 259
+    },
+    "25": {
+      "movie": "HATSIKUM",
+      "cast_id": 25,
+      "cast_resource_id": 113,
+      "bitd_resource_id": 298,
+      "path": "./bitmaps/cast_0025.bmp",
+      "width": 102,
+      "height": 260,
+      "decoded_bytes": 26520,
+      "row_stride_source": 102,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 79,
+      "reg_offset_y": 259
+    },
+    "26": {
+      "movie": "HATSIKUM",
+      "cast_id": 26,
+      "cast_resource_id": 112,
+      "bitd_resource_id": 299,
+      "path": "./bitmaps/cast_0026.bmp",
+      "width": 38,
+      "height": 21,
+      "decoded_bytes": 798,
+      "row_stride_source": 38,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 19,
+      "reg_offset_y": 10
+    },
+    "27": {
+      "movie": "HATSIKUM",
+      "cast_id": 27,
+      "cast_resource_id": 103,
+      "bitd_resource_id": 300,
+      "path": "./bitmaps/cast_0027.bmp",
+      "width": 38,
+      "height": 25,
+      "decoded_bytes": 950,
+      "row_stride_source": 38,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 19,
+      "reg_offset_y": 12
+    },
+    "28": {
+      "movie": "HATSIKUM",
+      "cast_id": 28,
+      "cast_resource_id": 71,
+      "bitd_resource_id": 301,
+      "path": "./bitmaps/cast_0028.bmp",
+      "width": 67,
+      "height": 108,
+      "decoded_bytes": 7344,
+      "row_stride_source": 68,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 60,
+      "reg_offset_y": 64
+    },
+    "29": {
+      "movie": "HATSIKUM",
+      "cast_id": 29,
+      "cast_resource_id": 111,
+      "bitd_resource_id": 302,
+      "path": "./bitmaps/cast_0029.bmp",
+      "width": 67,
+      "height": 108,
+      "decoded_bytes": 7344,
+      "row_stride_source": 68,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 60,
+      "reg_offset_y": 64
+    },
+    "43": {
+      "movie": "HATSIKUM",
+      "cast_id": 43,
+      "cast_resource_id": 184,
+      "bitd_resource_id": 303,
+      "path": "./bitmaps/cast_0043.bmp",
+      "width": 39,
+      "height": 40,
+      "decoded_bytes": 1600,
+      "row_stride_source": 40,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 19,
+      "reg_offset_y": 20
+    },
+    "45": {
+      "movie": "HATSIKUM",
+      "cast_id": 45,
+      "cast_resource_id": 193,
+      "bitd_resource_id": 304,
+      "path": "./bitmaps/cast_0045.bmp",
+      "width": 268,
+      "height": 13,
+      "decoded_bytes": 3484,
+      "row_stride_source": 268,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 134,
+      "reg_offset_y": 6
+    },
+    "46": {
+      "movie": "HATSIKUM",
+      "cast_id": 46,
+      "cast_resource_id": 199,
+      "bitd_resource_id": 305,
+      "path": "./bitmaps/cast_0046.bmp",
+      "width": 265,
+      "height": 13,
+      "decoded_bytes": 3458,
+      "row_stride_source": 266,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 132,
+      "reg_offset_y": 6
+    },
+    "47": {
+      "movie": "HATSIKUM",
+      "cast_id": 47,
+      "cast_resource_id": 201,
+      "bitd_resource_id": 306,
+      "path": "./bitmaps/cast_0047.bmp",
+      "width": 355,
+      "height": 13,
+      "decoded_bytes": 4628,
+      "row_stride_source": 356,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 177,
+      "reg_offset_y": 6
+    },
+    "49": {
+      "movie": "HATSIKUM",
+      "cast_id": 49,
+      "cast_resource_id": 213,
+      "bitd_resource_id": 307,
+      "path": "./bitmaps/cast_0049.bmp",
+      "width": 177,
+      "height": 66,
+      "decoded_bytes": 11748,
+      "row_stride_source": 178,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 88,
+      "reg_offset_y": 33
+    },
+    "50": {
+      "movie": "HATSIKUM",
+      "cast_id": 50,
+      "cast_resource_id": 208,
+      "bitd_resource_id": 308,
+      "path": "./bitmaps/cast_0050.bmp",
+      "width": 79,
+      "height": 113,
+      "decoded_bytes": 9040,
+      "row_stride_source": 80,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 56
+    },
+    "51": {
+      "movie": "HATSIKUM",
+      "cast_id": 51,
+      "cast_resource_id": 170,
+      "bitd_resource_id": 309,
+      "path": "./bitmaps/cast_0051.bmp",
+      "width": 93,
+      "height": 120,
+      "decoded_bytes": 11280,
+      "row_stride_source": 94,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 46,
+      "reg_offset_y": 60
+    },
+    "52": {
+      "movie": "HATSIKUM",
+      "cast_id": 52,
+      "cast_resource_id": 214,
+      "bitd_resource_id": 310,
+      "path": "./bitmaps/cast_0052.bmp",
+      "width": 126,
+      "height": 105,
+      "decoded_bytes": 13230,
+      "row_stride_source": 126,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 52
+    }
+  },
+  "top_widths": [
+    [
+      58,
+      2
+    ],
+    [
+      85,
+      2
+    ],
+    [
+      86,
+      2
+    ],
+    [
+      38,
+      2
+    ],
+    [
+      67,
+      2
+    ],
+    [
+      640,
+      1
+    ],
+    [
+      172,
+      1
+    ],
+    [
+      342,
+      1
+    ],
+    [
+      198,
+      1
+    ],
+    [
+      189,
+      1
+    ],
+    [
+      97,
+      1
+    ],
+    [
+      111,
+      1
+    ],
+    [
+      98,
+      1
+    ],
+    [
+      116,
+      1
+    ],
+    [
+      102,
+      1
+    ],
+    [
+      39,
+      1
+    ],
+    [
+      268,
+      1
+    ],
+    [
+      265,
+      1
+    ],
+    [
+      355,
+      1
+    ],
+    [
+      177,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      13,
+      6
+    ],
+    [
+      105,
+      3
+    ],
+    [
+      260,
+      3
+    ],
+    [
+      262,
+      2
+    ],
+    [
+      108,
+      2
+    ],
+    [
+      400,
+      1
+    ],
+    [
+      131,
+      1
+    ],
+    [
+      265,
+      1
+    ],
+    [
+      263,
+      1
+    ],
+    [
+      261,
+      1
+    ],
+    [
+      258,
+      1
+    ],
+    [
+      21,
+      1
+    ],
+    [
+      25,
+      1
+    ],
+    [
+      40,
+      1
+    ],
+    [
+      66,
+      1
+    ],
+    [
+      113,
+      1
+    ],
+    [
+      120,
+      1
+    ]
+  ]
+}

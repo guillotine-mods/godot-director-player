@@ -1,0 +1,35 @@
+{
+  "movie": "RUNAWAY",
+  "score_chunk": "VWSC-1946.bin",
+  "frame_count": 1047,
+  "member_count": 648,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "heznigt",
+      "path": "Macintosh HD:pip2data:heznigt.cst"
+    },
+    "3": {
+      "name": "night",
+      "path": "Macintosh HD:pip2data:night.cst"
+    },
+    "4": {
+      "name": "master",
+      "path": "Macintosh HD:pip2data:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-1941.bin",
+    "left": 20,
+    "top": 60,
+    "right": 660,
+    "bottom": 540,
+    "width": 640,
+    "height": 480
+  }
+}

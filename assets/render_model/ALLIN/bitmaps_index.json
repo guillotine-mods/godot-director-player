@@ -1,0 +1,620 @@
+{
+  "movie": "ALLIN",
+  "decoded_bitmap_count": 30,
+  "bitmaps": {
+    "1": {
+      "movie": "ALLIN",
+      "cast_id": 1,
+      "cast_resource_id": 242,
+      "bitd_resource_id": 621,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 441,
+      "decoded_bytes": 282240,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 641,
+      "reg_offset_y": 220
+    },
+    "6": {
+      "movie": "ALLIN",
+      "cast_id": 6,
+      "cast_resource_id": 299,
+      "bitd_resource_id": 626,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 179,
+      "height": 238,
+      "decoded_bytes": 42840,
+      "row_stride_source": 180,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 50,
+      "reg_offset_y": 219
+    },
+    "7": {
+      "movie": "ALLIN",
+      "cast_id": 7,
+      "cast_resource_id": 17,
+      "bitd_resource_id": 627,
+      "path": "./bitmaps/cast_0007.bmp",
+      "width": 129,
+      "height": 251,
+      "decoded_bytes": 32630,
+      "row_stride_source": 130,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 56,
+      "reg_offset_y": 240
+    },
+    "8": {
+      "movie": "ALLIN",
+      "cast_id": 8,
+      "cast_resource_id": 241,
+      "bitd_resource_id": 628,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 219,
+      "height": 209,
+      "decoded_bytes": 45980,
+      "row_stride_source": 220,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 44,
+      "reg_offset_y": 184
+    },
+    "10": {
+      "movie": "ALLIN",
+      "cast_id": 10,
+      "cast_resource_id": 36,
+      "bitd_resource_id": 630,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 44,
+      "height": 17,
+      "decoded_bytes": 748,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 22,
+      "reg_offset_y": 8
+    },
+    "18": {
+      "movie": "ALLIN",
+      "cast_id": 18,
+      "cast_resource_id": 107,
+      "bitd_resource_id": 638,
+      "path": "./bitmaps/cast_0018.bmp",
+      "width": 48,
+      "height": 31,
+      "decoded_bytes": 1488,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 24,
+      "reg_offset_y": 16
+    },
+    "20": {
+      "movie": "ALLIN",
+      "cast_id": 20,
+      "cast_resource_id": 109,
+      "bitd_resource_id": 640,
+      "path": "./bitmaps/cast_0020.bmp",
+      "width": 48,
+      "height": 31,
+      "decoded_bytes": 1488,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 24,
+      "reg_offset_y": 16
+    },
+    "21": {
+      "movie": "ALLIN",
+      "cast_id": 21,
+      "cast_resource_id": 110,
+      "bitd_resource_id": 641,
+      "path": "./bitmaps/cast_0021.bmp",
+      "width": 38,
+      "height": 27,
+      "decoded_bytes": 1026,
+      "row_stride_source": 38,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 20,
+      "reg_offset_y": 12
+    },
+    "22": {
+      "movie": "ALLIN",
+      "cast_id": 22,
+      "cast_resource_id": 111,
+      "bitd_resource_id": 642,
+      "path": "./bitmaps/cast_0022.bmp",
+      "width": 42,
+      "height": 13,
+      "decoded_bytes": 546,
+      "row_stride_source": 42,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": -13,
+      "reg_offset_y": 7
+    },
+    "23": {
+      "movie": "ALLIN",
+      "cast_id": 23,
+      "cast_resource_id": 112,
+      "bitd_resource_id": 643,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 44,
+      "height": 17,
+      "decoded_bytes": 748,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 22,
+      "reg_offset_y": 8
+    },
+    "34": {
+      "movie": "ALLIN",
+      "cast_id": 34,
+      "cast_resource_id": 46,
+      "bitd_resource_id": 652,
+      "path": "./bitmaps/cast_0034.bmp",
+      "width": 390,
+      "height": 10,
+      "decoded_bytes": 3900,
+      "row_stride_source": 390,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 195,
+      "reg_offset_y": 5
+    },
+    "35": {
+      "movie": "ALLIN",
+      "cast_id": 35,
+      "cast_resource_id": 45,
+      "bitd_resource_id": 653,
+      "path": "./bitmaps/cast_0035.bmp",
+      "width": 217,
+      "height": 12,
+      "decoded_bytes": 2616,
+      "row_stride_source": 218,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 108,
+      "reg_offset_y": 6
+    },
+    "36": {
+      "movie": "ALLIN",
+      "cast_id": 36,
+      "cast_resource_id": 44,
+      "bitd_resource_id": 654,
+      "path": "./bitmaps/cast_0036.bmp",
+      "width": 385,
+      "height": 12,
+      "decoded_bytes": 4632,
+      "row_stride_source": 386,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 192,
+      "reg_offset_y": 6
+    },
+    "41": {
+      "movie": "ALLIN",
+      "cast_id": 41,
+      "cast_resource_id": 61,
+      "bitd_resource_id": 655,
+      "path": "./bitmaps/cast_0041.bmp",
+      "width": 137,
+      "height": 441,
+      "decoded_bytes": 60858,
+      "row_stride_source": 138,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 41,
+      "reg_offset_y": 201
+    },
+    "42": {
+      "movie": "ALLIN",
+      "cast_id": 42,
+      "cast_resource_id": 67,
+      "bitd_resource_id": 656,
+      "path": "./bitmaps/cast_0042.bmp",
+      "width": 222,
+      "height": 283,
+      "decoded_bytes": 62826,
+      "row_stride_source": 222,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 110,
+      "reg_offset_y": 141
+    },
+    "52": {
+      "movie": "ALLIN",
+      "cast_id": 52,
+      "cast_resource_id": 197,
+      "bitd_resource_id": 657,
+      "path": "./bitmaps/cast_0052.bmp",
+      "width": 253,
+      "height": 116,
+      "decoded_bytes": 29464,
+      "row_stride_source": 254,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 25,
+      "reg_offset_y": 85
+    },
+    "57": {
+      "movie": "ALLIN",
+      "cast_id": 57,
+      "cast_resource_id": 250,
+      "bitd_resource_id": 658,
+      "path": "./bitmaps/cast_0057.bmp",
+      "width": 228,
+      "height": 88,
+      "decoded_bytes": 20064,
+      "row_stride_source": 228,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 113,
+      "reg_offset_y": 42
+    },
+    "64": {
+      "movie": "ALLIN",
+      "cast_id": 64,
+      "cast_resource_id": 300,
+      "bitd_resource_id": 659,
+      "path": "./bitmaps/cast_0064.bmp",
+      "width": 176,
+      "height": 128,
+      "decoded_bytes": 22528,
+      "row_stride_source": 176,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 81
+    },
+    "65": {
+      "movie": "ALLIN",
+      "cast_id": 65,
+      "cast_resource_id": 14,
+      "bitd_resource_id": 660,
+      "path": "./bitmaps/cast_0065.bmp",
+      "width": 180,
+      "height": 134,
+      "decoded_bytes": 24120,
+      "row_stride_source": 180,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 84
+    },
+    "66": {
+      "movie": "ALLIN",
+      "cast_id": 66,
+      "cast_resource_id": 236,
+      "bitd_resource_id": 661,
+      "path": "./bitmaps/cast_0066.bmp",
+      "width": 179,
+      "height": 125,
+      "decoded_bytes": 22500,
+      "row_stride_source": 180,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 80
+    },
+    "67": {
+      "movie": "ALLIN",
+      "cast_id": 67,
+      "cast_resource_id": 311,
+      "bitd_resource_id": 662,
+      "path": "./bitmaps/cast_0067.bmp",
+      "width": 180,
+      "height": 85,
+      "decoded_bytes": 15300,
+      "row_stride_source": 180,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 62
+    },
+    "68": {
+      "movie": "ALLIN",
+      "cast_id": 68,
+      "cast_resource_id": 246,
+      "bitd_resource_id": 663,
+      "path": "./bitmaps/cast_0068.bmp",
+      "width": 55,
+      "height": 43,
+      "decoded_bytes": 2408,
+      "row_stride_source": 56,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 12,
+      "reg_offset_y": -1
+    },
+    "69": {
+      "movie": "ALLIN",
+      "cast_id": 69,
+      "cast_resource_id": 264,
+      "bitd_resource_id": 664,
+      "path": "./bitmaps/cast_0069.bmp",
+      "width": 55,
+      "height": 57,
+      "decoded_bytes": 3192,
+      "row_stride_source": 56,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 2,
+      "reg_offset_y": 0
+    },
+    "70": {
+      "movie": "ALLIN",
+      "cast_id": 70,
+      "cast_resource_id": 270,
+      "bitd_resource_id": 665,
+      "path": "./bitmaps/cast_0070.bmp",
+      "width": 65,
+      "height": 105,
+      "decoded_bytes": 6930,
+      "row_stride_source": 66,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 53,
+      "reg_offset_y": 104
+    },
+    "71": {
+      "movie": "ALLIN",
+      "cast_id": 71,
+      "cast_resource_id": 333,
+      "bitd_resource_id": 666,
+      "path": "./bitmaps/cast_0071.bmp",
+      "width": 165,
+      "height": 166,
+      "decoded_bytes": 27556,
+      "row_stride_source": 166,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 86,
+      "reg_offset_y": 288
+    },
+    "82": {
+      "movie": "ALLIN",
+      "cast_id": 82,
+      "cast_resource_id": 49,
+      "bitd_resource_id": 667,
+      "path": "./bitmaps/cast_0082.bmp",
+      "width": 97,
+      "height": 271,
+      "decoded_bytes": 26558,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 272,
+      "reg_offset_y": 290
+    },
+    "83": {
+      "movie": "ALLIN",
+      "cast_id": 83,
+      "cast_resource_id": 279,
+      "bitd_resource_id": 668,
+      "path": "./bitmaps/cast_0083.bmp",
+      "width": 92,
+      "height": 255,
+      "decoded_bytes": 23460,
+      "row_stride_source": 92,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 38,
+      "reg_offset_y": 141
+    },
+    "94": {
+      "movie": "ALLIN",
+      "cast_id": 94,
+      "cast_resource_id": 91,
+      "bitd_resource_id": 669,
+      "path": "./bitmaps/cast_0094.bmp",
+      "width": 41,
+      "height": 88,
+      "decoded_bytes": 3696,
+      "row_stride_source": 42,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 13,
+      "reg_offset_y": 48
+    },
+    "107": {
+      "movie": "ALLIN",
+      "cast_id": 107,
+      "cast_resource_id": 373,
+      "bitd_resource_id": 670,
+      "path": "./bitmaps/cast_0107.bmp",
+      "width": 67,
+      "height": 291,
+      "decoded_bytes": 107670,
+      "row_stride_source": 370,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 33,
+      "reg_offset_y": 145
+    },
+    "115": {
+      "movie": "ALLIN",
+      "cast_id": 115,
+      "cast_resource_id": 52,
+      "bitd_resource_id": 671,
+      "path": "./bitmaps/cast_0115.bmp",
+      "width": 142,
+      "height": 94,
+      "decoded_bytes": 13348,
+      "row_stride_source": 142,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 71,
+      "reg_offset_y": 47
+    }
+  },
+  "top_widths": [
+    [
+      179,
+      2
+    ],
+    [
+      44,
+      2
+    ],
+    [
+      48,
+      2
+    ],
+    [
+      180,
+      2
+    ],
+    [
+      55,
+      2
+    ],
+    [
+      640,
+      1
+    ],
+    [
+      129,
+      1
+    ],
+    [
+      219,
+      1
+    ],
+    [
+      38,
+      1
+    ],
+    [
+      42,
+      1
+    ],
+    [
+      390,
+      1
+    ],
+    [
+      217,
+      1
+    ],
+    [
+      385,
+      1
+    ],
+    [
+      137,
+      1
+    ],
+    [
+      222,
+      1
+    ],
+    [
+      253,
+      1
+    ],
+    [
+      228,
+      1
+    ],
+    [
+      176,
+      1
+    ],
+    [
+      65,
+      1
+    ],
+    [
+      165,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      441,
+      2
+    ],
+    [
+      17,
+      2
+    ],
+    [
+      31,
+      2
+    ],
+    [
+      12,
+      2
+    ],
+    [
+      88,
+      2
+    ],
+    [
+      238,
+      1
+    ],
+    [
+      251,
+      1
+    ],
+    [
+      209,
+      1
+    ],
+    [
+      27,
+      1
+    ],
+    [
+      13,
+      1
+    ],
+    [
+      10,
+      1
+    ],
+    [
+      283,
+      1
+    ],
+    [
+      116,
+      1
+    ],
+    [
+      128,
+      1
+    ],
+    [
+      134,
+      1
+    ],
+    [
+      125,
+      1
+    ],
+    [
+      85,
+      1
+    ],
+    [
+      43,
+      1
+    ],
+    [
+      57,
+      1
+    ],
+    [
+      105,
+      1
+    ]
+  ]
+}

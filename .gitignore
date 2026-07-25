@@ -1,0 +1,27 @@
+# Godot 4
+.godot/
+*.translation
+export.cfg
+*.tmp
+build/
+android/*.keystore
+android/*.jks
+
+# Broken keep-importer stubs — BMPs/WAVs load at runtime from source files
+**/*.import
+
+# Build artifacts / local logs
+*.apk
+smoke_log.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.vscode/
+.idea/
+
+# Local overrides
+*.local
+user://

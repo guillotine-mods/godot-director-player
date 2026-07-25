@@ -1,0 +1,15 @@
+{
+  "movie": "MANAGER",
+  "score_chunk": null,
+  "frame_count": 0,
+  "member_count": 316,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    }
+  },
+  "sprite_record_size": null,
+  "frames_version": null,
+  "stage": null
+}

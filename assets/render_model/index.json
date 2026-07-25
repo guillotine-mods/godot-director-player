@@ -1,0 +1,2465 @@
+{
+  "exports": [
+    {
+      "movie": "strtgame",
+      "score_chunk": "VWSC-3148.bin",
+      "frame_count": 1375,
+      "member_count": 824,
+      "first_playable_frame": 840,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "EXODUS",
+      "score_chunk": "VWSC-338.bin",
+      "frame_count": 448,
+      "member_count": 648,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "DAY1",
+      "score_chunk": "VWSC-1827.bin",
+      "frame_count": 2784,
+      "member_count": 1349,
+      "first_playable_frame": 39,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "3": {
+          "name": "island",
+          "path": "macintosh hd:pip2 full:island.cst"
+        },
+        "4": {
+          "name": "island2",
+          "path": "macintosh hd:pip2 full:island2.cst"
+        },
+        "5": {
+          "name": "wonder",
+          "path": "macintosh hd:pip2 full:wonder.cst"
+        }
+      }
+    },
+    {
+      "movie": "AIR1",
+      "score_chunk": "VWSC-2624.bin",
+      "frame_count": 1006,
+      "member_count": 992,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "byair",
+          "path": "macintosh hd:pip2 full:byair.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "4": {
+          "name": "island2",
+          "path": "macintosh hd:pip2 full:island2.cst"
+        }
+      }
+    },
+    {
+      "movie": "ALLIN",
+      "score_chunk": "VWSC-677.bin",
+      "frame_count": 1438,
+      "member_count": 614,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "6": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "8": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "9": {
+          "name": "ishurun",
+          "path": "macintosh hd:pip2 full:ishurun.cst"
+        },
+        "10": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ARCADE1",
+      "score_chunk": "VWSC-935.bin",
+      "frame_count": 333,
+      "member_count": 324,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ARCADE2",
+      "score_chunk": "VWSC-1684.bin",
+      "frame_count": 1198,
+      "member_count": 386,
+      "first_playable_frame": 2,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "BIGEL",
+      "score_chunk": "VWSC-458.bin",
+      "frame_count": 1172,
+      "member_count": 208,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "BLACK",
+      "score_chunk": "SCVW-764.bin",
+      "frame_count": 6,
+      "member_count": 320,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "BOOK",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 344,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "BYAIR",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 118,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "BYSEA",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 60,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "CHESS",
+      "score_chunk": "VWSC-1359.bin",
+      "frame_count": 489,
+      "member_count": 906,
+      "first_playable_frame": 2,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "DAGI",
+      "score_chunk": "VWSC-163.bin",
+      "frame_count": 330,
+      "member_count": 112,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "DETECTIV",
+      "score_chunk": "SCVW-1013.bin",
+      "frame_count": 6,
+      "member_count": 404,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "DIVEFIGT",
+      "score_chunk": "VWSC-865.bin",
+      "frame_count": 385,
+      "member_count": 328,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "bysea",
+          "path": "macintosh hd:pip2 full:bysea.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "4": {
+          "name": "jokers",
+          "path": "macintosh hd:pip2 full:jokers.cst"
+        }
+      }
+    },
+    {
+      "movie": "DTCDAY2",
+      "score_chunk": "VWSC-439.bin",
+      "frame_count": 1256,
+      "member_count": 650,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "detectiv",
+          "path": "macintosh hd:pip2 full:detectiv.cst"
+        },
+        "3": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "6": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "7": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "8": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "9": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "10": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ENDMOVI1",
+      "score_chunk": "VWSC-323.bin",
+      "frame_count": 737,
+      "member_count": 660,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "Macintosh HD:pip2data:black.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "Macintosh HD:pip2data:detectiv.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "Macintosh HD:pip2data:fat.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "Macintosh HD:pip2data:hatuli.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "Macintosh HD:pip2data:hezi.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "Macintosh HD:pip2data:manager.cst"
+        },
+        "8": {
+          "name": "rinati",
+          "path": "Macintosh HD:pip2data:rinati.cst"
+        },
+        "9": {
+          "name": "tofi",
+          "path": "Macintosh HD:pip2data:tofi.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "Macintosh HD:pip2data:ishurun.cst"
+        },
+        "11": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ENDMOVI2",
+      "score_chunk": "VWSC-513.bin",
+      "frame_count": 991,
+      "member_count": 724,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "Macintosh HD:pip2data:black.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "Macintosh HD:pip2data:detectiv.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "Macintosh HD:pip2data:fat.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "Macintosh HD:pip2data:hatuli.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "Macintosh HD:pip2data:hezi.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "Macintosh HD:pip2data:manager.cst"
+        },
+        "8": {
+          "name": "rinati",
+          "path": "Macintosh HD:pip2data:rinati.cst"
+        },
+        "9": {
+          "name": "tofi",
+          "path": "Macintosh HD:pip2data:tofi.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "Macintosh HD:pip2data:ishurun.cst"
+        },
+        "11": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ENDMOVI3",
+      "score_chunk": "VWSC-1173.bin",
+      "frame_count": 1576,
+      "member_count": 908,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "Macintosh HD:pip2data:black.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "Macintosh HD:pip2data:detectiv.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "Macintosh HD:pip2data:fat.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "Macintosh HD:pip2data:hatuli.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "Macintosh HD:pip2data:hezi.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "Macintosh HD:pip2data:manager.cst"
+        },
+        "8": {
+          "name": "rinati",
+          "path": "Macintosh HD:pip2data:rinati.cst"
+        },
+        "9": {
+          "name": "tofi",
+          "path": "Macintosh HD:pip2data:tofi.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "Macintosh HD:pip2data:ishurun.cst"
+        },
+        "11": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ENDMOVI4",
+      "score_chunk": "VWSC-1152.bin",
+      "frame_count": 3629,
+      "member_count": 758,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "Macintosh HD:pip2data:black.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "Macintosh HD:pip2data:detectiv.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "Macintosh HD:pip2data:fat.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "Macintosh HD:pip2data:hatuli.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "Macintosh HD:pip2data:hezi.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "Macintosh HD:pip2data:manager.cst"
+        },
+        "8": {
+          "name": "rinati",
+          "path": "Macintosh HD:pip2data:rinati.cst"
+        },
+        "9": {
+          "name": "tofi",
+          "path": "Macintosh HD:pip2data:tofi.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "Macintosh HD:pip2data:ishurun.cst"
+        },
+        "11": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        },
+        "12": {
+          "name": "heznigt",
+          "path": "Macintosh HD:pip2data:heznigt.cst"
+        }
+      }
+    },
+    {
+      "movie": "ENDMOVI5",
+      "score_chunk": "VWSC-1467.bin",
+      "frame_count": 2740,
+      "member_count": 878,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "Macintosh HD:pip2data:black.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "Macintosh HD:pip2data:detectiv.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "Macintosh HD:pip2data:fat.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "Macintosh HD:pip2data:hatuli.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "Macintosh HD:pip2data:hezi.cst"
+        },
+        "7": {
+          "name": "manager",
+          "path": "Macintosh HD:pip2data:manager.cst"
+        },
+        "8": {
+          "name": "rinati",
+          "path": "Macintosh HD:pip2data:rinati.cst"
+        },
+        "9": {
+          "name": "tofi",
+          "path": "Macintosh HD:pip2data:tofi.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "Macintosh HD:pip2data:ishurun.cst"
+        },
+        "11": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "FAT",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 512,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "FIGTAIR",
+      "score_chunk": "VWSC-760.bin",
+      "frame_count": 418,
+      "member_count": 294,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "jokers",
+          "path": "macintosh hd:pip2 full:jokers.cst"
+        },
+        "3": {
+          "name": "byair",
+          "path": "macintosh hd:pip2 full:byair.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "FIGTBRJ",
+      "score_chunk": "VWSC-1136.bin",
+      "frame_count": 451,
+      "member_count": 874,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "bysea",
+          "path": "macintosh hd:pip2 full:bysea.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "FIGTNIGT",
+      "score_chunk": "VWSC-715.bin",
+      "frame_count": 354,
+      "member_count": 284,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "jokers",
+          "path": "macintosh hd:pip2 full:jokers.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "FUGEL",
+      "score_chunk": "VWSC-559.bin",
+      "frame_count": 899,
+      "member_count": 244,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "GARDUG",
+      "score_chunk": "VWSC-1703.bin",
+      "frame_count": 833,
+      "member_count": 202,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": ""
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "GOLDDEAD",
+      "score_chunk": "VWSC-634.bin",
+      "frame_count": 2279,
+      "member_count": 710,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "3": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "4": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "5": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "7": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "8": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "9": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "10": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "GOLDOLIN",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 196,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "HATDAY1",
+      "score_chunk": "VWSC-299.bin",
+      "frame_count": 1189,
+      "member_count": 580,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "5": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "6": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "7": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "8": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "HATDAY2",
+      "score_chunk": "VWSC-970.bin",
+      "frame_count": 1161,
+      "member_count": 810,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "5": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "6": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "7": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "8": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "HATDAY3",
+      "score_chunk": "VWSC-861.bin",
+      "frame_count": 1145,
+      "member_count": 798,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "5": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "6": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "7": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "8": {
+          "name": "detectiv",
+          "path": "macintosh hd:pip2 full:detectiv.cst"
+        },
+        "9": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "HATSIKUM",
+      "score_chunk": "VWSC-316.bin",
+      "frame_count": 1095,
+      "member_count": 610,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "5": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "6": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "7": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "HATULI",
+      "score_chunk": "SCVW-895.bin",
+      "frame_count": 14,
+      "member_count": 310,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "HEZI",
+      "score_chunk": "SCVW-2400.bin",
+      "frame_count": 12,
+      "member_count": 948,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "HEZNIGT",
+      "score_chunk": "SCVW-1491.bin",
+      "frame_count": 12,
+      "member_count": 586,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "HEZSAVE",
+      "score_chunk": "VWSC-1186.bin",
+      "frame_count": 32,
+      "member_count": 88,
+      "first_playable_frame": 10,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "C:\\Documents and Settings\\\u008e\u0098\u0093\\\u009d\u008c\u0093\u008d\u0095 \u008a\u0098\u0087\u008c\u008b\u008a\\tul\\Director\\master.cst"
+        }
+      }
+    },
+    {
+      "movie": "HOTEL",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 74,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "HOTEL1",
+      "score_chunk": "VWSC-5045.bin",
+      "frame_count": 1524,
+      "member_count": 2083,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hotel",
+          "path": "macintosh hd:pip2 full:hotel.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "4": {
+          "name": "wonder",
+          "path": "macintosh hd:pip2 full:wonder.cst"
+        },
+        "5": {
+          "name": "island2",
+          "path": "macintosh hd:pip2 full:island2.cst"
+        },
+        "6": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "7": {
+          "name": "book",
+          "path": "macintosh hd:pip2 full:book.cst"
+        }
+      }
+    },
+    {
+      "movie": "IGUL",
+      "score_chunk": "VWSC-194.bin",
+      "frame_count": 610,
+      "member_count": 106,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "INVESTIG",
+      "score_chunk": "VWSC-636.bin",
+      "frame_count": 1052,
+      "member_count": 696,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "detectiv",
+          "path": "macintosh hd:pip2 full:detectiv.cst"
+        },
+        "4": {
+          "name": "hotel",
+          "path": "macintosh hd:pip2 full:hotel.cst"
+        },
+        "5": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "6": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ISHDAY1",
+      "score_chunk": "VWSC-261.bin",
+      "frame_count": 1333,
+      "member_count": 574,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "ishurun",
+          "path": "macintosh hd:pip2 full:ishurun.cst"
+        },
+        "3": {
+          "name": "hezi1",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "ISHURUN",
+      "score_chunk": "SCVW-587.bin",
+      "frame_count": 6,
+      "member_count": 328,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "ISLAND",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 64,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "ISLAND2",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 324,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "JO",
+      "score_chunk": "VWSC-253.bin",
+      "frame_count": 575,
+      "member_count": 128,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "JOKE",
+      "score_chunk": "VWSC-234.bin",
+      "frame_count": 96,
+      "member_count": 156,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "JOKERS",
+      "score_chunk": "SCVW-1890.bin",
+      "frame_count": 4,
+      "member_count": 600,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "KAROZ",
+      "score_chunk": "VWSC-573.bin",
+      "frame_count": 830,
+      "member_count": 246,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MANAGER",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 316,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "MAP",
+      "score_chunk": "VWSC-184.bin",
+      "frame_count": 81,
+      "member_count": 102,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MASTER",
+      "score_chunk": "SCVW-680.bin",
+      "frame_count": 31,
+      "member_count": 160,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "MENADAY2",
+      "score_chunk": "VWSC-313.bin",
+      "frame_count": 1436,
+      "member_count": 564,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "3": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MIROLO",
+      "score_chunk": "VWSC-1146.bin",
+      "frame_count": 1800,
+      "member_count": 894,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "detectiv",
+          "path": "macintosh hd:pip2 full:detectiv.cst"
+        },
+        "3": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "6": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "7": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "8": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "9": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "10": {
+          "name": "ishurun",
+          "path": "macintosh hd:pip2 full:ishurun.cst"
+        },
+        "11": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "12": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MOGUL",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 220,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "MORN2",
+      "score_chunk": "VWSC-444.bin",
+      "frame_count": 917,
+      "member_count": 652,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "3": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "6": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        }
+      }
+    },
+    {
+      "movie": "MORN3",
+      "score_chunk": "VWSC-229.bin",
+      "frame_count": 1143,
+      "member_count": 592,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "3": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "4": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "5": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "6": {
+          "name": "detectiv",
+          "path": "macintosh hd:pip2 full:detectiv.cst"
+        },
+        "7": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "8": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MRFDAY1",
+      "score_chunk": "VWSC-243.bin",
+      "frame_count": 957,
+      "member_count": 582,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "MURDER1",
+      "score_chunk": "VWSC-294.bin",
+      "frame_count": 884,
+      "member_count": 578,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "goldolin",
+          "path": "macintosh hd:pip2 full:goldolin.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "NIGHT",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 84,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "NIGHT1",
+      "score_chunk": "VWSC-3210.bin",
+      "frame_count": 2646,
+      "member_count": 1479,
+      "first_playable_frame": 1192,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "3": {
+          "name": "island2",
+          "path": "macintosh hd:pip2 full:island2.cst"
+        },
+        "4": {
+          "name": "wonder",
+          "path": "macintosh hd:pip2 full:wonder.cst"
+        },
+        "5": {
+          "name": "night",
+          "path": "macintosh hd:pip2 full:night.cst"
+        },
+        "6": {
+          "name": "night2",
+          "path": "macintosh hd:pip2 full:night2.cst"
+        }
+      }
+    },
+    {
+      "movie": "NIGHT2",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 218,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "NITE1",
+      "score_chunk": "VWSC-374.bin",
+      "frame_count": 127,
+      "member_count": 712,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "PANTER",
+      "score_chunk": "VWSC-323.bin",
+      "frame_count": 739,
+      "member_count": 170,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "PATDAY1",
+      "score_chunk": "VWSC-187.bin",
+      "frame_count": 926,
+      "member_count": 566,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "rinati",
+          "path": "macintosh hd:pip2 full:rinati.cst"
+        },
+        "4": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "PPTSHOW",
+      "score_chunk": "VWSC-3375.bin",
+      "frame_count": 1988,
+      "member_count": 1616,
+      "first_playable_frame": 1,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        }
+      }
+    },
+    {
+      "movie": "PSIK",
+      "score_chunk": "VWSC-358.bin",
+      "frame_count": 942,
+      "member_count": 630,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "RECEPT",
+      "score_chunk": "VWSC-157.bin",
+      "frame_count": 316,
+      "member_count": 578,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "manager",
+          "path": "macintosh hd:pip2 full:manager.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "RINATI",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 384,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "RUNAWAY",
+      "score_chunk": "VWSC-1946.bin",
+      "frame_count": 1047,
+      "member_count": 648,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "Macintosh HD:pip2data:heznigt.cst"
+        },
+        "3": {
+          "name": "night",
+          "path": "Macintosh HD:pip2data:night.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "Macintosh HD:pip2data:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SABMON",
+      "score_chunk": "SCVW-658.bin",
+      "frame_count": 3,
+      "member_count": 284,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "SABMON1",
+      "score_chunk": "VWSC-569.bin",
+      "frame_count": 761,
+      "member_count": 228,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "sabmon",
+          "path": "macintosh hd:pip2 full:sabmon.cst"
+        },
+        "3": {
+          "name": "mogul",
+          "path": "macintosh hd:pip2 full:mogul.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SABMON2",
+      "score_chunk": "VWSC-643.bin",
+      "frame_count": 1006,
+      "member_count": 262,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "sabmon",
+          "path": "macintosh hd:pip2 full:sabmon.cst"
+        },
+        "3": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "4": {
+          "name": "sabmon",
+          "path": "macintosh hd:pip2 full:sabmon.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SAMNIGHT",
+      "score_chunk": "VWSC-336.bin",
+      "frame_count": 722,
+      "member_count": 614,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "black",
+          "path": "macintosh hd:pip2 full:black.cst"
+        },
+        "3": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "4": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "5": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SAVELOAD",
+      "score_chunk": "VWSC-807.bin",
+      "frame_count": 255,
+      "member_count": 276,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SEA1",
+      "score_chunk": "VWSC-6108.bin",
+      "frame_count": 1982,
+      "member_count": 2491,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "bysea",
+          "path": "macintosh hd:pip2 full:bysea.cst"
+        },
+        "3": {
+          "name": "island2",
+          "path": "macintosh hd:pip2 full:island2.cst"
+        },
+        "4": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "5": {
+          "name": "wonder",
+          "path": "macintosh hd:pip2 full:wonder.cst"
+        }
+      }
+    },
+    {
+      "movie": "SHUFFLE",
+      "score_chunk": "VWSC-1136.bin",
+      "frame_count": 208,
+      "member_count": 444,
+      "first_playable_frame": 1,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SLEEP1",
+      "score_chunk": "VWSC-772.bin",
+      "frame_count": 1251,
+      "member_count": 300,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "5": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "6": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "SLEEP2",
+      "score_chunk": "VWSC-734.bin",
+      "frame_count": 114,
+      "member_count": 126,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "hatuli",
+          "path": "macintosh hd:pip2 full:hatuli.cst"
+        },
+        "4": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        },
+        "5": {
+          "name": "fat",
+          "path": "macintosh hd:pip2 full:fat.cst"
+        },
+        "6": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "TENNIS",
+      "score_chunk": "VWSC-1381.bin",
+      "frame_count": 432,
+      "member_count": 456,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    },
+    {
+      "movie": "TOFI",
+      "score_chunk": null,
+      "frame_count": 0,
+      "member_count": 412,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "TOFIRCPT",
+      "score_chunk": "VWSC-258.bin",
+      "frame_count": 342,
+      "member_count": 594,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "hezi",
+          "path": "macintosh hd:pip2 full:hezi.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        },
+        "4": {
+          "name": "tofi",
+          "path": "macintosh hd:pip2 full:tofi.cst"
+        }
+      }
+    },
+    {
+      "movie": "WONDER",
+      "score_chunk": "SCVW-3615.bin",
+      "frame_count": 74,
+      "member_count": 1150,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        }
+      }
+    },
+    {
+      "movie": "ZARA",
+      "score_chunk": "VWSC-999.bin",
+      "frame_count": 586,
+      "member_count": 186,
+      "first_playable_frame": 0,
+      "stage": {
+        "width": 640,
+        "height": 480
+      },
+      "cast_libs": {
+        "1": {
+          "name": "internal",
+          "path": ""
+        },
+        "2": {
+          "name": "heznigt",
+          "path": "macintosh hd:pip2 full:heznigt.cst"
+        },
+        "3": {
+          "name": "master",
+          "path": "macintosh hd:pip2 full:master.cst"
+        }
+      }
+    }
+  ]
+}

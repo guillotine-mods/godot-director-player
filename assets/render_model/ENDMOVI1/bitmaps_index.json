@@ -1,0 +1,965 @@
+{
+  "movie": "ENDMOVI1",
+  "decoded_bitmap_count": 53,
+  "bitmaps": {
+    "1": {
+      "movie": "ENDMOVI1",
+      "cast_id": 1,
+      "cast_resource_id": 4,
+      "bitd_resource_id": 260,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "2": {
+      "movie": "ENDMOVI1",
+      "cast_id": 2,
+      "cast_resource_id": 5,
+      "bitd_resource_id": 261,
+      "path": "./bitmaps/cast_0002.bmp",
+      "width": 81,
+      "height": 400,
+      "decoded_bytes": 32800,
+      "row_stride_source": 82,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 41,
+      "reg_offset_y": 200
+    },
+    "5": {
+      "movie": "ENDMOVI1",
+      "cast_id": 5,
+      "cast_resource_id": 8,
+      "bitd_resource_id": 264,
+      "path": "./bitmaps/cast_0005.bmp",
+      "width": 60,
+      "height": 85,
+      "decoded_bytes": 5100,
+      "row_stride_source": 60,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": -15,
+      "reg_offset_y": -16
+    },
+    "6": {
+      "movie": "ENDMOVI1",
+      "cast_id": 6,
+      "cast_resource_id": 9,
+      "bitd_resource_id": 265,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 60,
+      "height": 85,
+      "decoded_bytes": 5100,
+      "row_stride_source": 60,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": -15,
+      "reg_offset_y": -16
+    },
+    "8": {
+      "movie": "ENDMOVI1",
+      "cast_id": 8,
+      "cast_resource_id": 11,
+      "bitd_resource_id": 267,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 108,
+      "height": 273,
+      "decoded_bytes": 29484,
+      "row_stride_source": 108,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 82,
+      "reg_offset_y": 272
+    },
+    "9": {
+      "movie": "ENDMOVI1",
+      "cast_id": 9,
+      "cast_resource_id": 12,
+      "bitd_resource_id": 268,
+      "path": "./bitmaps/cast_0009.bmp",
+      "width": 168,
+      "height": 276,
+      "decoded_bytes": 46368,
+      "row_stride_source": 168,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": -7,
+      "reg_offset_y": 275
+    },
+    "10": {
+      "movie": "ENDMOVI1",
+      "cast_id": 10,
+      "cast_resource_id": 13,
+      "bitd_resource_id": 269,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 136,
+      "height": 272,
+      "decoded_bytes": 36992,
+      "row_stride_source": 136,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 102,
+      "reg_offset_y": 271
+    },
+    "11": {
+      "movie": "ENDMOVI1",
+      "cast_id": 11,
+      "cast_resource_id": 14,
+      "bitd_resource_id": 270,
+      "path": "./bitmaps/cast_0011.bmp",
+      "width": 103,
+      "height": 279,
+      "decoded_bytes": 29016,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 278
+    },
+    "12": {
+      "movie": "ENDMOVI1",
+      "cast_id": 12,
+      "cast_resource_id": 15,
+      "bitd_resource_id": 271,
+      "path": "./bitmaps/cast_0012.bmp",
+      "width": 103,
+      "height": 277,
+      "decoded_bytes": 28808,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 69,
+      "reg_offset_y": 277
+    },
+    "13": {
+      "movie": "ENDMOVI1",
+      "cast_id": 13,
+      "cast_resource_id": 16,
+      "bitd_resource_id": 272,
+      "path": "./bitmaps/cast_0013.bmp",
+      "width": 140,
+      "height": 271,
+      "decoded_bytes": 37940,
+      "row_stride_source": 140,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 107,
+      "reg_offset_y": 271
+    },
+    "14": {
+      "movie": "ENDMOVI1",
+      "cast_id": 14,
+      "cast_resource_id": 17,
+      "bitd_resource_id": 273,
+      "path": "./bitmaps/cast_0014.bmp",
+      "width": 103,
+      "height": 267,
+      "decoded_bytes": 27768,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 91,
+      "reg_offset_y": 267
+    },
+    "16": {
+      "movie": "ENDMOVI1",
+      "cast_id": 16,
+      "cast_resource_id": 19,
+      "bitd_resource_id": 275,
+      "path": "./bitmaps/cast_0016.bmp",
+      "width": 89,
+      "height": 98,
+      "decoded_bytes": 8820,
+      "row_stride_source": 90,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 44,
+      "reg_offset_y": 49
+    },
+    "17": {
+      "movie": "ENDMOVI1",
+      "cast_id": 17,
+      "cast_resource_id": 20,
+      "bitd_resource_id": 276,
+      "path": "./bitmaps/cast_0017.bmp",
+      "width": 96,
+      "height": 145,
+      "decoded_bytes": 13920,
+      "row_stride_source": 96,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 10,
+      "reg_offset_y": 144
+    },
+    "19": {
+      "movie": "ENDMOVI1",
+      "cast_id": 19,
+      "cast_resource_id": 22,
+      "bitd_resource_id": 277,
+      "path": "./bitmaps/cast_0019.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "20": {
+      "movie": "ENDMOVI1",
+      "cast_id": 20,
+      "cast_resource_id": 23,
+      "bitd_resource_id": 278,
+      "path": "./bitmaps/cast_0020.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "21": {
+      "movie": "ENDMOVI1",
+      "cast_id": 21,
+      "cast_resource_id": 24,
+      "bitd_resource_id": 279,
+      "path": "./bitmaps/cast_0021.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "22": {
+      "movie": "ENDMOVI1",
+      "cast_id": 22,
+      "cast_resource_id": 25,
+      "bitd_resource_id": 280,
+      "path": "./bitmaps/cast_0022.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "23": {
+      "movie": "ENDMOVI1",
+      "cast_id": 23,
+      "cast_resource_id": 26,
+      "bitd_resource_id": 281,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "24": {
+      "movie": "ENDMOVI1",
+      "cast_id": 24,
+      "cast_resource_id": 27,
+      "bitd_resource_id": 282,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 43,
+      "height": 55,
+      "decoded_bytes": 2420,
+      "row_stride_source": 44,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 0,
+      "reg_offset_y": 24
+    },
+    "25": {
+      "movie": "ENDMOVI1",
+      "cast_id": 25,
+      "cast_resource_id": 28,
+      "bitd_resource_id": 283,
+      "path": "./bitmaps/cast_0025.bmp",
+      "width": 118,
+      "height": 254,
+      "decoded_bytes": 29972,
+      "row_stride_source": 118,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 35,
+      "reg_offset_y": 253
+    },
+    "26": {
+      "movie": "ENDMOVI1",
+      "cast_id": 26,
+      "cast_resource_id": 29,
+      "bitd_resource_id": 284,
+      "path": "./bitmaps/cast_0026.bmp",
+      "width": 98,
+      "height": 257,
+      "decoded_bytes": 25186,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 27,
+      "reg_offset_y": 256
+    },
+    "27": {
+      "movie": "ENDMOVI1",
+      "cast_id": 27,
+      "cast_resource_id": 30,
+      "bitd_resource_id": 285,
+      "path": "./bitmaps/cast_0027.bmp",
+      "width": 86,
+      "height": 253,
+      "decoded_bytes": 21758,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 28,
+      "reg_offset_y": 252
+    },
+    "28": {
+      "movie": "ENDMOVI1",
+      "cast_id": 28,
+      "cast_resource_id": 31,
+      "bitd_resource_id": 286,
+      "path": "./bitmaps/cast_0028.bmp",
+      "width": 90,
+      "height": 256,
+      "decoded_bytes": 23040,
+      "row_stride_source": 90,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 26,
+      "reg_offset_y": 255
+    },
+    "29": {
+      "movie": "ENDMOVI1",
+      "cast_id": 29,
+      "cast_resource_id": 32,
+      "bitd_resource_id": 287,
+      "path": "./bitmaps/cast_0029.bmp",
+      "width": 86,
+      "height": 254,
+      "decoded_bytes": 21844,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 28,
+      "reg_offset_y": 253
+    },
+    "30": {
+      "movie": "ENDMOVI1",
+      "cast_id": 30,
+      "cast_resource_id": 33,
+      "bitd_resource_id": 288,
+      "path": "./bitmaps/cast_0030.bmp",
+      "width": 98,
+      "height": 254,
+      "decoded_bytes": 24892,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 27,
+      "reg_offset_y": 253
+    },
+    "31": {
+      "movie": "ENDMOVI1",
+      "cast_id": 31,
+      "cast_resource_id": 34,
+      "bitd_resource_id": 289,
+      "path": "./bitmaps/cast_0031.bmp",
+      "width": 116,
+      "height": 254,
+      "decoded_bytes": 29464,
+      "row_stride_source": 116,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 80,
+      "reg_offset_y": 253
+    },
+    "32": {
+      "movie": "ENDMOVI1",
+      "cast_id": 32,
+      "cast_resource_id": 35,
+      "bitd_resource_id": 290,
+      "path": "./bitmaps/cast_0032.bmp",
+      "width": 97,
+      "height": 254,
+      "decoded_bytes": 24892,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 69,
+      "reg_offset_y": 253
+    },
+    "33": {
+      "movie": "ENDMOVI1",
+      "cast_id": 33,
+      "cast_resource_id": 36,
+      "bitd_resource_id": 291,
+      "path": "./bitmaps/cast_0033.bmp",
+      "width": 82,
+      "height": 255,
+      "decoded_bytes": 20910,
+      "row_stride_source": 82,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 56,
+      "reg_offset_y": 254
+    },
+    "34": {
+      "movie": "ENDMOVI1",
+      "cast_id": 34,
+      "cast_resource_id": 37,
+      "bitd_resource_id": 292,
+      "path": "./bitmaps/cast_0034.bmp",
+      "width": 93,
+      "height": 256,
+      "decoded_bytes": 24064,
+      "row_stride_source": 94,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 64,
+      "reg_offset_y": 255
+    },
+    "35": {
+      "movie": "ENDMOVI1",
+      "cast_id": 35,
+      "cast_resource_id": 38,
+      "bitd_resource_id": 293,
+      "path": "./bitmaps/cast_0035.bmp",
+      "width": 85,
+      "height": 254,
+      "decoded_bytes": 21844,
+      "row_stride_source": 86,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 56,
+      "reg_offset_y": 253
+    },
+    "36": {
+      "movie": "ENDMOVI1",
+      "cast_id": 36,
+      "cast_resource_id": 39,
+      "bitd_resource_id": 294,
+      "path": "./bitmaps/cast_0036.bmp",
+      "width": 100,
+      "height": 255,
+      "decoded_bytes": 25500,
+      "row_stride_source": 100,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 69,
+      "reg_offset_y": 254
+    },
+    "37": {
+      "movie": "ENDMOVI1",
+      "cast_id": 37,
+      "cast_resource_id": 40,
+      "bitd_resource_id": 295,
+      "path": "./bitmaps/cast_0037.bmp",
+      "width": 64,
+      "height": 100,
+      "decoded_bytes": 6400,
+      "row_stride_source": 64,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 63,
+      "reg_offset_y": 99
+    },
+    "38": {
+      "movie": "ENDMOVI1",
+      "cast_id": 38,
+      "cast_resource_id": 41,
+      "bitd_resource_id": 296,
+      "path": "./bitmaps/cast_0038.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "39": {
+      "movie": "ENDMOVI1",
+      "cast_id": 39,
+      "cast_resource_id": 42,
+      "bitd_resource_id": 297,
+      "path": "./bitmaps/cast_0039.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "40": {
+      "movie": "ENDMOVI1",
+      "cast_id": 40,
+      "cast_resource_id": 43,
+      "bitd_resource_id": 298,
+      "path": "./bitmaps/cast_0040.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "41": {
+      "movie": "ENDMOVI1",
+      "cast_id": 41,
+      "cast_resource_id": 44,
+      "bitd_resource_id": 299,
+      "path": "./bitmaps/cast_0041.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "42": {
+      "movie": "ENDMOVI1",
+      "cast_id": 42,
+      "cast_resource_id": 45,
+      "bitd_resource_id": 300,
+      "path": "./bitmaps/cast_0042.bmp",
+      "width": 108,
+      "height": 273,
+      "decoded_bytes": 29484,
+      "row_stride_source": 108,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 92,
+      "reg_offset_y": 272
+    },
+    "43": {
+      "movie": "ENDMOVI1",
+      "cast_id": 43,
+      "cast_resource_id": 46,
+      "bitd_resource_id": 301,
+      "path": "./bitmaps/cast_0043.bmp",
+      "width": 168,
+      "height": 276,
+      "decoded_bytes": 46368,
+      "row_stride_source": 168,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 151,
+      "reg_offset_y": 275
+    },
+    "44": {
+      "movie": "ENDMOVI1",
+      "cast_id": 44,
+      "cast_resource_id": 47,
+      "bitd_resource_id": 302,
+      "path": "./bitmaps/cast_0044.bmp",
+      "width": 136,
+      "height": 272,
+      "decoded_bytes": 36992,
+      "row_stride_source": 136,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 119,
+      "reg_offset_y": 271
+    },
+    "45": {
+      "movie": "ENDMOVI1",
+      "cast_id": 45,
+      "cast_resource_id": 48,
+      "bitd_resource_id": 303,
+      "path": "./bitmaps/cast_0045.bmp",
+      "width": 103,
+      "height": 279,
+      "decoded_bytes": 29016,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 87,
+      "reg_offset_y": 278
+    },
+    "46": {
+      "movie": "ENDMOVI1",
+      "cast_id": 46,
+      "cast_resource_id": 49,
+      "bitd_resource_id": 304,
+      "path": "./bitmaps/cast_0046.bmp",
+      "width": 103,
+      "height": 277,
+      "decoded_bytes": 28808,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 87,
+      "reg_offset_y": 277
+    },
+    "47": {
+      "movie": "ENDMOVI1",
+      "cast_id": 47,
+      "cast_resource_id": 50,
+      "bitd_resource_id": 305,
+      "path": "./bitmaps/cast_0047.bmp",
+      "width": 140,
+      "height": 271,
+      "decoded_bytes": 37940,
+      "row_stride_source": 140,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 124,
+      "reg_offset_y": 271
+    },
+    "48": {
+      "movie": "ENDMOVI1",
+      "cast_id": 48,
+      "cast_resource_id": 51,
+      "bitd_resource_id": 306,
+      "path": "./bitmaps/cast_0048.bmp",
+      "width": 103,
+      "height": 267,
+      "decoded_bytes": 27768,
+      "row_stride_source": 104,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 87,
+      "reg_offset_y": 267
+    },
+    "49": {
+      "movie": "ENDMOVI1",
+      "cast_id": 49,
+      "cast_resource_id": 52,
+      "bitd_resource_id": 307,
+      "path": "./bitmaps/cast_0049.bmp",
+      "width": 31,
+      "height": 27,
+      "decoded_bytes": 864,
+      "row_stride_source": 32,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 14
+    },
+    "50": {
+      "movie": "ENDMOVI1",
+      "cast_id": 50,
+      "cast_resource_id": 53,
+      "bitd_resource_id": 308,
+      "path": "./bitmaps/cast_0050.bmp",
+      "width": 82,
+      "height": 94,
+      "decoded_bytes": 7708,
+      "row_stride_source": 82,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 37,
+      "reg_offset_y": 51
+    },
+    "58": {
+      "movie": "ENDMOVI1",
+      "cast_id": 58,
+      "cast_resource_id": 61,
+      "bitd_resource_id": 309,
+      "path": "./bitmaps/cast_0058.bmp",
+      "width": 277,
+      "height": 13,
+      "decoded_bytes": 3614,
+      "row_stride_source": 278,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 138,
+      "reg_offset_y": 6
+    },
+    "59": {
+      "movie": "ENDMOVI1",
+      "cast_id": 59,
+      "cast_resource_id": 62,
+      "bitd_resource_id": 310,
+      "path": "./bitmaps/cast_0059.bmp",
+      "width": 377,
+      "height": 13,
+      "decoded_bytes": 4914,
+      "row_stride_source": 378,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 188,
+      "reg_offset_y": 6
+    },
+    "60": {
+      "movie": "ENDMOVI1",
+      "cast_id": 60,
+      "cast_resource_id": 63,
+      "bitd_resource_id": 311,
+      "path": "./bitmaps/cast_0060.bmp",
+      "width": 349,
+      "height": 13,
+      "decoded_bytes": 4550,
+      "row_stride_source": 350,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 174,
+      "reg_offset_y": 6
+    },
+    "69": {
+      "movie": "ENDMOVI1",
+      "cast_id": 69,
+      "cast_resource_id": 72,
+      "bitd_resource_id": 313,
+      "path": "./bitmaps/cast_0069.bmp",
+      "width": 49,
+      "height": 55,
+      "decoded_bytes": 2750,
+      "row_stride_source": 50,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "70": {
+      "movie": "ENDMOVI1",
+      "cast_id": 70,
+      "cast_resource_id": 73,
+      "bitd_resource_id": 314,
+      "path": "./bitmaps/cast_0070.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "71": {
+      "movie": "ENDMOVI1",
+      "cast_id": 71,
+      "cast_resource_id": 74,
+      "bitd_resource_id": 315,
+      "path": "./bitmaps/cast_0071.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "72": {
+      "movie": "ENDMOVI1",
+      "cast_id": 72,
+      "cast_resource_id": 75,
+      "bitd_resource_id": 316,
+      "path": "./bitmaps/cast_0072.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    },
+    "73": {
+      "movie": "ENDMOVI1",
+      "cast_id": 73,
+      "cast_resource_id": 76,
+      "bitd_resource_id": 317,
+      "path": "./bitmaps/cast_0073.bmp",
+      "width": 48,
+      "height": 55,
+      "decoded_bytes": 2640,
+      "row_stride_source": 48,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 61,
+      "reg_offset_y": 54
+    }
+  },
+  "top_widths": [
+    [
+      48,
+      8
+    ],
+    [
+      103,
+      6
+    ],
+    [
+      43,
+      6
+    ],
+    [
+      60,
+      2
+    ],
+    [
+      108,
+      2
+    ],
+    [
+      168,
+      2
+    ],
+    [
+      136,
+      2
+    ],
+    [
+      140,
+      2
+    ],
+    [
+      98,
+      2
+    ],
+    [
+      86,
+      2
+    ],
+    [
+      82,
+      2
+    ],
+    [
+      640,
+      1
+    ],
+    [
+      81,
+      1
+    ],
+    [
+      89,
+      1
+    ],
+    [
+      96,
+      1
+    ],
+    [
+      118,
+      1
+    ],
+    [
+      90,
+      1
+    ],
+    [
+      116,
+      1
+    ],
+    [
+      97,
+      1
+    ],
+    [
+      93,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      55,
+      15
+    ],
+    [
+      254,
+      6
+    ],
+    [
+      13,
+      3
+    ],
+    [
+      400,
+      2
+    ],
+    [
+      85,
+      2
+    ],
+    [
+      273,
+      2
+    ],
+    [
+      276,
+      2
+    ],
+    [
+      272,
+      2
+    ],
+    [
+      279,
+      2
+    ],
+    [
+      277,
+      2
+    ],
+    [
+      271,
+      2
+    ],
+    [
+      267,
+      2
+    ],
+    [
+      256,
+      2
+    ],
+    [
+      255,
+      2
+    ],
+    [
+      98,
+      1
+    ],
+    [
+      145,
+      1
+    ],
+    [
+      257,
+      1
+    ],
+    [
+      253,
+      1
+    ],
+    [
+      100,
+      1
+    ],
+    [
+      27,
+      1
+    ]
+  ]
+}

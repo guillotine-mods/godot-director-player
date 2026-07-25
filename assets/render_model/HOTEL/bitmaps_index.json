@@ -1,0 +1,673 @@
+{
+  "movie": "HOTEL",
+  "decoded_bitmap_count": 37,
+  "bitmaps": {
+    "1": {
+      "movie": "HOTEL",
+      "cast_id": 1,
+      "cast_resource_id": 10,
+      "bitd_resource_id": 94,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "2": {
+      "movie": "HOTEL",
+      "cast_id": 2,
+      "cast_resource_id": 14,
+      "bitd_resource_id": 95,
+      "path": "./bitmaps/cast_0002.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "3": {
+      "movie": "HOTEL",
+      "cast_id": 3,
+      "cast_resource_id": 18,
+      "bitd_resource_id": 96,
+      "path": "./bitmaps/cast_0003.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "4": {
+      "movie": "HOTEL",
+      "cast_id": 4,
+      "cast_resource_id": 22,
+      "bitd_resource_id": 97,
+      "path": "./bitmaps/cast_0004.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "5": {
+      "movie": "HOTEL",
+      "cast_id": 5,
+      "cast_resource_id": 26,
+      "bitd_resource_id": 98,
+      "path": "./bitmaps/cast_0005.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "6": {
+      "movie": "HOTEL",
+      "cast_id": 6,
+      "cast_resource_id": 30,
+      "bitd_resource_id": 99,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 1280,
+      "height": 441,
+      "decoded_bytes": 564480,
+      "row_stride_source": 1280,
+      "palette_id": -1,
+      "bpp_marker": 133,
+      "reg_offset_x": 640,
+      "reg_offset_y": 220
+    },
+    "7": {
+      "movie": "HOTEL",
+      "cast_id": 7,
+      "cast_resource_id": 6,
+      "bitd_resource_id": 100,
+      "path": "./bitmaps/cast_0007.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "8": {
+      "movie": "HOTEL",
+      "cast_id": 8,
+      "cast_resource_id": 32,
+      "bitd_resource_id": 101,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 225,
+      "height": 232,
+      "decoded_bytes": 52432,
+      "row_stride_source": 226,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 112,
+      "reg_offset_y": 116
+    },
+    "9": {
+      "movie": "HOTEL",
+      "cast_id": 9,
+      "cast_resource_id": 17,
+      "bitd_resource_id": 102,
+      "path": "./bitmaps/cast_0009.bmp",
+      "width": 183,
+      "height": 141,
+      "decoded_bytes": 25944,
+      "row_stride_source": 184,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 91,
+      "reg_offset_y": 71
+    },
+    "10": {
+      "movie": "HOTEL",
+      "cast_id": 10,
+      "cast_resource_id": 12,
+      "bitd_resource_id": 103,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 201,
+      "height": 184,
+      "decoded_bytes": 37168,
+      "row_stride_source": 202,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 100,
+      "reg_offset_y": 92
+    },
+    "11": {
+      "movie": "HOTEL",
+      "cast_id": 11,
+      "cast_resource_id": 42,
+      "bitd_resource_id": 104,
+      "path": "./bitmaps/cast_0011.bmp",
+      "width": 319,
+      "height": 165,
+      "decoded_bytes": 52800,
+      "row_stride_source": 320,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": -76,
+      "reg_offset_y": 114
+    },
+    "12": {
+      "movie": "HOTEL",
+      "cast_id": 12,
+      "cast_resource_id": 61,
+      "bitd_resource_id": 105,
+      "path": "./bitmaps/cast_0012.bmp",
+      "width": 207,
+      "height": 232,
+      "decoded_bytes": 48256,
+      "row_stride_source": 208,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 103,
+      "reg_offset_y": 116
+    },
+    "13": {
+      "movie": "HOTEL",
+      "cast_id": 13,
+      "cast_resource_id": 65,
+      "bitd_resource_id": 106,
+      "path": "./bitmaps/cast_0013.bmp",
+      "width": 207,
+      "height": 232,
+      "decoded_bytes": 48256,
+      "row_stride_source": 208,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 103,
+      "reg_offset_y": 116
+    },
+    "14": {
+      "movie": "HOTEL",
+      "cast_id": 14,
+      "cast_resource_id": 69,
+      "bitd_resource_id": 107,
+      "path": "./bitmaps/cast_0014.bmp",
+      "width": 207,
+      "height": 231,
+      "decoded_bytes": 48048,
+      "row_stride_source": 208,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 103,
+      "reg_offset_y": 115
+    },
+    "15": {
+      "movie": "HOTEL",
+      "cast_id": 15,
+      "cast_resource_id": 80,
+      "bitd_resource_id": 108,
+      "path": "./bitmaps/cast_0015.bmp",
+      "width": 225,
+      "height": 197,
+      "decoded_bytes": 44522,
+      "row_stride_source": 226,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 112,
+      "reg_offset_y": 99
+    },
+    "16": {
+      "movie": "HOTEL",
+      "cast_id": 16,
+      "cast_resource_id": 82,
+      "bitd_resource_id": 109,
+      "path": "./bitmaps/cast_0016.bmp",
+      "width": 225,
+      "height": 196,
+      "decoded_bytes": 44296,
+      "row_stride_source": 226,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 112,
+      "reg_offset_y": 98
+    },
+    "17": {
+      "movie": "HOTEL",
+      "cast_id": 17,
+      "cast_resource_id": 79,
+      "bitd_resource_id": 110,
+      "path": "./bitmaps/cast_0017.bmp",
+      "width": 225,
+      "height": 196,
+      "decoded_bytes": 44296,
+      "row_stride_source": 226,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 112,
+      "reg_offset_y": 98
+    },
+    "18": {
+      "movie": "HOTEL",
+      "cast_id": 18,
+      "cast_resource_id": 85,
+      "bitd_resource_id": 111,
+      "path": "./bitmaps/cast_0018.bmp",
+      "width": 28,
+      "height": 165,
+      "decoded_bytes": 4620,
+      "row_stride_source": 28,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 14,
+      "reg_offset_y": 82
+    },
+    "19": {
+      "movie": "HOTEL",
+      "cast_id": 19,
+      "cast_resource_id": 25,
+      "bitd_resource_id": 112,
+      "path": "./bitmaps/cast_0019.bmp",
+      "width": 128,
+      "height": 87,
+      "decoded_bytes": 11136,
+      "row_stride_source": 128,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 70,
+      "reg_offset_y": 47
+    },
+    "20": {
+      "movie": "HOTEL",
+      "cast_id": 20,
+      "cast_resource_id": 45,
+      "bitd_resource_id": 113,
+      "path": "./bitmaps/cast_0020.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 31868,
+      "row_stride_source": 514,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "21": {
+      "movie": "HOTEL",
+      "cast_id": 21,
+      "cast_resource_id": 51,
+      "bitd_resource_id": 114,
+      "path": "./bitmaps/cast_0021.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 39432,
+      "row_stride_source": 636,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "22": {
+      "movie": "HOTEL",
+      "cast_id": 22,
+      "cast_resource_id": 44,
+      "bitd_resource_id": 115,
+      "path": "./bitmaps/cast_0022.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 38068,
+      "row_stride_source": 614,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "23": {
+      "movie": "HOTEL",
+      "cast_id": 23,
+      "cast_resource_id": 43,
+      "bitd_resource_id": 116,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 33418,
+      "row_stride_source": 539,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "24": {
+      "movie": "HOTEL",
+      "cast_id": 24,
+      "cast_resource_id": 47,
+      "bitd_resource_id": 117,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 40052,
+      "row_stride_source": 646,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "25": {
+      "movie": "HOTEL",
+      "cast_id": 25,
+      "cast_resource_id": 40,
+      "bitd_resource_id": 118,
+      "path": "./bitmaps/cast_0025.bmp",
+      "width": 79,
+      "height": 62,
+      "decoded_bytes": 39618,
+      "row_stride_source": 639,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 31
+    },
+    "26": {
+      "movie": "HOTEL",
+      "cast_id": 26,
+      "cast_resource_id": 39,
+      "bitd_resource_id": 119,
+      "path": "./bitmaps/cast_0026.bmp",
+      "width": 78,
+      "height": 72,
+      "decoded_bytes": 5616,
+      "row_stride_source": 78,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 36
+    },
+    "27": {
+      "movie": "HOTEL",
+      "cast_id": 27,
+      "cast_resource_id": 38,
+      "bitd_resource_id": 120,
+      "path": "./bitmaps/cast_0027.bmp",
+      "width": 78,
+      "height": 72,
+      "decoded_bytes": 5616,
+      "row_stride_source": 78,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 36
+    },
+    "28": {
+      "movie": "HOTEL",
+      "cast_id": 28,
+      "cast_resource_id": 37,
+      "bitd_resource_id": 121,
+      "path": "./bitmaps/cast_0028.bmp",
+      "width": 78,
+      "height": 72,
+      "decoded_bytes": 5616,
+      "row_stride_source": 78,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 36
+    },
+    "29": {
+      "movie": "HOTEL",
+      "cast_id": 29,
+      "cast_resource_id": 36,
+      "bitd_resource_id": 122,
+      "path": "./bitmaps/cast_0029.bmp",
+      "width": 78,
+      "height": 72,
+      "decoded_bytes": 5616,
+      "row_stride_source": 78,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 36
+    },
+    "30": {
+      "movie": "HOTEL",
+      "cast_id": 30,
+      "cast_resource_id": 35,
+      "bitd_resource_id": 123,
+      "path": "./bitmaps/cast_0030.bmp",
+      "width": 78,
+      "height": 72,
+      "decoded_bytes": 5616,
+      "row_stride_source": 78,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 39,
+      "reg_offset_y": 36
+    },
+    "31": {
+      "movie": "HOTEL",
+      "cast_id": 31,
+      "cast_resource_id": 34,
+      "bitd_resource_id": 124,
+      "path": "./bitmaps/cast_0031.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "32": {
+      "movie": "HOTEL",
+      "cast_id": 32,
+      "cast_resource_id": 33,
+      "bitd_resource_id": 125,
+      "path": "./bitmaps/cast_0032.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "33": {
+      "movie": "HOTEL",
+      "cast_id": 33,
+      "cast_resource_id": 31,
+      "bitd_resource_id": 126,
+      "path": "./bitmaps/cast_0033.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "34": {
+      "movie": "HOTEL",
+      "cast_id": 34,
+      "cast_resource_id": 29,
+      "bitd_resource_id": 127,
+      "path": "./bitmaps/cast_0034.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "35": {
+      "movie": "HOTEL",
+      "cast_id": 35,
+      "cast_resource_id": 28,
+      "bitd_resource_id": 128,
+      "path": "./bitmaps/cast_0035.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "36": {
+      "movie": "HOTEL",
+      "cast_id": 36,
+      "cast_resource_id": 24,
+      "bitd_resource_id": 129,
+      "path": "./bitmaps/cast_0036.bmp",
+      "width": 555,
+      "height": 88,
+      "decoded_bytes": 48928,
+      "row_stride_source": 556,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 277,
+      "reg_offset_y": 44
+    },
+    "37": {
+      "movie": "HOTEL",
+      "cast_id": 37,
+      "cast_resource_id": 41,
+      "bitd_resource_id": 130,
+      "path": "./bitmaps/cast_0037.bmp",
+      "width": 49,
+      "height": 33,
+      "decoded_bytes": 1650,
+      "row_stride_source": 50,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 24,
+      "reg_offset_y": 16
+    }
+  },
+  "top_widths": [
+    [
+      640,
+      6
+    ],
+    [
+      79,
+      6
+    ],
+    [
+      555,
+      6
+    ],
+    [
+      78,
+      5
+    ],
+    [
+      225,
+      4
+    ],
+    [
+      207,
+      3
+    ],
+    [
+      1280,
+      1
+    ],
+    [
+      183,
+      1
+    ],
+    [
+      201,
+      1
+    ],
+    [
+      319,
+      1
+    ],
+    [
+      28,
+      1
+    ],
+    [
+      128,
+      1
+    ],
+    [
+      49,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      400,
+      6
+    ],
+    [
+      62,
+      6
+    ],
+    [
+      88,
+      6
+    ],
+    [
+      72,
+      5
+    ],
+    [
+      232,
+      3
+    ],
+    [
+      165,
+      2
+    ],
+    [
+      196,
+      2
+    ],
+    [
+      441,
+      1
+    ],
+    [
+      141,
+      1
+    ],
+    [
+      184,
+      1
+    ],
+    [
+      231,
+      1
+    ],
+    [
+      197,
+      1
+    ],
+    [
+      87,
+      1
+    ],
+    [
+      33,
+      1
+    ]
+  ]
+}

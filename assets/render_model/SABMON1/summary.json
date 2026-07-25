@@ -1,0 +1,35 @@
+{
+  "movie": "SABMON1",
+  "score_chunk": "VWSC-569.bin",
+  "frame_count": 761,
+  "member_count": 228,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "sabmon",
+      "path": "macintosh hd:pip2 full:sabmon.cst"
+    },
+    "3": {
+      "name": "mogul",
+      "path": "macintosh hd:pip2 full:mogul.cst"
+    },
+    "4": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-564.bin",
+    "left": 192,
+    "top": 144,
+    "right": 832,
+    "bottom": 624,
+    "width": 640,
+    "height": 480
+  }
+}

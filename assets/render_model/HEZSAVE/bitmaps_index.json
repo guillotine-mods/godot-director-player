@@ -1,0 +1,102 @@
+{
+  "movie": "HEZSAVE",
+  "decoded_bitmap_count": 4,
+  "bitmaps": {
+    "24": {
+      "movie": "HEZSAVE",
+      "cast_id": 24,
+      "cast_resource_id": 150,
+      "bitd_resource_id": 711,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 508,
+      "height": 26,
+      "decoded_bytes": 13208,
+      "row_stride_source": 508,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 254,
+      "reg_offset_y": 13
+    },
+    "25": {
+      "movie": "HEZSAVE",
+      "cast_id": 25,
+      "cast_resource_id": 144,
+      "bitd_resource_id": 713,
+      "path": "./bitmaps/cast_0025.bmp",
+      "width": 271,
+      "height": 21,
+      "decoded_bytes": 5712,
+      "row_stride_source": 272,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 135,
+      "reg_offset_y": 10
+    },
+    "26": {
+      "movie": "HEZSAVE",
+      "cast_id": 26,
+      "cast_resource_id": 132,
+      "bitd_resource_id": 715,
+      "path": "./bitmaps/cast_0026.bmp",
+      "width": 277,
+      "height": 45,
+      "decoded_bytes": 12510,
+      "row_stride_source": 278,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 138,
+      "reg_offset_y": 22
+    },
+    "27": {
+      "movie": "HEZSAVE",
+      "cast_id": 27,
+      "cast_resource_id": 587,
+      "bitd_resource_id": 717,
+      "path": "./bitmaps/cast_0027.bmp",
+      "width": 69,
+      "height": 17,
+      "decoded_bytes": 1190,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 34,
+      "reg_offset_y": 8
+    }
+  },
+  "top_widths": [
+    [
+      508,
+      1
+    ],
+    [
+      271,
+      1
+    ],
+    [
+      277,
+      1
+    ],
+    [
+      69,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      26,
+      1
+    ],
+    [
+      21,
+      1
+    ],
+    [
+      45,
+      1
+    ],
+    [
+      17,
+      1
+    ]
+  ]
+}

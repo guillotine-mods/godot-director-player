@@ -1,0 +1,51 @@
+{
+  "movie": "MORN3",
+  "score_chunk": "VWSC-229.bin",
+  "frame_count": 1143,
+  "member_count": 592,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "rinati",
+      "path": "macintosh hd:pip2 full:rinati.cst"
+    },
+    "3": {
+      "name": "fat",
+      "path": "macintosh hd:pip2 full:fat.cst"
+    },
+    "4": {
+      "name": "hezi",
+      "path": "macintosh hd:pip2 full:hezi.cst"
+    },
+    "5": {
+      "name": "tofi",
+      "path": "macintosh hd:pip2 full:tofi.cst"
+    },
+    "6": {
+      "name": "detectiv",
+      "path": "macintosh hd:pip2 full:detectiv.cst"
+    },
+    "7": {
+      "name": "hatuli",
+      "path": "macintosh hd:pip2 full:hatuli.cst"
+    },
+    "8": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-224.bin",
+    "left": 16,
+    "top": 60,
+    "right": 656,
+    "bottom": 540,
+    "width": 640,
+    "height": 480
+  }
+}

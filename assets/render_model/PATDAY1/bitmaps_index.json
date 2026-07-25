@@ -1,0 +1,144 @@
+{
+  "movie": "PATDAY1",
+  "decoded_bitmap_count": 6,
+  "bitmaps": {
+    "1": {
+      "movie": "PATDAY1",
+      "cast_id": 1,
+      "cast_resource_id": 22,
+      "bitd_resource_id": 172,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "4": {
+      "movie": "PATDAY1",
+      "cast_id": 4,
+      "cast_resource_id": 25,
+      "bitd_resource_id": 175,
+      "path": "./bitmaps/cast_0004.bmp",
+      "width": 36,
+      "height": 63,
+      "decoded_bytes": 2268,
+      "row_stride_source": 36,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 31
+    },
+    "6": {
+      "movie": "PATDAY1",
+      "cast_id": 6,
+      "cast_resource_id": 27,
+      "bitd_resource_id": 177,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 46,
+      "height": 68,
+      "decoded_bytes": 3128,
+      "row_stride_source": 46,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 23,
+      "reg_offset_y": 34
+    },
+    "8": {
+      "movie": "PATDAY1",
+      "cast_id": 8,
+      "cast_resource_id": 14,
+      "bitd_resource_id": 179,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 252,
+      "height": 13,
+      "decoded_bytes": 3276,
+      "row_stride_source": 252,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 126,
+      "reg_offset_y": 6
+    },
+    "9": {
+      "movie": "PATDAY1",
+      "cast_id": 9,
+      "cast_resource_id": 13,
+      "bitd_resource_id": 180,
+      "path": "./bitmaps/cast_0009.bmp",
+      "width": 139,
+      "height": 8,
+      "decoded_bytes": 1120,
+      "row_stride_source": 140,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 69,
+      "reg_offset_y": 4
+    },
+    "10": {
+      "movie": "PATDAY1",
+      "cast_id": 10,
+      "cast_resource_id": 12,
+      "bitd_resource_id": 181,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 392,
+      "height": 13,
+      "decoded_bytes": 5096,
+      "row_stride_source": 392,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 196,
+      "reg_offset_y": 6
+    }
+  },
+  "top_widths": [
+    [
+      640,
+      1
+    ],
+    [
+      36,
+      1
+    ],
+    [
+      46,
+      1
+    ],
+    [
+      252,
+      1
+    ],
+    [
+      139,
+      1
+    ],
+    [
+      392,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      13,
+      2
+    ],
+    [
+      400,
+      1
+    ],
+    [
+      63,
+      1
+    ],
+    [
+      68,
+      1
+    ],
+    [
+      8,
+      1
+    ]
+  ]
+}

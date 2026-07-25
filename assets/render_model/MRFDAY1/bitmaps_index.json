@@ -1,0 +1,280 @@
+{
+  "movie": "MRFDAY1",
+  "decoded_bitmap_count": 14,
+  "bitmaps": {
+    "1": {
+      "movie": "MRFDAY1",
+      "cast_id": 1,
+      "cast_resource_id": 4,
+      "bitd_resource_id": 222,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 9,
+      "height": 2,
+      "decoded_bytes": 18,
+      "row_stride_source": 9,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 4,
+      "reg_offset_y": 1
+    },
+    "2": {
+      "movie": "MRFDAY1",
+      "cast_id": 2,
+      "cast_resource_id": 5,
+      "bitd_resource_id": 223,
+      "path": "./bitmaps/cast_0002.bmp",
+      "width": 14,
+      "height": 3,
+      "decoded_bytes": 42,
+      "row_stride_source": 14,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 8,
+      "reg_offset_y": 1
+    },
+    "3": {
+      "movie": "MRFDAY1",
+      "cast_id": 3,
+      "cast_resource_id": 6,
+      "bitd_resource_id": 224,
+      "path": "./bitmaps/cast_0003.bmp",
+      "width": 18,
+      "height": 3,
+      "decoded_bytes": 54,
+      "row_stride_source": 18,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 10,
+      "reg_offset_y": 1
+    },
+    "4": {
+      "movie": "MRFDAY1",
+      "cast_id": 4,
+      "cast_resource_id": 7,
+      "bitd_resource_id": 225,
+      "path": "./bitmaps/cast_0004.bmp",
+      "width": 14,
+      "height": 3,
+      "decoded_bytes": 42,
+      "row_stride_source": 14,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 8,
+      "reg_offset_y": 1
+    },
+    "5": {
+      "movie": "MRFDAY1",
+      "cast_id": 5,
+      "cast_resource_id": 8,
+      "bitd_resource_id": 226,
+      "path": "./bitmaps/cast_0005.bmp",
+      "width": 14,
+      "height": 2,
+      "decoded_bytes": 28,
+      "row_stride_source": 14,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 8,
+      "reg_offset_y": 1
+    },
+    "6": {
+      "movie": "MRFDAY1",
+      "cast_id": 6,
+      "cast_resource_id": 9,
+      "bitd_resource_id": 227,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 12,
+      "height": 2,
+      "decoded_bytes": 24,
+      "row_stride_source": 12,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 7,
+      "reg_offset_y": 1
+    },
+    "7": {
+      "movie": "MRFDAY1",
+      "cast_id": 7,
+      "cast_resource_id": 10,
+      "bitd_resource_id": 228,
+      "path": "./bitmaps/cast_0007.bmp",
+      "width": 9,
+      "height": 2,
+      "decoded_bytes": 18,
+      "row_stride_source": 9,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 7,
+      "reg_offset_y": 1
+    },
+    "8": {
+      "movie": "MRFDAY1",
+      "cast_id": 8,
+      "cast_resource_id": 11,
+      "bitd_resource_id": 229,
+      "path": "./bitmaps/cast_0008.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "10": {
+      "movie": "MRFDAY1",
+      "cast_id": 10,
+      "cast_resource_id": 12,
+      "bitd_resource_id": 230,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 75,
+      "height": 39,
+      "decoded_bytes": 2964,
+      "row_stride_source": 76,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 36,
+      "reg_offset_y": 18
+    },
+    "11": {
+      "movie": "MRFDAY1",
+      "cast_id": 11,
+      "cast_resource_id": 13,
+      "bitd_resource_id": 231,
+      "path": "./bitmaps/cast_0011.bmp",
+      "width": 75,
+      "height": 39,
+      "decoded_bytes": 2964,
+      "row_stride_source": 76,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 36,
+      "reg_offset_y": 18
+    },
+    "12": {
+      "movie": "MRFDAY1",
+      "cast_id": 12,
+      "cast_resource_id": 14,
+      "bitd_resource_id": 232,
+      "path": "./bitmaps/cast_0012.bmp",
+      "width": 75,
+      "height": 39,
+      "decoded_bytes": 2964,
+      "row_stride_source": 76,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 36,
+      "reg_offset_y": 18
+    },
+    "15": {
+      "movie": "MRFDAY1",
+      "cast_id": 15,
+      "cast_resource_id": 86,
+      "bitd_resource_id": 235,
+      "path": "./bitmaps/cast_0015.bmp",
+      "width": 290,
+      "height": 13,
+      "decoded_bytes": 3770,
+      "row_stride_source": 290,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 145,
+      "reg_offset_y": 6
+    },
+    "16": {
+      "movie": "MRFDAY1",
+      "cast_id": 16,
+      "cast_resource_id": 85,
+      "bitd_resource_id": 236,
+      "path": "./bitmaps/cast_0016.bmp",
+      "width": 370,
+      "height": 13,
+      "decoded_bytes": 9620,
+      "row_stride_source": 740,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 185,
+      "reg_offset_y": 6
+    },
+    "17": {
+      "movie": "MRFDAY1",
+      "cast_id": 17,
+      "cast_resource_id": 84,
+      "bitd_resource_id": 237,
+      "path": "./bitmaps/cast_0017.bmp",
+      "width": 279,
+      "height": 10,
+      "decoded_bytes": 5580,
+      "row_stride_source": 558,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 139,
+      "reg_offset_y": 5
+    }
+  },
+  "top_widths": [
+    [
+      14,
+      3
+    ],
+    [
+      75,
+      3
+    ],
+    [
+      9,
+      2
+    ],
+    [
+      18,
+      1
+    ],
+    [
+      12,
+      1
+    ],
+    [
+      640,
+      1
+    ],
+    [
+      290,
+      1
+    ],
+    [
+      370,
+      1
+    ],
+    [
+      279,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      2,
+      4
+    ],
+    [
+      3,
+      3
+    ],
+    [
+      39,
+      3
+    ],
+    [
+      13,
+      2
+    ],
+    [
+      400,
+      1
+    ],
+    [
+      10,
+      1
+    ]
+  ]
+}

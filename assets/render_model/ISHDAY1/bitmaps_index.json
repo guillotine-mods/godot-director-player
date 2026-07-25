@@ -1,0 +1,216 @@
+{
+  "movie": "ISHDAY1",
+  "decoded_bitmap_count": 10,
+  "bitmaps": {
+    "4": {
+      "movie": "ISHDAY1",
+      "cast_id": 4,
+      "cast_resource_id": 5,
+      "bitd_resource_id": 245,
+      "path": "./bitmaps/cast_0004.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "6": {
+      "movie": "ISHDAY1",
+      "cast_id": 6,
+      "cast_resource_id": 7,
+      "bitd_resource_id": 247,
+      "path": "./bitmaps/cast_0006.bmp",
+      "width": 399,
+      "height": 400,
+      "decoded_bytes": 160000,
+      "row_stride_source": 400,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 79,
+      "reg_offset_y": 200
+    },
+    "7": {
+      "movie": "ISHDAY1",
+      "cast_id": 7,
+      "cast_resource_id": 11,
+      "bitd_resource_id": 248,
+      "path": "./bitmaps/cast_0007.bmp",
+      "width": 246,
+      "height": 202,
+      "decoded_bytes": 49692,
+      "row_stride_source": 246,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 123,
+      "reg_offset_y": 101
+    },
+    "9": {
+      "movie": "ISHDAY1",
+      "cast_id": 9,
+      "cast_resource_id": 64,
+      "bitd_resource_id": 249,
+      "path": "./bitmaps/cast_0009.bmp",
+      "width": 262,
+      "height": 13,
+      "decoded_bytes": 3406,
+      "row_stride_source": 262,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 131,
+      "reg_offset_y": 6
+    },
+    "10": {
+      "movie": "ISHDAY1",
+      "cast_id": 10,
+      "cast_resource_id": 19,
+      "bitd_resource_id": 250,
+      "path": "./bitmaps/cast_0010.bmp",
+      "width": 414,
+      "height": 13,
+      "decoded_bytes": 5382,
+      "row_stride_source": 414,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 207,
+      "reg_offset_y": 6
+    },
+    "11": {
+      "movie": "ISHDAY1",
+      "cast_id": 11,
+      "cast_resource_id": 57,
+      "bitd_resource_id": 251,
+      "path": "./bitmaps/cast_0011.bmp",
+      "width": 320,
+      "height": 13,
+      "decoded_bytes": 4160,
+      "row_stride_source": 320,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 160,
+      "reg_offset_y": 6
+    },
+    "35": {
+      "movie": "ISHDAY1",
+      "cast_id": 35,
+      "cast_resource_id": 42,
+      "bitd_resource_id": 252,
+      "path": "./bitmaps/cast_0035.bmp",
+      "width": 346,
+      "height": 13,
+      "decoded_bytes": 4498,
+      "row_stride_source": 346,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 173,
+      "reg_offset_y": 6
+    },
+    "36": {
+      "movie": "ISHDAY1",
+      "cast_id": 36,
+      "cast_resource_id": 66,
+      "bitd_resource_id": 253,
+      "path": "./bitmaps/cast_0036.bmp",
+      "width": 420,
+      "height": 13,
+      "decoded_bytes": 5460,
+      "row_stride_source": 420,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 210,
+      "reg_offset_y": 6
+    },
+    "37": {
+      "movie": "ISHDAY1",
+      "cast_id": 37,
+      "cast_resource_id": 111,
+      "bitd_resource_id": 254,
+      "path": "./bitmaps/cast_0037.bmp",
+      "width": 250,
+      "height": 13,
+      "decoded_bytes": 3250,
+      "row_stride_source": 250,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 125,
+      "reg_offset_y": 6
+    },
+    "53": {
+      "movie": "ISHDAY1",
+      "cast_id": 53,
+      "cast_resource_id": 142,
+      "bitd_resource_id": 255,
+      "path": "./bitmaps/cast_0053.bmp",
+      "width": 9,
+      "height": 11,
+      "decoded_bytes": 198,
+      "row_stride_source": 18,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 4,
+      "reg_offset_y": 5
+    }
+  },
+  "top_widths": [
+    [
+      640,
+      1
+    ],
+    [
+      399,
+      1
+    ],
+    [
+      246,
+      1
+    ],
+    [
+      262,
+      1
+    ],
+    [
+      414,
+      1
+    ],
+    [
+      320,
+      1
+    ],
+    [
+      346,
+      1
+    ],
+    [
+      420,
+      1
+    ],
+    [
+      250,
+      1
+    ],
+    [
+      9,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      13,
+      6
+    ],
+    [
+      400,
+      2
+    ],
+    [
+      202,
+      1
+    ],
+    [
+      11,
+      1
+    ]
+  ]
+}

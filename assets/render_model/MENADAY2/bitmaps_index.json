@@ -1,0 +1,113 @@
+{
+  "movie": "MENADAY2",
+  "decoded_bitmap_count": 5,
+  "bitmaps": {
+    "1": {
+      "movie": "MENADAY2",
+      "cast_id": 1,
+      "cast_resource_id": 4,
+      "bitd_resource_id": 298,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "2": {
+      "movie": "MENADAY2",
+      "cast_id": 2,
+      "cast_resource_id": 26,
+      "bitd_resource_id": 299,
+      "path": "./bitmaps/cast_0002.bmp",
+      "width": 640,
+      "height": 203,
+      "decoded_bytes": 129920,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 101
+    },
+    "23": {
+      "movie": "MENADAY2",
+      "cast_id": 23,
+      "cast_resource_id": 111,
+      "bitd_resource_id": 305,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 322,
+      "height": 13,
+      "decoded_bytes": 4186,
+      "row_stride_source": 322,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 161,
+      "reg_offset_y": 6
+    },
+    "24": {
+      "movie": "MENADAY2",
+      "cast_id": 24,
+      "cast_resource_id": 116,
+      "bitd_resource_id": 306,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 369,
+      "height": 13,
+      "decoded_bytes": 4810,
+      "row_stride_source": 370,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 184,
+      "reg_offset_y": 6
+    },
+    "25": {
+      "movie": "MENADAY2",
+      "cast_id": 25,
+      "cast_resource_id": 20,
+      "bitd_resource_id": 307,
+      "path": "./bitmaps/cast_0025.bmp",
+      "width": 410,
+      "height": 13,
+      "decoded_bytes": 5330,
+      "row_stride_source": 410,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 205,
+      "reg_offset_y": 6
+    }
+  },
+  "top_widths": [
+    [
+      640,
+      2
+    ],
+    [
+      322,
+      1
+    ],
+    [
+      369,
+      1
+    ],
+    [
+      410,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      13,
+      3
+    ],
+    [
+      400,
+      1
+    ],
+    [
+      203,
+      1
+    ]
+  ]
+}

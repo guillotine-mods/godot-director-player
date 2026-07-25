@@ -1,0 +1,600 @@
+{
+  "movie": "SAMNIGHT",
+  "decoded_bitmap_count": 30,
+  "bitmaps": {
+    "1": {
+      "movie": "SAMNIGHT",
+      "cast_id": 1,
+      "cast_resource_id": 4,
+      "bitd_resource_id": 291,
+      "path": "./bitmaps/cast_0001.bmp",
+      "width": 640,
+      "height": 400,
+      "decoded_bytes": 256000,
+      "row_stride_source": 640,
+      "palette_id": -1,
+      "bpp_marker": 130,
+      "reg_offset_x": 320,
+      "reg_offset_y": 200
+    },
+    "5": {
+      "movie": "SAMNIGHT",
+      "cast_id": 5,
+      "cast_resource_id": 11,
+      "bitd_resource_id": 294,
+      "path": "./bitmaps/cast_0005.bmp",
+      "width": 105,
+      "height": 269,
+      "decoded_bytes": 28514,
+      "row_stride_source": 106,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 104,
+      "reg_offset_y": 268
+    },
+    "12": {
+      "movie": "SAMNIGHT",
+      "cast_id": 12,
+      "cast_resource_id": 102,
+      "bitd_resource_id": 300,
+      "path": "./bitmaps/cast_0012.bmp",
+      "width": 70,
+      "height": 129,
+      "decoded_bytes": 9030,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 128
+    },
+    "13": {
+      "movie": "SAMNIGHT",
+      "cast_id": 13,
+      "cast_resource_id": 46,
+      "bitd_resource_id": 301,
+      "path": "./bitmaps/cast_0013.bmp",
+      "width": 70,
+      "height": 129,
+      "decoded_bytes": 9030,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 128
+    },
+    "14": {
+      "movie": "SAMNIGHT",
+      "cast_id": 14,
+      "cast_resource_id": 45,
+      "bitd_resource_id": 302,
+      "path": "./bitmaps/cast_0014.bmp",
+      "width": 70,
+      "height": 129,
+      "decoded_bytes": 9030,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 128
+    },
+    "15": {
+      "movie": "SAMNIGHT",
+      "cast_id": 15,
+      "cast_resource_id": 44,
+      "bitd_resource_id": 303,
+      "path": "./bitmaps/cast_0015.bmp",
+      "width": 70,
+      "height": 131,
+      "decoded_bytes": 9170,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 130
+    },
+    "16": {
+      "movie": "SAMNIGHT",
+      "cast_id": 16,
+      "cast_resource_id": 43,
+      "bitd_resource_id": 304,
+      "path": "./bitmaps/cast_0016.bmp",
+      "width": 70,
+      "height": 132,
+      "decoded_bytes": 9240,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 131
+    },
+    "17": {
+      "movie": "SAMNIGHT",
+      "cast_id": 17,
+      "cast_resource_id": 42,
+      "bitd_resource_id": 305,
+      "path": "./bitmaps/cast_0017.bmp",
+      "width": 70,
+      "height": 132,
+      "decoded_bytes": 9240,
+      "row_stride_source": 70,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 45,
+      "reg_offset_y": 131
+    },
+    "19": {
+      "movie": "SAMNIGHT",
+      "cast_id": 19,
+      "cast_resource_id": 40,
+      "bitd_resource_id": 307,
+      "path": "./bitmaps/cast_0019.bmp",
+      "width": 128,
+      "height": 262,
+      "decoded_bytes": 33536,
+      "row_stride_source": 128,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 261
+    },
+    "20": {
+      "movie": "SAMNIGHT",
+      "cast_id": 20,
+      "cast_resource_id": 39,
+      "bitd_resource_id": 308,
+      "path": "./bitmaps/cast_0020.bmp",
+      "width": 117,
+      "height": 259,
+      "decoded_bytes": 30562,
+      "row_stride_source": 118,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 258
+    },
+    "21": {
+      "movie": "SAMNIGHT",
+      "cast_id": 21,
+      "cast_resource_id": 37,
+      "bitd_resource_id": 309,
+      "path": "./bitmaps/cast_0021.bmp",
+      "width": 92,
+      "height": 262,
+      "decoded_bytes": 24104,
+      "row_stride_source": 92,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 18,
+      "reg_offset_y": 261
+    },
+    "22": {
+      "movie": "SAMNIGHT",
+      "cast_id": 22,
+      "cast_resource_id": 35,
+      "bitd_resource_id": 310,
+      "path": "./bitmaps/cast_0022.bmp",
+      "width": 149,
+      "height": 262,
+      "decoded_bytes": 39300,
+      "row_stride_source": 150,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 17,
+      "reg_offset_y": 262
+    },
+    "23": {
+      "movie": "SAMNIGHT",
+      "cast_id": 23,
+      "cast_resource_id": 34,
+      "bitd_resource_id": 311,
+      "path": "./bitmaps/cast_0023.bmp",
+      "width": 138,
+      "height": 264,
+      "decoded_bytes": 36432,
+      "row_stride_source": 138,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 263
+    },
+    "24": {
+      "movie": "SAMNIGHT",
+      "cast_id": 24,
+      "cast_resource_id": 33,
+      "bitd_resource_id": 312,
+      "path": "./bitmaps/cast_0024.bmp",
+      "width": 117,
+      "height": 259,
+      "decoded_bytes": 30562,
+      "row_stride_source": 118,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 17,
+      "reg_offset_y": 258
+    },
+    "26": {
+      "movie": "SAMNIGHT",
+      "cast_id": 26,
+      "cast_resource_id": 31,
+      "bitd_resource_id": 314,
+      "path": "./bitmaps/cast_0026.bmp",
+      "width": 98,
+      "height": 129,
+      "decoded_bytes": 12642,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 49,
+      "reg_offset_y": 64
+    },
+    "27": {
+      "movie": "SAMNIGHT",
+      "cast_id": 27,
+      "cast_resource_id": 65,
+      "bitd_resource_id": 315,
+      "path": "./bitmaps/cast_0027.bmp",
+      "width": 107,
+      "height": 122,
+      "decoded_bytes": 13176,
+      "row_stride_source": 108,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 53,
+      "reg_offset_y": 61
+    },
+    "28": {
+      "movie": "SAMNIGHT",
+      "cast_id": 28,
+      "cast_resource_id": 29,
+      "bitd_resource_id": 316,
+      "path": "./bitmaps/cast_0028.bmp",
+      "width": 134,
+      "height": 89,
+      "decoded_bytes": 11926,
+      "row_stride_source": 134,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 67,
+      "reg_offset_y": 44
+    },
+    "29": {
+      "movie": "SAMNIGHT",
+      "cast_id": 29,
+      "cast_resource_id": 28,
+      "bitd_resource_id": 317,
+      "path": "./bitmaps/cast_0029.bmp",
+      "width": 129,
+      "height": 98,
+      "decoded_bytes": 12740,
+      "row_stride_source": 130,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 64,
+      "reg_offset_y": 49
+    },
+    "30": {
+      "movie": "SAMNIGHT",
+      "cast_id": 30,
+      "cast_resource_id": 27,
+      "bitd_resource_id": 318,
+      "path": "./bitmaps/cast_0030.bmp",
+      "width": 98,
+      "height": 129,
+      "decoded_bytes": 12642,
+      "row_stride_source": 98,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 49,
+      "reg_offset_y": 64
+    },
+    "31": {
+      "movie": "SAMNIGHT",
+      "cast_id": 31,
+      "cast_resource_id": 26,
+      "bitd_resource_id": 319,
+      "path": "./bitmaps/cast_0031.bmp",
+      "width": 128,
+      "height": 260,
+      "decoded_bytes": 33280,
+      "row_stride_source": 128,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 259
+    },
+    "32": {
+      "movie": "SAMNIGHT",
+      "cast_id": 32,
+      "cast_resource_id": 25,
+      "bitd_resource_id": 320,
+      "path": "./bitmaps/cast_0032.bmp",
+      "width": 117,
+      "height": 258,
+      "decoded_bytes": 30444,
+      "row_stride_source": 118,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 13,
+      "reg_offset_y": 257
+    },
+    "33": {
+      "movie": "SAMNIGHT",
+      "cast_id": 33,
+      "cast_resource_id": 24,
+      "bitd_resource_id": 321,
+      "path": "./bitmaps/cast_0033.bmp",
+      "width": 92,
+      "height": 259,
+      "decoded_bytes": 23828,
+      "row_stride_source": 92,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 18,
+      "reg_offset_y": 258
+    },
+    "34": {
+      "movie": "SAMNIGHT",
+      "cast_id": 34,
+      "cast_resource_id": 23,
+      "bitd_resource_id": 322,
+      "path": "./bitmaps/cast_0034.bmp",
+      "width": 148,
+      "height": 259,
+      "decoded_bytes": 38332,
+      "row_stride_source": 148,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 16,
+      "reg_offset_y": 259
+    },
+    "35": {
+      "movie": "SAMNIGHT",
+      "cast_id": 35,
+      "cast_resource_id": 22,
+      "bitd_resource_id": 323,
+      "path": "./bitmaps/cast_0035.bmp",
+      "width": 137,
+      "height": 262,
+      "decoded_bytes": 36156,
+      "row_stride_source": 138,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 12,
+      "reg_offset_y": 261
+    },
+    "36": {
+      "movie": "SAMNIGHT",
+      "cast_id": 36,
+      "cast_resource_id": 21,
+      "bitd_resource_id": 324,
+      "path": "./bitmaps/cast_0036.bmp",
+      "width": 117,
+      "height": 259,
+      "decoded_bytes": 30562,
+      "row_stride_source": 118,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 17,
+      "reg_offset_y": 258
+    },
+    "37": {
+      "movie": "SAMNIGHT",
+      "cast_id": 37,
+      "cast_resource_id": 20,
+      "bitd_resource_id": 325,
+      "path": "./bitmaps/cast_0037.bmp",
+      "width": 93,
+      "height": 125,
+      "decoded_bytes": 11750,
+      "row_stride_source": 94,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 49,
+      "reg_offset_y": 64
+    },
+    "38": {
+      "movie": "SAMNIGHT",
+      "cast_id": 38,
+      "cast_resource_id": 19,
+      "bitd_resource_id": 326,
+      "path": "./bitmaps/cast_0038.bmp",
+      "width": 166,
+      "height": 66,
+      "decoded_bytes": 10956,
+      "row_stride_source": 166,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 83,
+      "reg_offset_y": 32
+    },
+    "43": {
+      "movie": "SAMNIGHT",
+      "cast_id": 43,
+      "cast_resource_id": 179,
+      "bitd_resource_id": 327,
+      "path": "./bitmaps/cast_0043.bmp",
+      "width": 331,
+      "height": 13,
+      "decoded_bytes": 4316,
+      "row_stride_source": 332,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 165,
+      "reg_offset_y": 6
+    },
+    "44": {
+      "movie": "SAMNIGHT",
+      "cast_id": 44,
+      "cast_resource_id": 52,
+      "bitd_resource_id": 328,
+      "path": "./bitmaps/cast_0044.bmp",
+      "width": 153,
+      "height": 13,
+      "decoded_bytes": 2002,
+      "row_stride_source": 154,
+      "palette_id": -1,
+      "bpp_marker": 128,
+      "reg_offset_x": 76,
+      "reg_offset_y": 6
+    },
+    "45": {
+      "movie": "SAMNIGHT",
+      "cast_id": 45,
+      "cast_resource_id": 180,
+      "bitd_resource_id": 329,
+      "path": "./bitmaps/cast_0045.bmp",
+      "width": 296,
+      "height": 13,
+      "decoded_bytes": 3848,
+      "row_stride_source": 296,
+      "palette_id": -1,
+      "bpp_marker": 129,
+      "reg_offset_x": 148,
+      "reg_offset_y": 6
+    }
+  },
+  "top_widths": [
+    [
+      70,
+      6
+    ],
+    [
+      117,
+      4
+    ],
+    [
+      128,
+      2
+    ],
+    [
+      92,
+      2
+    ],
+    [
+      98,
+      2
+    ],
+    [
+      640,
+      1
+    ],
+    [
+      105,
+      1
+    ],
+    [
+      149,
+      1
+    ],
+    [
+      138,
+      1
+    ],
+    [
+      107,
+      1
+    ],
+    [
+      134,
+      1
+    ],
+    [
+      129,
+      1
+    ],
+    [
+      148,
+      1
+    ],
+    [
+      137,
+      1
+    ],
+    [
+      93,
+      1
+    ],
+    [
+      166,
+      1
+    ],
+    [
+      331,
+      1
+    ],
+    [
+      153,
+      1
+    ],
+    [
+      296,
+      1
+    ]
+  ],
+  "top_heights": [
+    [
+      129,
+      5
+    ],
+    [
+      259,
+      5
+    ],
+    [
+      262,
+      4
+    ],
+    [
+      13,
+      3
+    ],
+    [
+      132,
+      2
+    ],
+    [
+      400,
+      1
+    ],
+    [
+      269,
+      1
+    ],
+    [
+      131,
+      1
+    ],
+    [
+      264,
+      1
+    ],
+    [
+      122,
+      1
+    ],
+    [
+      89,
+      1
+    ],
+    [
+      98,
+      1
+    ],
+    [
+      260,
+      1
+    ],
+    [
+      258,
+      1
+    ],
+    [
+      125,
+      1
+    ],
+    [
+      66,
+      1
+    ]
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "movie": "PANTER",
+  "score_chunk": "VWSC-323.bin",
+  "frame_count": 739,
+  "member_count": 170,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "heznigt",
+      "path": "macintosh hd:pip2 full:heznigt.cst"
+    },
+    "3": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-318.bin",
+    "left": 192,
+    "top": 144,
+    "right": 832,
+    "bottom": 624,
+    "width": 640,
+    "height": 480
+  }
+}

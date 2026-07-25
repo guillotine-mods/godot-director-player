@@ -1,0 +1,35 @@
+{
+  "movie": "FIGTBRJ",
+  "score_chunk": "VWSC-1136.bin",
+  "frame_count": 451,
+  "member_count": 874,
+  "cast_libs": {
+    "1": {
+      "name": "internal",
+      "path": ""
+    },
+    "2": {
+      "name": "bysea",
+      "path": "macintosh hd:pip2 full:bysea.cst"
+    },
+    "3": {
+      "name": "hezi",
+      "path": "macintosh hd:pip2 full:hezi.cst"
+    },
+    "4": {
+      "name": "master",
+      "path": "macintosh hd:pip2 full:master.cst"
+    }
+  },
+  "sprite_record_size": 48,
+  "frames_version": 13,
+  "stage": {
+    "chunk": "DRCF-1131.bin",
+    "left": 192,
+    "top": 144,
+    "right": 832,
+    "bottom": 624,
+    "width": 640,
+    "height": 480
+  }
+}
