@@ -222,6 +222,17 @@ func is_channel_hidden(channel: int) -> bool:
 	return _hidden_channels.has(channel)
 
 
+func refresh_sprite_gates() -> void:
+	## Gates normally settle on room entry, but a click can reveal something in
+	## the room the player is already standing in.
+	var room := marker_name_for_frame(frame_index)
+	var next := context.hidden_channels(loader.movie_name, room)
+	if next == _hidden_channels:
+		return
+	_hidden_channels = next
+	redraw_requested.emit()
+
+
 func _clear_pending_transition() -> void:
 	_pending_transition = ""
 	_pending_destination = ""
@@ -575,6 +586,7 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 	var on_click: Dictionary = sprite.get("on_click", {})
 	AudioDirector.play_click_sounds(on_click)
 	_apply_inventory_ops(on_click.get("inventory", []))
+	_apply_click_flag(int(sprite.get("channel", 0)))
 	var nav: Variant = on_click.get("nav", null)
 	nav_event.emit("click: %s (cast %s:%s)" % [
 		NavActions.describe(nav),
@@ -611,6 +623,22 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 		"movie":
 			_goto_from_action(action)
 			running = true
+
+
+func _apply_click_flag(channel: int) -> void:
+	## Some hotspots exist only to reveal something else — searching the sand
+	## turns up the shells. The flag is declared per room and channel in
+	## data/movie_context.json; sprite gates wait on it.
+	var flag := context.flag_for_click(
+		loader.movie_name,
+		marker_name_for_frame(frame_index),
+		channel
+	)
+	if flag == "":
+		return
+	GameState.set_story_flag(flag)
+	nav_event.emit("revealed: %s" % flag)
+	refresh_sprite_gates()
 
 
 func _apply_inventory_ops(ops: Variant) -> void:
