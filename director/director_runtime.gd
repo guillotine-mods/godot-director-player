@@ -37,6 +37,7 @@ const MOVIE_ALIASES := {
 }
 
 const MAX_GUARD_HOLD_MS := 20000.0
+const MAX_SCORE_STEPS_PER_TICK := 3
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
@@ -80,9 +81,17 @@ func tick(delta: float) -> void:
 		return
 	_accum_ms += delta * 1000.0
 	var frame_ms := 1000.0 / maxf(current_fps, 1.0)
-	while _accum_ms >= frame_ms:
-		_accum_ms -= frame_ms
+	var steps_due := floori(_accum_ms / frame_ms)
+	if steps_due <= 0:
+		return
+	var steps_to_run := mini(steps_due, MAX_SCORE_STEPS_PER_TICK)
+	_accum_ms = fmod(_accum_ms, frame_ms)
+	for _step in range(steps_to_run):
+		var movie_name := loader.movie_name
 		game_step()
+		if loader.movie_name != movie_name:
+			_accum_ms = 0.0
+			break
 
 
 func game_step() -> void:
