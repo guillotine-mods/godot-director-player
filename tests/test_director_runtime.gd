@@ -13,6 +13,10 @@ func _run() -> void:
 	_test_boot_chain()
 	_test_same_movie_transition_stops_catch_up()
 	_test_go_back_discards_accumulated_time()
+	_test_missing_movie_navigation_is_attempted_once_per_tick()
+	_test_loader_failed_movie_load_is_transactional()
+	_test_failed_goto_preserves_runtime_state()
+	_test_failed_go_back_preserves_runtime_state()
 
 	if failures.is_empty():
 		print("PASS: DirectorRuntime regression suite")
@@ -105,6 +109,97 @@ func _test_go_back_discards_accumulated_time() -> void:
 	var returned_title_frame: int = runtime.frame_index
 	runtime.tick(0.03)
 	_expect_eq(runtime.frame_index, returned_title_frame, "go_back discards accumulated score time")
+
+
+func _test_missing_movie_navigation_is_attempted_once_per_tick() -> void:
+	var runtime := _make_runtime()
+	runtime.loader.frames[0]["nav"] = {
+		"kind": "movie",
+		"value": "definitely_missing_movie",
+	}
+	var missing_event_count := [0]
+	runtime.nav_event.connect(func(description: String):
+		if description.begins_with("Missing movie:"):
+			missing_event_count[0] += 1
+	)
+
+	runtime.tick(1.0)
+	_expect_eq(missing_event_count[0], 1, "missing movie navigation is attempted once per tick")
+
+
+func _test_loader_failed_movie_load_is_transactional() -> void:
+	var loader: RefCounted = load("res://director/render_model_loader.gd").new()
+	_expect_eq(loader.load_index(), OK, "transactional loader test loads the index")
+	_expect_eq(loader.load_movie("EXODUS"), OK, "transactional loader test loads EXODUS")
+	var previous_movie_name: String = loader.movie_name
+	var previous_base_path: String = loader.base_path
+	var previous_frames: Array = loader.frames
+	var previous_members: Dictionary = loader.members
+	var previous_cast_libs: Dictionary = loader.cast_libs
+	var previous_labels: Dictionary = loader.labels
+	var previous_markers: Array = loader.markers
+	var previous_stage_size: Vector2i = loader.stage_size
+	var previous_first_playable_frame: int = loader.first_playable_frame
+
+	_expect_eq(
+		loader.load_movie("BROKEN"),
+		ERR_FILE_NOT_FOUND,
+		"missing movie load returns ERR_FILE_NOT_FOUND"
+	)
+	_expect_eq(loader.movie_name, previous_movie_name, "failed movie load preserves movie name")
+	_expect_eq(loader.base_path, previous_base_path, "failed movie load preserves base path")
+	_expect_true(is_same(loader.frames, previous_frames), "failed movie load preserves frames")
+	_expect_true(is_same(loader.members, previous_members), "failed movie load preserves members")
+	_expect_true(is_same(loader.cast_libs, previous_cast_libs), "failed movie load preserves cast libraries")
+	_expect_true(is_same(loader.labels, previous_labels), "failed movie load preserves labels")
+	_expect_true(is_same(loader.markers, previous_markers), "failed movie load preserves markers")
+	_expect_eq(loader.stage_size, previous_stage_size, "failed movie load preserves stage size")
+	_expect_eq(
+		loader.first_playable_frame,
+		previous_first_playable_frame,
+		"failed movie load preserves first playable frame"
+	)
+
+
+func _test_failed_goto_preserves_runtime_state() -> void:
+	var runtime := _new_runtime()
+	_expect_eq(runtime.boot(), OK, "failed-goto test loads the render model index")
+	_expect_true(runtime.goto_movie("strtgame"), "failed-goto test enters strtgame")
+	_expect_true(runtime.goto_movie("EXODUS"), "failed-goto test enters EXODUS")
+	runtime.loader.index["exports"].append({"movie": "BROKEN"})
+	var previous_movie_name: String = runtime.loader.movie_name
+	var previous_base_path: String = runtime.loader.base_path
+	var previous_frame_count: int = runtime.loader.frames.size()
+	var previous_frame_index: int = runtime.frame_index
+	var previous_route_stack: Array = runtime.route_stack.duplicate(true)
+
+	_expect_true(not runtime.goto_movie("BROKEN"), "failed goto returns false")
+	_expect_eq(runtime.loader.movie_name, previous_movie_name, "failed goto preserves active movie")
+	_expect_eq(runtime.loader.base_path, previous_base_path, "failed goto preserves active base path")
+	_expect_eq(runtime.loader.frames.size(), previous_frame_count, "failed goto preserves active frames")
+	_expect_eq(runtime.frame_index, previous_frame_index, "failed goto preserves active frame")
+	_expect_eq(runtime.route_stack, previous_route_stack, "failed goto preserves route stack")
+
+
+func _test_failed_go_back_preserves_runtime_state() -> void:
+	var runtime := _new_runtime()
+	_expect_eq(runtime.boot(), OK, "failed-go-back test loads the render model index")
+	_expect_true(runtime.goto_movie("EXODUS"), "failed-go-back test enters EXODUS")
+	runtime.loader.index["exports"].append({"movie": "BROKEN"})
+	runtime.route_stack.clear()
+	runtime.route_stack.append({"movie": "BROKEN", "frame": 123})
+	var previous_movie_name: String = runtime.loader.movie_name
+	var previous_base_path: String = runtime.loader.base_path
+	var previous_frame_count: int = runtime.loader.frames.size()
+	var previous_frame_index: int = runtime.frame_index
+	var previous_route_stack: Array = runtime.route_stack.duplicate(true)
+
+	_expect_true(not runtime.go_back(), "failed go_back returns false")
+	_expect_eq(runtime.loader.movie_name, previous_movie_name, "failed go_back preserves active movie")
+	_expect_eq(runtime.loader.base_path, previous_base_path, "failed go_back preserves active base path")
+	_expect_eq(runtime.loader.frames.size(), previous_frame_count, "failed go_back preserves active frames")
+	_expect_eq(runtime.frame_index, previous_frame_index, "failed go_back preserves active frame")
+	_expect_eq(runtime.route_stack, previous_route_stack, "failed go_back preserves route stack")
 
 
 func _expect_true(actual: bool, message: String) -> void:
