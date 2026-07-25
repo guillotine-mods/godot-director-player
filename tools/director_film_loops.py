@@ -138,8 +138,7 @@ def parse_film_cast(path: Path) -> dict | None:
 
 def _frame_sprites(buffer: bytearray) -> list[dict]:
     sprites: list[dict] = []
-    channels = (len(buffer) - MAIN_CHANNEL_SIZE) // SPRITE_CHANNEL_SIZE
-    for index in range(channels):
+    for index in range(MAX_D7_SPRITE_CHANNELS):
         base = MAIN_CHANNEL_SIZE + index * SPRITE_CHANNEL_SIZE
         cast_id = _u16(buffer, base + 6)
         width = _i16(buffer, base + 18)
