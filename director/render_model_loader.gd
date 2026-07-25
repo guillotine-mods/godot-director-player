@@ -161,6 +161,14 @@ func member_key(cast_lib: int, cast_id: int) -> String:
 	return lib_id
 
 
+func _linked_cast_name(cast_lib: int) -> String:
+	var library: Variant = cast_libs.get(str(cast_lib), {})
+	if typeof(library) != TYPE_DICTIONARY:
+		return ""
+	var name: Variant = library.get("name", "")
+	return name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
+
+
 func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 	var cache_key := "%d:%d" % [cast_lib, cast_id]
 	if _resolved_member_cache.has(cache_key):
@@ -170,30 +178,42 @@ func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 
 	var local_key := member_key(cast_lib, cast_id)
 	var local_member: Variant = members.get(local_key, {})
-	if typeof(local_member) == TYPE_DICTIONARY:
+	if typeof(local_member) == TYPE_DICTIONARY and not local_member.is_empty():
 		_resolved_member_cache[cache_key] = local_member
 		return local_member
 
+	var cast_name := _linked_cast_name(cast_lib)
 	if cast_lib != 1:
-		var library: Variant = cast_libs.get(str(cast_lib), {})
-		if typeof(library) == TYPE_DICTIONARY:
-			var cast_name := str(library.get("name", "")).strip_edges().to_lower()
+		if not cast_name.is_empty():
 			var registry_cast: Variant = cast_registry.get(cast_name, {})
 			if typeof(registry_cast) == TYPE_DICTIONARY:
 				var registry_members: Variant = registry_cast.get("members", {})
-				var directory := str(registry_cast.get("directory", "")).strip_edges()
+				var directory_value: Variant = registry_cast.get("directory", "")
+				var directory: String = ""
+				if typeof(directory_value) == TYPE_STRING:
+					directory = directory_value.strip_edges()
 				var registry_member: Variant = {}
 				if typeof(registry_members) == TYPE_DICTIONARY:
 					registry_member = registry_members.get(str(cast_id), {})
-				if typeof(registry_member) == TYPE_DICTIONARY and not directory.is_empty():
-					var resolved_member: Dictionary = registry_member.duplicate()
+				if (
+					typeof(registry_member) == TYPE_DICTIONARY
+					and not registry_member.is_empty()
+					and _is_safe_registry_directory(directory)
+				):
+					var resolved_member: Dictionary = registry_member.duplicate(true)
 					resolved_member["_registry_directory"] = directory
 					resolved_member["_registry_cast_name"] = cast_name
 					_resolved_member_cache[cache_key] = resolved_member
 					return resolved_member
 
 	_missing_member_keys[cache_key] = true
-	push_warning("Missing cast member %s" % cache_key)
+	push_warning(
+		"Missing cast member for movie %s, linked cast %s, member %d" % [
+			movie_name,
+			cast_name if not cast_name.is_empty() else "<unknown>",
+			cast_id,
+		]
+	)
 	return {}
 
 
@@ -231,26 +251,19 @@ func _resolve_bitmap_path(member: Dictionary) -> String:
 	if member.has("_registry_directory"):
 		var directory := str(member.get("_registry_directory", "")).strip_edges()
 		var cast_name := str(member.get("_registry_cast_name", "")).strip_edges().to_lower()
-		var cast_id := str(member.get("cast_id", ""))
-		var texture_key := "%s:%s" % [cast_name, cast_id]
+		var cast_id := int(member.get("cast_id", -1))
+		var texture_key := "%s:%d" % [cast_name, cast_id]
 		if _missing_texture_keys.has(texture_key):
 			return ""
-		if (
-			directory.is_empty()
-			or directory != directory.get_file()
-			or rel.begins_with("/")
-			or rel.begins_with("\\")
-			or rel.contains("://")
-			or rel.simplify_path().begins_with("..")
-		):
+		if not _is_safe_registry_directory(directory) or not _is_safe_registry_path(rel):
 			_missing_texture_keys[texture_key] = true
-			push_warning("Invalid bitmap path for linked cast %s member %s" % [cast_name, cast_id])
+			push_warning("Invalid bitmap path for movie %s, linked cast %s, member %d" % [movie_name, cast_name, cast_id])
 			return ""
 		var registry_path := MODEL_ROOT.path_join(directory).path_join(rel)
 		if FileAccess.file_exists(registry_path):
 			return registry_path
 		_missing_texture_keys[texture_key] = true
-		push_warning("Missing bitmap for linked cast %s member %s" % [cast_name, cast_id])
+		push_warning("Missing bitmap for movie %s, linked cast %s, member %d" % [movie_name, cast_name, cast_id])
 		return ""
 	var candidates: PackedStringArray = PackedStringArray([
 		base_path.path_join(rel),
@@ -267,6 +280,35 @@ func _resolve_bitmap_path(member: Dictionary) -> String:
 		if FileAccess.file_exists(path):
 			return path
 	return ""
+
+
+func _is_safe_registry_directory(directory: String) -> bool:
+	return (
+		not directory.is_empty()
+		and directory not in [".", ".."]
+		and not directory.is_absolute_path()
+		and not directory.begins_with("/")
+		and not directory.begins_with("\\")
+		and not directory.contains("://")
+		and not directory.contains("/")
+		and not directory.contains("\\")
+	)
+
+
+func _is_safe_registry_path(path: String) -> bool:
+	if (
+		path.is_empty()
+		or path.is_absolute_path()
+		or path.begins_with("/")
+		or path.begins_with("\\")
+		or path.contains("://")
+		or path.contains("\\")
+	):
+		return false
+	for segment in path.split("/"):
+		if segment == "..":
+			return false
+	return true
 
 
 func _load_bmp(path: String) -> Image:
