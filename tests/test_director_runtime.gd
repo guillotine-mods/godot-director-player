@@ -138,6 +138,11 @@ func _test_loader_failed_movie_load_is_transactional() -> void:
 	var previous_cast_libs: Dictionary = loader.cast_libs
 	var previous_labels: Dictionary = loader.labels
 	var previous_markers: Array = loader.markers
+	var previous_frame_values: Array = loader.frames.duplicate(true)
+	var previous_member_values: Dictionary = loader.members.duplicate(true)
+	var previous_cast_lib_values: Dictionary = loader.cast_libs.duplicate(true)
+	var previous_label_values: Dictionary = loader.labels.duplicate(true)
+	var previous_marker_values: Array = loader.markers.duplicate(true)
 	var previous_stage_size: Vector2i = loader.stage_size
 	var previous_first_playable_frame: int = loader.first_playable_frame
 
@@ -153,6 +158,15 @@ func _test_loader_failed_movie_load_is_transactional() -> void:
 	_expect_true(is_same(loader.cast_libs, previous_cast_libs), "failed movie load preserves cast libraries")
 	_expect_true(is_same(loader.labels, previous_labels), "failed movie load preserves labels")
 	_expect_true(is_same(loader.markers, previous_markers), "failed movie load preserves markers")
+	_expect_eq(loader.frames, previous_frame_values, "failed movie load preserves frame values")
+	_expect_eq(loader.members, previous_member_values, "failed movie load preserves member values")
+	_expect_eq(
+		loader.cast_libs,
+		previous_cast_lib_values,
+		"failed movie load preserves cast library values"
+	)
+	_expect_eq(loader.labels, previous_label_values, "failed movie load preserves label values")
+	_expect_eq(loader.markers, previous_marker_values, "failed movie load preserves marker values")
 	_expect_eq(loader.stage_size, previous_stage_size, "failed movie load preserves stage size")
 	_expect_eq(
 		loader.first_playable_frame,
@@ -169,14 +183,14 @@ func _test_failed_goto_preserves_runtime_state() -> void:
 	runtime.loader.index["exports"].append({"movie": "BROKEN"})
 	var previous_movie_name: String = runtime.loader.movie_name
 	var previous_base_path: String = runtime.loader.base_path
-	var previous_frame_count: int = runtime.loader.frames.size()
+	var previous_frames: Array = runtime.loader.frames.duplicate(true)
 	var previous_frame_index: int = runtime.frame_index
 	var previous_route_stack: Array = runtime.route_stack.duplicate(true)
 
 	_expect_true(not runtime.goto_movie("BROKEN"), "failed goto returns false")
 	_expect_eq(runtime.loader.movie_name, previous_movie_name, "failed goto preserves active movie")
 	_expect_eq(runtime.loader.base_path, previous_base_path, "failed goto preserves active base path")
-	_expect_eq(runtime.loader.frames.size(), previous_frame_count, "failed goto preserves active frames")
+	_expect_eq(runtime.loader.frames, previous_frames, "failed goto preserves active frame data")
 	_expect_eq(runtime.frame_index, previous_frame_index, "failed goto preserves active frame")
 	_expect_eq(runtime.route_stack, previous_route_stack, "failed goto preserves route stack")
 
@@ -190,14 +204,14 @@ func _test_failed_go_back_preserves_runtime_state() -> void:
 	runtime.route_stack.append({"movie": "BROKEN", "frame": 123})
 	var previous_movie_name: String = runtime.loader.movie_name
 	var previous_base_path: String = runtime.loader.base_path
-	var previous_frame_count: int = runtime.loader.frames.size()
+	var previous_frames: Array = runtime.loader.frames.duplicate(true)
 	var previous_frame_index: int = runtime.frame_index
 	var previous_route_stack: Array = runtime.route_stack.duplicate(true)
 
 	_expect_true(not runtime.go_back(), "failed go_back returns false")
 	_expect_eq(runtime.loader.movie_name, previous_movie_name, "failed go_back preserves active movie")
 	_expect_eq(runtime.loader.base_path, previous_base_path, "failed go_back preserves active base path")
-	_expect_eq(runtime.loader.frames.size(), previous_frame_count, "failed go_back preserves active frames")
+	_expect_eq(runtime.loader.frames, previous_frames, "failed go_back preserves active frame data")
 	_expect_eq(runtime.frame_index, previous_frame_index, "failed go_back preserves active frame")
 	_expect_eq(runtime.route_stack, previous_route_stack, "failed go_back preserves route stack")
 
