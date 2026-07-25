@@ -27,6 +27,8 @@ Native Godot score runner for Piposh 2, using `assets/render_model` (frames / me
    - `quit` on SAVELOAD/MAP → `go_back` (not app quit)
    - none → advance playhead (+1), or movie-end handler
 
+The score clock executes at most three catch-up steps per Godot process tick. Long render or asset-loading stalls discard excess whole-step backlog, preventing cutscenes from fast-forwarding. A movie change ends catch-up so the destination movie starts with a fresh timing accumulator.
+
 ## Audio
 
 Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs under `assets/audio/sounds` and `assets/audio/fx` are indexed by stem and decoded at runtime (no editor import required).
