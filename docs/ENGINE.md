@@ -111,7 +111,26 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 
 F1 debug · F5 save editor · F10 settings · H hint · Esc skip intro/minigame
 
+## Progression spine
+
+`data/movie_context.json` carries the rules that let the game advance, none of
+which are in the score:
+
+- `meeting_triggers` — which meeting fires in which room, per hub and day
+- `phase_transitions` — when a hub hands over (DAY1 → NIGHT1 once day 1's seven
+  meetings are done). One-shot, flagged in `story_flags`, because NIGHT1
+  declares a route back to `day1 @fort` and would otherwise bounce forever
+- `day_advance` — arriving at `HOTEL1 @newmorning` turns the day over, matching
+  SLEEP1/SLEEP2's exported return
+
+Only the four original DAY1 rows are verified behaviour. The HOTEL1 and NIGHT1
+rows and both transitions are **inferred**, each carrying a `confidence` note.
+They exist so the game is completable; the Lingo replaces them wholesale.
+
 ## Still open
 
 - Talk trees / lip-sync
-- Full meeting / dialogue branching beyond `people_funk` triggers
+- Day 2 room content: MORN2, MORN3, DTCDAY2, MENADAY2, HATDAY2/3, HATSIKUM and
+  INVESTIG have no triggers yet
+- 222 cast members that resolve to neither bitmap nor film loop
+  (`tools/check_cast_coverage.py`)

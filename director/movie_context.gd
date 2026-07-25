@@ -18,6 +18,9 @@ var _hub_return_cache: Dictionary = {}
 var _warned_transitions: Dictionary = {}
 var _sprite_gates: Dictionary = {}
 var _click_flags: Dictionary = {}
+var _meeting_triggers: Array = []
+var _phase_transitions: Array = []
+var _day_advance: Array = []
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -65,6 +68,16 @@ func load_context() -> Error:
 			for label in labels:
 				label_set[_s(label).to_lower()] = true
 			_known_unmapped[_s(key).to_lower()] = label_set
+
+	var triggers_value: Variant = data.get("meeting_triggers", [])
+	if typeof(triggers_value) == TYPE_ARRAY:
+		_meeting_triggers = triggers_value
+	var phases_value: Variant = data.get("phase_transitions", [])
+	if typeof(phases_value) == TYPE_ARRAY:
+		_phase_transitions = phases_value
+	var advance_value: Variant = data.get("day_advance", [])
+	if typeof(advance_value) == TYPE_ARRAY:
+		_day_advance = advance_value
 
 	var click_value: Variant = data.get("click_flags", {})
 	if typeof(click_value) == TYPE_DICTIONARY:
@@ -175,6 +188,63 @@ func flag_for_click(movie: String, room: String, channel: int) -> String:
 			if int(ch) == channel:
 				return _s(rule.get("sets_flag", ""))
 	return ""
+
+
+func meeting_triggers() -> Array:
+	return _meeting_triggers
+
+
+func phase_transition(hub: String, day: int) -> Dictionary:
+	## The hub that takes over once this one is finished with the player.
+	##
+	## Inferred, not sourced: no DAY1 to NIGHT1 edge exists anywhere in the
+	## score, because the original made that jump from Lingo globals.
+	##
+	## Returns the destination plus a one-shot flag. NIGHT1 declares a route
+	## back to DAY1 @fort, so without the flag a player who walks back would be
+	## thrown straight to night again, forever.
+	for rule_value in _phase_transitions:
+		if typeof(rule_value) != TYPE_DICTIONARY:
+			continue
+		var rule: Dictionary = rule_value
+		if _s(rule.get("from_hub", "")).to_lower() != hub.to_lower():
+			continue
+		if rule.get("day") != null and int(rule.get("day")) != day:
+			continue
+		var required: Variant = rule.get("require_meetings", [])
+		if typeof(required) != TYPE_ARRAY:
+			continue
+		var satisfied := true
+		for meeting in (required as Array):
+			if not GameState.is_meeting_done(_s(meeting)):
+				satisfied = false
+				break
+		if not satisfied:
+			continue
+		var destination := _s(rule.get("to_movie", ""))
+		if destination == "":
+			continue
+		var flag := "phase:%s>%s:day%d" % [hub.to_lower(), destination.to_lower(), day]
+		if GameState.has_story_flag(flag):
+			continue
+		return {"movie": destination, "flag": flag}
+	return {}
+
+
+func day_for_arrival(movie: String, label: String) -> int:
+	## -1 when arriving here does not turn the day over.
+	if label == "":
+		return -1
+	for rule_value in _day_advance:
+		if typeof(rule_value) != TYPE_DICTIONARY:
+			continue
+		var rule: Dictionary = rule_value
+		if _s(rule.get("movie", "")).to_lower() != movie.to_lower():
+			continue
+		if _s(rule.get("label", "")).to_lower() != label.to_lower():
+			continue
+		return int(rule.get("set_day", -1))
+	return -1
 
 
 func is_hub(movie: String) -> bool:

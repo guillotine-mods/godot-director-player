@@ -80,6 +80,7 @@ func _init() -> void:
 
 func boot() -> Error:
 	context.load_context()
+	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
 
 
@@ -433,6 +434,10 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		]
 	)
 
+	var arrival_day := context.day_for_arrival(movie_name, label_opt)
+	if arrival_day > 0:
+		GameState.advance_day(arrival_day)
+
 	if context.is_hub(movie_name) and label_opt != "" and not bool(opts.get("from_meeting", false)):
 		_try_people_funk(label_opt)
 	return true
@@ -681,10 +686,29 @@ func _on_puppet_arrived(next: Dictionary) -> void:
 
 func _try_people_funk(room_label: String) -> void:
 	var meet := GameState.people_funk(room_label)
-	if meet == "":
+	if meet != "":
+		nav_event.emit("peoplefunk → %s" % meet)
+		goto_movie(meet, 1, {"from_meeting": true})
 		return
-	nav_event.emit("peoplefunk → %s" % meet)
-	goto_movie(meet, 1, {"from_meeting": true})
+	_try_phase_transition()
+
+
+func _try_phase_transition() -> void:
+	## A hub hands the player to the next one once it has nothing left to show.
+	## Checked only when no meeting is due, so a pending meeting always wins.
+	if not context.is_hub(loader.movie_name):
+		return
+	var next: Dictionary = context.phase_transition(loader.movie_name, GameState.globalday)
+	if next.is_empty():
+		return
+	var destination := _s(next.get("movie", ""))
+	if destination == "" or destination.to_lower() == loader.movie_name.to_lower():
+		return
+	# One-shot: mark before travelling so the arrival cannot re-trigger it.
+	GameState.set_story_flag(_s(next.get("flag", "")))
+	nav_event.emit("phase: %s → %s" % [loader.movie_name, destination])
+	GameState.emit_log("Phase change: %s → %s" % [loader.movie_name, destination], "info")
+	goto_movie(destination)
 
 
 func _on_movie_end() -> void:

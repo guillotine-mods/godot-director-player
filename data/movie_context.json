@@ -48,6 +48,80 @@
 		}
 	},
 
+	"_progression_comment": [
+		"THE PROGRESSION SPINE. Everything here is INFERRED, not sourced.",
+		"The original rules live in Lingo (peoplefunk and the day handlers) which",
+		"is not available. Without these rules the game cannot advance past day 1",
+		"at all, so they exist as scaffolding: the game becomes completable, and",
+		"every line is one edit away from correct once the Lingo is recovered.",
+		"Each entry carries a confidence note. Treat none of it as faithful."
+	],
+
+	"meeting_triggers": [
+		{
+			"hub": "DAY1", "day": 1, "room": "clif2", "index": 0, "movie": "MURDER1",
+			"confidence": "existing behaviour, unchanged"
+		},
+		{
+			"hub": "DAY1", "day": 1, "room": "veranda", "index": 1, "movie": "HATDAY1",
+			"require_done": [], "confidence": "existing behaviour, unchanged"
+		},
+		{
+			"hub": "DAY1", "day": 1, "room": "shore2", "index": 2, "movie": "MRFDAY1",
+			"require_done": [1], "confidence": "existing behaviour, unchanged"
+		},
+		{
+			"hub": "DAY1", "day": 1, "room": "field", "index": 4, "movie": "PATDAY1",
+			"require_done": [1], "confidence": "existing behaviour, unchanged"
+		},
+		{
+			"hub": "HOTEL1", "day": 1, "room": "recept", "index": 3, "movie": "ISHDAY1",
+			"confidence": "good — recept carries a mantalk label and ISHDAY1 returns to receptfromish; ish is the man at reception"
+		},
+		{
+			"hub": "HOTEL1", "day": 1, "room": "recept", "index": 5, "movie": "TOFIRCPT",
+			"require_done": [3],
+			"confidence": "moderate — the movie name reads TOFI-ReCePT and it returns to retlobi; ordered after ISHDAY1 so both do not fire in one room"
+		},
+		{
+			"hub": "HOTEL1", "day": 1, "room": "prosdor", "index": 6, "movie": "ALLIN",
+			"require_done": [3, 5],
+			"confidence": "weak — only signal is that ALLIN returns to prosdor, and a return label does not prove the trigger room (HATDAY1 triggers at veranda and returns to gate)"
+		},
+		{
+			"hub": "NIGHT1", "day": 1, "room": "shore3", "index": 7, "movie": "GOLDDEAD",
+			"confidence": "good — NIGHT1 shore3go carries cast 1:217, the same corpse sprite as DAY1 shore3, so the body is found on the night beach"
+		}
+	],
+
+	"_phase_transitions_comment": [
+		"When a hub hands over to the next one. Fires on arrival in a room once no",
+		"meeting is due. require_meetings names meetings-list entries that must all",
+		"be done first."
+	],
+
+	"phase_transitions": [
+		{
+			"from_hub": "DAY1", "day": 1,
+			"require_meetings": ["murder1", "hatday1", "mrfday1", "ishday1", "patpip1", "tofircpt", "allin"],
+			"to_movie": "NIGHT1",
+			"confidence": "inferred — day 1 ends once its seven meetings are done; the real condition is unknown and there is no DAY1 to NIGHT1 edge anywhere in the score"
+		}
+	],
+
+	"_day_advance_comment": [
+		"Arriving at one of these movie/label pairs sets globalday. SLEEP1 and",
+		"SLEEP2 both route to HOTEL1 newmorning in the exported score, so the",
+		"morning label is the natural place for the day to turn over."
+	],
+
+	"day_advance": [
+		{
+			"movie": "HOTEL1", "label": "newmorning", "set_day": 2,
+			"confidence": "good — SLEEP1 and SLEEP2 both declare hotel1 @newmorning as their return in the exported data"
+		}
+	],
+
 	"_click_flags_comment": [
 		"Hotspots that exist to reveal something else: clicking the sand turns up",
 		"the shells. Clicking a listed channel raises 'sets_flag', and a sprite",

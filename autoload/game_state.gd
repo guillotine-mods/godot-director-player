@@ -23,17 +23,10 @@ const DAY1_MEETINGS_INIT: PackedStringArray = [
 
 ## Which meeting fires on arrival in a room, per hub and per day.
 ##
-## The original table lives in Lingo (`peoplefunk`), which is not available in
-## this repo, so only entries verified against the existing Day 1 behaviour are
-## listed. Day 2, night and ending triggers are deliberately absent rather than
-## guessed: inventing them would write invented progression into save files.
-## `hub` and `phase` exist so those rows can be added without reshaping anything.
-const MEETING_TRIGGERS: Array[Dictionary] = [
-	{"hub": "DAY1", "phase": "day", "room": "clif2", "day": 1, "index": 0, "movie": "MURDER1"},
-	{"hub": "DAY1", "phase": "day", "room": "veranda", "day": 1, "index": 1, "movie": "HATDAY1", "require_done": []},
-	{"hub": "DAY1", "phase": "day", "room": "shore2", "day": 1, "index": 2, "movie": "MRFDAY1", "require_done": [1]},
-	{"hub": "DAY1", "phase": "day", "room": "field", "day": 1, "index": 4, "movie": "PATDAY1", "require_done": [1]},
-]
+## Supplied by MovieContext from data/movie_context.json at boot, so the whole
+## inferred progression sits in one file the Lingo can overwrite wholesale.
+## Empty until then: no trigger is better than a wrong trigger baked into code.
+var meeting_triggers: Array = []
 
 ## Movie stem → index into `meetings`. Several stems map to one slot because the
 ## original data and the render_model export disagree on spelling.
@@ -254,6 +247,19 @@ func is_minigame_movie(movie: String) -> bool:
 	return movie.to_upper() in MINIGAME_MOVIES
 
 
+func set_meeting_triggers(triggers: Array) -> void:
+	meeting_triggers = triggers
+	emit_log("Meeting triggers loaded: %d" % triggers.size(), "info")
+
+
+func advance_day(day: int) -> void:
+	if day <= globalday:
+		return
+	globalday = day
+	emit_log("Day %d begins" % day, "info")
+	state_changed.emit()
+
+
 func set_story_flag(flag: String) -> void:
 	var key := flag.strip_edges().to_lower()
 	if key == "" or story_flags.has(key):
@@ -310,18 +316,20 @@ func enter_hub(movie: String) -> void:
 func people_funk(room_label: String) -> String:
 	var room := room_label.to_lower().trim_suffix("go")
 	var hub := current_hub().to_upper()
-	var phase := current_phase()
-	for trig in MEETING_TRIGGERS:
-		if str(trig.room) != room:
+	for trig_value in meeting_triggers:
+		if typeof(trig_value) != TYPE_DICTIONARY:
 			continue
-		if int(trig.day) != globalday:
+		var trig: Dictionary = trig_value
+		if str(trig.get("room", "")) != room:
+			continue
+		if int(trig.get("day", 1)) != globalday:
 			continue
 		if str(trig.get("hub", "DAY1")).to_upper() != hub:
 			continue
-		if str(trig.get("phase", "day")) != phase:
+		var idx: int = int(trig.get("index", -1))
+		if idx < 0 or idx >= meetings.size():
 			continue
-		var idx: int = int(trig.index)
-		if idx < meetings.size() and str(meetings[idx]).to_lower() == "done":
+		if str(meetings[idx]).to_lower() == "done":
 			continue
 		var req: Array = trig.get("require_done", [])
 		var blocked := false
@@ -331,7 +339,7 @@ func people_funk(room_label: String) -> String:
 				break
 		if blocked:
 			continue
-		return str(trig.movie)
+		return str(trig.get("movie", ""))
 	return ""
 
 
