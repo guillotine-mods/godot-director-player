@@ -1,12 +1,12 @@
 {
-  "_test_fixture": "invalid numeric movie metadata",
+  "_test_fixture": "invalid stage.width metadata",
   "frames": [],
   "labels": {},
   "markers": [],
   "cast_libs": {},
-  "first_playable_frame": "not-a-number",
+  "first_playable_frame": 0,
   "stage": {
     "width": "not-a-number",
-    "height": []
+    "height": 480
   }
 }

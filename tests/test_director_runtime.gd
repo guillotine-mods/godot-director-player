@@ -143,17 +143,33 @@ func _test_loader_failed_movie_load_is_transactional() -> void:
 
 
 func _test_loader_rejects_invalid_numeric_metadata_transactionally() -> void:
-	var loader: RefCounted = load("res://director/render_model_loader.gd").new()
-	_expect_eq(loader.load_index(), OK, "invalid-metadata test loads the index")
-	_expect_eq(loader.load_movie("EXODUS"), OK, "invalid-metadata test loads EXODUS")
-	var previous_state := _snapshot_loader_state(loader)
+	var cases := [
+		{
+			"movie": "_TEST_INVALID_FIRST_PLAYABLE",
+			"description": "invalid first_playable_frame",
+		},
+		{
+			"movie": "_TEST_INVALID_STAGE_WIDTH",
+			"description": "invalid stage.width",
+		},
+		{
+			"movie": "_TEST_INVALID_STAGE_HEIGHT",
+			"description": "invalid stage.height",
+		},
+	]
+	for test_case in cases:
+		var description := str(test_case.description)
+		var loader: RefCounted = load("res://director/render_model_loader.gd").new()
+		_expect_eq(loader.load_index(), OK, "%s test loads the index" % description)
+		_expect_eq(loader.load_movie("EXODUS"), OK, "%s test loads EXODUS" % description)
+		var previous_state := _snapshot_loader_state(loader)
 
-	_expect_eq(
-		loader.load_movie("_TEST_INVALID_METADATA"),
-		ERR_INVALID_DATA,
-		"invalid numeric movie metadata is rejected"
-	)
-	_expect_loader_state(loader, previous_state, "invalid metadata")
+		_expect_eq(
+			loader.load_movie(str(test_case.movie)),
+			ERR_INVALID_DATA,
+			"%s is rejected" % description
+		)
+		_expect_loader_state(loader, previous_state, description)
 
 
 func _test_failed_goto_preserves_runtime_state() -> void:
@@ -227,15 +243,26 @@ func _expect_loader_state(loader: RefCounted, expected: Dictionary, context: Str
 	)
 	_expect_true(is_same(loader.labels, expected.labels), "%s preserves labels" % context)
 	_expect_true(is_same(loader.markers, expected.markers), "%s preserves markers" % context)
-	_expect_eq(loader.frames, expected.frame_values, "%s preserves frame values" % context)
-	_expect_eq(loader.members, expected.member_values, "%s preserves member values" % context)
-	_expect_eq(
-		loader.cast_libs,
-		expected.cast_lib_values,
+	_expect_true(
+		loader.frames == expected.frame_values,
+		"%s preserves frame values" % context
+	)
+	_expect_true(
+		loader.members == expected.member_values,
+		"%s preserves member values" % context
+	)
+	_expect_true(
+		loader.cast_libs == expected.cast_lib_values,
 		"%s preserves cast library values" % context
 	)
-	_expect_eq(loader.labels, expected.label_values, "%s preserves label values" % context)
-	_expect_eq(loader.markers, expected.marker_values, "%s preserves marker values" % context)
+	_expect_true(
+		loader.labels == expected.label_values,
+		"%s preserves label values" % context
+	)
+	_expect_true(
+		loader.markers == expected.marker_values,
+		"%s preserves marker values" % context
+	)
 	_expect_eq(loader.stage_size, expected.stage_size, "%s preserves stage size" % context)
 	_expect_eq(
 		loader.first_playable_frame,
