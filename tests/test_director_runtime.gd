@@ -8,10 +8,11 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_test_large_delta_is_bounded()
-	_test_excess_backlog_is_discarded()
+	_test_large_delta_preserves_fractional_remainder()
 	_test_ordinary_delta_advances_once()
 	_test_boot_chain()
+	_test_same_movie_transition_stops_catch_up()
+	_test_go_back_discards_accumulated_time()
 
 	if failures.is_empty():
 		print("PASS: DirectorRuntime regression suite")
@@ -24,7 +25,7 @@ func _run() -> void:
 
 
 func _make_runtime(fps: float = 10.0) -> RefCounted:
-	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
+	var runtime := _new_runtime()
 	var frames: Array = []
 	for index in 20:
 		frames.append({
@@ -42,18 +43,20 @@ func _make_runtime(fps: float = 10.0) -> RefCounted:
 	return runtime
 
 
-func _test_large_delta_is_bounded() -> void:
+func _new_runtime() -> RefCounted:
+	return load("res://director/director_runtime.gd").new()
+
+
+func _test_large_delta_preserves_fractional_remainder() -> void:
 	var runtime := _make_runtime()
-	runtime.tick(1.0)
+	runtime.tick(1.05)
 	_expect_eq(runtime.frame_index, 3, "large delta advances at most three score steps")
 
+	runtime.tick(0.049)
+	_expect_eq(runtime.frame_index, 3, "excess score backlog is discarded")
 
-func _test_excess_backlog_is_discarded() -> void:
-	var runtime := _make_runtime()
-	runtime.tick(1.0)
-	var bounded_frame: int = runtime.frame_index
-	runtime.tick(0.01)
-	_expect_eq(runtime.frame_index, bounded_frame, "excess score backlog is discarded")
+	runtime.tick(0.002)
+	_expect_eq(runtime.frame_index, 4, "fractional score remainder is preserved")
 
 
 func _test_ordinary_delta_advances_once() -> void:
@@ -63,10 +66,10 @@ func _test_ordinary_delta_advances_once() -> void:
 
 
 func _test_boot_chain() -> void:
-	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
+	var runtime := _new_runtime()
 	_expect_eq(runtime.boot(), OK, "boot loads the render model index")
 	_expect_true(runtime.goto_movie("strtgame"), "boot chain enters strtgame")
-	_expect_true(runtime.goto_movie("exodus", 1), "boot chain enters EXODUS frame 1")
+	runtime.perform_click(Vector2(300, 100))
 	_expect_eq(runtime.loader.movie_name, "EXODUS", "boot chain loads EXODUS")
 	_expect_eq(runtime.frame_index, 0, "EXODUS frame 1 uses zero-based frame 0")
 
@@ -74,6 +77,34 @@ func _test_boot_chain() -> void:
 	runtime.game_step()
 	_expect_eq(runtime.loader.movie_name, "DAY1", "final EXODUS frame enters DAY1")
 	_expect_eq(runtime.frame_index, 0, "DAY1 frame 1 uses zero-based frame 0")
+
+
+func _test_same_movie_transition_stops_catch_up() -> void:
+	var runtime := _new_runtime()
+	_expect_eq(runtime.boot(), OK, "same-movie test loads the render model index")
+	_expect_true(runtime.goto_movie("EXODUS"), "same-movie test enters EXODUS")
+	runtime.loader.frames[0]["nav"] = {
+		"kind": "movie",
+		"value": "exodus",
+		"frame": 2,
+	}
+
+	runtime.tick(1.0)
+	_expect_eq(runtime.frame_index, 1, "same-movie transition stops score catch-up")
+
+
+func _test_go_back_discards_accumulated_time() -> void:
+	var runtime := _new_runtime()
+	_expect_eq(runtime.boot(), OK, "go-back test loads the render model index")
+	_expect_true(runtime.goto_movie("strtgame"), "go-back test enters strtgame")
+	_expect_true(runtime.goto_movie("EXODUS"), "go-back test enters EXODUS")
+
+	runtime.tick(0.05)
+	_expect_true(runtime.go_back(), "go-back test returns to strtgame")
+	_expect_eq(runtime.loader.movie_name, "strtgame", "go-back test restores strtgame")
+	var returned_title_frame: int = runtime.frame_index
+	runtime.tick(0.03)
+	_expect_eq(runtime.frame_index, returned_title_frame, "go_back discards accumulated score time")
 
 
 func _expect_true(actual: bool, message: String) -> void:
