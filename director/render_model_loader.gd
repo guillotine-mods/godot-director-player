@@ -28,6 +28,12 @@ var _resolved_member_cache: Dictionary = {}
 var _missing_member_keys: Dictionary = {}
 var _missing_linked_member_keys: Dictionary = {}
 var _missing_texture_keys: Dictionary = {}
+var _registry_member_cache: Dictionary = {}
+var _missing_registry_member_keys: Dictionary = {}
+var _registry_texture_cache: Dictionary = {}
+var _missing_registry_texture_keys: Dictionary = {}
+var _film_loop_cache: Dictionary = {}
+var _missing_film_loop_keys: Dictionary = {}
 
 
 func load_index() -> Error:
@@ -105,6 +111,12 @@ func load_movie(name: String) -> Error:
 	_missing_member_keys.clear()
 	_missing_linked_member_keys.clear()
 	_missing_texture_keys.clear()
+	_registry_member_cache.clear()
+	_missing_registry_member_keys.clear()
+	_registry_texture_cache.clear()
+	_missing_registry_texture_keys.clear()
+	_film_loop_cache.clear()
+	_missing_film_loop_keys.clear()
 	return OK
 
 
@@ -169,6 +181,110 @@ func _linked_cast_name(cast_lib: int) -> String:
 		return ""
 	var name: Variant = library.get("name", "")
 	return name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
+
+
+func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
+	if cast_lib == 1:
+		return {}
+	var cache_key := "%d:%d" % [cast_lib, cast_id]
+	if _film_loop_cache.has(cache_key):
+		return (_film_loop_cache[cache_key] as Dictionary).duplicate(true)
+	if _missing_film_loop_keys.has(cache_key):
+		return {}
+
+	var cast_name := _linked_cast_name(cast_lib)
+	var registry_cast: Variant = cast_registry.get(cast_name, {})
+	if typeof(registry_cast) != TYPE_DICTIONARY:
+		return _cache_missing_film_loop(cache_key)
+	var film_loops: Variant = registry_cast.get("film_loops", {})
+	if typeof(film_loops) != TYPE_DICTIONARY:
+		return _cache_missing_film_loop(cache_key)
+	var film_loop: Variant = film_loops.get(str(cast_id), {})
+	if typeof(film_loop) != TYPE_DICTIONARY or film_loop.is_empty():
+		return _cache_missing_film_loop(cache_key)
+	var initial_rect: Variant = film_loop.get("initial_rect", {})
+	var loop_frames: Variant = film_loop.get("frames", [])
+	if (
+		typeof(initial_rect) != TYPE_DICTIONARY
+		or int(film_loop.get("width", 0)) <= 0
+		or int(film_loop.get("height", 0)) <= 0
+		or typeof(loop_frames) != TYPE_ARRAY
+		or loop_frames.is_empty()
+	):
+		return _cache_missing_film_loop(cache_key)
+	var resolved_loop: Dictionary = film_loop.duplicate(true)
+	resolved_loop["_registry_cast_name"] = cast_name
+	_film_loop_cache[cache_key] = resolved_loop
+	return resolved_loop.duplicate(true)
+
+
+func _cache_missing_film_loop(cache_key: String) -> Dictionary:
+	_missing_film_loop_keys[cache_key] = true
+	return {}
+
+
+func get_registry_member(cast_name: String, cast_id: int) -> Dictionary:
+	var normalized_cast_name := cast_name.strip_edges().to_lower()
+	var cache_key := "%s:%d" % [normalized_cast_name, cast_id]
+	if _registry_member_cache.has(cache_key):
+		return (_registry_member_cache[cache_key] as Dictionary).duplicate(true)
+	if _missing_registry_member_keys.has(cache_key):
+		return {}
+
+	var registry_cast: Variant = cast_registry.get(normalized_cast_name, {})
+	if typeof(registry_cast) != TYPE_DICTIONARY:
+		return _cache_missing_registry_member(cache_key)
+	var registry_members: Variant = registry_cast.get("members", {})
+	var directory_value: Variant = registry_cast.get("directory", "")
+	if typeof(registry_members) != TYPE_DICTIONARY or typeof(directory_value) != TYPE_STRING:
+		return _cache_missing_registry_member(cache_key)
+	var directory: String = directory_value.strip_edges()
+	var registry_member: Variant = registry_members.get(str(cast_id), {})
+	if (
+		typeof(registry_member) != TYPE_DICTIONARY
+		or registry_member.is_empty()
+		or not _is_safe_registry_directory(directory)
+	):
+		return _cache_missing_registry_member(cache_key)
+	var resolved_member: Dictionary = registry_member.duplicate(true)
+	resolved_member["_registry_directory"] = directory
+	resolved_member["_registry_cast_name"] = normalized_cast_name
+	_registry_member_cache[cache_key] = resolved_member
+	return resolved_member.duplicate(true)
+
+
+func _cache_missing_registry_member(cache_key: String) -> Dictionary:
+	_missing_registry_member_keys[cache_key] = true
+	return {}
+
+
+func get_registry_texture(cast_name: String, cast_id: int, use_matte: bool = false) -> Texture2D:
+	var normalized_cast_name := cast_name.strip_edges().to_lower()
+	var cache_key := "%s:%d:%s" % [normalized_cast_name, cast_id, "matte" if use_matte else "plain"]
+	if _registry_texture_cache.has(cache_key):
+		return _registry_texture_cache[cache_key]
+	if _missing_registry_texture_keys.has(cache_key):
+		return null
+
+	var member := get_registry_member(normalized_cast_name, cast_id)
+	if member.is_empty():
+		return _cache_missing_registry_texture(cache_key)
+	var abs_path := _resolve_bitmap_path(member, false)
+	if abs_path.is_empty():
+		return _cache_missing_registry_texture(cache_key)
+	var img := _load_bmp(abs_path)
+	if img == null:
+		return _cache_missing_registry_texture(cache_key)
+	if use_matte:
+		_apply_matte(img)
+	var texture := ImageTexture.create_from_image(img)
+	_registry_texture_cache[cache_key] = texture
+	return texture
+
+
+func _cache_missing_registry_texture(cache_key: String) -> Texture2D:
+	_missing_registry_texture_keys[cache_key] = true
+	return null
 
 
 func get_linked_member(cast_lib: int, cast_id: int) -> Dictionary:
@@ -273,7 +389,7 @@ func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Textur
 	return plain
 
 
-func _resolve_bitmap_path(member: Dictionary) -> String:
+func _resolve_bitmap_path(member: Dictionary, warn_on_registry_missing: bool = true) -> String:
 	var path_value: Variant = member.get("path", "")
 	var rel := str(path_value).trim_prefix("./")
 	var has_valid_path := typeof(path_value) == TYPE_STRING
@@ -282,13 +398,17 @@ func _resolve_bitmap_path(member: Dictionary) -> String:
 		var cast_name := str(member.get("_registry_cast_name", "")).strip_edges().to_lower()
 		var cast_id := int(member.get("cast_id", -1))
 		var texture_key := "%s:%d" % [cast_name, cast_id]
-		if _missing_texture_keys.has(texture_key):
+		if warn_on_registry_missing and _missing_texture_keys.has(texture_key):
 			return ""
 		if not has_valid_path or not _is_safe_registry_directory(directory) or not _is_safe_registry_path(rel):
+			if not warn_on_registry_missing:
+				return ""
 			return _cache_missing_registry_bitmap(texture_key, cast_name, cast_id, "Invalid bitmap path")
 		var registry_path := MODEL_ROOT.path_join(directory).path_join(rel)
 		if FileAccess.file_exists(registry_path):
 			return registry_path
+		if not warn_on_registry_missing:
+			return ""
 		return _cache_missing_registry_bitmap(texture_key, cast_name, cast_id, "Missing bitmap")
 	if rel.is_empty():
 		return ""
