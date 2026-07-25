@@ -38,8 +38,30 @@ const MOVIE_ALIASES := {
 
 const MAX_GUARD_HOLD_MS := 20000.0
 const MAX_SCORE_STEPS_PER_TICK := 3
+# Transition animation label → the original Lingo nextroomdata destination.
 const DAY1_TRANSITION_REDIRECTS := {
+	"checkdown": "check",
+	"dwarfdown": "dwarfs",
+	"edge2up": "lighthouse",
+	"edge6down": "edge6",
+	"exitforest1fromclif": "exitforest1",
+	"exitforest1toclif": "clif",
+	"exitforest2frompath3": "exitforest2",
+	"forest1fromcheck": "forest1",
+	"forest1tocheck": "check",
+	"forest1toexit": "exitforest1",
+	"gatefromedge1": "gate",
+	"gatetoedge1": "edge1",
+	"gatetoveranda": "veranda",
+	"lighthousein": "stairs",
+	"path3up": "path4",
+	"path4tofield": "field",
+	"path4up": "path5",
+	"shore2up": "gate",
+	"stairsclimbdown": "stairs",
 	"stairsclimbup": "lighttop",
+	"swingup": "swing",
+	"tennisdown": "tennis",
 }
 const DAY1_DYNAMIC_REDIRECT_SCRIPT := 207
 
@@ -58,6 +80,8 @@ var route_stack: Array[Dictionary] = []
 var _accum_ms: float = 0.0
 var _time_ms: float = 0.0
 var _movie_transition_attempt_generation: int = 0
+var _pending_day1_transition: String = ""
+var _pending_day1_destination: String = ""
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -86,6 +110,7 @@ func _mark_movie_transition_attempted() -> void:
 
 func _mark_movie_loaded() -> void:
 	_accum_ms = 0.0
+	_clear_pending_day1_transition()
 
 
 func tick(delta: float) -> void:
@@ -166,11 +191,16 @@ func _try_day1_transition_redirect(frame: Dictionary) -> bool:
 	if frame.get("frame_script") != DAY1_DYNAMIC_REDIRECT_SCRIPT:
 		return false
 
-	var transition := marker_name_for_frame(frame_index).to_lower()
-	var destination := _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
+	var transition := _pending_day1_transition
+	var destination := _pending_day1_destination
+	if transition == "":
+		transition = marker_name_for_frame(frame_index).to_lower()
+	if destination == "":
+		destination = _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
 	if destination == "":
 		return false
 
+	_clear_pending_day1_transition()
 	var destination_frame := loader.resolve_label(destination, false)
 	if destination_frame < 0:
 		nav_event.emit('Day 1 transition: %s → missing label "%s"' % [transition, destination])
@@ -179,6 +209,26 @@ func _try_day1_transition_redirect(frame: Dictionary) -> bool:
 	enter_frame(destination_frame)
 	nav_event.emit("Day 1 transition: %s → %s" % [transition, destination])
 	return true
+
+
+func _remember_day1_transition(nav: Variant) -> void:
+	_clear_pending_day1_transition()
+	if loader.movie_name.to_lower() != "day1" or typeof(nav) != TYPE_DICTIONARY:
+		return
+	var after: Variant = nav.get("after", null)
+	if typeof(after) != TYPE_DICTIONARY or _s(after.get("kind", "")).to_lower() != "label":
+		return
+	var transition := _s(after.get("value", "")).to_lower()
+	var destination := _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
+	if destination == "":
+		return
+	_pending_day1_transition = transition
+	_pending_day1_destination = destination
+
+
+func _clear_pending_day1_transition() -> void:
+	_pending_day1_transition = ""
+	_pending_day1_destination = ""
 
 
 func _advance_or_hold() -> void:
@@ -454,13 +504,16 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 		"hold":
 			pass
 		"walk", "walk_here":
+			var walk_nav: Variant = action.get("nav", nav)
+			_clear_pending_day1_transition()
 			var ok: bool = puppet.start_walk(
-				action.get("nav", nav),
+				walk_nav,
 				stage_pt,
 				loader.stage_size,
 				marker_name_for_frame(frame_index)
 			)
 			if ok:
+				_remember_day1_transition(walk_nav)
 				running = true
 				nav_event.emit("walk started")
 			redraw_requested.emit()
