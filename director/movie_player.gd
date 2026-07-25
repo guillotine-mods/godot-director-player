@@ -246,8 +246,9 @@ func draw_current_frame(canvas: Control) -> void:
 		if not bool(sprite.get("has_image", false)) and inv.is_empty():
 			continue
 
-		var ink: int = int(sprite.get("ink", 0))
-		var use_matte: bool = RenderModelLoader.is_transparent_ink(ink) or not inv.is_empty()
+		# Keep the channel-1 scene background opaque. All character/object
+		# sprites use the edge-connected white matte, regardless of Director ink.
+		var use_matte: bool = channel != 1 or not inv.is_empty()
 		var tex: Texture2D = runtime.loader.get_texture(draw_lib, cast_id, use_matte)
 		if tex == null:
 			continue
