@@ -216,8 +216,6 @@ func _draw_film_loop(
 	var initial_width: float = float(initial_rect.right) - initial_left
 	var initial_height: float = float(initial_rect.bottom) - initial_top
 	var stage_scale := Vector2(parent_rect.size.x / initial_width, parent_rect.size.y / initial_height)
-	var parent_stretched := not is_equal_approx(parent_rect.size.x, initial_width) \
-		or not is_equal_approx(parent_rect.size.y, initial_height)
 	var registry_cast_name: String = str(film_loop.get("_registry_cast_name", ""))
 
 	for child_value in child_sprites:
@@ -237,8 +235,8 @@ func _draw_film_loop(
 
 		var child_width: float = float(child.width)
 		var child_height: float = float(child.height)
-		var draw_width: float = parent_rect.size.x if parent_stretched else child_width
-		var draw_height: float = parent_rect.size.y if parent_stretched else child_height
+		var draw_width: float = child_width * stage_scale.x
+		var draw_height: float = child_height * stage_scale.y
 		if draw_width <= 0.0 or draw_height <= 0.0:
 			continue
 		var child_start := parent_rect.position + Vector2(
