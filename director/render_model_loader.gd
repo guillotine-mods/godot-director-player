@@ -232,14 +232,62 @@ func _apply_matte(img: Image) -> void:
 	var h := img.get_height()
 	if w <= 0 or h <= 0:
 		return
-	var white_floor := 1.0 - MATTE_TOLERANCE
+	var papers: Array[Color] = [Color(1, 1, 1, 1)]
+	for corner in [Vector2i(0, 0), Vector2i(w - 1, 0), Vector2i(0, h - 1), Vector2i(w - 1, h - 1)]:
+		var c := img.get_pixelv(corner)
+		if c.r >= 0.94 and c.g >= 0.94 and c.b >= 0.94:
+			papers.append(c)
+
+	var visited := PackedByteArray()
+	visited.resize(w * h)
+	var stack: Array[Vector2i] = []
+	for x in w:
+		_matte_try_enqueue(img, papers, visited, stack, x, 0, w, h)
+		_matte_try_enqueue(img, papers, visited, stack, x, h - 1, w, h)
 	for y in h:
-		for x in w:
-			var color := img.get_pixel(x, y)
-			if color.r < white_floor or color.g < white_floor or color.b < white_floor:
-				continue
-			color.a = 0.0
-			img.set_pixel(x, y, color)
+		_matte_try_enqueue(img, papers, visited, stack, 0, y, w, h)
+		_matte_try_enqueue(img, papers, visited, stack, w - 1, y, w, h)
+
+	while not stack.is_empty():
+		var p: Vector2i = stack.pop_back()
+		var c := img.get_pixelv(p)
+		c.a = 0.0
+		img.set_pixelv(p, c)
+		_matte_try_enqueue(img, papers, visited, stack, p.x - 1, p.y, w, h)
+		_matte_try_enqueue(img, papers, visited, stack, p.x + 1, p.y, w, h)
+		_matte_try_enqueue(img, papers, visited, stack, p.x, p.y - 1, w, h)
+		_matte_try_enqueue(img, papers, visited, stack, p.x, p.y + 1, w, h)
+
+
+func _matte_try_enqueue(
+	img: Image,
+	papers: Array[Color],
+	visited: PackedByteArray,
+	stack: Array[Vector2i],
+	x: int,
+	y: int,
+	w: int,
+	h: int
+) -> void:
+	if x < 0 or y < 0 or x >= w or y >= h:
+		return
+	var idx := y * w + x
+	if visited[idx] != 0:
+		return
+	var px := img.get_pixel(x, y)
+	var near := false
+	for p in papers:
+		if (
+			absf(px.r - p.r) <= MATTE_TOLERANCE
+			and absf(px.g - p.g) <= MATTE_TOLERANCE
+			and absf(px.b - p.b) <= MATTE_TOLERANCE
+		):
+			near = true
+			break
+	if not near:
+		return
+	visited[idx] = 1
+	stack.append(Vector2i(x, y))
 
 
 static func is_transparent_ink(ink: int) -> bool:

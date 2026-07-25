@@ -247,17 +247,7 @@ func draw_current_frame(canvas: Control) -> void:
 			continue
 
 		var ink: int = int(sprite.get("ink", 0))
-		var sprite_width: float = float(sprite.get("width", 0))
-		var sprite_height: float = float(sprite.get("height", 0))
-		var background_sized := (
-			sprite_width >= float(runtime.loader.stage_size.x) * 0.8
-			and sprite_height >= float(runtime.loader.stage_size.y) * 0.5
-		)
-		var use_matte := (
-			RenderModelLoader.is_transparent_ink(ink)
-			or not inv.is_empty()
-			or (channel != 1 and not background_sized)
-		)
+		var use_matte: bool = RenderModelLoader.is_transparent_ink(ink) or not inv.is_empty()
 		var tex: Texture2D = runtime.loader.get_texture(draw_lib, cast_id, use_matte)
 		if tex == null:
 			continue
