@@ -54,6 +54,18 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 - Linked names are collected from `cast_libs`; the corresponding canonical
   standalone exports provide the registry metadata and bitmaps. Regenerate it
   after render-model exports change: `python3 tools/generate_cast_registry.py`.
+- When raw Director chunk dumps are available, that generator also exports
+  `film_loops` SCVW mini-scores into each matching canonical cast in
+  `cast_registry.json`. Its `--chunks-root` option defaults to the sibling
+  `../Piposh2-Web-Alpha/decompiled_chunks` research tree; supply another dump
+  root with `python3 tools/generate_cast_registry.py --chunks-root <path>`.
+- At runtime, a linked film-loop parent resolves its child bitmap members from
+  that canonical registry cast. The loop cursor advances once per entered main
+  score frame, resets independently when a channel's member changes, and is
+  cleared when a new movie loads. The renderer expands the selected mini-score
+  frame's children in channel order and applies Director Scale semantics:
+  each child draw width and height are its own dimensions scaled by the parent
+  rectangle's X/Y scale relative to the loop's initial rectangle.
 
 ## Controls
 

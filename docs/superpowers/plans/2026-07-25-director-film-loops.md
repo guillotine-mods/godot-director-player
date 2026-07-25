@@ -196,6 +196,10 @@ For each child, in channel order:
 - Translate the child registration point from the loop’s `initial_rect` into
   that parent box.
 - Scale the translation when the parent sprite is stretched.
+- Scale each child’s draw width and height from that child’s own width and
+  height by the parent/initial-rectangle X/Y scale, rather than using the full
+  parent dimensions. This follows Director Scale behavior; quality verification
+  rejected the earlier literal ScummVM sizing assumption.
 - Resolve the child bitmap from the same normalized registry cast.
 - Subtract the child bitmap’s scaled registration offset to obtain its
   top-left draw position.
