@@ -48,6 +48,36 @@
 		}
 	},
 
+	"_sprite_gates_comment": [
+		"Director rooms carry every conditional character and object at once, and",
+		"Lingo puppeted away whatever the story had not reached. The export keeps",
+		"the sprites but not the conditions, so the runtime draws everything: NPCs",
+		"stand in rooms on days they should not, and event aftermath is visible",
+		"before the event. Declare the conditions here; they gate both drawing and",
+		"clicking. A room name covers its 'go' variant too (shore3 = shore3go).",
+		"Conditions: 'after_meeting' (a meetings-list entry that must be done) and",
+		"'from_day' (minimum globalday). Absent means always visible.",
+		"This table is far from complete. Add a rule whenever play shows content",
+		"that has not happened yet."
+	],
+
+	"sprite_gates": {
+		"DAY1": [
+			{
+				"rooms": ["shore3"],
+				"channels": [14, 34, 15, 16, 17],
+				"after_meeting": "murder1",
+				"note": [
+					"Gondolin's corpse (cast 1:217, drawn on channels 14 AND 34 at",
+					"21,250) plus her handbag (1:218 ch16), lipstick (1:219 ch17)",
+					"and a third clue (1:235 ch15). All were visible and clickable",
+					"from the first second of day 1, before MURDER1 shows Tofi",
+					"pushing her off the clif2 cliff."
+				]
+			}
+		]
+	},
+
 	"_unmapped_comment": [
 		"Known-missing destinations: 46 movie/label pairs, 40 distinct labels.",
 		"Recovering them needs the original Lingo (nextroomdata) or playtesting.",

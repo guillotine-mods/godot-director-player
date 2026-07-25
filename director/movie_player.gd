@@ -375,6 +375,9 @@ func draw_current_frame(canvas: Control) -> void:
 		# Puppet overrides score channel 30 while active.
 		if puppet.active and channel == 30:
 			continue
+		# Story-gated: in the score, but the story has not reached it yet.
+		if runtime.is_channel_hidden(channel):
+			continue
 
 		var cast_lib: int = int(sprite.get("cast_lib", 1))
 		var cast_id: int = int(sprite.get("cast_id", 0))
