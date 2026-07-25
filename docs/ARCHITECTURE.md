@@ -54,6 +54,8 @@ Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
 - `AppSettings.upscale_mode` — scale factor + filter
 - `AppSettings.test_mode_enhanced_graphics` — switch to smooth filtering; later: alternate texture root
 - `GameState.MINIGAME_MOVIES` — Esc skip targets
-- `GameState.MEETING_TRIGGERS` — room/day/hub/phase meeting table (Day 1 only so far)
-- `data/movie_context.json` — hubs and transition destinations
+- `data/movie_context.json` — hubs, transition destinations, sprite gates, and
+  the whole inferred progression spine (meeting triggers, phase transitions,
+  day advance). `GameState` receives the trigger table from `MovieContext` at
+  boot rather than holding its own copy.
 - `InputRouter` — single place to extend remapping / accessibility
