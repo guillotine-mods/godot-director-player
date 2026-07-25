@@ -44,7 +44,7 @@ func _ready() -> void:
 	GameState.movie_requested.connect(_on_game_state_movie_requested)
 
 	_on_settings_changed()
-	runtime.goto_movie("strtgame")
+	runtime.goto_movie("strtgame", null, {"play_opening": true})
 	_log_frame_texture_stats("boot")
 
 

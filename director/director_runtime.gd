@@ -230,7 +230,9 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		puppet.reset()
 
 	var start := 0
-	if label_opt != "":
+	if to == "strtgame" and bool(opts.get("play_opening", false)):
+		start = 0
+	elif label_opt != "":
 		var idx := loader.resolve_label(label_opt, true)
 		start = idx if idx >= 0 else loader.resolve_boot_frame()
 	elif frame_number != null and str(frame_number) != "":
@@ -510,6 +512,12 @@ func skip_current() -> void:
 	if not AppSettings.allow_minigame_skip:
 		return
 	var m := loader.movie_name.to_upper()
+	if m == "STRTGAME":
+		var menu_frame := loader.lookup_label("mainmenu")
+		if menu_frame >= 0 and frame_index < menu_frame:
+			nav_event.emit("QoL skip → main menu")
+			enter_frame(menu_frame)
+			return
 	if GameState.is_minigame_movie(m) or m == "EXODUS":
 		nav_event.emit("QoL skip → DAY1")
 		if m == "EXODUS":

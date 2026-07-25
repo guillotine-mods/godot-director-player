@@ -10,6 +10,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_test_large_delta_preserves_fractional_remainder()
 	_test_ordinary_delta_advances_once()
+	_test_title_opening_boot_and_skip()
 	_test_boot_chain()
 	_test_same_movie_transition_stops_catch_up()
 	_test_go_back_discards_accumulated_time()
@@ -68,6 +69,23 @@ func _test_ordinary_delta_advances_once() -> void:
 	var runtime := _make_runtime()
 	runtime.tick(0.1)
 	_expect_eq(runtime.frame_index, 1, "ordinary delta advances one score step")
+
+
+func _test_title_opening_boot_and_skip() -> void:
+	var runtime := _new_runtime()
+	_expect_eq(runtime.boot(), OK, "title opening loads the render model index")
+	_expect_true(
+		runtime.goto_movie("strtgame", null, {"play_opening": true}),
+		"title opening loads"
+	)
+	_expect_eq(runtime.frame_index, 0, "initial title boot begins with the opening")
+
+	runtime.skip_current()
+	_expect_eq(
+		runtime.frame_index,
+		runtime.loader.lookup_label("mainmenu"),
+		"skip moves the title opening to the main menu"
+	)
 
 
 func _test_boot_chain() -> void:
