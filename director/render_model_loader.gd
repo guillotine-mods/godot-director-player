@@ -169,6 +169,45 @@ func _linked_cast_name(cast_lib: int) -> String:
 	return name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
 
 
+func get_linked_member(cast_lib: int, cast_id: int) -> Dictionary:
+	var cache_key := "%d:%d" % [cast_lib, cast_id]
+	if _resolved_member_cache.has(cache_key):
+		var cached_member: Variant = _resolved_member_cache[cache_key]
+		if typeof(cached_member) == TYPE_DICTIONARY and cached_member.has("_registry_directory"):
+			return cached_member
+		return {}
+	var local_key := member_key(cast_lib, cast_id)
+	var local_member: Variant = members.get(local_key, {})
+	if typeof(local_member) == TYPE_DICTIONARY and not local_member.is_empty():
+		return {}
+	if cast_lib == 1:
+		return {}
+
+	var cast_name := _linked_cast_name(cast_lib)
+	if cast_name.is_empty():
+		return {}
+	var registry_cast: Variant = cast_registry.get(cast_name, {})
+	if typeof(registry_cast) != TYPE_DICTIONARY:
+		return {}
+	var registry_members: Variant = registry_cast.get("members", {})
+	var directory_value: Variant = registry_cast.get("directory", "")
+	if typeof(registry_members) != TYPE_DICTIONARY or typeof(directory_value) != TYPE_STRING:
+		return {}
+	var directory: String = directory_value.strip_edges()
+	var registry_member: Variant = registry_members.get(str(cast_id), {})
+	if (
+		typeof(registry_member) != TYPE_DICTIONARY
+		or registry_member.is_empty()
+		or not _is_safe_registry_directory(directory)
+	):
+		return {}
+	var resolved_member: Dictionary = registry_member.duplicate(true)
+	resolved_member["_registry_directory"] = directory
+	resolved_member["_registry_cast_name"] = cast_name
+	_resolved_member_cache[cache_key] = resolved_member
+	return resolved_member
+
+
 func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 	var cache_key := "%d:%d" % [cast_lib, cast_id]
 	if _resolved_member_cache.has(cache_key):
@@ -183,28 +222,9 @@ func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 		return local_member
 
 	var cast_name := _linked_cast_name(cast_lib)
-	if cast_lib != 1:
-		if not cast_name.is_empty():
-			var registry_cast: Variant = cast_registry.get(cast_name, {})
-			if typeof(registry_cast) == TYPE_DICTIONARY:
-				var registry_members: Variant = registry_cast.get("members", {})
-				var directory_value: Variant = registry_cast.get("directory", "")
-				var directory: String = ""
-				if typeof(directory_value) == TYPE_STRING:
-					directory = directory_value.strip_edges()
-				var registry_member: Variant = {}
-				if typeof(registry_members) == TYPE_DICTIONARY:
-					registry_member = registry_members.get(str(cast_id), {})
-				if (
-					typeof(registry_member) == TYPE_DICTIONARY
-					and not registry_member.is_empty()
-					and _is_safe_registry_directory(directory)
-				):
-					var resolved_member: Dictionary = registry_member.duplicate(true)
-					resolved_member["_registry_directory"] = directory
-					resolved_member["_registry_cast_name"] = cast_name
-					_resolved_member_cache[cache_key] = resolved_member
-					return resolved_member
+	var linked_member := get_linked_member(cast_lib, cast_id)
+	if not linked_member.is_empty():
+		return linked_member
 
 	_missing_member_keys[cache_key] = true
 	push_warning(

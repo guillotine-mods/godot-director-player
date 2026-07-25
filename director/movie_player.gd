@@ -140,10 +140,10 @@ func _log_frame_texture_stats(tag: String) -> void:
 			continue
 		var has_image: bool = bool(sprite.get("has_image", false))
 		if not has_image:
-			var member: Dictionary = runtime.loader.get_member(
+			var member: Dictionary = runtime.loader.get_linked_member(
 				int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0))
 			)
-			if not member.has("_registry_directory"):
+			if member.is_empty():
 				continue
 		var tex: Texture2D = runtime.loader.get_texture(
 			int(sprite.get("cast_lib", 1)),
@@ -266,13 +266,11 @@ func draw_current_frame(canvas: Control) -> void:
 			cast_id = int(STRTGAME_MENU_HOVER[channel]["hover"])
 
 		var member: Dictionary = {}
-		var is_registry_member := false
 		var has_image: bool = bool(sprite.get("has_image", false))
-		if inv.is_empty():
-			member = runtime.loader.get_member(draw_lib, cast_id)
-			is_registry_member = member.has("_registry_directory")
-		if not has_image and inv.is_empty() and not is_registry_member:
-			continue
+		if not has_image and inv.is_empty():
+			member = runtime.loader.get_linked_member(draw_lib, cast_id)
+			if member.is_empty():
+				continue
 
 		var ink: int = int(sprite.get("ink", 0))
 		var use_matte: bool = RenderModelLoader.is_transparent_ink(ink) or not inv.is_empty()
@@ -297,7 +295,9 @@ func draw_current_frame(canvas: Control) -> void:
 			canvas.draw_texture_rect(tex, Rect2(cx - reg_x, cy - reg_y, nw, nh), false)
 		else:
 			# Score sprites stretch to sprite rect (Director default).
-			if is_registry_member:
+			if member.is_empty():
+				member = runtime.loader.get_member(draw_lib, cast_id)
+			if member.has("_registry_directory"):
 				var stage_position := _registry_score_stage_position(sprite, member)
 				x = stage_position.x * sx
 				y = stage_position.y * sy
