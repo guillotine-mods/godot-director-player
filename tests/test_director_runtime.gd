@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_go_back_discards_accumulated_time()
 	_test_missing_movie_navigation_is_attempted_once_per_tick()
 	_test_loader_failed_movie_load_is_transactional()
+	_test_loader_rejects_invalid_numeric_metadata_transactionally()
 	_test_failed_goto_preserves_runtime_state()
 	_test_failed_go_back_preserves_runtime_state()
 
@@ -131,48 +132,28 @@ func _test_loader_failed_movie_load_is_transactional() -> void:
 	var loader: RefCounted = load("res://director/render_model_loader.gd").new()
 	_expect_eq(loader.load_index(), OK, "transactional loader test loads the index")
 	_expect_eq(loader.load_movie("EXODUS"), OK, "transactional loader test loads EXODUS")
-	var previous_movie_name: String = loader.movie_name
-	var previous_base_path: String = loader.base_path
-	var previous_frames: Array = loader.frames
-	var previous_members: Dictionary = loader.members
-	var previous_cast_libs: Dictionary = loader.cast_libs
-	var previous_labels: Dictionary = loader.labels
-	var previous_markers: Array = loader.markers
-	var previous_frame_values: Array = loader.frames.duplicate(true)
-	var previous_member_values: Dictionary = loader.members.duplicate(true)
-	var previous_cast_lib_values: Dictionary = loader.cast_libs.duplicate(true)
-	var previous_label_values: Dictionary = loader.labels.duplicate(true)
-	var previous_marker_values: Array = loader.markers.duplicate(true)
-	var previous_stage_size: Vector2i = loader.stage_size
-	var previous_first_playable_frame: int = loader.first_playable_frame
+	var previous_state := _snapshot_loader_state(loader)
 
 	_expect_eq(
 		loader.load_movie("BROKEN"),
 		ERR_FILE_NOT_FOUND,
 		"missing movie load returns ERR_FILE_NOT_FOUND"
 	)
-	_expect_eq(loader.movie_name, previous_movie_name, "failed movie load preserves movie name")
-	_expect_eq(loader.base_path, previous_base_path, "failed movie load preserves base path")
-	_expect_true(is_same(loader.frames, previous_frames), "failed movie load preserves frames")
-	_expect_true(is_same(loader.members, previous_members), "failed movie load preserves members")
-	_expect_true(is_same(loader.cast_libs, previous_cast_libs), "failed movie load preserves cast libraries")
-	_expect_true(is_same(loader.labels, previous_labels), "failed movie load preserves labels")
-	_expect_true(is_same(loader.markers, previous_markers), "failed movie load preserves markers")
-	_expect_eq(loader.frames, previous_frame_values, "failed movie load preserves frame values")
-	_expect_eq(loader.members, previous_member_values, "failed movie load preserves member values")
+	_expect_loader_state(loader, previous_state, "failed movie load")
+
+
+func _test_loader_rejects_invalid_numeric_metadata_transactionally() -> void:
+	var loader: RefCounted = load("res://director/render_model_loader.gd").new()
+	_expect_eq(loader.load_index(), OK, "invalid-metadata test loads the index")
+	_expect_eq(loader.load_movie("EXODUS"), OK, "invalid-metadata test loads EXODUS")
+	var previous_state := _snapshot_loader_state(loader)
+
 	_expect_eq(
-		loader.cast_libs,
-		previous_cast_lib_values,
-		"failed movie load preserves cast library values"
+		loader.load_movie("_TEST_INVALID_METADATA"),
+		ERR_INVALID_DATA,
+		"invalid numeric movie metadata is rejected"
 	)
-	_expect_eq(loader.labels, previous_label_values, "failed movie load preserves label values")
-	_expect_eq(loader.markers, previous_marker_values, "failed movie load preserves marker values")
-	_expect_eq(loader.stage_size, previous_stage_size, "failed movie load preserves stage size")
-	_expect_eq(
-		loader.first_playable_frame,
-		previous_first_playable_frame,
-		"failed movie load preserves first playable frame"
-	)
+	_expect_loader_state(loader, previous_state, "invalid metadata")
 
 
 func _test_failed_goto_preserves_runtime_state() -> void:
@@ -214,6 +195,53 @@ func _test_failed_go_back_preserves_runtime_state() -> void:
 	_expect_eq(runtime.loader.frames, previous_frames, "failed go_back preserves active frame data")
 	_expect_eq(runtime.frame_index, previous_frame_index, "failed go_back preserves active frame")
 	_expect_eq(runtime.route_stack, previous_route_stack, "failed go_back preserves route stack")
+
+
+func _snapshot_loader_state(loader: RefCounted) -> Dictionary:
+	return {
+		"movie_name": loader.movie_name,
+		"base_path": loader.base_path,
+		"frames": loader.frames,
+		"members": loader.members,
+		"cast_libs": loader.cast_libs,
+		"labels": loader.labels,
+		"markers": loader.markers,
+		"frame_values": loader.frames.duplicate(true),
+		"member_values": loader.members.duplicate(true),
+		"cast_lib_values": loader.cast_libs.duplicate(true),
+		"label_values": loader.labels.duplicate(true),
+		"marker_values": loader.markers.duplicate(true),
+		"stage_size": loader.stage_size,
+		"first_playable_frame": loader.first_playable_frame,
+	}
+
+
+func _expect_loader_state(loader: RefCounted, expected: Dictionary, context: String) -> void:
+	_expect_eq(loader.movie_name, expected.movie_name, "%s preserves movie name" % context)
+	_expect_eq(loader.base_path, expected.base_path, "%s preserves base path" % context)
+	_expect_true(is_same(loader.frames, expected.frames), "%s preserves frames" % context)
+	_expect_true(is_same(loader.members, expected.members), "%s preserves members" % context)
+	_expect_true(
+		is_same(loader.cast_libs, expected.cast_libs),
+		"%s preserves cast libraries" % context
+	)
+	_expect_true(is_same(loader.labels, expected.labels), "%s preserves labels" % context)
+	_expect_true(is_same(loader.markers, expected.markers), "%s preserves markers" % context)
+	_expect_eq(loader.frames, expected.frame_values, "%s preserves frame values" % context)
+	_expect_eq(loader.members, expected.member_values, "%s preserves member values" % context)
+	_expect_eq(
+		loader.cast_libs,
+		expected.cast_lib_values,
+		"%s preserves cast library values" % context
+	)
+	_expect_eq(loader.labels, expected.label_values, "%s preserves label values" % context)
+	_expect_eq(loader.markers, expected.marker_values, "%s preserves marker values" % context)
+	_expect_eq(loader.stage_size, expected.stage_size, "%s preserves stage size" % context)
+	_expect_eq(
+		loader.first_playable_frame,
+		expected.first_playable_frame,
+		"%s preserves first playable frame" % context
+	)
 
 
 func _expect_true(actual: bool, message: String) -> void:

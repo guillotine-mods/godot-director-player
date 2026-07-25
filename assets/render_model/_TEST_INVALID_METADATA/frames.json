@@ -1,0 +1,12 @@
+{
+  "_test_fixture": "invalid numeric movie metadata",
+  "frames": [],
+  "labels": {},
+  "markers": [],
+  "cast_libs": {},
+  "first_playable_frame": "not-a-number",
+  "stage": {
+    "width": "not-a-number",
+    "height": []
+  }
+}
