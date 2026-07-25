@@ -48,6 +48,15 @@
 		}
 	},
 
+	"_click_flags_comment": [
+		"Hotspots that exist to reveal something else: clicking the sand turns up",
+		"the shells. Clicking a listed channel raises 'sets_flag', and a sprite",
+		"gate can then wait on it with 'after_flag'. Flags persist in saves.",
+		"Empty until the reveal hotspots are identified in play."
+	],
+
+	"click_flags": {},
+
 	"_sprite_gates_comment": [
 		"Director rooms carry every conditional character and object at once, and",
 		"Lingo puppeted away whatever the story had not reached. The export keeps",
@@ -55,8 +64,13 @@
 		"stand in rooms on days they should not, and event aftermath is visible",
 		"before the event. Declare the conditions here; they gate both drawing and",
 		"clicking. A room name covers its 'go' variant too (shore3 = shore3go).",
-		"Conditions: 'after_meeting' (a meetings-list entry that must be done) and",
-		"'from_day' (minimum globalday). Absent means always visible.",
+		"Conditions form a window, because content can be premature (a corpse",
+		"before the murder) or stale (a character still sitting where they were",
+		"before a conversation moved them). Every condition has both forms:",
+		"  after_meeting / before_meeting  a meetings-list entry, e.g. murder1",
+		"  after_flag / before_flag        a flag raised by click_flags above",
+		"  from_day / until_day            globalday bounds",
+		"All listed conditions must hold. Absent means always visible.",
 		"This table is far from complete. Add a rule whenever play shows content",
 		"that has not happened yet."
 	],

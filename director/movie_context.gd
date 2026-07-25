@@ -17,6 +17,7 @@ var _known_unmapped: Dictionary = {}
 var _hub_return_cache: Dictionary = {}
 var _warned_transitions: Dictionary = {}
 var _sprite_gates: Dictionary = {}
+var _click_flags: Dictionary = {}
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -64,6 +65,13 @@ func load_context() -> Error:
 			for label in labels:
 				label_set[_s(label).to_lower()] = true
 			_known_unmapped[_s(key).to_lower()] = label_set
+
+	var click_value: Variant = data.get("click_flags", {})
+	if typeof(click_value) == TYPE_DICTIONARY:
+		for key in (click_value as Dictionary).keys():
+			var rules: Variant = (click_value as Dictionary)[key]
+			if typeof(rules) == TYPE_ARRAY:
+				_click_flags[_s(key).to_lower()] = rules
 
 	var gates_value: Variant = data.get("sprite_gates", {})
 	if typeof(gates_value) == TYPE_DICTIONARY:
@@ -118,14 +126,55 @@ func _rule_covers_room(rule: Dictionary, wanted: String) -> bool:
 
 
 func _rule_satisfied(rule: Dictionary) -> bool:
-	## True once the story has reached the point where the sprites belong.
-	var after_value: Variant = rule.get("after_meeting", null)
-	if after_value != null and not GameState.is_meeting_done(_s(after_value)):
+	## True while the sprites belong on screen.
+	##
+	## Conditions are a window, not just a start: content can be premature
+	## (a corpse before the murder) or stale (a character still sitting where
+	## they were before a conversation moved them), so every condition has a
+	## "not yet" and an "already over" form.
+	var after_meeting: Variant = rule.get("after_meeting", null)
+	if after_meeting != null and not GameState.is_meeting_done(_s(after_meeting)):
 		return false
+	var before_meeting: Variant = rule.get("before_meeting", null)
+	if before_meeting != null and GameState.is_meeting_done(_s(before_meeting)):
+		return false
+
+	var after_flag: Variant = rule.get("after_flag", null)
+	if after_flag != null and not GameState.has_story_flag(_s(after_flag)):
+		return false
+	var before_flag: Variant = rule.get("before_flag", null)
+	if before_flag != null and GameState.has_story_flag(_s(before_flag)):
+		return false
+
 	var from_day: Variant = rule.get("from_day", null)
 	if from_day != null and GameState.globalday < int(from_day):
 		return false
+	var until_day: Variant = rule.get("until_day", null)
+	if until_day != null and GameState.globalday > int(until_day):
+		return false
 	return true
+
+
+func flag_for_click(movie: String, room: String, channel: int) -> String:
+	## A hotspot that reveals something: clicking it raises a story flag that a
+	## sprite gate can wait on. Lingo did this with globals plus puppetSprite.
+	var rules_value: Variant = _click_flags.get(movie.to_lower(), [])
+	if typeof(rules_value) != TYPE_ARRAY:
+		return ""
+	var wanted := _room_key(room)
+	for rule_value in (rules_value as Array):
+		if typeof(rule_value) != TYPE_DICTIONARY:
+			continue
+		var rule: Dictionary = rule_value
+		if not _rule_covers_room(rule, wanted):
+			continue
+		var channels_value: Variant = rule.get("channels", [])
+		if typeof(channels_value) != TYPE_ARRAY:
+			continue
+		for ch in (channels_value as Array):
+			if int(ch) == channel:
+				return _s(rule.get("sets_flag", ""))
+	return ""
 
 
 func is_hub(movie: String) -> bool:

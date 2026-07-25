@@ -65,6 +65,10 @@ var whichsnd: String = "sea"
 ## Last hub entered. Drives where a movie with no declared return sends the
 ## player, replacing the DAY1 @shore2 literal that used to be hardcoded.
 var current_hub_movie: String = "DAY1"
+## Story flags set by clicking declared hotspots. Lingo kept this kind of state
+## in globals; sprite gates read it so an object can appear only after the
+## player has done the thing that reveals it.
+var story_flags: Dictionary = {}
 
 
 func _ready() -> void:
@@ -88,6 +92,7 @@ func new_game() -> void:
 	meetings = DAY1_MEETINGS_INIT.duplicate()
 	whichsnd = "sea"
 	current_hub_movie = "DAY1"
+	story_flags.clear()
 	route_stack.clear()
 	_init_objects_field()
 	current_movie = "strtgame"
@@ -116,6 +121,7 @@ func to_dict() -> Dictionary:
 		"current_frame": current_frame,
 		"whichsnd": whichsnd,
 		"current_hub": current_hub_movie,
+		"story_flags": story_flags.keys(),
 		"route_stack": route_stack.duplicate(true),
 	}
 
@@ -137,6 +143,9 @@ func from_dict(data: Dictionary) -> void:
 	if saved_hub == "" and current_movie.to_upper() in HUB_MOVIES:
 		saved_hub = current_movie
 	current_hub_movie = saved_hub if saved_hub != "" else "DAY1"
+	story_flags.clear()
+	for flag in data.get("story_flags", []):
+		story_flags[str(flag)] = true
 	route_stack.clear()
 	for entry in data.get("route_stack", []):
 		if typeof(entry) == TYPE_DICTIONARY:
@@ -243,6 +252,19 @@ func inventory_override_for_channel(channel: int) -> Dictionary:
 
 func is_minigame_movie(movie: String) -> bool:
 	return movie.to_upper() in MINIGAME_MOVIES
+
+
+func set_story_flag(flag: String) -> void:
+	var key := flag.strip_edges().to_lower()
+	if key == "" or story_flags.has(key):
+		return
+	story_flags[key] = true
+	emit_log("Story flag: %s" % key, "info")
+	state_changed.emit()
+
+
+func has_story_flag(flag: String) -> bool:
+	return story_flags.has(flag.strip_edges().to_lower())
 
 
 func is_meeting_done(name: String) -> bool:
