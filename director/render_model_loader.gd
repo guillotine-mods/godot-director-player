@@ -208,17 +208,34 @@ func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
 	var initial_rect: Variant = film_loop.get("initial_rect", {})
 	var loop_frames: Variant = film_loop.get("frames", [])
 	if (
-		typeof(initial_rect) != TYPE_DICTIONARY
+		not _is_valid_film_loop_rect(initial_rect)
 		or int(film_loop.get("width", 0)) <= 0
 		or int(film_loop.get("height", 0)) <= 0
-		or typeof(loop_frames) != TYPE_ARRAY
-		or loop_frames.is_empty()
+		or not _has_valid_film_loop_frames(loop_frames)
 	):
 		return _cache_missing_film_loop(cache_key)
 	var resolved_loop: Dictionary = film_loop.duplicate(true)
 	resolved_loop["_registry_cast_name"] = cast_name
 	_film_loop_cache[cache_key] = resolved_loop
 	return resolved_loop
+
+
+func _is_valid_film_loop_rect(rect: Variant) -> bool:
+	if typeof(rect) != TYPE_DICTIONARY:
+		return false
+	for edge in ["top", "left", "bottom", "right"]:
+		if not rect.has(edge) or typeof(rect[edge]) not in [TYPE_INT, TYPE_FLOAT]:
+			return false
+	return float(rect["right"]) > float(rect["left"]) and float(rect["bottom"]) > float(rect["top"])
+
+
+func _has_valid_film_loop_frames(loop_frames: Variant) -> bool:
+	if typeof(loop_frames) != TYPE_ARRAY or loop_frames.is_empty():
+		return false
+	for frame in loop_frames:
+		if typeof(frame) != TYPE_DICTIONARY or typeof(frame.get("sprites", null)) != TYPE_ARRAY:
+			return false
+	return true
 
 
 func _cache_missing_film_loop(cache_key: String) -> Dictionary:
