@@ -245,9 +245,9 @@ func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Textur
 
 
 func _resolve_bitmap_path(member: Dictionary) -> String:
-	var rel := str(member.get("path", "")).trim_prefix("./")
-	if rel.is_empty():
-		return ""
+	var path_value: Variant = member.get("path", "")
+	var rel := str(path_value).trim_prefix("./")
+	var has_valid_path := typeof(path_value) == TYPE_STRING
 	if member.has("_registry_directory"):
 		var directory := str(member.get("_registry_directory", "")).strip_edges()
 		var cast_name := str(member.get("_registry_cast_name", "")).strip_edges().to_lower()
@@ -255,15 +255,13 @@ func _resolve_bitmap_path(member: Dictionary) -> String:
 		var texture_key := "%s:%d" % [cast_name, cast_id]
 		if _missing_texture_keys.has(texture_key):
 			return ""
-		if not _is_safe_registry_directory(directory) or not _is_safe_registry_path(rel):
-			_missing_texture_keys[texture_key] = true
-			push_warning("Invalid bitmap path for movie %s, linked cast %s, member %d" % [movie_name, cast_name, cast_id])
-			return ""
+		if not has_valid_path or not _is_safe_registry_directory(directory) or not _is_safe_registry_path(rel):
+			return _cache_missing_registry_bitmap(texture_key, cast_name, cast_id, "Invalid bitmap path")
 		var registry_path := MODEL_ROOT.path_join(directory).path_join(rel)
 		if FileAccess.file_exists(registry_path):
 			return registry_path
-		_missing_texture_keys[texture_key] = true
-		push_warning("Missing bitmap for movie %s, linked cast %s, member %d" % [movie_name, cast_name, cast_id])
+		return _cache_missing_registry_bitmap(texture_key, cast_name, cast_id, "Missing bitmap")
+	if rel.is_empty():
 		return ""
 	var candidates: PackedStringArray = PackedStringArray([
 		base_path.path_join(rel),
@@ -279,6 +277,12 @@ func _resolve_bitmap_path(member: Dictionary) -> String:
 	for path in candidates:
 		if FileAccess.file_exists(path):
 			return path
+	return ""
+
+
+func _cache_missing_registry_bitmap(texture_key: String, cast_name: String, cast_id: int, message: String) -> String:
+	_missing_texture_keys[texture_key] = true
+	push_warning("%s for movie %s, linked cast %s, member %d" % [message, movie_name, cast_name, cast_id])
 	return ""
 
 
