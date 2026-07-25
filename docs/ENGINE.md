@@ -7,6 +7,7 @@ Native Godot score runner for Piposh 2, using `assets/render_model` (frames / me
 | File | Role |
 |------|------|
 | `director/director_runtime.gd` | Tempo clock, `game_step`, `goto_movie`, clicks, save/load intercept |
+| `director/movie_context.gd` | Hubs, end-of-movie routing, transition destinations, playability |
 | `director/nav_actions.gd` | Resolve `label` / `movie` / `walk` / `marker` / `hold` / `quit` |
 | `director/puppet_controller.gd` | Channel 30 Piposh stand/walk + room arrive |
 | `director/render_model_loader.gd` | JSON + BMP via `Image.load`, matte / transparent inks, local-first linked-cast lookup |
@@ -26,6 +27,34 @@ Native Godot score runner for Piposh 2, using `assets/render_model` (frames / me
    - `movie` → `goto_movie` (HEZSAVE intercepted)
    - `quit` on SAVELOAD/MAP → `go_back` (not app quit)
    - none → advance playhead (+1), or movie-end handler
+
+## Movie context
+
+The score says where a frame goes; it does not say where a *movie* sits in the
+game. Hub membership, end-of-movie routing and walk-transition destinations
+lived in Lingo movie scripts, so `MovieContext` supplies them, reading
+`data/movie_context.json` (kept outside `assets/`, which is `robocopy /MIR`
+mirrored).
+
+The three hubs are `DAY1`, `HOTEL1` and `NIGHT1`. A movie that runs off the end
+of its score resolves, in order:
+
+1. Its own declared hub return — the single distinct hub-targeting cross-movie
+   nav it exports (`SEA1` → `day1 @shore2downdeck`, `ARCADE2` → `hotel1 @arcade`).
+   The caller is deliberately *not* tried first: `DAY1` frame 153 is `movie sea1`,
+   so returning `SEA1` to its caller would re-enter the frame that launched it.
+2. The caller on `route_stack`. This is `JOKE`'s path — it exports no return nav
+   and used to freeze on its last frame.
+3. The current hub.
+
+Hubs are excluded and hold on their final frame. Fourteen exports carry zero
+frames (`.CST` cast libraries emitted as movies); `goto_movie` refuses them.
+
+Walk transitions ending on `frame_script 207` need an explicit destination or
+the score falls into the adjacent reverse animation. The table is shared across
+movies, so the verified Day 1 destinations also cover 19 of `NIGHT1`'s 27
+transitions. Unmapped labels log a warning instead of reversing silently; see
+`unmapped_transitions` in the data file for the open list.
 
 The score clock executes at most three catch-up steps per Godot process tick. Long render or asset-loading stalls discard excess whole-step backlog, preventing cutscenes from fast-forwarding. A movie change ends catch-up so the destination movie starts with a fresh timing accumulator.
 

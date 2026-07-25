@@ -1,0 +1,73 @@
+{
+	"_comment": [
+		"Per-movie context the render_model export cannot carry, because it lived in",
+		"Lingo movie scripts rather than in the score. Hand maintained.",
+		"NOT under assets/ on purpose: assets/SOURCE.txt documents that tree as",
+		"mirrored with `robocopy /MIR`, which would delete this file."
+	],
+
+	"hubs": ["DAY1", "HOTEL1", "NIGHT1"],
+
+	"_transitions_comment": [
+		"Destination room for a walk transition that ends on the dynamic redirect",
+		"handler (frame_script 207). Without an entry the score falls into the",
+		"adjacent reverse animation and Piposh walks back where he came from.",
+		"Destinations are NOT derivable from the export: walk navs carry only",
+		"target_label / walk_to / arrive_at, the hosting room is always the source,",
+		"and name rules contradict each other (swingup -> swing, but path3up ->",
+		"path4 and shore2up -> gate). Entries are added only once verified.",
+		"'shared' applies to every movie. DAY1 and NIGHT1 are the same island by",
+		"day and by night, so the verified Day 1 destinations also resolve 19 of",
+		"NIGHT1's 27 transitions. A per-movie block overrides 'shared'."
+	],
+
+	"transitions": {
+		"shared": {
+			"checkdown": "check",
+			"dwarfdown": "dwarfs",
+			"edge2up": "lighthouse",
+			"edge6down": "edge6",
+			"exitforest1fromclif": "exitforest1",
+			"exitforest1toclif": "clif",
+			"exitforest2frompath3": "exitforest2",
+			"forest1fromcheck": "forest1",
+			"forest1tocheck": "check",
+			"forest1toexit": "exitforest1",
+			"gatefromedge1": "gate",
+			"gatetoedge1": "edge1",
+			"gatetoveranda": "veranda",
+			"lighthousein": "stairs",
+			"path3up": "path4",
+			"path4tofield": "field",
+			"path4up": "path5",
+			"shore2up": "gate",
+			"stairsclimbdown": "stairs",
+			"stairsclimbup": "lighttop",
+			"swingup": "swing",
+			"tennisdown": "tennis"
+		}
+	},
+
+	"_unmapped_comment": [
+		"Known-missing destinations: 46 movie/label pairs, 40 distinct labels.",
+		"Recovering them needs the original Lingo (nextroomdata) or playtesting.",
+		"Each logs an 'unmapped transition' warning naming movie and label. Move a",
+		"label into 'transitions' as soon as its destination is confirmed."
+	],
+
+	"unmapped_transitions": {
+		"AIR1": ["climbupfort", "fortgame", "getdown", "movingdown", "movingup", "rachupdown"],
+		"DAY1": ["lobyfromrecept", "rachbalin"],
+		"HOTEL1": [
+			"bathbath", "getdownbeda", "getdownbedc", "getdownroomb", "goarcade1", "goarcade2",
+			"goshaf", "lobyfromrecept", "lobytopath5", "mirror", "openver", "receptfromhall",
+			"recepttohall", "sinkscrm", "toarcade", "tobath", "today", "toialet", "tolib",
+			"torooma", "toroomb", "toroomc", "upstairs1"
+		],
+		"NIGHT1": [
+			"climbfort", "climbupfort", "gosleep", "movingdown", "movingup", "rachbalin",
+			"rachbalout", "rachupdown"
+		],
+		"SEA1": ["frombrjroom", "fromsafe", "inhall2", "outhall2", "tobrjroom", "tosafe", "toware"]
+	}
+}
