@@ -3,6 +3,7 @@ extends RefCounted
 ## Loads Director render_model JSON + BMP cast members for a movie.
 
 const INDEX_PATH := "res://assets/render_model/index.json"
+const CAST_REGISTRY_PATH := "res://assets/render_model/cast_registry.json"
 const MODEL_ROOT := "res://assets/render_model"
 ## Director ink types that key a background as transparent (web player parity).
 ## 1=Transparent, 8=Matte, 9=Mask, 36=Background Transparent, 39=Ghost-ish in some exports.
@@ -10,6 +11,7 @@ const TRANSPARENT_INKS := [1, 8, 9, 36, 39]
 const MATTE_TOLERANCE := 14.0 / 255.0
 
 var index: Dictionary = {}
+var cast_registry: Dictionary = {}
 var movie_name: String = ""
 var frames: Array = []
 var members: Dictionary = {}
@@ -22,15 +24,23 @@ var base_path: String = ""
 
 var _texture_cache: Dictionary = {}
 var _matte_cache: Dictionary = {}
+var _resolved_member_cache: Dictionary = {}
+var _missing_member_keys: Dictionary = {}
+var _missing_texture_keys: Dictionary = {}
 
 
 func load_index() -> Error:
-	if not FileAccess.file_exists(INDEX_PATH):
+	if not FileAccess.file_exists(INDEX_PATH) or not FileAccess.file_exists(CAST_REGISTRY_PATH):
 		return ERR_FILE_NOT_FOUND
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(INDEX_PATH))
-	if typeof(parsed) != TYPE_DICTIONARY:
+	var registry_parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(CAST_REGISTRY_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY or typeof(registry_parsed) != TYPE_DICTIONARY:
+		return ERR_INVALID_DATA
+	var casts: Variant = registry_parsed.get("casts", {})
+	if typeof(casts) != TYPE_DICTIONARY:
 		return ERR_INVALID_DATA
 	index = parsed
+	cast_registry = casts
 	return OK
 
 
@@ -90,6 +100,9 @@ func load_movie(name: String) -> Error:
 	stage_size = next_stage_size
 	_texture_cache.clear()
 	_matte_cache.clear()
+	_resolved_member_cache.clear()
+	_missing_member_keys.clear()
+	_missing_texture_keys.clear()
 	return OK
 
 
@@ -143,15 +156,45 @@ func member_key(cast_lib: int, cast_id: int) -> String:
 	if members.has(lib_id):
 		return lib_id
 	var bare := str(cast_id)
-	if members.has(bare):
+	if cast_lib == 1 and members.has(bare):
 		return bare
 	return lib_id
 
 
 func get_member(cast_lib: int, cast_id: int) -> Dictionary:
-	var key := member_key(cast_lib, cast_id)
-	var m: Variant = members.get(key, {})
-	return m if typeof(m) == TYPE_DICTIONARY else {}
+	var cache_key := "%d:%d" % [cast_lib, cast_id]
+	if _resolved_member_cache.has(cache_key):
+		return _resolved_member_cache[cache_key]
+	if _missing_member_keys.has(cache_key):
+		return {}
+
+	var local_key := member_key(cast_lib, cast_id)
+	var local_member: Variant = members.get(local_key, {})
+	if typeof(local_member) == TYPE_DICTIONARY:
+		_resolved_member_cache[cache_key] = local_member
+		return local_member
+
+	if cast_lib != 1:
+		var library: Variant = cast_libs.get(str(cast_lib), {})
+		if typeof(library) == TYPE_DICTIONARY:
+			var cast_name := str(library.get("name", "")).strip_edges().to_lower()
+			var registry_cast: Variant = cast_registry.get(cast_name, {})
+			if typeof(registry_cast) == TYPE_DICTIONARY:
+				var registry_members: Variant = registry_cast.get("members", {})
+				var directory := str(registry_cast.get("directory", "")).strip_edges()
+				var registry_member: Variant = {}
+				if typeof(registry_members) == TYPE_DICTIONARY:
+					registry_member = registry_members.get(str(cast_id), {})
+				if typeof(registry_member) == TYPE_DICTIONARY and not directory.is_empty():
+					var resolved_member: Dictionary = registry_member.duplicate()
+					resolved_member["_registry_directory"] = directory
+					resolved_member["_registry_cast_name"] = cast_name
+					_resolved_member_cache[cache_key] = resolved_member
+					return resolved_member
+
+	_missing_member_keys[cache_key] = true
+	push_warning("Missing cast member %s" % cache_key)
+	return {}
 
 
 func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Texture2D:
@@ -184,6 +227,30 @@ func get_texture(cast_lib: int, cast_id: int, use_matte: bool = false) -> Textur
 func _resolve_bitmap_path(member: Dictionary) -> String:
 	var rel := str(member.get("path", "")).trim_prefix("./")
 	if rel.is_empty():
+		return ""
+	if member.has("_registry_directory"):
+		var directory := str(member.get("_registry_directory", "")).strip_edges()
+		var cast_name := str(member.get("_registry_cast_name", "")).strip_edges().to_lower()
+		var cast_id := str(member.get("cast_id", ""))
+		var texture_key := "%s:%s" % [cast_name, cast_id]
+		if _missing_texture_keys.has(texture_key):
+			return ""
+		if (
+			directory.is_empty()
+			or directory != directory.get_file()
+			or rel.begins_with("/")
+			or rel.begins_with("\\")
+			or rel.contains("://")
+			or rel.simplify_path().begins_with("..")
+		):
+			_missing_texture_keys[texture_key] = true
+			push_warning("Invalid bitmap path for linked cast %s member %s" % [cast_name, cast_id])
+			return ""
+		var registry_path := MODEL_ROOT.path_join(directory).path_join(rel)
+		if FileAccess.file_exists(registry_path):
+			return registry_path
+		_missing_texture_keys[texture_key] = true
+		push_warning("Missing bitmap for linked cast %s member %s" % [cast_name, cast_id])
 		return ""
 	var candidates: PackedStringArray = PackedStringArray([
 		base_path.path_join(rel),
