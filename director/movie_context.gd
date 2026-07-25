@@ -16,6 +16,7 @@ var _movie_transitions: Dictionary = {}
 var _known_unmapped: Dictionary = {}
 var _hub_return_cache: Dictionary = {}
 var _warned_transitions: Dictionary = {}
+var _sprite_gates: Dictionary = {}
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -63,7 +64,68 @@ func load_context() -> Error:
 			for label in labels:
 				label_set[_s(label).to_lower()] = true
 			_known_unmapped[_s(key).to_lower()] = label_set
+
+	var gates_value: Variant = data.get("sprite_gates", {})
+	if typeof(gates_value) == TYPE_DICTIONARY:
+		for key in (gates_value as Dictionary).keys():
+			var rules: Variant = (gates_value as Dictionary)[key]
+			if typeof(rules) == TYPE_ARRAY:
+				_sprite_gates[_s(key).to_lower()] = rules
 	return OK
+
+
+func _room_key(room: String) -> String:
+	## Rooms appear as both "shore3" and "shore3go"; one gate entry covers both.
+	return room.to_lower().trim_suffix("go")
+
+
+func hidden_channels(movie: String, room: String) -> Dictionary:
+	## Score channels that must not draw or accept clicks in this room right now.
+	##
+	## Director rooms carry every conditional character and object at once and
+	## Lingo puppeted away whatever the story had not reached yet. Nothing in the
+	## export records those conditions, so they are declared in
+	## data/movie_context.json and evaluated against GameState here.
+	var out: Dictionary = {}
+	var rules_value: Variant = _sprite_gates.get(movie.to_lower(), [])
+	if typeof(rules_value) != TYPE_ARRAY:
+		return out
+	var wanted := _room_key(room)
+	for rule_value in (rules_value as Array):
+		if typeof(rule_value) != TYPE_DICTIONARY:
+			continue
+		var rule: Dictionary = rule_value
+		if not _rule_covers_room(rule, wanted):
+			continue
+		if _rule_satisfied(rule):
+			continue
+		var channels_value: Variant = rule.get("channels", [])
+		if typeof(channels_value) != TYPE_ARRAY:
+			continue
+		for channel in (channels_value as Array):
+			out[int(channel)] = true
+	return out
+
+
+func _rule_covers_room(rule: Dictionary, wanted: String) -> bool:
+	var rooms_value: Variant = rule.get("rooms", [])
+	if typeof(rooms_value) != TYPE_ARRAY:
+		return false
+	for room in (rooms_value as Array):
+		if _room_key(_s(room)) == wanted:
+			return true
+	return false
+
+
+func _rule_satisfied(rule: Dictionary) -> bool:
+	## True once the story has reached the point where the sprites belong.
+	var after_value: Variant = rule.get("after_meeting", null)
+	if after_value != null and not GameState.is_meeting_done(_s(after_value)):
+		return false
+	var from_day: Variant = rule.get("from_day", null)
+	if from_day != null and GameState.globalday < int(from_day):
+		return false
+	return true
 
 
 func is_hub(movie: String) -> bool:

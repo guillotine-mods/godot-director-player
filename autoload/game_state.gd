@@ -35,6 +35,14 @@ const MEETING_TRIGGERS: Array[Dictionary] = [
 	{"hub": "DAY1", "phase": "day", "room": "field", "day": 1, "index": 4, "movie": "PATDAY1", "require_done": [1]},
 ]
 
+## Movie stem → index into `meetings`. Several stems map to one slot because the
+## original data and the render_model export disagree on spelling.
+const MEETING_INDEX := {
+	"murder1": 0, "hatday1": 1, "mrfday1": 2, "ishday1": 3,
+	"patpip1": 4, "patday1": 4, "tofircpt": 5, "allin": 6,
+	"goldodead": 7, "golddead": 7,
+}
+
 ## The three rooms the player returns to. Hub membership is also declared in
 ## data/movie_context.json, which the runtime reads; this mirror keeps GameState
 ## usable on its own (Save Editor, tests) without loading the context file.
@@ -237,16 +245,19 @@ func is_minigame_movie(movie: String) -> bool:
 	return movie.to_upper() in MINIGAME_MOVIES
 
 
+func is_meeting_done(name: String) -> bool:
+	## Named lookup for story gates, e.g. "has the murder happened yet".
+	var idx: int = int(MEETING_INDEX.get(name.to_lower(), -1))
+	if idx < 0 or idx >= meetings.size():
+		return false
+	return str(meetings[idx]).to_lower() == "done"
+
+
 func mark_meeting_done_by_movie(stem: String) -> void:
 	var lower := stem.to_lower()
-	var aliases := {
-		"murder1": 0, "hatday1": 1, "mrfday1": 2, "ishday1": 3,
-		"patpip1": 4, "patday1": 4, "tofircpt": 5, "allin": 6,
-		"goldodead": 7, "golddead": 7,
-	}
-	if not aliases.has(lower):
+	if not MEETING_INDEX.has(lower):
 		return
-	var idx: int = aliases[lower]
+	var idx: int = int(MEETING_INDEX[lower])
 	if idx >= meetings.size():
 		return
 	if meetings[idx] == "done":

@@ -63,6 +63,7 @@ var _movie_transition_attempt_generation: int = 0
 var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
+var _hidden_channels: Dictionary = {}
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -216,6 +217,11 @@ func _remember_transition(nav: Variant) -> void:
 	_pending_destination = destination
 
 
+func is_channel_hidden(channel: int) -> bool:
+	## Story-gated score channel: present in the export, not yet in the story.
+	return _hidden_channels.has(channel)
+
+
 func _clear_pending_transition() -> void:
 	_pending_transition = ""
 	_pending_destination = ""
@@ -241,7 +247,9 @@ func enter_frame(index: int) -> void:
 	if fps > 0.0:
 		current_fps = fps
 	waiting_for_click = bool(frame.get("wait_click", false))
-	puppet.sync_from_frame(frame, marker_name_for_frame(frame_index), loader.stage_size)
+	var room := marker_name_for_frame(frame_index)
+	_hidden_channels = context.hidden_channels(loader.movie_name, room)
+	puppet.sync_from_frame(frame, room, loader.stage_size)
 	AudioDirector.play_frame_sounds(frame)
 	GameState.remember_location(loader.movie_name, label_near_frame(frame_index), frame_index)
 	frame_changed.emit(frame_index)
@@ -737,6 +745,8 @@ func clickable_sprites(frame: Dictionary) -> Array:
 		if typeof(sprite) != TYPE_DICTIONARY:
 			continue
 		if not bool(sprite.get("clickable", false)):
+			continue
+		if is_channel_hidden(int(sprite.get("channel", 0))):
 			continue
 		var on_click: Dictionary = sprite.get("on_click", {})
 		var nav: Variant = on_click.get("nav", null)
