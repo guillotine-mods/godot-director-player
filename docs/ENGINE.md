@@ -9,7 +9,7 @@ Native Godot score runner for Piposh 2, using `assets/render_model` (frames / me
 | `director/director_runtime.gd` | Tempo clock, `game_step`, `goto_movie`, clicks, save/load intercept |
 | `director/nav_actions.gd` | Resolve `label` / `movie` / `walk` / `marker` / `hold` / `quit` |
 | `director/puppet_controller.gd` | Channel 30 Piposh stand/walk + room arrive |
-| `director/render_model_loader.gd` | JSON + BMP via `Image.load`, matte / transparent inks |
+| `director/render_model_loader.gd` | JSON + BMP via `Image.load`, matte / transparent inks, local-first linked-cast lookup |
 | `director/movie_player.gd` | Stage view, widescreen transform, draw + input shell |
 | `autoload/audio_director.gd` | Multi-channel `playFile` / `soundBusy` (runtime WAV) |
 | `autoload/game_state.gd` | Inventory, day, meetings, JSON save slots |
@@ -47,6 +47,13 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 - Transparent inks: 1, 8, 9, 36, 39 (masked with `ink & 0x3f`).
 - Matte: edge flood-fill of near-white paper.
 - Sprites drawn low→high channel; inventory icons use reg-point on slot center.
+- `assets/render_model/cast_registry.json` is generated data owned by
+  `tools/generate_cast_registry.py`. Movie-local `members.json` entries win;
+  missing linked members resolve through the movie's `cast_libs` name and the
+  registry's canonical standalone export bitmap path.
+- Linked names are collected from `cast_libs`; the corresponding canonical
+  standalone exports provide the registry metadata and bitmaps. Regenerate it
+  after render-model exports change: `python3 tools/generate_cast_registry.py`.
 
 ## Controls
 
