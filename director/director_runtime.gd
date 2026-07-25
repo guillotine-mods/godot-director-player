@@ -53,6 +53,7 @@ var route_stack: Array[Dictionary] = []
 
 var _accum_ms: float = 0.0
 var _time_ms: float = 0.0
+var _movie_load_generation: int = 0
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -75,6 +76,11 @@ func available_movies() -> PackedStringArray:
 	return loader.available_movies()
 
 
+func _mark_movie_loaded() -> void:
+	_movie_load_generation += 1
+	_accum_ms = 0.0
+
+
 func tick(delta: float) -> void:
 	_time_ms += delta * 1000.0
 	if not running or loader.frames.is_empty():
@@ -87,10 +93,9 @@ func tick(delta: float) -> void:
 	var steps_to_run := mini(steps_due, MAX_SCORE_STEPS_PER_TICK)
 	_accum_ms = fmod(_accum_ms, frame_ms)
 	for _step in range(steps_to_run):
-		var movie_name := loader.movie_name
+		var movie_load_generation := _movie_load_generation
 		game_step()
-		if loader.movie_name != movie_name:
-			_accum_ms = 0.0
+		if _movie_load_generation != movie_load_generation:
 			break
 
 
@@ -209,11 +214,11 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 	if err != OK:
 		GameState.emit_log("Failed to load movie %s" % movie_name, "error")
 		return false
+	_mark_movie_loaded()
 
 	waiting_for_click = false
 	menu_hover_channel = -1
 	hovered_sprite = {}
-	_accum_ms = 0.0
 
 	if to in ["strtgame", "exodus"] or (to == "day1" and from in ["strtgame", "exodus", ""]):
 		puppet.reset()
@@ -322,6 +327,7 @@ func go_back() -> bool:
 	var err := loader.load_movie(find_movie_name(movie) if find_movie_name(movie) != "" else movie)
 	if err != OK:
 		return false
+	_mark_movie_loaded()
 	waiting_for_click = false
 	movie_changed.emit(loader.movie_name)
 	enter_frame(frame)
