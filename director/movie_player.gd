@@ -131,6 +131,110 @@ func _registry_score_stage_position(sprite: Dictionary, member: Dictionary) -> V
 	)
 
 
+func _film_loop_parent_rect(sprite: Dictionary, film_loop: Dictionary) -> Rect2:
+	var initial_rect_value: Variant = film_loop.get("initial_rect", {})
+	if typeof(initial_rect_value) != TYPE_DICTIONARY:
+		return Rect2()
+	var initial_rect: Dictionary = initial_rect_value
+	var initial_width: float = float(initial_rect.get("right", 0)) - float(initial_rect.get("left", 0))
+	var initial_height: float = float(initial_rect.get("bottom", 0)) - float(initial_rect.get("top", 0))
+	var parent_width: float = float(sprite.get("width", film_loop.get("width", 0)))
+	var parent_height: float = float(sprite.get("height", film_loop.get("height", 0)))
+	if initial_width <= 0.0 or initial_height <= 0.0 or parent_width <= 0.0 or parent_height <= 0.0:
+		return Rect2()
+
+	var loc_h: float = float(sprite.get("loc_h", sprite.get("x", 0)))
+	var loc_v: float = float(sprite.get("loc_v", sprite.get("y", 0)))
+	return Rect2(loc_h - parent_width * 0.5, loc_v - parent_height * 0.5, parent_width, parent_height)
+
+
+func _film_loop_child_channel(child: Variant) -> int:
+	return int(child.get("channel", 0)) if typeof(child) == TYPE_DICTIONARY else 0
+
+
+func _draw_film_loop(
+	canvas: Control,
+	sprite: Dictionary,
+	film_loop: Dictionary,
+	channel: int,
+	sx: float,
+	sy: float,
+) -> bool:
+	var parent_rect := _film_loop_parent_rect(sprite, film_loop)
+	if parent_rect.size.x <= 0.0 or parent_rect.size.y <= 0.0:
+		return false
+	var frames_value: Variant = film_loop.get("frames", [])
+	if typeof(frames_value) != TYPE_ARRAY:
+		return false
+	var frames: Array = frames_value
+	if frames.is_empty():
+		return false
+
+	var selected_index: int = clampi(runtime.film_loop_frame(channel), 0, frames.size() - 1)
+	var selected_frame_value: Variant = frames[selected_index]
+	if typeof(selected_frame_value) != TYPE_DICTIONARY:
+		return true
+	var selected_frame: Dictionary = selected_frame_value
+	var child_sprites_value: Variant = selected_frame.get("sprites", [])
+	if typeof(child_sprites_value) != TYPE_ARRAY:
+		return true
+	var child_sprites: Array = child_sprites_value.duplicate()
+	child_sprites.sort_custom(func(a, b): return _film_loop_child_channel(a) < _film_loop_child_channel(b))
+
+	var initial_rect: Dictionary = film_loop.get("initial_rect", {})
+	var initial_left: float = float(initial_rect.get("left", 0))
+	var initial_top: float = float(initial_rect.get("top", 0))
+	var initial_width: float = float(initial_rect.get("right", 0)) - initial_left
+	var initial_height: float = float(initial_rect.get("bottom", 0)) - initial_top
+	var stage_scale := Vector2(parent_rect.size.x / initial_width, parent_rect.size.y / initial_height)
+	var parent_stretched := not is_equal_approx(parent_rect.size.x, initial_width) \
+		or not is_equal_approx(parent_rect.size.y, initial_height)
+	var registry_cast_name: String = str(film_loop.get("_registry_cast_name", ""))
+
+	for child_sprite in child_sprites:
+		if typeof(child_sprite) != TYPE_DICTIONARY:
+			continue
+		var child: Dictionary = child_sprite
+		var child_cast_id: int = int(child.get("cast_id", 0))
+		var child_member: Dictionary = runtime.loader.get_registry_member(registry_cast_name, child_cast_id)
+		if child_member.is_empty():
+			continue
+		var child_ink: int = int(child.get("ink", 0))
+		var child_texture: Texture2D = runtime.loader.get_registry_texture(
+			registry_cast_name,
+			child_cast_id,
+			RenderModelLoader.is_transparent_ink(child_ink),
+		)
+		if child_texture == null:
+			continue
+
+		var child_width: float = float(child.get("width", 0))
+		var child_height: float = float(child.get("height", 0))
+		var draw_width: float = parent_rect.size.x if parent_stretched else child_width
+		var draw_height: float = parent_rect.size.y if parent_stretched else child_height
+		if draw_width <= 0.0 or draw_height <= 0.0:
+			continue
+		var child_start := parent_rect.position + Vector2(
+			(float(child.get("start_x", 0)) - initial_left) * stage_scale.x,
+			(float(child.get("start_y", 0)) - initial_top) * stage_scale.y,
+		)
+		var member_width: float = maxf(float(child_member.get("width", 1)), 1.0)
+		var member_height: float = maxf(float(child_member.get("height", 1)), 1.0)
+		var reg_x: float = float(child_member.get("reg_offset_x", member_width * 0.5))
+		var reg_y: float = float(child_member.get("reg_offset_y", member_height * 0.5))
+		var child_top_left := child_start - Vector2(
+			reg_x * draw_width / member_width,
+			reg_y * draw_height / member_height,
+		)
+		canvas.draw_texture_rect(
+			child_texture,
+			Rect2(child_top_left.x * sx, child_top_left.y * sy, draw_width * sx, draw_height * sy),
+			false,
+		)
+
+	return true
+
+
 func _log_frame_texture_stats(tag: String) -> void:
 	var frame: Dictionary = runtime.loader.get_frame(runtime.frame_index)
 	var ok := 0
@@ -264,6 +368,11 @@ func draw_current_frame(canvas: Control) -> void:
 			and STRTGAME_MENU_HOVER.has(channel)
 		):
 			cast_id = int(STRTGAME_MENU_HOVER[channel]["hover"])
+
+		if inv.is_empty():
+			var film_loop: Dictionary = runtime.loader.get_film_loop(draw_lib, cast_id)
+			if not film_loop.is_empty() and _draw_film_loop(canvas, sprite, film_loop, channel, sx, sy):
+				continue
 
 		var member: Dictionary = {}
 		var has_image: bool = bool(sprite.get("has_image", false))
