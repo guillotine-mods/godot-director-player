@@ -26,6 +26,7 @@ var _texture_cache: Dictionary = {}
 var _matte_cache: Dictionary = {}
 var _resolved_member_cache: Dictionary = {}
 var _missing_member_keys: Dictionary = {}
+var _missing_linked_member_keys: Dictionary = {}
 var _missing_texture_keys: Dictionary = {}
 
 
@@ -102,6 +103,7 @@ func load_movie(name: String) -> Error:
 	_matte_cache.clear()
 	_resolved_member_cache.clear()
 	_missing_member_keys.clear()
+	_missing_linked_member_keys.clear()
 	_missing_texture_keys.clear()
 	return OK
 
@@ -176,23 +178,25 @@ func get_linked_member(cast_lib: int, cast_id: int) -> Dictionary:
 		if typeof(cached_member) == TYPE_DICTIONARY and cached_member.has("_registry_directory"):
 			return cached_member
 		return {}
+	if _missing_linked_member_keys.has(cache_key):
+		return {}
 	var local_key := member_key(cast_lib, cast_id)
 	var local_member: Variant = members.get(local_key, {})
 	if typeof(local_member) == TYPE_DICTIONARY and not local_member.is_empty():
-		return {}
+		return _cache_missing_linked_member(cache_key)
 	if cast_lib == 1:
-		return {}
+		return _cache_missing_linked_member(cache_key)
 
 	var cast_name := _linked_cast_name(cast_lib)
 	if cast_name.is_empty():
-		return {}
+		return _cache_missing_linked_member(cache_key)
 	var registry_cast: Variant = cast_registry.get(cast_name, {})
 	if typeof(registry_cast) != TYPE_DICTIONARY:
-		return {}
+		return _cache_missing_linked_member(cache_key)
 	var registry_members: Variant = registry_cast.get("members", {})
 	var directory_value: Variant = registry_cast.get("directory", "")
 	if typeof(registry_members) != TYPE_DICTIONARY or typeof(directory_value) != TYPE_STRING:
-		return {}
+		return _cache_missing_linked_member(cache_key)
 	var directory: String = directory_value.strip_edges()
 	var registry_member: Variant = registry_members.get(str(cast_id), {})
 	if (
@@ -200,12 +204,17 @@ func get_linked_member(cast_lib: int, cast_id: int) -> Dictionary:
 		or registry_member.is_empty()
 		or not _is_safe_registry_directory(directory)
 	):
-		return {}
+		return _cache_missing_linked_member(cache_key)
 	var resolved_member: Dictionary = registry_member.duplicate(true)
 	resolved_member["_registry_directory"] = directory
 	resolved_member["_registry_cast_name"] = cast_name
 	_resolved_member_cache[cache_key] = resolved_member
 	return resolved_member
+
+
+func _cache_missing_linked_member(cache_key: String) -> Dictionary:
+	_missing_linked_member_keys[cache_key] = true
+	return {}
 
 
 func get_member(cast_lib: int, cast_id: int) -> Dictionary:
