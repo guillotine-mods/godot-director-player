@@ -43,10 +43,9 @@ func available_movies() -> PackedStringArray:
 
 
 func load_movie(name: String) -> Error:
-	movie_name = name
-	base_path = "%s/%s" % [MODEL_ROOT, name]
-	var frames_path := "%s/frames.json" % base_path
-	var members_path := "%s/members.json" % base_path
+	var next_base_path := "%s/%s" % [MODEL_ROOT, name]
+	var frames_path := "%s/frames.json" % next_base_path
+	var members_path := "%s/members.json" % next_base_path
 	if not FileAccess.file_exists(frames_path) or not FileAccess.file_exists(members_path):
 		return ERR_FILE_NOT_FOUND
 
@@ -55,14 +54,40 @@ func load_movie(name: String) -> Error:
 	if typeof(frames_json) != TYPE_DICTIONARY or typeof(members_json) != TYPE_DICTIONARY:
 		return ERR_INVALID_DATA
 
-	frames = frames_json.get("frames", [])
-	labels = frames_json.get("labels", {})
-	markers = frames_json.get("markers", [])
-	cast_libs = frames_json.get("cast_libs", members_json.get("cast_libs", {}))
-	members = members_json.get("members", {})
-	first_playable_frame = int(frames_json.get("first_playable_frame", 0))
-	var stage: Dictionary = frames_json.get("stage", {})
-	stage_size = Vector2i(int(stage.get("width", 640)), int(stage.get("height", 480)))
+	var next_frames: Variant = frames_json.get("frames", [])
+	var next_labels: Variant = frames_json.get("labels", {})
+	var next_markers: Variant = frames_json.get("markers", [])
+	var next_cast_libs: Variant = frames_json.get(
+		"cast_libs",
+		members_json.get("cast_libs", {})
+	)
+	var next_members: Variant = members_json.get("members", {})
+	var next_stage: Variant = frames_json.get("stage", {})
+	if (
+		typeof(next_frames) != TYPE_ARRAY
+		or typeof(next_labels) != TYPE_DICTIONARY
+		or typeof(next_markers) != TYPE_ARRAY
+		or typeof(next_cast_libs) != TYPE_DICTIONARY
+		or typeof(next_members) != TYPE_DICTIONARY
+		or typeof(next_stage) != TYPE_DICTIONARY
+	):
+		return ERR_INVALID_DATA
+
+	var next_first_playable_frame := int(frames_json.get("first_playable_frame", 0))
+	var next_stage_size := Vector2i(
+		int(next_stage.get("width", 640)),
+		int(next_stage.get("height", 480))
+	)
+
+	movie_name = name
+	base_path = next_base_path
+	frames = next_frames
+	labels = next_labels
+	markers = next_markers
+	cast_libs = next_cast_libs
+	members = next_members
+	first_playable_frame = next_first_playable_frame
+	stage_size = next_stage_size
 	_texture_cache.clear()
 	_matte_cache.clear()
 	return OK

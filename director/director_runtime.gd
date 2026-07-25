@@ -53,7 +53,7 @@ var route_stack: Array[Dictionary] = []
 
 var _accum_ms: float = 0.0
 var _time_ms: float = 0.0
-var _movie_load_generation: int = 0
+var _movie_transition_attempt_generation: int = 0
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -76,8 +76,11 @@ func available_movies() -> PackedStringArray:
 	return loader.available_movies()
 
 
+func _mark_movie_transition_attempted() -> void:
+	_movie_transition_attempt_generation += 1
+
+
 func _mark_movie_loaded() -> void:
-	_movie_load_generation += 1
 	_accum_ms = 0.0
 
 
@@ -93,9 +96,9 @@ func tick(delta: float) -> void:
 	var steps_to_run := mini(steps_due, MAX_SCORE_STEPS_PER_TICK)
 	_accum_ms = fmod(_accum_ms, frame_ms)
 	for _step in range(steps_to_run):
-		var movie_load_generation := _movie_load_generation
+		var transition_attempt_generation := _movie_transition_attempt_generation
 		game_step()
-		if _movie_load_generation != movie_load_generation:
+		if _movie_transition_attempt_generation != transition_attempt_generation:
 			break
 
 
@@ -185,14 +188,23 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 	if raw == "hezsave" or find_movie_name(stem).to_lower() == "hezsave":
 		return _handle_hezsave(label_opt)
 
+	_mark_movie_transition_attempted()
 	var movie_name := find_movie_name(stem)
 	if movie_name == "":
 		GameState.emit_log('go movie "%s" — not in render_model' % stem, "warn")
 		nav_event.emit("Missing movie: %s" % stem)
 		return false
 
-	var from := loader.movie_name.to_lower()
+	var from_movie_name := loader.movie_name
+	var from := from_movie_name.to_lower()
 	var to := movie_name.to_lower()
+
+	GameState.emit_log("Loading movie %s …" % movie_name, "info")
+	var err := loader.load_movie(movie_name)
+	if err != OK:
+		GameState.emit_log("Failed to load movie %s" % movie_name, "error")
+		return false
+	_mark_movie_loaded()
 
 	if to == "exodus" and from in ["strtgame", "saveload", ""]:
 		GameState.new_game()
@@ -201,20 +213,14 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		GameState.mark_meeting_done_by_movie(from)
 
 	if not (to == "day1" and from not in ["", "strtgame", "exodus", "day1"]):
-		if loader.movie_name != "":
-			route_stack.append({"movie": loader.movie_name, "frame": frame_index})
+		if from_movie_name != "":
+			route_stack.append({"movie": from_movie_name, "frame": frame_index})
 	elif not route_stack.is_empty():
 		var top: Dictionary = route_stack[route_stack.size() - 1]
 		if _s(top.get("movie", "")).to_lower() == from:
 			route_stack.pop_back()
 
 	AudioDirector.stop_all()
-	GameState.emit_log("Loading movie %s …" % movie_name, "info")
-	var err := loader.load_movie(movie_name)
-	if err != OK:
-		GameState.emit_log("Failed to load movie %s" % movie_name, "error")
-		return false
-	_mark_movie_loaded()
 
 	waiting_for_click = false
 	menu_hover_channel = -1
@@ -320,14 +326,16 @@ func go_back() -> bool:
 			goto_movie("strtgame")
 			return true
 		return false
-	var prev: Dictionary = route_stack.pop_back()
+	var prev: Dictionary = route_stack[route_stack.size() - 1]
 	var movie := _s(prev.get("movie", "DAY1"), "DAY1")
 	var frame := int(prev.get("frame", 0))
-	AudioDirector.stop_all()
+	_mark_movie_transition_attempted()
 	var err := loader.load_movie(find_movie_name(movie) if find_movie_name(movie) != "" else movie)
 	if err != OK:
 		return false
 	_mark_movie_loaded()
+	route_stack.pop_back()
+	AudioDirector.stop_all()
 	waiting_for_click = false
 	movie_changed.emit(loader.movie_name)
 	enter_frame(frame)
