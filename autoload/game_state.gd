@@ -21,12 +21,24 @@ const DAY1_MEETINGS_INIT: PackedStringArray = [
 	"goldodead",
 ]
 
+## Which meeting fires on arrival in a room, per hub and per day.
+##
+## The original table lives in Lingo (`peoplefunk`), which is not available in
+## this repo, so only entries verified against the existing Day 1 behaviour are
+## listed. Day 2, night and ending triggers are deliberately absent rather than
+## guessed: inventing them would write invented progression into save files.
+## `hub` and `phase` exist so those rows can be added without reshaping anything.
 const MEETING_TRIGGERS: Array[Dictionary] = [
-	{"room": "clif2", "day": 1, "index": 0, "movie": "MURDER1"},
-	{"room": "veranda", "day": 1, "index": 1, "movie": "HATDAY1", "require_done": []},
-	{"room": "shore2", "day": 1, "index": 2, "movie": "MRFDAY1", "require_done": [1]},
-	{"room": "field", "day": 1, "index": 4, "movie": "PATDAY1", "require_done": [1]},
+	{"hub": "DAY1", "phase": "day", "room": "clif2", "day": 1, "index": 0, "movie": "MURDER1"},
+	{"hub": "DAY1", "phase": "day", "room": "veranda", "day": 1, "index": 1, "movie": "HATDAY1", "require_done": []},
+	{"hub": "DAY1", "phase": "day", "room": "shore2", "day": 1, "index": 2, "movie": "MRFDAY1", "require_done": [1]},
+	{"hub": "DAY1", "phase": "day", "room": "field", "day": 1, "index": 4, "movie": "PATDAY1", "require_done": [1]},
 ]
+
+## The three rooms the player returns to. Hub membership is also declared in
+## data/movie_context.json, which the runtime reads; this mirror keeps GameState
+## usable on its own (Save Editor, tests) without loading the context file.
+const HUB_MOVIES: PackedStringArray = ["DAY1", "HOTEL1", "NIGHT1"]
 
 ## Movies treated as skippable minigames when QoL skip is enabled.
 const MINIGAME_MOVIES: PackedStringArray = [
@@ -42,6 +54,9 @@ var current_label: String = "mainmenu"
 var current_frame: int = 0
 var route_stack: Array[Dictionary] = []
 var whichsnd: String = "sea"
+## Last hub entered. Drives where a movie with no declared return sends the
+## player, replacing the DAY1 @shore2 literal that used to be hardcoded.
+var current_hub_movie: String = "DAY1"
 
 
 func _ready() -> void:
@@ -64,6 +79,7 @@ func new_game() -> void:
 	globalday = 1
 	meetings = DAY1_MEETINGS_INIT.duplicate()
 	whichsnd = "sea"
+	current_hub_movie = "DAY1"
 	route_stack.clear()
 	_init_objects_field()
 	current_movie = "strtgame"
@@ -91,6 +107,7 @@ func to_dict() -> Dictionary:
 		"current_label": current_label,
 		"current_frame": current_frame,
 		"whichsnd": whichsnd,
+		"current_hub": current_hub_movie,
 		"route_stack": route_stack.duplicate(true),
 	}
 
@@ -107,6 +124,11 @@ func from_dict(data: Dictionary) -> void:
 	current_label = str(data.get("current_label", "shore2"))
 	current_frame = int(data.get("current_frame", 0))
 	whichsnd = str(data.get("whichsnd", "sea"))
+	# Older saves predate the hub field; infer it from where they were saved.
+	var saved_hub := str(data.get("current_hub", ""))
+	if saved_hub == "" and current_movie.to_upper() in HUB_MOVIES:
+		saved_hub = current_movie
+	current_hub_movie = saved_hub if saved_hub != "" else "DAY1"
 	route_stack.clear()
 	for entry in data.get("route_stack", []):
 		if typeof(entry) == TYPE_DICTIONARY:
@@ -234,12 +256,36 @@ func mark_meeting_done_by_movie(stem: String) -> void:
 	emit_log("Meeting done: %s" % lower, "info")
 
 
+func current_hub() -> String:
+	return current_hub_movie if current_hub_movie != "" else "DAY1"
+
+
+func current_phase() -> String:
+	return "night" if current_hub_movie.to_upper() == "NIGHT1" else "day"
+
+
+func enter_hub(movie: String) -> void:
+	if movie.to_upper() not in HUB_MOVIES:
+		return
+	if current_hub_movie == movie:
+		return
+	current_hub_movie = movie
+	emit_log("Hub: %s (day %d, %s)" % [movie, globalday, current_phase()], "info")
+	state_changed.emit()
+
+
 func people_funk(room_label: String) -> String:
 	var room := room_label.to_lower().trim_suffix("go")
+	var hub := current_hub().to_upper()
+	var phase := current_phase()
 	for trig in MEETING_TRIGGERS:
 		if str(trig.room) != room:
 			continue
 		if int(trig.day) != globalday:
+			continue
+		if str(trig.get("hub", "DAY1")).to_upper() != hub:
+			continue
+		if str(trig.get("phase", "day")) != phase:
 			continue
 		var idx: int = int(trig.index)
 		if idx < meetings.size() and str(meetings[idx]).to_lower() == "done":

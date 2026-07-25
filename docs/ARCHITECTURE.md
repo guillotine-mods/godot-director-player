@@ -32,6 +32,7 @@ Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
   "current_label": "shore2",
   "current_frame": 120,
   "whichsnd": "sea",
+  "current_hub": "DAY1",
   "note": "optional",
   "saved_at": "..."
 }
@@ -53,4 +54,6 @@ Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
 - `AppSettings.upscale_mode` — scale factor + filter
 - `AppSettings.test_mode_enhanced_graphics` — switch to smooth filtering; later: alternate texture root
 - `GameState.MINIGAME_MOVIES` — Esc skip targets
+- `GameState.MEETING_TRIGGERS` — room/day/hub/phase meeting table (Day 1 only so far)
+- `data/movie_context.json` — hubs and transition destinations
 - `InputRouter` — single place to extend remapping / accessibility

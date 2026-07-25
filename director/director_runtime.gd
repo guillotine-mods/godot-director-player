@@ -38,35 +38,15 @@ const MOVIE_ALIASES := {
 
 const MAX_GUARD_HOLD_MS := 20000.0
 const MAX_SCORE_STEPS_PER_TICK := 3
-# Transition animation label → the original Lingo nextroomdata destination.
-const DAY1_TRANSITION_REDIRECTS := {
-	"checkdown": "check",
-	"dwarfdown": "dwarfs",
-	"edge2up": "lighthouse",
-	"edge6down": "edge6",
-	"exitforest1fromclif": "exitforest1",
-	"exitforest1toclif": "clif",
-	"exitforest2frompath3": "exitforest2",
-	"forest1fromcheck": "forest1",
-	"forest1tocheck": "check",
-	"forest1toexit": "exitforest1",
-	"gatefromedge1": "gate",
-	"gatetoedge1": "edge1",
-	"gatetoveranda": "veranda",
-	"lighthousein": "stairs",
-	"path3up": "path4",
-	"path4tofield": "field",
-	"path4up": "path5",
-	"shore2up": "gate",
-	"stairsclimbdown": "stairs",
-	"stairsclimbup": "lighttop",
-	"swingup": "swing",
-	"tennisdown": "tennis",
-}
-const DAY1_DYNAMIC_REDIRECT_SCRIPT := 207
+## Lingo's dynamic room-redirect handler. Present in DAY1, NIGHT1, HOTEL1 and
+## AIR1, so this is not a Day 1 concern. Destinations live in MovieContext.
+const DYNAMIC_REDIRECT_SCRIPT := 207
+## Boot movies that are never treated as a hub the player can return to.
+const BOOT_MOVIES := ["strtgame", "exodus"]
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
+var context: MovieContext = MovieContext.new()
 
 var frame_index: int = 0
 var running: bool = true
@@ -80,8 +60,8 @@ var route_stack: Array[Dictionary] = []
 var _accum_ms: float = 0.0
 var _time_ms: float = 0.0
 var _movie_transition_attempt_generation: int = 0
-var _pending_day1_transition: String = ""
-var _pending_day1_destination: String = ""
+var _pending_transition: String = ""
+var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
 
 
@@ -98,6 +78,7 @@ func _init() -> void:
 
 
 func boot() -> Error:
+	context.load_context()
 	return loader.load_index()
 
 
@@ -111,8 +92,10 @@ func _mark_movie_transition_attempted() -> void:
 
 func _mark_movie_loaded() -> void:
 	_accum_ms = 0.0
-	_clear_pending_day1_transition()
+	_clear_pending_transition()
 	_film_loop_channels.clear()
+	if context.is_hub(loader.movie_name):
+		GameState.enter_hub(loader.movie_name)
 
 
 func tick(delta: float) -> void:
@@ -140,7 +123,7 @@ func game_step() -> void:
 		return
 
 	var frame: Dictionary = loader.get_frame(frame_index)
-	if _try_day1_transition_redirect(frame):
+	if _try_transition_redirect(frame):
 		return
 	var nav: Variant = frame.get("nav", null)
 	var action: Dictionary = NavActions.resolve(nav, loader, frame_index)
@@ -187,50 +170,55 @@ func game_step() -> void:
 			_advance_or_hold()
 
 
-func _try_day1_transition_redirect(frame: Dictionary) -> bool:
-	if loader.movie_name.to_lower() != "day1":
-		return false
-	if frame.get("frame_script") != DAY1_DYNAMIC_REDIRECT_SCRIPT:
+func _try_transition_redirect(frame: Dictionary) -> bool:
+	## Without this the completed walk animation falls into the adjacent reverse
+	## animation and Piposh turns around. Applies to every movie using the
+	## handler, not just DAY1.
+	if frame.get("frame_script") != DYNAMIC_REDIRECT_SCRIPT:
 		return false
 
-	var transition := _pending_day1_transition
-	var destination := _pending_day1_destination
+	var movie := loader.movie_name
+	var transition := _pending_transition
+	var walked := transition != ""
+	var destination := _pending_destination
 	if transition == "":
 		transition = marker_name_for_frame(frame_index).to_lower()
 	if destination == "":
-		destination = _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
+		destination = context.transition_destination(movie, transition)
 	if destination == "":
+		if transition != "":
+			context.note_unmapped_transition(movie, transition, walked)
 		return false
 
-	_clear_pending_day1_transition()
+	_clear_pending_transition()
 	var destination_frame := loader.resolve_label(destination, false)
 	if destination_frame < 0:
-		nav_event.emit('Day 1 transition: %s → missing label "%s"' % [transition, destination])
+		nav_event.emit('%s transition: %s → missing label "%s"' % [movie, transition, destination])
 		return false
 
 	enter_frame(destination_frame)
-	nav_event.emit("Day 1 transition: %s → %s" % [transition, destination])
+	nav_event.emit("%s transition: %s → %s" % [movie, transition, destination])
 	return true
 
 
-func _remember_day1_transition(nav: Variant) -> void:
-	_clear_pending_day1_transition()
-	if loader.movie_name.to_lower() != "day1" or typeof(nav) != TYPE_DICTIONARY:
+func _remember_transition(nav: Variant) -> void:
+	_clear_pending_transition()
+	if typeof(nav) != TYPE_DICTIONARY:
 		return
 	var after: Variant = nav.get("after", null)
 	if typeof(after) != TYPE_DICTIONARY or _s(after.get("kind", "")).to_lower() != "label":
 		return
 	var transition := _s(after.get("value", "")).to_lower()
-	var destination := _s(DAY1_TRANSITION_REDIRECTS.get(transition, ""))
+	var destination := context.transition_destination(loader.movie_name, transition)
 	if destination == "":
 		return
-	_pending_day1_transition = transition
-	_pending_day1_destination = destination
+	_pending_transition = transition
+	_pending_destination = destination
 
 
-func _clear_pending_day1_transition() -> void:
-	_pending_day1_transition = ""
-	_pending_day1_destination = ""
+func _clear_pending_transition() -> void:
+	_pending_transition = ""
+	_pending_destination = ""
 
 
 func _advance_or_hold() -> void:
@@ -344,6 +332,17 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 	var from := from_movie_name.to_lower()
 	var to := movie_name.to_lower()
 
+	# Fourteen exports hold zero frames: they are .CST cast libraries the export
+	# pipeline emitted as movies. Loading one leaves a blank stage and a dead
+	# score, so refuse and keep the current movie running.
+	if not context.is_playable(loader.index, movie_name):
+		GameState.emit_log(
+			'go movie "%s" — not a playable movie (empty cast-library export)' % movie_name,
+			"warn"
+		)
+		nav_event.emit("Refused unplayable movie: %s" % movie_name)
+		return false
+
 	GameState.emit_log("Loading movie %s …" % movie_name, "info")
 	var err := loader.load_movie(movie_name)
 	if err != OK:
@@ -354,16 +353,26 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 	if to == "exodus" and from in ["strtgame", "saveload", ""]:
 		GameState.new_game()
 
-	if to == "day1" and from != "" and from not in ["day1", "strtgame", "exodus"]:
+	# A meeting is complete once it hands the player back to any hub. Checking
+	# only DAY1 missed ALLIN, ISHDAY1 and TOFIRCPT, which return to HOTEL1 and
+	# so could retrigger forever.
+	var returning_to_hub := (
+		context.is_hub(movie_name)
+		and from != ""
+		and not context.is_hub(from_movie_name)
+		and from not in BOOT_MOVIES
+	)
+	if returning_to_hub:
 		GameState.mark_meeting_done_by_movie(from)
-
-	if not (to == "day1" and from not in ["", "strtgame", "exodus", "day1"]):
-		if from_movie_name != "":
-			route_stack.append({"movie": from_movie_name, "frame": frame_index})
-	elif not route_stack.is_empty():
-		var top: Dictionary = route_stack[route_stack.size() - 1]
-		if _s(top.get("movie", "")).to_lower() == from:
-			route_stack.pop_back()
+		# Drop the outbound entry this return consumes. The old check compared
+		# the stack top against the movie being left rather than the one being
+		# entered, so it never matched and the stack grew on every excursion.
+		if not route_stack.is_empty():
+			var top: Dictionary = route_stack[route_stack.size() - 1]
+			if _s(top.get("movie", "")).to_lower() == to:
+				route_stack.pop_back()
+	elif from_movie_name != "":
+		route_stack.append({"movie": from_movie_name, "frame": frame_index})
 
 	AudioDirector.stop_all()
 
@@ -371,7 +380,8 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 	menu_hover_channel = -1
 	hovered_sprite = {}
 
-	if to in ["strtgame", "exodus"] or (to == "day1" and from in ["strtgame", "exodus", ""]):
+	# Reset only on a fresh run into a hub, never on a return from an excursion.
+	if to in BOOT_MOVIES or (context.is_hub(movie_name) and from in (BOOT_MOVIES + [""])):
 		puppet.reset()
 
 	var start := 0
@@ -404,7 +414,7 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		]
 	)
 
-	if to == "day1" and label_opt != "" and not bool(opts.get("from_meeting", false)):
+	if context.is_hub(movie_name) and label_opt != "" and not bool(opts.get("from_meeting", false)):
 		_try_people_funk(label_opt)
 	return true
 
@@ -573,7 +583,7 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 			pass
 		"walk", "walk_here":
 			var walk_nav: Variant = action.get("nav", nav)
-			_clear_pending_day1_transition()
+			_clear_pending_transition()
 			var ok: bool = puppet.start_walk(
 				walk_nav,
 				stage_pt,
@@ -581,7 +591,7 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 				marker_name_for_frame(frame_index)
 			)
 			if ok:
-				_remember_day1_transition(walk_nav)
+				_remember_transition(walk_nav)
 				running = true
 				nav_event.emit("walk started")
 			redraw_requested.emit()
@@ -642,17 +652,51 @@ func _try_people_funk(room_label: String) -> void:
 
 
 func _on_movie_end() -> void:
-	var m := loader.movie_name.to_upper()
-	if m == "EXODUS":
-		goto_movie("DAY1", null, {"label": "shore2"})
+	## Where a movie goes when its score runs out.
+	##
+	## Previously a hardcoded movie list sent every minigame and meeting to
+	## DAY1 @shore2. That teleported ARCADE2 out of the hotel, ignored SEA1's own
+	## return label, and left anything off the list — most visibly JOKE, reachable
+	## from DAY1, HOTEL1 and AIR1 — frozen on its final frame.
+	var movie := loader.movie_name
+	if movie == "" or loader.frames.is_empty():
 		return
-	if m in ["HEZSAVE", "SAVELOAD", "MAP"]:
+
+	# Hubs hold. Routing one to its caller would eject the player from the room
+	# they are standing in.
+	if context.is_hub(movie):
+		enter_frame(loader.frames.size() - 1)
+		return
+
+	if movie.to_upper() in ["HEZSAVE", "SAVELOAD", "MAP"]:
 		go_back()
 		return
-	if GameState.is_minigame_movie(m) or m in ["MURDER1", "HATDAY1", "MRFDAY1", "PATDAY1", "ISHDAY1", "TOFIRCPT", "ALLIN", "GOLDDEAD"]:
-		GameState.mark_meeting_done_by_movie(m)
-		goto_movie("DAY1", null, {"label": "shore2"})
+
+	# The movie's own declared hub return comes first. Using the caller here
+	# would livelock SEA1 and AIR1, whose launching DAY1 frames are themselves
+	# `movie sea1` / `movie air1`.
+	var hub_return: Dictionary = context.hub_return(loader)
+	if not hub_return.is_empty():
+		var target := _s(hub_return.get("movie", ""))
+		nav_event.emit("movie end: %s → %s" % [movie, target])
+		var opts := {"label": hub_return.get("label", null)}
+		var routed := goto_movie(target, hub_return.get("frame", null), opts)
+		if routed:
+			return
+
+	# No declared return, so fall back to whoever called us. This is JOKE's path.
+	if go_back():
+		nav_event.emit("movie end: %s → caller" % movie)
 		return
+
+	var hub := GameState.current_hub()
+	if goto_movie(hub):
+		nav_event.emit("movie end: %s → hub %s" % [movie, hub])
+		return
+
+	# Nothing routed. Hold on the last frame rather than re-running this handler
+	# on every tick.
+	GameState.emit_log("movie end: %s has nowhere to go — holding" % movie, "warn")
 	enter_frame(loader.frames.size() - 1)
 
 
@@ -666,11 +710,16 @@ func skip_current() -> void:
 			nav_event.emit("QoL skip → main menu")
 			enter_frame(menu_frame)
 			return
-	if GameState.is_minigame_movie(m) or m == "EXODUS":
+	if m == "EXODUS":
 		nav_event.emit("QoL skip → DAY1")
-		if m == "EXODUS":
-			GameState.new_game()
+		GameState.new_game()
 		goto_movie("DAY1", null, {"label": "shore2"})
+		return
+	if GameState.is_minigame_movie(m):
+		# Skipping a minigame exits the same way finishing it would, so skipping
+		# in the hotel arcade no longer drops the player on the Day 1 shore.
+		nav_event.emit("QoL skip → %s exit" % m)
+		_on_movie_end()
 
 
 func hint() -> void:
