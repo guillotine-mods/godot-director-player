@@ -9,6 +9,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from director_film_loops import extract_film_loops
+
 
 def read_object(path: Path) -> dict:
     """Read a JSON object, reporting malformed inputs without stopping generation."""
@@ -57,6 +59,12 @@ def main() -> int:
     parser.add_argument(
         "--output", type=Path, default=Path("assets/render_model/cast_registry.json")
     )
+    parser.add_argument(
+        "--chunks-root",
+        type=Path,
+        default=Path("../Piposh2-Web-Alpha/decompiled_chunks"),
+        help="Director chunk-dump root used to export type-2 film loops",
+    )
     args = parser.parse_args()
 
     if not args.model_root.is_dir():
@@ -89,7 +97,12 @@ def main() -> int:
         if directory_name:
             directories.setdefault(directory_name, members_path.parent)
 
+    chunks_available = args.chunks_root.is_dir()
+    if not chunks_available:
+        print(f"warning: film-loop chunks unavailable: {args.chunks_root}")
+
     casts: dict[str, dict] = {}
+    film_loop_count = 0
     for name in sorted(linked):
         directory = directories.get(name)
         if directory is None:
@@ -104,7 +117,14 @@ def main() -> int:
         if not members:
             print(f"warning: no internal members for linked cast {name} in {directory}")
             continue
-        casts[name] = {"directory": directory.name, "members": members}
+        cast = {"directory": directory.name, "members": members}
+        chunks_dir = args.chunks_root / directory.name / directory.name / "chunks"
+        if chunks_available and chunks_dir.is_dir():
+            film_loops = extract_film_loops(chunks_dir)
+            if film_loops:
+                cast["film_loops"] = film_loops
+                film_loop_count += len(film_loops)
+        casts[name] = cast
 
     contents = json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n"
     temporary_path: Path | None = None
@@ -131,7 +151,7 @@ def main() -> int:
                 pass
         print(f"error: cannot write {args.output}: {error}")
         return 1
-    print(f"wrote {args.output}: {len(casts)} casts")
+    print(f"wrote {args.output}: {len(casts)} casts, {film_loop_count} film loops")
     return 0
 
 
