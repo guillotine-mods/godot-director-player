@@ -116,13 +116,35 @@ func _on_save_ui_requested(mode: String) -> void:
 	save_ui_requested.emit(mode)
 
 
+func _registry_score_stage_position(sprite: Dictionary, member: Dictionary) -> Vector2:
+	var sprite_width: float = float(sprite.get("width", 1))
+	var sprite_height: float = float(sprite.get("height", 1))
+	var member_width: float = maxf(float(member.get("width", 1)), 1.0)
+	var member_height: float = maxf(float(member.get("height", 1)), 1.0)
+	var reg_x: float = float(member.get("reg_offset_x", member_width * 0.5))
+	var reg_y: float = float(member.get("reg_offset_y", member_height * 0.5))
+	var loc_h: float = float(sprite.get("loc_h", sprite.get("x", 0)))
+	var loc_v: float = float(sprite.get("loc_v", sprite.get("y", 0)))
+	return Vector2(
+		loc_h - reg_x * sprite_width / member_width,
+		loc_v - reg_y * sprite_height / member_height,
+	)
+
+
 func _log_frame_texture_stats(tag: String) -> void:
 	var frame: Dictionary = runtime.loader.get_frame(runtime.frame_index)
 	var ok := 0
 	var miss := 0
 	for sprite in frame.get("sprites", []):
-		if typeof(sprite) != TYPE_DICTIONARY or not bool(sprite.get("has_image", false)):
+		if typeof(sprite) != TYPE_DICTIONARY:
 			continue
+		var has_image: bool = bool(sprite.get("has_image", false))
+		if not has_image:
+			var member: Dictionary = runtime.loader.get_member(
+				int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0))
+			)
+			if not member.has("_registry_directory"):
+				continue
 		var tex: Texture2D = runtime.loader.get_texture(
 			int(sprite.get("cast_lib", 1)),
 			int(sprite.get("cast_id", 0)),
@@ -243,7 +265,13 @@ func draw_current_frame(canvas: Control) -> void:
 		):
 			cast_id = int(STRTGAME_MENU_HOVER[channel]["hover"])
 
-		if not bool(sprite.get("has_image", false)) and inv.is_empty():
+		var member: Dictionary = {}
+		var is_registry_member := false
+		var has_image: bool = bool(sprite.get("has_image", false))
+		if inv.is_empty():
+			member = runtime.loader.get_member(draw_lib, cast_id)
+			is_registry_member = member.has("_registry_directory")
+		if not has_image and inv.is_empty() and not is_registry_member:
 			continue
 
 		var ink: int = int(sprite.get("ink", 0))
@@ -259,7 +287,7 @@ func draw_current_frame(canvas: Control) -> void:
 
 		if not inv.is_empty():
 			# Inventory icons: natural size, reg-point on slot center (web parity).
-			var member: Dictionary = runtime.loader.get_member(draw_lib, cast_id)
+			member = runtime.loader.get_member(draw_lib, cast_id)
 			var nw: float = float(tex.get_width()) * sx
 			var nh: float = float(tex.get_height()) * sy
 			var reg_x: float = float(member.get("reg_offset_x", tex.get_width() * 0.5)) * sx
@@ -269,6 +297,10 @@ func draw_current_frame(canvas: Control) -> void:
 			canvas.draw_texture_rect(tex, Rect2(cx - reg_x, cy - reg_y, nw, nh), false)
 		else:
 			# Score sprites stretch to sprite rect (Director default).
+			if is_registry_member:
+				var stage_position := _registry_score_stage_position(sprite, member)
+				x = stage_position.x * sx
+				y = stage_position.y * sy
 			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
 	if puppet.active:
