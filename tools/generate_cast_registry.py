@@ -64,12 +64,18 @@ def main() -> int:
         if not isinstance(cast_libs, dict):
             print(f"warning: invalid cast_libs in {frames_path}")
             continue
-        for library in cast_libs.values():
+        for library_id, library in cast_libs.items():
             if not isinstance(library, dict):
                 print(f"warning: invalid cast library in {frames_path}")
                 continue
             name = norm(library.get("name"))
-            if name and name != "internal":
+            if not name:
+                print(
+                    "warning: invalid cast library name for "
+                    f"{library_id!r} in {frames_path}: expected non-empty string"
+                )
+                continue
+            if name != "internal":
                 linked.add(name)
 
     for members_path in sorted(args.model_root.glob("*/members.json"), key=lambda path: path.parent.name.lower()):
