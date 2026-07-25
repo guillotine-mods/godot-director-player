@@ -9,6 +9,8 @@ from pathlib import Path
 
 MAIN_CHANNEL_SIZE = 288
 SPRITE_CHANNEL_SIZE = 48
+MAX_D7_SPRITE_CHANNELS = 200
+MAX_D7_CHANNEL_DATA = MAIN_CHANNEL_SIZE + SPRITE_CHANNEL_SIZE * MAX_D7_SPRITE_CHANNELS
 
 
 def _u32(data: bytes, offset: int, endian: str = ">") -> int:
@@ -172,6 +174,9 @@ def parse_scvw(path: Path) -> list[dict] | None:
         return None
     list_size = _u32(data, list_start + 4)
     max_data_len = _u32(data, list_start + 8)
+    if max_data_len > MAX_D7_CHANNEL_DATA:
+        _warning(f"SCVW channel data exceeds D7 limit in {path}")
+        return None
     index_start = list_start + 12
     frame_data_offset = index_start + list_size * 4
     if list_size == 0 or index_start + 4 > len(data) or frame_data_offset > len(data):
@@ -188,7 +193,9 @@ def parse_scvw(path: Path) -> list[dict] | None:
         _warning(f"invalid SCVW first frame offset {path}")
         return None
 
-    buffer = bytearray(max(max_data_len, MAIN_CHANNEL_SIZE + SPRITE_CHANNEL_SIZE * 200) + SPRITE_CHANNEL_SIZE)
+    # Preserve the established D7 capacity with one trailing record for a
+    # boundary delta, without trusting an unbounded resource declaration.
+    buffer = bytearray(MAX_D7_CHANNEL_DATA + SPRITE_CHANNEL_SIZE)
     frames: list[dict] = []
     position = first_frame
     while position + 2 <= len(data) and position - frame_data_offset < inner_stream_size:
