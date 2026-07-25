@@ -57,6 +57,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if not args.model_root.is_dir():
+        print(f"error: model root is not a directory: {args.model_root}")
+        return 1
+
     linked: set[str] = set()
     directories: dict[str, Path] = {}
     for frames_path in sorted(args.model_root.glob("*/frames.json"), key=lambda path: path.parent.name.lower()):
@@ -100,10 +104,14 @@ def main() -> int:
             continue
         casts[name] = {"directory": directory.name, "members": members}
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    except OSError as error:
+        print(f"error: cannot write {args.output}: {error}")
+        return 1
     print(f"wrote {args.output}: {len(casts)} casts")
     return 0
 
