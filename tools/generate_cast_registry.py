@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 
@@ -104,12 +106,29 @@ def main() -> int:
             continue
         casts[name] = {"directory": directory.name, "members": members}
 
+    contents = json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n"
+    temporary_path: Path | None = None
     try:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=args.output.parent,
+            prefix=f".{args.output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(contents)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, args.output)
     except OSError as error:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         print(f"error: cannot write {args.output}: {error}")
         return 1
     print(f"wrote {args.output}: {len(casts)} casts")
