@@ -197,6 +197,23 @@ func _linked_cast_name(cast_lib: int) -> String:
 	return name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
 
 
+func cast_lib_index(name: String) -> int:
+	## Linked libraries sit at a different index in every movie: `master` is 2
+	## in DAY1, 3 in HOTEL1, 4 in SEA1. Returns -1 when the movie does not link
+	## the library at all.
+	var wanted := name.strip_edges().to_lower()
+	for key in cast_libs.keys():
+		var library: Variant = cast_libs[key]
+		if typeof(library) != TYPE_DICTIONARY:
+			continue
+		var lib_name: Variant = (library as Dictionary).get("name", "")
+		if typeof(lib_name) != TYPE_STRING:
+			continue
+		if str(lib_name).strip_edges().to_lower() == wanted:
+			return int(key)
+	return -1
+
+
 func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
 	if cast_lib == 1:
 		return {}

@@ -10,6 +10,12 @@ This is written so someone with a Windows machine can do it without knowing
 anything about the project. **Nothing needs installing, no Python, no build
 tools.** Steps 1 and 2 are the whole job.
 
+> **The Lingo is already recovered.** It is committed at `reference/lingo/`, with
+> the Director text members at `reference/chunks/`; see `reference/README.md` for
+> provenance and layout. Step 3 below is how it was produced and how to reproduce
+> it, not outstanding work. Do not conclude from this document that room
+> conditions and progression logic have to be inferred: read the Lingo.
+
 ## What we need and why
 
 | Type | Files | Size | Why |
@@ -53,7 +59,10 @@ same job.
 222 missing cast members are in it. If something goes wrong and only one file
 can be recovered, make it that one.
 
-## Step 3 (optional, and worth a lot) — ProjectorRays
+## Step 3 (already done) — ProjectorRays
+
+**This step has been completed and its output is in the repository at
+`reference/`.** What follows is the recipe, kept for reproducing the dump.
 
 If whoever is helping is comfortable with a command line, this step is worth
 more than everything above, because it recovers the original Lingo.
@@ -72,6 +81,10 @@ Check `--help` for how it names output — the layout we consume is
 Without this step we still fix the missing characters. With it we also get
 `peoplefunk` and the room-condition logic, which is the difference between
 patching conditions one at a time and porting them wholesale.
+
+Note that the first run dumped `MASTER`'s chunks but not its scripts, so verify
+`casts/` is non-empty afterward. `MASTER` owns `objectsfield`, `Dprocess`,
+`points` and the inventory HUD, so missing it hides the whole inventory system.
 
 ## Step 4 — verification, on the Mac
 
