@@ -546,6 +546,19 @@ func _go(args: Array) -> Variant:
 	if args.size() >= 2 and LingoValue.to_str(first).to_lower() == "movie":
 		runtime.goto_movie(LingoValue.to_str(args[1]))
 		return 0
+	# `go(1, "exodus.dir")` is "frame 1 of that movie". Without this the second
+	# argument was dropped and the first read as a frame in the *current* movie,
+	# so New Game jumped strtgame to its own frame 0, replayed the title
+	# sequence and came back to the menu: the intro appeared to loop forever.
+	# Used 64 times across the corpus, including every `peoplefunk` meeting.
+	# The path is stripped because the originals prefix `the moviePath` or
+	# `cdsavepath`, neither of which means anything here.
+	if args.size() >= 2:
+		var target := LingoValue.to_str(args[1]).strip_edges()
+		var lowered := target.to_lower()
+		if lowered.ends_with(".dxr") or lowered.ends_with(".dir"):
+			runtime.goto_movie(target.get_file().get_basename(), LingoValue.to_int(first))
+			return 0
 	if typeof(first) == TYPE_STRING:
 		var text := (first as String)
 		if text.to_lower().ends_with(".dxr") or text.to_lower().ends_with(".dir"):
