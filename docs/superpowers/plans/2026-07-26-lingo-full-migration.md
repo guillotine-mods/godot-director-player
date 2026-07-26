@@ -93,7 +93,54 @@ Expressions: integer, float and string literals; identifiers; parenthesised grou
 
 `objectsfield`, `Dprocess` and `points` must alias `GameState`, not shadow it, so saves keep round-tripping.
 
-### Phase 4 — Script attachment, and the score gap
+### Phase 4 — Script attachment (PREMISE DISPROVEN, see below)
+
+**Measured 2026-07-26, and the opposite of what this phase assumed.** The score
+does not carry per-sprite script references in this movie, so there is nothing
+to extract. Evidence from DAY1's `VWSC-1827.bin`:
+
+- The score decodes fully: 6-int32 header, an offsets table of `entryCount + 1`,
+  then the entries. Entry 0 is the delta-compressed frame stream (2784 frames,
+  version 13, 48-byte records, 1006 channels), and it replays to exactly the
+  2784 frames the export has.
+- The 48-byte sprite record is fully mapped and every field cross-checks against
+  `frames.json`: byte 0 spriteType, byte 1 ink+flags, byte 2 foreColor, byte 3
+  backColor, u16@4 castLib, u16@6 memberNum, i16@12 locV, i16@14 locH, u16@16
+  height, u16@18 width. Sprite channel N sits at buffer offset `48 * (N + 5)`,
+  after the six reserved score channels.
+- **u16@8, where a script reference belongs, is zero in all 73,220 sprite
+  records.** u16@10 is a sprite-interval id: stable while a sprite persists,
+  and present as a value in score entry 1.
+- Bytes 20-23 take only 7 distinct values movie-wide, so they are sprite flags.
+  Bytes 24-47 are nonzero in 28 records with a single distinct value: noise.
+- Every frame-interval entry is empty (offsets 2 through 19535 are identical),
+  so there are no Director-6 sprite behaviours to read.
+- `KEY_` holds no `Lscr` entries for DAY1, so no member owns a script through
+  the key table either. Note MASTER.CST is little-endian where DAY1.DXR is
+  big-endian.
+
+**Do not repeat this.** The score, the sprite records and the key table have all
+been checked and none of them says which sprite owns `on mouseUp`.
+
+The fallback, `tools/lingo_attach.py`, recovers attachment by matching the
+export's own `on_click` entries against signatures computed from the ASTs. It
+reaches **28.2% attributed to exactly one script, 36.0% ambiguous, 35.9% with no
+candidate** across 90,207 clickable sprite-frames. That is not a foundation to
+build on, and it is reported here rather than rounded up.
+
+**What this means for the migration.** Attachment is only needed for sprite-level
+mouse handlers. Frame scripts are already exported per frame as `frame_script`,
+and movie scripts are global by definition, so neither needs it. Those two
+categories carry the handlers that matter most, `walkonby`, `objecttalktime`,
+`talkproc`, `searchfunk`, `displayobject`, `planefunk`, `ishspec`, and they can
+run without solving this. Sprite `on mouseUp` is the residue, and for it the
+lifted `on_click` data stays as the fallback.
+
+Remaining options for the residue, none yet attempted: read `Lctx` and `Lnam` to
+recover the script-member ownership table; check the `SCRF` and `Sord` chunks;
+or consult the `.lasm` bytecode headers, which may name their owner.
+
+### Phase 4 (original text) — Script attachment, and the score gap
 
 An `on mouseUp` handler is useless until the runtime knows *which sprite in which frame* owns it. The export dropped the sprite script fields: `assets/render_model/*/frames.json` sprite records carry no script reference. This is the one place the earlier plan's escape hatch becomes mandatory.
 
