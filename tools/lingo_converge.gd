@@ -12,6 +12,14 @@ extends SceneTree
 ##
 ## Agreement is reported as a fraction. Disagreements are printed with both
 ## sides so they can be read against the Lingo.
+##
+## `reached` used to read 533/533. That was false: every compiled bundle was keyed
+## on the ProjectorRays subdirectory, and eleven casts are called `External`, so a
+## lookup for member N matched whichever cast happened to load last. Namespacing
+## them dropped this to 273/540, which is the honest count of clickable sprites
+## whose script the interpreter can actually resolve. Some of the rest have no
+## script to find: DAY1 links an `island` cast that was never decompiled, which is
+## most of its 14/112.
 
 ## Channels the port drives natively rather than through the interpreter: the
 ## eight inventory slots (InventoryDrag plus data/inventory_drops.json) and the

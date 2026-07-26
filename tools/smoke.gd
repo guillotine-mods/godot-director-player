@@ -161,6 +161,30 @@ func _initialize() -> void:
 		search._activate_sprite(bench, search.sprite_stage_rect(bench).get_center())
 		_check("searching the bench uncovers the shell", not search.is_channel_hidden(15))
 
+	# The joke bottle. MASTER CastScript 69 records the room in `jokefield`, then
+	# opens joke.dxr as a Movie In A Window and puppets sprite 3 to the picture
+	# named "joke" & globalday & slot. Director floats a real window; this port has
+	# one stage, so it becomes an overlay on the route stack and `forget` returns.
+	var joke: RefCounted = load("res://director/director_runtime.gd").new()
+	joke.boot()
+	state.new_game()
+	joke.goto_movie("DAY1", null, {"label": "edge1go"})
+	var engine = joke.lingo
+	engine.host.set_field("jokefield", "master", "1,1,1,1,1,1,1,1,1,1")
+	engine.interpreter.globals["nof"] = "edge1"
+	joke.set_channel_visible(30, true)
+	engine.host.begin_dispatch()
+	engine.host.click_on = 33
+	engine.interpreter.run_handler_in_script(engine.script_for_member(2, 69), "mouseUp")
+	_check("joke bottle opens the joke", joke.loader.movie_name == "JOKE",
+		str(joke.loader.movie_name))
+	_check("joke bottle shows this day's picture",
+		int(engine.host.get_sprite_prop(3, "membernum")) == int(engine.host.member_number("joke11", "joke")))
+	_check("joke bottle records the room", engine.host.get_field("jokefield", "master").begins_with("edge1"))
+	engine.host.call_builtin("forget", ["joke"])
+	_check("closing the joke returns to the room", joke.loader.movie_name == "DAY1",
+		str(joke.loader.movie_name))
+
 	print("")
 	print("%d checks failed" % _fails)
 	quit(1 if _fails > 0 else 0)

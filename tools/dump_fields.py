@@ -58,6 +58,35 @@ def chunk_dirs() -> dict[str, Path]:
     return out
 
 
+def name_only_dirs(already: set[str]) -> dict[str, Path]:
+    """cast -> chunks dir, for casts with no committed chunks of their own.
+
+    Kept apart from `chunk_dirs()` on purpose. Text members are joined to
+    `reference/chunks/<CAST>/STXT-*.bin` by resource id, and the dump has more
+    than one copy of some casts whose ids do not agree, so widening chunk_dirs()
+    silently emptied MASTER's fields. These directories are used for member names
+    only, which need nothing but the cast's own CASt chunks.
+
+    Without this, JOKE has no names, and `the number of member ("joke" &
+    globalday & zz)` cannot resolve the picture the joke bottle is meant to show.
+    """
+    out: dict[str, Path] = {}
+    if not DUMP_ROOT.is_dir():
+        return out
+    for parent in (DUMP_ROOT / "PIP2DATA", DUMP_ROOT):
+        if not parent.is_dir():
+            continue
+        for cast_dir in sorted(parent.iterdir()):
+            name = cast_dir.name
+            if not cast_dir.is_dir() or name == "PIP2DATA" or name in already or name in out:
+                continue
+            for candidate in (cast_dir / name / "chunks", cast_dir / "chunks"):
+                if candidate.is_dir():
+                    out[name] = candidate
+                    break
+    return out
+
+
 def read_ints(data: bytes, endian: str) -> tuple[int, ...]:
     count = len(data) // 4
     return struct.unpack(f"{endian}{count}i", data[: count * 4])
@@ -182,6 +211,32 @@ def main() -> int:
             names[name] = text
         if names:
             fields[cast] = names
+
+    # Names for the casts with no committed chunks. Names only: see name_only_dirs.
+    extra_named = 0
+    for cast, chunks in name_only_dirs(set(chunk_dirs())).items():
+        cas_hits = sorted(glob.glob(str(chunks / "CAS_-*.bin")))
+        if not cas_hits:
+            continue
+        cas = Path(cas_hits[0]).read_bytes()
+        ids = read_ints(cas, pick_endian_for_cas(cas))
+        for number, resource in enumerate(ids, start=1):
+            if resource <= 0:
+                continue
+            cast_path = chunks / f"CASt-{resource}.bin"
+            if not cast_path.exists():
+                continue
+            blob = cast_path.read_bytes()
+            if len(blob) < 12:
+                continue
+            _kind, info_len, _spec = struct.unpack(">3I", blob[:12])
+            if not (0 < info_len <= len(blob) - 12):
+                info_len = max(0, len(blob) - 12)
+            name = member_name(blob[12: 12 + info_len])
+            if name:
+                member_names.setdefault(cast, {})[str(number)] = name
+                extra_named += 1
+    print(f"{extra_named} member names from casts without committed chunks")
 
     total = sum(len(v) for v in fields.values())
     print(f"recovered {total} text members across {len(fields)} casts "

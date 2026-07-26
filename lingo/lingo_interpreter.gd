@@ -355,6 +355,11 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 					_cast_of(owner_node, frame), prop_name, value,
 				])
 				return
+			## `window("joke.dxr").windowType = 2` and friends. The owner is a call
+			## returning a window handle, and every window property is about where
+			## a floating window sits, which means nothing on a single stage.
+			if typeof(_eval(owner_node, frame)) == TYPE_STRING:
+				return
 			_fail("cannot assign to %s.%s" % [str(owner_node.get("node", "?")), prop_name])
 		"chunk":
 			_assign_chunk(target, value, frame)

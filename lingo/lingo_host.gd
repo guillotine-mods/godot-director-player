@@ -55,6 +55,9 @@ var key_down_script: String = ""
 ## missing binding is visible without spamming the log.
 var unhandled: Dictionary = {}
 var stage_dirty: bool = false
+## Set when a script opened a window, so the runtime can tell a real navigation
+## from a click that merely did nothing.
+var acted_on_window: bool = false
 ## When true, navigation and sound are captured instead of performed, so a script
 ## can be compared against the exported on_click without touching the game.
 ## Set when a script navigated during the current dispatch, so the runtime knows
@@ -343,6 +346,9 @@ func get_system_prop(prop: String) -> Variant:
 
 func set_system_prop(prop: String, value: Variant) -> void:
 	match prop.to_lower():
+		"centerstage", "windowtype", "titlevisible", "drawrect", "rect":
+			## Window trimmings. One stage here, so nothing to place or resize.
+			pass
 		"keydownscript":
 			## The game's only use of key input. `on startMovie` sets this to
 			## "fromnow", which stops sound channel 1 when a key is pressed, so
@@ -416,6 +422,32 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			return 1 if sprite_rect(LingoValue.to_int(args[1])).encloses(
 				sprite_rect(LingoValue.to_int(args[0]))) else 0
+		"window":
+			## A Movie In A Window, reduced to the movie it names. Director shows
+			## it floating over the stage; this port has one stage, so it becomes
+			## an overlay on the route stack and `forget` returns the way SAVELOAD
+			## already does. The handle is just the stem, which is all `open` and
+			## `forget` need.
+			if args.is_empty():
+				return ""
+			return LingoValue.to_str(args[0]).strip_edges().get_file().get_basename()
+		"open":
+			## `open(window("joke.dxr"))` is how the joke bottle shows its joke.
+			if runtime == null or args.is_empty():
+				return 0
+			var stem := LingoValue.to_str(args[0]).strip_edges().get_file().get_basename()
+			if stem == "":
+				return 0
+			acted_on_window = true
+			runtime.goto_movie(stem)
+			return 0
+		"forget", "close":
+			## The window closing itself: JOKE frame 5 runs
+			## `forget(window("joke.dxr"))` once its wait-for-click frame is past.
+			if runtime == null:
+				return 0
+			runtime.go_back()
+			return 0
 		"cursor", "preloadmember", "unloadmember", "alert", "beep", "nothing", "cursorfunk", "updatelock":
 			return 0
 		_:
