@@ -224,7 +224,18 @@ func set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	if key == "visible" and runtime != null:
 		# Visibility is the one property the existing renderer already gates, so
 		# keep the two in step rather than introducing a second mechanism.
-		runtime.set_channel_visible(channel, LingoValue.truthy(value))
+		#
+		# Only for a puppeted sprite, though. Director refreshes a non-puppeted
+		# sprite's properties from the score on the next frame, so an unpuppeted
+		# `sprite(N).visible = 0` is transient. The runtime's hide is permanent,
+		# and `BehaviorScript 3 - b4 bk's` blanks channels 15, 17 and 33 on every
+		# room entry without puppeting them: honouring that hid 600 collectable
+		# records, sciser and sulam and afgan among them, for the whole session.
+		if puppeted.has(channel):
+			runtime.set_channel_visible(channel, LingoValue.truthy(value))
+		elif LingoValue.truthy(value):
+			# A show still has to be able to undo an earlier puppeted hide.
+			runtime.set_channel_visible(channel, true)
 	stage_dirty = true
 
 
