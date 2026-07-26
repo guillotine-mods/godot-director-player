@@ -19,6 +19,7 @@ Upstream decode / research assets live in the separate Piposh 2 toolchain (rende
 | Transparent / matte BMP sprites | Working |
 | Widescreen + upscale + gamepad cursor | Working |
 | Android export path | Working (subset / full desktop assets) |
+| Clicks driven by the original Lingo | Working (`use_lingo_clicks` on) |
 | Talk trees / lip-sync / full dialogue | Not yet |
 | Complete parity with every DXR edge case | Ongoing |
 
