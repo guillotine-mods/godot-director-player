@@ -93,52 +93,58 @@ Expressions: integer, float and string literals; identifiers; parenthesised grou
 
 `objectsfield`, `Dprocess` and `points` must alias `GameState`, not shadow it, so saves keep round-tripping.
 
-### Phase 4 — Script attachment (PREMISE DISPROVEN, see below)
+### Phase 4 — Script attachment: SOLVED
 
-**Measured 2026-07-26, and the opposite of what this phase assumed.** The score
-does not carry per-sprite script references in this movie, so there is nothing
-to extract. Evidence from DAY1's `VWSC-1827.bin`:
+**Corrects an earlier wrong conclusion in this same plan.** I first reported that
+the score does not store sprite scripts. That was wrong, and the mistake was
+method, not data: I read the first eight entry offsets of DAY1's `VWSC`, saw them
+identical, and generalised. DAY1 actually has **3865 non-empty entries**.
 
-- The score decodes fully: 6-int32 header, an offsets table of `entryCount + 1`,
-  then the entries. Entry 0 is the delta-compressed frame stream (2784 frames,
-  version 13, 48-byte records, 1006 channels), and it replays to exactly the
-  2784 frames the export has.
-- The 48-byte sprite record is fully mapped and every field cross-checks against
-  `frames.json`: byte 0 spriteType, byte 1 ink+flags, byte 2 foreColor, byte 3
-  backColor, u16@4 castLib, u16@6 memberNum, i16@12 locV, i16@14 locH, u16@16
-  height, u16@18 width. Sprite channel N sits at buffer offset `48 * (N + 5)`,
-  after the six reserved score channels.
-- **u16@8, where a script reference belongs, is zero in all 73,220 sprite
-  records.** u16@10 is a sprite-interval id: stable while a sprite persists,
-  and present as a value in score entry 1.
-- Bytes 20-23 take only 7 distinct values movie-wide, so they are sprite flags.
-  Bytes 24-47 are nonzero in 28 records with a single distinct value: noise.
-- Every frame-interval entry is empty (offsets 2 through 19535 are identical),
-  so there are no Director-6 sprite behaviours to read.
-- `KEY_` holds no `Lscr` entries for DAY1, so no member owns a script through
-  the key table either. Note MASTER.CST is little-endian where DAY1.DXR is
-  big-endian.
+The score stores it in the frame intervals that follow the frame-delta stream:
 
-**Do not repeat this.** The score, the sprite records and the key table have all
-been checked and none of them says which sprite owns `on mouseUp`.
+    primary   >= 44 bytes: int32 startFrame, endFrame, unk, unk, spriteNumber
+    secondary    8 bytes:  int16 scriptCastLib, scriptMemberNum, unk, unk
 
-The fallback, `tools/lingo_attach.py`, recovers attachment by matching the
-export's own `on_click` entries against signatures computed from the ASTs. It
-reaches **28.2% attributed to exactly one script, 36.0% ambiguous, 35.9% with no
-candidate** across 90,207 clickable sprite-frames. That is not a foundation to
-build on, and it is reported here rather than rounded up.
+`spriteNumber` carries the same +5 bias as the frame buffer, so the real channel
+is `spriteNumber - 5`. `tools/dump_sprite_scripts.py` recovers **14,855
+script-bearing intervals across 61 movies** and writes
+`data/lingo/<MOVIE>/sprite_scripts.json`.
 
-**What this means for the migration.** Attachment is only needed for sprite-level
-mouse handlers. Frame scripts are already exported per frame as `frame_script`,
-and movie scripts are global by definition, so neither needs it. Those two
-categories carry the handlers that matter most, `walkonby`, `objecttalktime`,
-`talkproc`, `searchfunk`, `displayobject`, `planefunk`, `ishspec`, and they can
-run without solving this. Sprite `on mouseUp` is the residue, and for it the
-lifted `on_click` data stays as the fallback.
+The member number in the secondary is a cast member number, which is exactly how
+ProjectorRays names its files. Confirmed on two independent casts:
 
-Remaining options for the residue, none yet attempted: read `Lctx` and `Lnam` to
-recover the script-member ownership table; check the `SCRF` and `Sord` chunks;
-or consult the `.lasm` bytecode headers, which may name their owner.
+- DAY1: 100 script members plus 12 non-script members carrying a non-zero
+  `scriptId` (int32 index 4 of the `CASt` info block) equals precisely the 112
+  `.ls` filenames in its dump. Four of the twelve are `1:217`, `1:218`, `1:219`
+  and `1:235`, which `data/movie_context.json` independently documents as
+  Gondolin's corpse, handbag, lipstick and third clue.
+- MASTER: 36 script members plus 4 with a `scriptId` (57, 59, 69, 77) equals its
+  40 `.ls` files. Those four are `invright`, `invleft`, `jokebtl` and `shell`:
+  button bitmaps whose script runs on click.
+
+So all three attachment routes are resolvable: sprite behaviours from the
+intervals, cast member scripts from the displayed member's `scriptId`, and frame
+scripts from the `frame_script` field the export already carries (DAY1's 207 is
+the dynamic room redirect).
+
+**Validation, and an independent check on the previous plan.** The scripts found
+on slot channels 103-110 match, movie by movie, the attributions made earlier by
+reading the Lingo alone:
+
+| Movie | Drop behaviours on the slot channels | Matches the hand-derived reading |
+|---|---|---|
+| DAY1 | 52, 108, 128 | 108 is the dwarfs variant testing 36/37 |
+| NIGHT1 | 52, 108, 110, 111 | 110 is the `sulam` ladder, 111 is mirolo |
+| HOTEL1 | 52, 94, 129, 135 | 94 is the fat room, 129 is `ishspec` |
+| SEA1 | 52 | 52 is the examine-plus-talk variant |
+| AIR1 | 52, 97 | 97 is `planefunk` |
+
+Every attribution in `data/inventory_drops.json` is corroborated. It also settles
+the one rule that had been parked: `BehaviorScript 128` sits on DAY1's slot
+channels, so the `tools` puzzle is DAY1's and the rule is now enabled.
+
+Still open: `BehaviorScript 93` does not appear on the slot channels of those five
+movies, so it is attached somewhere else and has not been placed.
 
 ### Phase 4 (original text) — Script attachment, and the score gap
 
