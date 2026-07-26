@@ -607,7 +607,9 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 		"hold":
 			pass
 		"walk", "walk_here":
-			var walk_nav: Variant = action.get("nav", nav)
+			var walk_nav: Variant = _apply_walk_override(
+				action.get("nav", nav), int(sprite.get("channel", 0))
+			)
 			_clear_pending_transition()
 			var ok: bool = puppet.start_walk(
 				walk_nav,
@@ -628,6 +630,28 @@ func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 		"movie":
 			_goto_from_action(action)
 			running = true
+
+
+func _apply_walk_override(nav: Variant, channel: int) -> Variant:
+	## Swap in this hotspot's own walk target. The export keyed walk_to and
+	## arrive_at per destination label, so a room reachable from two directions
+	## handed both of its exits the same pair and one of them points backwards.
+	if typeof(nav) != TYPE_DICTIONARY:
+		return nav
+	var entry := context.walk_override(
+		loader.movie_name,
+		marker_name_for_frame(frame_index),
+		channel,
+		_s((nav as Dictionary).get("target_label", ""))
+	)
+	if entry.is_empty():
+		return nav
+	var fixed: Dictionary = (nav as Dictionary).duplicate(true)
+	if entry.has("walk_to"):
+		fixed["walk_to"] = entry["walk_to"]
+	if entry.has("arrive_at"):
+		fixed["arrive_at"] = entry["arrive_at"]
+	return fixed
 
 
 func _apply_click_flag(channel: int) -> void:
