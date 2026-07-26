@@ -71,7 +71,7 @@ func _load_bundles_for(dir_name: String) -> void:
 			var text := FileAccess.get_file_as_string("%s/%s/%s" % [LINGO_ROOT, dir_name, file])
 			var parsed: Variant = JSON.parse_string(text)
 			if typeof(parsed) == TYPE_DICTIONARY:
-				interpreter.load_bundle(parsed)
+				interpreter.load_bundle(parsed, dir_name)
 		file = dir.get_next()
 	dir.list_dir_end()
 
@@ -126,7 +126,7 @@ func _cast_key_for_dir(dir_name: String) -> PackedStringArray:
 	var file := dir.get_next()
 	while file != "":
 		if file.ends_with(".json") and file != "attach.json" and file != "sprite_scripts.json":
-			out.append(file.get_basename())
+			out.append("%s/%s" % [dir_name, file.get_basename()])
 		file = dir.get_next()
 	dir.list_dir_end()
 	return out

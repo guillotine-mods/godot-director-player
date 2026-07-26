@@ -44,9 +44,17 @@ func _init(host_object: Object = null) -> void:
 # ---------------------------------------------------------------- loading
 
 
-func load_bundle(bundle: Dictionary) -> void:
+func load_bundle(bundle: Dictionary, qualifier: String = "") -> void:
 	## One compiled cast: {"movie":…, "cast":…, "scripts": {name: ast}}
+	##
+	## The bundle's own `cast` is the subdirectory ProjectorRays wrote it to, and
+	## eleven casts use "External" — MASTER, ISLAND2, WONDER, BOOK and the rest.
+	## Keyed on that alone they share one namespace and the last one loaded wins,
+	## so DAY1 asking island2 for member 59 got MASTER's `invleft` instead of
+	## `to forest1`, and the click played an inventory sound rather than walking.
 	var cast := str(bundle.get("cast", ""))
+	if qualifier != "":
+		cast = "%s/%s" % [qualifier, cast]
 	var scripts: Dictionary = bundle.get("scripts", {})
 	var by_name: Dictionary = _scripts.get(cast, {})
 	for script_name in scripts.keys():
