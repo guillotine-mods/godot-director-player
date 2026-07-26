@@ -361,6 +361,12 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"label":
 			if runtime == null or args.is_empty():
 				return 0
+			# `label(0)` is not a lookup of a marker named "0": with a number it
+			# means the current marker, the same as `marker(0)`. The rooms record
+			# themselves with `whereami = label(0)` and every hotspot compares
+			# that against `label("<room>")`, so both spellings must agree.
+			if typeof(args[0]) != TYPE_STRING:
+				return _marker(args)
 			var index: int = int(runtime.loader.lookup_label(LingoValue.to_str(args[0])))
 			return index + 1 if index >= 0 else 0
 		"rollover":
@@ -438,12 +444,49 @@ func _walkonby() -> Variant:
 		var first := LingoValue.get_chunk(raw, "item", 1, 1)
 		if first != "" and first != "000":
 			destination = first
+		# `ifmovie` outranks it. 130 scripts set this global, and it is the
+		# original's answer to "where does the walk actually land", which is not
+		# always the room named in `nextroomdata`. ISLAND2's `arcade1` handler
+		# walks Piposh to "arcade" and sets `ifmovie = "1,goarcade1"`, and
+		# goarcade1 is the label that launches ARCADE1. Reading only
+		# `nextroomdata` left him standing in the arcade, which is what made both
+		# HOTEL1 machines and the DAY1/NIGHT1 forest exits dead clicks.
+		var after := _ifmovie_label()
+		if after != "":
+			destination = after
 	puppet.nextroom = {"label": destination} if destination != "" else {}
 	puppet.whatodo = "walktime"
 	puppet.walk_tick = 0
 	puppet.apply_walk_frame()
 	stage_dirty = true
 	return 0
+
+
+func _ifmovie_label() -> String:
+	## `ifmovie` is written as "<flag>,<label>". The flag is 1 when the walk ends
+	## somewhere other than the room it started in, and "0,0" is the idle value
+	## every room resets it to. A few handlers write the bare label with no flag.
+	##
+	## Consumed here rather than merely read: the original clears it once the
+	## handover happens, and leaving it set would redirect the next walk too.
+	if interpreter == null:
+		return ""
+	var globals: Dictionary = interpreter.globals
+	var raw := LingoValue.to_str(globals.get("ifmovie", "")).strip_edges()
+	if raw == "":
+		return ""
+	var parts := raw.split(",")
+	var label := ""
+	if parts.size() >= 2:
+		if parts[0].strip_edges() != "1":
+			return ""
+		label = parts[1].strip_edges()
+	else:
+		label = parts[0].strip_edges()
+	if label == "" or label == "0" or label == "000":
+		return ""
+	globals["ifmovie"] = "0,0"
+	return label
 
 
 func begin_dispatch() -> void:

@@ -498,10 +498,50 @@ func enter_frame(index: int) -> void:
 	var room := marker_name_for_frame(frame_index)
 	_hidden_channels = context.hidden_channels(loader.movie_name, room)
 	puppet.sync_from_frame(frame, room, loader.stage_size)
+	# `on enterFrame` is where the original records which room the player is in.
+	# 13 handlers set the `whereami` global here, and 138 mouseUp handlers gate
+	# their real behaviour on it: ISLAND2's `arcade1` only sets the movie-launch
+	# flag `if whereami = label("arcade")`. Without this dispatch `whereami` is
+	# never assigned, every one of those gates is false, and the hotspots fall
+	# through to a generic branch that walks nowhere.
+	if lingo != null and AppSettings.use_lingo_frames:
+		_run_skipped_entry_scripts()
+		lingo.host.begin_dispatch()
+		lingo.dispatch_sprite_behaviours("enterFrame", frame_index)
+		lingo.dispatch_frame_event("enterFrame", frame_index)
+		if lingo.host.stage_dirty:
+			lingo.host.stage_dirty = false
+			redraw_requested.emit()
 	AudioDirector.play_frame_sounds(frame)
 	GameState.remember_location(loader.movie_name, label_near_frame(frame_index), frame_index)
 	frame_changed.emit(frame_index)
 	redraw_requested.emit()
+
+
+func _run_skipped_entry_scripts() -> void:
+	## Jumping straight to a room's `*go` frame skips the frames the score would
+	## have played on the way in, and one of them is where the room announces
+	## itself: HOTEL1 frame 436 runs `whereami = label(0)`, and `arcadego` is 437.
+	##
+	## It cannot be recovered by running enterFrame on the `*go` frame instead,
+	## because `label(0)` there resolves to `arcadego` while every hotspot tests
+	## against `label("arcade")`. The entry frames have to execute where they sit,
+	## so their enterFrame handlers run here, in score order, before the arrival
+	## frame's own.
+	var room := marker_name_for_frame(frame_index).to_lower()
+	if not room.ends_with("go"):
+		return
+	var base := loader.lookup_label(room.substr(0, room.length() - 2))
+	if base < 0 or base >= frame_index:
+		return
+	var landed := frame_index
+	for index in range(base, landed):
+		if loader.get_frame(index).get("frame_script") == null:
+			continue
+		frame_index = index
+		lingo.host.begin_dispatch()
+		lingo.dispatch_frame_event("enterFrame", index)
+	frame_index = landed
 
 
 func _sync_film_loop_channels(frame: Dictionary) -> void:

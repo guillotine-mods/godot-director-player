@@ -71,7 +71,7 @@ func _load_bundles_for(dir_name: String) -> void:
 			var text := FileAccess.get_file_as_string("%s/%s/%s" % [LINGO_ROOT, dir_name, file])
 			var parsed: Variant = JSON.parse_string(text)
 			if typeof(parsed) == TYPE_DICTIONARY:
-				interpreter.load_bundle(parsed)
+				interpreter.load_bundle(parsed, dir_name)
 		file = dir.get_next()
 	dir.list_dir_end()
 
@@ -126,7 +126,7 @@ func _cast_key_for_dir(dir_name: String) -> PackedStringArray:
 	var file := dir.get_next()
 	while file != "":
 		if file.ends_with(".json") and file != "attach.json" and file != "sprite_scripts.json":
-			out.append(file.get_basename())
+			out.append("%s/%s" % [dir_name, file.get_basename()])
 		file = dir.get_next()
 	dir.list_dir_end()
 	return out
@@ -202,6 +202,35 @@ func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> boo
 		return true
 	missing_handlers["%s:ch%d" % [event, channel]] = true
 	return false
+
+
+func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
+	## Director sends enterFrame and exitFrame to every sprite behaviour in the
+	## frame, not only to the frame script. This game depends on it: `whereami`,
+	## which 138 mouseUp handlers gate their real behaviour on, is set by an
+	## `on enterFrame` in a sprite behaviour (`BehaviorScript 3 - b4 bk's`) rather
+	## than by any frame script. Returns how many behaviours ran.
+	var frame: Dictionary = {}
+	if host != null and host.runtime != null:
+		frame = host.runtime.loader.get_frame(frame_index)
+	var ran := 0
+	var seen: Dictionary = {}
+	for sprite_value in frame.get("sprites", []):
+		if typeof(sprite_value) != TYPE_DICTIONARY:
+			continue
+		var channel := int((sprite_value as Dictionary).get("channel", 0))
+		if channel <= 0 or seen.has(channel):
+			continue
+		seen[channel] = true
+		var behaviour := behaviour_for_sprite(channel, frame_index)
+		if behaviour.is_empty() or not _script_handles(behaviour, event):
+			continue
+		host.click_on = channel
+		interpreter.reset_steps()
+		if interpreter.run_handler_in_script(behaviour, event):
+			ran += 1
+	host.click_on = 0
+	return ran
 
 
 func dispatch_frame_event(event: String, frame_index: int) -> bool:

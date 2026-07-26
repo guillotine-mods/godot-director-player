@@ -158,11 +158,41 @@ Only the four original DAY1 rows are verified behaviour. The HOTEL1 and NIGHT1
 rows and both transitions are **inferred**, each carrying a `confidence` note.
 They exist so the game is completable; the Lingo replaces them wholesale.
 
+## Clicks run from the Lingo
+
+`use_lingo_clicks` defaults on. Three things had to be true together, and fixing
+any one alone measured identically, which is worth knowing before touching this:
+
+- **`enterFrame` is dispatched.** The rooms announce themselves with
+  `whereami = label(0)` from an `on enterFrame`, and 138 `mouseUp` handlers gate
+  their real behaviour on `whereami`. Only `exitFrame` used to reach the
+  interpreter, so every gate was false and every hotspot took a dead branch.
+- **Room-entry frames are not skipped.** Jumping to a room's `*go` frame skips
+  the frame the announcement sits on: HOTEL1 runs it at 436 and `arcadego` is
+  437. Running `enterFrame` on the arrival frame does not substitute, because
+  `label(0)` there resolves to `arcadego` while the hotspots compare against
+  `label("arcade")`. `_run_skipped_entry_scripts()` replays the span.
+- **Linked casts have their own script namespace.** Bundles were keyed by the
+  ProjectorRays subdirectory, and eleven casts use `External`, so they shared
+  one namespace and the last load won. DAY1 asking island2 for member 59 got
+  MASTER's `invleft` instead of `to forest1`.
+
+Walk outcomes over 117 hotspots in DAY1, NIGHT1 and HOTEL1: identical 51 → 89,
+dead clicks 8 → 0, wrong room 25 → 18, facing-only 33 → 10
+(`tools/lingo_walk_diff.gd`).
+
+The 18 remaining are all HOTEL1, where the export is the weaker reference:
+`movie_context.json` has 23 unmapped transitions there and zero verified ones,
+and its destinations repeat per channel across unrelated rooms.
+
 ## Still open
 
 - Talk trees / lip-sync
 - Day 2 room content: MORN2, MORN3, DTCDAY2, MENADAY2, HATDAY2/3, HATSIKUM and
   INVESTIG have no triggers yet
+- `keyDown`, `startMovie`, `stopMovie` and `idle` are still not dispatched
+- Retirement of `movie_context.json` and `walk_doorways.json` has not started
+- Convergence measured on 5 of 61 movies
 Closed: the 222 unresolvable cast members. 13 were genuinely missing film loops,
 now recovered; 149 are Director shapes, which are the game's invisible hotspots
 and correctly draw nothing; 59 were behind a cast-lib name alias; 1 is a text
