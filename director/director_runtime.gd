@@ -71,7 +71,7 @@ var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
 var _hidden_channels: Dictionary = {}
-var _head_look_frames: int = 0
+var _head_look_until_ms: float = -1.0
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -241,7 +241,12 @@ func master_cast_lib() -> int:
 
 func head_member_override() -> int:
 	## -1 while the score member (piphead1) stands.
-	return PIPHEAD_LOOK_MEMBER if _head_look_frames > 0 else -1
+	##
+	## Timed rather than counted in enter_frame(), because a frame that holds on
+	## wait_click, on delay_ms or on the soundBusy guard never re-enters, and the
+	## Lingo's restore after one updateStage() is unconditional. Examining on a
+	## wait_click frame used to leave Piposh mid-look until the player clicked.
+	return PIPHEAD_LOOK_MEMBER if _time_ms < _head_look_until_ms else -1
 
 
 func slot_sprite_at(stage_pt: Vector2) -> Dictionary:
@@ -341,9 +346,9 @@ func _drag_intersects(channel: int) -> bool:
 
 
 func _examine_item(item: String) -> void:
-	## Swap sprite 100 to piphead2, play pi<item>.aif, and let the next frame
-	## restore piphead1: the Lingo calls updateStage() once before restoring.
-	_head_look_frames = 1
+	## Swap sprite 100 to piphead2, play pi<item>.aif, and restore piphead1 one
+	## score frame later: the Lingo calls updateStage() once before restoring.
+	_head_look_until_ms = _time_ms + 1000.0 / maxf(current_fps, 1.0)
 	AudioDirector.play_file(1, "pi%s.aif" % item)
 	nav_event.emit("examine: %s" % item)
 
@@ -450,9 +455,6 @@ func enter_frame(index: int) -> void:
 		return
 	frame_index = clampi(index, 0, loader.frames.size() - 1)
 	frame_entered_ms = _time_ms
-	# piphead2 shows for one stage refresh, then the Lingo puts piphead1 back.
-	if _head_look_frames > 0:
-		_head_look_frames -= 1
 	var frame: Dictionary = loader.get_frame(frame_index)
 	_sync_film_loop_channels(frame)
 	var fps := float(frame.get("fps", 0))

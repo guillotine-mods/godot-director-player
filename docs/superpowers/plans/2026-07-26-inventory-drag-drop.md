@@ -1431,7 +1431,8 @@ Nothing yet, and that is deliberate: retire nothing that has not been replaced.
 
 Mapped from the spec, restricted to plan 1's scope.
 
-- [x] Items drag from any occupied slot, with a hand cursor, in DAY1, NIGHT1, SEA1, HOTEL1, AIR1, SHUFFLE, ARCADE1 and ARCADE2, and slot icons draw from the right cast library in all of them, which they did not before.
+- [x] Items drag from any occupied slot, with a hand cursor, in DAY1, NIGHT1, SEA1, HOTEL1, AIR1 and SHUFFLE, and slot icons draw from the right cast library in all of them, which they did not before.
+- ARCADE1 and ARCADE2 are **not** inventory screens, contrary to the spec's scope list. They score only channels 103, 106 and 108, on 20 frames each, and channel 100 is absent entirely, so there is no HUD bar and no examine target. Drag stays enabled there and simply has nothing to intersect, which is the silent snap-back case. SHUFFLE is a real HUD: all eight slots plus channel 100 on 198 frames.
 - [x] Dropping on Piposh's head plays `pi<item>.aif` and blinks `piphead2` for one frame, in every movie.
 - [x] An invalid target snaps the icon home in silence.
 - [x] Dropping `sulam` on NIGHT1 sprite 8 reveals sprite 17 and consumes the item; the flag survives a `to_dict` / `from_dict` round trip (`story_flags` already does this).
