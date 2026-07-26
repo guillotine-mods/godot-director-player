@@ -48,11 +48,13 @@ func _run() -> void:
 	var no_walk := 0
 	var lines := PackedStringArray()
 	for case in cases:
-		AppSettings.use_lingo_frames = false
+		# The baseline is what ships today. `use_lingo_frames` defaulted on in
+		# the previous session, so comparing against both-off measures a change
+		# that already happened and attributes it to the click flag.
+		AppSettings.use_lingo_frames = true
 		AppSettings.use_lingo_clicks = false
 		var off := _outcome(case)
-		# The target configuration: both on. Clicks are the half that needs
-		# walkonby, so testing frames alone hides exactly what matters here.
+		# The target configuration. Clicks are the half that needs walkonby.
 		AppSettings.use_lingo_frames = true
 		AppSettings.use_lingo_clicks = true
 		var on := _outcome(case)
