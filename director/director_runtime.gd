@@ -518,6 +518,21 @@ func enter_frame(index: int) -> void:
 	redraw_requested.emit()
 
 
+func handle_key(code: int) -> bool:
+	## Director routes every keypress through `the keyDownScript`. Returns true
+	## when a script claimed it, so the caller can leave the event alone.
+	if lingo == null or not AppSettings.use_lingo_frames:
+		return false
+	var script_name := str(lingo.host.key_down_script)
+	if script_name == "" or not lingo.interpreter.has_handler(script_name):
+		return false
+	lingo.host.begin_dispatch()
+	lingo.host.key_code = code
+	lingo.interpreter.call_handler(script_name)
+	lingo.host.key_code = 0
+	return true
+
+
 func _run_skipped_entry_scripts() -> void:
 	## Jumping straight to a room's `*go` frame skips the frames the score would
 	## have played on the way in, and one of them is where the room announces
@@ -703,6 +718,13 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 
 	if lingo != null:
 		lingo.prepare_movie(movie_name)
+		# The corpus has exactly one `on startMovie`, and all it does is
+		# `set the keyDownScript to "fromnow"`, which is what makes a keypress
+		# cut the line of speech that is playing. Cheap to honour, and it is the
+		# only route key input has into the original scripts.
+		if AppSettings.use_lingo_frames and lingo.interpreter.has_handler("startmovie"):
+			lingo.host.begin_dispatch()
+			lingo.interpreter.call_handler("startmovie")
 	movie_changed.emit(movie_name)
 	enter_frame(start)
 	nav_event.emit(

@@ -34,7 +34,25 @@ func _on_save_ui_requested(_mode: String) -> void:
 	save_editor.refresh_from_state()
 
 
+## Director key codes, for `the keyCode`. The corpus tests exactly one of them:
+## `fromnow` compares against "49" and stops sound channel 1, so pressing space
+## cuts the line of speech that is playing.
+const DIRECTOR_KEY_CODES := {
+	KEY_SPACE: 49,
+	KEY_ENTER: 36,
+	KEY_KP_ENTER: 76,
+	KEY_ESCAPE: 53,
+	KEY_TAB: 48,
+}
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var code: int = DIRECTOR_KEY_CODES.get((event as InputEventKey).keycode, 0)
+		if code != 0 and movie_player.runtime.handle_key(code):
+			# Not marked handled: the original's key script runs alongside the
+			# port's own shortcuts rather than swallowing them.
+			pass
 	if event.is_action_pressed("toggle_debug"):
 		debug_hud.visible = not debug_hud.visible
 		get_viewport().set_input_as_handled()

@@ -40,6 +40,10 @@ var _member_numbers: Dictionary = {}
 ## The channel that received the current mouse event, for `the clickOn`.
 var click_on: int = 0
 var mouse_stage: Vector2 = Vector2.ZERO
+## Director's `the keyCode`, valid only while a key handler is running.
+var key_code: int = 0
+## Handler name from `set the keyDownScript to ...`, run on every keypress.
+var key_down_script: String = ""
 ## Builtins that were called but are not implemented, counted once each so a
 ## missing binding is visible without spamming the log.
 var unhandled: Dictionary = {}
@@ -306,7 +310,7 @@ func get_system_prop(prop: String) -> Variant:
 		"milliseconds":
 			return Time.get_ticks_msec()
 		"keycode", "key":
-			return 0
+			return key_code
 		"shiftdown", "optiondown", "commanddown", "controldown", "doubleclick":
 			return 0
 		"stagewidth":
@@ -318,8 +322,14 @@ func get_system_prop(prop: String) -> Variant:
 
 
 func set_system_prop(prop: String, value: Variant) -> void:
-	# keyDownScript and friends are set but never read by this port.
-	unhandled["the %s (write)" % prop.to_lower()] = true
+	match prop.to_lower():
+		"keydownscript":
+			## The game's only use of key input. `on startMovie` sets this to
+			## "fromnow", which stops sound channel 1 when a key is pressed, so
+			## a keypress cuts the line of speech that is playing.
+			key_down_script = LingoValue.to_str(value).strip_edges()
+		_:
+			unhandled["the %s (write)" % prop.to_lower()] = true
 
 
 # ---------------------------------------------------------------- builtins
