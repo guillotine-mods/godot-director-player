@@ -14,8 +14,7 @@ Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decode
 On a fresh checkout, **open the editor once before running anything headless.**
 `.godot/` is gitignored, and `global_script_class_cache.cfg` inside it is what
 makes `class_name` scripts resolvable. Without it, `godot --headless --script`
-fails with `Could not find type "InventoryDrag"` in a file you did not touch, and
-every suite goes down with it.
+fails with `Could not find type "InventoryDrag"` in a file you did not touch.
 
 ## Verification tools
 
