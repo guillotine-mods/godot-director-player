@@ -17,17 +17,22 @@ makes `class_name` scripts resolvable. Without it, `godot --headless --script`
 fails with `Could not find type "InventoryDrag"` in a file you did not touch, and
 every suite goes down with it.
 
-## Tests
+## Verification tools
+
+There is no test suite. What remains are measurement tools, each printing a
+number rather than pass/fail:
 
 ```
-godot --headless --script tests/test_walk_doorways.gd
-godot --headless --script tests/test_day1_navigation.gd
-godot --headless --script tests/test_director_runtime.gd
+python3 tools/lingo_compile.py                      # 3349/3349 scripts parse
+python3 tools/dump_sprite_scripts.py                # sprite -> script attachment
+python3 tools/dump_fields.py                        # Director fields + member names
+godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
+godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 ```
 
-Each prints `PASS: <suite>` or one `ERROR:` per failure. Autoloads are not
-compile-time globals in a `--script` run, because the script loads before the
-tree exists; reach them with `root.get_node("GameState")`.
+Writing a `--script` tool: autoloads are not compile-time globals, because the
+script loads before the tree exists, so reach them with
+`root.get_node("GameState")`.
 
 Boot: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVELOAD` (JSON slots).
 
