@@ -19,6 +19,13 @@ const INVENTORY_FIELD := "objectsfield"
 const PUPPET_GLOBALS := {
 	"egozh": "egozh", "egozv": "egozv", "whatodo": "whatodo", "syz": "syz",
 }
+## Adventure state GameState owns. The original gates conditional content on it:
+## DAY1 BehaviorScript 226 hides Gondolin's corpse and her handbag while
+## `item 1 of meetings <> "done"`, and shows them once the murder has happened.
+## Read as a plain interpreter global it is always empty, so that test never
+## flips and the bag stays hidden forever, which means the scissors inside it can
+## never be found.
+const STATE_GLOBALS := {"meetings": true, "globalday": true}
 ## Handlers the port implements natively, which therefore win even over the
 ## original Lingo definition.
 const NATIVE_HANDLERS := ["walkonby"]
@@ -417,18 +424,53 @@ func call_builtin(name: String, args: Array) -> Variant:
 
 
 func owns_global(name: String) -> bool:
-	return runtime != null and PUPPET_GLOBALS.has(name.to_lower())
+	var key := name.to_lower()
+	if STATE_GLOBALS.has(key):
+		return true
+	return runtime != null and PUPPET_GLOBALS.has(key)
 
 
 func get_global(name: String) -> Variant:
-	var field := str(PUPPET_GLOBALS.get(name.to_lower(), ""))
+	var key := name.to_lower()
+	if STATE_GLOBALS.has(key):
+		return _get_state_global(key)
+	var field := str(PUPPET_GLOBALS.get(key, ""))
 	if field == "" or runtime == null:
 		return null
 	return runtime.puppet.get(field)
 
 
+func _get_state_global(key: String) -> Variant:
+	match key:
+		"meetings":
+			# Lingo reads this as `item N of meetings`, so it has to be one
+			# comma-separated string rather than the array GameState keeps.
+			return ",".join(Array(GameState.meetings))
+		"globalday":
+			return GameState.globalday
+	return null
+
+
+func _set_state_global(key: String, value: Variant) -> void:
+	match key:
+		"meetings":
+			var next := PackedStringArray()
+			for item in LingoValue.to_str(value).split(","):
+				next.append(str(item).strip_edges())
+			GameState.meetings = next
+			GameState.state_changed.emit()
+		"globalday":
+			var day := LingoValue.to_int(value)
+			if day != GameState.globalday:
+				GameState.advance_day(day)
+
+
 func set_global(name: String, value: Variant) -> void:
-	var field := str(PUPPET_GLOBALS.get(name.to_lower(), ""))
+	var key := name.to_lower()
+	if STATE_GLOBALS.has(key):
+		_set_state_global(key, value)
+		return
+	var field := str(PUPPET_GLOBALS.get(key, ""))
 	if field == "" or runtime == null:
 		return
 	if field == "whatodo":

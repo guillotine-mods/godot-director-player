@@ -86,6 +86,58 @@ func _initialize() -> void:
 			"hidden" if holds else "shown", "held" if holds else "not held"],
 			hidden == holds)
 
+	# Conditional content keyed on `meetings`. DAY1 BehaviorScript 226 hides
+	# Gondolin's corpse and handbag until the murder, and CastScript 218 reveals
+	# what is inside the bag only when it is searched.
+	for murdered in [false, true]:
+		var scene: RefCounted = load("res://director/director_runtime.gd").new()
+		scene.boot()
+		state.new_game()
+		if murdered:
+			var seen: PackedStringArray = state.meetings
+			seen[0] = "done"
+			state.meetings = seen
+			state.set_story_flag("murder1")
+		scene.goto_movie("DAY1", null, {"label": "shore3go"})
+		_check("handbag %s before the murder is %s" % [
+			"visible" if murdered else "hidden", "done" if murdered else "pending"],
+			scene.is_channel_hidden(16) != murdered)
+		if not murdered:
+			continue
+		_check("bag contents stay hidden until searched", scene.is_channel_hidden(15))
+		var bag: Dictionary = {}
+		for sprite in scene.clickable_sprites(scene.loader.get_frame(scene.frame_index)):
+			if int((sprite as Dictionary).get("channel", 0)) == 16:
+				bag = sprite
+		scene._activate_sprite(bag, scene.sprite_stage_rect(bag).get_center())
+		for _i in 200:
+			scene.tick(0.1)
+		scene._activate_sprite(bag, scene.sprite_stage_rect(bag).get_center())
+		_check("searching the bag reveals what is inside", not scene.is_channel_hidden(15))
+
+	# Story-gated exit. ISLAND2 CastScript 34 only walks when
+	# `item 1 of meetings <> "murder1"`, so the edge2 -> edge1 path is shut until
+	# the murder is resolved. lingo_walk_diff scores this as a dead click, because
+	# the lifted export it compares against has no story gating at all.
+	for resolved in [false, true]:
+		var exit_scene: RefCounted = load("res://director/director_runtime.gd").new()
+		exit_scene.boot()
+		state.new_game()
+		if resolved:
+			var seen: PackedStringArray = state.meetings
+			seen[0] = "done"
+			state.meetings = seen
+		exit_scene.goto_movie("DAY1", null, {"label": "edge2go"})
+		var exit_sprite: Dictionary = {}
+		for sprite in exit_scene.clickable_sprites(exit_scene.loader.get_frame(exit_scene.frame_index)):
+			if int((sprite as Dictionary).get("channel", 0)) == 10:
+				exit_sprite = sprite
+		exit_scene._activate_sprite(exit_sprite, exit_scene.sprite_stage_rect(exit_sprite).get_center())
+		var walked: bool = exit_scene.puppet.is_walking()
+		_check("edge2 exit %s while the murder is %s" % [
+			"opens" if resolved else "stays shut", "done" if resolved else "pending"],
+			walked == resolved)
+
 	print("")
 	print("%d checks failed" % _fails)
 	quit(1 if _fails > 0 else 0)

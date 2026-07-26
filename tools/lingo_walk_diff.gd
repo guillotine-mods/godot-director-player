@@ -11,6 +11,13 @@ extends SceneTree
 ## and record where the player ended up. A difference is not automatically a bug,
 ## but every one has to be read before the flag can default on.
 ##
+## Read the number carefully: it is agreement with the lifted export, and the
+## export has no story gating. ISLAND2 CastScript 34 refuses the edge2 exit while
+## `item 1 of meetings = "murder1"`, which is correct and which this tool scores
+## as a dead click. So agreement falls as the interpreter becomes more faithful,
+## and higher is not automatically better. tools/smoke.gd asserts the gated cases
+## directly instead.
+##
 ##   godot --headless --script tools/lingo_walk_diff.gd
 ##   godot --headless --script tools/lingo_walk_diff.gd -- DAY1
 
