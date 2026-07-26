@@ -71,31 +71,57 @@ def main() -> int:
     if not isinstance(casts, dict):
         print(f"error: no casts in {args.registry}")
         return 1
+    ## `{"alias_of": target}` entries are references, not casts. See the generator.
+    for name, cast in list(casts.items()):
+        target = cast.get("alias_of") if isinstance(cast, dict) else None
+        if isinstance(target, str):
+            resolved = casts.get(target)
+            if isinstance(resolved, dict) and "alias_of" not in resolved:
+                casts[name] = resolved
+            else:
+                print(f"warning: alias {name} points at missing cast {target}")
 
     wanted = referenced_ids(args.model_root)
     total = 0
+    ## Reported per category so that forgiving a member and resolving one stay
+    ## distinguishable. Classifying everything as non-drawing would also reach
+    ## exit 0, and a bitmap that silently became unclassified would look the same.
+    counts = {"bitmap": 0, "film loop": 0, "non-drawing": 0}
     for name in sorted(wanted):
         cast = casts.get(name)
         if not isinstance(cast, dict):
             print(f"{name}: no standalone export — the linked cast was never exported")
             total += len(wanted[name])
             continue
-        resolved = set(cast.get("members") or {}) | set(cast.get("film_loops") or {})
+        bitmaps = set(cast.get("members") or {})
+        loops = set(cast.get("film_loops") or {})
+        non_drawing = set(cast.get("non_drawing") or {})
+        for cast_id in wanted[name]:
+            key = str(cast_id)
+            if key in bitmaps:
+                counts["bitmap"] += 1
+            elif key in loops:
+                counts["film loop"] += 1
+            elif key in non_drawing:
+                counts["non-drawing"] += 1
+        resolved = bitmaps | loops | non_drawing
         missing = sorted(i for i in wanted[name] if str(i) not in resolved)
         if not missing:
             continue
         total += len(missing)
-        loops = len(cast.get("film_loops") or {})
         print(
             f"{name}: {len(missing)} unresolvable of {len(wanted[name])} referenced "
-            f"(bitmaps {len(cast.get('members') or {})}, film loops {loops})"
+            f"(bitmaps {len(bitmaps)}, film loops {len(loops)}, "
+            f"non-drawing {len(non_drawing)})"
         )
         print(f"    {missing}")
 
+    summary = ", ".join(f"{count} {label}" for label, count in counts.items())
     if total == 0:
-        print("every referenced linked cast member resolves")
+        print(f"every referenced linked cast member resolves: {summary}")
         return 0
-    print(f"\n{total} referenced cast ids resolve to neither a bitmap nor a film loop.")
+    print(f"\nresolved: {summary}")
+    print(f"{total} referenced cast ids resolve to no member at all.")
     print("Regenerate with the chunk dumps available:")
     print("    python3 tools/generate_cast_registry.py --chunks-root <decompiled_chunks>")
     return 1

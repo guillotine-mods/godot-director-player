@@ -163,8 +163,10 @@ They exist so the game is completable; the Lingo replaces them wholesale.
 - Talk trees / lip-sync
 - Day 2 room content: MORN2, MORN3, DTCDAY2, MENADAY2, HATDAY2/3, HATSIKUM and
   INVESTIG have no triggers yet
-- 222 cast members that resolve to neither bitmap nor film loop
-  (`tools/check_cast_coverage.py`)
+Closed: the 222 unresolvable cast members. 13 were genuinely missing film loops,
+now recovered; 149 are Director shapes, which are the game's invisible hotspots
+and correctly draw nothing; 59 were behind a cast-lib name alias; 1 is a text
+member. `tools/check_cast_coverage.py` exits 0 and reports per category.
 
 ## Inventory drag-and-drop
 
