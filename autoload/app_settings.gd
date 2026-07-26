@@ -21,9 +21,10 @@ const CONFIG_PATH := "user://piposh2_settings.cfg"
 
 var aspect_mode: AspectMode = AspectMode.WIDE_16_9
 var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST
-## Master switch for development aids. Off by default: nothing that only exists
-## to help build the game may show up in a normal play session.
-var dev_mode: bool = false
+## Master switch for development aids (press marks, the Skip scene button).
+## ON while the port is being built. FLIP THIS TO false BEFORE SHIPPING, or an
+## exported build hands players a skip button and boxes over every hotspot.
+var dev_mode: bool = true
 var show_debug_overlays: bool = true
 var show_hotspot_hints: bool = false
 var allow_minigame_skip: bool = true
