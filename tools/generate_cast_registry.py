@@ -9,6 +9,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from director_cast_types import non_drawing_members
 from director_film_loops import extract_film_loops
 
 
@@ -28,6 +29,25 @@ def read_object(path: Path) -> dict:
 def norm(value: object) -> str:
     """Normalize valid cast-library names for case-insensitive lookup."""
     return value.strip().lower() if isinstance(value, str) else ""
+
+
+def path_stem(value: object) -> str:
+    """Return the cast file's base name, lowercased, from a Director path.
+
+    Movies name the same linked library inconsistently: `ISHDAY1` links
+    `hezi.cst` twice, once as `hezi` and once as `hezi1`, so a name-keyed lookup
+    misses 59 members that are in fact exported. The path agrees where the names
+    do not.
+    """
+    if not isinstance(value, str):
+        return ""
+    tail = value.strip().lower()
+    for separator in (":", "\\", "/"):
+        tail = tail.rsplit(separator, 1)[-1]
+    for suffix in (".cst", ".cxt", ".dxr", ".dir"):
+        if tail.endswith(suffix):
+            return tail[: -len(suffix)]
+    return tail
 
 
 def internal_members(source: dict, path: Path) -> dict[str, dict]:
@@ -63,7 +83,7 @@ def main() -> int:
         "--chunks-root",
         type=Path,
         default=Path("../Piposh2-Web-Alpha/decompiled_chunks"),
-        help="Director chunk-dump root used to export type-2 film loops",
+        help="Director chunk-dump root used to export film loops and member types",
     )
     args = parser.parse_args()
 
@@ -72,6 +92,7 @@ def main() -> int:
         return 1
 
     linked: set[str] = set()
+    aliases: dict[str, str] = {}
     directories: dict[str, Path] = {}
     for frames_path in sorted(args.model_root.glob("*/frames.json"), key=lambda path: path.parent.name.lower()):
         cast_libs = read_object(frames_path).get("cast_libs", {})
@@ -91,6 +112,9 @@ def main() -> int:
                 continue
             if name != "internal":
                 linked.add(name)
+                stem = path_stem(library.get("path"))
+                if stem and stem != name:
+                    aliases.setdefault(name, stem)
 
     for members_path in sorted(args.model_root.glob("*/members.json"), key=lambda path: path.parent.name.lower()):
         directory_name = norm(members_path.parent.name)
@@ -99,13 +123,31 @@ def main() -> int:
 
     chunks_available = args.chunks_root.is_dir()
     if not chunks_available:
-        print(f"warning: film-loop chunks unavailable: {args.chunks_root}")
+        print(f"warning: chunk dump unavailable: {args.chunks_root}")
+
+    ## Film loops and member types come from the chunk dump, which is not in the
+    ## repository. Regenerating without it must not silently drop what a previous
+    ## run recovered, or the coverage check reverts to reporting members that were
+    ## already accounted for.
+    previous = read_object(args.output).get("casts", {}) if args.output.is_file() else {}
+    if not isinstance(previous, dict):
+        previous = {}
 
     casts: dict[str, dict] = {}
     film_loop_count = 0
+    non_drawing_count = 0
+    aliased: dict[str, str] = {}
     for name in sorted(linked):
         directory = directories.get(name)
         if directory is None:
+            ## The cast is exported, the movie just calls it something else.
+            ## Recorded as a reference rather than a copy: `hezi` is 474 members
+            ## and duplicating it to model one alias would add 300 KB to a file
+            ## the runtime parses at boot.
+            target = aliases.get(name, "")
+            if target and target in directories:
+                aliased[name] = target
+                continue
             print(f"warning: no standalone export for linked cast {name}")
             continue
         members_path = directory / "members.json"
@@ -118,13 +160,27 @@ def main() -> int:
             print(f"warning: no internal members for linked cast {name} in {directory}")
             continue
         cast = {"directory": directory.name, "members": members}
+        carried = previous.get(name) if isinstance(previous.get(name), dict) else {}
         chunks_dir = args.chunks_root / directory.name / directory.name / "chunks"
         if chunks_available and chunks_dir.is_dir():
             film_loops = extract_film_loops(chunks_dir)
-            if film_loops:
-                cast["film_loops"] = film_loops
-                film_loop_count += len(film_loops)
+            non_drawing = non_drawing_members(chunks_dir)
+        else:
+            film_loops = carried.get("film_loops") or {}
+            non_drawing = carried.get("non_drawing") or {}
+        if film_loops:
+            cast["film_loops"] = film_loops
+            film_loop_count += len(film_loops)
+        if non_drawing:
+            cast["non_drawing"] = non_drawing
+            non_drawing_count += len(non_drawing)
         casts[name] = cast
+
+    for name, target in sorted(aliased.items()):
+        if target in casts:
+            casts[name] = {"alias_of": target}
+        else:
+            print(f"warning: alias {name} points at missing cast {target}")
 
     contents = json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n"
     temporary_path: Path | None = None
@@ -151,7 +207,10 @@ def main() -> int:
                 pass
         print(f"error: cannot write {args.output}: {error}")
         return 1
-    print(f"wrote {args.output}: {len(casts)} casts, {film_loop_count} film loops")
+    print(
+        f"wrote {args.output}: {len(casts)} casts ({len(aliased)} aliased), "
+        f"{film_loop_count} film loops, {non_drawing_count} non-drawing members"
+    )
     return 0
 
 

@@ -61,8 +61,29 @@ func load_index() -> Error:
 	if typeof(casts) != TYPE_DICTIONARY:
 		return ERR_INVALID_DATA
 	index = parsed
-	cast_registry = casts
+	cast_registry = _resolve_cast_aliases(casts)
 	return OK
+
+
+func _resolve_cast_aliases(casts: Dictionary) -> Dictionary:
+	## A movie can link the same cast file under two names: `ISHDAY1` links
+	## `hezi.cst` as both `hezi` and `hezi1`. The generator records the second as
+	## `{"alias_of": "hezi"}` rather than duplicating 474 members on disk, so the
+	## alias is pointed at the real cast here. Doing it once at load keeps every
+	## `cast_registry` lookup a plain dictionary access.
+	for name in casts.keys():
+		var cast: Variant = casts[name]
+		if typeof(cast) != TYPE_DICTIONARY:
+			continue
+		var target: Variant = (cast as Dictionary).get("alias_of", null)
+		if typeof(target) != TYPE_STRING:
+			continue
+		var resolved: Variant = casts.get(target, null)
+		if typeof(resolved) == TYPE_DICTIONARY and not (resolved as Dictionary).has("alias_of"):
+			casts[name] = resolved
+		else:
+			push_warning("Cast alias %s points at missing cast %s" % [name, target])
+	return casts
 
 
 func available_movies() -> PackedStringArray:
