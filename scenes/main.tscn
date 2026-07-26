@@ -80,6 +80,27 @@ offset_bottom = 14.0
 mouse_filter = 2
 color = Color(1, 0.9, 0.25, 0.95)
 
+[node name="DevBar" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -180.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 44.0
+grow_horizontal = 0
+theme_override_constants/separation = 6
+
+[node name="SkipBtn" type="Button" parent="DevBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Leave this scene the way finishing it would (dev only)"
+text = "Skip scene ⏭"
+
 [node name="DebugHud" type="PanelContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 1
@@ -285,10 +306,15 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
+[node name="DevCheck" type="CheckBox" parent="SettingsPanel/Margin/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Development mode"
+
 [node name="DebugCheck" type="CheckBox" parent="SettingsPanel/Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Debug hotspot overlays"
+text = "Debug hotspot overlays (needs dev mode)"
 
 [node name="HintsCheck" type="CheckBox" parent="SettingsPanel/Margin/VBox"]
 unique_name_in_owner = true
@@ -355,3 +381,5 @@ text = "Close"
 [connection signal="value_changed" from="SettingsPanel/Margin/VBox/CursorSpeed" to="SettingsPanel" method="_on_cursor_speed_value_changed"]
 [connection signal="pressed" from="SettingsPanel/Margin/VBox/MovieRow/JumpBtn" to="SettingsPanel" method="_on_jump_movie_pressed"]
 [connection signal="pressed" from="SettingsPanel/Margin/VBox/CloseBtn" to="SettingsPanel" method="_on_close_pressed"]
+[connection signal="pressed" from="DevBar/SkipBtn" to="." method="_on_skip_scene_pressed"]
+[connection signal="toggled" from="SettingsPanel/Margin/VBox/DevCheck" to="SettingsPanel" method="_on_dev_check_toggled"]

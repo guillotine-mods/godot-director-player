@@ -3,6 +3,11 @@ extends Node
 
 signal stage_click(stage_pos: Vector2)
 signal stage_hover(stage_pos: Vector2)
+## Director's inventory mechanic is mouseDown (store home) → drag → mouseUp
+## (test intersects), which a click stream alone cannot express.
+signal stage_press(stage_pos: Vector2)
+signal stage_drag(stage_pos: Vector2)
+signal stage_release(stage_pos: Vector2)
 signal hint_requested
 signal skip_requested
 
@@ -10,6 +15,7 @@ var virtual_cursor: Vector2 = Vector2(320, 240)
 var using_gamepad: bool = false
 var _stage_rect := Rect2(0, 0, 640, 480)
 var _enabled: bool = true
+var _pressed: bool = false
 
 
 func set_stage_rect(rect: Rect2) -> void:
@@ -58,9 +64,26 @@ func _input(event: InputEvent) -> void:
 
 func notify_mouse_stage_pos(stage_pos: Vector2) -> void:
 	virtual_cursor = stage_pos.clamp(_stage_rect.position, _stage_rect.position + _stage_rect.size)
-	stage_hover.emit(virtual_cursor)
+	if _pressed:
+		stage_drag.emit(virtual_cursor)
+	else:
+		stage_hover.emit(virtual_cursor)
 
 
 func notify_mouse_click(stage_pos: Vector2) -> void:
 	virtual_cursor = stage_pos
 	stage_click.emit(stage_pos)
+
+
+func notify_mouse_press(stage_pos: Vector2) -> void:
+	_pressed = true
+	virtual_cursor = stage_pos
+	stage_press.emit(stage_pos)
+
+
+func notify_mouse_release(stage_pos: Vector2) -> void:
+	if not _pressed:
+		return
+	_pressed = false
+	virtual_cursor = stage_pos
+	stage_release.emit(stage_pos)

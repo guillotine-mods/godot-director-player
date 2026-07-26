@@ -47,6 +47,7 @@ const MINIGAME_MOVIES: PackedStringArray = [
 ]
 
 var inventory_catalog: Dictionary = {}
+var _slot_channels: Array[int] = []
 var objects_field: PackedStringArray = PackedStringArray()
 var globalday: int = 1
 var meetings: PackedStringArray = PackedStringArray()
@@ -78,6 +79,7 @@ func _load_inventory_catalog() -> void:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) == TYPE_DICTIONARY:
 		inventory_catalog = parsed
+		_slot_channels.clear()
 
 
 func new_game() -> void:
@@ -224,23 +226,47 @@ func remove_inventory_item(item_name: String) -> bool:
 	return true
 
 
-func inventory_member_for_item(item_name: String) -> Dictionary:
+func slot_channels() -> Array:
+	## JSON numbers parse as floats, and Array.find() will not match the int 103
+	## against 103.0, so coerce once. Without this the slot lookup returned -1
+	## for every channel and no item icon was ever drawn.
+	if not _slot_channels.is_empty():
+		return _slot_channels
+	var raw: Array = inventory_catalog.get("slot_channels", [103, 104, 105, 106, 107, 108, 109, 110])
+	for channel in raw:
+		_slot_channels.append(int(channel))
+	return _slot_channels
+
+
+func item_in_slot(slot_index: int) -> String:
+	## objectsfield line `slot_index + 1`, i.e. Lingo's `line i - 102` for
+	## sprite i. Returns "" for an out-of-range or empty slot.
+	if slot_index < 0 or slot_index >= objects_field.size():
+		return ""
+	var item := str(objects_field[slot_index]).to_lower()
+	return "" if item == "" or item == "empty" else item
+
+
+func inventory_member_for_item(item_name: String, cast_lib: int = -1) -> Dictionary:
+	## cast_lib is the index of the `master` library in the movie being drawn,
+	## which differs per movie. -1 keeps the catalog default for callers with no
+	## loader to ask (Save Editor, tests).
 	var name := item_name.to_lower()
-	var cast_lib := int(inventory_catalog.get("cast_lib", 2))
+	var lib := cast_lib if cast_lib > 0 else int(inventory_catalog.get("cast_lib", 2))
 	if name.is_empty() or name == "empty":
-		return {"cast_lib": cast_lib, "cast_id": int(inventory_catalog.get("empty_member", 9))}
+		return {"cast_lib": lib, "cast_id": int(inventory_catalog.get("empty_member", 9))}
 	var items: Dictionary = inventory_catalog.get("items", {})
 	if not items.has(name):
 		return {}
-	return {"cast_lib": cast_lib, "cast_id": int(items[name])}
+	return {"cast_lib": lib, "cast_id": int(items[name])}
 
 
-func inventory_override_for_channel(channel: int) -> Dictionary:
-	var slots: Array = inventory_catalog.get("slot_channels", [103, 104, 105, 106, 107, 108, 109, 110])
+func inventory_override_for_channel(channel: int, cast_lib: int = -1) -> Dictionary:
+	var slots: Array = slot_channels()
 	var slot_idx := slots.find(channel)
 	if slot_idx < 0 or slot_idx >= objects_field.size():
 		return {}
-	return inventory_member_for_item(objects_field[slot_idx])
+	return inventory_member_for_item(objects_field[slot_idx], cast_lib)
 
 
 func is_minigame_movie(movie: String) -> bool:

@@ -163,6 +163,19 @@
 					"pushing her off the clif2 cliff."
 				]
 			}
+		],
+		"NIGHT1": [
+			{
+				"rooms": ["shore3"],
+				"channels": [17],
+				"after_flag": "night_sulam_placed",
+				"note": [
+					"reference/lingo/MASTER/External/BehaviorScript 110.ls reveals",
+					"sprite 17 when the ladder (sulam) is dropped on sprite 8, and",
+					"records it in globalnight item 1. Sourced from the Lingo, not",
+					"inferred, so it carries no confidence field."
+				]
+			}
 		]
 	},
 

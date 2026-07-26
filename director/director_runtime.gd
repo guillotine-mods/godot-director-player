@@ -43,10 +43,20 @@ const MAX_SCORE_STEPS_PER_TICK := 3
 const DYNAMIC_REDIRECT_SCRIPT := 207
 ## Boot movies that are never treated as a hub the player can return to.
 const BOOT_MOVIES := ["strtgame", "exodus"]
+## Piposh's head. Every drop handler tests this first: an item dropped on it is
+## examined rather than used.
+const EXAMINE_CHANNEL := 100
+## master member piphead2, shown for a single stage refresh while he looks.
+const PIPHEAD_LOOK_MEMBER := 55
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
 var context: MovieContext = MovieContext.new()
+var drag: InventoryDrag = InventoryDrag.new()
+var drops: InventoryDrops = InventoryDrops.new()
+## Built on demand: loading every cast's scripts costs time a normal run should
+## not pay when the interpreter is off.
+var lingo: LingoEngine = null
 
 var frame_index: int = 0
 var running: bool = true
@@ -64,6 +74,10 @@ var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
 var _hidden_channels: Dictionary = {}
+## Channels hidden by an interpreted script's `sprite(N).visible = 0`. Kept apart
+## from _hidden_channels, which refresh_sprite_gates() replaces wholesale.
+var _lingo_hidden: Dictionary = {}
+var _head_look_until_ms: float = -1.0
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -80,6 +94,9 @@ func _init() -> void:
 
 func boot() -> Error:
 	context.load_context()
+	drops.load_table()
+	if AppSettings.use_lingo_clicks or AppSettings.use_lingo_frames:
+		lingo = LingoEngine.new(self)
 	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
 
@@ -127,6 +144,19 @@ func game_step() -> void:
 	var frame: Dictionary = loader.get_frame(frame_index)
 	if _try_transition_redirect(frame):
 		return
+
+	# The original `on exitFrame` is 2504 of the game's 3457 handlers. When one
+	# exists and navigates, it decides where the score goes and the exported nav
+	# is not consulted; a hold stops here too. Anything else falls through to the
+	# existing resolution.
+	if lingo != null and AppSettings.use_lingo_frames:
+		if lingo.dispatch_frame_event("exitFrame", frame_index):
+			if lingo.host.stage_dirty:
+				lingo.host.stage_dirty = false
+				redraw_requested.emit()
+			if lingo.host.navigated or lingo.host.held:
+				return
+
 	var nav: Variant = frame.get("nav", null)
 	var action: Dictionary = NavActions.resolve(nav, loader, frame_index)
 
@@ -220,7 +250,213 @@ func _remember_transition(nav: Variant) -> void:
 
 func is_channel_hidden(channel: int) -> bool:
 	## Story-gated score channel: present in the export, not yet in the story.
-	return _hidden_channels.has(channel)
+	return _hidden_channels.has(channel) or _lingo_hidden.has(channel)
+
+
+func set_channel_visible(channel: int, visible: bool) -> void:
+	## `sprite(N).visible = 0` from an interpreted script.
+	if visible:
+		if not _lingo_hidden.has(channel):
+			return
+		_lingo_hidden.erase(channel)
+	else:
+		if _lingo_hidden.has(channel):
+			return
+		_lingo_hidden[channel] = true
+	redraw_requested.emit()
+
+
+func master_cast_lib() -> int:
+	## Every inventory icon, `object0` and both Piposh heads live in the shared
+	## `master` cast. Fall back to 2, which is where DAY1 and NIGHT1 put it.
+	var index := loader.cast_lib_index("master")
+	return index if index > 0 else 2
+
+
+func head_member_override() -> int:
+	## -1 while the score member (piphead1) stands.
+	##
+	## Timed rather than counted in enter_frame(), because a frame that holds on
+	## wait_click, on delay_ms or on the soundBusy guard never re-enters, and the
+	## Lingo's restore after one updateStage() is unconditional. Examining on a
+	## wait_click frame used to leave Piposh mid-look until the player clicked.
+	return PIPHEAD_LOOK_MEMBER if _time_ms < _head_look_until_ms else -1
+
+
+func slot_sprite_at(stage_pt: Vector2) -> Dictionary:
+	## Slot channels never reach clickable_sprites(): that filter drops any
+	## sprite whose on_click has no nav, inventory or sounds, which is all of
+	## 103-110. Find them by channel in the score frame instead.
+	var slots: Array = GameState.slot_channels()
+	var frame: Dictionary = loader.get_frame(frame_index)
+	for sprite in frame.get("sprites", []):
+		if typeof(sprite) != TYPE_DICTIONARY:
+			continue
+		var channel := int((sprite as Dictionary).get("channel", 0))
+		if slots.find(channel) < 0:
+			continue
+		if is_channel_hidden(channel):
+			continue
+		if sprite_contains(sprite, stage_pt):
+			return sprite
+	return {}
+
+
+func begin_inventory_drag(stage_pt: Vector2) -> bool:
+	var sprite: Dictionary = slot_sprite_at(stage_pt)
+	if sprite.is_empty():
+		return false
+	var channel := int(sprite.get("channel", 0))
+	var slot_index: int = GameState.slot_channels().find(channel)
+	var item: String = GameState.item_in_slot(slot_index)
+	if item == "":
+		# displayobject() gives an empty slot member object0 and no
+		# moveableSprite, so there is nothing to pick up.
+		return false
+	var rect: Rect2 = sprite_stage_rect(sprite)
+	drag.begin(channel, item, rect.position + rect.size * 0.5, _item_icon_size(item, rect.size))
+	redraw_requested.emit()
+	return true
+
+
+func _item_icon_size(item: String, fallback: Vector2) -> Vector2:
+	## displayobject() sets the slot's memberNum to the item, so `intersects`
+	## measures the item's own bitmap. The score rect is the stale object0 box.
+	var member: Dictionary = GameState.inventory_member_for_item(item, master_cast_lib())
+	if member.is_empty():
+		return fallback
+	var bitmap: Dictionary = loader.get_member(int(member.cast_lib), int(member.cast_id))
+	var w := float(bitmap.get("width", 0))
+	var h := float(bitmap.get("height", 0))
+	return Vector2(w, h) if w > 0.0 and h > 0.0 else fallback
+
+
+func update_inventory_drag(stage_pt: Vector2) -> void:
+	if not drag.active:
+		return
+	drag.move_to(stage_pt)
+	redraw_requested.emit()
+
+
+func end_inventory_drag(stage_pt: Vector2) -> void:
+	if not drag.active:
+		return
+	drag.move_to(stage_pt)
+	var item := drag.item
+	if _drag_intersects(EXAMINE_CHANNEL):
+		_examine_item(item)
+	else:
+		for rule_value in drops.rules_for(loader.movie_name):
+			var channel := int((rule_value as Dictionary).get("target_channel", -1))
+			if channel >= 0 and _drag_intersects(channel):
+				if apply_inventory_drop(item, channel):
+					break
+	# The icon springs home whatever happened, so a wrong target needs no
+	# failure branch: nothing intersects, and nothing plays.
+	drag.clear()
+	redraw_requested.emit()
+
+
+func _channel_rect(channel: int) -> Rect2:
+	var frame: Dictionary = loader.get_frame(frame_index)
+	for sprite in frame.get("sprites", []):
+		if typeof(sprite) != TYPE_DICTIONARY:
+			continue
+		if int((sprite as Dictionary).get("channel", 0)) != channel:
+			continue
+		if is_channel_hidden(channel):
+			return Rect2()
+		return sprite_stage_rect(sprite)
+	return Rect2()
+
+
+func _drag_intersects(channel: int) -> bool:
+	## Lingo: `sprite the clickOn intersects <channel>`, a rect overlap between
+	## the dragged icon and the target sprite, not a point test.
+	var target := _channel_rect(channel)
+	if target.size.x <= 0.0 or target.size.y <= 0.0:
+		return false
+	return drag.icon_rect().intersects(target)
+
+
+func _examine_item(item: String) -> void:
+	## Swap sprite 100 to piphead2, play pi<item>.aif, and restore piphead1 one
+	## score frame later: the Lingo calls updateStage() once before restoring.
+	_head_look_until_ms = _time_ms + 1000.0 / maxf(current_fps, 1.0)
+	AudioDirector.play_file(1, "pi%s.aif" % item)
+	nav_event.emit("examine: %s" % item)
+
+
+func apply_inventory_drop(item: String, target_channel: int) -> bool:
+	## Returns false when nothing in the table matched, which is the silent
+	## case: the icon springs home and no sound plays.
+	var room := marker_name_for_frame(frame_index)
+	for rule_value in drops.rules_for(loader.movie_name):
+		var rule: Dictionary = rule_value
+		if int(rule.get("target_channel", -1)) != target_channel:
+			continue
+		if not drops.matches(rule, item, room):
+			continue
+		if not _drop_requirements_met(rule):
+			continue
+		_run_drop_rule(rule, item)
+		return true
+	return false
+
+
+func _drop_requirements_met(rule: Dictionary) -> bool:
+	var required: Variant = rule.get("requires_visible", [])
+	if typeof(required) != TYPE_ARRAY:
+		return true
+	for channel in required as Array:
+		var rect := _channel_rect(int(channel))
+		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+			return false
+	return true
+
+
+func _run_drop_rule(rule: Dictionary, item: String) -> void:
+	for channel in rule.get("stop_channels", []):
+		AudioDirector.stop_channel(int(channel))
+
+	for sound_value in rule.get("sounds", []):
+		if typeof(sound_value) != TYPE_DICTIONARY:
+			continue
+		var sound: Dictionary = sound_value
+		var channel := int(sound.get("channel", 1))
+		var file := _s(sound.get("file", ""))
+		if file != "":
+			AudioDirector.play_file(channel, file)
+			continue
+		var family := _s(sound.get("family", ""))
+		if family == "":
+			continue
+		var from := int(sound.get("from", 1))
+		var to := maxi(from, int(sound.get("to", from)))
+		AudioDirector.play_file(channel, "%s%d.aif" % [family, randi_range(from, to)])
+
+	var flag := _s(rule.get("sets_flag", ""))
+	if flag != "":
+		GameState.set_story_flag(flag)
+		refresh_sprite_gates()
+
+	if bool(rule.get("consume", false)):
+		GameState.remove_inventory_item(item)
+
+	match _s(rule.get("action", "none")):
+		"goto_label":
+			var label := _s(rule.get("label", ""))
+			var idx := loader.resolve_label(label, false)
+			if idx >= 0:
+				enter_frame(idx)
+				running = true
+				nav_event.emit("drop %s → %s" % [item, label])
+			else:
+				nav_event.emit('drop %s → missing label "%s"' % [item, label])
+		"reveal":
+			nav_event.emit("drop %s → revealed %s" % [item, _s(rule.get("sets_flag", ""))])
+		_:
+			pass
 
 
 func refresh_sprite_gates() -> void:
@@ -425,6 +661,8 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		if load_lbl >= 0:
 			start = load_lbl
 
+	if lingo != null:
+		lingo.prepare_movie(movie_name)
 	movie_changed.emit(movie_name)
 	enter_frame(start)
 	nav_event.emit(
@@ -588,6 +826,22 @@ func update_hover(stage_pt: Vector2) -> void:
 
 
 func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
+	# The original script wins when it exists and the interpreter is enabled;
+	# otherwise the lifted on_click data stands, so nothing regresses. The flag
+	# must be checked here as well as at construction: the engine is built when
+	# either flag is on, so testing `lingo != null` alone let use_lingo_frames
+	# silently take clicks too, which broke every walk hotspot.
+	if lingo != null and AppSettings.use_lingo_clicks:
+		var channel_clicked := int(sprite.get("channel", 0))
+		if lingo.has_any_handler_for(channel_clicked, frame_index, "mouseUp"):
+			lingo.host.mouse_stage = stage_pt
+			lingo.dispatch_sprite_event("mouseDown", channel_clicked, frame_index)
+			lingo.dispatch_sprite_event("mouseUp", channel_clicked, frame_index)
+			if lingo.host.stage_dirty:
+				lingo.host.stage_dirty = false
+				redraw_requested.emit()
+			nav_event.emit("lingo: ch%d mouseUp" % channel_clicked)
+			return
 	var on_click: Dictionary = sprite.get("on_click", {})
 	AudioDirector.play_click_sounds(on_click)
 	_apply_inventory_ops(on_click.get("inventory", []))
@@ -804,6 +1058,31 @@ func skip_current() -> void:
 		# in the hotel arcade no longer drops the player on the Day 1 shore.
 		nav_event.emit("QoL skip → %s exit" % m)
 		_on_movie_end()
+
+
+func dev_skip_scene() -> String:
+	## Development aid: leave the current movie the way finishing it would, with
+	## none of skip_current()'s restrictions. skip_current() only fires for the
+	## title, EXODUS and the declared minigames, which is most of what you want
+	## to skip while playing but useless when you are trying to reach a specific
+	## room. Returns a short description for the caller to surface.
+	var movie := loader.movie_name
+	if movie == "" or loader.frames.is_empty():
+		return "nothing loaded"
+	AudioDirector.stop_all()
+	waiting_for_click = false
+	puppet.reset()
+	if context.is_hub(movie):
+		# A hub has nowhere to exit to, so hand it to its own phase transition,
+		# or fall through to the next room the score would reach.
+		_try_phase_transition()
+		if loader.movie_name == movie:
+			_advance_or_hold()
+		nav_event.emit("dev skip: %s" % movie)
+		return "advanced %s" % movie
+	_on_movie_end()
+	nav_event.emit("dev skip: %s → %s" % [movie, loader.movie_name])
+	return "%s → %s" % [movie, loader.movie_name]
 
 
 func hint() -> void:

@@ -38,6 +38,9 @@ func _ready() -> void:
 
 	InputRouter.stage_click.connect(_on_stage_click)
 	InputRouter.stage_hover.connect(_on_stage_hover)
+	InputRouter.stage_press.connect(func(p): runtime.begin_inventory_drag(p))
+	InputRouter.stage_drag.connect(func(p): runtime.update_inventory_drag(p))
+	InputRouter.stage_release.connect(func(p): runtime.end_inventory_drag(p))
 	InputRouter.hint_requested.connect(func(): runtime.hint())
 	InputRouter.skip_requested.connect(func(): runtime.skip_current())
 	AppSettings.settings_changed.connect(_on_settings_changed)
@@ -59,8 +62,15 @@ func _process(delta: float) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		InputRouter.notify_mouse_stage_pos(screen_to_stage(event.position))
-	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		InputRouter.notify_mouse_click(screen_to_stage(event.position))
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		var stage_pos := screen_to_stage(event.position)
+		if event.pressed:
+			# Press starts a possible drag AND still fires the click, so every
+			# existing hotspot keeps its press-to-activate behaviour.
+			InputRouter.notify_mouse_press(stage_pos)
+			InputRouter.notify_mouse_click(stage_pos)
+		else:
+			InputRouter.notify_mouse_release(stage_pos)
 		accept_event()
 
 
@@ -90,6 +100,20 @@ var frame_index: int:
 
 func _on_stage_hover(stage_pos: Vector2) -> void:
 	runtime.update_hover(stage_pos)
+	# displayobject() sets the cursor of an occupied slot to
+	# [member "hand1", member "hand2"]. Those two members decode to 5x6 and 8x8
+	# pixels, and a Director cursor cast pair is 1-bit 16x16, so the export is
+	# wrong and the built-in hand stands in until the BITD decode is fixed.
+	var over_item := false
+	var slot: Dictionary = runtime.slot_sprite_at(stage_pos)
+	if not slot.is_empty():
+		var slot_index: int = GameState.slot_channels().find(int(slot.get("channel", 0)))
+		over_item = GameState.item_in_slot(slot_index) != ""
+	mouse_default_cursor_shape = (
+		Control.CURSOR_POINTING_HAND
+		if over_item or runtime.drag.active
+		else Control.CURSOR_ARROW
+	)
 
 
 func _on_stage_click(stage_pos: Vector2) -> void:
@@ -378,10 +402,15 @@ func draw_current_frame(canvas: Control) -> void:
 		# Story-gated: in the score, but the story has not reached it yet.
 		if runtime.is_channel_hidden(channel):
 			continue
+		# The icon being dragged is drawn at the cursor, below.
+		if runtime.drag.active and channel == runtime.drag.slot_channel:
+			continue
 
 		var cast_lib: int = int(sprite.get("cast_lib", 1))
 		var cast_id: int = int(sprite.get("cast_id", 0))
-		var inv: Dictionary = GameState.inventory_override_for_channel(channel)
+		var inv: Dictionary = GameState.inventory_override_for_channel(
+			channel, runtime.master_cast_lib()
+		)
 		var draw_lib: int = cast_lib
 		if not inv.is_empty():
 			draw_lib = int(inv.cast_lib)
@@ -393,6 +422,10 @@ func draw_current_frame(canvas: Control) -> void:
 			and STRTGAME_MENU_HOVER.has(channel)
 		):
 			cast_id = int(STRTGAME_MENU_HOVER[channel]["hover"])
+
+		# Examining an item swaps piphead1 for piphead2 for one frame.
+		if channel == DirectorRuntime.EXAMINE_CHANNEL and runtime.head_member_override() >= 0:
+			cast_id = runtime.head_member_override()
 
 		if inv.is_empty():
 			var film_loop: Dictionary = runtime.loader.get_film_loop(draw_lib, cast_id)
@@ -457,13 +490,41 @@ func draw_current_frame(canvas: Control) -> void:
 			var prect: Rect2 = puppet.draw_rect(pmember, ptex, sx, sy)
 			canvas.draw_texture_rect(ptex, prect, false)
 
-	if AppSettings.show_debug_overlays or AppSettings.show_hotspot_hints:
+	if runtime.drag.active:
+		var drag_member: Dictionary = GameState.inventory_member_for_item(
+			runtime.drag.item, runtime.master_cast_lib()
+		)
+		if not drag_member.is_empty():
+			var dtex: Texture2D = runtime.loader.get_texture(
+				int(drag_member.cast_lib),
+				int(drag_member.cast_id),
+				RenderModelLoader.Transparency.BACKGROUND
+			)
+			if dtex:
+				var dmember: Dictionary = runtime.loader.get_member(
+					int(drag_member.cast_lib), int(drag_member.cast_id)
+				)
+				var dreg_x: float = float(dmember.get("reg_offset_x", dtex.get_width() * 0.5))
+				var dreg_y: float = float(dmember.get("reg_offset_y", dtex.get_height() * 0.5))
+				var dpos: Vector2 = runtime.drag.position
+				canvas.draw_texture_rect(
+					dtex,
+					Rect2(
+						(dpos.x - dreg_x) * sx,
+						(dpos.y - dreg_y) * sy,
+						float(dtex.get_width()) * sx,
+						float(dtex.get_height()) * sy,
+					),
+					false
+				)
+
+	if AppSettings.show_press_marks() or AppSettings.show_hotspot_hints:
 		for sprite in runtime.clickable_sprites(frame):
 			var r: Rect2 = runtime.sprite_stage_rect(sprite)
 			var rect: Rect2 = Rect2(r.position.x * sx, r.position.y * sy, r.size.x * sx, r.size.y * sy)
 			var color: Color = (
 				Color(0.35, 0.8, 1.0, 0.85)
-				if AppSettings.show_debug_overlays
+				if AppSettings.show_press_marks()
 				else Color(1.0, 0.9, 0.2, 0.55)
 			)
 			canvas.draw_rect(rect, color, false, 2.0)

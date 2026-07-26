@@ -1,0 +1,104 @@
+{
+	"_comment": [
+		"Inventory drop rules, transcribed from the ten drop behaviours in",
+		"reference/lingo/MASTER/External/BehaviorScript {52,93,94,97,108,110,111,128,129,135}.ls.",
+		"Inventory is drag-and-drop; there is no selection state in the original.",
+		"mouseDown stores the slot's home position, mouseUp tests",
+		"`sprite the clickOn intersects <target>`, and the icon always springs",
+		"home afterwards. A wrong target therefore needs no failure branch.",
+		"Rules are tried in order and the first match wins, so item-specific",
+		"rules must precede the wildcard for the same target.",
+		"NOT under assets/ on purpose: assets/SOURCE.txt documents that tree as",
+		"mirrored with `robocopy /MIR`, which would delete this file."
+	],
+
+	"_schema": [
+		"target_channel    score channel the dragged icon must intersect",
+		"items             item names, or [\"*\"] for any item",
+		"requires_visible  channels that must be present and not story-gated",
+		"rooms             optional marker names; absent means any room",
+		"action            reveal | goto_label | none",
+		"reveal_channels   channels the action makes visible (via sets_flag)",
+		"sets_flag         story flag raised, which sprite gates read",
+		"label             score label to jump to for goto_label",
+		"sounds            [{channel, file}] or [{channel, family, from, to}]",
+		"stop_channels     sound channels stopped first",
+		"consume           true when the item leaves objectsfield",
+		"enabled           false parks a rule that cannot be placed yet",
+		"lingo             the file this rule was transcribed from"
+	],
+
+	"rules": {
+		"NIGHT1": [
+			{
+				"target_channel": 8,
+				"items": ["sulam"],
+				"action": "reveal",
+				"reveal_channels": [17],
+				"sets_flag": "night_sulam_placed",
+				"consume": true,
+				"lingo": "MASTER/External/BehaviorScript 110.ls"
+			},
+			{
+				"target_channel": 15,
+				"items": ["sciser"],
+				"requires_visible": [15],
+				"action": "goto_label",
+				"label": "cutmirolohair",
+				"consume": false,
+				"lingo": "MASTER/External/BehaviorScript 111.ls"
+			},
+			{
+				"target_channel": 15,
+				"items": ["*"],
+				"requires_visible": [15],
+				"action": "goto_label",
+				"label": "mirolospk",
+				"stop_channels": [2],
+				"sounds": [{"channel": 1, "family": "mirolo", "from": 2, "to": 5}],
+				"consume": false,
+				"lingo": "MASTER/External/BehaviorScript 111.ls, where random(4) + 1 is 2..5, so mirolo1 is never used here"
+			}
+		],
+
+		"HOTEL1": [
+			{
+				"target_channel": 35,
+				"items": ["*"],
+				"requires_visible": [35],
+				"action": "goto_label",
+				"label": "fatspkroomb",
+				"sounds": [{"channel": 1, "file": "fatobjb.aif"}],
+				"consume": false,
+				"lingo": "MASTER/External/BehaviorScript 94.ls"
+			}
+		],
+
+		"DAY1": [
+			{
+				"target_channel": 9,
+				"items": ["tools"],
+				"action": "reveal",
+				"reveal_channels": [7, 8],
+				"sets_flag": "day1_tools_used",
+				"sounds": [{"channel": 1, "file": "zzz.aif"}],
+				"consume": false,
+				"lingo": [
+					"MASTER/External/BehaviorScript 128.ls. The movie could not be",
+					"determined from the Lingo alone, so this rule was parked. The score",
+					"settles it: tools/dump_sprite_scripts.py finds master member 128 on",
+					"DAY1's slot channels. The Lingo also requires sprites 7 and 8 to be",
+					"invisible first, which the runtime has no representation for yet, so",
+					"a second drop replays the reveal harmlessly."
+				]
+			}
+		],
+
+		"_disabled": []
+	},
+
+	"_deferred": [
+		"objecttalktime targets (characters 18-21, 34, 36, 37): plan 2.",
+		"AIR1 planefunk on sprite 14 and HOTEL1 ishspec on 34/18 with money: plan 5, both write field \"points\"."
+	]
+}

@@ -165,3 +165,55 @@ They exist so the game is completable; the Lingo replaces them wholesale.
   INVESTIG have no triggers yet
 - 222 cast members that resolve to neither bitmap nor film loop
   (`tools/check_cast_coverage.py`)
+
+## Inventory drag-and-drop
+
+Inventory is drag-and-drop. There is no selection state in the original.
+
+`reference/lingo/MASTER/External/MovieScript 80 - displayobject.ls` puppets
+sprites 103-110 from `objectsfield` lines 1-8 (`line i - 102`). An occupied slot
+gets `moveableSprite = 1` and a `hand1`/`hand2` cursor; an empty slot gets member
+`object0` and no drag.
+
+The ten `BehaviorScript {52, 93, 94, 97, 108, 110, 111, 128, 129, 135}.ls`
+handlers resolve the drop. `mouseDown` stores the slot's home position in
+`objectxx`/`objectyy`; `mouseUp` tests `sprite the clickOn intersects <target>`
+and then writes the home position back **unconditionally**. So an invalid target
+needs no failure branch: nothing intersects, the icon springs home, and nothing
+plays. Item consumption is always a mutation of `objectsfield`, never a sprite
+position, so the snap-back is independent of whether the puzzle succeeded.
+
+In the port:
+
+- `director/inventory_drag.gd` holds the icon in flight. Its rect is the item's
+  own bitmap, not the slot's score rect, because `displayobject` sets the slot's
+  `memberNum` to the item and `intersects` measures that.
+- `data/inventory_drops.json` holds the rules, one Lingo citation each, read by
+  `director/inventory_drops.gd`. Rules are tried in order, first match wins.
+- `InputRouter` carries `stage_press` / `stage_drag` / `stage_release` alongside
+  `stage_click`. Clicks still fire on press, so existing hotspots are unchanged.
+- `DirectorRuntime.slot_sprite_at()` finds slots by channel rather than through
+  `clickable_sprites()`, which filters out every sprite whose `on_click` carries
+  no nav, inventory or sounds: that is all eight slot channels.
+- Dropping on channel 100 examines the item: `pi<item>.aif` plus master member
+  `piphead2` (55) for one frame, which is what the Lingo's single `updateStage()`
+  before restoring `piphead1` (54) produces.
+
+Two traps found while building this:
+
+- The `master` cast library index differs per movie (DAY1 and NIGHT1 2, HOTEL1
+  and AIR1 3, SEA1 4), so `master_cast_lib()` resolves it instead of assuming 2.
+- `slot_channels` comes out of JSON as floats, and `Array.find()` will not match
+  the int 103 against 103.0. That returned -1 for every slot, so before this
+  change no item icon was drawn in any movie. `GameState.slot_channels()` now
+  coerces once.
+
+`hand1`/`hand2` decode to 5x6 and 8x8 pixels rather than the 1-bit 16x16 a
+Director cursor cast pair needs, so `CURSOR_POINTING_HAND` stands in.
+
+Scope note: of the screens carrying slot channels, only DAY1, NIGHT1, SEA1,
+HOTEL1, AIR1 and SHUFFLE are real inventory HUDs. ARCADE1 and ARCADE2 score
+channels 103, 106 and 108 on 20 frames with no channel 100 at all, so they have
+no HUD bar and no examine target; drag there finds nothing to intersect. Five
+further movies (DTCDAY2, GOLDDEAD, ISHDAY1, MIROLO, TOFIRCPT) carry the eight
+channels on a single stray frame each.
