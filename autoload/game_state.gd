@@ -79,6 +79,7 @@ func _load_inventory_catalog() -> void:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) == TYPE_DICTIONARY:
 		inventory_catalog = parsed
+		_slot_channels.clear()
 
 
 func new_game() -> void:
