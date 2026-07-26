@@ -43,10 +43,17 @@ const MAX_SCORE_STEPS_PER_TICK := 3
 const DYNAMIC_REDIRECT_SCRIPT := 207
 ## Boot movies that are never treated as a hub the player can return to.
 const BOOT_MOVIES := ["strtgame", "exodus"]
+## Piposh's head. Every drop handler tests this first: an item dropped on it is
+## examined rather than used.
+const EXAMINE_CHANNEL := 100
+## master member piphead2, shown for a single stage refresh while he looks.
+const PIPHEAD_LOOK_MEMBER := 55
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
 var context: MovieContext = MovieContext.new()
+var drag: InventoryDrag = InventoryDrag.new()
+var drops: InventoryDrops = InventoryDrops.new()
 
 var frame_index: int = 0
 var running: bool = true
@@ -64,6 +71,7 @@ var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
 var _hidden_channels: Dictionary = {}
+var _head_look_frames: int = 0
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -80,6 +88,7 @@ func _init() -> void:
 
 func boot() -> Error:
 	context.load_context()
+	drops.load_table()
 	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
 
@@ -223,6 +232,194 @@ func is_channel_hidden(channel: int) -> bool:
 	return _hidden_channels.has(channel)
 
 
+func master_cast_lib() -> int:
+	## Every inventory icon, `object0` and both Piposh heads live in the shared
+	## `master` cast. Fall back to 2, which is where DAY1 and NIGHT1 put it.
+	var index := loader.cast_lib_index("master")
+	return index if index > 0 else 2
+
+
+func head_member_override() -> int:
+	## -1 while the score member (piphead1) stands.
+	return PIPHEAD_LOOK_MEMBER if _head_look_frames > 0 else -1
+
+
+func slot_sprite_at(stage_pt: Vector2) -> Dictionary:
+	## Slot channels never reach clickable_sprites(): that filter drops any
+	## sprite whose on_click has no nav, inventory or sounds, which is all of
+	## 103-110. Find them by channel in the score frame instead.
+	var slots: Array = GameState.slot_channels()
+	var frame: Dictionary = loader.get_frame(frame_index)
+	for sprite in frame.get("sprites", []):
+		if typeof(sprite) != TYPE_DICTIONARY:
+			continue
+		var channel := int((sprite as Dictionary).get("channel", 0))
+		if slots.find(channel) < 0:
+			continue
+		if is_channel_hidden(channel):
+			continue
+		if sprite_contains(sprite, stage_pt):
+			return sprite
+	return {}
+
+
+func begin_inventory_drag(stage_pt: Vector2) -> bool:
+	var sprite: Dictionary = slot_sprite_at(stage_pt)
+	if sprite.is_empty():
+		return false
+	var channel := int(sprite.get("channel", 0))
+	var slot_index: int = GameState.slot_channels().find(channel)
+	var item: String = GameState.item_in_slot(slot_index)
+	if item == "":
+		# displayobject() gives an empty slot member object0 and no
+		# moveableSprite, so there is nothing to pick up.
+		return false
+	var rect: Rect2 = sprite_stage_rect(sprite)
+	drag.begin(channel, item, rect.position + rect.size * 0.5, _item_icon_size(item, rect.size))
+	redraw_requested.emit()
+	return true
+
+
+func _item_icon_size(item: String, fallback: Vector2) -> Vector2:
+	## displayobject() sets the slot's memberNum to the item, so `intersects`
+	## measures the item's own bitmap. The score rect is the stale object0 box.
+	var member: Dictionary = GameState.inventory_member_for_item(item, master_cast_lib())
+	if member.is_empty():
+		return fallback
+	var bitmap: Dictionary = loader.get_member(int(member.cast_lib), int(member.cast_id))
+	var w := float(bitmap.get("width", 0))
+	var h := float(bitmap.get("height", 0))
+	return Vector2(w, h) if w > 0.0 and h > 0.0 else fallback
+
+
+func update_inventory_drag(stage_pt: Vector2) -> void:
+	if not drag.active:
+		return
+	drag.move_to(stage_pt)
+	redraw_requested.emit()
+
+
+func end_inventory_drag(stage_pt: Vector2) -> void:
+	if not drag.active:
+		return
+	drag.move_to(stage_pt)
+	var item := drag.item
+	if _drag_intersects(EXAMINE_CHANNEL):
+		_examine_item(item)
+	else:
+		for rule_value in drops.rules_for(loader.movie_name):
+			var channel := int((rule_value as Dictionary).get("target_channel", -1))
+			if channel >= 0 and _drag_intersects(channel):
+				if apply_inventory_drop(item, channel):
+					break
+	# The icon springs home whatever happened, so a wrong target needs no
+	# failure branch: nothing intersects, and nothing plays.
+	drag.clear()
+	redraw_requested.emit()
+
+
+func _channel_rect(channel: int) -> Rect2:
+	var frame: Dictionary = loader.get_frame(frame_index)
+	for sprite in frame.get("sprites", []):
+		if typeof(sprite) != TYPE_DICTIONARY:
+			continue
+		if int((sprite as Dictionary).get("channel", 0)) != channel:
+			continue
+		if is_channel_hidden(channel):
+			return Rect2()
+		return sprite_stage_rect(sprite)
+	return Rect2()
+
+
+func _drag_intersects(channel: int) -> bool:
+	## Lingo: `sprite the clickOn intersects <channel>`, a rect overlap between
+	## the dragged icon and the target sprite, not a point test.
+	var target := _channel_rect(channel)
+	if target.size.x <= 0.0 or target.size.y <= 0.0:
+		return false
+	return drag.icon_rect().intersects(target)
+
+
+func _examine_item(item: String) -> void:
+	## Swap sprite 100 to piphead2, play pi<item>.aif, and let the next frame
+	## restore piphead1: the Lingo calls updateStage() once before restoring.
+	_head_look_frames = 1
+	AudioDirector.play_file(1, "pi%s.aif" % item)
+	nav_event.emit("examine: %s" % item)
+
+
+func apply_inventory_drop(item: String, target_channel: int) -> bool:
+	## Returns false when nothing in the table matched, which is the silent
+	## case: the icon springs home and no sound plays.
+	var room := marker_name_for_frame(frame_index)
+	for rule_value in drops.rules_for(loader.movie_name):
+		var rule: Dictionary = rule_value
+		if int(rule.get("target_channel", -1)) != target_channel:
+			continue
+		if not drops.matches(rule, item, room):
+			continue
+		if not _drop_requirements_met(rule):
+			continue
+		_run_drop_rule(rule, item)
+		return true
+	return false
+
+
+func _drop_requirements_met(rule: Dictionary) -> bool:
+	var required: Variant = rule.get("requires_visible", [])
+	if typeof(required) != TYPE_ARRAY:
+		return true
+	for channel in required as Array:
+		var rect := _channel_rect(int(channel))
+		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+			return false
+	return true
+
+
+func _run_drop_rule(rule: Dictionary, item: String) -> void:
+	for channel in rule.get("stop_channels", []):
+		AudioDirector.stop_channel(int(channel))
+
+	for sound_value in rule.get("sounds", []):
+		if typeof(sound_value) != TYPE_DICTIONARY:
+			continue
+		var sound: Dictionary = sound_value
+		var channel := int(sound.get("channel", 1))
+		var file := _s(sound.get("file", ""))
+		if file != "":
+			AudioDirector.play_file(channel, file)
+			continue
+		var family := _s(sound.get("family", ""))
+		if family == "":
+			continue
+		var from := int(sound.get("from", 1))
+		var to := maxi(from, int(sound.get("to", from)))
+		AudioDirector.play_file(channel, "%s%d.aif" % [family, randi_range(from, to)])
+
+	var flag := _s(rule.get("sets_flag", ""))
+	if flag != "":
+		GameState.set_story_flag(flag)
+		refresh_sprite_gates()
+
+	if bool(rule.get("consume", false)):
+		GameState.remove_inventory_item(item)
+
+	match _s(rule.get("action", "none")):
+		"goto_label":
+			var label := _s(rule.get("label", ""))
+			var idx := loader.resolve_label(label, false)
+			if idx >= 0:
+				enter_frame(idx)
+				running = true
+				nav_event.emit("drop %s → %s" % [item, label])
+			else:
+				nav_event.emit('drop %s → missing label "%s"' % [item, label])
+		"reveal":
+			nav_event.emit("drop %s → revealed %s" % [item, _s(rule.get("sets_flag", ""))])
+		_:
+			pass
+
+
 func refresh_sprite_gates() -> void:
 	## Gates normally settle on room entry, but a click can reveal something in
 	## the room the player is already standing in.
@@ -253,6 +450,9 @@ func enter_frame(index: int) -> void:
 		return
 	frame_index = clampi(index, 0, loader.frames.size() - 1)
 	frame_entered_ms = _time_ms
+	# piphead2 shows for one stage refresh, then the Lingo puts piphead1 back.
+	if _head_look_frames > 0:
+		_head_look_frames -= 1
 	var frame: Dictionary = loader.get_frame(frame_index)
 	_sync_film_loop_channels(frame)
 	var fps := float(frame.get("fps", 0))
