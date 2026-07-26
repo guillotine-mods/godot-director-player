@@ -271,14 +271,45 @@ first eight VWSC offsets were. The 7 regressions are the next piece of work, and
 they are the last thing between the interpreter and being the port's real script
 engine.
 
+## exitFrame is now ON, and the regression was mine
+
+The 7 regressions were not the interpreter. `DirectorRuntime._activate_sprite()`
+guarded the click path on `lingo != null`, but the engine is constructed when
+*either* flag is set, so turning on `use_lingo_frames` silently handed clicks to
+the interpreter as well. Every walk hotspot in the game broke as a result.
+
+`tools/lingo_walk_diff.gd` found it by sweeping every walk hotspot in every room
+rather than ticking from one start point: 41 of 44 DAY1 cases differed, all of them
+`walked=n`, which is a click that never started a walk rather than a frame script
+misbehaving.
+
+With the guard fixed:
+
+- **115 of 117 walk outcomes identical** across DAY1, NIGHT1 and HOTEL1.
+- The 2 differences are **improvements**: HOTEL1 `roomago` and `roombgo` now reach
+  `hallgo` where the lifted data strands the player at `what`. Both are in
+  `movie_context.json`'s `unmapped_transitions` for HOTEL1, so the interpreter is
+  resolving transitions the export could not.
+- The three deleted suites, restored from git for the check, returned to their
+  exact 0/0/28 baseline.
+
+`use_lingo_frames` is now **on by default**. 2504 of 3457 handlers, 72% of the
+game's script logic, run from the original Lingo.
+
+`use_lingo_clicks` stays off, and the blocker is now exact rather than vague:
+enabling it reproduces 5/2/31, because the original click handler on an exit sets
+`nextroomdata` and `egozh`/`egozv` and leaves the walking to `walkonby`. Those are
+the same 190 cases convergence counts as deferred walks. Wiring `walkonby` is the
+single remaining gate.
+
 ## Honest remaining list
 
 | Item | State |
 |---|---|
-| `on exitFrame` dispatch | implemented, flag off, 7 test regressions to diagnose |
-| `on mouseUp` / `mouseDown` dispatch | implemented, flag off, 94.6% convergence |
+| `on exitFrame` dispatch | **ON by default**, 115/117 walk outcomes identical, 2 improvements |
+| `on mouseUp` / `mouseDown` dispatch | implemented, flag off; blocked solely on `walkonby` |
 | SEA1's 27 click disagreements | not investigated; systematic and localised |
-| Deferred walks (190 cases) | `walkonby` not wired; counted, not working |
+| Deferred walks (190 cases) | `walkonby` not wired. This is now the one thing gating clicks, and therefore the last 22% of handlers |
 | Convergence beyond 5 movies | 56 of 61 movies with intervals unmeasured |
 | `keyDown`, `startMovie`, `stopMovie`, `idle` | not dispatched |
 | Retirement of the guessed tables | nothing retired; `movie_context.json`, `inventory_drops.json` and the lifted `on_click` are still what the game uses |

@@ -827,8 +827,11 @@ func update_hover(stage_pt: Vector2) -> void:
 
 func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
 	# The original script wins when it exists and the interpreter is enabled;
-	# otherwise the lifted on_click data stands, so nothing regresses.
-	if lingo != null:
+	# otherwise the lifted on_click data stands, so nothing regresses. The flag
+	# must be checked here as well as at construction: the engine is built when
+	# either flag is on, so testing `lingo != null` alone let use_lingo_frames
+	# silently take clicks too, which broke every walk hotspot.
+	if lingo != null and AppSettings.use_lingo_clicks:
 		var channel_clicked := int(sprite.get("channel", 0))
 		if lingo.has_any_handler_for(channel_clicked, frame_index, "mouseUp"):
 			lingo.host.mouse_stage = stage_pt
