@@ -35,6 +35,13 @@ var unhandled: Dictionary = {}
 var stage_dirty: bool = false
 ## When true, navigation and sound are captured instead of performed, so a script
 ## can be compared against the exported on_click without touching the game.
+## Set when a script navigated during the current dispatch, so the runtime knows
+## not to also apply the exported nav for this frame.
+var navigated: bool = false
+## `go to the frame` / `go(marker(0))`: Director's idle hold. Distinguished from a
+## real navigation so the runtime holds instead of re-entering the frame, which
+## would restart its sounds and delay timer every step.
+var held: bool = false
 var record: bool = false
 var recorded_navs: PackedStringArray = PackedStringArray()
 var recorded_sounds: PackedStringArray = PackedStringArray()
@@ -367,6 +374,11 @@ func call_builtin(name: String, args: Array) -> Variant:
 			return null
 
 
+func begin_dispatch() -> void:
+	navigated = false
+	held = false
+
+
 func begin_record() -> void:
 	record = true
 	recorded_navs = PackedStringArray()
@@ -405,14 +417,28 @@ func _go(args: Array) -> Variant:
 			return 0
 		var index: int = int(runtime.loader.resolve_label(text, false))
 		if index >= 0:
-			runtime.enter_frame(index)
+			_enter(index)
 		else:
+			navigated = false
 			unhandled['go "%s"' % text] = true
 		return 0
 	var frame := LingoValue.to_int(first)
 	if frame > 0:
-		runtime.enter_frame(frame - 1)
+		_enter(frame - 1)
+	else:
+		navigated = false
 	return 0
+
+
+func _enter(index: int) -> void:
+	if runtime == null:
+		return
+	if index == runtime.frame_index:
+		# `go to the frame`: hold here rather than re-entering, which would
+		# restart the frame's sounds and delay timer on every step.
+		held = true
+		return
+	runtime.enter_frame(index)
 
 
 func _sound(args: Array) -> Variant:

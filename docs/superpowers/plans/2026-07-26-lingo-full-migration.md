@@ -234,3 +234,51 @@ measurable oracle is worth more than careful reading.
 when it does not. 94.6% is promising, not finished: turning it on by default
 should wait until SEA1 is understood and the deferred-walk path is wired through
 `walkonby` rather than counted as out of scope.
+
+
+---
+
+## exitFrame: implemented, measured, and not switched on
+
+`on exitFrame` is 2504 of the 3457 handlers, so it is the bulk of the migration.
+It is now wired: `DirectorRuntime.game_step()` dispatches it through the message
+hierarchy, and when the script navigates or holds, the exported nav is not
+consulted for that frame. `go(marker(0))` is treated as Director's idle hold
+rather than a re-entry, which would otherwise restart the frame's sounds and
+delay timer on every step.
+
+Coverage, from `tools/lingo_frames.gd`:
+
+| Movie | Frames | Resolvable frame script | Defines exitFrame |
+|---|---:|---:|---:|
+| DAY1 | 2784 | 1401 | 1369 (49.2%) |
+| NIGHT1 | 2646 | 1268 | 1233 (46.6%) |
+| HOTEL1 | 1524 | 675 | 664 (43.6%) |
+| SEA1 | 1982 | 771 | 759 (38.3%) |
+| AIR1 | 1006 | 472 | 465 (46.2%) |
+| **total** | **9942** | **4587** | **4490 (45.2%)** |
+
+**And a warning about that tool.** It reports the frame path identical to the
+existing runner for 220/220 ticks in all five movies, which reads like a licence
+to switch the flag on. It is not. Turning `use_lingo_frames` on takes
+`tests/test_walk_doorways.gd` from 0 failures to 5, `test_day1_navigation` from 0
+to 2, and `test_director_runtime` from 28 to 31. Those suites exercise
+transitions, walk arrival and movie loads that a straight tick from a single start
+point never reaches.
+
+So the frame-path measurement was necessary and insufficient, in the same way the
+first eight VWSC offsets were. The 7 regressions are the next piece of work, and
+they are the last thing between the interpreter and being the port's real script
+engine.
+
+## Honest remaining list
+
+| Item | State |
+|---|---|
+| `on exitFrame` dispatch | implemented, flag off, 7 test regressions to diagnose |
+| `on mouseUp` / `mouseDown` dispatch | implemented, flag off, 94.6% convergence |
+| SEA1's 27 click disagreements | not investigated; systematic and localised |
+| Deferred walks (190 cases) | `walkonby` not wired; counted, not working |
+| Convergence beyond 5 movies | 56 of 61 movies with intervals unmeasured |
+| `keyDown`, `startMovie`, `stopMovie`, `idle` | not dispatched |
+| Retirement of the guessed tables | nothing retired; `movie_context.json`, `inventory_drops.json` and the lifted `on_click` are still what the game uses |
