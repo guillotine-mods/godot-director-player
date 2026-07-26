@@ -1,0 +1,36 @@
+on exitFrame
+  [  0] pushzero ................................ <0>
+  [  1] pushzero ................................ <0>
+  [  2] pushzero ................................ <0>
+  [  3] pushzero ................................ <0>
+  [  4] pushint8 10 ............................. <10>
+  [  7] pushzero ................................ <0>
+  [  8] pushint8 1 .............................. <1>
+  [ 11] pushzero ................................ <0>
+  [ 12] pushcons 0 .............................. <"Dprocess">
+  [ 14] pushcons 8 .............................. <"master">
+  [ 16] getfield ................................ <field("Dprocess", "master")>
+  [ 17] getchunk ................................ <item 10 of line 1 of field "Dprocess" of castLib "master">
+  [ 18] pushcons 16 ............................. <"done">
+  [ 20] nteq .................................... <item 10 of line 1 of field "Dprocess" of castLib "master" <> "done">
+  [ 21] jmpifz [ 24] ............................ if item 10 of line 1 of field "Dprocess" of castLib "master" <> "done" then
+  [ 24] pushint8 2 .............................. <2>
+  [ 27] pusharglist 1 ........................... <2>
+  [ 29] extcall 58 .............................. <soundBusy(2)>
+  [ 32] not ..................................... <not soundBusy(2)>
+  [ 33] getglobal 114 ........................... <whichsnd>
+  [ 36] pushcons 24 ............................. <"liber">
+  [ 38] nteq .................................... <whichsnd <> "liber">
+  [ 39] or ...................................... <not soundBusy(2) or (whichsnd <> "liber")>
+  [ 40] jmpifz [ 65] ............................ if not soundBusy(2) or (whichsnd <> "liber") then
+  [ 43] pushsymb 52 ............................. <#playFile>
+  [ 46] pushint8 2 .............................. <2>
+  [ 49] getglobal 36 ............................ <effectspath>
+  [ 52] pushcons 32 ............................. <"liber.aif">
+  [ 54] joinstr ................................. <effectspath & "liber.aif">
+  [ 55] pusharglistnoret 3 ...................... <2, effectspath & "liber.aif">
+  [ 57] extcall 53 .............................. sound playFile 2, effectspath & "liber.aif"
+  [ 60] pushcons 40 ............................. <"liber">
+  [ 62] setglobal 114 ........................... whichsnd = "liber"
+  [ 65] ret
+end

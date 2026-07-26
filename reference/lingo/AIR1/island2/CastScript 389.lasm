@@ -1,0 +1,7 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"yes">
+  [  2] setglobal 83 ............................ monk = "yes"
+  [  4] pusharglistnoret 0 ...................... <>
+  [  6] extcall 81 .............................. play done
+  [  8] ret
+end

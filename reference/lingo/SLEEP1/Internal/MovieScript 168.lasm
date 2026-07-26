@@ -1,0 +1,7 @@
+on peoplefunk
+  [  0] ret
+end
+
+on cursorfunk
+  [  0] ret
+end

@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"walkthewalk">
+  [  2] pusharglistnoret 1 ...................... <"walkthewalk">
+  [  4] extcall 2 ............................... go("walkthewalk")
+  [  6] ret
+end

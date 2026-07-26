@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  4] set 0 ................................... set the keyDownScript to EMPTY
+  [  6] ret
+end

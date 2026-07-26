@@ -1,0 +1,18 @@
+on enterFrame
+  [  0] getmovieprop 120 ........................ <the movieName>
+  [  3] pushcons 0 .............................. <"hotel">
+  [  5] containsstr ............................. <the movieName contains "hotel">
+  [  6] jmpifz [ 33] ............................ if the movieName contains "hotel" then
+  [  9] pusharglistnoret 0 ...................... <>
+  [ 11] extcall 27 .............................. peoplefunk()
+  [ 13] pushint8 30 ............................. <30>
+  [ 16] pusharglist 1 ........................... <30>
+  [ 18] extcall 12 .............................. <sprite(30)>
+  [ 20] pushzero ................................ <0>
+  [ 21] setobjprop 13 ........................... sprite(30).visible = 0
+  [ 23] pushint8 30 ............................. <30>
+  [ 26] pushint8 1 .............................. <1>
+  [ 29] pusharglistnoret 2 ...................... <30, 1>
+  [ 31] extcall 31 .............................. puppetSprite(30, 1)
+  [ 33] ret
+end

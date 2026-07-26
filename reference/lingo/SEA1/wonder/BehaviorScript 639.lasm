@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"rewind">
+  [  2] pusharglistnoret 1 ...................... <"rewind">
+  [  4] extcall 3 ............................... go("rewind")
+  [  6] ret
+end

@@ -1,0 +1,13 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  4] set 0 ................................... set the keyDownScript to EMPTY
+  [  6] pushsymb 10 ............................. <#playFile>
+  [  8] pushint8 1 .............................. <1>
+  [ 10] getglobal 15 ............................ <soundspath>
+  [ 12] pushcons 8 .............................. <"zigend21.aif">
+  [ 14] joinstr ................................. <soundspath & "zigend21.aif">
+  [ 15] pusharglistnoret 3 ...................... <1, soundspath & "zigend21.aif">
+  [ 17] extcall 11 .............................. sound playFile 1, soundspath & "zigend21.aif"
+  [ 19] ret
+end

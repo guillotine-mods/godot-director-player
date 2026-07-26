@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"s_night1">
+  [  2] pusharglistnoret 1 ...................... <"s_night1">
+  [  4] extcall 4 ............................... tlkpath("s_night1")
+  [  6] ret
+end

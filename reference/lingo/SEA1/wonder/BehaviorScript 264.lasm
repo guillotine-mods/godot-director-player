@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"wrecktobarrels">
+  [  2] pusharglistnoret 1 ...................... <"wrecktobarrels">
+  [  4] extcall 3 ............................... go("wrecktobarrels")
+  [  6] ret
+end

@@ -1,0 +1,18 @@
+on mouseUp
+  [  0] pushsymb 3 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 23 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"dive1.aif">
+  [  9] joinstr ................................. <effectspath & "dive1.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, effectspath & "dive1.aif">
+  [ 12] extcall 4 ............................... sound playFile 1, effectspath & "dive1.aif"
+  [ 14] pushint8 2 .............................. <2>
+  [ 17] pusharglistnoret 1 ...................... <2>
+  [ 19] extcall 13 .............................. go(2)
+  [ 21] pushint8 10 ............................. <10>
+  [ 24] pusharglist 1 ........................... <10>
+  [ 26] extcall 45 .............................. <sprite(10)>
+  [ 29] pushint8 1 .............................. <1>
+  [ 32] setobjprop 46 ........................... sprite(10).visible = 1
+  [ 35] ret
+end

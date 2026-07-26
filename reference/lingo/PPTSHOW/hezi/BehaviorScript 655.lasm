@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"exitout">
+  [  2] pusharglistnoret 1 ...................... <"exitout">
+  [  4] extcall 4 ............................... go("exitout")
+  [  6] ret
+end

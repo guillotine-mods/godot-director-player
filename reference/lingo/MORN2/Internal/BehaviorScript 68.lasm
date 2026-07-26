@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 12 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 14 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"jos6b.aif">
+  [  9] joinstr ................................. <tlkpath & "jos6b.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "jos6b.aif">
+  [ 12] extcall 13 .............................. sound playFile 1, tlkpath & "jos6b.aif"
+  [ 14] ret
+end

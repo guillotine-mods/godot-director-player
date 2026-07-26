@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"exitware">
+  [  2] pusharglistnoret 1 ...................... <"exitware">
+  [  4] extcall 3 ............................... go("exitware")
+  [  6] ret
+end

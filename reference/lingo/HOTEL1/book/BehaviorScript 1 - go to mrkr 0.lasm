@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 58 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] jmpifz [ 33] ............................ if not soundBusy(2) then
+  [ 12] pushsymb 52 ............................. <#playFile>
+  [ 15] pushint8 2 .............................. <2>
+  [ 18] getglobal 36 ............................ <effectspath>
+  [ 21] getglobal 114 ........................... <whichsnd>
+  [ 24] joinstr ................................. <effectspath & whichsnd>
+  [ 25] pushcons 0 .............................. <".aif">
+  [ 27] joinstr ................................. <effectspath & whichsnd & ".aif">
+  [ 28] pusharglistnoret 3 ...................... <2, effectspath & whichsnd & ".aif">
+  [ 30] extcall 53 .............................. sound playFile 2, effectspath & whichsnd & ".aif"
+  [ 33] pusharglistnoret 0 ...................... <>
+  [ 35] extcall 1 ............................... whatodoeveryframe()
+  [ 37] pushzero ................................ <0>
+  [ 38] pusharglist 1 ........................... <0>
+  [ 40] extcall 2 ............................... <marker(0)>
+  [ 42] pusharglistnoret 1 ...................... <marker(0)>
+  [ 44] extcall 3 ............................... go(marker(0))
+  [ 46] ret
+end

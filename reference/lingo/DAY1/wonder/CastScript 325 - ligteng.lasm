@@ -1,0 +1,10 @@
+on mouseUp
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 31 ............................ <soundspath>
+  [  8] pushcons 0 .............................. <"ligteng.aif">
+  [ 10] joinstr ................................. <soundspath & "ligteng.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, soundspath & "ligteng.aif">
+  [ 13] extcall 43 .............................. sound playFile 1, soundspath & "ligteng.aif"
+  [ 16] ret
+end

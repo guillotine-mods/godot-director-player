@@ -1,0 +1,20 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to EMPTY
+  [  7] pushsymb 34 ............................. <#playFile>
+  [ 10] pushint8 1 .............................. <1>
+  [ 13] getglobal 36 ............................ <soundspath>
+  [ 16] pushcons 8 .............................. <"mnkzoo.aif">
+  [ 18] joinstr ................................. <soundspath & "mnkzoo.aif">
+  [ 19] pusharglistnoret 3 ...................... <1, soundspath & "mnkzoo.aif">
+  [ 21] extcall 35 .............................. sound playFile 1, soundspath & "mnkzoo.aif"
+  [ 24] pushsymb 34 ............................. <#playFile>
+  [ 27] pushint8 2 .............................. <2>
+  [ 30] getglobal 36 ............................ <soundspath>
+  [ 33] pushcons 16 ............................. <"stgovr.aif">
+  [ 35] joinstr ................................. <soundspath & "stgovr.aif">
+  [ 36] pusharglistnoret 3 ...................... <2, soundspath & "stgovr.aif">
+  [ 38] extcall 35 .............................. sound playFile 2, soundspath & "stgovr.aif"
+  [ 41] ret
+end

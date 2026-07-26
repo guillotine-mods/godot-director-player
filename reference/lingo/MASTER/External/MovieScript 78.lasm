@@ -1,0 +1,582 @@
+on searchfunk
+  [  0] pushzero ................................ <0>
+  [  1] setlocal 0 .............................. myline = 0
+  [  3] pusharglist 0 ........................... <>
+  [  5] thebuiltin 29 ........................... <the clickOn>
+  [  7] pushint16 35 ............................ <35>
+  [ 10] get 6 ................................... <the memberNum of sprite the clickOn>
+  [ 12] setlocal 1 .............................. yny = the memberNum of sprite the clickOn
+  [ 14] getlocal 1 .............................. <yny>
+  [ 16] pushcons 0 .............................. <"island2">
+  [ 18] pusharglist 2 ........................... <yny, "island2">
+  [ 20] extcall 22 .............................. <member(yny, "island2")>
+  [ 22] getobjprop 30 ........................... <member(yny, "island2").name>
+  [ 24] setlocal 2 .............................. myname = member(yny, "island2").name
+  [ 26] pushint16 1 ............................. <1>
+  [ 29] setlocal 3 .............................. i = 1
+  [ 31] getlocal 3 .............................. <i>
+  [ 33] pushcons 1 .............................. <"searchinfo">
+  [ 35] pushzero ................................ <0>
+  [ 36] getfield ................................ <field("searchinfo")>
+  [ 37] pushint16 4 ............................. <4>
+  [ 40] get 1 ................................... <the number of lines in field "searchinfo">
+  [ 42] lteq .................................... <i <= the number of lines in field "searchinfo">
+  [ 43] jmpifz [ 83] ............................ repeat while i <= the number of lines in field "searchinfo"
+  [ 46] pushzero ................................ <0>
+  [ 47] pushzero ................................ <0>
+  [ 48] pushzero ................................ <0>
+  [ 49] pushzero ................................ <0>
+  [ 50] pushint16 1 ............................. <1>
+  [ 53] pushzero ................................ <0>
+  [ 54] getlocal 3 .............................. <i>
+  [ 56] pushzero ................................ <0>
+  [ 57] pushcons 2 .............................. <"searchinfo">
+  [ 59] pushzero ................................ <0>
+  [ 60] getfield ................................ <field("searchinfo")>
+  [ 61] getchunk ................................ <item 1 of line i of field "searchinfo">
+  [ 62] getlocal 2 .............................. <myname>
+  [ 64] eq ...................................... <item 1 of line i of field "searchinfo" = myname>
+  [ 65] jmpifz [ 72] ............................ if item 1 of line i of field "searchinfo" = myname then
+  [ 68] getlocal 3 .............................. <i>
+  [ 70] setlocal 0 .............................. myline = i
+  [ 72] pushint16 1 ............................. <1>
+  [ 75] getlocal 3 .............................. <i>
+  [ 77] add ..................................... <1 + i>
+  [ 78] setlocal 3 .............................. i = 1 + i
+  [ 80] endrepeat [ 31]
+  [ 83] getlocal 0 .............................. <myline>
+  [ 85] pushzero ................................ <0>
+  [ 86] nteq .................................... <myline <> 0>
+  [ 87] jmpifz [1180] ........................... if myline <> 0 then
+  [ 90] pushzero ................................ <0>
+  [ 91] pushzero ................................ <0>
+  [ 92] pushzero ................................ <0>
+  [ 93] pushzero ................................ <0>
+  [ 94] pushint16 2 ............................. <2>
+  [ 97] pushzero ................................ <0>
+  [ 98] getlocal 0 .............................. <myline>
+  [100] pushzero ................................ <0>
+  [101] pushcons 3 .............................. <"searchinfo">
+  [103] pushzero ................................ <0>
+  [104] getfield ................................ <field("searchinfo")>
+  [105] getchunk ................................ <item 2 of line myline of field "searchinfo">
+  [106] pusharglist 1 ........................... <item 2 of line myline of field "searchinfo">
+  [108] extcall 44 .............................. <value(item 2 of line myline of field "searchinfo")>
+  [111] setlocal 4 .............................. myx = value(item 2 of line myline of field "searchinfo")
+  [113] pushzero ................................ <0>
+  [114] pushzero ................................ <0>
+  [115] pushzero ................................ <0>
+  [116] pushzero ................................ <0>
+  [117] pushint16 3 ............................. <3>
+  [120] pushzero ................................ <0>
+  [121] getlocal 0 .............................. <myline>
+  [123] pushzero ................................ <0>
+  [124] pushcons 4 .............................. <"searchinfo">
+  [126] pushzero ................................ <0>
+  [127] getfield ................................ <field("searchinfo")>
+  [128] getchunk ................................ <item 3 of line myline of field "searchinfo">
+  [129] pusharglist 1 ........................... <item 3 of line myline of field "searchinfo">
+  [131] extcall 44 .............................. <value(item 3 of line myline of field "searchinfo")>
+  [134] setlocal 5 .............................. myy = value(item 3 of line myline of field "searchinfo")
+  [136] pushzero ................................ <0>
+  [137] pushzero ................................ <0>
+  [138] pushzero ................................ <0>
+  [139] pushzero ................................ <0>
+  [140] pushint16 4 ............................. <4>
+  [143] pushzero ................................ <0>
+  [144] getlocal 0 .............................. <myline>
+  [146] pushzero ................................ <0>
+  [147] pushcons 5 .............................. <"searchinfo">
+  [149] pushzero ................................ <0>
+  [150] getfield ................................ <field("searchinfo")>
+  [151] getchunk ................................ <item 4 of line myline of field "searchinfo">
+  [152] setlocal 6 .............................. mydoing = item 4 of line myline of field "searchinfo"
+  [154] pushcons 6 .............................. <"000">
+  [156] setglobal 45 ............................ nextroomdata = "000"
+  [159] getglobal 46 ............................ <egozv>
+  [162] getlocal 5 .............................. <myy>
+  [164] nteq .................................... <egozv <> myy>
+  [165] getglobal 47 ............................ <egozh>
+  [168] getlocal 4 .............................. <myx>
+  [170] nteq .................................... <egozh <> myx>
+  [171] and ..................................... <(egozv <> myy) and (egozh <> myx)>
+  [172] jmpifz [193] ............................ if (egozv <> myy) and (egozh <> myx) then / else
+  [175] getlocal 5 .............................. <myy>
+  [177] setglobal 46 ............................ egozv = myy
+  [180] getlocal 4 .............................. <myx>
+  [182] setglobal 47 ............................ egozh = myx
+  [185] pusharglistnoret 0 ...................... <>
+  [187] extcall 48 .............................. walkonby()
+  [190] jmp [1180]
+  [193] getglobal 49 ............................ <whatodo>
+  [196] pushcons 7 .............................. <"stand">
+  [198] eq ...................................... <whatodo = "stand">
+  [199] jmpifz [1180] ........................... if whatodo = "stand" then
+  [202] getlocal 6 .............................. <mydoing>
+  [204] pushcons 8 .............................. <"non">
+  [206] eq ...................................... <mydoing = "non">
+  [207] jmpifz [850] ............................ if mydoing = "non" then / else
+  [210] pushzero ................................ <0>
+  [211] pushzero ................................ <0>
+  [212] pushzero ................................ <0>
+  [213] pushzero ................................ <0>
+  [214] pushint16 5 ............................. <5>
+  [217] pushzero ................................ <0>
+  [218] getlocal 0 .............................. <myline>
+  [220] pushzero ................................ <0>
+  [221] pushcons 9 .............................. <"searchinfo">
+  [223] pushzero ................................ <0>
+  [224] getfield ................................ <field("searchinfo")>
+  [225] getchunk ................................ <item 5 of line myline of field "searchinfo">
+  [226] setlocal 7 .............................. whatsound = item 5 of line myline of field "searchinfo"
+  [228] getlocal 7 .............................. <whatsound>
+  [230] peek 0 .................................. case whatsound of
+  [232] pushcons 10 ............................. <"grass">
+  [234] eq
+  [235] jmpifz [267] ............................ (case) "grass":
+  [238] pushsymb 11 ............................. <#playFile>
+  [240] pushint16 1 ............................. <1>
+  [243] getglobal 13 ............................ <soundspath>
+  [245] pushcons 11 ............................. <"pgrass">
+  [247] pushint16 30 ............................ <30>
+  [250] pusharglist 1 ........................... <30>
+  [252] extcall 50 .............................. <random(30)>
+  [255] joinstr ................................. <"pgrass" & random(30)>
+  [256] pushcons 12 ............................. <".aif">
+  [258] joinstr ................................. <"pgrass" & random(30) & ".aif">
+  [259] joinstr ................................. <soundspath & "pgrass" & random(30) & ".aif">
+  [260] pusharglistnoret 3 ...................... <1, soundspath & "pgrass" & random(30) & ".aif">
+  [262] extcall 12 .............................. sound playFile 1, soundspath & "pgrass" & random(30) & ".aif"
+  [264] jmp [845]
+  [267] peek 0
+  [269] pushcons 13 ............................. <"stat">
+  [271] eq
+  [272] jmpifz [304] ............................ (case) "stat":
+  [275] pushsymb 11 ............................. <#playFile>
+  [277] pushint16 1 ............................. <1>
+  [280] getglobal 13 ............................ <soundspath>
+  [282] pushcons 14 ............................. <"pstat">
+  [284] pushint16 20 ............................ <20>
+  [287] pusharglist 1 ........................... <20>
+  [289] extcall 50 .............................. <random(20)>
+  [292] joinstr ................................. <"pstat" & random(20)>
+  [293] pushcons 15 ............................. <".aif">
+  [295] joinstr ................................. <"pstat" & random(20) & ".aif">
+  [296] joinstr ................................. <soundspath & "pstat" & random(20) & ".aif">
+  [297] pusharglistnoret 3 ...................... <1, soundspath & "pstat" & random(20) & ".aif">
+  [299] extcall 12 .............................. sound playFile 1, soundspath & "pstat" & random(20) & ".aif"
+  [301] jmp [845]
+  [304] peek 0
+  [306] pushcons 16 ............................. <"umb">
+  [308] eq
+  [309] jmpifz [341] ............................ (case) "umb":
+  [312] pushsymb 11 ............................. <#playFile>
+  [314] pushint16 1 ............................. <1>
+  [317] getglobal 13 ............................ <soundspath>
+  [319] pushcons 17 ............................. <"pumb">
+  [321] pushint16 6 ............................. <6>
+  [324] pusharglist 1 ........................... <6>
+  [326] extcall 50 .............................. <random(6)>
+  [329] joinstr ................................. <"pumb" & random(6)>
+  [330] pushcons 18 ............................. <".aif">
+  [332] joinstr ................................. <"pumb" & random(6) & ".aif">
+  [333] joinstr ................................. <soundspath & "pumb" & random(6) & ".aif">
+  [334] pusharglistnoret 3 ...................... <1, soundspath & "pumb" & random(6) & ".aif">
+  [336] extcall 12 .............................. sound playFile 1, soundspath & "pumb" & random(6) & ".aif"
+  [338] jmp [845]
+  [341] peek 0
+  [343] pushcons 19 ............................. <"rock">
+  [345] eq
+  [346] jmpifz [378] ............................ (case) "rock":
+  [349] pushsymb 11 ............................. <#playFile>
+  [351] pushint16 1 ............................. <1>
+  [354] getglobal 13 ............................ <soundspath>
+  [356] pushcons 20 ............................. <"prock">
+  [358] pushint16 6 ............................. <6>
+  [361] pusharglist 1 ........................... <6>
+  [363] extcall 50 .............................. <random(6)>
+  [366] joinstr ................................. <"prock" & random(6)>
+  [367] pushcons 21 ............................. <".aif">
+  [369] joinstr ................................. <"prock" & random(6) & ".aif">
+  [370] joinstr ................................. <soundspath & "prock" & random(6) & ".aif">
+  [371] pusharglistnoret 3 ...................... <1, soundspath & "prock" & random(6) & ".aif">
+  [373] extcall 12 .............................. sound playFile 1, soundspath & "prock" & random(6) & ".aif"
+  [375] jmp [845]
+  [378] peek 0
+  [380] pushcons 22 ............................. <"fence">
+  [382] eq
+  [383] jmpifz [415] ............................ (case) "fence":
+  [386] pushsymb 11 ............................. <#playFile>
+  [388] pushint16 1 ............................. <1>
+  [391] getglobal 13 ............................ <soundspath>
+  [393] pushcons 23 ............................. <"pfence">
+  [395] pushint16 6 ............................. <6>
+  [398] pusharglist 1 ........................... <6>
+  [400] extcall 50 .............................. <random(6)>
+  [403] joinstr ................................. <"pfence" & random(6)>
+  [404] pushcons 24 ............................. <".aif">
+  [406] joinstr ................................. <"pfence" & random(6) & ".aif">
+  [407] joinstr ................................. <soundspath & "pfence" & random(6) & ".aif">
+  [408] pusharglistnoret 3 ...................... <1, soundspath & "pfence" & random(6) & ".aif">
+  [410] extcall 12 .............................. sound playFile 1, soundspath & "pfence" & random(6) & ".aif"
+  [412] jmp [845]
+  [415] peek 0
+  [417] pushcons 25 ............................. <"azitz">
+  [419] eq
+  [420] jmpifz [452] ............................ (case) "azitz":
+  [423] pushsymb 11 ............................. <#playFile>
+  [425] pushint16 1 ............................. <1>
+  [428] getglobal 13 ............................ <soundspath>
+  [430] pushcons 26 ............................. <"pazitz">
+  [432] pushint16 15 ............................ <15>
+  [435] pusharglist 1 ........................... <15>
+  [437] extcall 50 .............................. <random(15)>
+  [440] joinstr ................................. <"pazitz" & random(15)>
+  [441] pushcons 27 ............................. <".aif">
+  [443] joinstr ................................. <"pazitz" & random(15) & ".aif">
+  [444] joinstr ................................. <soundspath & "pazitz" & random(15) & ".aif">
+  [445] pusharglistnoret 3 ...................... <1, soundspath & "pazitz" & random(15) & ".aif">
+  [447] extcall 12 .............................. sound playFile 1, soundspath & "pazitz" & random(15) & ".aif"
+  [449] jmp [845]
+  [452] peek 0
+  [454] pushcons 28 ............................. <"swing">
+  [456] eq
+  [457] jmpifz [489] ............................ (case) "swing":
+  [460] pushsymb 11 ............................. <#playFile>
+  [462] pushint16 1 ............................. <1>
+  [465] getglobal 13 ............................ <soundspath>
+  [467] pushcons 29 ............................. <"pswing">
+  [469] pushint16 5 ............................. <5>
+  [472] pusharglist 1 ........................... <5>
+  [474] extcall 50 .............................. <random(5)>
+  [477] joinstr ................................. <"pswing" & random(5)>
+  [478] pushcons 30 ............................. <".aif">
+  [480] joinstr ................................. <"pswing" & random(5) & ".aif">
+  [481] joinstr ................................. <soundspath & "pswing" & random(5) & ".aif">
+  [482] pusharglistnoret 3 ...................... <1, soundspath & "pswing" & random(5) & ".aif">
+  [484] extcall 12 .............................. sound playFile 1, soundspath & "pswing" & random(5) & ".aif"
+  [486] jmp [845]
+  [489] peek 0
+  [491] pushcons 31 ............................. <"sign">
+  [493] eq
+  [494] jmpifz [528] ............................ (case) "sign":
+  [497] pushsymb 11 ............................. <#playFile>
+  [499] pushint16 1 ............................. <1>
+  [502] getglobal 13 ............................ <soundspath>
+  [504] pushcons 32 ............................. <"psign">
+  [507] pushint16 6 ............................. <6>
+  [510] pusharglist 1 ........................... <6>
+  [512] extcall 50 .............................. <random(6)>
+  [515] joinstr ................................. <"psign" & random(6)>
+  [516] pushcons 33 ............................. <".aif">
+  [519] joinstr ................................. <"psign" & random(6) & ".aif">
+  [520] joinstr ................................. <soundspath & "psign" & random(6) & ".aif">
+  [521] pusharglistnoret 3 ...................... <1, soundspath & "psign" & random(6) & ".aif">
+  [523] extcall 12 .............................. sound playFile 1, soundspath & "psign" & random(6) & ".aif"
+  [525] jmp [845]
+  [528] peek 0
+  [530] pushcons 34 ............................. <"well">
+  [533] eq
+  [534] jmpifz [568] ............................ (case) "well":
+  [537] pushsymb 11 ............................. <#playFile>
+  [539] pushint16 1 ............................. <1>
+  [542] getglobal 13 ............................ <soundspath>
+  [544] pushcons 35 ............................. <"pwell">
+  [547] pushint16 5 ............................. <5>
+  [550] pusharglist 1 ........................... <5>
+  [552] extcall 50 .............................. <random(5)>
+  [555] joinstr ................................. <"pwell" & random(5)>
+  [556] pushcons 36 ............................. <".aif">
+  [559] joinstr ................................. <"pwell" & random(5) & ".aif">
+  [560] joinstr ................................. <soundspath & "pwell" & random(5) & ".aif">
+  [561] pusharglistnoret 3 ...................... <1, soundspath & "pwell" & random(5) & ".aif">
+  [563] extcall 12 .............................. sound playFile 1, soundspath & "pwell" & random(5) & ".aif"
+  [565] jmp [845]
+  [568] peek 0
+  [570] pushcons 37 ............................. <"bench">
+  [573] eq
+  [574] jmpifz [608] ............................ (case) "bench":
+  [577] pushsymb 11 ............................. <#playFile>
+  [579] pushint16 1 ............................. <1>
+  [582] getglobal 13 ............................ <soundspath>
+  [584] pushcons 38 ............................. <"pbench">
+  [587] pushint16 7 ............................. <7>
+  [590] pusharglist 1 ........................... <7>
+  [592] extcall 50 .............................. <random(7)>
+  [595] joinstr ................................. <"pbench" & random(7)>
+  [596] pushcons 39 ............................. <".aif">
+  [599] joinstr ................................. <"pbench" & random(7) & ".aif">
+  [600] joinstr ................................. <soundspath & "pbench" & random(7) & ".aif">
+  [601] pusharglistnoret 3 ...................... <1, soundspath & "pbench" & random(7) & ".aif">
+  [603] extcall 12 .............................. sound playFile 1, soundspath & "pbench" & random(7) & ".aif"
+  [605] jmp [845]
+  [608] peek 0
+  [610] pushcons 40 ............................. <"lite">
+  [613] eq
+  [614] jmpifz [648] ............................ (case) "lite":
+  [617] pushsymb 11 ............................. <#playFile>
+  [619] pushint16 1 ............................. <1>
+  [622] getglobal 13 ............................ <soundspath>
+  [624] pushcons 41 ............................. <"plite">
+  [627] pushint16 5 ............................. <5>
+  [630] pusharglist 1 ........................... <5>
+  [632] extcall 50 .............................. <random(5)>
+  [635] joinstr ................................. <"plite" & random(5)>
+  [636] pushcons 42 ............................. <".aif">
+  [639] joinstr ................................. <"plite" & random(5) & ".aif">
+  [640] joinstr ................................. <soundspath & "plite" & random(5) & ".aif">
+  [641] pusharglistnoret 3 ...................... <1, soundspath & "plite" & random(5) & ".aif">
+  [643] extcall 12 .............................. sound playFile 1, soundspath & "plite" & random(5) & ".aif"
+  [645] jmp [845]
+  [648] peek 0
+  [650] pushcons 43 ............................. <"table">
+  [653] eq
+  [654] jmpifz [688] ............................ (case) "table":
+  [657] pushsymb 11 ............................. <#playFile>
+  [659] pushint16 1 ............................. <1>
+  [662] getglobal 13 ............................ <soundspath>
+  [664] pushcons 44 ............................. <"ptable">
+  [667] pushint16 6 ............................. <6>
+  [670] pusharglist 1 ........................... <6>
+  [672] extcall 50 .............................. <random(6)>
+  [675] joinstr ................................. <"ptable" & random(6)>
+  [676] pushcons 45 ............................. <".aif">
+  [679] joinstr ................................. <"ptable" & random(6) & ".aif">
+  [680] joinstr ................................. <soundspath & "ptable" & random(6) & ".aif">
+  [681] pusharglistnoret 3 ...................... <1, soundspath & "ptable" & random(6) & ".aif">
+  [683] extcall 12 .............................. sound playFile 1, soundspath & "ptable" & random(6) & ".aif"
+  [685] jmp [845]
+  [688] peek 0
+  [690] pushcons 46 ............................. <"vilon">
+  [693] eq
+  [694] jmpifz [728] ............................ (case) "vilon":
+  [697] pushsymb 11 ............................. <#playFile>
+  [699] pushint16 1 ............................. <1>
+  [702] getglobal 13 ............................ <soundspath>
+  [704] pushcons 47 ............................. <"pvilon">
+  [707] pushint16 3 ............................. <3>
+  [710] pusharglist 1 ........................... <3>
+  [712] extcall 50 .............................. <random(3)>
+  [715] joinstr ................................. <"pvilon" & random(3)>
+  [716] pushcons 48 ............................. <".aif">
+  [719] joinstr ................................. <"pvilon" & random(3) & ".aif">
+  [720] joinstr ................................. <soundspath & "pvilon" & random(3) & ".aif">
+  [721] pusharglistnoret 3 ...................... <1, soundspath & "pvilon" & random(3) & ".aif">
+  [723] extcall 12 .............................. sound playFile 1, soundspath & "pvilon" & random(3) & ".aif"
+  [725] jmp [845]
+  [728] peek 0
+  [730] pushcons 49 ............................. <"pic">
+  [733] eq
+  [734] jmpifz [768] ............................ (case) "pic":
+  [737] pushsymb 11 ............................. <#playFile>
+  [739] pushint16 1 ............................. <1>
+  [742] getglobal 13 ............................ <soundspath>
+  [744] pushcons 50 ............................. <"ppic">
+  [747] pushint16 7 ............................. <7>
+  [750] pusharglist 1 ........................... <7>
+  [752] extcall 50 .............................. <random(7)>
+  [755] joinstr ................................. <"ppic" & random(7)>
+  [756] pushcons 51 ............................. <".aif">
+  [759] joinstr ................................. <"ppic" & random(7) & ".aif">
+  [760] joinstr ................................. <soundspath & "ppic" & random(7) & ".aif">
+  [761] pusharglistnoret 3 ...................... <1, soundspath & "ppic" & random(7) & ".aif">
+  [763] extcall 12 .............................. sound playFile 1, soundspath & "ppic" & random(7) & ".aif"
+  [765] jmp [845]
+  [768] peek 0
+  [770] pushcons 52 ............................. <"drawer">
+  [773] eq
+  [774] jmpifz [808] ............................ (case) "drawer":
+  [777] pushsymb 11 ............................. <#playFile>
+  [779] pushint16 1 ............................. <1>
+  [782] getglobal 13 ............................ <soundspath>
+  [784] pushcons 53 ............................. <"pdrawer">
+  [787] pushint16 7 ............................. <7>
+  [790] pusharglist 1 ........................... <7>
+  [792] extcall 50 .............................. <random(7)>
+  [795] joinstr ................................. <"pdrawer" & random(7)>
+  [796] pushcons 54 ............................. <".aif">
+  [799] joinstr ................................. <"pdrawer" & random(7) & ".aif">
+  [800] joinstr ................................. <soundspath & "pdrawer" & random(7) & ".aif">
+  [801] pusharglistnoret 3 ...................... <1, soundspath & "pdrawer" & random(7) & ".aif">
+  [803] extcall 12 .............................. sound playFile 1, soundspath & "pdrawer" & random(7) & ".aif"
+  [805] jmp [845]
+  [808] peek 0
+  [810] pushcons 55 ............................. <"water">
+  [813] eq
+  [814] jmpifz [845] ............................ (case) "water":
+  [817] pushsymb 11 ............................. <#playFile>
+  [819] pushint16 1 ............................. <1>
+  [822] getglobal 13 ............................ <soundspath>
+  [824] pushcons 56 ............................. <"pwater">
+  [827] pushint16 6 ............................. <6>
+  [830] pusharglist 1 ........................... <6>
+  [832] extcall 50 .............................. <random(6)>
+  [835] joinstr ................................. <"pwater" & random(6)>
+  [836] pushcons 57 ............................. <".aif">
+  [839] joinstr ................................. <"pwater" & random(6) & ".aif">
+  [840] joinstr ................................. <soundspath & "pwater" & random(6) & ".aif">
+  [841] pusharglistnoret 3 ...................... <1, soundspath & "pwater" & random(6) & ".aif">
+  [843] extcall 12 .............................. sound playFile 1, soundspath & "pwater" & random(6) & ".aif"
+  [845] pop 1 ................................... end case
+  [847] jmp [1180]
+  [850] getlocal 6 .............................. <mydoing>
+  [852] pushcons 58 ............................. <"dwarf">
+  [855] containsstr ............................. <mydoing contains "dwarf">
+  [856] jmpifz [869] ............................ if mydoing contains "dwarf" then / else
+  [859] getlocal 6 .............................. <mydoing>
+  [861] pusharglistnoret 1 ...................... <mydoing>
+  [863] extcall 51 .............................. gamad(mydoing)
+  [866] jmp [1180]
+  [869] getlocal 6 .............................. <mydoing>
+  [871] pushcons 59 ............................. <"key">
+  [874] eq ...................................... <mydoing = "key">
+  [875] jmpifz [896] ............................ if mydoing = "key" then / else
+  [878] pushsymb 11 ............................. <#playFile>
+  [880] pushint16 1 ............................. <1>
+  [883] getglobal 13 ............................ <soundspath>
+  [885] pushcons 60 ............................. <"tinkkey.aif">
+  [888] joinstr ................................. <soundspath & "tinkkey.aif">
+  [889] pusharglistnoret 3 ...................... <1, soundspath & "tinkkey.aif">
+  [891] extcall 12 .............................. sound playFile 1, soundspath & "tinkkey.aif"
+  [893] jmp [1180]
+  [896] getlocal 6 .............................. <mydoing>
+  [898] pusharglist 1 ........................... <mydoing>
+  [900] extcall 44 .............................. <value(mydoing)>
+  [903] setlocal 6 .............................. mydoing = value(mydoing)
+  [905] getlocal 6 .............................. <mydoing>
+  [907] pushint16 35 ............................ <35>
+  [910] get 6 ................................... <the memberNum of sprite mydoing>
+  [912] setlocal 8 .............................. unu = the memberNum of sprite mydoing
+  [914] getlocal 8 .............................. <unu>
+  [916] pushcons 61 ............................. <"master">
+  [919] pusharglist 2 ........................... <unu, "master">
+  [921] extcall 22 .............................. <member(unu, "master")>
+  [923] getobjprop 30 ........................... <member(unu, "master").name>
+  [925] setlocal 9 .............................. fff = member(unu, "master").name
+  [927] getlocal 9 .............................. <fff>
+  [929] pushcons 62 ............................. <"jokebtl">
+  [932] eq ...................................... <fff = "jokebtl">
+  [933] jmpifz [1057] ........................... if fff = "jokebtl" then / else
+  [936] pushcons 63 ............................. <"gojoking">
+  [939] setlocal 10 ............................. sss = "gojoking"
+  [941] pushint16 1 ............................. <1>
+  [944] setlocal 3 .............................. i = 1
+  [946] getlocal 3 .............................. <i>
+  [948] pushcons 64 ............................. <"jokefield">
+  [951] pushzero ................................ <0>
+  [952] getfield ................................ <field("jokefield")>
+  [953] pushint16 3 ............................. <3>
+  [956] get 1 ................................... <the number of items in field "jokefield">
+  [958] lteq .................................... <i <= the number of items in field "jokefield">
+  [959] jmpifz [999] ............................ repeat while i <= the number of items in field "jokefield"
+  [962] getglobal 19 ............................ <nof>
+  [964] pushzero ................................ <0>
+  [965] pushzero ................................ <0>
+  [966] pushzero ................................ <0>
+  [967] pushzero ................................ <0>
+  [968] getlocal 3 .............................. <i>
+  [970] pushzero ................................ <0>
+  [971] pushzero ................................ <0>
+  [972] pushzero ................................ <0>
+  [973] pushcons 65 ............................. <"jokefield">
+  [976] pushzero ................................ <0>
+  [977] getfield ................................ <field("jokefield")>
+  [978] getchunk ................................ <item i of field "jokefield">
+  [979] eq ...................................... <nof = item i of field "jokefield">
+  [980] jmpifz [988] ............................ if nof = item i of field "jokefield" then
+  [983] pushcons 66 ............................. <"wasalready">
+  [986] setlocal 10 ............................. sss = "wasalready"
+  [988] pushint16 1 ............................. <1>
+  [991] getlocal 3 .............................. <i>
+  [993] add ..................................... <1 + i>
+  [994] setlocal 3 .............................. i = 1 + i
+  [996] endrepeat [946]
+  [999] getlocal 10 ............................. <sss>
+  [1001] pushcons 67 ............................ <"gojoking">
+  [1004] eq ..................................... <sss = "gojoking">
+  [1005] jmpifz [1038] .......................... if sss = "gojoking" then / else
+  [1008] getlocal 6 ............................. <mydoing>
+  [1010] pusharglist 1 .......................... <mydoing>
+  [1012] extcall 20 ............................. <sprite(mydoing)>
+  [1014] pushint16 1 ............................ <1>
+  [1017] setobjprop 21 .......................... sprite(mydoing).visible = 1
+  [1019] pushsymb 11 ............................ <#playFile>
+  [1021] pushint16 1 ............................ <1>
+  [1024] getglobal 36 ........................... <effectspath>
+  [1027] pushcons 68 ............................ <"found.aif">
+  [1030] joinstr ................................ <effectspath & "found.aif">
+  [1031] pusharglistnoret 3 ..................... <1, effectspath & "found.aif">
+  [1033] extcall 12 ............................. sound playFile 1, effectspath & "found.aif"
+  [1035] jmp [1054]
+  [1038] pushsymb 11 ............................ <#playFile>
+  [1040] pushint16 1 ............................ <1>
+  [1043] getglobal 36 ........................... <effectspath>
+  [1046] pushcons 69 ............................ <"nofound.aif">
+  [1049] joinstr ................................ <effectspath & "nofound.aif">
+  [1050] pusharglistnoret 3 ..................... <1, effectspath & "nofound.aif">
+  [1052] extcall 12 ............................. sound playFile 1, effectspath & "nofound.aif"
+  [1054] jmp [1180]
+  [1057] getlocal 9 ............................. <fff>
+  [1059] pushcons 70 ............................ <"shell">
+  [1062] eq ..................................... <fff = "shell">
+  [1063] jmpifz [1180] .......................... if fff = "shell" then
+  [1066] pushzero ............................... <0>
+  [1067] setlocal 11 ............................ gtu = 0
+  [1069] pushint16 1 ............................ <1>
+  [1072] setlocal 3 ............................. i = 1
+  [1074] getlocal 3 ............................. <i>
+  [1076] pushcons 71 ............................ <"shellfield">
+  [1079] pushzero ............................... <0>
+  [1080] getfield ............................... <field("shellfield")>
+  [1081] pushint16 3 ............................ <3>
+  [1084] get 1 .................................. <the number of items in field "shellfield">
+  [1086] lteq ................................... <i <= the number of items in field "shellfield">
+  [1087] jmpifz [1127] .......................... repeat while i <= the number of items in field "shellfield"
+  [1090] pushzero ............................... <0>
+  [1091] pushzero ............................... <0>
+  [1092] pushzero ............................... <0>
+  [1093] pushzero ............................... <0>
+  [1094] getlocal 3 ............................. <i>
+  [1096] pushzero ............................... <0>
+  [1097] pushzero ............................... <0>
+  [1098] pushzero ............................... <0>
+  [1099] pushcons 72 ............................ <"shellfield">
+  [1102] pushzero ............................... <0>
+  [1103] getfield ............................... <field("shellfield")>
+  [1104] getchunk ............................... <item i of field "shellfield">
+  [1105] getglobal 19 ........................... <nof>
+  [1107] eq ..................................... <item i of field "shellfield" = nof>
+  [1108] jmpifz [1116] .......................... if item i of field "shellfield" = nof then
+  [1111] pushcons 73 ............................ <"beenhere">
+  [1114] setlocal 11 ............................ gtu = "beenhere"
+  [1116] pushint16 1 ............................ <1>
+  [1119] getlocal 3 ............................. <i>
+  [1121] add .................................... <1 + i>
+  [1122] setlocal 3 ............................. i = 1 + i
+  [1124] endrepeat [1074]
+  [1127] getlocal 11 ............................ <gtu>
+  [1129] pushzero ............................... <0>
+  [1130] eq ..................................... <gtu = 0>
+  [1131] jmpifz [1164] .......................... if gtu = 0 then / else
+  [1134] getlocal 6 ............................. <mydoing>
+  [1136] pusharglist 1 .......................... <mydoing>
+  [1138] extcall 20 ............................. <sprite(mydoing)>
+  [1140] pushint16 1 ............................ <1>
+  [1143] setobjprop 21 .......................... sprite(mydoing).visible = 1
+  [1145] pushsymb 11 ............................ <#playFile>
+  [1147] pushint16 1 ............................ <1>
+  [1150] getglobal 36 ........................... <effectspath>
+  [1153] pushcons 74 ............................ <"found.aif">
+  [1156] joinstr ................................ <effectspath & "found.aif">
+  [1157] pusharglistnoret 3 ..................... <1, effectspath & "found.aif">
+  [1159] extcall 12 ............................. sound playFile 1, effectspath & "found.aif"
+  [1161] jmp [1180]
+  [1164] pushsymb 11 ............................ <#playFile>
+  [1166] pushint16 1 ............................ <1>
+  [1169] getglobal 36 ........................... <effectspath>
+  [1172] pushcons 75 ............................ <"nofound.aif">
+  [1175] joinstr ................................ <effectspath & "nofound.aif">
+  [1176] pusharglistnoret 3 ..................... <1, effectspath & "nofound.aif">
+  [1178] extcall 12 ............................. sound playFile 1, effectspath & "nofound.aif"
+  [1180] ret
+end

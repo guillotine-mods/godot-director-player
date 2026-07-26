@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"lighthouseleft">
+  [  2] pusharglistnoret 1 ...................... <"lighthouseleft">
+  [  4] extcall 3 ............................... go("lighthouseleft")
+  [  6] ret
+end

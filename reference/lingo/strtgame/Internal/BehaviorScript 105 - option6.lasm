@@ -1,0 +1,48 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"z:\\sounds\\strtgame\\">
+  [  2] pusharglist 1 ........................... <["z:\\sounds\\strtgame\\"]>
+  [  4] pushlist ................................ <["z:\\sounds\\strtgame\\"]>
+  [  5] setmovieprop 13 ......................... the searchPath = ["z:\\sounds\\strtgame\\"]
+  [  7] getmovieprop 13 ......................... <the searchPath>
+  [  9] pushint8 1 .............................. <1>
+  [ 12] pusharglist 2 ........................... <the searchPath, 1>
+  [ 14] extcall 14 .............................. <getAt(the searchPath, 1)>
+  [ 16] setlocal 0 .............................. x = getAt(the searchPath, 1)
+  [ 18] pushsymb 15 ............................. <#playFile>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] getlocal 0 .............................. <x>
+  [ 25] pushcons 8 .............................. <"egozcold.aif">
+  [ 27] joinstr ................................. <x & "egozcold.aif">
+  [ 28] pusharglistnoret 3 ...................... <1, x & "egozcold.aif">
+  [ 30] extcall 16 .............................. sound playFile 1, x & "egozcold.aif"
+  [ 32] pushint8 1 .............................. <1>
+  [ 35] pusharglist 1 ........................... <1>
+  [ 37] extcall 17 .............................. <soundBusy(1)>
+  [ 39] jmpifz [ 80] ............................ if soundBusy(1) then / else
+  [ 42] getlocal 0 .............................. <x>
+  [ 44] setlocal 8 .............................. alfred = x
+  [ 46] pushint8 1 .............................. <1>
+  [ 49] pushzero ................................ <0>
+  [ 50] pushzero ................................ <0>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushzero ................................ <0>
+  [ 53] pushzero ................................ <0>
+  [ 54] pushint8 1 .............................. <1>
+  [ 57] pushzero ................................ <0>
+  [ 58] getlocal 8 .............................. <alfred>
+  [ 60] getchunk ................................ <char 1 of line 1 of alfred>
+  [ 61] setglobal 8 ............................. gWinDriveLetter = char 1 of line 1 of alfred
+  [ 63] getglobal 8 ............................. <gWinDriveLetter>
+  [ 65] pushcons 16 ............................. <":\\sounds\\">
+  [ 67] joinstr ................................. <gWinDriveLetter & ":\\sounds\\">
+  [ 68] setglobal 6 ............................. soundspathstart = gWinDriveLetter & ":\\sounds\\"
+  [ 70] getglobal 8 ............................. <gWinDriveLetter>
+  [ 72] pushcons 24 ............................. <":\\pip2data\\">
+  [ 74] joinstr ................................. <gWinDriveLetter & ":\\pip2data\\">
+  [ 75] setglobal 9 ............................. cdsavepath = gWinDriveLetter & ":\\pip2data\\"
+  [ 77] jmp [ 86]
+  [ 80] pushcons 32 ............................. <"option27">
+  [ 82] pusharglistnoret 1 ...................... <"option27">
+  [ 84] extcall 11 .............................. go("option27")
+  [ 86] ret
+end

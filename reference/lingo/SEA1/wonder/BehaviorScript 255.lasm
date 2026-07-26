@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"travelshore2">
+  [  2] pusharglistnoret 1 ...................... <"travelshore2">
+  [  4] extcall 3 ............................... go("travelshore2")
+  [  6] ret
+end

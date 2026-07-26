@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"loby">
+  [  2] pusharglistnoret 1 ...................... <"loby">
+  [  4] extcall 3 ............................... go("loby")
+  [  6] ret
+end

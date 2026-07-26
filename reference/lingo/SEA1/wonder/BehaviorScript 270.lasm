@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"wrecktomap">
+  [  2] pusharglistnoret 1 ...................... <"wrecktomap">
+  [  4] extcall 3 ............................... go("wrecktomap")
+  [  6] ret
+end

@@ -1,0 +1,17 @@
+on mouseUp
+  [  0] pushsymb 96 ............................. <#stop>
+  [  3] pushint8 2 .............................. <2>
+  [  6] pusharglistnoret 2 ...................... <2>
+  [  8] extcall 43 .............................. sound stop 2
+  [ 11] pushsymb 42 ............................. <#playFile>
+  [ 14] pushint8 1 .............................. <1>
+  [ 17] getglobal 20 ............................ <soundspath>
+  [ 19] pushcons 0 .............................. <"brjtch.aif">
+  [ 21] joinstr ................................. <soundspath & "brjtch.aif">
+  [ 22] pusharglistnoret 3 ...................... <1, soundspath & "brjtch.aif">
+  [ 24] extcall 43 .............................. sound playFile 1, soundspath & "brjtch.aif"
+  [ 27] pushcons 8 .............................. <"brjtalk2">
+  [ 29] pusharglistnoret 1 ...................... <"brjtalk2">
+  [ 31] extcall 48 .............................. play frame "brjtalk2"
+  [ 34] ret
+end

@@ -1,0 +1,203 @@
+on cursorfunk
+  [  0] getmovieprop 26 ......................... <the movieName>
+  [  2] pushcons 0 .............................. <"hotel">
+  [  4] containsstr ............................. <the movieName contains "hotel">
+  [  5] getmovieprop 26 ......................... <the movieName>
+  [  7] pushcons 1 .............................. <"day1.dxr">
+  [  9] eq ...................................... <the movieName = "day1.dxr">
+  [ 10] or ...................................... <(the movieName contains "hotel") or (the movieName = "day1.dxr")>
+  [ 11] getmovieprop 26 ......................... <the movieName>
+  [ 13] pushcons 2 .............................. <"sea">
+  [ 15] containsstr ............................. <the movieName contains "sea">
+  [ 16] or ...................................... <(the movieName contains "hotel") or (the movieName = "day1.dxr") or (the movieName contains "sea")>
+  [ 17] getmovieprop 26 ......................... <the movieName>
+  [ 19] pushcons 3 .............................. <"night1">
+  [ 21] containsstr ............................. <the movieName contains "night1">
+  [ 22] or ...................................... <(the movieName contains "hotel") or (the movieName = "day1.dxr") or (the movieName contains "sea") or (the movieName contains "night1")>
+  [ 23] getmovieprop 26 ......................... <the movieName>
+  [ 25] pushcons 4 .............................. <"air">
+  [ 27] containsstr ............................. <the movieName contains "air">
+  [ 28] or ...................................... <(the movieName contains "hotel") or (the movieName = "day1.dxr") or (the movieName contains "sea") or (the movieName contains "night1") or (the movieName contains "air")>
+  [ 29] jmpifz [417] ............................ if (the movieName contains "hotel") or (the movieName = "day1.dxr") or (the movieName contains "sea") or (the movieName contains "night1") or (the movieName contains "air") then
+  [ 32] pushint16 93 ............................ <93>
+  [ 35] pushint16 1 ............................. <1>
+  [ 38] pusharglistnoret 2 ...................... <93, 1>
+  [ 40] extcall 25 .............................. puppetSprite(93, 1)
+  [ 42] getmovieprop 26 ......................... <the movieName>
+  [ 44] pushcons 5 .............................. <"night">
+  [ 46] containsstr ............................. <the movieName contains "night">
+  [ 47] jmpifz [ 89] ............................ if the movieName contains "night" then / else
+  [ 50] pushint16 93 ............................ <93>
+  [ 53] pushcons 6 .............................. <"night">
+  [ 55] getglobal 9 ............................. <globalday>
+  [ 57] joinstr ................................. <"night" & globalday>
+  [ 58] pushcons 7 .............................. <"master">
+  [ 60] pushint16 10 ............................ <10>
+  [ 63] get 9 ................................... <the number of member ("night" & globalday) of castLib "master">
+  [ 65] pushint16 35 ............................ <35>
+  [ 68] set 6 ................................... set the memberNum of sprite 93 to the number of member ("night" & globalday) of castLib "master"
+  [ 70] pushcons 8 .............................. <"s_night">
+  [ 72] getglobal 9 ............................. <globalday>
+  [ 74] joinstr ................................. <"s_night" & globalday>
+  [ 75] pusharglistnoret 1 ...................... <"s_night" & globalday>
+  [ 77] extcall 78 .............................. tlkpath("s_night" & globalday)
+  [ 80] pushcons 9 .............................. <"nights">
+  [ 82] pusharglistnoret 1 ...................... <"nights">
+  [ 84] extcall 13 .............................. soundspath("nights")
+  [ 86] jmp [159]
+  [ 89] pushint16 93 ............................ <93>
+  [ 92] pushcons 10 ............................. <"day">
+  [ 94] getglobal 9 ............................. <globalday>
+  [ 96] joinstr ................................. <"day" & globalday>
+  [ 97] pushcons 11 ............................. <"master">
+  [ 99] pushint16 10 ............................ <10>
+  [102] get 9 ................................... <the number of member ("day" & globalday) of castLib "master">
+  [104] pushint16 35 ............................ <35>
+  [107] set 6 ................................... set the memberNum of sprite 93 to the number of member ("day" & globalday) of castLib "master"
+  [109] pushcons 12 ............................. <"s_day">
+  [111] getglobal 9 ............................. <globalday>
+  [113] joinstr ................................. <"s_day" & globalday>
+  [114] pusharglistnoret 1 ...................... <"s_day" & globalday>
+  [116] extcall 78 .............................. tlkpath("s_day" & globalday)
+  [119] getmovieprop 26 ......................... <the movieName>
+  [121] pushcons 13 ............................. <"sea">
+  [123] containsstr ............................. <the movieName contains "sea">
+  [124] jmpifz [136] ............................ if the movieName contains "sea" then / else
+  [127] pushcons 14 ............................. <"sea">
+  [129] pusharglistnoret 1 ...................... <"sea">
+  [131] extcall 13 .............................. soundspath("sea")
+  [133] jmp [159]
+  [136] getmovieprop 26 ......................... <the movieName>
+  [138] pushcons 15 ............................. <"air">
+  [140] containsstr ............................. <the movieName contains "air">
+  [141] jmpifz [153] ............................ if the movieName contains "air" then / else
+  [144] pushcons 16 ............................. <"air">
+  [146] pusharglistnoret 1 ...................... <"air">
+  [148] extcall 13 .............................. soundspath("air")
+  [150] jmp [159]
+  [153] pushcons 17 ............................. <"days">
+  [155] pusharglistnoret 1 ...................... <"days">
+  [157] extcall 13 .............................. soundspath("days")
+  [159] pushint16 2 ............................. <2>
+  [162] pushint16 130 ........................... <130>
+  [165] pushint16 1 ............................. <1>
+  [168] set 4 ................................... set the volume of sound 2 to 130
+  [170] pushint16 2 ............................. <2>
+  [173] pushcons 18 ............................. <"wlkcur1">
+  [175] pusharglist 1 ........................... <"wlkcur1">
+  [177] extcall 22 .............................. <member("wlkcur1")>
+  [179] getobjprop 23 ........................... <member("wlkcur1").memberNum>
+  [181] pushcons 19 ............................. <"wlkcur2">
+  [183] pusharglist 1 ........................... <"wlkcur2">
+  [185] extcall 22 .............................. <member("wlkcur2")>
+  [187] getobjprop 23 ........................... <member("wlkcur2").memberNum>
+  [189] pusharglist 2 ........................... <[member("wlkcur1").memberNum, member("wlkcur2").memberNum]>
+  [191] pushlist ................................ <[member("wlkcur1").memberNum, member("wlkcur2").memberNum]>
+  [192] pushint16 6 ............................. <6>
+  [195] set 6 ................................... set the cursor of sprite 2 to [member("wlkcur1").memberNum, member("wlkcur2").memberNum]
+  [197] pushint16 7 ............................. <7>
+  [200] pushcons 20 ............................. <"magni1">
+  [202] pusharglist 1 ........................... <"magni1">
+  [204] extcall 22 .............................. <member("magni1")>
+  [206] getobjprop 23 ........................... <member("magni1").memberNum>
+  [208] pushcons 21 ............................. <"magni2">
+  [210] pusharglist 1 ........................... <"magni2">
+  [212] extcall 22 .............................. <member("magni2")>
+  [214] getobjprop 23 ........................... <member("magni2").memberNum>
+  [216] pusharglist 2 ........................... <[member("magni1").memberNum, member("magni2").memberNum]>
+  [218] pushlist ................................ <[member("magni1").memberNum, member("magni2").memberNum]>
+  [219] pushint16 6 ............................. <6>
+  [222] set 6 ................................... set the cursor of sprite 7 to [member("magni1").memberNum, member("magni2").memberNum]
+  [224] pushint16 8 ............................. <8>
+  [227] pushcons 22 ............................. <"magni1">
+  [229] pusharglist 1 ........................... <"magni1">
+  [231] extcall 22 .............................. <member("magni1")>
+  [233] getobjprop 23 ........................... <member("magni1").memberNum>
+  [235] pushcons 23 ............................. <"magni2">
+  [237] pusharglist 1 ........................... <"magni2">
+  [239] extcall 22 .............................. <member("magni2")>
+  [241] getobjprop 23 ........................... <member("magni2").memberNum>
+  [243] pusharglist 2 ........................... <[member("magni1").memberNum, member("magni2").memberNum]>
+  [245] pushlist ................................ <[member("magni1").memberNum, member("magni2").memberNum]>
+  [246] pushint16 6 ............................. <6>
+  [249] set 6 ................................... set the cursor of sprite 8 to [member("magni1").memberNum, member("magni2").memberNum]
+  [251] pushint16 9 ............................. <9>
+  [254] pushcons 24 ............................. <"magni1">
+  [256] pusharglist 1 ........................... <"magni1">
+  [258] extcall 22 .............................. <member("magni1")>
+  [260] getobjprop 23 ........................... <member("magni1").memberNum>
+  [262] pushcons 25 ............................. <"magni2">
+  [264] pusharglist 1 ........................... <"magni2">
+  [266] extcall 22 .............................. <member("magni2")>
+  [268] getobjprop 23 ........................... <member("magni2").memberNum>
+  [270] pusharglist 2 ........................... <[member("magni1").memberNum, member("magni2").memberNum]>
+  [272] pushlist ................................ <[member("magni1").memberNum, member("magni2").memberNum]>
+  [273] pushint16 6 ............................. <6>
+  [276] set 6 ................................... set the cursor of sprite 9 to [member("magni1").memberNum, member("magni2").memberNum]
+  [278] pushint16 10 ............................ <10>
+  [281] pushcons 26 ............................. <"leftcur1">
+  [283] pusharglist 1 ........................... <"leftcur1">
+  [285] extcall 22 .............................. <member("leftcur1")>
+  [287] getobjprop 23 ........................... <member("leftcur1").memberNum>
+  [289] pushcons 27 ............................. <"leftcur2">
+  [291] pusharglist 1 ........................... <"leftcur2">
+  [293] extcall 22 .............................. <member("leftcur2")>
+  [295] getobjprop 23 ........................... <member("leftcur2").memberNum>
+  [297] pusharglist 2 ........................... <[member("leftcur1").memberNum, member("leftcur2").memberNum]>
+  [299] pushlist ................................ <[member("leftcur1").memberNum, member("leftcur2").memberNum]>
+  [300] pushint16 6 ............................. <6>
+  [303] set 6 ................................... set the cursor of sprite 10 to [member("leftcur1").memberNum, member("leftcur2").memberNum]
+  [305] pushint16 11 ............................ <11>
+  [308] pushcons 28 ............................. <"rightcur1">
+  [310] pusharglist 1 ........................... <"rightcur1">
+  [312] extcall 22 .............................. <member("rightcur1")>
+  [314] getobjprop 23 ........................... <member("rightcur1").memberNum>
+  [316] pushcons 29 ............................. <"rightcur2">
+  [318] pusharglist 1 ........................... <"rightcur2">
+  [320] extcall 22 .............................. <member("rightcur2")>
+  [322] getobjprop 23 ........................... <member("rightcur2").memberNum>
+  [324] pusharglist 2 ........................... <[member("rightcur1").memberNum, member("rightcur2").memberNum]>
+  [326] pushlist ................................ <[member("rightcur1").memberNum, member("rightcur2").memberNum]>
+  [327] pushint16 6 ............................. <6>
+  [330] set 6 ................................... set the cursor of sprite 11 to [member("rightcur1").memberNum, member("rightcur2").memberNum]
+  [332] pushint16 12 ............................ <12>
+  [335] pushcons 30 ............................. <"downcur1">
+  [337] pusharglist 1 ........................... <"downcur1">
+  [339] extcall 22 .............................. <member("downcur1")>
+  [341] getobjprop 23 ........................... <member("downcur1").memberNum>
+  [343] pushcons 31 ............................. <"downcur2">
+  [345] pusharglist 1 ........................... <"downcur2">
+  [347] extcall 22 .............................. <member("downcur2")>
+  [349] getobjprop 23 ........................... <member("downcur2").memberNum>
+  [351] pusharglist 2 ........................... <[member("downcur1").memberNum, member("downcur2").memberNum]>
+  [353] pushlist ................................ <[member("downcur1").memberNum, member("downcur2").memberNum]>
+  [354] pushint16 6 ............................. <6>
+  [357] set 6 ................................... set the cursor of sprite 12 to [member("downcur1").memberNum, member("downcur2").memberNum]
+  [359] pushint16 13 ............................ <13>
+  [362] pushcons 32 ............................. <"upcur1">
+  [365] pusharglist 1 ........................... <"upcur1">
+  [367] extcall 22 .............................. <member("upcur1")>
+  [369] getobjprop 23 ........................... <member("upcur1").memberNum>
+  [371] pushcons 33 ............................. <"upcur2">
+  [374] pusharglist 1 ........................... <"upcur2">
+  [376] extcall 22 .............................. <member("upcur2")>
+  [378] getobjprop 23 ........................... <member("upcur2").memberNum>
+  [380] pusharglist 2 ........................... <[member("upcur1").memberNum, member("upcur2").memberNum]>
+  [382] pushlist ................................ <[member("upcur1").memberNum, member("upcur2").memberNum]>
+  [383] pushint16 6 ............................. <6>
+  [386] set 6 ................................... set the cursor of sprite 13 to [member("upcur1").memberNum, member("upcur2").memberNum]
+  [388] pushint16 14 ............................ <14>
+  [391] pushcons 34 ............................. <"trgcur1">
+  [394] pusharglist 1 ........................... <"trgcur1">
+  [396] extcall 22 .............................. <member("trgcur1")>
+  [398] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [400] pushcons 35 ............................. <"trgcur2">
+  [403] pusharglist 1 ........................... <"trgcur2">
+  [405] extcall 22 .............................. <member("trgcur2")>
+  [407] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [409] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [411] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [412] pushint16 6 ............................. <6>
+  [415] set 6 ................................... set the cursor of sprite 14 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [417] ret
+end

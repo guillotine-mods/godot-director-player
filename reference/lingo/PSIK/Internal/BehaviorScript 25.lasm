@@ -1,0 +1,12 @@
+on exitFrame
+  [  0] pushsymb 29 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 31 ............................ <soundspath>
+  [  7] pushcons 0 .............................. <"zev1.aif">
+  [  9] joinstr ................................. <soundspath & "zev1.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, soundspath & "zev1.aif">
+  [ 12] extcall 30 .............................. sound playFile 1, soundspath & "zev1.aif"
+  [ 14] pushzero ................................ <0>
+  [ 15] setglobal 34 ............................ freeforall = 0
+  [ 18] ret
+end

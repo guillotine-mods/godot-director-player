@@ -1,0 +1,37 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"000">
+  [  2] setglobal 17 ............................ nextroomdata = "000"
+  [  4] getglobal 10 ............................ <egozv>
+  [  6] pushint8 370 ............................ <370>
+  [  9] nteq .................................... <egozv <> 370>
+  [ 10] getglobal 6 ............................. <egozh>
+  [ 12] pushint8 520 ............................ <520>
+  [ 15] nteq .................................... <egozh <> 520>
+  [ 16] and ..................................... <(egozv <> 370) and (egozh <> 520)>
+  [ 17] jmpifz [ 50] ............................ if (egozv <> 370) and (egozh <> 520) then / else
+  [ 20] pushint8 370 ............................ <370>
+  [ 23] setglobal 10 ............................ egozv = 370
+  [ 25] pushint8 520 ............................ <520>
+  [ 28] setglobal 6 ............................. egozh = 520
+  [ 30] pushsymb 42 ............................. <#playFile>
+  [ 32] pushint8 1 .............................. <1>
+  [ 34] getglobal 31 ............................ <soundspath>
+  [ 36] pushcons 8 .............................. <"plytnis.aif">
+  [ 38] joinstr ................................. <soundspath & "plytnis.aif">
+  [ 39] pusharglistnoret 3 ...................... <1, soundspath & "plytnis.aif">
+  [ 41] extcall 43 .............................. sound playFile 1, soundspath & "plytnis.aif"
+  [ 43] pusharglistnoret 0 ...................... <>
+  [ 45] extcall 4 ............................... walkonby()
+  [ 47] jmp [ 69]
+  [ 50] getglobal 8 ............................. <whatodo>
+  [ 52] pushcons 16 ............................. <"stand">
+  [ 54] eq ...................................... <whatodo = "stand">
+  [ 55] jmpifz [ 69] ............................ if whatodo = "stand" then
+  [ 58] pushint8 1 .............................. <1>
+  [ 60] getmovieprop 30 ......................... <the moviePath>
+  [ 62] pushcons 24 ............................. <"tennis.dir">
+  [ 64] joinstr ................................. <the moviePath & "tennis.dir">
+  [ 65] pusharglistnoret 2 ...................... <1, the moviePath & "tennis.dir">
+  [ 67] extcall 3 ............................... go(1, the moviePath & "tennis.dir")
+  [ 69] ret
+end

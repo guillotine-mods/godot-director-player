@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 8 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 71 ............................ <effectspath>
+  [  8] pushcons 0 .............................. <"cling.aif">
+  [ 10] joinstr ................................. <effectspath & "cling.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, effectspath & "cling.aif">
+  [ 13] extcall 9 ............................... sound playFile 1, effectspath & "cling.aif"
+  [ 15] ret
+end

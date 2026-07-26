@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"choose1abc">
+  [  2] pusharglistnoret 1 ...................... <"choose1abc">
+  [  4] extcall 17 .............................. go("choose1abc")
+  [  6] ret
+end

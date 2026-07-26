@@ -1,0 +1,67 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"continue">
+  [  2] setlocal 0 .............................. x = "continue"
+  [  4] pushint8 1 .............................. <1>
+  [  7] setlocal 8
+  [  9] getlocal 8
+  [ 11] pushcons 8 .............................. <"objectsfield">
+  [ 13] pushcons 16 ............................. <"master">
+  [ 15] getfield ................................ <field("objectsfield", "master")>
+  [ 16] pushint8 4 .............................. <4>
+  [ 19] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 21] lteq
+  [ 22] jmpifz [ 84] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 25] pushzero ................................ <0>
+  [ 26] pushzero ................................ <0>
+  [ 27] pushzero ................................ <0>
+  [ 28] pushzero ................................ <0>
+  [ 29] pushzero ................................ <0>
+  [ 30] pushzero ................................ <0>
+  [ 31] getlocal 8 .............................. <i>
+  [ 33] pushzero ................................ <0>
+  [ 34] pushcons 24 ............................. <"objectsfield">
+  [ 36] pushcons 32 ............................. <"master">
+  [ 38] getfield ................................ <field("objectsfield", "master")>
+  [ 39] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 40] pushcons 40 ............................. <"empty">
+  [ 42] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 43] getlocal 0 .............................. <x>
+  [ 45] pushcons 48 ............................. <"continue">
+  [ 47] eq ...................................... <x = "continue">
+  [ 48] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 49] jmpifz [ 73] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 52] pushcons 56 ............................. <"camera">
+  [ 54] pushzero ................................ <0>
+  [ 55] pushzero ................................ <0>
+  [ 56] pushzero ................................ <0>
+  [ 57] pushzero ................................ <0>
+  [ 58] pushzero ................................ <0>
+  [ 59] pushzero ................................ <0>
+  [ 60] getlocal 8 .............................. <i>
+  [ 62] pushzero ................................ <0>
+  [ 63] pushcons 64 ............................. <"objectsfield">
+  [ 65] pushcons 72 ............................. <"master">
+  [ 67] putchunk 22 ............................. put "camera" into line i of field "objectsfield" of castLib "master"
+  [ 69] pushcons 80 ............................. <"stop">
+  [ 71] setlocal 0 .............................. x = "stop"
+  [ 73] pushint8 1
+  [ 76] getlocal 8
+  [ 78] add
+  [ 79] setlocal 8
+  [ 81] endrepeat [  9]
+  [ 84] pushint8 16 ............................. <16>
+  [ 87] pusharglist 1 ........................... <16>
+  [ 89] extcall 12 .............................. <sprite(16)>
+  [ 91] pushzero ................................ <0>
+  [ 92] setobjprop 13 ........................... sprite(16).visible = 0
+  [ 94] pusharglistnoret 0 ...................... <>
+  [ 96] extcall 74 .............................. displayobject()
+  [ 99] pushsymb 52 ............................. <#playFile>
+  [102] pushint8 1 .............................. <1>
+  [105] getglobal 37 ............................ <soundspath>
+  [108] pushcons 88 ............................. <"pfcamera.aif">
+  [110] joinstr ................................. <soundspath & "pfcamera.aif">
+  [111] pusharglistnoret 3 ...................... <1, soundspath & "pfcamera.aif">
+  [113] extcall 53 .............................. sound playFile 1, soundspath & "pfcamera.aif"
+  [116] ret
+end

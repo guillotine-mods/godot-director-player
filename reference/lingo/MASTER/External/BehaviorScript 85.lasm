@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushsymb 66 ............................. <#stop>
+  [  3] pushint16 2 ............................. <2>
+  [  6] pusharglistnoret 2 ...................... <2>
+  [  8] extcall 12 .............................. sound stop 2
+  [ 10] pushsymb 11 ............................. <#playFile>
+  [ 12] pushint16 1 ............................. <1>
+  [ 15] getglobal 13 ............................ <soundspath>
+  [ 17] pushcons 0 .............................. <"surejump.aif">
+  [ 19] joinstr ................................. <soundspath & "surejump.aif">
+  [ 20] pusharglistnoret 3 ...................... <1, soundspath & "surejump.aif">
+  [ 22] extcall 12 .............................. sound playFile 1, soundspath & "surejump.aif"
+  [ 24] ret
+end

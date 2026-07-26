@@ -1,0 +1,10 @@
+on mouseUp
+  [  0] pushsymb 18 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 20 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"hotellk1.aif">
+  [  8] joinstr ................................. <soundspath & "hotellk1.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "hotellk1.aif">
+  [ 11] extcall 19 .............................. sound playFile 1, soundspath & "hotellk1.aif"
+  [ 13] ret
+end

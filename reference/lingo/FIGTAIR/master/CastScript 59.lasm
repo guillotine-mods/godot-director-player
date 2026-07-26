@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 1 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 4 ............................. <soundspath>
+  [  6] pushcons 0 .............................. <"guard6.aif">
+  [  8] joinstr ................................. <soundspath & "guard6.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "guard6.aif">
+  [ 11] extcall 2 ............................... sound playFile 1, soundspath & "guard6.aif"
+  [ 13] pushcons 8 .............................. <"guardspk">
+  [ 15] pusharglistnoret 1 ...................... <"guardspk">
+  [ 17] extcall 5 ............................... play frame "guardspk"
+  [ 19] ret
+end

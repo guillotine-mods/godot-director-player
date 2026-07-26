@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 50 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 118 ........................... <whichsnd>
+  [ 12] pushcons 0 .............................. <"edgewlk">
+  [ 14] nteq .................................... <whichsnd <> "edgewlk">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "edgewlk")>
+  [ 16] jmpifz [ 41] ............................ if not soundBusy(2) or (whichsnd <> "edgewlk") then
+  [ 19] pushsymb 42 ............................. <#playFile>
+  [ 22] pushint8 2 .............................. <2>
+  [ 25] getglobal 32 ............................ <effectspath>
+  [ 28] pushcons 8 .............................. <"edgewlk.aif">
+  [ 30] joinstr ................................. <effectspath & "edgewlk.aif">
+  [ 31] pusharglistnoret 3 ...................... <2, effectspath & "edgewlk.aif">
+  [ 33] extcall 43 .............................. sound playFile 2, effectspath & "edgewlk.aif"
+  [ 36] pushcons 16 ............................. <"edgewlk">
+  [ 38] setglobal 118 ........................... whichsnd = "edgewlk"
+  [ 41] ret
+end

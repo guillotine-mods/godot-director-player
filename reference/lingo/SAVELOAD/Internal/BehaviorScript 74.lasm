@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushint8 6 .............................. <6>
+  [  3] pushint8 26 ............................. <26>
+  [  6] set 7 ................................... set the soundLevel to 6
+  [  8] pushsymb 26 ............................. <#playFile>
+  [ 10] pushint8 1 .............................. <1>
+  [ 13] getglobal 28 ............................ <soundspath>
+  [ 15] pushcons 0 .............................. <"voice6.aif">
+  [ 17] joinstr ................................. <soundspath & "voice6.aif">
+  [ 18] pusharglistnoret 3 ...................... <1, soundspath & "voice6.aif">
+  [ 20] extcall 27 .............................. sound playFile 1, soundspath & "voice6.aif"
+  [ 22] ret
+end

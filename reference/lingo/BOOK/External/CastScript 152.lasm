@@ -1,0 +1,12 @@
+on mouseUp
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 4 ............................... updateStage()
+  [  4] pusharglist 0 ........................... <>
+  [  6] thebuiltin 6 ............................ <the frame>
+  [  8] pusharglist 0 ........................... <>
+  [ 10] thebuiltin 6 ............................ <the frame>
+  [ 12] pushint8 50 ............................. <50>
+  [ 15] pusharglistnoret 3 ...................... <the frame, the frame, 50>
+  [ 17] extcall 5 ............................... printFrom(the frame, the frame, 50)
+  [ 19] ret
+end

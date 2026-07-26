@@ -1,0 +1,96 @@
+on enterFrame
+  [  0] pushint8 10 ............................. <10>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 62 ............................. <62>
+  [ 10] lteq
+  [ 11] jmpifz [ 37] ............................ repeat with i = 10 to 62
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pusharglist 1 ........................... <i>
+  [ 18] extcall 69 .............................. <sprite(i)>
+  [ 21] pushint8 1 .............................. <1>
+  [ 24] setobjprop 70 ........................... sprite(i).visible = 1
+  [ 27] pushint8 1
+  [ 30] getlocal 0
+  [ 32] add
+  [ 33] setlocal 0
+  [ 35] endrepeat [  5]
+  [ 37] pushint8 9 .............................. <9>
+  [ 40] pushcons 0 .............................. <"lef1">
+  [ 42] pusharglist 1 ........................... <"lef1">
+  [ 44] extcall 1 ............................... <member("lef1")>
+  [ 46] getobjprop 2 ............................ <member("lef1").memberNum>
+  [ 48] pushcons 8 .............................. <"lef2">
+  [ 50] pusharglist 1 ........................... <"lef2">
+  [ 52] extcall 1 ............................... <member("lef2")>
+  [ 54] getobjprop 2 ............................ <member("lef2").memberNum>
+  [ 56] pusharglist 2 ........................... <[member("lef1").memberNum, member("lef2").memberNum]>
+  [ 58] pushlist ................................ <[member("lef1").memberNum, member("lef2").memberNum]>
+  [ 59] pushint8 6 .............................. <6>
+  [ 62] set 6 ................................... set the cursor of sprite 9 to [member("lef1").memberNum, member("lef2").memberNum]
+  [ 64] pushint8 10 ............................. <10>
+  [ 67] pushcons 16 ............................. <"rit1">
+  [ 69] pusharglist 1 ........................... <"rit1">
+  [ 71] extcall 1 ............................... <member("rit1")>
+  [ 73] getobjprop 2 ............................ <member("rit1").memberNum>
+  [ 75] pushcons 24 ............................. <"rit2">
+  [ 77] pusharglist 1 ........................... <"rit2">
+  [ 79] extcall 1 ............................... <member("rit2")>
+  [ 81] getobjprop 2 ............................ <member("rit2").memberNum>
+  [ 83] pusharglist 2 ........................... <[member("rit1").memberNum, member("rit2").memberNum]>
+  [ 85] pushlist ................................ <[member("rit1").memberNum, member("rit2").memberNum]>
+  [ 86] pushint8 6 .............................. <6>
+  [ 89] set 6 ................................... set the cursor of sprite 10 to [member("rit1").memberNum, member("rit2").memberNum]
+  [ 91] pushint8 11 ............................. <11>
+  [ 94] pushcons 32 ............................. <"tar1">
+  [ 96] pusharglist 1 ........................... <"tar1">
+  [ 98] extcall 1 ............................... <member("tar1")>
+  [100] getobjprop 2 ............................ <member("tar1").memberNum>
+  [102] pushcons 40 ............................. <"tar2">
+  [104] pusharglist 1 ........................... <"tar2">
+  [106] extcall 1 ............................... <member("tar2")>
+  [108] getobjprop 2 ............................ <member("tar2").memberNum>
+  [110] pusharglist 2 ........................... <[member("tar1").memberNum, member("tar2").memberNum]>
+  [112] pushlist ................................ <[member("tar1").memberNum, member("tar2").memberNum]>
+  [113] pushint8 6 .............................. <6>
+  [116] set 6 ................................... set the cursor of sprite 11 to [member("tar1").memberNum, member("tar2").memberNum]
+  [118] pushint8 11 ............................. <11>
+  [121] pushint8 1 .............................. <1>
+  [124] pusharglistnoret 2 ...................... <11, 1>
+  [126] extcall 14 .............................. puppetSprite(11, 1)
+  [128] getglobal 48 ............................ <globalday>
+  [131] pushint8 1 .............................. <1>
+  [134] eq ...................................... <globalday = 1>
+  [135] jmpifz [160] ............................ if globalday = 1 then / else
+  [138] pushint8 11 ............................. <11>
+  [141] pushcons 48 ............................. <"igky">
+  [143] pushint8 1 .............................. <1>
+  [146] pusharglist 2 ........................... <"igky", 1>
+  [148] extcall 1 ............................... <member("igky", 1)>
+  [150] getobjprop 2 ............................ <member("igky", 1).memberNum>
+  [152] pushint8 35 ............................. <35>
+  [155] set 6 ................................... set the memberNum of sprite 11 to member("igky", 1).memberNum
+  [157] jmp [211]
+  [160] getglobal 48 ............................ <globalday>
+  [163] pushint8 2 .............................. <2>
+  [166] eq ...................................... <globalday = 2>
+  [167] jmpifz [192] ............................ if globalday = 2 then / else
+  [170] pushint8 11 ............................. <11>
+  [173] pushcons 56 ............................. <"fuel">
+  [175] pushint8 1 .............................. <1>
+  [178] pusharglist 2 ........................... <"fuel", 1>
+  [180] extcall 1 ............................... <member("fuel", 1)>
+  [182] getobjprop 2 ............................ <member("fuel", 1).memberNum>
+  [184] pushint8 35 ............................. <35>
+  [187] set 6 ................................... set the memberNum of sprite 11 to member("fuel", 1).memberNum
+  [189] jmp [211]
+  [192] pushint8 11 ............................. <11>
+  [195] pushcons 64 ............................. <"sprn">
+  [197] pushint8 1 .............................. <1>
+  [200] pusharglist 2 ........................... <"sprn", 1>
+  [202] extcall 1 ............................... <member("sprn", 1)>
+  [204] getobjprop 2 ............................ <member("sprn", 1).memberNum>
+  [206] pushint8 35 ............................. <35>
+  [209] set 6 ................................... set the memberNum of sprite 11 to member("sprn", 1).memberNum
+  [211] ret
+end

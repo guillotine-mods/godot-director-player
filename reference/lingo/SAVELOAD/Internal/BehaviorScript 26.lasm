@@ -1,0 +1,7 @@
+on exitFrame
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 56 .............................. beep()
+  [  5] pusharglistnoret 0 ...................... <>
+  [  7] extcall 56 .............................. beep()
+  [ 10] ret
+end

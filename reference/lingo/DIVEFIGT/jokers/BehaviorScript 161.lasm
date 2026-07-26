@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 3 .............................. <#playFile>
+  [  2] pushint8 3 .............................. <3>
+  [  5] getglobal 23 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"thudlow.aif">
+  [  9] joinstr ................................. <effectspath & "thudlow.aif">
+  [ 10] pusharglistnoret 3 ...................... <3, effectspath & "thudlow.aif">
+  [ 12] extcall 4 ............................... sound playFile 3, effectspath & "thudlow.aif"
+  [ 14] ret
+end

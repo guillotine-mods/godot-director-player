@@ -1,0 +1,8 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to EMPTY
+  [  7] pusharglistnoret 0 ...................... <>
+  [  9] extcall 0 ............................... stonecold()
+  [ 11] ret
+end

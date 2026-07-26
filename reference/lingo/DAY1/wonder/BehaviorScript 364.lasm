@@ -1,0 +1,52 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 50 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] pushint8 20 ............................. <20>
+  [ 12] pusharglist 1 ........................... <20>
+  [ 14] extcall 94 .............................. <sprite(20)>
+  [ 17] getobjprop 95 ........................... <sprite(20).visible>
+  [ 20] pushzero ................................ <0>
+  [ 21] eq ...................................... <sprite(20).visible = 0>
+  [ 22] and ..................................... <not soundBusy(2) and (sprite(20).visible = 0)>
+  [ 23] pushint8 18 ............................. <18>
+  [ 26] pusharglist 1 ........................... <18>
+  [ 28] extcall 94 .............................. <sprite(18)>
+  [ 31] getobjprop 95 ........................... <sprite(18).visible>
+  [ 34] pushzero ................................ <0>
+  [ 35] eq ...................................... <sprite(18).visible = 0>
+  [ 36] and ..................................... <not soundBusy(2) and (sprite(20).visible = 0) and (sprite(18).visible = 0)>
+  [ 37] pushint8 36 ............................. <36>
+  [ 40] pusharglist 1 ........................... <36>
+  [ 42] extcall 94 .............................. <sprite(36)>
+  [ 45] getobjprop 95 ........................... <sprite(36).visible>
+  [ 48] pushzero ................................ <0>
+  [ 49] eq ...................................... <sprite(36).visible = 0>
+  [ 50] and ..................................... <not soundBusy(2) and (sprite(20).visible = 0) and (sprite(18).visible = 0) and (sprite(36).visible = 0)>
+  [ 51] pushint8 37 ............................. <37>
+  [ 54] pusharglist 1 ........................... <37>
+  [ 56] extcall 94 .............................. <sprite(37)>
+  [ 59] getobjprop 95 ........................... <sprite(37).visible>
+  [ 62] pushzero ................................ <0>
+  [ 63] eq ...................................... <sprite(37).visible = 0>
+  [ 64] and ..................................... <not soundBusy(2) and (sprite(20).visible = 0) and (sprite(18).visible = 0) and (sprite(36).visible = 0) and (sprite(37).visible = 0)>
+  [ 65] jmpifz [ 89] ............................ if not soundBusy(2) and (sprite(20).visible = 0) and (sprite(18).visible = 0) and (sprite(36).visible = 0) and (sprite(37).visible = 0) then
+  [ 68] pushsymb 42 ............................. <#playFile>
+  [ 71] pushint8 2 .............................. <2>
+  [ 74] getglobal 32 ............................ <effectspath>
+  [ 77] getglobal 118 ........................... <whichsnd>
+  [ 80] joinstr ................................. <effectspath & whichsnd>
+  [ 81] pushcons 0 .............................. <".aif">
+  [ 83] joinstr ................................. <effectspath & whichsnd & ".aif">
+  [ 84] pusharglistnoret 3 ...................... <2, effectspath & whichsnd & ".aif">
+  [ 86] extcall 43 .............................. sound playFile 2, effectspath & whichsnd & ".aif"
+  [ 89] pusharglistnoret 0 ...................... <>
+  [ 91] extcall 1 ............................... whatodoeveryframe()
+  [ 93] pushzero ................................ <0>
+  [ 94] pusharglist 1 ........................... <0>
+  [ 96] extcall 2 ............................... <marker(0)>
+  [ 98] pusharglistnoret 1 ...................... <marker(0)>
+  [100] extcall 3 ............................... go(marker(0))
+  [102] ret
+end

@@ -1,0 +1,13 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to EMPTY
+  [  7] pushsymb 34 ............................. <#playFile>
+  [ 10] pushint8 1 .............................. <1>
+  [ 13] getglobal 36 ............................ <soundspath>
+  [ 16] pushcons 8 .............................. <"lost2.aif">
+  [ 18] joinstr ................................. <soundspath & "lost2.aif">
+  [ 19] pusharglistnoret 3 ...................... <1, soundspath & "lost2.aif">
+  [ 21] extcall 35 .............................. sound playFile 1, soundspath & "lost2.aif"
+  [ 24] ret
+end

@@ -1,0 +1,22 @@
+on exitFrame
+  [  0] getglobal 23 ............................ <optcount>
+  [  2] pushint8 1 .............................. <1>
+  [  5] add ..................................... <optcount + 1>
+  [  6] setglobal 23 ............................ optcount = optcount + 1
+  [  8] getglobal 23 ............................ <optcount>
+  [ 10] pushint8 2 .............................. <2>
+  [ 13] lt ...................................... <optcount < 2>
+  [ 14] jmpifz [ 34] ............................ if optcount < 2 then / else
+  [ 17] pushsymb 14 ............................. <#playFile>
+  [ 19] pushint8 1 .............................. <1>
+  [ 22] getglobal 16 ............................ <tlkpath>
+  [ 24] pushcons 0 .............................. <"hez147.aif">
+  [ 26] joinstr ................................. <tlkpath & "hez147.aif">
+  [ 27] pusharglistnoret 3 ...................... <1, tlkpath & "hez147.aif">
+  [ 29] extcall 15 .............................. sound playFile 1, tlkpath & "hez147.aif"
+  [ 31] jmp [ 40]
+  [ 34] pushcons 8 .............................. <"conect1abc">
+  [ 36] pusharglistnoret 1 ...................... <"conect1abc">
+  [ 38] extcall 12 .............................. go("conect1abc")
+  [ 40] ret
+end

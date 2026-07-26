@@ -1,0 +1,12 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 3 ............................. usfultalking = 1
+  [  5] pushsymb 9 .............................. <#stop>
+  [  7] pushint8 2 .............................. <2>
+  [ 10] pusharglistnoret 2 ...................... <2>
+  [ 12] extcall 10 .............................. sound stop 2
+  [ 14] pushcons 0 .............................. <"dnzclicktalk">
+  [ 16] pusharglistnoret 1 ...................... <"dnzclicktalk">
+  [ 18] extcall 4 ............................... go("dnzclicktalk")
+  [ 20] ret
+end

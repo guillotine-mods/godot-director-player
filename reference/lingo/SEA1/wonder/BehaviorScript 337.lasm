@@ -1,0 +1,24 @@
+on mouseUp
+  [  0] pushint8 21 ............................. <21>
+  [  3] pusharglist 1 ........................... <21>
+  [  5] extcall 58 .............................. <sprite(21)>
+  [  8] getobjprop 89 ........................... <sprite(21).visible>
+  [ 11] pushzero ................................ <0>
+  [ 12] eq ...................................... <sprite(21).visible = 0>
+  [ 13] jmpifz [ 42] ............................ if sprite(21).visible = 0 then / else
+  [ 16] pushsymb 42 ............................. <#playFile>
+  [ 19] pushint8 1 .............................. <1>
+  [ 22] getglobal 20 ............................ <soundspath>
+  [ 24] pushcons 0 .............................. <"ware5.aif">
+  [ 26] joinstr ................................. <soundspath & "ware5.aif">
+  [ 27] pusharglistnoret 3 ...................... <1, soundspath & "ware5.aif">
+  [ 29] extcall 43 .............................. sound playFile 1, soundspath & "ware5.aif"
+  [ 32] pushcons 8 .............................. <"dubispk">
+  [ 34] pusharglistnoret 1 ...................... <"dubispk">
+  [ 36] extcall 48 .............................. play frame "dubispk"
+  [ 39] jmp [ 48]
+  [ 42] pushcons 16 ............................. <"waredive">
+  [ 44] pusharglistnoret 1 ...................... <"waredive">
+  [ 46] extcall 3 ............................... go("waredive")
+  [ 48] ret
+end

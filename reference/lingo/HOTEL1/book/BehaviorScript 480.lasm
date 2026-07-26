@@ -1,0 +1,26 @@
+on exitFrame
+  [  0] pushint8 22 ............................. <22>
+  [  3] pusharglist 1 ........................... <22>
+  [  5] extcall 12 .............................. <sprite(22)>
+  [  7] pushzero ................................ <0>
+  [  8] setobjprop 13 ........................... sprite(22).visible = 0
+  [ 10] pushint8 2 .............................. <2>
+  [ 13] pusharglist 1 ........................... <2>
+  [ 15] extcall 58 .............................. <soundBusy(2)>
+  [ 18] not ..................................... <not soundBusy(2)>
+  [ 19] getglobal 114 ........................... <whichsnd>
+  [ 22] pushcons 0 .............................. <"hotel">
+  [ 24] nteq .................................... <whichsnd <> "hotel">
+  [ 25] or ...................................... <not soundBusy(2) or (whichsnd <> "hotel")>
+  [ 26] jmpifz [ 51] ............................ if not soundBusy(2) or (whichsnd <> "hotel") then
+  [ 29] pushsymb 52 ............................. <#playFile>
+  [ 32] pushint8 2 .............................. <2>
+  [ 35] getglobal 36 ............................ <effectspath>
+  [ 38] pushcons 8 .............................. <"hotel.aif">
+  [ 40] joinstr ................................. <effectspath & "hotel.aif">
+  [ 41] pusharglistnoret 3 ...................... <2, effectspath & "hotel.aif">
+  [ 43] extcall 53 .............................. sound playFile 2, effectspath & "hotel.aif"
+  [ 46] pushcons 16 ............................. <"hotel">
+  [ 48] setglobal 114 ........................... whichsnd = "hotel"
+  [ 51] ret
+end

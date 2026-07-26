@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 10 .............................. <soundBusy(2)>
+  [  7] not ..................................... <not soundBusy(2)>
+  [  8] getglobal 7 ............................. <whichsnd>
+  [ 10] pushcons 0 .............................. <"cave">
+  [ 12] nteq .................................... <whichsnd <> "cave">
+  [ 13] or ...................................... <not soundBusy(2) or (whichsnd <> "cave")>
+  [ 14] jmpifz [ 35] ............................ if not soundBusy(2) or (whichsnd <> "cave") then
+  [ 17] pushsymb 5 .............................. <#playFile>
+  [ 19] pushint8 2 .............................. <2>
+  [ 22] getglobal 6 ............................. <effectspath>
+  [ 24] pushcons 8 .............................. <"cave.aif">
+  [ 26] joinstr ................................. <effectspath & "cave.aif">
+  [ 27] pusharglistnoret 3 ...................... <2, effectspath & "cave.aif">
+  [ 29] extcall 4 ............................... sound playFile 2, effectspath & "cave.aif"
+  [ 31] pushcons 16 ............................. <"cave">
+  [ 33] setglobal 7 ............................. whichsnd = "cave"
+  [ 35] ret
+end

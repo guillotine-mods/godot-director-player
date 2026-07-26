@@ -1,0 +1,95 @@
+on mouseUp
+  [  0] pushint8 11 ............................. <11>
+  [  3] pushint8 35 ............................. <35>
+  [  6] get 6 ................................... <the memberNum of sprite 11>
+  [  8] setlocal 0 .............................. x = the memberNum of sprite 11
+  [ 10] getlocal 0 .............................. <x>
+  [ 12] pushcons 0 .............................. <"book">
+  [ 14] pusharglist 2 ........................... <x, "book">
+  [ 16] extcall 9 ............................... <member(x, "book")>
+  [ 18] getobjprop 10 ........................... <member(x, "book").name>
+  [ 20] pushcons 8 .............................. <"empty">
+  [ 22] containsstr ............................. <member(x, "book").name contains "empty">
+  [ 23] jmpifz [ 43] ............................ if member(x, "book").name contains "empty" then / else
+  [ 26] pushsymb 11 ............................. <#playFile>
+  [ 28] pushint8 1 .............................. <1>
+  [ 31] getglobal 13 ............................ <effectspath>
+  [ 33] pushcons 16 ............................. <"clik2.aif">
+  [ 35] joinstr ................................. <effectspath & "clik2.aif">
+  [ 36] pusharglistnoret 3 ...................... <1, effectspath & "clik2.aif">
+  [ 38] extcall 12 .............................. sound playFile 1, effectspath & "clik2.aif"
+  [ 40] jmp [191]
+  [ 43] pushint8 6 .............................. <6>
+  [ 46] pushint8 7 .............................. <7>
+  [ 49] pushzero ................................ <0>
+  [ 50] pushzero ................................ <0>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushzero ................................ <0>
+  [ 53] pushzero ................................ <0>
+  [ 54] pushzero ................................ <0>
+  [ 55] getlocal 0 .............................. <x>
+  [ 57] pushcons 24 ............................. <"book">
+  [ 59] pusharglist 2 ........................... <x, "book">
+  [ 61] extcall 9 ............................... <member(x, "book")>
+  [ 63] getobjprop 10 ........................... <member(x, "book").name>
+  [ 65] getchunk ................................ <char 6 to 7 of the name of member x of castLib "book">
+  [ 66] pusharglist 1 ........................... <char 6 to 7 of the name of member x of castLib "book">
+  [ 68] extcall 14 .............................. <value(char 6 to 7 of the name of member x of castLib "book")>
+  [ 70] setlocal 0 .............................. x = value(char 6 to 7 of the name of member x of castLib "book")
+  [ 72] getglobal 15 ............................ <afganicnt>
+  [ 74] getlocal 0 .............................. <x>
+  [ 76] gt ...................................... <afganicnt > x>
+  [ 77] jmpifz [177] ............................ if afganicnt > x then / else
+  [ 80] pushsymb 11 ............................. <#playFile>
+  [ 82] pushint8 1 .............................. <1>
+  [ 85] getglobal 13 ............................ <effectspath>
+  [ 87] pushcons 32 ............................. <"clik3.aif">
+  [ 89] joinstr ................................. <effectspath & "clik3.aif">
+  [ 90] pusharglistnoret 3 ...................... <1, effectspath & "clik3.aif">
+  [ 92] extcall 12 .............................. sound playFile 1, effectspath & "clik3.aif"
+  [ 94] pushint8 10 ............................. <10>
+  [ 97] pushcons 40 ............................. <"afgan">
+  [ 99] getlocal 0 .............................. <x>
+  [101] pushint8 1 .............................. <1>
+  [104] add ..................................... <x + 1>
+  [105] joinstr ................................. <"afgan" & x + 1>
+  [106] pushcons 48 ............................. <"book">
+  [108] pushint8 10 ............................. <10>
+  [111] get 9 ................................... <the number of member ("afgan" & x + 1) of castLib "book">
+  [113] pushint8 35 ............................. <35>
+  [116] set 6 ................................... set the memberNum of sprite 10 to the number of member ("afgan" & x + 1) of castLib "book"
+  [118] getglobal 15 ............................ <afganicnt>
+  [120] getlocal 0 .............................. <x>
+  [122] pushint8 1 .............................. <1>
+  [125] add ..................................... <x + 1>
+  [126] gt ...................................... <afganicnt > (x + 1)>
+  [127] jmpifz [157] ............................ if afganicnt > (x + 1) then / else
+  [130] pushint8 11 ............................. <11>
+  [133] pushcons 56 ............................. <"afgan">
+  [135] getlocal 0 .............................. <x>
+  [137] pushint8 2 .............................. <2>
+  [140] add ..................................... <x + 2>
+  [141] joinstr ................................. <"afgan" & x + 2>
+  [142] pushcons 64 ............................. <"book">
+  [144] pushint8 10 ............................. <10>
+  [147] get 9 ................................... <the number of member ("afgan" & x + 2) of castLib "book">
+  [149] pushint8 35 ............................. <35>
+  [152] set 6 ................................... set the memberNum of sprite 11 to the number of member ("afgan" & x + 2) of castLib "book"
+  [154] jmp [174]
+  [157] pushint8 11 ............................. <11>
+  [160] pushcons 72 ............................. <"afganempty">
+  [162] pushcons 80 ............................. <"book">
+  [164] pushint8 10 ............................. <10>
+  [167] get 9 ................................... <the number of member "afganempty" of castLib "book">
+  [169] pushint8 35 ............................. <35>
+  [172] set 6 ................................... set the memberNum of sprite 11 to the number of member "afganempty" of castLib "book"
+  [174] jmp [191]
+  [177] pushsymb 11 ............................. <#playFile>
+  [179] pushint8 1 .............................. <1>
+  [182] getglobal 13 ............................ <effectspath>
+  [184] pushcons 88 ............................. <"clik2.aif">
+  [186] joinstr ................................. <effectspath & "clik2.aif">
+  [187] pusharglistnoret 3 ...................... <1, effectspath & "clik2.aif">
+  [189] extcall 12 .............................. sound playFile 1, effectspath & "clik2.aif"
+  [191] ret
+end

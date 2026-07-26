@@ -1,0 +1,8 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 3 ............................. usfultalking = 1
+  [  5] pushcons 0 .............................. <"mogclicktalk">
+  [  7] pusharglistnoret 1 ...................... <"mogclicktalk">
+  [  9] extcall 5 ............................... play frame "mogclicktalk"
+  [ 11] ret
+end

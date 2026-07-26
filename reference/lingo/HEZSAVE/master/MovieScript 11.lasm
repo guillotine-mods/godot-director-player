@@ -1,0 +1,177 @@
+on doload
+  [  0] pushcons 0 .............................. <"nof">
+  [  2] getglobal 2 ............................. <saveNum>
+  [  4] joinstr ................................. <"nof" & saveNum>
+  [  5] pushzero ................................ <0>
+  [  6] getfield ................................ <field("nof" & saveNum)>
+  [  7] setglobal 1 ............................. nof = field("nof" & saveNum)
+  [  9] pushcons 1 .............................. <"clickoncharacter">
+  [ 11] getglobal 2 ............................. <saveNum>
+  [ 13] joinstr ................................. <"clickoncharacter" & saveNum>
+  [ 14] pushzero ................................ <0>
+  [ 15] getfield ................................ <field("clickoncharacter" & saveNum)>
+  [ 16] setglobal 31 ............................ saveB = field("clickoncharacter" & saveNum)
+  [ 18] pushcons 2 .............................. <"objectsfield">
+  [ 20] getglobal 2 ............................. <saveNum>
+  [ 22] joinstr ................................. <"objectsfield" & saveNum>
+  [ 23] pushzero ................................ <0>
+  [ 24] getfield ................................ <field("objectsfield" & saveNum)>
+  [ 25] setglobal 4 ............................. saveC = field("objectsfield" & saveNum)
+  [ 27] pushcons 3 .............................. <"afganifield">
+  [ 29] getglobal 2 ............................. <saveNum>
+  [ 31] joinstr ................................. <"afganifield" & saveNum>
+  [ 32] pushzero ................................ <0>
+  [ 33] getfield ................................ <field("afganifield" & saveNum)>
+  [ 34] setglobal 5 ............................. saveD = field("afganifield" & saveNum)
+  [ 36] pushcons 4 .............................. <"plane">
+  [ 38] getglobal 2 ............................. <saveNum>
+  [ 40] joinstr ................................. <"plane" & saveNum>
+  [ 41] pushzero ................................ <0>
+  [ 42] getfield ................................ <field("plane" & saveNum)>
+  [ 43] setglobal 6 ............................. saveE = field("plane" & saveNum)
+  [ 45] pushcons 5 .............................. <"points">
+  [ 47] getglobal 2 ............................. <saveNum>
+  [ 49] joinstr ................................. <"points" & saveNum>
+  [ 50] pushzero ................................ <0>
+  [ 51] getfield ................................ <field("points" & saveNum)>
+  [ 52] setglobal 7 ............................. saveF = field("points" & saveNum)
+  [ 54] pushcons 6 .............................. <"whichday">
+  [ 56] getglobal 2 ............................. <saveNum>
+  [ 58] joinstr ................................. <"whichday" & saveNum>
+  [ 59] pushzero ................................ <0>
+  [ 60] getfield ................................ <field("whichday" & saveNum)>
+  [ 61] pusharglist 1 ........................... <field("whichday" & saveNum)>
+  [ 63] extcall 39 .............................. <value(field("whichday" & saveNum))>
+  [ 66] setglobal 8 ............................. globalday = value(field("whichday" & saveNum))
+  [ 68] pushcons 7 .............................. <"inexits">
+  [ 70] getglobal 2 ............................. <saveNum>
+  [ 72] joinstr ................................. <"inexits" & saveNum>
+  [ 73] pushzero ................................ <0>
+  [ 74] getfield ................................ <field("inexits" & saveNum)>
+  [ 75] setglobal 63 ............................ inexits = field("inexits" & saveNum)
+  [ 78] pushcons 8 .............................. <"meetings">
+  [ 80] getglobal 2 ............................. <saveNum>
+  [ 82] joinstr ................................. <"meetings" & saveNum>
+  [ 83] pushzero ................................ <0>
+  [ 84] getfield ................................ <field("meetings" & saveNum)>
+  [ 85] setglobal 26 ............................ meetings = field("meetings" & saveNum)
+  [ 87] pushcons 9 .............................. <"foe">
+  [ 89] getglobal 2 ............................. <saveNum>
+  [ 91] joinstr ................................. <"foe" & saveNum>
+  [ 92] pushzero ................................ <0>
+  [ 93] getfield ................................ <field("foe" & saveNum)>
+  [ 94] setglobal 77 ............................ foe = field("foe" & saveNum)
+  [ 97] pushcons 10 ............................. <"DorN">
+  [ 99] getglobal 2 ............................. <saveNum>
+  [101] joinstr ................................. <"DorN" & saveNum>
+  [102] pushzero ................................ <0>
+  [103] getfield ................................ <field("DorN" & saveNum)>
+  [104] setglobal 80 ............................ DorN = field("DorN" & saveNum)
+  [107] pushcons 11 ............................. <"savei">
+  [109] getglobal 2 ............................. <saveNum>
+  [111] joinstr ................................. <"savei" & saveNum>
+  [112] pushzero ................................ <0>
+  [113] getfield ................................ <field("savei" & saveNum)>
+  [114] setglobal 79 ............................ savei = field("savei" & saveNum)
+  [117] pushcons 12 ............................. <"globaljokes">
+  [119] getglobal 2 ............................. <saveNum>
+  [121] joinstr ................................. <"globaljokes" & saveNum>
+  [122] pushzero ................................ <0>
+  [123] getfield ................................ <field("globaljokes" & saveNum)>
+  [124] setglobal 66 ............................ saveG = field("globaljokes" & saveNum)
+  [127] pushcons 13 ............................. <"afganicnt">
+  [129] getglobal 2 ............................. <saveNum>
+  [131] joinstr ................................. <"afganicnt" & saveNum>
+  [132] pushzero ................................ <0>
+  [133] getfield ................................ <field("afganicnt" & saveNum)>
+  [134] setglobal 78 ............................ afganicnt = field("afganicnt" & saveNum)
+  [137] pushcons 14 ............................. <"wreck">
+  [139] getglobal 2 ............................. <saveNum>
+  [141] joinstr ................................. <"wreck" & saveNum>
+  [142] pushzero ................................ <0>
+  [143] getfield ................................ <field("wreck" & saveNum)>
+  [144] setglobal 64 ............................ wreck = field("wreck" & saveNum)
+  [147] pushcons 15 ............................. <"firsttalk">
+  [149] getglobal 2 ............................. <saveNum>
+  [151] joinstr ................................. <"firsttalk" & saveNum>
+  [152] pushzero ................................ <0>
+  [153] getfield ................................ <field("firsttalk" & saveNum)>
+  [154] setglobal 65 ............................ firsttalk = field("firsttalk" & saveNum)
+  [157] pushcons 16 ............................. <"shelltoday">
+  [159] getglobal 2 ............................. <saveNum>
+  [161] joinstr ................................. <"shelltoday" & saveNum>
+  [162] pushzero ................................ <0>
+  [163] getfield ................................ <field("shelltoday" & saveNum)>
+  [164] setglobal 67 ............................ shelltoday = field("shelltoday" & saveNum)
+  [167] pushcons 17 ............................. <"mirror">
+  [169] getglobal 2 ............................. <saveNum>
+  [171] joinstr ................................. <"mirror" & saveNum>
+  [172] pushzero ................................ <0>
+  [173] getfield ................................ <field("mirror" & saveNum)>
+  [174] setglobal 68 ............................ mirror = field("mirror" & saveNum)
+  [177] pushcons 18 ............................. <"sink">
+  [179] getglobal 2 ............................. <saveNum>
+  [181] joinstr ................................. <"sink" & saveNum>
+  [182] pushzero ................................ <0>
+  [183] getfield ................................ <field("sink" & saveNum)>
+  [184] setglobal 69 ............................ sink = field("sink" & saveNum)
+  [187] pushcons 19 ............................. <"bath">
+  [189] getglobal 2 ............................. <saveNum>
+  [191] joinstr ................................. <"bath" & saveNum>
+  [192] pushzero ................................ <0>
+  [193] getfield ................................ <field("bath" & saveNum)>
+  [194] setglobal 70 ............................ bath = field("bath" & saveNum)
+  [197] pushcons 20 ............................. <"globalday">
+  [199] getglobal 2 ............................. <saveNum>
+  [201] joinstr ................................. <"globalday" & saveNum>
+  [202] pushzero ................................ <0>
+  [203] getfield ................................ <field("globalday" & saveNum)>
+  [204] pusharglist 1 ........................... <field("globalday" & saveNum)>
+  [206] extcall 39 .............................. <value(field("globalday" & saveNum))>
+  [209] setglobal 8 ............................. globalday = value(field("globalday" & saveNum))
+  [211] pushcons 21 ............................. <"globalnight">
+  [213] getglobal 2 ............................. <saveNum>
+  [215] joinstr ................................. <"globalnight" & saveNum>
+  [216] pushzero ................................ <0>
+  [217] getfield ................................ <field("globalnight" & saveNum)>
+  [218] setglobal 75 ............................ globalnight = field("globalnight" & saveNum)
+  [221] pushcons 22 ............................. <"catgame">
+  [223] getglobal 2 ............................. <saveNum>
+  [225] joinstr ................................. <"catgame" & saveNum>
+  [226] pushzero ................................ <0>
+  [227] getfield ................................ <field("catgame" & saveNum)>
+  [228] pusharglist 1 ........................... <field("catgame" & saveNum)>
+  [230] extcall 39 .............................. <value(field("catgame" & saveNum))>
+  [233] setglobal 71 ............................ catgame = value(field("catgame" & saveNum))
+  [236] pushcons 23 ............................. <"monk">
+  [238] getglobal 2 ............................. <saveNum>
+  [240] joinstr ................................. <"monk" & saveNum>
+  [241] pushzero ................................ <0>
+  [242] getfield ................................ <field("monk" & saveNum)>
+  [243] setglobal 72 ............................ monk = field("monk" & saveNum)
+  [246] pushcons 24 ............................. <"guard">
+  [248] getglobal 2 ............................. <saveNum>
+  [250] joinstr ................................. <"guard" & saveNum>
+  [251] pushzero ................................ <0>
+  [252] getfield ................................ <field("guard" & saveNum)>
+  [253] setglobal 73 ............................ guard = field("guard" & saveNum)
+  [256] pushcons 25 ............................. <"dubi">
+  [258] getglobal 2 ............................. <saveNum>
+  [260] joinstr ................................. <"dubi" & saveNum>
+  [261] pushzero ................................ <0>
+  [262] getfield ................................ <field("dubi" & saveNum)>
+  [263] setglobal 74 ............................ dubi = field("dubi" & saveNum)
+  [266] pushcons 26 ............................. <"saveH">
+  [268] getglobal 2 ............................. <saveNum>
+  [270] joinstr ................................. <"saveH" & saveNum>
+  [271] pushzero ................................ <0>
+  [272] getfield ................................ <field("saveH" & saveNum)>
+  [273] setglobal 76 ............................ saveH = field("saveH" & saveNum)
+  [276] pushcons 27 ............................. <"afterload">
+  [278] getglobal 81 ............................ <cdsavepath>
+  [281] pushcons 28 ............................. <"saveload.dxr">
+  [283] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [284] pusharglistnoret 2 ...................... <"afterload", cdsavepath & "saveload.dxr">
+  [286] extcall 10 .............................. go("afterload", cdsavepath & "saveload.dxr")
+  [288] ret
+end

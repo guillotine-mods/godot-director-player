@@ -1,0 +1,7 @@
+on mouseUp
+  [  0] pushsymb 7 .............................. <#pass>
+  [  2] pusharglistnoret 1 ...................... <pass>
+  [  4] pushvarref 6 ............................ <dont>
+  [  6] objcallv4 1 ............................. dont(pass)
+  [  8] ret
+end

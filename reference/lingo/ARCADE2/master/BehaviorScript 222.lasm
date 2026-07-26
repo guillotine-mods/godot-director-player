@@ -1,0 +1,16 @@
+on exitFrame
+  [  0] pushsymb 10 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 15 ............................ <soundspath>
+  [  7] pushcons 0 .............................. <"zigstr1">
+  [  9] pushint8 5 .............................. <5>
+  [ 12] pusharglist 1 ........................... <5>
+  [ 14] extcall 20 .............................. <random(5)>
+  [ 16] joinstr ................................. <"zigstr1" & random(5)>
+  [ 17] pushcons 8 .............................. <".aif">
+  [ 19] joinstr ................................. <"zigstr1" & random(5) & ".aif">
+  [ 20] joinstr ................................. <soundspath & "zigstr1" & random(5) & ".aif">
+  [ 21] pusharglistnoret 3 ...................... <1, soundspath & "zigstr1" & random(5) & ".aif">
+  [ 23] extcall 11 .............................. sound playFile 1, soundspath & "zigstr1" & random(5) & ".aif"
+  [ 25] ret
+end

@@ -1,0 +1,5 @@
+on mouseUp
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 45 .............................. pass()
+  [  5] ret
+end

@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushsymb 96 ............................. <#stop>
+  [  3] pushint8 2 .............................. <2>
+  [  6] pusharglistnoret 2 ...................... <2>
+  [  8] extcall 43 .............................. sound stop 2
+  [ 11] pushsymb 42 ............................. <#playFile>
+  [ 14] pushint8 1 .............................. <1>
+  [ 17] getglobal 20 ............................ <soundspath>
+  [ 19] pushcons 0 .............................. <"blocked.aif">
+  [ 21] joinstr ................................. <soundspath & "blocked.aif">
+  [ 22] pusharglistnoret 3 ...................... <1, soundspath & "blocked.aif">
+  [ 24] extcall 43 .............................. sound playFile 1, soundspath & "blocked.aif"
+  [ 27] ret
+end

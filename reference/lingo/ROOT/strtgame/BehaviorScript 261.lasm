@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushsymb 15 ............................. <#playFile>
+  [  2] pushint8 2 .............................. <2>
+  [  5] getglobal 21 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"sea2.aif">
+  [  9] joinstr ................................. <effectspath & "sea2.aif">
+  [ 10] pusharglistnoret 3 ...................... <2, effectspath & "sea2.aif">
+  [ 12] extcall 16 .............................. sound playFile 2, effectspath & "sea2.aif"
+  [ 14] pushint8 2 .............................. <2>
+  [ 17] pushint8 50 ............................. <50>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] set 4 ................................... set the volume of sound 2 to 50
+  [ 25] ret
+end

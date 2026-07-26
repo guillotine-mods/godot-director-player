@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 20 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"ware7.aif">
+  [  8] joinstr ................................. <soundspath & "ware7.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "ware7.aif">
+  [ 11] extcall 43 .............................. sound playFile 1, soundspath & "ware7.aif"
+  [ 13] pushcons 8 .............................. <"dubispk">
+  [ 15] pusharglistnoret 1 ...................... <"dubispk">
+  [ 17] extcall 48 .............................. play frame "dubispk"
+  [ 19] ret
+end

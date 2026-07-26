@@ -1,0 +1,38 @@
+on exitFrame
+  [  0] pushint8 1 .............................. <1>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 50 ............................. <50>
+  [ 10] lteq
+  [ 11] jmpifz [ 36] ............................ repeat with i = 1 to 50
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pusharglist 1 ........................... <i>
+  [ 18] extcall 24 .............................. <sprite(i)>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] setobjprop 39 ........................... sprite(i).visible = 1
+  [ 26] pushint8 1
+  [ 29] getlocal 0
+  [ 31] add
+  [ 32] setlocal 0
+  [ 34] endrepeat [  5]
+  [ 36] pushsymb 10 ............................. <#playFile>
+  [ 38] pushint8 2 .............................. <2>
+  [ 41] getglobal 12 ............................ <effectspath>
+  [ 43] pushcons 0 .............................. <"action.aif">
+  [ 45] joinstr ................................. <effectspath & "action.aif">
+  [ 46] pusharglistnoret 3 ...................... <2, effectspath & "action.aif">
+  [ 48] extcall 11 .............................. sound playFile 2, effectspath & "action.aif"
+  [ 50] pushcons 8 .............................. <EMPTY>
+  [ 52] pushint8 3 .............................. <3>
+  [ 55] set 0 ................................... set the keyDownScript to EMPTY
+  [ 57] pushint8 40 ............................. <40>
+  [ 60] pushcons 16 ............................. <"zigi4">
+  [ 62] pushzero ................................ <0>
+  [ 63] pushint8 10 ............................. <10>
+  [ 66] get 9 ................................... <the number of member "zigi4">
+  [ 68] pushint8 35 ............................. <35>
+  [ 71] set 6 ................................... set the memberNum of sprite 40 to the number of member "zigi4"
+  [ 73] pusharglistnoret 0 ...................... <>
+  [ 75] extcall 13 .............................. updateStage()
+  [ 77] ret
+end

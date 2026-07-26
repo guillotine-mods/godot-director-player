@@ -1,0 +1,18 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  2] setlocal 0
+  [  4] getlocal 0
+  [  6] pushint8 50 ............................. <50>
+  [  8] lteq
+  [  9] jmpifz [ 29] ............................ repeat with i = 2 to 50
+  [ 12] getlocal 0 .............................. <i>
+  [ 14] pushint8 1 .............................. <1>
+  [ 16] pushint8 25 ............................. <25>
+  [ 18] set 6 ................................... set the visible of sprite i to 1
+  [ 20] pushint8 1
+  [ 22] getlocal 0
+  [ 24] add
+  [ 25] setlocal 0
+  [ 27] endrepeat [  4]
+  [ 29] ret
+end

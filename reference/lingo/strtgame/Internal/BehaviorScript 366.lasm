@@ -1,0 +1,9 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] getglobal 9 ............................. <cdsavepath>
+  [  5] pushcons 0 .............................. <"exodus.dir">
+  [  7] joinstr ................................. <cdsavepath & "exodus.dir">
+  [  8] pusharglistnoret 2 ...................... <1, cdsavepath & "exodus.dir">
+  [ 10] extcall 11 .............................. go(1, cdsavepath & "exodus.dir")
+  [ 12] ret
+end

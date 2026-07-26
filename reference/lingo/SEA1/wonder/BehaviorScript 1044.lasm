@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushint8 16 ............................. <16>
+  [  3] pushint8 20 ............................. <20>
+  [  6] pushint8 13 ............................. <13>
+  [  9] get 6 ................................... <the locH of sprite 20>
+  [ 11] pushint8 13 ............................. <13>
+  [ 14] set 6 ................................... set the locH of sprite 16 to the locH of sprite 20
+  [ 16] pushint8 16 ............................. <16>
+  [ 19] pushint8 20 ............................. <20>
+  [ 22] pushint8 14 ............................. <14>
+  [ 25] get 6 ................................... <the locV of sprite 20>
+  [ 27] pushint8 14 ............................. <14>
+  [ 30] set 6 ................................... set the locV of sprite 16 to the locV of sprite 20
+  [ 32] pusharglistnoret 0 ...................... <>
+  [ 34] extcall 12 .............................. updateStage()
+  [ 36] pushsymb 42 ............................. <#playFile>
+  [ 39] pushint8 1 .............................. <1>
+  [ 42] getglobal 21 ............................ <effectspath>
+  [ 44] pushcons 0 .............................. <"floor.aif">
+  [ 46] joinstr ................................. <effectspath & "floor.aif">
+  [ 47] pusharglistnoret 3 ...................... <1, effectspath & "floor.aif">
+  [ 49] extcall 43 .............................. sound playFile 1, effectspath & "floor.aif"
+  [ 52] ret
+end

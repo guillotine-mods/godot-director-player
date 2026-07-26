@@ -1,0 +1,15 @@
+on exitFrame
+  [  0] pushint8 13 ............................. <13>
+  [  3] pusharglist 1 ........................... <13>
+  [  5] extcall 16 .............................. <sprite(13)>
+  [  7] pushzero ................................ <0>
+  [  8] setobjprop 17 ........................... sprite(13).visible = 0
+  [ 10] pushsymb 20 ............................. <#playFile>
+  [ 12] pushint8 1 .............................. <1>
+  [ 15] getglobal 18 ............................ <soundspath>
+  [ 17] pushcons 0 .............................. <"hezyaaa.aif">
+  [ 19] joinstr ................................. <soundspath & "hezyaaa.aif">
+  [ 20] pusharglistnoret 3 ...................... <1, soundspath & "hezyaaa.aif">
+  [ 22] extcall 21 .............................. sound playFile 1, soundspath & "hezyaaa.aif"
+  [ 24] ret
+end

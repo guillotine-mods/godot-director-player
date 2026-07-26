@@ -1,0 +1,25 @@
+on exitFrame
+  [  0] pushint8 3 .............................. <3>
+  [  3] pushint8 255 ............................ <255>
+  [  6] pushint8 1 .............................. <1>
+  [  9] set 4 ................................... set the volume of sound 3 to 255
+  [ 11] pushint8 4 .............................. <4>
+  [ 14] pushint8 255 ............................ <255>
+  [ 17] pushint8 1 .............................. <1>
+  [ 20] set 4 ................................... set the volume of sound 4 to 255
+  [ 22] pushsymb 4 .............................. <#playFile>
+  [ 24] pushint8 3 .............................. <3>
+  [ 27] getglobal 22 ............................ <tlkpath>
+  [ 29] pushcons 0 .............................. <"chope.aif">
+  [ 31] joinstr ................................. <tlkpath & "chope.aif">
+  [ 32] pusharglistnoret 3 ...................... <3, tlkpath & "chope.aif">
+  [ 34] extcall 3 ............................... sound playFile 3, tlkpath & "chope.aif"
+  [ 36] pushsymb 4 .............................. <#playFile>
+  [ 38] pushint8 4 .............................. <4>
+  [ 41] getglobal 22 ............................ <tlkpath>
+  [ 43] pushcons 8 .............................. <"tofsong1.aif">
+  [ 45] joinstr ................................. <tlkpath & "tofsong1.aif">
+  [ 46] pusharglistnoret 3 ...................... <4, tlkpath & "tofsong1.aif">
+  [ 48] extcall 3 ............................... sound playFile 4, tlkpath & "tofsong1.aif"
+  [ 50] ret
+end

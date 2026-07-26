@@ -1,0 +1,119 @@
+on exitFrame
+  [  0] pushsymb 48 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 30 ............................ <soundspath>
+  [  8] pushcons 0 .............................. <"l">
+  [ 10] getglobal 77 ............................ <catgame>
+  [ 13] joinstr ................................. <"l" & catgame>
+  [ 14] pushcons 8 .............................. <".aif">
+  [ 16] joinstr ................................. <"l" & catgame & ".aif">
+  [ 17] joinstr ................................. <soundspath & "l" & catgame & ".aif">
+  [ 18] pusharglistnoret 3 ...................... <1, soundspath & "l" & catgame & ".aif">
+  [ 20] extcall 49 .............................. sound playFile 1, soundspath & "l" & catgame & ".aif"
+  [ 23] pushcons 16 ............................. <"lefttalk">
+  [ 25] pusharglistnoret 1 ...................... <"lefttalk">
+  [ 27] extcall 81 .............................. play frame "lefttalk"
+  [ 30] getglobal 77 ............................ <catgame>
+  [ 33] pushcons 24 ............................. <"win">
+  [ 35] containsstr ............................. <catgame contains "win">
+  [ 36] jmpifz [118] ............................ if catgame contains "win" then / else
+  [ 39] pushsymb 48 ............................. <#playFile>
+  [ 42] pushint8 1 .............................. <1>
+  [ 45] getglobal 30 ............................ <soundspath>
+  [ 47] pushcons 32 ............................. <"heziwin">
+  [ 49] pushint8 3 .............................. <3>
+  [ 52] pusharglist 1 ........................... <3>
+  [ 54] extcall 40 .............................. <random(3)>
+  [ 57] joinstr ................................. <"heziwin" & random(3)>
+  [ 58] pushcons 40 ............................. <".aif">
+  [ 60] joinstr ................................. <"heziwin" & random(3) & ".aif">
+  [ 61] joinstr ................................. <soundspath & "heziwin" & random(3) & ".aif">
+  [ 62] pusharglistnoret 3 ...................... <1, soundspath & "heziwin" & random(3) & ".aif">
+  [ 64] extcall 49 .............................. sound playFile 1, soundspath & "heziwin" & random(3) & ".aif"
+  [ 67] pushcons 48 ............................. <"heztalk">
+  [ 69] pusharglistnoret 1 ...................... <"heztalk">
+  [ 71] extcall 81 .............................. play frame "heztalk"
+  [ 74] pushsymb 48 ............................. <#playFile>
+  [ 77] pushint8 1 .............................. <1>
+  [ 80] getglobal 30 ............................ <soundspath>
+  [ 82] pushcons 56 ............................. <"rightin">
+  [ 84] pushint8 2 .............................. <2>
+  [ 87] pusharglist 1 ........................... <2>
+  [ 89] extcall 40 .............................. <random(2)>
+  [ 92] joinstr ................................. <"rightin" & random(2)>
+  [ 93] pushcons 64 ............................. <".aif">
+  [ 95] joinstr ................................. <"rightin" & random(2) & ".aif">
+  [ 96] joinstr ................................. <soundspath & "rightin" & random(2) & ".aif">
+  [ 97] pusharglistnoret 3 ...................... <1, soundspath & "rightin" & random(2) & ".aif">
+  [ 99] extcall 49 .............................. sound playFile 1, soundspath & "rightin" & random(2) & ".aif"
+  [102] pushcons 72 ............................. <"righttalk">
+  [104] pusharglistnoret 1 ...................... <"righttalk">
+  [106] extcall 81 .............................. play frame "righttalk"
+  [109] pushcons 80 ............................. <"insidefort">
+  [111] pusharglistnoret 1 ...................... <"insidefort">
+  [113] extcall 3 ............................... go("insidefort")
+  [115] jmp [260]
+  [118] getglobal 77 ............................ <catgame>
+  [121] pushcons 88 ............................. <"los">
+  [123] containsstr ............................. <catgame contains "los">
+  [124] jmpifz [219] ............................ if catgame contains "los" then / else
+  [127] pushsymb 48 ............................. <#playFile>
+  [130] pushint8 1 .............................. <1>
+  [133] getglobal 30 ............................ <soundspath>
+  [135] pushcons 96 ............................. <"hezilos">
+  [137] pushint8 3 .............................. <3>
+  [140] pusharglist 1 ........................... <3>
+  [142] extcall 40 .............................. <random(3)>
+  [145] joinstr ................................. <"hezilos" & random(3)>
+  [146] pushcons 104 ............................ <".aif">
+  [148] joinstr ................................. <"hezilos" & random(3) & ".aif">
+  [149] joinstr ................................. <soundspath & "hezilos" & random(3) & ".aif">
+  [150] pusharglistnoret 3 ...................... <1, soundspath & "hezilos" & random(3) & ".aif">
+  [152] extcall 49 .............................. sound playFile 1, soundspath & "hezilos" & random(3) & ".aif"
+  [155] pushcons 112 ............................ <"heztalk">
+  [157] pusharglistnoret 1 ...................... <"heztalk">
+  [159] extcall 81 .............................. play frame "heztalk"
+  [162] pushint8 30 ............................. <30>
+  [165] pusharglist 1 ........................... <30>
+  [167] extcall 103 ............................. <sprite(30)>
+  [170] pushint8 1 .............................. <1>
+  [173] setobjprop 104 .......................... sprite(30).visible = 1
+  [176] pushint8 9 .............................. <9>
+  [179] setglobal 23 ............................ newsyz = 9
+  [181] pushint8 30 ............................. <30>
+  [184] pushint8 13 ............................. <13>
+  [187] get 6 ................................... <the locH of sprite 30>
+  [189] setglobal 10 ............................ egozh = the locH of sprite 30
+  [191] pushint8 30 ............................. <30>
+  [194] pushint8 14 ............................. <14>
+  [197] get 6 ................................... <the locV of sprite 30>
+  [199] setglobal 11 ............................ egozv = the locV of sprite 30
+  [201] pushcons 120 ............................ <"000">
+  [203] setglobal 22 ............................ nextroomdata = "000"
+  [205] pushcons 128 ............................ <"cats">
+  [207] setglobal 110 ........................... whichsnd = "cats"
+  [210] pushcons 136 ............................ <"fort">
+  [212] pusharglistnoret 1 ...................... <"fort">
+  [214] extcall 3 ............................... go("fort")
+  [216] jmp [260]
+  [219] pushsymb 48 ............................. <#playFile>
+  [222] pushint8 1 .............................. <1>
+  [225] getglobal 30 ............................ <soundspath>
+  [227] pushcons 144 ............................ <"hezrnd2">
+  [229] pushint8 3 .............................. <3>
+  [232] pusharglist 1 ........................... <3>
+  [234] extcall 40 .............................. <random(3)>
+  [237] joinstr ................................. <"hezrnd2" & random(3)>
+  [238] pushcons 152 ............................ <".aif">
+  [240] joinstr ................................. <"hezrnd2" & random(3) & ".aif">
+  [241] joinstr ................................. <soundspath & "hezrnd2" & random(3) & ".aif">
+  [242] pusharglistnoret 3 ...................... <1, soundspath & "hezrnd2" & random(3) & ".aif">
+  [244] extcall 49 .............................. sound playFile 1, soundspath & "hezrnd2" & random(3) & ".aif"
+  [247] pushcons 160 ............................ <"heztalk">
+  [249] pusharglistnoret 1 ...................... <"heztalk">
+  [251] extcall 81 .............................. play frame "heztalk"
+  [254] pushcons 168 ............................ <"choose21">
+  [256] pusharglistnoret 1 ...................... <"choose21">
+  [258] extcall 3 ............................... go("choose21")
+  [260] ret
+end

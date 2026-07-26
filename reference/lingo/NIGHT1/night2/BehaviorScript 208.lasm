@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"edge3down">
+  [  2] pusharglistnoret 1 ...................... <"edge3down">
+  [  4] extcall 3 ............................... go("edge3down")
+  [  6] ret
+end

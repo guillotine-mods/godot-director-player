@@ -1,0 +1,98 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"continue">
+  [  2] setlocal 0 .............................. x = "continue"
+  [  4] pushint8 1 .............................. <1>
+  [  7] setlocal 8
+  [  9] getlocal 8
+  [ 11] pushcons 8 .............................. <"objectsfield">
+  [ 13] pushcons 16 ............................. <"master">
+  [ 15] getfield ................................ <field("objectsfield", "master")>
+  [ 16] pushint8 4 .............................. <4>
+  [ 19] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 21] lteq
+  [ 22] jmpifz [ 84] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 25] pushzero ................................ <0>
+  [ 26] pushzero ................................ <0>
+  [ 27] pushzero ................................ <0>
+  [ 28] pushzero ................................ <0>
+  [ 29] pushzero ................................ <0>
+  [ 30] pushzero ................................ <0>
+  [ 31] getlocal 8 .............................. <i>
+  [ 33] pushzero ................................ <0>
+  [ 34] pushcons 24 ............................. <"objectsfield">
+  [ 36] pushcons 32 ............................. <"master">
+  [ 38] getfield ................................ <field("objectsfield", "master")>
+  [ 39] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 40] pushcons 40 ............................. <"empty">
+  [ 42] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 43] getlocal 0 .............................. <x>
+  [ 45] pushcons 48 ............................. <"continue">
+  [ 47] eq ...................................... <x = "continue">
+  [ 48] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 49] jmpifz [ 73] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 52] pushcons 56 ............................. <"brkin">
+  [ 54] pushzero ................................ <0>
+  [ 55] pushzero ................................ <0>
+  [ 56] pushzero ................................ <0>
+  [ 57] pushzero ................................ <0>
+  [ 58] pushzero ................................ <0>
+  [ 59] pushzero ................................ <0>
+  [ 60] getlocal 8 .............................. <i>
+  [ 62] pushzero ................................ <0>
+  [ 63] pushcons 64 ............................. <"objectsfield">
+  [ 65] pushcons 72 ............................. <"master">
+  [ 67] putchunk 22 ............................. put "brkin" into line i of field "objectsfield" of castLib "master"
+  [ 69] pushcons 80 ............................. <"stop">
+  [ 71] setlocal 0 .............................. x = "stop"
+  [ 73] pushint8 1
+  [ 76] getlocal 8
+  [ 78] add
+  [ 79] setlocal 8
+  [ 81] endrepeat [  9]
+  [ 84] pushcons 88 ............................. <"dwarfsmovnote">
+  [ 86] pusharglistnoret 1 ...................... <"dwarfsmovnote">
+  [ 88] extcall 3 ............................... go("dwarfsmovnote")
+  [ 90] pushcons 96 ............................. <"done">
+  [ 92] pushzero ................................ <0>
+  [ 93] pushzero ................................ <0>
+  [ 94] pushzero ................................ <0>
+  [ 95] pushzero ................................ <0>
+  [ 96] pushint8 5 .............................. <5>
+  [ 99] pushzero ................................ <0>
+  [100] pushint8 2 .............................. <2>
+  [103] pushzero ................................ <0>
+  [104] pushcons 104 ............................ <"Dprocess">
+  [106] pushcons 112 ............................ <"master">
+  [108] putchunk 22 ............................. put "done" into item 5 of line 2 of field "Dprocess" of castLib "master"
+  [110] pushcons 120 ............................ <"points">
+  [112] pushcons 128 ............................ <"master">
+  [114] pushint8 2 .............................. <2>
+  [117] get 11 .................................. <the text of field "points" of castLib "master">
+  [119] pusharglist 1 ........................... <the text of field "points" of castLib "master">
+  [121] extcall 15 .............................. <value(the text of field "points" of castLib "master")>
+  [123] setlocal 0 .............................. x = value(the text of field "points" of castLib "master")
+  [125] getlocal 0 .............................. <x>
+  [127] pushint8 1 .............................. <1>
+  [130] add ..................................... <x + 1>
+  [131] setlocal 0 .............................. x = x + 1
+  [133] getlocal 0 .............................. <x>
+  [135] pushint8 10 ............................. <10>
+  [138] lt ...................................... <x < 10>
+  [139] jmpifz [156] ............................ if x < 10 then / else
+  [142] pushcons 136 ............................ <"00">
+  [144] getlocal 0 .............................. <x>
+  [146] joinstr ................................. <"00" & x>
+  [147] pushcons 144 ............................ <"points">
+  [149] pushcons 152 ............................ <"master">
+  [151] put 22 .................................. put "00" & x into field "points" of castLib "master"
+  [153] jmp [167]
+  [156] pushcons 160 ............................ <"0">
+  [158] getlocal 0 .............................. <x>
+  [160] joinstr ................................. <"0" & x>
+  [161] pushcons 168 ............................ <"points">
+  [163] pushcons 176 ............................ <"master">
+  [165] put 22 .................................. put "0" & x into field "points" of castLib "master"
+  [167] pusharglistnoret 0 ...................... <>
+  [169] extcall 46 .............................. displayobject()
+  [172] ret
+end

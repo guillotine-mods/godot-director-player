@@ -1,0 +1,117 @@
+on exitFrame
+  [  0] pushint8 4 .............................. <4>
+  [  3] pusharglist 1 ........................... <4>
+  [  5] extcall 20 .............................. <rollOver(4)>
+  [  7] jmpifz [ 30] ............................ if rollOver(4) then / else
+  [ 10] pushint8 4 .............................. <4>
+  [ 13] pushcons 0 .............................. <"cbook1">
+  [ 15] pushcons 8 .............................. <"book">
+  [ 17] pushint8 10 ............................. <10>
+  [ 20] get 9 ................................... <the number of member "cbook1" of castLib "book">
+  [ 22] pushint8 35 ............................. <35>
+  [ 25] set 6 ................................... set the memberNum of sprite 4 to the number of member "cbook1" of castLib "book"
+  [ 27] jmp [282]
+  [ 30] pushint8 4 .............................. <4>
+  [ 33] pushcons 16 ............................. <"book1">
+  [ 35] pushcons 24 ............................. <"book">
+  [ 37] pushint8 10 ............................. <10>
+  [ 40] get 9 ................................... <the number of member "book1" of castLib "book">
+  [ 42] pushint8 35 ............................. <35>
+  [ 45] set 6 ................................... set the memberNum of sprite 4 to the number of member "book1" of castLib "book"
+  [ 47] pushint8 5 .............................. <5>
+  [ 50] pusharglist 1 ........................... <5>
+  [ 52] extcall 20 .............................. <rollOver(5)>
+  [ 54] jmpifz [ 77] ............................ if rollOver(5) then / else
+  [ 57] pushint8 5 .............................. <5>
+  [ 60] pushcons 32 ............................. <"cafgani">
+  [ 62] pushcons 40 ............................. <"book">
+  [ 64] pushint8 10 ............................. <10>
+  [ 67] get 9 ................................... <the number of member "cafgani" of castLib "book">
+  [ 69] pushint8 35 ............................. <35>
+  [ 72] set 6 ................................... set the memberNum of sprite 5 to the number of member "cafgani" of castLib "book"
+  [ 74] jmp [282]
+  [ 77] pushint8 5 .............................. <5>
+  [ 80] pushcons 48 ............................. <"afgani">
+  [ 82] pushcons 56 ............................. <"book">
+  [ 84] pushint8 10 ............................. <10>
+  [ 87] get 9 ................................... <the number of member "afgani" of castLib "book">
+  [ 89] pushint8 35 ............................. <35>
+  [ 92] set 6 ................................... set the memberNum of sprite 5 to the number of member "afgani" of castLib "book"
+  [ 94] pushint8 6 .............................. <6>
+  [ 97] pusharglist 1 ........................... <6>
+  [ 99] extcall 20 .............................. <rollOver(6)>
+  [101] jmpifz [124] ............................ if rollOver(6) then / else
+  [104] pushint8 6 .............................. <6>
+  [107] pushcons 64 ............................. <"cbook2">
+  [109] pushcons 72 ............................. <"book">
+  [111] pushint8 10 ............................. <10>
+  [114] get 9 ................................... <the number of member "cbook2" of castLib "book">
+  [116] pushint8 35 ............................. <35>
+  [119] set 6 ................................... set the memberNum of sprite 6 to the number of member "cbook2" of castLib "book"
+  [121] jmp [282]
+  [124] pushint8 6 .............................. <6>
+  [127] pushcons 80 ............................. <"book2">
+  [129] pushcons 88 ............................. <"book">
+  [131] pushint8 10 ............................. <10>
+  [134] get 9 ................................... <the number of member "book2" of castLib "book">
+  [136] pushint8 35 ............................. <35>
+  [139] set 6 ................................... set the memberNum of sprite 6 to the number of member "book2" of castLib "book"
+  [141] pushint8 7 .............................. <7>
+  [144] pusharglist 1 ........................... <7>
+  [146] extcall 20 .............................. <rollOver(7)>
+  [148] jmpifz [171] ............................ if rollOver(7) then / else
+  [151] pushint8 7 .............................. <7>
+  [154] pushcons 96 ............................. <"cbook4">
+  [156] pushcons 104 ............................ <"book">
+  [158] pushint8 10 ............................. <10>
+  [161] get 9 ................................... <the number of member "cbook4" of castLib "book">
+  [163] pushint8 35 ............................. <35>
+  [166] set 6 ................................... set the memberNum of sprite 7 to the number of member "cbook4" of castLib "book"
+  [168] jmp [282]
+  [171] pushint8 7 .............................. <7>
+  [174] pushcons 112 ............................ <"book4">
+  [176] pushcons 120 ............................ <"book">
+  [178] pushint8 10 ............................. <10>
+  [181] get 9 ................................... <the number of member "book4" of castLib "book">
+  [183] pushint8 35 ............................. <35>
+  [186] set 6 ................................... set the memberNum of sprite 7 to the number of member "book4" of castLib "book"
+  [188] pushint8 8 .............................. <8>
+  [191] pusharglist 1 ........................... <8>
+  [193] extcall 20 .............................. <rollOver(8)>
+  [195] jmpifz [218] ............................ if rollOver(8) then / else
+  [198] pushint8 8 .............................. <8>
+  [201] pushcons 128 ............................ <"cbook3">
+  [203] pushcons 136 ............................ <"book">
+  [205] pushint8 10 ............................. <10>
+  [208] get 9 ................................... <the number of member "cbook3" of castLib "book">
+  [210] pushint8 35 ............................. <35>
+  [213] set 6 ................................... set the memberNum of sprite 8 to the number of member "cbook3" of castLib "book"
+  [215] jmp [282]
+  [218] pushint8 8 .............................. <8>
+  [221] pushcons 144 ............................ <"book3">
+  [223] pushcons 152 ............................ <"book">
+  [225] pushint8 10 ............................. <10>
+  [228] get 9 ................................... <the number of member "book3" of castLib "book">
+  [230] pushint8 35 ............................. <35>
+  [233] set 6 ................................... set the memberNum of sprite 8 to the number of member "book3" of castLib "book"
+  [235] pushint8 9 .............................. <9>
+  [238] pusharglist 1 ........................... <9>
+  [240] extcall 20 .............................. <rollOver(9)>
+  [242] jmpifz [265] ............................ if rollOver(9) then / else
+  [245] pushint8 9 .............................. <9>
+  [248] pushcons 160 ............................ <"cbook5">
+  [250] pushcons 168 ............................ <"book">
+  [252] pushint8 10 ............................. <10>
+  [255] get 9 ................................... <the number of member "cbook5" of castLib "book">
+  [257] pushint8 35 ............................. <35>
+  [260] set 6 ................................... set the memberNum of sprite 9 to the number of member "cbook5" of castLib "book"
+  [262] jmp [282]
+  [265] pushint8 9 .............................. <9>
+  [268] pushcons 176 ............................ <"book5">
+  [270] pushcons 184 ............................ <"book">
+  [272] pushint8 10 ............................. <10>
+  [275] get 9 ................................... <the number of member "book5" of castLib "book">
+  [277] pushint8 35 ............................. <35>
+  [280] set 6 ................................... set the memberNum of sprite 9 to the number of member "book5" of castLib "book"
+  [282] ret
+end

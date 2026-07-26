@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 54 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 110 ........................... <whichsnd>
+  [ 12] pushcons 0 .............................. <"rachbal">
+  [ 14] nteq .................................... <whichsnd <> "rachbal">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "rachbal")>
+  [ 16] jmpifz [ 40] ............................ if not soundBusy(2) or (whichsnd <> "rachbal") then
+  [ 19] pushsymb 48 ............................. <#playFile>
+  [ 22] pushint8 2 .............................. <2>
+  [ 25] getglobal 31 ............................ <effectspath>
+  [ 27] pushcons 8 .............................. <"rachbal.aif">
+  [ 29] joinstr ................................. <effectspath & "rachbal.aif">
+  [ 30] pusharglistnoret 3 ...................... <2, effectspath & "rachbal.aif">
+  [ 32] extcall 49 .............................. sound playFile 2, effectspath & "rachbal.aif"
+  [ 35] pushcons 16 ............................. <"rachbal">
+  [ 37] setglobal 110 ........................... whichsnd = "rachbal"
+  [ 40] ret
+end

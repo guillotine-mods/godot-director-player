@@ -1,0 +1,213 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 29 ........................... <the clickOn>
+  [  4] pushint16 100 ........................... <100>
+  [  7] ontospr ................................. <sprite the clickOn intersects 100>
+  [  8] jmpifz [ 86] ............................ if sprite the clickOn intersects 100 then / else
+  [ 11] pushint16 100 ........................... <100>
+  [ 14] pushcons 0 .............................. <"piphead2">
+  [ 16] pushcons 1 .............................. <"master">
+  [ 18] pushint16 10 ............................ <10>
+  [ 21] get 9 ................................... <the number of member "piphead2" of castLib "master">
+  [ 23] pushint16 35 ............................ <35>
+  [ 26] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead2" of castLib "master"
+  [ 28] pusharglist 0 ........................... <>
+  [ 30] thebuiltin 29 ........................... <the clickOn>
+  [ 32] pushint16 35 ............................ <35>
+  [ 35] get 6 ................................... <the memberNum of sprite the clickOn>
+  [ 37] setlocal 0 .............................. x = the memberNum of sprite the clickOn
+  [ 39] getlocal 0 .............................. <x>
+  [ 41] pushcons 2 .............................. <"master">
+  [ 43] pusharglist 2 ........................... <x, "master">
+  [ 45] extcall 22 .............................. <member(x, "master")>
+  [ 47] getobjprop 30 ........................... <member(x, "master").name>
+  [ 49] setlocal 0 .............................. x = member(x, "master").name
+  [ 51] pushcons 3 .............................. <"days">
+  [ 53] pusharglistnoret 1 ...................... <"days">
+  [ 55] extcall 13 .............................. soundspath("days")
+  [ 57] pushsymb 11 ............................. <#playFile>
+  [ 59] pushint16 1 ............................. <1>
+  [ 62] getglobal 13 ............................ <soundspath>
+  [ 64] pushcons 4 .............................. <"pi">
+  [ 66] getlocal 0 .............................. <x>
+  [ 68] joinstr ................................. <"pi" & x>
+  [ 69] pushcons 5 .............................. <".aif">
+  [ 71] joinstr ................................. <"pi" & x & ".aif">
+  [ 72] joinstr ................................. <soundspath & "pi" & x & ".aif">
+  [ 73] pusharglistnoret 3 ...................... <1, soundspath & "pi" & x & ".aif">
+  [ 75] extcall 12 .............................. sound playFile 1, soundspath & "pi" & x & ".aif"
+  [ 77] pushcons 6 .............................. <"nights">
+  [ 79] pusharglistnoret 1 ...................... <"nights">
+  [ 81] extcall 13 .............................. soundspath("nights")
+  [ 83] jmp [330]
+  [ 86] pushcons 7 .............................. <"not">
+  [ 88] setlocal 1 .............................. r = "not"
+  [ 90] pusharglist 0 ........................... <>
+  [ 92] thebuiltin 29 ........................... <the clickOn>
+  [ 94] pushint16 8 ............................. <8>
+  [ 97] ontospr ................................. <sprite the clickOn intersects 8>
+  [ 98] jmpifz [105] ............................ if sprite the clickOn intersects 8 then
+  [101] pushcons 8 .............................. <"yes">
+  [103] setlocal 1 .............................. r = "yes"
+  [105] getlocal 1 .............................. <r>
+  [107] pushcons 9 .............................. <"yes">
+  [109] eq ...................................... <r = "yes">
+  [110] jmpifz [330] ............................ if r = "yes" then
+  [113] pusharglist 0 ........................... <>
+  [115] thebuiltin 29 ........................... <the clickOn>
+  [117] pushint16 35 ............................ <35>
+  [120] get 6 ................................... <the memberNum of sprite the clickOn>
+  [122] setlocal 2 .............................. unu = the memberNum of sprite the clickOn
+  [124] getlocal 2 .............................. <unu>
+  [126] pushcons 10 ............................. <"master">
+  [128] pusharglist 2 ........................... <unu, "master">
+  [130] extcall 22 .............................. <member(unu, "master")>
+  [132] getobjprop 30 ........................... <member(unu, "master").name>
+  [134] setlocal 0 .............................. x = member(unu, "master").name
+  [136] getlocal 0 .............................. <x>
+  [138] pushcons 11 ............................. <"sulam">
+  [140] eq ...................................... <x = "sulam">
+  [141] jmpifz [330] ............................ if x = "sulam" then
+  [144] pushint16 17 ............................ <17>
+  [147] pusharglist 1 ........................... <17>
+  [149] extcall 20 .............................. <sprite(17)>
+  [151] pushint16 1 ............................. <1>
+  [154] setobjprop 21 ........................... sprite(17).visible = 1
+  [156] pushint16 1 ............................. <1>
+  [159] pushzero ................................ <0>
+  [160] pushzero ................................ <0>
+  [161] pushzero ................................ <0>
+  [162] pushzero ................................ <0>
+  [163] pushint16 1 ............................. <1>
+  [166] pushzero ................................ <0>
+  [167] pushzero ................................ <0>
+  [168] pushzero ................................ <0>
+  [169] pushvarref 93 ........................... <globalnight>
+  [172] putchunk 18 ............................. put 1 into item 1 of globalnight
+  [174] pushint16 1 ............................. <1>
+  [177] setlocal 3 .............................. i = 1
+  [179] getlocal 3 .............................. <i>
+  [181] pushcons 12 ............................. <"objectsfield">
+  [183] pushcons 13 ............................. <"master">
+  [185] getfield ................................ <field("objectsfield", "master")>
+  [186] pushint16 4 ............................. <4>
+  [189] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [191] lteq .................................... <i <= the number of lines in field "objectsfield" of castLib "master">
+  [192] jmpifz [231] ............................ repeat while i <= the number of lines in field "objectsfield" of castLib "master"
+  [195] pushzero ................................ <0>
+  [196] pushzero ................................ <0>
+  [197] pushzero ................................ <0>
+  [198] pushzero ................................ <0>
+  [199] pushzero ................................ <0>
+  [200] pushzero ................................ <0>
+  [201] getlocal 3 .............................. <i>
+  [203] pushzero ................................ <0>
+  [204] pushcons 14 ............................. <"objectsfield">
+  [206] pushcons 15 ............................. <"master">
+  [208] getfield ................................ <field("objectsfield", "master")>
+  [209] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [210] pushcons 16 ............................. <"sulam">
+  [212] eq ...................................... <line i of field "objectsfield" of castLib "master" = "sulam">
+  [213] jmpifz [220] ............................ if line i of field "objectsfield" of castLib "master" = "sulam" then
+  [216] getlocal 3 .............................. <i>
+  [218] setlocal 4 .............................. objplc = i
+  [220] pushint16 1 ............................. <1>
+  [223] getlocal 3 .............................. <i>
+  [225] add ..................................... <1 + i>
+  [226] setlocal 3 .............................. i = 1 + i
+  [228] endrepeat [179]
+  [231] getlocal 4 .............................. <objplc>
+  [233] pushint16 1 ............................. <1>
+  [236] add ..................................... <objplc + 1>
+  [237] setlocal 3 .............................. i = objplc + 1
+  [239] getlocal 3 .............................. <i>
+  [241] pushcons 17 ............................. <"objectsfield">
+  [243] pushcons 18 ............................. <"master">
+  [245] getfield ................................ <field("objectsfield", "master")>
+  [246] pushint16 4 ............................. <4>
+  [249] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [251] lteq .................................... <i <= the number of lines in field "objectsfield" of castLib "master">
+  [252] jmpifz [300] ............................ repeat while i <= the number of lines in field "objectsfield" of castLib "master"
+  [255] pushzero ................................ <0>
+  [256] pushzero ................................ <0>
+  [257] pushzero ................................ <0>
+  [258] pushzero ................................ <0>
+  [259] pushzero ................................ <0>
+  [260] pushzero ................................ <0>
+  [261] getlocal 3 .............................. <i>
+  [263] pushzero ................................ <0>
+  [264] pushcons 19 ............................. <"objectsfield">
+  [266] pushcons 20 ............................. <"master">
+  [268] getfield ................................ <field("objectsfield", "master")>
+  [269] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [270] pushzero ................................ <0>
+  [271] pushzero ................................ <0>
+  [272] pushzero ................................ <0>
+  [273] pushzero ................................ <0>
+  [274] pushzero ................................ <0>
+  [275] pushzero ................................ <0>
+  [276] getlocal 3 .............................. <i>
+  [278] pushint16 1 ............................. <1>
+  [281] sub ..................................... <i - 1>
+  [282] pushzero ................................ <0>
+  [283] pushcons 21 ............................. <"objectsfield">
+  [285] pushcons 22 ............................. <"master">
+  [287] putchunk 22 ............................. put line i of field "objectsfield" of castLib "master" into line i - 1 of field "objectsfield" of castLib "master"
+  [289] pushint16 1 ............................. <1>
+  [292] getlocal 3 .............................. <i>
+  [294] add ..................................... <1 + i>
+  [295] setlocal 3 .............................. i = 1 + i
+  [297] endrepeat [239]
+  [300] pushcons 23 ............................. <"empty">
+  [302] pushzero ................................ <0>
+  [303] pushzero ................................ <0>
+  [304] pushzero ................................ <0>
+  [305] pushzero ................................ <0>
+  [306] pushzero ................................ <0>
+  [307] pushzero ................................ <0>
+  [308] pushcons 24 ............................. <"objectsfield">
+  [310] pushcons 25 ............................. <"master">
+  [312] getfield ................................ <field("objectsfield", "master")>
+  [313] pushint16 4 ............................. <4>
+  [316] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [318] pushzero ................................ <0>
+  [319] pushcons 26 ............................. <"objectsfield">
+  [321] pushcons 27 ............................. <"master">
+  [323] putchunk 22 ............................. put "empty" into line the number of lines in field "objectsfield" of castLib "master" of field "objectsfield" of castLib "master"
+  [325] pusharglistnoret 0 ...................... <>
+  [327] extcall 64 .............................. displayobject()
+  [330] pusharglist 0 ........................... <>
+  [332] thebuiltin 29 ........................... <the clickOn>
+  [334] getglobal 32 ............................ <objectxx>
+  [337] pushint16 13 ............................ <13>
+  [340] set 6 ................................... set the locH of sprite the clickOn to objectxx
+  [342] pusharglist 0 ........................... <>
+  [344] thebuiltin 29 ........................... <the clickOn>
+  [346] getglobal 33 ............................ <objectyy>
+  [349] pushint16 14 ............................ <14>
+  [352] set 6 ................................... set the locV of sprite the clickOn to objectyy
+  [354] pusharglistnoret 0 ...................... <>
+  [356] extcall 34 .............................. updateStage()
+  [359] pushint16 100 ........................... <100>
+  [362] pushcons 28 ............................. <"piphead1">
+  [364] pushcons 29 ............................. <"master">
+  [366] pushint16 10 ............................ <10>
+  [369] get 9 ................................... <the number of member "piphead1" of castLib "master">
+  [371] pushint16 35 ............................ <35>
+  [374] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead1" of castLib "master"
+  [376] ret
+end
+
+on mouseDown
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 29 ........................... <the clickOn>
+  [  4] pushint16 13 ............................ <13>
+  [  7] get 6 ................................... <the locH of sprite the clickOn>
+  [  9] setglobal 32 ............................ objectxx = the locH of sprite the clickOn
+  [ 12] pusharglist 0 ........................... <>
+  [ 14] thebuiltin 29 ........................... <the clickOn>
+  [ 16] pushint16 14 ............................ <14>
+  [ 19] get 6 ................................... <the locV of sprite the clickOn>
+  [ 21] setglobal 33 ............................ objectyy = the locV of sprite the clickOn
+  [ 24] ret
+end

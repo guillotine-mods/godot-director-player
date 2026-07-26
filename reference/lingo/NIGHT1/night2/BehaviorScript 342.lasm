@@ -1,0 +1,66 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"show">
+  [  2] setlocal 0 .............................. x = "show"
+  [  4] pushint8 1 .............................. <1>
+  [  7] setlocal 8
+  [  9] getlocal 8
+  [ 11] pushint8 30 ............................. <30>
+  [ 14] lteq
+  [ 15] jmpifz [ 54] ............................ repeat with i = 1 to 30
+  [ 18] pushzero ................................ <0>
+  [ 19] pushzero ................................ <0>
+  [ 20] pushzero ................................ <0>
+  [ 21] pushzero ................................ <0>
+  [ 22] pushzero ................................ <0>
+  [ 23] pushzero ................................ <0>
+  [ 24] getlocal 8 .............................. <i>
+  [ 26] pushzero ................................ <0>
+  [ 27] pushcons 8 .............................. <"objectsfield">
+  [ 29] pushcons 16 ............................. <"master">
+  [ 31] getfield ................................ <field("objectsfield", "master")>
+  [ 32] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 33] pushcons 24 ............................. <"tools">
+  [ 35] eq ...................................... <line i of field "objectsfield" of castLib "master" = "tools">
+  [ 36] jmpifz [ 43] ............................ if line i of field "objectsfield" of castLib "master" = "tools" then
+  [ 39] pushcons 32 ............................. <"hide">
+  [ 41] setlocal 0 .............................. x = "hide"
+  [ 43] pushint8 1
+  [ 46] getlocal 8
+  [ 48] add
+  [ 49] setlocal 8
+  [ 51] endrepeat [  9]
+  [ 54] getlocal 0 .............................. <x>
+  [ 56] pushcons 40 ............................. <"hide">
+  [ 58] eq ...................................... <x = "hide">
+  [ 59] jmpifz [ 77] ............................ if x = "hide" then / else
+  [ 62] pushint8 17 ............................. <17>
+  [ 65] pusharglist 1 ........................... <17>
+  [ 67] extcall 83 .............................. <sprite(17)>
+  [ 70] pushzero ................................ <0>
+  [ 71] setobjprop 96 ........................... sprite(17).visible = 0
+  [ 74] jmp [ 91]
+  [ 77] pushint8 17 ............................. <17>
+  [ 80] pusharglist 1 ........................... <17>
+  [ 82] extcall 83 .............................. <sprite(17)>
+  [ 85] pushint8 1 .............................. <1>
+  [ 88] setobjprop 96 ........................... sprite(17).visible = 1
+  [ 91] pushint8 2 .............................. <2>
+  [ 94] pusharglist 1 ........................... <2>
+  [ 96] extcall 50 .............................. <soundBusy(2)>
+  [ 99] not ..................................... <not soundBusy(2)>
+  [100] getglobal 104 ........................... <whichsnd>
+  [103] pushcons 48 ............................. <"rachbal">
+  [105] nteq .................................... <whichsnd <> "rachbal">
+  [106] or ...................................... <not soundBusy(2) or (whichsnd <> "rachbal")>
+  [107] jmpifz [132] ............................ if not soundBusy(2) or (whichsnd <> "rachbal") then
+  [110] pushsymb 42 ............................. <#playFile>
+  [113] pushint8 2 .............................. <2>
+  [116] getglobal 32 ............................ <effectspath>
+  [119] pushcons 56 ............................. <"rachbal.aif">
+  [121] joinstr ................................. <effectspath & "rachbal.aif">
+  [122] pusharglistnoret 3 ...................... <2, effectspath & "rachbal.aif">
+  [124] extcall 43 .............................. sound playFile 2, effectspath & "rachbal.aif"
+  [127] pushcons 64 ............................. <"rachbal">
+  [129] setglobal 104 ........................... whichsnd = "rachbal"
+  [132] ret
+end

@@ -1,0 +1,7 @@
+on exitFrame
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 5 ............................ <the frame>
+  [  4] pusharglistnoret 1 ...................... <the frame>
+  [  6] extcall 6 ............................... go(the frame)
+  [  8] ret
+end

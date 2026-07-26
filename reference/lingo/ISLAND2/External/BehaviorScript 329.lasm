@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 42 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 46 ............................ <whichsnd>
+  [ 12] pushcons 0 .............................. <"tennis">
+  [ 14] nteq .................................... <whichsnd <> "tennis">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "tennis")>
+  [ 16] jmpifz [ 39] ............................ if not soundBusy(2) or (whichsnd <> "tennis") then
+  [ 19] pushsymb 23 ............................. <#playFile>
+  [ 21] pushint8 2 .............................. <2>
+  [ 24] getglobal 47 ............................ <effectspath>
+  [ 27] pushcons 8 .............................. <"tennis.aif">
+  [ 29] joinstr ................................. <effectspath & "tennis.aif">
+  [ 30] pusharglistnoret 3 ...................... <2, effectspath & "tennis.aif">
+  [ 32] extcall 24 .............................. sound playFile 2, effectspath & "tennis.aif"
+  [ 34] pushcons 16 ............................. <"tennis">
+  [ 36] setglobal 46 ............................ whichsnd = "tennis"
+  [ 39] ret
+end

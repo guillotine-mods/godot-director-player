@@ -1,0 +1,325 @@
+on objecttalktime x
+  [  0] pushint8 18 ............................. <18>
+  [  2] setlocal 0
+  [  4] getlocal 0
+  [  6] pushint8 21 ............................. <21>
+  [  8] lteq
+  [  9] jmpifz [ 29] ............................ repeat with i = 18 to 21
+  [ 12] getlocal 0 .............................. <i>
+  [ 14] pushint8 1 .............................. <1>
+  [ 16] pusharglistnoret 2 ...................... <i, 1>
+  [ 18] extcall 22 .............................. puppetSprite(i, 1)
+  [ 20] pushint8 1
+  [ 22] getlocal 0
+  [ 24] add
+  [ 25] setlocal 0
+  [ 27] endrepeat [  4]
+  [ 29] pushint8 30 ............................. <30>
+  [ 31] pushint8 35 ............................. <35>
+  [ 33] get 6 ................................... <the memberNum of sprite 30>
+  [ 35] pusharglist 1 ........................... <the memberNum of sprite 30>
+  [ 37] extcall 13 .............................. <member(the memberNum of sprite 30)>
+  [ 39] getobjprop 14 ........................... <member(the memberNum of sprite 30).name>
+  [ 41] pushcons 0 .............................. <"stand">
+  [ 43] containsstr ............................. <member(the memberNum of sprite 30).name contains "stand">
+  [ 44] jmpifz [ 50] ............................ if member(the memberNum of sprite 30).name contains "stand" then / else
+  [ 47] jmp [119]
+  [ 50] pushint8 30 ............................. <30>
+  [ 52] pushint8 35 ............................. <35>
+  [ 54] get 6 ................................... <the memberNum of sprite 30>
+  [ 56] pusharglist 1 ........................... <the memberNum of sprite 30>
+  [ 58] extcall 13 .............................. <member(the memberNum of sprite 30)>
+  [ 60] getobjprop 14 ........................... <member(the memberNum of sprite 30).name>
+  [ 62] pushcons 8 .............................. <"right">
+  [ 64] containsstr ............................. <member(the memberNum of sprite 30).name contains "right">
+  [ 65] jmpifz [ 87] ............................ if member(the memberNum of sprite 30).name contains "right" then / else
+  [ 68] pushint8 30 ............................. <30>
+  [ 70] pushcons 16 ............................. <"standright">
+  [ 72] getglobal 7 ............................. <syz>
+  [ 74] joinstr ................................. <"standright" & syz>
+  [ 75] pushzero ................................ <0>
+  [ 76] pushint8 10 ............................. <10>
+  [ 78] get 9 ................................... <the number of member ("standright" & syz)>
+  [ 80] pushint8 35 ............................. <35>
+  [ 82] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standright" & syz)
+  [ 84] jmp [103]
+  [ 87] pushint8 30 ............................. <30>
+  [ 89] pushcons 24 ............................. <"standleft">
+  [ 91] getglobal 7 ............................. <syz>
+  [ 93] joinstr ................................. <"standleft" & syz>
+  [ 94] pushzero ................................ <0>
+  [ 95] pushint8 10 ............................. <10>
+  [ 97] get 9 ................................... <the number of member ("standleft" & syz)>
+  [ 99] pushint8 35 ............................. <35>
+  [101] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standleft" & syz)
+  [103] pushint8 30 ............................. <30>
+  [105] getglobal 10 ............................ <egozv>
+  [107] pushint8 14 ............................. <14>
+  [109] set 6 ................................... set the locV of sprite 30 to egozv
+  [111] pushint8 30 ............................. <30>
+  [113] getglobal 6 ............................. <egozh>
+  [115] pushint8 13 ............................. <13>
+  [117] set 6 ................................... set the locH of sprite 30 to egozh
+  [119] pushint8 1 .............................. <1>
+  [121] setglobal 53 ............................ usfultalking = 1
+  [123] getparam 0 .............................. <x>
+  [125] setglobal 54 ............................ usfulobject = x
+  [127] pushzero ................................ <0>
+  [128] pusharglist 1 ........................... <0>
+  [130] extcall 2 ............................... <marker(0)>
+  [132] pushcons 32 ............................. <"fieldgo">
+  [134] pusharglist 1 ........................... <"fieldgo">
+  [136] extcall 38 .............................. <label("fieldgo")>
+  [138] eq ...................................... <marker(0) = label("fieldgo")>
+  [139] jmpifz [151] ............................ if marker(0) = label("fieldgo") then / else
+  [142] pushcons 40 ............................. <"fieldtalk">
+  [144] pusharglistnoret 1 ...................... <"fieldtalk">
+  [146] extcall 3 ............................... go("fieldtalk")
+  [148] jmp [298]
+  [151] pushzero ................................ <0>
+  [152] pusharglist 1 ........................... <0>
+  [154] extcall 2 ............................... <marker(0)>
+  [156] pushcons 48 ............................. <"tennisgo">
+  [158] pusharglist 1 ........................... <"tennisgo">
+  [160] extcall 38 .............................. <label("tennisgo")>
+  [162] eq ...................................... <marker(0) = label("tennisgo")>
+  [163] jmpifz [175] ............................ if marker(0) = label("tennisgo") then / else
+  [166] pushcons 56 ............................. <"tennistalk">
+  [168] pusharglistnoret 1 ...................... <"tennistalk">
+  [170] extcall 3 ............................... go("tennistalk")
+  [172] jmp [298]
+  [175] pushzero ................................ <0>
+  [176] pusharglist 1 ........................... <0>
+  [178] extcall 2 ............................... <marker(0)>
+  [180] pushcons 64 ............................. <"edge1go">
+  [182] pusharglist 1 ........................... <"edge1go">
+  [184] extcall 38 .............................. <label("edge1go")>
+  [186] eq ...................................... <marker(0) = label("edge1go")>
+  [187] jmpifz [199] ............................ if marker(0) = label("edge1go") then / else
+  [190] pushcons 72 ............................. <"edge1talk">
+  [192] pusharglistnoret 1 ...................... <"edge1talk">
+  [194] extcall 3 ............................... go("edge1talk")
+  [196] jmp [298]
+  [199] pushzero ................................ <0>
+  [200] pusharglist 1 ........................... <0>
+  [202] extcall 2 ............................... <marker(0)>
+  [204] pushcons 80 ............................. <"verandago">
+  [206] pusharglist 1 ........................... <"verandago">
+  [208] extcall 38 .............................. <label("verandago")>
+  [210] eq ...................................... <marker(0) = label("verandago")>
+  [211] jmpifz [223] ............................ if marker(0) = label("verandago") then / else
+  [214] pushcons 88 ............................. <"verandatalk">
+  [216] pusharglistnoret 1 ...................... <"verandatalk">
+  [218] extcall 3 ............................... go("verandatalk")
+  [220] jmp [298]
+  [223] pushzero ................................ <0>
+  [224] pusharglist 1 ........................... <0>
+  [226] extcall 2 ............................... <marker(0)>
+  [228] pushcons 96 ............................. <"dwarfsgo">
+  [230] pusharglist 1 ........................... <"dwarfsgo">
+  [232] extcall 38 .............................. <label("dwarfsgo")>
+  [234] eq ...................................... <marker(0) = label("dwarfsgo")>
+  [235] jmpifz [274] ............................ if marker(0) = label("dwarfsgo") then / else
+  [238] pusharglist 0 ........................... <>
+  [240] thebuiltin 45 ........................... <the clickOn>
+  [242] pushint8 36 ............................. <36>
+  [244] ontospr ................................. <sprite the clickOn intersects 36>
+  [245] pusharglist 0 ........................... <>
+  [247] thebuiltin 45 ........................... <the clickOn>
+  [249] pushint8 37 ............................. <37>
+  [251] ontospr ................................. <sprite the clickOn intersects 37>
+  [252] or ...................................... <sprite the clickOn intersects 36 or sprite the clickOn intersects 37>
+  [253] jmpifz [265] ............................ if sprite the clickOn intersects 36 or sprite the clickOn intersects 37 then / else
+  [256] pushcons 104 ............................ <"dwarfs2talk">
+  [258] pusharglistnoret 1 ...................... <"dwarfs2talk">
+  [260] extcall 3 ............................... go("dwarfs2talk")
+  [262] jmp [271]
+  [265] pushcons 112 ............................ <"dwarfs1talk">
+  [267] pusharglistnoret 1 ...................... <"dwarfs1talk">
+  [269] extcall 3 ............................... go("dwarfs1talk")
+  [271] jmp [298]
+  [274] pushzero ................................ <0>
+  [275] pusharglist 1 ........................... <0>
+  [277] extcall 2 ............................... <marker(0)>
+  [279] pushcons 120 ............................ <"exitforest3go">
+  [281] pusharglist 1 ........................... <"exitforest3go">
+  [283] extcall 38 .............................. <label("exitforest3go")>
+  [285] eq ...................................... <marker(0) = label("exitforest3go")>
+  [286] jmpifz [298] ............................ if marker(0) = label("exitforest3go") then / else
+  [289] pushcons 128 ............................ <"exitforest3talk">
+  [291] pusharglistnoret 1 ...................... <"exitforest3talk">
+  [293] extcall 3 ............................... go("exitforest3talk")
+  [295] jmp [298]
+  [298] ret
+end
+
+on talkproc init, fieldname, lastmark
+  [  0] getglobal 53 ............................ <usfultalking>
+  [  2] pushint8 1 .............................. <1>
+  [  4] eq ...................................... <usfultalking = 1>
+  [  5] jmpifz [134] ............................ if usfultalking = 1 then / else
+  [  8] pushcons 136 ............................ <"not">
+  [ 10] setlocal 0 .............................. r = "not"
+  [ 12] pushint8 1 .............................. <1>
+  [ 14] setlocal 8 .............................. i = 1
+  [ 16] getlocal 8 .............................. <i>
+  [ 18] getparam 8 .............................. <fieldname>
+  [ 20] pushcons 144 ............................ <"master">
+  [ 22] getfield ................................ <field(fieldname, "master")>
+  [ 23] pushint8 4 .............................. <4>
+  [ 25] get 1 ................................... <the number of lines in field fieldname of castLib "master">
+  [ 27] pushint8 1 .............................. <1>
+  [ 29] add ..................................... <the number of lines in field fieldname of castLib "master" + 1>
+  [ 30] lt ...................................... <i < (the number of lines in field fieldname of castLib "master" + 1)>
+  [ 31] getlocal 0 .............................. <r>
+  [ 33] pushcons 152 ............................ <"not">
+  [ 35] eq ...................................... <r = "not">
+  [ 36] and ..................................... <(i < (the number of lines in field fieldname of castLib "master" + 1)) and (r = "not")>
+  [ 37] jmpifz [ 74] ............................ repeat while (i < (the number of lines in field fieldname of castLib "master" + 1)) and (r = "not")
+  [ 40] pushzero ................................ <0>
+  [ 41] pushzero ................................ <0>
+  [ 42] pushzero ................................ <0>
+  [ 43] pushzero ................................ <0>
+  [ 44] pushint8 1 .............................. <1>
+  [ 46] pushzero ................................ <0>
+  [ 47] getlocal 8 .............................. <i>
+  [ 49] pushzero ................................ <0>
+  [ 50] getparam 8 .............................. <fieldname>
+  [ 52] pushzero ................................ <0>
+  [ 53] getfield ................................ <field(fieldname)>
+  [ 54] getchunk ................................ <item 1 of line i of field fieldname>
+  [ 55] getglobal 54 ............................ <usfulobject>
+  [ 57] eq ...................................... <item 1 of line i of field fieldname = usfulobject>
+  [ 58] jmpifz [ 65] ............................ if item 1 of line i of field fieldname = usfulobject then
+  [ 61] getlocal 8 .............................. <i>
+  [ 63] setlocal 0 .............................. r = i
+  [ 65] getlocal 8 .............................. <i>
+  [ 67] pushint8 1 .............................. <1>
+  [ 69] add ..................................... <i + 1>
+  [ 70] setlocal 8 .............................. i = i + 1
+  [ 72] endrepeat [ 16]
+  [ 74] getlocal 0 .............................. <r>
+  [ 76] pushcons 160 ............................ <"not">
+  [ 78] nteq .................................... <r <> "not">
+  [ 79] jmpifz [131] ............................ if r <> "not" then
+  [ 82] getlocal 0 .............................. <r>
+  [ 84] setglobal 56 ............................ usfulline = r
+  [ 86] pushint8 30 ............................. <30>
+  [ 88] pushint8 13 ............................. <13>
+  [ 90] get 6 ................................... <the locH of sprite 30>
+  [ 92] setglobal 6 ............................. egozh = the locH of sprite 30
+  [ 94] pushint8 30 ............................. <30>
+  [ 96] pushint8 14 ............................. <14>
+  [ 98] get 6 ................................... <the locV of sprite 30>
+  [100] setglobal 10 ............................ egozv = the locV of sprite 30
+  [102] pushsymb 42 ............................. <#playFile>
+  [104] pushint8 1 .............................. <1>
+  [106] getglobal 31 ............................ <soundspath>
+  [108] getglobal 54 ............................ <usfulobject>
+  [110] getparam 0 .............................. <init>
+  [112] joinstr ................................. <usfulobject & init>
+  [113] getglobal 53 ............................ <usfultalking>
+  [115] joinstr ................................. <usfulobject & init & usfultalking>
+  [116] pushcons 168 ............................ <".aif">
+  [118] joinstr ................................. <usfulobject & init & usfultalking & ".aif">
+  [119] joinstr ................................. <soundspath & usfulobject & init & usfultalking & ".aif">
+  [120] pusharglistnoret 3 ...................... <1, soundspath & usfulobject & init & usfultalking & ".aif">
+  [122] extcall 43 .............................. sound playFile 1, soundspath & usfulobject & init & usfultalking & ".aif"
+  [124] getglobal 53 ............................ <usfultalking>
+  [126] pushint8 1 .............................. <1>
+  [128] add ..................................... <usfultalking + 1>
+  [129] setglobal 53 ............................ usfultalking = usfultalking + 1
+  [131] jmp [297]
+  [134] pushzero ................................ <0>
+  [135] pushzero ................................ <0>
+  [136] pushzero ................................ <0>
+  [137] pushzero ................................ <0>
+  [138] pushzero ................................ <0>
+  [139] pushzero ................................ <0>
+  [140] getglobal 56 ............................ <usfulline>
+  [142] pushzero ................................ <0>
+  [143] getparam 8 .............................. <fieldname>
+  [145] pushcons 176 ............................ <"master">
+  [147] getfield ................................ <field(fieldname, "master")>
+  [148] getchunk ................................ <line usfulline of field fieldname of castLib "master">
+  [149] pushint8 3 .............................. <3>
+  [151] get 1 ................................... <the number of items in line usfulline of field fieldname of castLib "master">
+  [153] pushint8 1 .............................. <1>
+  [155] sub ..................................... <the number of items in line usfulline of field fieldname of castLib "master" - 1>
+  [156] getglobal 53 ............................ <usfultalking>
+  [158] gteq .................................... <(the number of items in line usfulline of field fieldname of castLib "master" - 1) >= usfultalking>
+  [159] jmpifz [194] ............................ if (the number of items in line usfulline of field fieldname of castLib "master" - 1) >= usfultalking then / else
+  [162] pushsymb 42 ............................. <#playFile>
+  [164] pushint8 1 .............................. <1>
+  [166] getglobal 31 ............................ <soundspath>
+  [168] getglobal 54 ............................ <usfulobject>
+  [170] getparam 0 .............................. <init>
+  [172] joinstr ................................. <usfulobject & init>
+  [173] getglobal 53 ............................ <usfultalking>
+  [175] joinstr ................................. <usfulobject & init & usfultalking>
+  [176] pushcons 184 ............................ <".aif">
+  [178] joinstr ................................. <usfulobject & init & usfultalking & ".aif">
+  [179] joinstr ................................. <soundspath & usfulobject & init & usfultalking & ".aif">
+  [180] pusharglistnoret 3 ...................... <1, soundspath & usfulobject & init & usfultalking & ".aif">
+  [182] extcall 43 .............................. sound playFile 1, soundspath & usfulobject & init & usfultalking & ".aif"
+  [184] getglobal 53 ............................ <usfultalking>
+  [186] pushint8 1 .............................. <1>
+  [188] add ..................................... <usfultalking + 1>
+  [189] setglobal 53 ............................ usfultalking = usfultalking + 1
+  [191] jmp [297]
+  [194] pushint8 18 ............................. <18>
+  [196] setlocal 8
+  [198] getlocal 8
+  [200] pushint8 21 ............................. <21>
+  [202] lteq
+  [203] jmpifz [222] ............................ repeat with i = 18 to 21
+  [206] getlocal 8 .............................. <i>
+  [208] pushzero ................................ <0>
+  [209] pusharglistnoret 2 ...................... <i, 0>
+  [211] extcall 22 .............................. puppetSprite(i, 0)
+  [213] pushint8 1
+  [215] getlocal 8
+  [217] add
+  [218] setlocal 8
+  [220] endrepeat [198]
+  [222] pushint8 30 ............................. <30>
+  [224] pushint8 35 ............................. <35>
+  [226] get 6 ................................... <the memberNum of sprite 30>
+  [228] pusharglist 1 ........................... <the memberNum of sprite 30>
+  [230] extcall 13 .............................. <member(the memberNum of sprite 30)>
+  [232] getobjprop 14 ........................... <member(the memberNum of sprite 30).name>
+  [234] pushcons 192 ............................ <"right">
+  [236] containsstr ............................. <member(the memberNum of sprite 30).name contains "right">
+  [237] jmpifz [259] ............................ if member(the memberNum of sprite 30).name contains "right" then / else
+  [240] pushint8 30 ............................. <30>
+  [242] pushcons 200 ............................ <"standright">
+  [244] getglobal 7 ............................. <syz>
+  [246] joinstr ................................. <"standright" & syz>
+  [247] pushzero ................................ <0>
+  [248] pushint8 10 ............................. <10>
+  [250] get 9 ................................... <the number of member ("standright" & syz)>
+  [252] pushint8 35 ............................. <35>
+  [254] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standright" & syz)
+  [256] jmp [275]
+  [259] pushint8 30 ............................. <30>
+  [261] pushcons 208 ............................ <"standleft">
+  [263] getglobal 7 ............................. <syz>
+  [265] joinstr ................................. <"standleft" & syz>
+  [266] pushzero ................................ <0>
+  [267] pushint8 10 ............................. <10>
+  [269] get 9 ................................... <the number of member ("standleft" & syz)>
+  [271] pushint8 35 ............................. <35>
+  [273] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standleft" & syz)
+  [275] pushint8 30 ............................. <30>
+  [277] getglobal 10 ............................ <egozv>
+  [279] pushint8 14 ............................. <14>
+  [281] set 6 ................................... set the locV of sprite 30 to egozv
+  [283] pushint8 30 ............................. <30>
+  [285] getglobal 6 ............................. <egozh>
+  [287] pushint8 13 ............................. <13>
+  [289] set 6 ................................... set the locH of sprite 30 to egozh
+  [291] getparam 16 ............................. <lastmark>
+  [293] pusharglistnoret 1 ...................... <lastmark>
+  [295] extcall 3 ............................... go(lastmark)
+  [297] ret
+end

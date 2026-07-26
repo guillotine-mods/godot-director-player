@@ -1,0 +1,38 @@
+on exitFrame
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 21 ............................ <effectspath>
+  [  8] pushcons 0 .............................. <"boom.aif">
+  [ 10] joinstr ................................. <effectspath & "boom.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, effectspath & "boom.aif">
+  [ 13] extcall 43 .............................. sound playFile 1, effectspath & "boom.aif"
+  [ 16] pushcons 8 .............................. <"points">
+  [ 18] pushcons 16 ............................. <"master">
+  [ 20] pushint8 2 .............................. <2>
+  [ 23] get 11 .................................. <the text of field "points" of castLib "master">
+  [ 25] pusharglist 1 ........................... <the text of field "points" of castLib "master">
+  [ 27] extcall 37 .............................. <value(the text of field "points" of castLib "master")>
+  [ 30] setlocal 0 .............................. x = value(the text of field "points" of castLib "master")
+  [ 32] getlocal 0 .............................. <x>
+  [ 34] pushint8 1 .............................. <1>
+  [ 37] add ..................................... <x + 1>
+  [ 38] setlocal 0 .............................. x = x + 1
+  [ 40] getlocal 0 .............................. <x>
+  [ 42] pushint8 10 ............................. <10>
+  [ 45] lt ...................................... <x < 10>
+  [ 46] jmpifz [ 63] ............................ if x < 10 then / else
+  [ 49] pushcons 24 ............................. <"00">
+  [ 51] getlocal 0 .............................. <x>
+  [ 53] joinstr ................................. <"00" & x>
+  [ 54] pushcons 32 ............................. <"points">
+  [ 56] pushcons 40 ............................. <"master">
+  [ 58] put 22 .................................. put "00" & x into field "points" of castLib "master"
+  [ 60] jmp [ 74]
+  [ 63] pushcons 48 ............................. <"0">
+  [ 65] getlocal 0 .............................. <x>
+  [ 67] joinstr ................................. <"0" & x>
+  [ 68] pushcons 56 ............................. <"points">
+  [ 70] pushcons 64 ............................. <"master">
+  [ 72] put 22 .................................. put "0" & x into field "points" of castLib "master"
+  [ 74] ret
+end

@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"return2">
+  [  2] pusharglistnoret 1 ...................... <"return2">
+  [  4] extcall 5 ............................... go("return2")
+  [  6] ret
+end

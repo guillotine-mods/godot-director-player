@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 4 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 22 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"force2.aif">
+  [  9] joinstr ................................. <tlkpath & "force2.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "force2.aif">
+  [ 12] extcall 3 ............................... sound playFile 1, tlkpath & "force2.aif"
+  [ 14] pushsymb 4 .............................. <#playFile>
+  [ 16] pushint8 4 .............................. <4>
+  [ 19] getglobal 22 ............................ <tlkpath>
+  [ 21] pushcons 8 .............................. <"nigclif.aif">
+  [ 23] joinstr ................................. <tlkpath & "nigclif.aif">
+  [ 24] pusharglistnoret 3 ...................... <4, tlkpath & "nigclif.aif">
+  [ 26] extcall 3 ............................... sound playFile 4, tlkpath & "nigclif.aif"
+  [ 28] ret
+end

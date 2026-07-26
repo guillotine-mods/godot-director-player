@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 23 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 25 ............................ <soundspath>
+  [  7] pushcons 0 .............................. <"hezmons2.aif">
+  [  9] joinstr ................................. <soundspath & "hezmons2.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, soundspath & "hezmons2.aif">
+  [ 12] extcall 24 .............................. sound playFile 1, soundspath & "hezmons2.aif"
+  [ 14] ret
+end

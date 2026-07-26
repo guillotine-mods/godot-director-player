@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"strtgame">
+  [  2] pusharglistnoret 1 ...................... <"strtgame">
+  [  4] extcall 2 ............................... go("strtgame")
+  [  6] ret
+end

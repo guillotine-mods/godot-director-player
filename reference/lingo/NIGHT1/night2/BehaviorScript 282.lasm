@@ -1,0 +1,57 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"continue">
+  [  2] setlocal 0 .............................. x = "continue"
+  [  4] pushint8 1 .............................. <1>
+  [  6] setlocal 8
+  [  8] getlocal 8
+  [ 10] pushcons 8 .............................. <"objectsfield">
+  [ 12] pushcons 16 ............................. <"master">
+  [ 14] getfield ................................ <field("objectsfield", "master")>
+  [ 15] pushint8 4 .............................. <4>
+  [ 17] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 19] lteq
+  [ 20] jmpifz [ 80] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 23] pushzero ................................ <0>
+  [ 24] pushzero ................................ <0>
+  [ 25] pushzero ................................ <0>
+  [ 26] pushzero ................................ <0>
+  [ 27] pushzero ................................ <0>
+  [ 28] pushzero ................................ <0>
+  [ 29] getlocal 8 .............................. <i>
+  [ 31] pushzero ................................ <0>
+  [ 32] pushcons 24 ............................. <"objectsfield">
+  [ 34] pushcons 32 ............................. <"master">
+  [ 36] getfield ................................ <field("objectsfield", "master")>
+  [ 37] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 38] pushcons 40 ............................. <"empty">
+  [ 40] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 41] getlocal 0 .............................. <x>
+  [ 43] pushcons 48 ............................. <"continue">
+  [ 45] eq ...................................... <x = "continue">
+  [ 46] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 47] jmpifz [ 71] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 50] pushcons 56 ............................. <"plthat">
+  [ 52] pushzero ................................ <0>
+  [ 53] pushzero ................................ <0>
+  [ 54] pushzero ................................ <0>
+  [ 55] pushzero ................................ <0>
+  [ 56] pushzero ................................ <0>
+  [ 57] pushzero ................................ <0>
+  [ 58] getlocal 8 .............................. <i>
+  [ 60] pushzero ................................ <0>
+  [ 61] pushcons 64 ............................. <"objectsfield">
+  [ 63] pushcons 72 ............................. <"master">
+  [ 65] putchunk 22 ............................. put "plthat" into line i of field "objectsfield" of castLib "master"
+  [ 67] pushcons 80 ............................. <"stop">
+  [ 69] setlocal 0 .............................. x = "stop"
+  [ 71] pushint8 1
+  [ 73] getlocal 8
+  [ 75] add
+  [ 76] setlocal 8
+  [ 78] endrepeat [  8]
+  [ 80] pusharglistnoret 0 ...................... <>
+  [ 82] extcall 46 .............................. displayobject()
+  [ 84] pusharglistnoret 0 ...................... <>
+  [ 86] extcall 67 .............................. play done
+  [ 88] ret
+end

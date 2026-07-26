@@ -1,0 +1,13 @@
+on exitFrame
+  [  0] pushint16 2 ............................. <2>
+  [  3] pushint16 75 ............................ <75>
+  [  6] pushint16 1 ............................. <1>
+  [  9] set 4 ................................... set the volume of sound 2 to 75
+  [ 11] pushint16 1 ............................. <1>
+  [ 14] getmovieprop 80 ......................... <the moviePath>
+  [ 17] pushcons 0 .............................. <"endmovi4.dir">
+  [ 19] joinstr ................................. <the moviePath & "endmovi4.dir">
+  [ 20] pusharglistnoret 2 ...................... <1, the moviePath & "endmovi4.dir">
+  [ 22] extcall 68 .............................. go(1, the moviePath & "endmovi4.dir")
+  [ 25] ret
+end

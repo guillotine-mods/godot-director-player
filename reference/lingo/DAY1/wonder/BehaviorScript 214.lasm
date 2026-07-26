@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"fielddown">
+  [  2] pusharglistnoret 1 ...................... <"fielddown">
+  [  4] extcall 3 ............................... go("fielddown")
+  [  6] ret
+end

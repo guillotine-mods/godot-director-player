@@ -1,0 +1,154 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 70 ........................... <the clickOn>
+  [  5] pushint8 102 ............................ <102>
+  [  8] gt ...................................... <the clickOn > 102>
+  [  9] jmpifz [316] ............................ if the clickOn > 102 then
+  [ 12] pusharglist 0 ........................... <>
+  [ 14] thebuiltin 70 ........................... <the clickOn>
+  [ 17] pushint8 100 ............................ <100>
+  [ 20] ontospr ................................. <sprite the clickOn intersects 100>
+  [ 21] jmpifz [108] ............................ if sprite the clickOn intersects 100 then / else
+  [ 24] pushint8 100 ............................ <100>
+  [ 27] pushcons 0 .............................. <"piphead2">
+  [ 29] pushcons 8 .............................. <"master">
+  [ 31] pushint8 10 ............................. <10>
+  [ 34] get 9 ................................... <the number of member "piphead2" of castLib "master">
+  [ 36] pushint8 35 ............................. <35>
+  [ 39] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead2" of castLib "master"
+  [ 41] pusharglist 0 ........................... <>
+  [ 43] thebuiltin 70 ........................... <the clickOn>
+  [ 46] pushint8 35 ............................. <35>
+  [ 49] get 6 ................................... <the memberNum of sprite the clickOn>
+  [ 51] setlocal 0 .............................. x = the memberNum of sprite the clickOn
+  [ 53] getlocal 0 .............................. <x>
+  [ 55] pushcons 16 ............................. <"master">
+  [ 57] pusharglist 2 ........................... <x, "master">
+  [ 59] extcall 5 ............................... <member(x, "master")>
+  [ 61] getobjprop 6 ............................ <member(x, "master").name>
+  [ 63] setlocal 0 .............................. x = member(x, "master").name
+  [ 65] getglobal 37 ............................ <soundspath>
+  [ 68] setlocal 8 .............................. yui = soundspath
+  [ 70] pushcons 24 ............................. <"days">
+  [ 72] pusharglistnoret 1 ...................... <"days">
+  [ 74] extcall 37 .............................. soundspath("days")
+  [ 77] pushsymb 52 ............................. <#playFile>
+  [ 80] pushint8 1 .............................. <1>
+  [ 83] getglobal 37 ............................ <soundspath>
+  [ 86] pushcons 32 ............................. <"pi">
+  [ 88] getlocal 0 .............................. <x>
+  [ 90] joinstr ................................. <"pi" & x>
+  [ 91] pushcons 40 ............................. <".aif">
+  [ 93] joinstr ................................. <"pi" & x & ".aif">
+  [ 94] joinstr ................................. <soundspath & "pi" & x & ".aif">
+  [ 95] pusharglistnoret 3 ...................... <1, soundspath & "pi" & x & ".aif">
+  [ 97] extcall 53 .............................. sound playFile 1, soundspath & "pi" & x & ".aif"
+  [100] getlocal 8 .............................. <yui>
+  [102] setglobal 37 ............................ soundspath = yui
+  [105] jmp [269]
+  [108] pushcons 48 ............................. <"not">
+  [110] setlocal 16 ............................. r = "not"
+  [112] pushint8 18 ............................. <18>
+  [115] setlocal 24 ............................. i = 18
+  [117] pusharglist 0 ........................... <>
+  [119] thebuiltin 70 ........................... <the clickOn>
+  [122] pushint8 35 ............................. <35>
+  [125] ontospr ................................. <sprite the clickOn intersects 35>
+  [126] pushint8 35 ............................. <35>
+  [129] pusharglist 1 ........................... <35>
+  [131] extcall 12 .............................. <sprite(35)>
+  [133] getobjprop 13 ........................... <sprite(35).visible>
+  [135] pushint8 1 .............................. <1>
+  [138] eq ...................................... <sprite(35).visible = 1>
+  [139] and ..................................... <sprite the clickOn intersects 35 and (sprite(35).visible = 1)>
+  [140] jmpifz [200] ............................ if sprite the clickOn intersects 35 and (sprite(35).visible = 1) then / else
+  [143] pusharglist 0 ........................... <>
+  [145] thebuiltin 70 ........................... <the clickOn>
+  [148] getglobal 32 ............................ <objectxx>
+  [151] pushint8 13 ............................. <13>
+  [154] set 6 ................................... set the locH of sprite the clickOn to objectxx
+  [156] pusharglist 0 ........................... <>
+  [158] thebuiltin 70 ........................... <the clickOn>
+  [161] getglobal 33 ............................ <objectyy>
+  [164] pushint8 14 ............................. <14>
+  [167] set 6 ................................... set the locV of sprite the clickOn to objectyy
+  [169] pusharglistnoret 0 ...................... <>
+  [171] extcall 14 .............................. updateStage()
+  [173] pushsymb 52 ............................. <#playFile>
+  [176] pushint8 1 .............................. <1>
+  [179] getglobal 37 ............................ <soundspath>
+  [182] pushcons 56 ............................. <"fatnoobj.aif">
+  [184] joinstr ................................. <soundspath & "fatnoobj.aif">
+  [185] pusharglistnoret 3 ...................... <1, soundspath & "fatnoobj.aif">
+  [187] extcall 53 .............................. sound playFile 1, soundspath & "fatnoobj.aif"
+  [190] pushcons 64 ............................. <"fatspkroom3">
+  [192] pusharglistnoret 1 ...................... <"fatspkroom3">
+  [194] extcall 68 .............................. play frame "fatspkroom3"
+  [197] jmp [230]
+  [200] pusharglist 0 ........................... <>
+  [202] thebuiltin 70 ........................... <the clickOn>
+  [205] pushint8 19 ............................. <19>
+  [208] ontospr ................................. <sprite the clickOn intersects 19>
+  [209] pushint8 19 ............................. <19>
+  [212] pusharglist 1 ........................... <19>
+  [214] extcall 12 .............................. <sprite(19)>
+  [216] getobjprop 13 ........................... <sprite(19).visible>
+  [218] pushint8 1 .............................. <1>
+  [221] eq ...................................... <sprite(19).visible = 1>
+  [222] and ..................................... <sprite the clickOn intersects 19 and (sprite(19).visible = 1)>
+  [223] jmpifz [230] ............................ if sprite the clickOn intersects 19 and (sprite(19).visible = 1) then
+  [226] pushcons 72 ............................. <"yes">
+  [228] setlocal 16 ............................. r = "yes"
+  [230] getlocal 16 ............................. <r>
+  [232] pushcons 80 ............................. <"yes">
+  [234] eq ...................................... <r = "yes">
+  [235] jmpifz [269] ............................ if r = "yes" then
+  [238] pusharglist 0 ........................... <>
+  [240] thebuiltin 70 ........................... <the clickOn>
+  [243] pushint8 35 ............................. <35>
+  [246] get 6 ................................... <the memberNum of sprite the clickOn>
+  [248] setlocal 0 .............................. x = the memberNum of sprite the clickOn
+  [250] getlocal 0 .............................. <x>
+  [252] pushcons 88 ............................. <"master">
+  [254] pusharglist 2 ........................... <x, "master">
+  [256] extcall 5 ............................... <member(x, "master")>
+  [258] getobjprop 6 ............................ <member(x, "master").name>
+  [260] setlocal 0 .............................. x = member(x, "master").name
+  [262] getlocal 0 .............................. <x>
+  [264] pusharglistnoret 1 ...................... <x>
+  [266] extcall 47 .............................. objecttalktime(x)
+  [269] pusharglist 0 ........................... <>
+  [271] thebuiltin 70 ........................... <the clickOn>
+  [274] getglobal 32 ............................ <objectxx>
+  [277] pushint8 13 ............................. <13>
+  [280] set 6 ................................... set the locH of sprite the clickOn to objectxx
+  [282] pusharglist 0 ........................... <>
+  [284] thebuiltin 70 ........................... <the clickOn>
+  [287] getglobal 33 ............................ <objectyy>
+  [290] pushint8 14 ............................. <14>
+  [293] set 6 ................................... set the locV of sprite the clickOn to objectyy
+  [295] pusharglistnoret 0 ...................... <>
+  [297] extcall 14 .............................. updateStage()
+  [299] pushint8 100 ............................ <100>
+  [302] pushcons 96 ............................. <"piphead1">
+  [304] pushcons 104 ............................ <"master">
+  [306] pushint8 10 ............................. <10>
+  [309] get 9 ................................... <the number of member "piphead1" of castLib "master">
+  [311] pushint8 35 ............................. <35>
+  [314] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead1" of castLib "master"
+  [316] ret
+end
+
+on mouseDown
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 70 ........................... <the clickOn>
+  [  5] pushint8 13 ............................. <13>
+  [  8] get 6 ................................... <the locH of sprite the clickOn>
+  [ 10] setglobal 32 ............................ objectxx = the locH of sprite the clickOn
+  [ 13] pusharglist 0 ........................... <>
+  [ 15] thebuiltin 70 ........................... <the clickOn>
+  [ 18] pushint8 14 ............................. <14>
+  [ 21] get 6 ................................... <the locV of sprite the clickOn>
+  [ 23] setglobal 33 ............................ objectyy = the locV of sprite the clickOn
+  [ 26] ret
+end

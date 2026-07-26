@@ -1,0 +1,59 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"clickoncharacter">
+  [  2] pushcons 8 .............................. <"master">
+  [  4] getfield ................................ <field("clickoncharacter", "master")>
+  [  5] setglobal 24 ............................ saveB = field("clickoncharacter", "master")
+  [  7] pushcons 16 ............................. <"jokefield">
+  [  9] pushcons 24 ............................. <"master">
+  [ 11] getfield ................................ <field("jokefield", "master")>
+  [ 12] setglobal 59 ............................ saveG = field("jokefield", "master")
+  [ 15] pushcons 32 ............................. <"points">
+  [ 17] pushcons 40 ............................. <"master">
+  [ 19] getfield ................................ <field("points", "master")>
+  [ 20] setglobal 11 ............................ saveF = field("points", "master")
+  [ 22] pushcons 48 ............................. <"plane">
+  [ 24] pushcons 56 ............................. <"master">
+  [ 26] getfield ................................ <field("plane", "master")>
+  [ 27] setglobal 10 ............................ saveE = field("plane", "master")
+  [ 29] pushcons 64 ............................. <"shellfield">
+  [ 31] pushcons 72 ............................. <"master">
+  [ 33] getfield ................................ <field("shellfield", "master")>
+  [ 34] setglobal 9 ............................. saveD = field("shellfield", "master")
+  [ 36] pushcons 80 ............................. <"objectsfield">
+  [ 38] pushcons 88 ............................. <"master">
+  [ 40] getfield ................................ <field("objectsfield", "master")>
+  [ 41] setglobal 2 ............................. saveC = field("objectsfield", "master")
+  [ 43] pushcons 96 ............................. <"Dprocess">
+  [ 45] pushcons 104 ............................ <"master">
+  [ 47] getfield ................................ <field("Dprocess", "master")>
+  [ 48] setglobal 67 ............................ saveH = field("Dprocess", "master")
+  [ 51] getglobal 79 ............................ <egozh>
+  [ 54] pushcons 112 ............................ <",">
+  [ 56] joinstr ................................. <egozh & ",">
+  [ 57] getglobal 80 ............................ <egozv>
+  [ 60] joinstr ................................. <egozh & "," & egozv>
+  [ 61] pushcons 120 ............................ <",">
+  [ 63] joinstr ................................. <egozh & "," & egozv & ",">
+  [ 64] getglobal 73 ............................ <syz>
+  [ 67] joinstr ................................. <egozh & "," & egozv & "," & syz>
+  [ 68] setglobal 78 ............................ savei = egozh & "," & egozv & "," & syz
+  [ 71] getmovieprop 32 ......................... <the stage>
+  [ 74] starttell ............................... tell the stage
+  [ 75] getmovieprop 60 ......................... <the movieName>
+  [ 78] setglobal 86 ............................ DorN = the movieName
+  [ 81] endtell
+  [ 82] getmovieprop 32 ......................... <the stage>
+  [ 85] starttell ............................... tell the stage
+  [ 86] pushsymb 81 ............................. <#stop>
+  [ 89] pushint8 2 .............................. <2>
+  [ 92] pusharglistnoret 2 ...................... <2>
+  [ 94] tellcall 27 ............................. sound stop 2
+  [ 96] endtell
+  [ 97] pushcons 128 ............................ <"fillnames">
+  [ 99] getglobal 3 ............................. <savepath>
+  [101] pushcons 136 ............................ <"hezsave.dir">
+  [103] joinstr ................................. <savepath & "hezsave.dir">
+  [104] pusharglistnoret 2 ...................... <"fillnames", savepath & "hezsave.dir">
+  [106] extcall 4 ............................... go("fillnames", savepath & "hezsave.dir")
+  [108] ret
+end

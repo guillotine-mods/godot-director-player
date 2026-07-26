@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"000">
+  [  2] setglobal 1 ............................. nextroomdata = "000"
+  [  4] pusharglist 0 ........................... <>
+  [  6] thebuiltin 2 ............................ <the mouseV>
+  [  8] setglobal 3 ............................. egozv = the mouseV
+  [ 10] pusharglist 0 ........................... <>
+  [ 12] thebuiltin 4 ............................ <the mouseH>
+  [ 14] setglobal 5 ............................. egozh = the mouseH
+  [ 16] pusharglistnoret 0 ...................... <>
+  [ 18] extcall 40 .............................. walkonby3()
+  [ 21] ret
+end

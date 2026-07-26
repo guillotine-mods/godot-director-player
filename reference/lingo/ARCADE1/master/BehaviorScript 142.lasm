@@ -1,0 +1,19 @@
+on exitFrame
+  [  0] getglobal 53 ............................ <afganicnt>
+  [  3] pusharglist 1 ........................... <afganicnt>
+  [  5] extcall 8 ............................... <value(afganicnt)>
+  [  7] pushint8 5 .............................. <5>
+  [ 10] add ..................................... <value(afganicnt) + 5>
+  [ 11] setglobal 53 ............................ afganicnt = value(afganicnt) + 5
+  [ 14] getglobal 53 ............................ <afganicnt>
+  [ 17] pusharglist 1 ........................... <afganicnt>
+  [ 19] extcall 8 ............................... <value(afganicnt)>
+  [ 21] pushint8 72 ............................. <72>
+  [ 24] gt ...................................... <value(afganicnt) > 72>
+  [ 25] jmpifz [ 34] ............................ if value(afganicnt) > 72 then
+  [ 28] pushint8 72 ............................. <72>
+  [ 31] setglobal 53 ............................ afganicnt = 72
+  [ 34] pusharglistnoret 0 ...................... <>
+  [ 36] extcall 33 .............................. pause()
+  [ 39] ret
+end

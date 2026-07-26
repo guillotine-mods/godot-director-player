@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 3 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 2 ............................. <tlkpath>
+  [  7] pushcons 0 .............................. <"hez5.aif">
+  [  9] joinstr ................................. <tlkpath & "hez5.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "hez5.aif">
+  [ 12] extcall 4 ............................... sound playFile 1, tlkpath & "hez5.aif"
+  [ 14] pushcons 8 .............................. <"choose1b">
+  [ 16] pusharglistnoret 1 ...................... <"choose1b">
+  [ 18] extcall 8 ............................... go("choose1b")
+  [ 20] ret
+end

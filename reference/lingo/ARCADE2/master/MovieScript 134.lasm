@@ -1,0 +1,200 @@
+on zigiscript
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 8 ............................ <the keyCode>
+  [  4] pushint8 126 ............................ <126>
+  [  6] eq ...................................... <the keyCode = 126>
+  [  7] pusharglist 0 ........................... <>
+  [  9] thebuiltin 8 ............................ <the keyCode>
+  [ 11] pushint8 13 ............................. <13>
+  [ 13] eq ...................................... <the keyCode = 13>
+  [ 14] or ...................................... <(the keyCode = 126) or (the keyCode = 13)>
+  [ 15] jmpifz [ 56] ............................ if (the keyCode = 126) or (the keyCode = 13) then / else
+  [ 18] pushint8 5 .............................. <5>
+  [ 20] setglobal 9 ............................. zigi = 5
+  [ 22] pushint8 7 .............................. <7>
+  [ 24] pushcons 0 .............................. <"action1">
+  [ 26] pushint8 1 .............................. <1>
+  [ 28] pushint8 10 ............................. <10>
+  [ 30] get 9 ................................... <the number of member "action1" of castLib 1>
+  [ 32] pushint8 35 ............................. <35>
+  [ 34] set 6 ................................... set the memberNum of sprite 7 to the number of member "action1" of castLib 1
+  [ 36] pushsymb 10 ............................. <#playFile>
+  [ 38] pushint8 1 .............................. <1>
+  [ 40] getglobal 12 ............................ <effectspath>
+  [ 42] pushcons 8 .............................. <"jump.aif">
+  [ 44] joinstr ................................. <effectspath & "jump.aif">
+  [ 45] pusharglistnoret 3 ...................... <1, effectspath & "jump.aif">
+  [ 47] extcall 11 .............................. sound playFile 1, effectspath & "jump.aif"
+  [ 49] pusharglistnoret 0 ...................... <>
+  [ 51] extcall 13 .............................. updateStage()
+  [ 53] jmp [165]
+  [ 56] pusharglist 0 ........................... <>
+  [ 58] thebuiltin 8 ............................ <the keyCode>
+  [ 60] pushint8 124 ............................ <124>
+  [ 62] eq ...................................... <the keyCode = 124>
+  [ 63] pusharglist 0 ........................... <>
+  [ 65] thebuiltin 8 ............................ <the keyCode>
+  [ 67] pushint8 14 ............................. <14>
+  [ 69] eq ...................................... <the keyCode = 14>
+  [ 70] or ...................................... <(the keyCode = 124) or (the keyCode = 14)>
+  [ 71] jmpifz [112] ............................ if (the keyCode = 124) or (the keyCode = 14) then / else
+  [ 74] pushint8 4 .............................. <4>
+  [ 76] setglobal 9 ............................. zigi = 4
+  [ 78] pushint8 7 .............................. <7>
+  [ 80] pushcons 16 ............................. <"action2">
+  [ 82] pushint8 1 .............................. <1>
+  [ 84] pushint8 10 ............................. <10>
+  [ 86] get 9 ................................... <the number of member "action2" of castLib 1>
+  [ 88] pushint8 35 ............................. <35>
+  [ 90] set 6 ................................... set the memberNum of sprite 7 to the number of member "action2" of castLib 1
+  [ 92] pushsymb 10 ............................. <#playFile>
+  [ 94] pushint8 1 .............................. <1>
+  [ 96] getglobal 12 ............................ <effectspath>
+  [ 98] pushcons 24 ............................. <"kick.aif">
+  [100] joinstr ................................. <effectspath & "kick.aif">
+  [101] pusharglistnoret 3 ...................... <1, effectspath & "kick.aif">
+  [103] extcall 11 .............................. sound playFile 1, effectspath & "kick.aif"
+  [105] pusharglistnoret 0 ...................... <>
+  [107] extcall 13 .............................. updateStage()
+  [109] jmp [165]
+  [112] pusharglist 0 ........................... <>
+  [114] thebuiltin 8 ............................ <the keyCode>
+  [116] pushint8 125 ............................ <125>
+  [118] eq ...................................... <the keyCode = 125>
+  [119] pusharglist 0 ........................... <>
+  [121] thebuiltin 8 ............................ <the keyCode>
+  [123] pushint8 2 .............................. <2>
+  [125] eq ...................................... <the keyCode = 2>
+  [126] or ...................................... <(the keyCode = 125) or (the keyCode = 2)>
+  [127] jmpifz [165] ............................ if (the keyCode = 125) or (the keyCode = 2) then
+  [130] pushint8 4 .............................. <4>
+  [132] setglobal 9 ............................. zigi = 4
+  [134] pushint8 7 .............................. <7>
+  [136] pushcons 32 ............................. <"action3">
+  [138] pushint8 1 .............................. <1>
+  [140] pushint8 10 ............................. <10>
+  [142] get 9 ................................... <the number of member "action3" of castLib 1>
+  [144] pushint8 35 ............................. <35>
+  [146] set 6 ................................... set the memberNum of sprite 7 to the number of member "action3" of castLib 1
+  [148] pushsymb 10 ............................. <#playFile>
+  [150] pushint8 1 .............................. <1>
+  [152] getglobal 12 ............................ <effectspath>
+  [154] pushcons 40 ............................. <"box.aif">
+  [156] joinstr ................................. <effectspath & "box.aif">
+  [157] pusharglistnoret 3 ...................... <1, effectspath & "box.aif">
+  [159] extcall 11 .............................. sound playFile 1, effectspath & "box.aif"
+  [161] pusharglistnoret 0 ...................... <>
+  [163] extcall 13 .............................. updateStage()
+  [165] ret
+end
+
+on gun
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 8 ............................ <the keyCode>
+  [  4] pushint8 126 ............................ <126>
+  [  6] eq ...................................... <the keyCode = 126>
+  [  7] pusharglist 0 ........................... <>
+  [  9] thebuiltin 8 ............................ <the keyCode>
+  [ 11] pushint8 13 ............................. <13>
+  [ 13] eq ...................................... <the keyCode = 13>
+  [ 14] or ...................................... <(the keyCode = 126) or (the keyCode = 13)>
+  [ 15] jmpifz [104] ............................ if (the keyCode = 126) or (the keyCode = 13) then / else
+  [ 18] pushint8 6 .............................. <6>
+  [ 20] setglobal 9 ............................. zigi = 6
+  [ 22] pushint8 7 .............................. <7>
+  [ 24] pushint8 35 ............................. <35>
+  [ 26] get 6 ................................... <the memberNum of sprite 7>
+  [ 28] pushcons 48 ............................. <"gunup">
+  [ 30] pushint8 1 .............................. <1>
+  [ 32] pushint8 10 ............................. <10>
+  [ 34] get 9 ................................... <the number of member "gunup" of castLib 1>
+  [ 36] nteq .................................... <the memberNum of sprite 7 <> the number of member "gunup" of castLib 1>
+  [ 37] jmpifz [ 70] ............................ if the memberNum of sprite 7 <> the number of member "gunup" of castLib 1 then
+  [ 40] pushint8 7 .............................. <7>
+  [ 42] pushint8 7 .............................. <7>
+  [ 44] pushint8 13 ............................. <13>
+  [ 46] get 6 ................................... <the locH of sprite 7>
+  [ 48] pushint8 33 ............................. <33>
+  [ 50] add ..................................... <the locH of sprite 7 + 33>
+  [ 51] pushint8 13 ............................. <13>
+  [ 53] set 6 ................................... set the locH of sprite 7 to the locH of sprite 7 + 33
+  [ 55] pushint8 7 .............................. <7>
+  [ 57] pushint8 7 .............................. <7>
+  [ 59] pushint8 14 ............................. <14>
+  [ 61] get 6 ................................... <the locV of sprite 7>
+  [ 63] pushint8 12 ............................. <12>
+  [ 65] add ..................................... <the locV of sprite 7 + 12>
+  [ 66] pushint8 14 ............................. <14>
+  [ 68] set 6 ................................... set the locV of sprite 7 to the locV of sprite 7 + 12
+  [ 70] pushint8 7 .............................. <7>
+  [ 72] pushcons 56 ............................. <"gunup">
+  [ 74] pushint8 1 .............................. <1>
+  [ 76] pushint8 10 ............................. <10>
+  [ 78] get 9 ................................... <the number of member "gunup" of castLib 1>
+  [ 80] pushint8 35 ............................. <35>
+  [ 82] set 6 ................................... set the memberNum of sprite 7 to the number of member "gunup" of castLib 1
+  [ 84] pushsymb 10 ............................. <#playFile>
+  [ 86] pushint8 1 .............................. <1>
+  [ 88] getglobal 12 ............................ <effectspath>
+  [ 90] pushcons 64 ............................. <"gunup.aif">
+  [ 92] joinstr ................................. <effectspath & "gunup.aif">
+  [ 93] pusharglistnoret 3 ...................... <1, effectspath & "gunup.aif">
+  [ 95] extcall 11 .............................. sound playFile 1, effectspath & "gunup.aif"
+  [ 97] pusharglistnoret 0 ...................... <>
+  [ 99] extcall 13 .............................. updateStage()
+  [101] jmp [205]
+  [104] pusharglist 0 ........................... <>
+  [106] thebuiltin 8 ............................ <the keyCode>
+  [108] pushint8 124 ............................ <124>
+  [110] eq ...................................... <the keyCode = 124>
+  [111] pusharglist 0 ........................... <>
+  [113] thebuiltin 8 ............................ <the keyCode>
+  [115] pushint8 14 ............................. <14>
+  [117] eq ...................................... <the keyCode = 14>
+  [118] or ...................................... <(the keyCode = 124) or (the keyCode = 14)>
+  [119] jmpifz [205] ............................ if (the keyCode = 124) or (the keyCode = 14) then
+  [122] pushint8 4 .............................. <4>
+  [124] setglobal 9 ............................. zigi = 4
+  [126] pushint8 7 .............................. <7>
+  [128] pushint8 35 ............................. <35>
+  [130] get 6 ................................... <the memberNum of sprite 7>
+  [132] pushcons 72 ............................. <"gunright">
+  [134] pushint8 1 .............................. <1>
+  [136] pushint8 10 ............................. <10>
+  [138] get 9 ................................... <the number of member "gunright" of castLib 1>
+  [140] nteq .................................... <the memberNum of sprite 7 <> the number of member "gunright" of castLib 1>
+  [141] jmpifz [174] ............................ if the memberNum of sprite 7 <> the number of member "gunright" of castLib 1 then
+  [144] pushint8 7 .............................. <7>
+  [146] pushint8 7 .............................. <7>
+  [148] pushint8 13 ............................. <13>
+  [150] get 6 ................................... <the locH of sprite 7>
+  [152] pushint8 54 ............................. <54>
+  [154] add ..................................... <the locH of sprite 7 + 54>
+  [155] pushint8 13 ............................. <13>
+  [157] set 6 ................................... set the locH of sprite 7 to the locH of sprite 7 + 54
+  [159] pushint8 7 .............................. <7>
+  [161] pushint8 7 .............................. <7>
+  [163] pushint8 14 ............................. <14>
+  [165] get 6 ................................... <the locV of sprite 7>
+  [167] pushint8 37 ............................. <37>
+  [169] add ..................................... <the locV of sprite 7 + 37>
+  [170] pushint8 14 ............................. <14>
+  [172] set 6 ................................... set the locV of sprite 7 to the locV of sprite 7 + 37
+  [174] pushint8 7 .............................. <7>
+  [176] pushcons 80 ............................. <"gunright">
+  [178] pushint8 1 .............................. <1>
+  [180] pushint8 10 ............................. <10>
+  [182] get 9 ................................... <the number of member "gunright" of castLib 1>
+  [184] pushint8 35 ............................. <35>
+  [186] set 6 ................................... set the memberNum of sprite 7 to the number of member "gunright" of castLib 1
+  [188] pushsymb 10 ............................. <#playFile>
+  [190] pushint8 1 .............................. <1>
+  [192] getglobal 12 ............................ <effectspath>
+  [194] pushcons 88 ............................. <"gunright.aif">
+  [196] joinstr ................................. <effectspath & "gunright.aif">
+  [197] pusharglistnoret 3 ...................... <1, effectspath & "gunright.aif">
+  [199] extcall 11 .............................. sound playFile 1, effectspath & "gunright.aif"
+  [201] pusharglistnoret 0 ...................... <>
+  [203] extcall 13 .............................. updateStage()
+  [205] ret
+end

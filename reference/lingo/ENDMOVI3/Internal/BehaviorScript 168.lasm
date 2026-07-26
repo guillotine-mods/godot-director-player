@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 6 .............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 8 ............................. <tlkpath>
+  [  7] pushcons 0 .............................. <"rin5.aif">
+  [  9] joinstr ................................. <tlkpath & "rin5.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "rin5.aif">
+  [ 12] extcall 7 ............................... sound playFile 1, tlkpath & "rin5.aif"
+  [ 14] pushsymb 6 .............................. <#playFile>
+  [ 16] pushint8 2 .............................. <2>
+  [ 19] getglobal 23 ............................ <effectspath>
+  [ 21] pushcons 8 .............................. <"night2.aif">
+  [ 23] joinstr ................................. <effectspath & "night2.aif">
+  [ 24] pusharglistnoret 3 ...................... <2, effectspath & "night2.aif">
+  [ 26] extcall 7 ............................... sound playFile 2, effectspath & "night2.aif"
+  [ 28] ret
+end

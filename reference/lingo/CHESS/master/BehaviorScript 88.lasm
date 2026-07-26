@@ -1,0 +1,18 @@
+on exitFrame
+  [  0] pushint8 8 .............................. <8>
+  [  2] setlocal 0
+  [  4] getlocal 0
+  [  6] pushint8 15 ............................. <15>
+  [  8] lteq
+  [  9] jmpifz [ 28] ............................ repeat with i = 8 to 15
+  [ 12] getlocal 0 .............................. <i>
+  [ 14] pushzero ................................ <0>
+  [ 15] pusharglistnoret 2 ...................... <i, 0>
+  [ 17] extcall 14 .............................. puppetSprite(i, 0)
+  [ 19] pushint8 1
+  [ 21] getlocal 0
+  [ 23] add
+  [ 24] setlocal 0
+  [ 26] endrepeat [  4]
+  [ 28] ret
+end

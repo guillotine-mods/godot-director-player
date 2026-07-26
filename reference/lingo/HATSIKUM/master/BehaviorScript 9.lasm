@@ -1,0 +1,28 @@
+on exitFrame
+  [  0] pushsymb 12 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 14 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"hat56.aif">
+  [  9] joinstr ................................. <tlkpath & "hat56.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "hat56.aif">
+  [ 12] extcall 13 .............................. sound playFile 1, tlkpath & "hat56.aif"
+  [ 14] pushzero ................................ <0>
+  [ 15] setglobal 17 ............................ optcount = 0
+  [ 17] pushint8 1 .............................. <1>
+  [ 20] setlocal 0
+  [ 22] getlocal 0
+  [ 24] pushint8 40 ............................. <40>
+  [ 27] lteq
+  [ 28] jmpifz [ 52] ............................ repeat with i = 1 to 40
+  [ 31] getlocal 0 .............................. <i>
+  [ 33] pusharglist 1 ........................... <i>
+  [ 35] extcall 27 .............................. <sprite(i)>
+  [ 37] pushint8 1 .............................. <1>
+  [ 40] setobjprop 28 ........................... sprite(i).visible = 1
+  [ 42] pushint8 1
+  [ 45] getlocal 0
+  [ 47] add
+  [ 48] setlocal 0
+  [ 50] endrepeat [ 22]
+  [ 52] ret
+end

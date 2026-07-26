@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 52 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 37 ............................ <soundspath>
+  [  9] pushcons 0 .............................. <"fatbath.aif">
+  [ 11] joinstr ................................. <soundspath & "fatbath.aif">
+  [ 12] pusharglistnoret 3 ...................... <1, soundspath & "fatbath.aif">
+  [ 14] extcall 53 .............................. sound playFile 1, soundspath & "fatbath.aif"
+  [ 17] pushcons 8 .............................. <"fatspkbath">
+  [ 19] pusharglistnoret 1 ...................... <"fatspkbath">
+  [ 21] extcall 68 .............................. play frame "fatspkbath"
+  [ 24] ret
+end

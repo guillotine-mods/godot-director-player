@@ -1,0 +1,57 @@
+on exitFrame
+  [  0] pushint8 7 .............................. <7>
+  [  2] setlocal 0
+  [  4] getlocal 0
+  [  6] pushint8 49 ............................. <49>
+  [  8] lteq
+  [  9] jmpifz [ 28] ............................ repeat with i = 7 to 49
+  [ 12] getlocal 0 .............................. <i>
+  [ 14] pushzero ................................ <0>
+  [ 15] pushint8 25 ............................. <25>
+  [ 17] set 6 ................................... set the visible of sprite i to 0
+  [ 19] pushint8 1
+  [ 21] getlocal 0
+  [ 23] add
+  [ 24] setlocal 0
+  [ 26] endrepeat [  4]
+  [ 28] pushint8 4 .............................. <4>
+  [ 30] pushcons 0 .............................. <"cc1">
+  [ 32] pusharglist 1 ........................... <"cc1">
+  [ 34] extcall 1 ............................... <member("cc1")>
+  [ 36] getobjprop 2 ............................ <member("cc1").memberNum>
+  [ 38] pushcons 8 .............................. <"cc1b">
+  [ 40] pusharglist 1 ........................... <"cc1b">
+  [ 42] extcall 1 ............................... <member("cc1b")>
+  [ 44] getobjprop 2 ............................ <member("cc1b").memberNum>
+  [ 46] pusharglist 2 ........................... <[member("cc1").memberNum, member("cc1b").memberNum]>
+  [ 48] pushlist ................................ <[member("cc1").memberNum, member("cc1b").memberNum]>
+  [ 49] pushint8 6 .............................. <6>
+  [ 51] set 6 ................................... set the cursor of sprite 4 to [member("cc1").memberNum, member("cc1b").memberNum]
+  [ 53] pushint8 5 .............................. <5>
+  [ 55] pushcons 16 ............................. <"cc2">
+  [ 57] pusharglist 1 ........................... <"cc2">
+  [ 59] extcall 1 ............................... <member("cc2")>
+  [ 61] getobjprop 2 ............................ <member("cc2").memberNum>
+  [ 63] pushcons 24 ............................. <"cc2b">
+  [ 65] pusharglist 1 ........................... <"cc2b">
+  [ 67] extcall 1 ............................... <member("cc2b")>
+  [ 69] getobjprop 2 ............................ <member("cc2b").memberNum>
+  [ 71] pusharglist 2 ........................... <[member("cc2").memberNum, member("cc2b").memberNum]>
+  [ 73] pushlist ................................ <[member("cc2").memberNum, member("cc2b").memberNum]>
+  [ 74] pushint8 6 .............................. <6>
+  [ 76] set 6 ................................... set the cursor of sprite 5 to [member("cc2").memberNum, member("cc2b").memberNum]
+  [ 78] pushint8 6 .............................. <6>
+  [ 80] pushcons 32 ............................. <"cc3">
+  [ 82] pusharglist 1 ........................... <"cc3">
+  [ 84] extcall 1 ............................... <member("cc3")>
+  [ 86] getobjprop 2 ............................ <member("cc3").memberNum>
+  [ 88] pushcons 40 ............................. <"cc3b">
+  [ 90] pusharglist 1 ........................... <"cc3b">
+  [ 92] extcall 1 ............................... <member("cc3b")>
+  [ 94] getobjprop 2 ............................ <member("cc3b").memberNum>
+  [ 96] pusharglist 2 ........................... <[member("cc3").memberNum, member("cc3b").memberNum]>
+  [ 98] pushlist ................................ <[member("cc3").memberNum, member("cc3b").memberNum]>
+  [ 99] pushint8 6 .............................. <6>
+  [101] set 6 ................................... set the cursor of sprite 6 to [member("cc3").memberNum, member("cc3b").memberNum]
+  [103] ret
+end

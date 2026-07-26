@@ -1,0 +1,7 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"blame">
+  [  2] pushcons 8 .............................. <"endmovi4.dir">
+  [  4] pusharglistnoret 2 ...................... <"blame", "endmovi4.dir">
+  [  6] extcall 12 .............................. go("blame", "endmovi4.dir")
+  [  8] ret
+end

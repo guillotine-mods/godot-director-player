@@ -1,0 +1,22 @@
+on exitFrame
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 20 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"trowmon">
+  [  8] pushint8 6 .............................. <6>
+  [ 10] pusharglist 1 ........................... <6>
+  [ 12] extcall 44 .............................. <random(6)>
+  [ 14] joinstr ................................. <"trowmon" & random(6)>
+  [ 15] pushcons 8 .............................. <".aif">
+  [ 17] joinstr ................................. <"trowmon" & random(6) & ".aif">
+  [ 18] joinstr ................................. <soundspath & "trowmon" & random(6) & ".aif">
+  [ 19] pusharglistnoret 3 ...................... <1, soundspath & "trowmon" & random(6) & ".aif">
+  [ 21] extcall 43 .............................. sound playFile 1, soundspath & "trowmon" & random(6) & ".aif"
+  [ 23] pushcons 16 ............................. <"comon">
+  [ 25] pusharglistnoret 1 ...................... <"comon">
+  [ 27] extcall 48 .............................. play frame "comon"
+  [ 29] pushcons 24 ............................. <"throw">
+  [ 31] pusharglistnoret 1 ...................... <"throw">
+  [ 33] extcall 3 ............................... go("throw")
+  [ 35] ret
+end

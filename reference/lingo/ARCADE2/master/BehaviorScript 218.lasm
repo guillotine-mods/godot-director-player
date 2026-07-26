@@ -1,0 +1,19 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <EMPTY>
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to EMPTY
+  [  7] pushsymb 10 ............................. <#playFile>
+  [  9] pushint8 1 .............................. <1>
+  [ 12] getglobal 15 ............................ <soundspath>
+  [ 14] pushcons 8 .............................. <"zigover">
+  [ 16] pushint8 5 .............................. <5>
+  [ 19] pusharglist 1 ........................... <5>
+  [ 21] extcall 20 .............................. <random(5)>
+  [ 23] joinstr ................................. <"zigover" & random(5)>
+  [ 24] pushcons 16 ............................. <".aif">
+  [ 26] joinstr ................................. <"zigover" & random(5) & ".aif">
+  [ 27] joinstr ................................. <soundspath & "zigover" & random(5) & ".aif">
+  [ 28] pusharglistnoret 3 ...................... <1, soundspath & "zigover" & random(5) & ".aif">
+  [ 30] extcall 11 .............................. sound playFile 1, soundspath & "zigover" & random(5) & ".aif"
+  [ 32] ret
+end

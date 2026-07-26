@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 1 .............................. <#playFile>
+  [  2] pushint8 2 .............................. <2>
+  [  5] getglobal 31 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"metlhit2.aif">
+  [  9] joinstr ................................. <effectspath & "metlhit2.aif">
+  [ 10] pusharglistnoret 3 ...................... <2, effectspath & "metlhit2.aif">
+  [ 12] extcall 2 ............................... sound playFile 2, effectspath & "metlhit2.aif"
+  [ 14] ret
+end

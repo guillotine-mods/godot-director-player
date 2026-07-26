@@ -1,0 +1,8 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 3 ............................. usfultalking = 1
+  [  5] pushcons 0 .............................. <"rinclicktalk">
+  [  7] pusharglistnoret 1 ...................... <"rinclicktalk">
+  [  9] extcall 4 ............................... go("rinclicktalk")
+  [ 11] ret
+end

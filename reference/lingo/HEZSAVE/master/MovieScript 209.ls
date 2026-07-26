@@ -1,0 +1,3 @@
+on idle
+  dontPassEvent()
+end

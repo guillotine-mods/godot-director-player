@@ -1,0 +1,49 @@
+on exitFrame
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 12 ........................... <the mouseDown>
+  [  4] jmpifz [ 89] ............................ if the mouseDown then
+  [  7] pushint8 8 .............................. <8>
+  [  9] setlocal 0
+  [ 11] getlocal 0
+  [ 13] pushint8 15 ............................. <15>
+  [ 15] lteq
+  [ 16] jmpifz [ 36] ............................ repeat with i = 8 to 15
+  [ 19] getlocal 0 .............................. <i>
+  [ 21] pushint8 1 .............................. <1>
+  [ 23] pusharglistnoret 2 ...................... <i, 1>
+  [ 25] extcall 14 .............................. puppetSprite(i, 1)
+  [ 27] pushint8 1
+  [ 29] getlocal 0
+  [ 31] add
+  [ 32] setlocal 0
+  [ 34] endrepeat [ 11]
+  [ 36] pushsymb 8 .............................. <#playFile>
+  [ 38] pushint8 1 .............................. <1>
+  [ 40] getglobal 10 ............................ <soundspath>
+  [ 42] pushcons 0 .............................. <"art">
+  [ 44] pushint8 8 .............................. <8>
+  [ 46] pushint8 35 ............................. <35>
+  [ 48] get 6 ................................... <the memberNum of sprite 8>
+  [ 50] pusharglist 1 ........................... <the memberNum of sprite 8>
+  [ 52] extcall 1 ............................... <member(the memberNum of sprite 8)>
+  [ 54] getobjprop 13 ........................... <member(the memberNum of sprite 8).name>
+  [ 56] joinstr ................................. <"art" & member(the memberNum of sprite 8).name>
+  [ 57] pushcons 8 .............................. <".aif">
+  [ 59] joinstr ................................. <"art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 60] joinstr ................................. <soundspath & "art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 61] pusharglistnoret 3 ...................... <1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 63] extcall 9 ............................... sound playFile 1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif"
+  [ 65] pushint8 8 .............................. <8>
+  [ 67] pushint8 35 ............................. <35>
+  [ 69] get 6 ................................... <the memberNum of sprite 8>
+  [ 71] pusharglist 1 ........................... <the memberNum of sprite 8>
+  [ 73] extcall 1 ............................... <member(the memberNum of sprite 8)>
+  [ 75] getobjprop 13 ........................... <member(the memberNum of sprite 8).name>
+  [ 77] setglobal 17 ............................ ches2 = member(the memberNum of sprite 8).name
+  [ 79] pushint8 1 .............................. <1>
+  [ 81] pusharglist 1 ........................... <1>
+  [ 83] extcall 11 .............................. <marker(1)>
+  [ 85] pusharglistnoret 1 ...................... <marker(1)>
+  [ 87] extcall 6 ............................... go(marker(1))
+  [ 89] ret
+end
