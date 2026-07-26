@@ -4,6 +4,7 @@ signal close_requested
 
 @onready var aspect_option: OptionButton = %AspectOption
 @onready var upscale_option: OptionButton = %UpscaleOption
+@onready var dev_check: CheckBox = %DevCheck
 @onready var debug_check: CheckBox = %DebugCheck
 @onready var hints_check: CheckBox = %HintsCheck
 @onready var skip_check: CheckBox = %SkipCheck
@@ -29,6 +30,7 @@ func setup(player: MoviePlayer) -> void:
 		upscale_option.add_item(str(name))
 	upscale_option.select(AppSettings.upscale_mode)
 
+	dev_check.button_pressed = AppSettings.dev_mode
 	debug_check.button_pressed = AppSettings.show_debug_overlays
 	hints_check.button_pressed = AppSettings.show_hotspot_hints
 	skip_check.button_pressed = AppSettings.allow_minigame_skip
@@ -47,6 +49,7 @@ func _apply() -> void:
 		return
 	AppSettings.aspect_mode = aspect_option.selected as AppSettings.AspectMode
 	AppSettings.upscale_mode = upscale_option.selected as AppSettings.UpscaleMode
+	AppSettings.dev_mode = dev_check.button_pressed
 	AppSettings.show_debug_overlays = debug_check.button_pressed
 	AppSettings.show_hotspot_hints = hints_check.button_pressed
 	AppSettings.allow_minigame_skip = skip_check.button_pressed
@@ -61,6 +64,10 @@ func _on_aspect_option_item_selected(_idx: int) -> void:
 
 
 func _on_upscale_option_item_selected(_idx: int) -> void:
+	_apply()
+
+
+func _on_dev_check_toggled(_v: bool) -> void:
 	_apply()
 
 

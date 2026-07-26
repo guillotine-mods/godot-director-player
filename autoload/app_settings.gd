@@ -21,6 +21,9 @@ const CONFIG_PATH := "user://piposh2_settings.cfg"
 
 var aspect_mode: AspectMode = AspectMode.WIDE_16_9
 var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST
+## Master switch for development aids. Off by default: nothing that only exists
+## to help build the game may show up in a normal play session.
+var dev_mode: bool = false
 var show_debug_overlays: bool = true
 var show_hotspot_hints: bool = false
 var allow_minigame_skip: bool = true
@@ -40,6 +43,7 @@ func load_settings() -> void:
 		return
 	aspect_mode = int(cfg.get_value("display", "aspect_mode", aspect_mode)) as AspectMode
 	upscale_mode = int(cfg.get_value("display", "upscale_mode", upscale_mode)) as UpscaleMode
+	dev_mode = bool(cfg.get_value("debug", "dev_mode", dev_mode))
 	show_debug_overlays = bool(cfg.get_value("debug", "overlays", show_debug_overlays))
 	show_hotspot_hints = bool(cfg.get_value("qol", "hotspot_hints", show_hotspot_hints))
 	allow_minigame_skip = bool(cfg.get_value("qol", "minigame_skip", allow_minigame_skip))
@@ -54,6 +58,7 @@ func save_settings() -> void:
 	cfg.set_value("display", "upscale_mode", upscale_mode)
 	cfg.set_value("display", "enhanced_graphics", test_mode_enhanced_graphics)
 	cfg.set_value("display", "expand_edge_hotspots", expand_edge_hotspots)
+	cfg.set_value("debug", "dev_mode", dev_mode)
 	cfg.set_value("debug", "overlays", show_debug_overlays)
 	cfg.set_value("qol", "hotspot_hints", show_hotspot_hints)
 	cfg.set_value("qol", "minigame_skip", allow_minigame_skip)
@@ -64,6 +69,13 @@ func save_settings() -> void:
 
 func notify_changed() -> void:
 	save_settings()
+
+
+func show_press_marks() -> bool:
+	## Boxes over every clickable hotspot. A development aid, so it needs dev_mode
+	## as well as its own toggle. `show_hotspot_hints` is the player-facing one
+	## (H key) and stands on its own.
+	return dev_mode and show_debug_overlays
 
 
 func stage_scale_factor() -> int:
