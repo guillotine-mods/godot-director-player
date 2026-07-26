@@ -152,7 +152,8 @@ def build(m):
             doorway.setdefault((s, dr), p_out)
             doorway.setdefault((dr, s), p_in)
 
-    repaired, kept, unresolved = {}, 0, 0
+    # Four disjoint buckets, so the totals cannot double-count.
+    repaired, on_hotspot, confirmed, unresolved = {}, 0, 0, 0
     for (room, ch, t), rect in sorted(m["hotspots"].items()):
         dr = m["dest_room"](t)
         nav = m["navs"][(room, ch, t)]
@@ -161,7 +162,7 @@ def build(m):
         # The exported walk target already sits on the hotspot you click, so this
         # hotspot is the one that supplied the pair. Leave it alone.
         if rect_dist(rect, cur[0]) <= 15.0:
-            kept += 1
+            on_hotspot += 1
             continue
         w = doorway.get((room, dr))
         a = doorway.get((dr, room))
@@ -173,7 +174,7 @@ def build(m):
             continue
         new = (w or cur[0], a or cur[1])
         if new == cur:
-            kept += 1
+            confirmed += 1
             continue
         repaired["%s|%d|%s" % (room, ch, t)] = {
             "walk_to": {"x": new[0][0], "y": new[0][1]},
@@ -211,33 +212,44 @@ def build(m):
             "walk_to": {"x": point[0], "y": point[1]},
             "source": "hotspot-centre",
         }
-        unresolved -= 1
-    return canon, why, doorway, repaired, kept, unresolved
+        # This exit came from whichever bucket the first pass put it in.
+        if rect_dist(rect, (exported["x"], exported["y"])) > 15.0:
+            if doorway.get((room, m["dest_room"](t))) is None \
+                    and doorway.get((m["dest_room"](t), room)) is None:
+                unresolved -= 1
+            else:
+                confirmed -= 1
+        else:
+            on_hotspot -= 1
+    return canon, why, doorway, repaired, on_hotspot, confirmed, unresolved
 
 
 def main():
     out = {}
-    T = K = R = U = 0
+    T = K = C = R = U = 0
     stats = []
     for mv in sorted(os.listdir(ROOT)):
         m = scan(mv)
         if not m or not m["hotspots"]:
             continue
-        canon, why, doorway, repaired, kept, unresolved = build(m)
-        T += len(m["hotspots"]); K += kept; R += len(repaired); U += unresolved
+        canon, why, doorway, repaired, on_hotspot, confirmed, unresolved = build(m)
+        T += len(m["hotspots"]); K += on_hotspot; C += confirmed
+        R += len(repaired); U += unresolved
         if repaired:
             out[mv] = repaired
         stats.append((mv, len(m["hotspots"]), len(m["pair"]), len(canon),
-                      kept, len(repaired), unresolved))
+                      on_hotspot, confirmed, len(repaired), unresolved))
 
-    print("%-10s %5s %6s %6s %6s %8s %10s" %
-          ("movie", "hots", "labels", "canon", "kept", "repaired", "unresolved"))
+    head = ("movie", "hots", "labels", "canon", "on-spot", "confirm", "fixed", "unknown")
+    print("%-10s %5s %6s %6s %8s %8s %6s %8s" % head)
     for s in stats:
         if s[1] >= 4:
-            print("%-10s %5d %6d %6d %6d %8d %10d" % s)
-    print("-" * 56)
-    print("TOTAL      %5d %6s %6s %6d %8d %10d" % (T, "", "", K, R, U))
-    print("resolved: %d/%d (%.0f%%)" % (K + R, T, 100 * (K + R) / T))
+            print("%-10s %5d %6d %6d %8d %8d %6d %8d" % s)
+    print("-" * 62)
+    print("TOTAL      %5d %6s %6s %8d %8d %6d %8d" % (T, "", "", K, C, R, U))
+    print("accounted: %d of %d" % (K + C + R + U, T))
+    print("known-good or corrected: %d/%d (%.0f%%)   no information: %d"
+          % (K + C + R, T, 100 * (K + C + R) / T, U))
 
     dest = sys.argv[1] if len(sys.argv) > 1 else "data/walk_doorways.json"
     doc = json.load(open(dest)) if os.path.isfile(dest) else {}

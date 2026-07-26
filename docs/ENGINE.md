@@ -72,11 +72,20 @@ from D. Identifying which room supplied a label's pair fills both directions of
 that edge and re-derives its other hotspots. `DirectorRuntime._apply_walk_override`
 swaps the values in at click time; unlisted hotspots keep the exported nav.
 
-Covers 154 of 212 same-movie walk hotspots — 116 already correct, 38 corrected.
-The rest are mostly `HOTEL1` and `AIR1`, whose transition destinations are still
-in `unmapped_transitions` and so have no reverse edge to read; filling those in
-and re-running `tools/rebuild_doorways.py` extends the coverage. The durable fix
-is the export emitting nav per hotspot.
+Exits the reciprocity pass cannot reach, because both labels' pairs were claimed
+by other edges, fall back to standing Piposh in the middle of the exit he
+clicked, taking only the ground height from the room's `walk_here` band. That
+corrects direction but not arrival, so those rooms can still put him down on the
+wrong side.
+
+The 212 same-movie walk hotspots divide into four disjoint groups: 52 whose
+exported `walk_to` already sits on the hotspot that is clicked, 55 confirmed as
+the canonical hotspot so the exported pair is their own, 77 corrected, and 28
+with no surviving information. Those 28 at least walk in the right column, so
+direction is plausible, but neither point is verified. Most are blocked on
+`unmapped_transitions`: fill a destination in and re-run
+`tools/rebuild_doorways.py` and the reciprocity pass picks up the new reverse
+edge. The durable fix is the export emitting nav per hotspot.
 
 The score clock executes at most three catch-up steps per Godot process tick. Long render or asset-loading stalls discard excess whole-step backlog, preventing cutscenes from fast-forwarding. A movie change ends catch-up so the destination movie starts with a fresh timing accumulator.
 
