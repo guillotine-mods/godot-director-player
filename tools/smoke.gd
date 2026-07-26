@@ -54,10 +54,11 @@ func _initialize() -> void:
 		visited[cinematic.frame_index] = true
 	_check("opening cinematic advances", visited.size() > 100, "%d distinct frames" % visited.size())
 
+	# Deliberately no "entry hides nothing" assertion: blanking sprites on entry
+	# is what the original does, and the conditional handler on the next entry
+	# frame restores whatever the player has not collected. The inventory-driven
+	# checks at the end are the real invariant.
 	runtime.goto_movie("DAY1", null, {})
-	runtime.enter_frame(976)
-	_check("room entry hides nothing", runtime._lingo_hidden.is_empty(), str(runtime._lingo_hidden.keys()))
-
 	runtime.enter_frame(2649)
 	var pickup: Dictionary = {}
 	for sprite in runtime.clickable_sprites(runtime.loader.get_frame(runtime.frame_index)):
@@ -67,6 +68,23 @@ func _initialize() -> void:
 	runtime._activate_sprite(pickup, Vector2(320, 240))
 	_check("picking an item up adds it", Array(state.objects_field).count("empty") == before - 1)
 	_check("picking an item up clears it from the room", runtime.is_channel_hidden(18))
+
+	# Collectables are inventory-driven: DAY1's dwarfs room shows sprite 17 until
+	# the player holds `masor`, then hides it. This has broken three separate ways
+	# today, so it is asserted in both directions.
+	for holds in [false, true]:
+		var probe: RefCounted = load("res://director/director_runtime.gd").new()
+		probe.boot()
+		state.new_game()
+		if holds:
+			var carried: PackedStringArray = state.objects_field
+			carried[0] = "masor"
+			state.objects_field = carried
+		probe.goto_movie("DAY1", null, {"label": "dwarfsgo"})
+		var hidden: bool = probe.is_channel_hidden(17)
+		_check("collectable %s when masor %s" % [
+			"hidden" if holds else "shown", "held" if holds else "not held"],
+			hidden == holds)
 
 	print("")
 	print("%d checks failed" % _fails)

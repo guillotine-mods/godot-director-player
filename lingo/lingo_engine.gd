@@ -242,7 +242,6 @@ func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
 	if host != null and host.runtime != null:
 		frame = host.runtime.loader.get_frame(frame_index)
 	var ran := 0
-	host.frame_event_depth += 1
 	var seen: Dictionary = {}
 	for sprite_value in frame.get("sprites", []):
 		if typeof(sprite_value) != TYPE_DICTIONARY:
@@ -259,7 +258,6 @@ func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
 		if interpreter.run_handler_in_script(behaviour, event):
 			ran += 1
 	host.click_on = 0
-	host.frame_event_depth -= 1
 	return ran
 
 
@@ -267,16 +265,12 @@ func dispatch_frame_event(event: String, frame_index: int) -> bool:
 	host.click_on = 0
 	host.begin_dispatch()
 	interpreter.reset_steps()
-	host.frame_event_depth += 1
 	var frame := frame_script(frame_index)
 	if not frame.is_empty() and interpreter.run_handler_in_script(frame, event):
-		host.frame_event_depth -= 1
 		return true
 	if interpreter.has_handler(event):
 		interpreter.call_handler(event)
-		host.frame_event_depth -= 1
 		return true
-	host.frame_event_depth -= 1
 	return false
 
 

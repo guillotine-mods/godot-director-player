@@ -541,8 +541,19 @@ func _run_skipped_entry_scripts() -> void:
 	## It cannot be recovered by running enterFrame on the `*go` frame instead,
 	## because `label(0)` there resolves to `arcadego` while every hotspot tests
 	## against `label("arcade")`. The entry frames have to execute where they sit,
-	## so their enterFrame handlers run here, in score order, before the arrival
-	## frame's own.
+	## so their handlers run here, in score order, before the arrival frame's own.
+	##
+	## Both events, not just enterFrame. DAY1's dwarfs room is
+	## 1473 (script 83, `on enterFrame`) → 1474 (script 286, `on exitFrame`) →
+	## 1475 `dwarfsgo`. Script 83 blanks sprites 15, 17 and 33; script 286 is the
+	## one that puts them back, scanning `objectsfield` and showing sprite 17
+	## unless the player already holds `masor`. Replaying only enterFrame ran the
+	## blanking and never the restore, so every collectable in the game stayed
+	## invisible.
+	##
+	## Replayed under `record`, which captures navigation and sound instead of
+	## performing them: these frames are being fast-forwarded, so a `go` in one of
+	## them must not hijack the arrival, and their entry sounds must not fire.
 	var room := marker_name_for_frame(frame_index).to_lower()
 	if not room.ends_with("go"):
 		return
@@ -550,12 +561,17 @@ func _run_skipped_entry_scripts() -> void:
 	if base < 0 or base >= frame_index:
 		return
 	var landed := frame_index
+	var was_recording: bool = lingo.host.record
+	lingo.host.begin_record()
 	for index in range(base, landed):
 		if loader.get_frame(index).get("frame_script") == null:
 			continue
 		frame_index = index
 		lingo.host.begin_dispatch()
 		lingo.dispatch_frame_event("enterFrame", index)
+		lingo.host.begin_dispatch()
+		lingo.dispatch_frame_event("exitFrame", index)
+	lingo.host.record = was_recording
 	frame_index = landed
 
 
