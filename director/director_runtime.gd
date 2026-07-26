@@ -71,6 +71,9 @@ var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
 var _hidden_channels: Dictionary = {}
+## Channels hidden by an interpreted script's `sprite(N).visible = 0`. Kept apart
+## from _hidden_channels, which refresh_sprite_gates() replaces wholesale.
+var _lingo_hidden: Dictionary = {}
 var _head_look_until_ms: float = -1.0
 
 
@@ -229,7 +232,20 @@ func _remember_transition(nav: Variant) -> void:
 
 func is_channel_hidden(channel: int) -> bool:
 	## Story-gated score channel: present in the export, not yet in the story.
-	return _hidden_channels.has(channel)
+	return _hidden_channels.has(channel) or _lingo_hidden.has(channel)
+
+
+func set_channel_visible(channel: int, visible: bool) -> void:
+	## `sprite(N).visible = 0` from an interpreted script.
+	if visible:
+		if not _lingo_hidden.has(channel):
+			return
+		_lingo_hidden.erase(channel)
+	else:
+		if _lingo_hidden.has(channel):
+			return
+		_lingo_hidden[channel] = true
+	redraw_requested.emit()
 
 
 func master_cast_lib() -> int:
