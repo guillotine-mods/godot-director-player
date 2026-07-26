@@ -8,8 +8,11 @@ extends RefCounted
 ## rest is derived from the loaded movie.
 
 const CONTEXT_PATH := "res://data/movie_context.json"
+const DOORWAY_PATH := "res://data/walk_doorways.json"
 
 var hubs: PackedStringArray = PackedStringArray(["DAY1", "HOTEL1", "NIGHT1"])
+
+var _walk_doorways: Dictionary = {}
 
 var _shared_transitions: Dictionary = {}
 var _movie_transitions: Dictionary = {}
@@ -92,7 +95,46 @@ func load_context() -> Error:
 			var rules: Variant = (gates_value as Dictionary)[key]
 			if typeof(rules) == TYPE_ARRAY:
 				_sprite_gates[_s(key).to_lower()] = rules
+
+	_load_walk_doorways()
 	return OK
+
+
+func _load_walk_doorways() -> void:
+	## Per-hotspot walk targets recovered from the export; see the file's own
+	## comment. Absent means every hotspot keeps its exported (label-keyed) nav.
+	_walk_doorways.clear()
+	if not FileAccess.file_exists(DOORWAY_PATH):
+		return
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(DOORWAY_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("Malformed walk doorways: %s" % DOORWAY_PATH)
+		return
+	var overrides_value: Variant = (parsed as Dictionary).get("overrides", {})
+	if typeof(overrides_value) != TYPE_DICTIONARY:
+		return
+	for movie in (overrides_value as Dictionary).keys():
+		var entries: Variant = (overrides_value as Dictionary)[movie]
+		if typeof(entries) == TYPE_DICTIONARY:
+			_walk_doorways[_s(movie).to_lower()] = entries
+
+
+func walk_override(movie: String, room: String, channel: int, target_label: String) -> Dictionary:
+	## Corrected walk_to / arrive_at for one exit, or empty to keep the export's.
+	##
+	## The export stores both points once per destination label, so every exit
+	## into the same room shares one room's coordinates and all but one of them
+	## sends Piposh the wrong way.
+	if target_label == "":
+		return {}
+	var entries_value: Variant = _walk_doorways.get(movie.to_lower(), {})
+	if typeof(entries_value) != TYPE_DICTIONARY:
+		return {}
+	var key := "%s|%d|%s" % [_room_key(room), channel, target_label.to_lower()]
+	var entry: Variant = (entries_value as Dictionary).get(key, null)
+	if typeof(entry) != TYPE_DICTIONARY:
+		return {}
+	return entry
 
 
 func _room_key(room: String) -> String:

@@ -7,7 +7,7 @@ Native Godot score runner for Piposh 2, using `assets/render_model` (frames / me
 | File | Role |
 |------|------|
 | `director/director_runtime.gd` | Tempo clock, `game_step`, `goto_movie`, clicks, save/load intercept |
-| `director/movie_context.gd` | Hubs, end-of-movie routing, transition destinations, playability |
+| `director/movie_context.gd` | Hubs, end-of-movie routing, transition destinations, walk doorways, playability |
 | `director/nav_actions.gd` | Resolve `label` / `movie` / `walk` / `marker` / `hold` / `quit` |
 | `director/puppet_controller.gd` | Channel 30 Piposh stand/walk + room arrive |
 | `director/render_model_loader.gd` | JSON + BMP via `Image.load`, matte / transparent inks, local-first linked-cast lookup |
@@ -55,6 +55,28 @@ the score falls into the adjacent reverse animation. The table is shared across
 movies, so the verified Day 1 destinations also cover 19 of `NIGHT1`'s 27
 transitions. Unmapped labels log a warning instead of reversing silently; see
 `unmapped_transitions` in the data file for the open list.
+
+## Walk doorways
+
+A `walk` nav's `walk_to` and `arrive_at` are stored in the export **once per
+destination label**, not per hotspot: across all 90 movies no label carries two
+distinct pairs. Every exit into the same room therefore reuses one room's
+coordinates, and all but one of them sends Piposh away from the hotspot that was
+clicked and then puts him down on the wrong side of the next room. `path1` and
+`path3` sit on opposite sides of `path2` and both carried `path3`'s pair.
+
+`data/walk_doorways.json` restores the per-hotspot values, recovered from the
+export using the original's own model: a doorway is a place, so the spot Piposh
+walks to in room S on his way to D is the spot he stands on when he arrives in S
+from D. Identifying which room supplied a label's pair fills both directions of
+that edge and re-derives its other hotspots. `DirectorRuntime._apply_walk_override`
+swaps the values in at click time; unlisted hotspots keep the exported nav.
+
+Covers 154 of 212 same-movie walk hotspots — 116 already correct, 38 corrected.
+The rest are mostly `HOTEL1` and `AIR1`, whose transition destinations are still
+in `unmapped_transitions` and so have no reverse edge to read; filling those in
+and re-running `tools/rebuild_doorways.py` extends the coverage. The durable fix
+is the export emitting nav per hotspot.
 
 The score clock executes at most three catch-up steps per Godot process tick. Long render or asset-loading stalls discard excess whole-step backlog, preventing cutscenes from fast-forwarding. A movie change ends catch-up so the destination movie starts with a fresh timing accumulator.
 

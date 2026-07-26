@@ -1,0 +1,414 @@
+{
+	"_comment": [
+		"Per-hotspot walk targets. The render_model export stores a walk nav's walk_to",
+		"and arrive_at once per DESTINATION LABEL, not per hotspot: across all 90",
+		"movies no label carries two distinct pairs. Every exit leading to the same",
+		"room therefore reuses one room's coordinates, so Piposh walks away from the",
+		"hotspot that was clicked and then enters the next room on the wrong side.",
+		"",
+		"Recovered from the export itself, using the original's own model: a doorway is",
+		"a place. The spot Piposh walks to in room S on his way to room D is the same",
+		"spot he stands on when he arrives in S from D. The surviving pair for label T",
+		"is one edge's doorway pair -- walk_to(T) is the doorway in T's canonical",
+		"source room, arrive_at(T) the doorway in T facing it -- so identifying that",
+		"source room fills both directions of that edge and re-derives its other",
+		"hotspots. tools/rebuild_doorways.py regenerates this file.",
+		"",
+		"Covers 154 of 212 same-movie walk hotspots: 116 already carried the right",
+		"values, 38 are corrected here. The remaining 58 are mostly HOTEL1 and AIR1,",
+		"whose transition destinations are still in unmapped_transitions and so have no",
+		"reverse edge to read. They keep the exported values and stay wrong.",
+		"",
+		"Key: \"<room>|<channel>|<target_label>\", room lowercased with any 'go' suffix",
+		"stripped (MovieContext._room_key), matching the marker under the playhead.",
+		"NOT under assets/ on purpose: that tree is mirrored with robocopy /MIR."
+	],
+	"overrides": {
+		"DAY1": {
+			"check|12|forest1fromcheck": {
+				"walk_to": {
+					"x": 357,
+					"y": 400
+				},
+				"arrive_at": {
+					"x": 399,
+					"y": 366
+				}
+			},
+			"clif2|12|swingup": {
+				"walk_to": {
+					"x": 44,
+					"y": 373
+				},
+				"arrive_at": {
+					"x": 30,
+					"y": 328
+				}
+			},
+			"edge1|12|edge2": {
+				"walk_to": {
+					"x": 400,
+					"y": 390
+				},
+				"arrive_at": {
+					"x": 200,
+					"y": 380
+				}
+			},
+			"edge3|12|edge4": {
+				"walk_to": {
+					"x": 130,
+					"y": 222
+				},
+				"arrive_at": {
+					"x": 289,
+					"y": 287
+				}
+			},
+			"edge4|11|path4tofield": {
+				"walk_to": {
+					"x": 496,
+					"y": 247
+				},
+				"arrive_at": {
+					"x": 235,
+					"y": 193
+				}
+			},
+			"edge5|10|edge6down": {
+				"walk_to": {
+					"x": 289,
+					"y": 175
+				},
+				"arrive_at": {
+					"x": 186,
+					"y": 396
+				}
+			},
+			"exitforest1|10|exitforest1toclif": {
+				"walk_to": {
+					"x": 240,
+					"y": 294
+				},
+				"arrive_at": {
+					"x": 581,
+					"y": 381
+				}
+			},
+			"exitforest1|11|forest1fromcheck": {
+				"walk_to": {
+					"x": 630,
+					"y": 360
+				},
+				"arrive_at": {
+					"x": 268,
+					"y": 359
+				}
+			},
+			"forest1|12|dwarfdown": {
+				"walk_to": {
+					"x": 350,
+					"y": 400
+				},
+				"arrive_at": {
+					"x": 205,
+					"y": 206
+				}
+			},
+			"forest2|11|exitforest2frompath3": {
+				"walk_to": {
+					"x": 620,
+					"y": 340
+				},
+				"arrive_at": {
+					"x": 171,
+					"y": 228
+				}
+			},
+			"gate|10|swingup": {
+				"walk_to": {
+					"x": 39,
+					"y": 225
+				},
+				"arrive_at": {
+					"x": 326,
+					"y": 371
+				}
+			},
+			"lighttop|14|stairsclimbdown": {
+				"walk_to": {
+					"x": 293,
+					"y": 237
+				},
+				"arrive_at": {
+					"x": 161,
+					"y": 425
+				}
+			},
+			"path1|10|path2": {
+				"walk_to": {
+					"x": 30,
+					"y": 290
+				},
+				"arrive_at": {
+					"x": 600,
+					"y": 276
+				}
+			},
+			"path2|10|path3": {
+				"walk_to": {
+					"x": 30,
+					"y": 348
+				},
+				"arrive_at": {
+					"x": 600,
+					"y": 380
+				}
+			},
+			"path3|10|exitforest2frompath3": {
+				"walk_to": {
+					"x": 30,
+					"y": 276
+				},
+				"arrive_at": {
+					"x": 364,
+					"y": 247
+				}
+			},
+			"shore1|10|shore2": {
+				"walk_to": {
+					"x": 60,
+					"y": 374
+				},
+				"arrive_at": {
+					"x": 625,
+					"y": 364
+				}
+			},
+			"shore3|11|shore2": {
+				"walk_to": {
+					"x": 625,
+					"y": 324
+				},
+				"arrive_at": {
+					"x": 33,
+					"y": 324
+				}
+			},
+			"veranda|10|path1": {
+				"walk_to": {
+					"x": 30,
+					"y": 221
+				},
+				"arrive_at": {
+					"x": 620,
+					"y": 230
+				}
+			},
+			"veranda|11|gatefromedge1": {
+				"walk_to": {
+					"x": 600,
+					"y": 360
+				},
+				"arrive_at": {
+					"x": 321,
+					"y": 359
+				}
+			}
+		},
+		"NIGHT1": {
+			"check|12|forest1fromcheck": {
+				"walk_to": {
+					"x": 357,
+					"y": 400
+				},
+				"arrive_at": {
+					"x": 399,
+					"y": 366
+				}
+			},
+			"clif2|12|swingup": {
+				"walk_to": {
+					"x": 44,
+					"y": 373
+				},
+				"arrive_at": {
+					"x": 30,
+					"y": 328
+				}
+			},
+			"edge1|12|edge2": {
+				"walk_to": {
+					"x": 400,
+					"y": 390
+				},
+				"arrive_at": {
+					"x": 200,
+					"y": 380
+				}
+			},
+			"edge3|12|edge4": {
+				"walk_to": {
+					"x": 130,
+					"y": 222
+				},
+				"arrive_at": {
+					"x": 289,
+					"y": 287
+				}
+			},
+			"edge4|11|path4tofield": {
+				"walk_to": {
+					"x": 496,
+					"y": 247
+				},
+				"arrive_at": {
+					"x": 235,
+					"y": 193
+				}
+			},
+			"edge5|10|edge6down": {
+				"walk_to": {
+					"x": 289,
+					"y": 175
+				},
+				"arrive_at": {
+					"x": 186,
+					"y": 396
+				}
+			},
+			"exitforest1|10|exitforest1toclif": {
+				"walk_to": {
+					"x": 240,
+					"y": 294
+				},
+				"arrive_at": {
+					"x": 581,
+					"y": 381
+				}
+			},
+			"exitforest1|11|forest1fromcheck": {
+				"walk_to": {
+					"x": 630,
+					"y": 360
+				},
+				"arrive_at": {
+					"x": 268,
+					"y": 359
+				}
+			},
+			"forest1|12|dwarfdown": {
+				"walk_to": {
+					"x": 350,
+					"y": 400
+				},
+				"arrive_at": {
+					"x": 205,
+					"y": 206
+				}
+			},
+			"forest2|11|exitforest2frompath3": {
+				"walk_to": {
+					"x": 620,
+					"y": 340
+				},
+				"arrive_at": {
+					"x": 171,
+					"y": 228
+				}
+			},
+			"gate|10|swingup": {
+				"walk_to": {
+					"x": 39,
+					"y": 225
+				},
+				"arrive_at": {
+					"x": 326,
+					"y": 371
+				}
+			},
+			"path1|10|path2": {
+				"walk_to": {
+					"x": 30,
+					"y": 290
+				},
+				"arrive_at": {
+					"x": 600,
+					"y": 276
+				}
+			},
+			"path2|10|path3": {
+				"walk_to": {
+					"x": 30,
+					"y": 348
+				},
+				"arrive_at": {
+					"x": 600,
+					"y": 380
+				}
+			},
+			"path3|10|exitforest2frompath3": {
+				"walk_to": {
+					"x": 30,
+					"y": 276
+				},
+				"arrive_at": {
+					"x": 364,
+					"y": 247
+				}
+			},
+			"shore1|10|shore2": {
+				"walk_to": {
+					"x": 60,
+					"y": 374
+				},
+				"arrive_at": {
+					"x": 625,
+					"y": 364
+				}
+			},
+			"shore3|11|shore2": {
+				"walk_to": {
+					"x": 625,
+					"y": 324
+				},
+				"arrive_at": {
+					"x": 33,
+					"y": 324
+				}
+			},
+			"veranda|10|path1": {
+				"walk_to": {
+					"x": 30,
+					"y": 221
+				},
+				"arrive_at": {
+					"x": 620,
+					"y": 230
+				}
+			},
+			"veranda|11|gatefromedge1": {
+				"walk_to": {
+					"x": 600,
+					"y": 360
+				},
+				"arrive_at": {
+					"x": 321,
+					"y": 359
+				}
+			}
+		},
+		"SEA1": {
+			"openair1|10|openair2": {
+				"walk_to": {
+					"x": 35,
+					"y": 254
+				},
+				"arrive_at": {
+					"x": 514,
+					"y": 410
+				}
+			}
+		}
+	}
+}
