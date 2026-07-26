@@ -48,6 +48,10 @@ var key_down_script: String = ""
 ## missing binding is visible without spamming the log.
 var unhandled: Dictionary = {}
 var stage_dirty: bool = false
+## Nonzero while an enterFrame/exitFrame handler is running. Frame handlers blank
+## helper sprites every frame and rely on Director refreshing them from the score
+## afterwards, which this port does not do, so their hides are ignored.
+var frame_event_depth: int = 0
 ## When true, navigation and sound are captured instead of performed, so a script
 ## can be compared against the exported on_click without touching the game.
 ## Set when a script navigated during the current dispatch, so the runtime knows
@@ -225,17 +229,21 @@ func set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		# Visibility is the one property the existing renderer already gates, so
 		# keep the two in step rather than introducing a second mechanism.
 		#
-		# Only for a puppeted sprite, though. Director refreshes a non-puppeted
-		# sprite's properties from the score on the next frame, so an unpuppeted
-		# `sprite(N).visible = 0` is transient. The runtime's hide is permanent,
-		# and `BehaviorScript 3 - b4 bk's` blanks channels 15, 17 and 33 on every
-		# room entry without puppeting them: honouring that hid 600 collectable
-		# records, sciser and sulam and afgan among them, for the whole session.
-		if puppeted.has(channel):
+		# A hide is honoured only when it comes from a mouse handler. Both kinds
+		# of write are unpuppeted, so puppeting cannot tell them apart, but the
+		# event can:
+		#
+		#   on enterFrame ... set the visible of sprite 15 to 0   (b4 bk's)
+		#   on mouseUp    ... sprite(the clickOn).visible = 0      (a pickup)
+		#
+		# Director undoes the first when the score refreshes the sprite on the
+		# next frame; this port has no such refresh, and the runtime's hide is
+		# permanent. Honouring it blanked channels 15, 17 and 33 — 600 collectable
+		# records, sciser and sulam among them — for the whole session. Honouring
+		# only puppeted writes then broke the other half: picking up a shell left
+		# it sitting in the room.
+		if frame_event_depth == 0 or LingoValue.truthy(value) or puppeted.has(channel):
 			runtime.set_channel_visible(channel, LingoValue.truthy(value))
-		elif LingoValue.truthy(value):
-			# A show still has to be able to undo an earlier puppeted hide.
-			runtime.set_channel_visible(channel, true)
 	stage_dirty = true
 
 

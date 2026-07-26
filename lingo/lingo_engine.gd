@@ -26,6 +26,8 @@ var _loaded: Dictionary = {}
 ## movie -> channel -> [{start, end, script: [castLib, member]}]
 var _intervals: Dictionary = {}
 var _current_movie: String = ""
+## dir name -> bundle keys, so member lookups do not hit the filesystem.
+var _cast_keys: Dictionary = {}
 ## Names of scripts that were reached but had no handler for the event, for
 ## reporting. Not an error: falling through is normal.
 var missing_handlers: Dictionary = {}
@@ -116,6 +118,16 @@ func _cast_dir_for_lib(cast_lib: int) -> String:
 
 
 func _cast_key_for_dir(dir_name: String) -> PackedStringArray:
+	## Cached: this sits under every member lookup, and the uncached version
+	## opened and listed a directory each time.
+	if _cast_keys.has(dir_name):
+		return _cast_keys[dir_name]
+	var keys := _scan_cast_keys(dir_name)
+	_cast_keys[dir_name] = keys
+	return keys
+
+
+func _scan_cast_keys(dir_name: String) -> PackedStringArray:
 	## Bundles are keyed by the cast name ProjectorRays used inside the movie
 	## directory, which is not the cast-library name, so try all of them.
 	var out := PackedStringArray()
@@ -136,6 +148,22 @@ func script_for_member(cast_lib: int, member: int) -> Dictionary:
 	var dir_name := _cast_dir_for_lib(cast_lib)
 	if dir_name == "":
 		return {}
+	## ProjectorRays wrote a linked cast's scripts twice: once under the movie
+	## that links it (data/lingo/DAY1/wonder.json) and once in the cast's own
+	## standalone export (data/lingo/WONDER/External.json). The movie-local copy
+	## is the one the attachment data refers to, so it has to win.
+	##
+	## Both used to be reachable by accident, because every bundle was keyed on
+	## the ProjectorRays subdirectory and eleven casts are called "External".
+	## Namespacing them fixed the collisions and lost this: DAY1 asking wonder
+	## for member 231 stopped finding the igkey pickup, so picking a collectable
+	## up fell through to the lifted export, which adds the item but has no way
+	## to take the sprite off the stage. The shell stayed on the beach.
+	for cast_key in _cast_key_for_dir(_current_movie):
+		if cast_key.get_file().to_lower() == dir_name.to_lower():
+			var local := interpreter.find_script_by_member(cast_key, member)
+			if not local.is_empty():
+				return local
 	for cast_key in _cast_key_for_dir(dir_name):
 		var script := interpreter.find_script_by_member(cast_key, member)
 		if not script.is_empty():
@@ -214,6 +242,7 @@ func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
 	if host != null and host.runtime != null:
 		frame = host.runtime.loader.get_frame(frame_index)
 	var ran := 0
+	host.frame_event_depth += 1
 	var seen: Dictionary = {}
 	for sprite_value in frame.get("sprites", []):
 		if typeof(sprite_value) != TYPE_DICTIONARY:
@@ -230,6 +259,7 @@ func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
 		if interpreter.run_handler_in_script(behaviour, event):
 			ran += 1
 	host.click_on = 0
+	host.frame_event_depth -= 1
 	return ran
 
 
@@ -237,12 +267,16 @@ func dispatch_frame_event(event: String, frame_index: int) -> bool:
 	host.click_on = 0
 	host.begin_dispatch()
 	interpreter.reset_steps()
+	host.frame_event_depth += 1
 	var frame := frame_script(frame_index)
 	if not frame.is_empty() and interpreter.run_handler_in_script(frame, event):
+		host.frame_event_depth -= 1
 		return true
 	if interpreter.has_handler(event):
 		interpreter.call_handler(event)
+		host.frame_event_depth -= 1
 		return true
+	host.frame_event_depth -= 1
 	return false
 
 
