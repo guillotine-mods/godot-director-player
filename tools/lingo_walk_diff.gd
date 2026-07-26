@@ -68,9 +68,13 @@ func _run() -> void:
 				wrong_room += 1
 			else:
 				facing_only += 1
-			if lines.size() < 12:
-				lines.append("  %s @%s ch%d: off=%s | on=%s" % [
-					case.movie, case.room, case.channel, off, on])
+			var bucket := "facing"
+			if on.contains("walked=n") and off.contains("walked=y"):
+				bucket = "no-walk"
+			elif off_room != on_room:
+				bucket = "wrong-room"
+			lines.append("  [%-10s] %s @%s ch%d: off=%s | on=%s" % [
+				bucket, case.movie, case.room, case.channel, off, on])
 	print("identical outcome: %d/%d" % [same, cases.size()])
 	print("different outcome: %d" % differ)
 	print("  same room, facing differs: %d" % facing_only)
