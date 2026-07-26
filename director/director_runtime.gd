@@ -95,7 +95,7 @@ func _init() -> void:
 func boot() -> Error:
 	context.load_context()
 	drops.load_table()
-	if AppSettings.use_lingo_clicks:
+	if AppSettings.use_lingo_clicks or AppSettings.use_lingo_frames:
 		lingo = LingoEngine.new(self)
 	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
@@ -144,6 +144,19 @@ func game_step() -> void:
 	var frame: Dictionary = loader.get_frame(frame_index)
 	if _try_transition_redirect(frame):
 		return
+
+	# The original `on exitFrame` is 2504 of the game's 3457 handlers. When one
+	# exists and navigates, it decides where the score goes and the exported nav
+	# is not consulted; a hold stops here too. Anything else falls through to the
+	# existing resolution.
+	if lingo != null and AppSettings.use_lingo_frames:
+		if lingo.dispatch_frame_event("exitFrame", frame_index):
+			if lingo.host.stage_dirty:
+				lingo.host.stage_dirty = false
+				redraw_requested.emit()
+			if lingo.host.navigated or lingo.host.held:
+				return
+
 	var nav: Variant = frame.get("nav", null)
 	var action: Dictionary = NavActions.resolve(nav, loader, frame_index)
 

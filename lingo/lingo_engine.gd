@@ -178,6 +178,7 @@ func frame_script(frame_index: int) -> Dictionary:
 func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> bool:
 	## Returns true when some level of the hierarchy handled it.
 	host.click_on = channel
+	host.begin_dispatch()
 	interpreter.reset_steps()
 
 	var behaviour := behaviour_for_sprite(channel, frame_index)
@@ -204,6 +205,7 @@ func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> boo
 
 func dispatch_frame_event(event: String, frame_index: int) -> bool:
 	host.click_on = 0
+	host.begin_dispatch()
 	interpreter.reset_steps()
 	var frame := frame_script(frame_index)
 	if not frame.is_empty() and interpreter.run_handler_in_script(frame, event):

@@ -30,6 +30,17 @@ var dev_mode: bool = true
 ## to trust in play: it is 94.6% accounted for across the five inventory movies,
 ## which is promising, not finished.
 var use_lingo_clicks: bool = false
+## Interpret `on exitFrame`, which is 2504 of the 3457 handlers.
+##
+## OFF, and the reason is measured rather than cautious. tools/lingo_frames.gd
+## reports the frame path identical to the existing runner for 220/220 ticks in
+## all five inventory movies, which looked like enough to switch on. It is not:
+## turning it on takes tests/test_walk_doorways.gd from 0 failures to 5,
+## test_day1_navigation from 0 to 2, and test_director_runtime from 28 to 31.
+## Those suites exercise transitions, walks and movie loads that a straight tick
+## from one start point never reaches. Diagnose those 7 regressions before
+## flipping this.
+var use_lingo_frames: bool = false
 var show_debug_overlays: bool = true
 var show_hotspot_hints: bool = false
 var allow_minigame_skip: bool = true
@@ -51,6 +62,7 @@ func load_settings() -> void:
 	upscale_mode = int(cfg.get_value("display", "upscale_mode", upscale_mode)) as UpscaleMode
 	dev_mode = bool(cfg.get_value("debug", "dev_mode", dev_mode))
 	use_lingo_clicks = bool(cfg.get_value("lingo", "clicks", use_lingo_clicks))
+	use_lingo_frames = bool(cfg.get_value("lingo", "frames", use_lingo_frames))
 	show_debug_overlays = bool(cfg.get_value("debug", "overlays", show_debug_overlays))
 	show_hotspot_hints = bool(cfg.get_value("qol", "hotspot_hints", show_hotspot_hints))
 	allow_minigame_skip = bool(cfg.get_value("qol", "minigame_skip", allow_minigame_skip))
@@ -67,6 +79,7 @@ func save_settings() -> void:
 	cfg.set_value("display", "expand_edge_hotspots", expand_edge_hotspots)
 	cfg.set_value("debug", "dev_mode", dev_mode)
 	cfg.set_value("lingo", "clicks", use_lingo_clicks)
+	cfg.set_value("lingo", "frames", use_lingo_frames)
 	cfg.set_value("debug", "overlays", show_debug_overlays)
 	cfg.set_value("qol", "hotspot_hints", show_hotspot_hints)
 	cfg.set_value("qol", "minigame_skip", allow_minigame_skip)
