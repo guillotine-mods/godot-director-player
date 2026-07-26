@@ -367,7 +367,8 @@ class Parser:
     @staticmethod
     def is_place(node: dict) -> bool:
         return node.get("node") in ("var", "prop", "sprite_prop", "member_prop",
-                                    "chunk", "field", "menu_prop", "index")
+                                    "chunk", "field", "field_prop", "menu_prop",
+                                    "index", "dot", "prop_of")
 
     def parse_if(self) -> dict:
         line = self.peek().line
