@@ -622,17 +622,27 @@ func _marker(args: Array) -> Variant:
 	if runtime == null:
 		return 0
 	var offset := LingoValue.to_int(args[0] if args.size() > 0 else 0)
-	var name: String = str(runtime.marker_name_for_frame(runtime.frame_index))
-	if offset == 0:
-		var index: int = int(runtime.loader.lookup_label(name))
-		return index + 1 if index >= 0 else 0
-	# +1 / -1 step to the neighbouring marker.
+	# Resolve by position, never by name. Director names an unnamed marker
+	# "New Marker", and strtgame has 49 of them against 32 distinct labels, so a
+	# name lookup collapsed every marker in the opening cinematic onto the first
+	# at frame 42. `go(marker(0) + 1)` then meant "jump to 43" from anywhere,
+	# which replayed the frame that starts the speech, so soundBusy(1) never
+	# cleared and the Katzale/Nache scene looped forever.
 	var frames: Array = []
 	for marker in runtime.loader.markers:
 		if typeof(marker) == TYPE_DICTIONARY:
 			frames.append(int((marker as Dictionary).get("frame", 0)))
 	frames.sort()
 	var here: int = runtime.frame_index
+	if offset == 0:
+		# The marker at or before the playhead.
+		var current := -1
+		for frame in frames:
+			if frame <= here:
+				current = frame
+			else:
+				break
+		return current + 1 if current >= 0 else 0
 	if offset > 0:
 		for frame in frames:
 			if frame > here:
