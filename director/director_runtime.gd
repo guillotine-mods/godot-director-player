@@ -1172,14 +1172,21 @@ func hint() -> void:
 	nav_event.emit("Hint: ch%d → %s" % [int(s.get("channel", 0)), NavActions.describe(s.get("on_click", {}).get("nav", {}))])
 
 
+func _lingo_takes_clicks(channel: int) -> bool:
+	## Whether an interpreted script would act on a click here, for sprites the
+	## export left with no on_click of their own.
+	if lingo == null or not AppSettings.use_lingo_clicks:
+		return false
+	return lingo.has_any_handler_for(channel, frame_index, "mouseUp")
+
+
 func clickable_sprites(frame: Dictionary) -> Array:
 	var out: Array = []
 	for sprite in frame.get("sprites", []):
 		if typeof(sprite) != TYPE_DICTIONARY:
 			continue
-		if not bool(sprite.get("clickable", false)):
-			continue
-		if is_channel_hidden(int(sprite.get("channel", 0))):
+		var channel := int(sprite.get("channel", 0))
+		if is_channel_hidden(channel):
 			continue
 		var on_click: Dictionary = sprite.get("on_click", {})
 		var nav: Variant = on_click.get("nav", null)
@@ -1187,7 +1194,17 @@ func clickable_sprites(frame: Dictionary) -> Array:
 		var snd_v: Variant = on_click.get("sounds", null)
 		var has_inv: bool = typeof(inv_v) == TYPE_ARRAY and (inv_v as Array).size() > 0
 		var has_sounds: bool = typeof(snd_v) == TYPE_ARRAY and (snd_v as Array).size() > 0
-		if nav == null and not has_inv and not has_sounds:
+		var lifted: bool = (
+			bool(sprite.get("clickable", false))
+			and (nav != null or has_inv or has_sounds)
+		)
+		# A hotspot the export could not lift is still a hotspot. The searchable
+		# scenery is the clearest case: `edge1_bench` is island2:74 on channel 8
+		# at edge1go with no exported on_click at all, because everything it does
+		# lives in MASTER's `searchfunk` — walk over, then reveal the shell on
+		# channel 15 with found.aif. Filtering on the lifted data alone made every
+		# one of those unclickable, so no shell or bottle could ever be found.
+		if not lifted and not _lingo_takes_clicks(channel):
 			continue
 		if typeof(nav) == TYPE_DICTIONARY and _s(nav.get("kind", "")) == "unsupported":
 			continue

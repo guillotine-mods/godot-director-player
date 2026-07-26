@@ -138,6 +138,29 @@ func _initialize() -> void:
 			"opens" if resolved else "stays shut", "done" if resolved else "pending"],
 			walked == resolved)
 
+	# Searching scenery. MASTER's `searchfunk` identifies the hotspot by
+	# `member(n, "island2").name`, looks it up in `field "searchinfo"`, walks
+	# Piposh over on the first click and reveals what is hidden there on the
+	# second. edge1_bench is island2:74 on channel 8, and it uncovers the shell on
+	# channel 15. Needs island2 member names, a clickable sprite the export never
+	# lifted, and the entry blanking of channel 15 all working together.
+	var search: RefCounted = load("res://director/director_runtime.gd").new()
+	search.boot()
+	state.new_game()
+	search.goto_movie("DAY1", null, {"label": "edge1go"})
+	var bench: Dictionary = {}
+	for sprite in search.clickable_sprites(search.loader.get_frame(search.frame_index)):
+		if int((sprite as Dictionary).get("channel", 0)) == 8:
+			bench = sprite
+	_check("searchable scenery is clickable", not bench.is_empty())
+	if not bench.is_empty():
+		_check("hidden shell starts out of sight", search.is_channel_hidden(15))
+		search._activate_sprite(bench, search.sprite_stage_rect(bench).get_center())
+		for _i in 200:
+			search.tick(0.1)
+		search._activate_sprite(bench, search.sprite_stage_rect(bench).get_center())
+		_check("searching the bench uncovers the shell", not search.is_channel_hidden(15))
+
 	print("")
 	print("%d checks failed" % _fails)
 	quit(1 if _fails > 0 else 0)
