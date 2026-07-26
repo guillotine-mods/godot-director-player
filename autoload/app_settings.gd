@@ -43,7 +43,7 @@ var dev_mode: bool = true
 ## the interpreter being right: it uses the Lingo's own egozh, where the export
 ## path applies the walk_doorways.json corrections that were themselves patching
 ## bad exported walk targets.
-var use_lingo_clicks: bool = false
+var use_lingo_clicks: bool = true
 ## Interpret `on exitFrame`: 2504 of the game's 3457 handlers, so most of the
 ## script logic now runs from the original Lingo rather than the lifted score data.
 ##
