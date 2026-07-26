@@ -313,3 +313,46 @@ single remaining gate.
 | Convergence beyond 5 movies | 56 of 61 movies with intervals unmeasured |
 | `keyDown`, `startMovie`, `stopMovie`, `idle` | not dispatched |
 | Retirement of the guessed tables | nothing retired; `movie_context.json`, `inventory_drops.json` and the lifted `on_click` are still what the game uses |
+
+
+---
+
+## walkonby, wired
+
+The original click handler on an exit sets `egozh`/`egozv`, optionally
+`nextroomdata`, and calls `walkonby()`, which flips `whatodo` to `"walktime"` and
+lets the frame handlers carry Piposh across. `PuppetController` is already a
+native implementation of that state machine, carrying those exact field names, so
+the binding is an aliasing problem rather than a reimplementation:
+
+- `LingoHost.PUPPET_GLOBALS` aliases `egozh`, `egozv`, `whatodo` and `syz` onto
+  `PuppetController`, through `owns_global`/`get_global`/`set_global` hooks on the
+  interpreter. Shadowing them would let the two drift, and the second click in
+  the `if whatodo = "stand"` pattern would never fire.
+- `LingoHost.NATIVE_HANDLERS` lets the host claim a handler name outright, ahead
+  of the original definition. `walkonby` is claimed because running the Lingo
+  version would fight `PuppetController` over sprite 30's walk-cycle members.
+- `nextroomdata` item 1 becomes `PuppetController.nextroom.label`, so the
+  destination comes from the script rather than from
+  `movie_context.json`'s guessed `transitions` table.
+
+Measured over 117 walk hotspots in DAY1, NIGHT1 and HOTEL1, with both flags on:
+
+| Outcome | Cases |
+|---|---:|
+| identical to the exported path | 51 |
+| right room, facing reversed | 33 |
+| wrong room | 25 |
+| click no longer starts a walk | 8 |
+
+**84 of 117 reach the correct room, against 3 before this was wired.** That is the
+progress; the 25 wrong-room and 8 dead hotspots are the remaining work, and
+`use_lingo_clicks` stays off until they are gone.
+
+The facing difference is worth a note rather than a fix: the interpreted path uses
+the Lingo's own `egozh`, while the exported path applies `walk_doorways.json`,
+which exists precisely because the exported walk targets were wrong (commits
+"give each exit its own walk target" and "face the remaining exits the right way
+too"). So some of those 33 are likely the interpreter being more correct than the
+baseline it is being compared against, and the comparison needs a third opinion
+before any of them is called a regression.

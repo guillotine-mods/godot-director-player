@@ -35,6 +35,7 @@ func _init(director_runtime: Object) -> void:
 	runtime = director_runtime
 	host = LingoHost.new(director_runtime)
 	interpreter = LingoInterpreter.new(host)
+	host.interpreter = interpreter
 
 
 func prepare_movie(movie: String) -> void:

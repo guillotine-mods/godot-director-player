@@ -13,8 +13,19 @@ const MEMBER_NAMES_PATH := "res://data/lingo/member_names.json"
 ## Field whose text is the inventory. Aliased rather than copied: GameState owns
 ## it, the Save Editor edits it, and to_dict/from_dict round-trip it.
 const INVENTORY_FIELD := "objectsfield"
+## Globals the port already owns. PuppetController is a native implementation of
+## Director's walk state machine and carries these exact names, so the interpreter
+## must read and write through to it or the two drift apart.
+const PUPPET_GLOBALS := {
+	"egozh": "egozh", "egozv": "egozv", "whatodo": "whatodo", "syz": "syz",
+}
+## Handlers the port implements natively, which therefore win even over the
+## original Lingo definition.
+const NATIVE_HANDLERS := ["walkonby"]
 
 var runtime: Object = null
+## Set by LingoEngine. The native handlers read globals through it.
+var interpreter: Object = null
 
 ## channel -> {property (lower) -> value}. A property present here overrides the
 ## score; absent falls through to the score frame.
@@ -323,6 +334,8 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# play stack, so treat it as a plain go, which is how every use in
 			# this game behaves.
 			return _go(args)
+		"walkonby":
+			return _walkonby()
 		"puppetsprite":
 			if args.size() >= 1:
 				var channel := LingoValue.to_int(args[0])
@@ -372,6 +385,65 @@ func call_builtin(name: String, args: Array) -> Variant:
 		_:
 			unhandled[name.to_lower()] = true
 			return null
+
+
+func owns_global(name: String) -> bool:
+	return runtime != null and PUPPET_GLOBALS.has(name.to_lower())
+
+
+func get_global(name: String) -> Variant:
+	var field := str(PUPPET_GLOBALS.get(name.to_lower(), ""))
+	if field == "" or runtime == null:
+		return null
+	return runtime.puppet.get(field)
+
+
+func set_global(name: String, value: Variant) -> void:
+	var field := str(PUPPET_GLOBALS.get(name.to_lower(), ""))
+	if field == "" or runtime == null:
+		return
+	if field == "whatodo":
+		runtime.puppet.whatodo = LingoValue.to_str(value)
+	elif field == "syz":
+		runtime.puppet.syz = LingoValue.to_int(value)
+	else:
+		runtime.puppet.set(field, float(LingoValue.to_num(value)))
+
+
+func is_native_handler(name: String) -> bool:
+	return NATIVE_HANDLERS.has(name.to_lower())
+
+
+func _walkonby() -> Variant:
+	## The original sets sprite 30's walk-cycle member and flips whatodo. The port
+	## does all of that in PuppetController, so the native version only has to
+	## start it moving toward egozh/egozv, which the caller has already set.
+	if runtime == null:
+		return 0
+	var puppet: Object = runtime.puppet
+	if not bool(puppet.active):
+		puppet.bootstrap(Vector2(float(puppet.loc_h), float(puppet.loc_v)),
+			runtime.loader.stage_size,
+			str(runtime.marker_name_for_frame(runtime.frame_index)))
+	var target_h := float(puppet.egozh)
+	if target_h < float(puppet.loc_h) - 10.0:
+		puppet.facing = "left"
+	elif target_h > float(puppet.loc_h) + 10.0:
+		puppet.facing = "right"
+	# `nextroomdata` is the original's room handover and item 1 is the destination
+	# label; "000" means stay in this room.
+	var destination := ""
+	if interpreter != null:
+		var raw := LingoValue.to_str((interpreter.globals as Dictionary).get("nextroomdata", ""))
+		var first := LingoValue.get_chunk(raw, "item", 1, 1)
+		if first != "" and first != "000":
+			destination = first
+	puppet.nextroom = {"label": destination} if destination != "" else {}
+	puppet.whatodo = "walktime"
+	puppet.walk_tick = 0
+	puppet.apply_walk_frame()
+	stage_dirty = true
+	return 0
 
 
 func begin_dispatch() -> void:

@@ -369,6 +369,9 @@ func _assign_chunk(target: Dictionary, value: Variant, frame: Dictionary) -> voi
 
 
 func _set_var(name: String, value: Variant, frame: Dictionary) -> void:
+	if host != null and host.has_method("owns_global") and host.owns_global(name):
+		host.set_global(name, value)
+		return
 	if (frame.get("globals", {}) as Dictionary).has(name) or globals.has(name):
 		globals[name] = value
 		return
@@ -567,9 +570,16 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	var locals: Dictionary = frame.get("locals", {})
 	if locals.has(key):
 		return locals[key]
+	# Globals the host owns: the walk state lives in PuppetController, so
+	# `egozh`, `whatodo` and friends must alias it rather than shadow it.
+	if host != null and host.has_method("owns_global") and host.owns_global(key):
+		return host.get_global(key)
 	if globals.has(key):
 		return globals[key]
 	# An unknown bare identifier is a parameterless handler call in Lingo.
+	if host != null and host.has_method("is_native_handler") and host.is_native_handler(key):
+		var native: Variant = _host_call("call_builtin", [key, []])
+		return native if native != null else 0
 	if has_handler(key) or _script_has_handler(frame.get("script", {}), key):
 		return call_handler(key, [], frame.get("script", {}))
 	var handled: Variant = _host_call("call_builtin", [key, []])
@@ -636,7 +646,13 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 				return list[i - 1] if i >= 1 and i <= list.size() else 0
 			return 0
 
-	# A user handler wins over a host builtin, matching Director.
+	# Handlers the host implements natively win even over a user handler: the port
+	# reimplements the walk state machine in PuppetController, so running the
+	# original `walkonby` would fight it.
+	if host != null and host.has_method("is_native_handler") and host.is_native_handler(name):
+		var native: Variant = _host_call("call_builtin", [name, args])
+		return native if native != null else 0
+	# Otherwise a user handler wins over a host builtin, matching Director.
 	var script: Dictionary = frame.get("script", {})
 	if _script_has_handler(script, name) or has_handler(name):
 		return call_handler(name, args, script)

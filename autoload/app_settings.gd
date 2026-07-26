@@ -27,12 +27,22 @@ var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST
 var dev_mode: bool = true
 ## Interpret the original Lingo for mouse clicks instead of the lifted on_click.
 ##
-## OFF, and the blocker is known precisely. Enabling it takes the walk suites from
-## 0/0/28 failures to 5/2/31, because the original click handler on an exit sets
-## `nextroomdata` and `egozh`/`egozv` and leaves the moving to `walkonby`, which
-## this port replaces with walk_doorways.json and has not wired to the
-## interpreter. Those are the same 190 cases tools/lingo_converge.gd counts as
-## deferred walks. Wire walkonby, then flip this.
+## OFF, and the remaining gap is measured. `walkonby` is now wired natively
+## (LingoHost.NATIVE_HANDLERS), and the walk globals `egozh`, `egozv`, `whatodo`
+## and `syz` alias PuppetController rather than shadowing it, so an interpreted
+## click does start a walk. tools/lingo_walk_diff.gd over 117 walk hotspots in
+## DAY1, NIGHT1 and HOTEL1:
+##
+##   51  identical outcome
+##   33  right room, Piposh faces the other way
+##   25  wrong room
+##    8  click no longer starts a walk
+##
+## 84 of 117 reach the correct room, against 3 before walkonby was wired. The 25
+## wrong-room and 8 dead cases are what is left. Note the facing difference may be
+## the interpreter being right: it uses the Lingo's own egozh, where the export
+## path applies the walk_doorways.json corrections that were themselves patching
+## bad exported walk targets.
 var use_lingo_clicks: bool = false
 ## Interpret `on exitFrame`: 2504 of the game's 3457 handlers, so most of the
 ## script logic now runs from the original Lingo rather than the lifted score data.
