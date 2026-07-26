@@ -142,6 +142,17 @@ RESERVED_AFTER_PROP = {
 # The only adjectives that legitimately precede a property name.
 THE_ADJECTIVES = {"long", "short", "abbreviated", "abbrev", "number"}
 
+# Commands whose first argument is a bare word rather than an expression:
+# `sound playFile 1, x`, `go to frame 5`, `play frame "x"`. Without this the
+# second word parses as a nested command call and swallows the real arguments.
+COMMAND_WORDS = {
+    "sound": {"playfile", "stop", "fadein", "fadeout", "close", "play"},
+    "go": {"to", "frame", "loop", "next", "previous", "movie"},
+    "play": {"frame", "done", "movie"},
+    "open": {"window"},
+    "close": {"window"},
+}
+
 SYSTEM_PROPS = {
     "moviename", "machinetype", "keycode", "clickon", "mouseh", "mousev",
     "frame", "timer", "ticks", "milliseconds", "key", "shiftdown",
@@ -731,9 +742,21 @@ class Parser:
             # `puppetSprite i, 1`. An operator or newline means it is a bare
             # variable reference instead.
             if self.starts_command_args():
-                args = [self.parse_expr()]
-                while self.eat_op(","):
-                    args.append(self.parse_expr())
+                args: list[dict] = []
+                keywords = COMMAND_WORDS.get(name.lower())
+                while (keywords is not None
+                       and self.peek().kind in ("ident", "kw")
+                       and self.peek().value.lower() in keywords
+                       and not self.at_op("(", ahead=1)):
+                    args.append({"node": "str", "value": self.next().value,
+                                 "line": line})
+                if not (args and self.peek().kind in ("nl", "eof")):
+                    if args and not self.at_op(","):
+                        args.append(self.parse_expr())
+                    elif not args:
+                        args.append(self.parse_expr())
+                    while self.eat_op(","):
+                        args.append(self.parse_expr())
                 return {"node": "call", "callee": {"node": "var", "name": name},
                         "args": args, "command": True, "line": line}
             return {"node": "var", "name": name, "line": line}

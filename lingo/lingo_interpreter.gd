@@ -187,7 +187,9 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 				var key := str(name).to_lower()
 				frame["globals"][key] = true
 				if not globals.has(key):
-					globals[key] = 0
+					# An unset global is VOID, not 0. It matters: `effectspath &
+					# "x.aif"` must be "x.aif", and 0 would make it "0x.aif".
+					globals[key] = null
 			return Flow.NORMAL
 		"assign":
 			_assign(stmt.get("target", {}), _eval(stmt.get("value", {}), frame), frame)
@@ -573,7 +575,8 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	var handled: Variant = _host_call("call_builtin", [key, []])
 	if handled != null:
 		return handled
-	return 0
+	# Unknown identifiers are VOID, which concatenates as "" and counts as 0.
+	return null
 
 
 func _script_has_handler(script: Variant, key: String) -> bool:

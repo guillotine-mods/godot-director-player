@@ -54,6 +54,9 @@ var puppet: PuppetController = PuppetController.new()
 var context: MovieContext = MovieContext.new()
 var drag: InventoryDrag = InventoryDrag.new()
 var drops: InventoryDrops = InventoryDrops.new()
+## Built on demand: loading every cast's scripts costs time a normal run should
+## not pay when the interpreter is off.
+var lingo: LingoEngine = null
 
 var frame_index: int = 0
 var running: bool = true
@@ -92,6 +95,8 @@ func _init() -> void:
 func boot() -> Error:
 	context.load_context()
 	drops.load_table()
+	if AppSettings.use_lingo_clicks:
+		lingo = LingoEngine.new(self)
 	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
 
@@ -643,6 +648,8 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 		if load_lbl >= 0:
 			start = load_lbl
 
+	if lingo != null:
+		lingo.prepare_movie(movie_name)
 	movie_changed.emit(movie_name)
 	enter_frame(start)
 	nav_event.emit(
@@ -806,6 +813,19 @@ func update_hover(stage_pt: Vector2) -> void:
 
 
 func _activate_sprite(sprite: Dictionary, stage_pt: Vector2) -> void:
+	# The original script wins when it exists and the interpreter is enabled;
+	# otherwise the lifted on_click data stands, so nothing regresses.
+	if lingo != null:
+		var channel_clicked := int(sprite.get("channel", 0))
+		if lingo.has_any_handler_for(channel_clicked, frame_index, "mouseUp"):
+			lingo.host.mouse_stage = stage_pt
+			lingo.dispatch_sprite_event("mouseDown", channel_clicked, frame_index)
+			lingo.dispatch_sprite_event("mouseUp", channel_clicked, frame_index)
+			if lingo.host.stage_dirty:
+				lingo.host.stage_dirty = false
+				redraw_requested.emit()
+			nav_event.emit("lingo: ch%d mouseUp" % channel_clicked)
+			return
 	var on_click: Dictionary = sprite.get("on_click", {})
 	AudioDirector.play_click_sounds(on_click)
 	_apply_inventory_ops(on_click.get("inventory", []))
