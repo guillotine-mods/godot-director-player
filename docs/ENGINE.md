@@ -210,3 +210,10 @@ Two traps found while building this:
 
 `hand1`/`hand2` decode to 5x6 and 8x8 pixels rather than the 1-bit 16x16 a
 Director cursor cast pair needs, so `CURSOR_POINTING_HAND` stands in.
+
+Scope note: of the screens carrying slot channels, only DAY1, NIGHT1, SEA1,
+HOTEL1, AIR1 and SHUFFLE are real inventory HUDs. ARCADE1 and ARCADE2 score
+channels 103, 106 and 108 on 20 frames with no channel 100 at all, so they have
+no HUD bar and no examine target; drag there finds nothing to intersect. Five
+further movies (DTCDAY2, GOLDDEAD, ISHDAY1, MIROLO, TOFIRCPT) carry the eight
+channels on a single stray frame each.

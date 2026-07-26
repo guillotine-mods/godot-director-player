@@ -11,6 +11,24 @@ Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decode
 2. Open `project.godot`
 3. Press **F5**
 
+On a fresh checkout, **open the editor once before running anything headless.**
+`.godot/` is gitignored, and `global_script_class_cache.cfg` inside it is what
+makes `class_name` scripts resolvable. Without it, `godot --headless --script`
+fails with `Could not find type "InventoryDrag"` in a file you did not touch, and
+every suite goes down with it.
+
+## Tests
+
+```
+godot --headless --script tests/test_walk_doorways.gd
+godot --headless --script tests/test_day1_navigation.gd
+godot --headless --script tests/test_director_runtime.gd
+```
+
+Each prints `PASS: <suite>` or one `ERROR:` per failure. Autoloads are not
+compile-time globals in a `--script` run, because the script loads before the
+tree exists; reach them with `root.get_node("GameState")`.
+
 Boot: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVELOAD` (JSON slots).
 
 ## Controls
