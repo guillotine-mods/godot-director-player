@@ -204,6 +204,35 @@ func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> boo
 	return false
 
 
+func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
+	## Director sends enterFrame and exitFrame to every sprite behaviour in the
+	## frame, not only to the frame script. This game depends on it: `whereami`,
+	## which 138 mouseUp handlers gate their real behaviour on, is set by an
+	## `on enterFrame` in a sprite behaviour (`BehaviorScript 3 - b4 bk's`) rather
+	## than by any frame script. Returns how many behaviours ran.
+	var frame: Dictionary = {}
+	if host != null and host.runtime != null:
+		frame = host.runtime.loader.get_frame(frame_index)
+	var ran := 0
+	var seen: Dictionary = {}
+	for sprite_value in frame.get("sprites", []):
+		if typeof(sprite_value) != TYPE_DICTIONARY:
+			continue
+		var channel := int((sprite_value as Dictionary).get("channel", 0))
+		if channel <= 0 or seen.has(channel):
+			continue
+		seen[channel] = true
+		var behaviour := behaviour_for_sprite(channel, frame_index)
+		if behaviour.is_empty() or not _script_handles(behaviour, event):
+			continue
+		host.click_on = channel
+		interpreter.reset_steps()
+		if interpreter.run_handler_in_script(behaviour, event):
+			ran += 1
+	host.click_on = 0
+	return ran
+
+
 func dispatch_frame_event(event: String, frame_index: int) -> bool:
 	host.click_on = 0
 	host.begin_dispatch()

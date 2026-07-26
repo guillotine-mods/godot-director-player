@@ -498,6 +498,19 @@ func enter_frame(index: int) -> void:
 	var room := marker_name_for_frame(frame_index)
 	_hidden_channels = context.hidden_channels(loader.movie_name, room)
 	puppet.sync_from_frame(frame, room, loader.stage_size)
+	# `on enterFrame` is where the original records which room the player is in.
+	# 13 handlers set the `whereami` global here, and 138 mouseUp handlers gate
+	# their real behaviour on it: ISLAND2's `arcade1` only sets the movie-launch
+	# flag `if whereami = label("arcade")`. Without this dispatch `whereami` is
+	# never assigned, every one of those gates is false, and the hotspots fall
+	# through to a generic branch that walks nowhere.
+	if lingo != null and AppSettings.use_lingo_frames:
+		lingo.host.begin_dispatch()
+		lingo.dispatch_sprite_behaviours("enterFrame", frame_index)
+		lingo.dispatch_frame_event("enterFrame", frame_index)
+		if lingo.host.stage_dirty:
+			lingo.host.stage_dirty = false
+			redraw_requested.emit()
 	AudioDirector.play_frame_sounds(frame)
 	GameState.remember_location(loader.movie_name, label_near_frame(frame_index), frame_index)
 	frame_changed.emit(frame_index)

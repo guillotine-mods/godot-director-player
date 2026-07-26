@@ -15,6 +15,8 @@ extends SceneTree
 ##   godot --headless --script tools/lingo_walk_diff.gd -- DAY1
 
 const TICKS_AFTER_CLICK := 260
+## Ticks spent standing in the room before the click, so its own script has run.
+const SETTLE_TICKS := 12
 const DELTA := 0.1
 ## Rooms per movie. Enough to cover the exits without walking the whole game.
 const MAX_ROOMS := 14
@@ -133,6 +135,13 @@ func _outcome(case: Dictionary) -> String:
 		return "boot-failed"
 	if not runtime.goto_movie(str(case.movie), null, {"label": str(case.room)}):
 		return "enter-failed"
+	runtime.enter_frame(int(case.frame))
+	# Let the room's own script run before clicking in it. The original gates
+	# almost every hotspot on `whereami`, which the room sets from its exitFrame
+	# handler, so clicking on the entry frame takes the else branch of 114
+	# scripts and measures behaviour no player can reach.
+	for _settle in SETTLE_TICKS:
+		runtime.tick(DELTA)
 	runtime.enter_frame(int(case.frame))
 	runtime.perform_click(case.point)
 	var walked: bool = runtime.puppet.is_walking()
