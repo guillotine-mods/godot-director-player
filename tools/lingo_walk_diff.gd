@@ -40,23 +40,42 @@ func _run() -> void:
 
 	var same := 0
 	var differ := 0
+	# Severity matters: reaching a different room is a failure, reaching the same
+	# room facing the other way is cosmetic, and not walking at all is a dead
+	# hotspot.
+	var facing_only := 0
+	var wrong_room := 0
+	var no_walk := 0
 	var lines := PackedStringArray()
 	for case in cases:
 		AppSettings.use_lingo_frames = false
 		AppSettings.use_lingo_clicks = false
 		var off := _outcome(case)
+		# The target configuration: both on. Clicks are the half that needs
+		# walkonby, so testing frames alone hides exactly what matters here.
 		AppSettings.use_lingo_frames = true
-		AppSettings.use_lingo_clicks = false
+		AppSettings.use_lingo_clicks = true
 		var on := _outcome(case)
 		if off == on:
 			same += 1
 		else:
 			differ += 1
-			if lines.size() < 20:
+			var off_room := off.split(" ")[0]
+			var on_room := on.split(" ")[0]
+			if on.contains("walked=n") and off.contains("walked=y"):
+				no_walk += 1
+			elif off_room != on_room:
+				wrong_room += 1
+			else:
+				facing_only += 1
+			if lines.size() < 12:
 				lines.append("  %s @%s ch%d: off=%s | on=%s" % [
 					case.movie, case.room, case.channel, off, on])
 	print("identical outcome: %d/%d" % [same, cases.size()])
 	print("different outcome: %d" % differ)
+	print("  same room, facing differs: %d" % facing_only)
+	print("  different room:           %d" % wrong_room)
+	print("  click no longer walks:    %d" % no_walk)
 	for line in lines:
 		print(line)
 	quit(0)
