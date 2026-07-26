@@ -6,25 +6,34 @@ directory is readable — `tools/list_vise_archive.py` decodes all 3235 records 
 but the payloads use VISE's own compression, so the only practical way to get
 the files out is to run the installer on Windows.
 
-This is written so someone with a Windows machine can do it without knowing
-anything about the project. **Nothing needs installing, no Python, no build
-tools.** Steps 1 and 2 are the whole job.
+> **This recovery is done. Nothing here is outstanding work.**
+>
+> - The Lingo is committed at `reference/lingo/` (3349 scripts, 73 casts), with
+>   the Director text members at `reference/chunks/`. See `reference/README.md`.
+> - The extracted movies and casts, and the ProjectorRays chunk dump they were
+>   decompiled from, are at `~/Downloads/piposh2extracted/` on the development
+>   machine:
+>
+>   ```
+>   piposh2extracted/piposh2-data/          83 .DXR/.CXT plus MASTER.CST, HEZSAVE.DIR, strtgame.dxr
+>   piposh2extracted/piposh2-projectorrays/ 420 MB chunk dump, layout <root>/<NAME>/<NAME>/chunks
+>   ```
+>
+>   That dump is not in the repository, and is a generation-time input only. Pass
+>   its `PIP2DATA` subdirectory as `--chunks-root`; it contains `MASTER` too, so
+>   one root covers every cast.
+>
+> What follows is how the recovery was done, kept so it can be reproduced.
 
-> **The Lingo is already recovered.** It is committed at `reference/lingo/`, with
-> the Director text members at `reference/chunks/`; see `reference/README.md` for
-> provenance and layout. Step 3 below is how it was produced and how to reproduce
-> it, not outstanding work. Do not conclude from this document that room
-> conditions and progression logic have to be inferred: read the Lingo.
-
-## What we need and why
+## What the installer holds
 
 | Type | Files | Size | Why |
 |------|------:|-----:|-----|
-| `.CXT` / `.CST` cast libraries | 25 | 61 MB | 222 characters and objects don't render because their cast members were never exported. They live here. |
+| `.CXT` / `.CST` cast libraries | 25 | 61 MB | Bitmaps and film loops for the linked casts. |
 | `.DXR` / `.DIR` movies | 61 | 86 MB | Carry the original Lingo, which drives room conditions and day-to-day progression. |
 | `.AIF` audio | 3141 | 432 MB | **Not needed** — already converted in `assets/audio`. |
 
-Roughly **147 MB** to send back, not 593 MB.
+Roughly **147 MB** to recover, not 593 MB.
 
 ## Step 1 — run the installer
 
@@ -55,9 +64,10 @@ If PowerShell is awkward, sorting the installed folder by file type in Explorer
 and dragging the `.CXT`, `.CST`, `.DXR` and `.DIR` files into one folder does the
 same job.
 
-`ISLAND2.CXT` (5,135,530 bytes) is the single most valuable file: 137 of the
-222 missing cast members are in it. If something goes wrong and only one file
-can be recovered, make it that one.
+`ISLAND2.CXT` (5,135,530 bytes) was once described as the single most valuable
+file, on the grounds that 137 of 222 missing cast members were in it. That was
+wrong: all 137 are Director shapes, the game's invisible hotspots, and they draw
+nothing by design. See "What the 222 were" below.
 
 ## Step 3 (already done) — ProjectorRays
 
@@ -104,5 +114,27 @@ python3 tools/generate_cast_registry.py --chunks-root <chunk dumps>
 python3 tools/check_cast_coverage.py
 ```
 
-`check_cast_coverage.py` exits 0 only when every referenced cast member
-resolves to a bitmap or a film loop.
+`check_cast_coverage.py` exits 0 only when every referenced cast member resolves,
+and reports the split so that classifying a member as non-drawing cannot quietly
+stand in for resolving it.
+
+## What the 222 were
+
+The coverage tool once reported "222 referenced cast ids resolve to neither a
+bitmap nor a film loop", and this document read that as 222 missing characters.
+Decoding the `CASt` type field for each of them:
+
+| | Count | |
+|---|---:|---|
+| Shape members | 149 | Not missing. Director shapes are this game's invisible hotspots: `island2` member 30 is a 63x402 rect, which is `DAY1` channel 10, the left-edge walk hotspot. Drawing nothing is correct, and shape rendering is deliberately not implemented. |
+| `hezi1` | 59 | Not missing. `ISHDAY1` links `hezi.cst` twice, as `hezi` and as `hezi1`, and the registry lookup was by name. |
+| Film loops | 13 | Genuinely missing, now recovered from the chunk dump. |
+| Field member | 1 | `MASTER` member 10 is text. |
+
+Only the 13 film loops were a content gap. They are in black, detectiv, hatuli,
+heznigt, jokers and sabmon, and before recovery the characters they animate did
+not appear at all: `DIVEFIGT` drew no divers.
+
+The lesson worth keeping is that "member absent" and "member deliberately
+non-drawing" looked identical to the tool. The registry now records the
+difference in a `non_drawing` map.
