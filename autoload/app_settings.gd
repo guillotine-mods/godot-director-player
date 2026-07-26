@@ -25,22 +25,25 @@ var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST
 ## ON while the port is being built. FLIP THIS TO false BEFORE SHIPPING, or an
 ## exported build hands players a skip button and boxes over every hotspot.
 var dev_mode: bool = true
-## Interpret the original Lingo for mouse clicks instead of using the lifted
-## on_click data. Off until tools/lingo_converge.gd reports agreement high enough
-## to trust in play: it is 94.6% accounted for across the five inventory movies,
-## which is promising, not finished.
-var use_lingo_clicks: bool = false
-## Interpret `on exitFrame`, which is 2504 of the 3457 handlers.
+## Interpret the original Lingo for mouse clicks instead of the lifted on_click.
 ##
-## OFF, and the reason is measured rather than cautious. tools/lingo_frames.gd
-## reports the frame path identical to the existing runner for 220/220 ticks in
-## all five inventory movies, which looked like enough to switch on. It is not:
-## turning it on takes tests/test_walk_doorways.gd from 0 failures to 5,
-## test_day1_navigation from 0 to 2, and test_director_runtime from 28 to 31.
-## Those suites exercise transitions, walks and movie loads that a straight tick
-## from one start point never reaches. Diagnose those 7 regressions before
-## flipping this.
-var use_lingo_frames: bool = false
+## OFF, and the blocker is known precisely. Enabling it takes the walk suites from
+## 0/0/28 failures to 5/2/31, because the original click handler on an exit sets
+## `nextroomdata` and `egozh`/`egozv` and leaves the moving to `walkonby`, which
+## this port replaces with walk_doorways.json and has not wired to the
+## interpreter. Those are the same 190 cases tools/lingo_converge.gd counts as
+## deferred walks. Wire walkonby, then flip this.
+var use_lingo_clicks: bool = false
+## Interpret `on exitFrame`: 2504 of the game's 3457 handlers, so most of the
+## script logic now runs from the original Lingo rather than the lifted score data.
+##
+## ON, on this evidence: with clicks left off, tools/lingo_walk_diff.gd finds
+## 115/117 walk outcomes identical across DAY1, NIGHT1 and HOTEL1, and the two
+## differences are improvements (HOTEL1 roomago and roombgo now reach `hallgo`
+## instead of stranding at `what`, both listed as unmapped transitions in
+## data/movie_context.json). The three deleted suites also returned to their exact
+## 0/0/28 baseline with this on.
+var use_lingo_frames: bool = true
 var show_debug_overlays: bool = true
 var show_hotspot_hints: bool = false
 var allow_minigame_skip: bool = true
