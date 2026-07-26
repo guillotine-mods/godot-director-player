@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 19 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 13 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"hat41.aif">
+  [  9] joinstr ................................. <tlkpath & "hat41.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "hat41.aif">
+  [ 12] extcall 20 .............................. sound playFile 1, tlkpath & "hat41.aif"
+  [ 14] pushsymb 19 ............................. <#playFile>
+  [ 16] pushint8 2 .............................. <2>
+  [ 19] getglobal 29 ............................ <effectspath>
+  [ 21] pushcons 8 .............................. <"drama.aif">
+  [ 23] joinstr ................................. <effectspath & "drama.aif">
+  [ 24] pusharglistnoret 3 ...................... <2, effectspath & "drama.aif">
+  [ 26] extcall 20 .............................. sound playFile 2, effectspath & "drama.aif"
+  [ 28] ret
+end

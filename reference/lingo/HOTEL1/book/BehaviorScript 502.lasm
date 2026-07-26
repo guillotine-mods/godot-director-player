@@ -1,0 +1,53 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 58 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] jmpifz [110] ............................ if not soundBusy(2) then
+  [ 12] pushint8 3 .............................. <3>
+  [ 15] pusharglist 1 ........................... <3>
+  [ 17] extcall 44 .............................. <random(3)>
+  [ 20] setlocal 0 .............................. x = random(3)
+  [ 22] getlocal 0 .............................. <x>
+  [ 24] peek 0 .................................. case x of
+  [ 26] pushint8 1 .............................. <1>
+  [ 29] eq
+  [ 30] jmpifz [ 53] ............................ (case) 1:
+  [ 33] pushsymb 52 ............................. <#playFile>
+  [ 36] pushint8 2 .............................. <2>
+  [ 39] getglobal 36 ............................ <effectspath>
+  [ 42] pushcons 0 .............................. <"hotel2.aif">
+  [ 44] joinstr ................................. <effectspath & "hotel2.aif">
+  [ 45] pusharglistnoret 3 ...................... <2, effectspath & "hotel2.aif">
+  [ 47] extcall 53 .............................. sound playFile 2, effectspath & "hotel2.aif"
+  [ 50] jmp [108]
+  [ 53] peek 0
+  [ 55] pushint8 2 .............................. <2>
+  [ 58] eq
+  [ 59] jmpifz [ 82] ............................ (case) 2:
+  [ 62] pushsymb 52 ............................. <#playFile>
+  [ 65] pushint8 2 .............................. <2>
+  [ 68] getglobal 36 ............................ <effectspath>
+  [ 71] pushcons 8 .............................. <"liber.aif">
+  [ 73] joinstr ................................. <effectspath & "liber.aif">
+  [ 74] pusharglistnoret 3 ...................... <2, effectspath & "liber.aif">
+  [ 76] extcall 53 .............................. sound playFile 2, effectspath & "liber.aif"
+  [ 79] jmp [108]
+  [ 82] peek 0
+  [ 84] pushint8 3 .............................. <3>
+  [ 87] eq
+  [ 88] jmpifz [108] ............................ (case) 3:
+  [ 91] pushsymb 52 ............................. <#playFile>
+  [ 94] pushint8 2 .............................. <2>
+  [ 97] getglobal 36 ............................ <effectspath>
+  [100] pushcons 16 ............................. <"hotelup.aif">
+  [102] joinstr ................................. <effectspath & "hotelup.aif">
+  [103] pusharglistnoret 3 ...................... <2, effectspath & "hotelup.aif">
+  [105] extcall 53 .............................. sound playFile 2, effectspath & "hotelup.aif"
+  [108] pop 1 ................................... end case
+  [110] pusharglist 0 ........................... <>
+  [112] thebuiltin 118 .......................... <the frame>
+  [115] pusharglistnoret 1 ...................... <the frame>
+  [117] extcall 3 ............................... go(the frame)
+  [119] ret
+end

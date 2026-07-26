@@ -1,0 +1,74 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"continue">
+  [  2] setlocal 0 .............................. xxx = "continue"
+  [  4] getglobal 40 ............................ <afganicnt>
+  [  7] pushint16 1 ............................. <1>
+  [ 10] add ..................................... <afganicnt + 1>
+  [ 11] setglobal 40 ............................ afganicnt = afganicnt + 1
+  [ 14] pushint16 1 ............................. <1>
+  [ 17] setlocal 1 .............................. z = 1
+  [ 19] pushint16 1 ............................. <1>
+  [ 22] setlocal 2 .............................. i = 1
+  [ 24] getlocal 2 .............................. <i>
+  [ 26] pushcons 1 .............................. <"shellfield">
+  [ 28] pushcons 2 .............................. <"master">
+  [ 30] getfield ................................ <field("shellfield", "master")>
+  [ 31] pushint16 3 ............................. <3>
+  [ 34] get 1 ................................... <the number of items in field "shellfield" of castLib "master">
+  [ 36] lteq .................................... <i <= the number of items in field "shellfield" of castLib "master">
+  [ 37] jmpifz [103] ............................ repeat while i <= the number of items in field "shellfield" of castLib "master"
+  [ 40] pushzero ................................ <0>
+  [ 41] pushzero ................................ <0>
+  [ 42] pushzero ................................ <0>
+  [ 43] pushzero ................................ <0>
+  [ 44] getlocal 2 .............................. <i>
+  [ 46] pushzero ................................ <0>
+  [ 47] pushzero ................................ <0>
+  [ 48] pushzero ................................ <0>
+  [ 49] pushcons 3 .............................. <"shellfield">
+  [ 51] pushcons 4 .............................. <"master">
+  [ 53] getfield ................................ <field("shellfield", "master")>
+  [ 54] getchunk ................................ <item i of field "shellfield" of castLib "master">
+  [ 55] pushcons 5 .............................. <"0">
+  [ 57] eq ...................................... <item i of field "shellfield" of castLib "master" = "0">
+  [ 58] getlocal 0 .............................. <xxx>
+  [ 60] pushcons 6 .............................. <"continue">
+  [ 62] eq ...................................... <xxx = "continue">
+  [ 63] and ..................................... <(item i of field "shellfield" of castLib "master" = "0") and (xxx = "continue")>
+  [ 64] jmpifz [ 92] ............................ if (item i of field "shellfield" of castLib "master" = "0") and (xxx = "continue") then
+  [ 67] pushcons 7 .............................. <"stop">
+  [ 69] setlocal 0 .............................. xxx = "stop"
+  [ 71] getglobal 19 ............................ <nof>
+  [ 73] pushzero ................................ <0>
+  [ 74] pushzero ................................ <0>
+  [ 75] pushzero ................................ <0>
+  [ 76] pushzero ................................ <0>
+  [ 77] getlocal 2 .............................. <i>
+  [ 79] pushzero ................................ <0>
+  [ 80] pushzero ................................ <0>
+  [ 81] pushzero ................................ <0>
+  [ 82] pushcons 8 .............................. <"shellfield">
+  [ 84] pushcons 9 .............................. <"master">
+  [ 86] putchunk 22 ............................. put nof into item i of field "shellfield" of castLib "master"
+  [ 88] getlocal 2 .............................. <i>
+  [ 90] setlocal 1 .............................. z = i
+  [ 92] pushint16 1 ............................. <1>
+  [ 95] getlocal 2 .............................. <i>
+  [ 97] add ..................................... <1 + i>
+  [ 98] setlocal 2 .............................. i = 1 + i
+  [100] endrepeat [ 24]
+  [103] pushsymb 11 ............................. <#playFile>
+  [105] pushint16 1 ............................. <1>
+  [108] getglobal 36 ............................ <effectspath>
+  [111] pushcons 10 ............................. <"pshell.aif">
+  [113] joinstr ................................. <effectspath & "pshell.aif">
+  [114] pusharglistnoret 3 ...................... <1, effectspath & "pshell.aif">
+  [116] extcall 12 .............................. sound playFile 1, effectspath & "pshell.aif"
+  [118] pusharglist 0 ........................... <>
+  [120] thebuiltin 29 ........................... <the clickOn>
+  [122] pusharglist 1 ........................... <the clickOn>
+  [124] extcall 20 .............................. <sprite(the clickOn)>
+  [126] pushzero ................................ <0>
+  [127] setobjprop 21 ........................... sprite(the clickOn).visible = 0
+  [129] ret
+end

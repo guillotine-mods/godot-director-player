@@ -1,0 +1,7 @@
+on exitFrame
+  [  0] pushint8 1 .............................. <1>
+  [  3] pushcons 0 .............................. <"arcade1.dxr">
+  [  5] pusharglistnoret 2 ...................... <1, "arcade1.dxr">
+  [  7] extcall 22 .............................. go(1, "arcade1.dxr")
+  [  9] ret
+end

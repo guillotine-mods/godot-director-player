@@ -1,0 +1,67 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 45 ........................... <the clickOn>
+  [  4] pushzero ................................ <0>
+  [  5] pushint8 25 ............................. <25>
+  [  7] set 6 ................................... set the visible of sprite the clickOn to 0
+  [  9] pushcons 0 .............................. <"continue">
+  [ 11] setlocal 0 .............................. x = "continue"
+  [ 13] pushint8 1 .............................. <1>
+  [ 15] setlocal 8
+  [ 17] getlocal 8
+  [ 19] pushcons 8 .............................. <"objectsfield">
+  [ 21] pushcons 16 ............................. <"master">
+  [ 23] getfield ................................ <field("objectsfield", "master")>
+  [ 24] pushint8 4 .............................. <4>
+  [ 26] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 28] lteq
+  [ 29] jmpifz [ 89] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 32] pushzero ................................ <0>
+  [ 33] pushzero ................................ <0>
+  [ 34] pushzero ................................ <0>
+  [ 35] pushzero ................................ <0>
+  [ 36] pushzero ................................ <0>
+  [ 37] pushzero ................................ <0>
+  [ 38] getlocal 8 .............................. <i>
+  [ 40] pushzero ................................ <0>
+  [ 41] pushcons 24 ............................. <"objectsfield">
+  [ 43] pushcons 32 ............................. <"master">
+  [ 45] getfield ................................ <field("objectsfield", "master")>
+  [ 46] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 47] pushcons 40 ............................. <"empty">
+  [ 49] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 50] getlocal 0 .............................. <x>
+  [ 52] pushcons 48 ............................. <"continue">
+  [ 54] eq ...................................... <x = "continue">
+  [ 55] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 56] jmpifz [ 80] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 59] pushcons 56 ............................. <"sciser">
+  [ 61] pushzero ................................ <0>
+  [ 62] pushzero ................................ <0>
+  [ 63] pushzero ................................ <0>
+  [ 64] pushzero ................................ <0>
+  [ 65] pushzero ................................ <0>
+  [ 66] pushzero ................................ <0>
+  [ 67] getlocal 8 .............................. <i>
+  [ 69] pushzero ................................ <0>
+  [ 70] pushcons 64 ............................. <"objectsfield">
+  [ 72] pushcons 72 ............................. <"master">
+  [ 74] putchunk 22 ............................. put "sciser" into line i of field "objectsfield" of castLib "master"
+  [ 76] pushcons 80 ............................. <"stop">
+  [ 78] setlocal 0 .............................. x = "stop"
+  [ 80] pushint8 1
+  [ 82] getlocal 8
+  [ 84] add
+  [ 85] setlocal 8
+  [ 87] endrepeat [ 17]
+  [ 89] pushsymb 42 ............................. <#playFile>
+  [ 91] pushint8 1 .............................. <1>
+  [ 93] getglobal 31 ............................ <soundspath>
+  [ 95] pushcons 88 ............................. <"pfsciser.aif">
+  [ 97] joinstr ................................. <soundspath & "pfsciser.aif">
+  [ 98] pusharglistnoret 3 ...................... <1, soundspath & "pfsciser.aif">
+  [100] extcall 43 .............................. sound playFile 1, soundspath & "pfsciser.aif"
+  [102] pusharglistnoret 0 ...................... <>
+  [104] extcall 46 .............................. displayobject()
+  [106] ret
+end

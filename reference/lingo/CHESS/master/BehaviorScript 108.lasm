@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"hezmov">
+  [  2] pusharglistnoret 1 ...................... <"hezmov">
+  [  4] extcall 6 ............................... go("hezmov")
+  [  6] ret
+end

@@ -1,0 +1,191 @@
+on exitFrame
+  [  0] pushzero ................................ <0>
+  [  1] setlocal 0 .............................. oneortwo = 0
+  [  3] pushzero ................................ <0>
+  [  4] setlocal 8 .............................. moneycount = 0
+  [  6] pushcons 0 .............................. <"continue">
+  [  8] setlocal 16 ............................. x = "continue"
+  [ 10] pushint8 1 .............................. <1>
+  [ 12] setlocal 24
+  [ 14] getlocal 24
+  [ 16] pushcons 8 .............................. <"objectsfield">
+  [ 18] pushcons 16 ............................. <"master">
+  [ 20] getfield ................................ <field("objectsfield", "master")>
+  [ 21] pushint8 4 .............................. <4>
+  [ 23] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 25] lteq
+  [ 26] jmpifz [ 83] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 29] pushzero ................................ <0>
+  [ 30] pushzero ................................ <0>
+  [ 31] pushzero ................................ <0>
+  [ 32] pushzero ................................ <0>
+  [ 33] pushzero ................................ <0>
+  [ 34] pushzero ................................ <0>
+  [ 35] getlocal 24 ............................. <i>
+  [ 37] pushzero ................................ <0>
+  [ 38] pushcons 24 ............................. <"objectsfield">
+  [ 40] pushcons 32 ............................. <"master">
+  [ 42] getfield ................................ <field("objectsfield", "master")>
+  [ 43] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 44] pushcons 40 ............................. <"money">
+  [ 46] containsstr ............................. <line i of field "objectsfield" of castLib "master" contains "money">
+  [ 47] jmpifz [ 74] ............................ if line i of field "objectsfield" of castLib "master" contains "money" then
+  [ 50] pushzero ................................ <0>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushzero ................................ <0>
+  [ 53] pushzero ................................ <0>
+  [ 54] pushzero ................................ <0>
+  [ 55] pushzero ................................ <0>
+  [ 56] getlocal 24 ............................. <i>
+  [ 58] pushzero ................................ <0>
+  [ 59] pushcons 48 ............................. <"objectsfield">
+  [ 61] pushcons 56 ............................. <"master">
+  [ 63] getfield ................................ <field("objectsfield", "master")>
+  [ 64] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 65] setlocal 0 .............................. oneortwo = line i of field "objectsfield" of castLib "master"
+  [ 67] getlocal 8 .............................. <moneycount>
+  [ 69] pushint8 1 .............................. <1>
+  [ 71] add ..................................... <moneycount + 1>
+  [ 72] setlocal 8 .............................. moneycount = moneycount + 1
+  [ 74] pushint8 1
+  [ 76] getlocal 24
+  [ 78] add
+  [ 79] setlocal 24
+  [ 81] endrepeat [ 14]
+  [ 83] getlocal 8 .............................. <moneycount>
+  [ 85] pushint8 1 .............................. <1>
+  [ 87] gt ...................................... <moneycount > 1>
+  [ 88] jmpifz [107] ............................ if moneycount > 1 then / else
+  [ 91] pushsymb 25 ............................. <#playFile>
+  [ 93] pushint8 1 .............................. <1>
+  [ 95] getglobal 27 ............................ <soundspath>
+  [ 97] pushcons 64 ............................. <"nomony.aif">
+  [ 99] joinstr ................................. <soundspath & "nomony.aif">
+  [100] pusharglistnoret 3 ...................... <1, soundspath & "nomony.aif">
+  [102] extcall 26 .............................. sound playFile 1, soundspath & "nomony.aif"
+  [104] jmp [311]
+  [107] getlocal 0 .............................. <oneortwo>
+  [109] pushcons 72 ............................. <"money2">
+  [111] eq ...................................... <oneortwo = "money2">
+  [112] getlocal 0 .............................. <oneortwo>
+  [114] pushzero ................................ <0>
+  [115] eq ...................................... <oneortwo = 0>
+  [116] or ...................................... <(oneortwo = "money2") or (oneortwo = 0)>
+  [117] jmpifz [216] ............................ if (oneortwo = "money2") or (oneortwo = 0) then / else
+  [120] pushcons 80 ............................. <"continue">
+  [122] setlocal 16 ............................. x = "continue"
+  [124] pushint8 1 .............................. <1>
+  [126] setlocal 24
+  [128] getlocal 24
+  [130] pushcons 88 ............................. <"objectsfield">
+  [132] pushcons 96 ............................. <"master">
+  [134] getfield ................................ <field("objectsfield", "master")>
+  [135] pushint8 4 .............................. <4>
+  [137] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [139] lteq
+  [140] jmpifz [200] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [143] pushzero ................................ <0>
+  [144] pushzero ................................ <0>
+  [145] pushzero ................................ <0>
+  [146] pushzero ................................ <0>
+  [147] pushzero ................................ <0>
+  [148] pushzero ................................ <0>
+  [149] getlocal 24 ............................. <i>
+  [151] pushzero ................................ <0>
+  [152] pushcons 104 ............................ <"objectsfield">
+  [154] pushcons 112 ............................ <"master">
+  [156] getfield ................................ <field("objectsfield", "master")>
+  [157] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [158] pushcons 120 ............................ <"empty">
+  [160] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [161] getlocal 16 ............................. <x>
+  [163] pushcons 128 ............................ <"continue">
+  [165] eq ...................................... <x = "continue">
+  [166] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [167] jmpifz [191] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [170] pushcons 136 ............................ <"money1">
+  [172] pushzero ................................ <0>
+  [173] pushzero ................................ <0>
+  [174] pushzero ................................ <0>
+  [175] pushzero ................................ <0>
+  [176] pushzero ................................ <0>
+  [177] pushzero ................................ <0>
+  [178] getlocal 24 ............................. <i>
+  [180] pushzero ................................ <0>
+  [181] pushcons 144 ............................ <"objectsfield">
+  [183] pushcons 152 ............................ <"master">
+  [185] putchunk 22 ............................. put "money1" into line i of field "objectsfield" of castLib "master"
+  [187] pushcons 160 ............................ <"stop">
+  [189] setlocal 16 ............................. x = "stop"
+  [191] pushint8 1
+  [193] getlocal 24
+  [195] add
+  [196] setlocal 24
+  [198] endrepeat [128]
+  [200] pushsymb 25 ............................. <#playFile>
+  [202] pushint8 1 .............................. <1>
+  [204] getglobal 27 ............................ <soundspath>
+  [206] pushcons 168 ............................ <"pfmoney1.aif">
+  [208] joinstr ................................. <soundspath & "pfmoney1.aif">
+  [209] pusharglistnoret 3 ...................... <1, soundspath & "pfmoney1.aif">
+  [211] extcall 26 .............................. sound playFile 1, soundspath & "pfmoney1.aif"
+  [213] jmp [311]
+  [216] pushcons 176 ............................ <"continue">
+  [218] setlocal 16 ............................. x = "continue"
+  [220] pushint8 1 .............................. <1>
+  [222] setlocal 24
+  [224] getlocal 24
+  [226] pushcons 184 ............................ <"objectsfield">
+  [228] pushcons 192 ............................ <"master">
+  [230] getfield ................................ <field("objectsfield", "master")>
+  [231] pushint8 4 .............................. <4>
+  [233] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [235] lteq
+  [236] jmpifz [297] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [239] pushzero ................................ <0>
+  [240] pushzero ................................ <0>
+  [241] pushzero ................................ <0>
+  [242] pushzero ................................ <0>
+  [243] pushzero ................................ <0>
+  [244] pushzero ................................ <0>
+  [245] getlocal 24 ............................. <i>
+  [247] pushzero ................................ <0>
+  [248] pushcons 200 ............................ <"objectsfield">
+  [250] pushcons 208 ............................ <"master">
+  [252] getfield ................................ <field("objectsfield", "master")>
+  [253] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [254] pushcons 216 ............................ <"empty">
+  [256] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [257] getlocal 16 ............................. <x>
+  [259] pushcons 224 ............................ <"continue">
+  [261] eq ...................................... <x = "continue">
+  [262] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [263] jmpifz [288] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [266] pushcons 232 ............................ <"money2">
+  [268] pushzero ................................ <0>
+  [269] pushzero ................................ <0>
+  [270] pushzero ................................ <0>
+  [271] pushzero ................................ <0>
+  [272] pushzero ................................ <0>
+  [273] pushzero ................................ <0>
+  [274] getlocal 24 ............................. <i>
+  [276] pushzero ................................ <0>
+  [277] pushcons 240 ............................ <"objectsfield">
+  [279] pushcons 248 ............................ <"master">
+  [281] putchunk 22 ............................. put "money2" into line i of field "objectsfield" of castLib "master"
+  [283] pushcons 256 ............................ <"stop">
+  [286] setlocal 16 ............................. x = "stop"
+  [288] pushint8 1
+  [290] getlocal 24
+  [292] add
+  [293] setlocal 24
+  [295] endrepeat [224]
+  [297] pushsymb 25 ............................. <#playFile>
+  [299] pushint8 1 .............................. <1>
+  [301] getglobal 27 ............................ <soundspath>
+  [303] pushcons 264 ............................ <"pfmoney2.aif">
+  [306] joinstr ................................. <soundspath & "pfmoney2.aif">
+  [307] pusharglistnoret 3 ...................... <1, soundspath & "pfmoney2.aif">
+  [309] extcall 26 .............................. sound playFile 1, soundspath & "pfmoney2.aif"
+  [311] ret
+end

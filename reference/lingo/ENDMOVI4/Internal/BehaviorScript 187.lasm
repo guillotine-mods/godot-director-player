@@ -1,0 +1,107 @@
+on exitFrame
+  [  0] pushint8 3 .............................. <3>
+  [  3] pushcons 0 .............................. <"handcur1">
+  [  5] pusharglist 1 ........................... <"handcur1">
+  [  7] extcall 24 .............................. <member("handcur1")>
+  [  9] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [ 11] pushcons 8 .............................. <"handcur2">
+  [ 13] pusharglist 1 ........................... <"handcur2">
+  [ 15] extcall 24 .............................. <member("handcur2")>
+  [ 17] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [ 19] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 21] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 22] pushint8 6 .............................. <6>
+  [ 25] set 6 ................................... set the cursor of sprite 3 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [ 27] pushint8 10 ............................. <10>
+  [ 30] pushcons 16 ............................. <"handcur1">
+  [ 32] pusharglist 1 ........................... <"handcur1">
+  [ 34] extcall 24 .............................. <member("handcur1")>
+  [ 36] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [ 38] pushcons 24 ............................. <"handcur2">
+  [ 40] pusharglist 1 ........................... <"handcur2">
+  [ 42] extcall 24 .............................. <member("handcur2")>
+  [ 44] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [ 46] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 48] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 49] pushint8 6 .............................. <6>
+  [ 52] set 6 ................................... set the cursor of sprite 10 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [ 54] pushint8 14 ............................. <14>
+  [ 57] pushcons 32 ............................. <"handcur1">
+  [ 59] pusharglist 1 ........................... <"handcur1">
+  [ 61] extcall 24 .............................. <member("handcur1")>
+  [ 63] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [ 65] pushcons 40 ............................. <"handcur2">
+  [ 67] pusharglist 1 ........................... <"handcur2">
+  [ 69] extcall 24 .............................. <member("handcur2")>
+  [ 71] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [ 73] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 75] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [ 76] pushint8 6 .............................. <6>
+  [ 79] set 6 ................................... set the cursor of sprite 14 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [ 81] pushint8 18 ............................. <18>
+  [ 84] pushcons 48 ............................. <"handcur1">
+  [ 86] pusharglist 1 ........................... <"handcur1">
+  [ 88] extcall 24 .............................. <member("handcur1")>
+  [ 90] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [ 92] pushcons 56 ............................. <"handcur2">
+  [ 94] pusharglist 1 ........................... <"handcur2">
+  [ 96] extcall 24 .............................. <member("handcur2")>
+  [ 98] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [100] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [102] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [103] pushint8 6 .............................. <6>
+  [106] set 6 ................................... set the cursor of sprite 18 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [108] pushint8 22 ............................. <22>
+  [111] pushcons 64 ............................. <"handcur1">
+  [113] pusharglist 1 ........................... <"handcur1">
+  [115] extcall 24 .............................. <member("handcur1")>
+  [117] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [119] pushcons 72 ............................. <"handcur2">
+  [121] pusharglist 1 ........................... <"handcur2">
+  [123] extcall 24 .............................. <member("handcur2")>
+  [125] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [127] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [129] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [130] pushint8 6 .............................. <6>
+  [133] set 6 ................................... set the cursor of sprite 22 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [135] pushint8 28 ............................. <28>
+  [138] pushcons 80 ............................. <"handcur1">
+  [140] pusharglist 1 ........................... <"handcur1">
+  [142] extcall 24 .............................. <member("handcur1")>
+  [144] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [146] pushcons 88 ............................. <"handcur2">
+  [148] pusharglist 1 ........................... <"handcur2">
+  [150] extcall 24 .............................. <member("handcur2")>
+  [152] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [154] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [156] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [157] pushint8 6 .............................. <6>
+  [160] set 6 ................................... set the cursor of sprite 28 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [162] pushint8 34 ............................. <34>
+  [165] pushcons 96 ............................. <"handcur1">
+  [167] pusharglist 1 ........................... <"handcur1">
+  [169] extcall 24 .............................. <member("handcur1")>
+  [171] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [173] pushcons 104 ............................ <"handcur2">
+  [175] pusharglist 1 ........................... <"handcur2">
+  [177] extcall 24 .............................. <member("handcur2")>
+  [179] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [181] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [183] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [184] pushint8 6 .............................. <6>
+  [187] set 6 ................................... set the cursor of sprite 34 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [189] pushint8 41 ............................. <41>
+  [192] pushcons 112 ............................ <"handcur1">
+  [194] pusharglist 1 ........................... <"handcur1">
+  [196] extcall 24 .............................. <member("handcur1")>
+  [198] getobjprop 25 ........................... <member("handcur1").memberNum>
+  [200] pushcons 120 ............................ <"handcur2">
+  [202] pusharglist 1 ........................... <"handcur2">
+  [204] extcall 24 .............................. <member("handcur2")>
+  [206] getobjprop 25 ........................... <member("handcur2").memberNum>
+  [208] pusharglist 2 ........................... <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [210] pushlist ................................ <[member("handcur1").memberNum, member("handcur2").memberNum]>
+  [211] pushint8 6 .............................. <6>
+  [214] set 6 ................................... set the cursor of sprite 41 to [member("handcur1").memberNum, member("handcur2").memberNum]
+  [216] ret
+end

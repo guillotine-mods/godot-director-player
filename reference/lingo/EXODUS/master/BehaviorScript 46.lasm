@@ -1,0 +1,22 @@
+on exitFrame
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 31 ............................ globalday = 1
+  [  5] pushcons 0 .............................. <"s_day1">
+  [  7] pusharglistnoret 1 ...................... <"s_day1">
+  [  9] extcall 23 .............................. tlkpath("s_day1")
+  [ 11] pushcons 8 .............................. <"days">
+  [ 13] pusharglistnoret 1 ...................... <"days">
+  [ 15] extcall 41 .............................. soundspath("days")
+  [ 18] pushint8 2 .............................. <2>
+  [ 21] pushint8 130 ............................ <130>
+  [ 24] pushint8 1 .............................. <1>
+  [ 27] set 4 ................................... set the volume of sound 2 to 130
+  [ 29] pushsymb 21 ............................. <#playFile>
+  [ 31] pushint8 2 .............................. <2>
+  [ 34] getglobal 24 ............................ <effectspath>
+  [ 36] pushcons 16 ............................. <"sea.aif">
+  [ 38] joinstr ................................. <effectspath & "sea.aif">
+  [ 39] pusharglistnoret 3 ...................... <2, effectspath & "sea.aif">
+  [ 41] extcall 22 .............................. sound playFile 2, effectspath & "sea.aif"
+  [ 43] ret
+end

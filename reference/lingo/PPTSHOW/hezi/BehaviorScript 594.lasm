@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 21 ............................. <#playFile>
+  [  2] pushint8 2 .............................. <2>
+  [  5] getglobal 25 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"doornob.aif">
+  [  9] joinstr ................................. <effectspath & "doornob.aif">
+  [ 10] pusharglistnoret 3 ...................... <2, effectspath & "doornob.aif">
+  [ 12] extcall 22 .............................. sound playFile 2, effectspath & "doornob.aif"
+  [ 14] pushsymb 21 ............................. <#playFile>
+  [ 16] pushint8 1 .............................. <1>
+  [ 19] getglobal 23 ............................ <soundspath>
+  [ 21] pushcons 8 .............................. <"bar20.aif">
+  [ 23] joinstr ................................. <soundspath & "bar20.aif">
+  [ 24] pusharglistnoret 3 ...................... <1, soundspath & "bar20.aif">
+  [ 26] extcall 22 .............................. sound playFile 1, soundspath & "bar20.aif"
+  [ 28] ret
+end

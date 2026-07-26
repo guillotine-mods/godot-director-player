@@ -1,0 +1,57 @@
+on soundspath x
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 79 ........................... <the machineType>
+  [  5] pushint16 256 ........................... <256>
+  [  8] eq ...................................... <the machineType = 256>
+  [  9] jmpifz [ 19] ............................ if the machineType = 256 then / else
+  [ 12] pushcons 0 .............................. <"\\">
+  [ 14] setlocal 0 .............................. y = "\\"
+  [ 16] jmp [ 23]
+  [ 19] pushcons 1 .............................. <":">
+  [ 21] setlocal 0 .............................. y = ":"
+  [ 23] getglobal 86 ............................ <savepath>
+  [ 26] pushcons 2 .............................. <"fx">
+  [ 28] joinstr ................................. <savepath & "fx">
+  [ 29] getlocal 0 .............................. <y>
+  [ 31] joinstr ................................. <savepath & "fx" & y>
+  [ 32] setglobal 36 ............................ effectspath = savepath & "fx" & y
+  [ 35] getglobal 90 ............................ <soundspathstart>
+  [ 38] pushcons 3 .............................. <"objtlk">
+  [ 40] joinstr ................................. <soundspathstart & "objtlk">
+  [ 41] getlocal 0 .............................. <y>
+  [ 43] joinstr ................................. <soundspathstart & "objtlk" & y>
+  [ 44] setglobal 81 ............................ objtlkpath = soundspathstart & "objtlk" & y
+  [ 47] getglobal 90 ............................ <soundspathstart>
+  [ 50] getparam 0 .............................. <x>
+  [ 52] joinstr ................................. <soundspathstart & x>
+  [ 53] getlocal 0 .............................. <y>
+  [ 55] joinstr ................................. <soundspathstart & x & y>
+  [ 56] setglobal 13 ............................ soundspath = soundspathstart & x & y
+  [ 58] ret
+end
+
+on tlkpath x
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 79 ........................... <the machineType>
+  [  5] pushint16 256 ........................... <256>
+  [  8] eq ...................................... <the machineType = 256>
+  [  9] jmpifz [ 19] ............................ if the machineType = 256 then / else
+  [ 12] pushcons 4 .............................. <"\\">
+  [ 14] setlocal 0 .............................. y = "\\"
+  [ 16] jmp [ 23]
+  [ 19] pushcons 5 .............................. <":">
+  [ 21] setlocal 0 .............................. y = ":"
+  [ 23] getglobal 86 ............................ <savepath>
+  [ 26] pushcons 6 .............................. <"fx">
+  [ 28] joinstr ................................. <savepath & "fx">
+  [ 29] getlocal 0 .............................. <y>
+  [ 31] joinstr ................................. <savepath & "fx" & y>
+  [ 32] setglobal 36 ............................ effectspath = savepath & "fx" & y
+  [ 35] getglobal 90 ............................ <soundspathstart>
+  [ 38] getparam 0 .............................. <x>
+  [ 40] joinstr ................................. <soundspathstart & x>
+  [ 41] getlocal 0 .............................. <y>
+  [ 43] joinstr ................................. <soundspathstart & x & y>
+  [ 44] setglobal 78 ............................ tlkpath = soundspathstart & x & y
+  [ 47] ret
+end

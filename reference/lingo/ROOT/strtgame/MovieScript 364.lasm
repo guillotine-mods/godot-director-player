@@ -1,0 +1,47 @@
+on stonecold
+  [  0] getmovieprop 3 .......................... <the moviePath>
+  [  2] setglobal 4 ............................. savepath = the moviePath
+  [  4] pusharglist 0 ........................... <>
+  [  6] thebuiltin 5 ............................ <the machineType>
+  [  8] pushint8 256 ............................ <256>
+  [ 11] eq ...................................... <the machineType = 256>
+  [ 12] jmpifz [ 40] ............................ if the machineType = 256 then / else
+  [ 15] getmovieprop 3 .......................... <the moviePath>
+  [ 17] pushcons 0 .............................. <"sounds\\">
+  [ 19] joinstr ................................. <the moviePath & "sounds\\">
+  [ 20] setglobal 6 ............................. soundspathstart = the moviePath & "sounds\\"
+  [ 22] pushcons 8 .............................. <"smallins">
+  [ 24] setglobal 7 ............................. Whichins = "smallins"
+  [ 26] getmovieprop 3 .......................... <the moviePath>
+  [ 28] pushcons 16 ............................. <"pip2data\\">
+  [ 30] joinstr ................................. <the moviePath & "pip2data\\">
+  [ 31] setglobal 9 ............................. cdsavepath = the moviePath & "pip2data\\"
+  [ 33] getmovieprop 3 .......................... <the moviePath>
+  [ 35] setglobal 10 ............................ Whichins2 = the moviePath
+  [ 37] jmp [ 44]
+  [ 40] pusharglistnoret 0 ...................... <>
+  [ 42] localcall 2 ............................. getMacDiscInfo()
+  [ 44] ret
+end
+
+on getWinInfo
+  [  0] ret
+end
+
+on getMacDiscInfo
+  [  0] getmovieprop 3 .......................... <the moviePath>
+  [  2] setglobal 4 ............................. savepath = the moviePath
+  [  4] getmovieprop 3 .......................... <the moviePath>
+  [  6] pushcons 24 ............................. <"sounds:">
+  [  8] joinstr ................................. <the moviePath & "sounds:">
+  [  9] setglobal 6 ............................. soundspathstart = the moviePath & "sounds:"
+  [ 11] getmovieprop 3 .......................... <the moviePath>
+  [ 13] pushcons 32 ............................. <"pip2data:">
+  [ 15] joinstr ................................. <the moviePath & "pip2data:">
+  [ 16] setglobal 9 ............................. cdsavepath = the moviePath & "pip2data:"
+  [ 18] pushcons 40 ............................. <"smallins">
+  [ 20] setglobal 7 ............................. Whichins = "smallins"
+  [ 22] getmovieprop 3 .......................... <the moviePath>
+  [ 24] setglobal 10 ............................ Whichins2 = the moviePath
+  [ 26] ret
+end

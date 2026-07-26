@@ -1,0 +1,105 @@
+on mouseUp
+  [  0] getglobal 48 ............................ <globalday>
+  [  3] pushint8 1 .............................. <1>
+  [  6] eq ...................................... <globalday = 1>
+  [  7] jmpifz [ 72] ............................ if globalday = 1 then / else
+  [ 10] pushint8 11 ............................. <11>
+  [ 13] pushint8 35 ............................. <35>
+  [ 16] get 6 ................................... <the memberNum of sprite 11>
+  [ 18] pushcons 0 .............................. <"rotr">
+  [ 20] pushzero ................................ <0>
+  [ 21] pushint8 10 ............................. <10>
+  [ 24] get 9 ................................... <the number of member "rotr">
+  [ 26] eq ...................................... <the memberNum of sprite 11 = the number of member "rotr">
+  [ 27] jmpifz [ 49] ............................ if the memberNum of sprite 11 = the number of member "rotr" then / else
+  [ 30] pushint8 11 ............................. <11>
+  [ 33] pushcons 8 .............................. <"igky">
+  [ 35] pusharglist 1 ........................... <"igky">
+  [ 37] extcall 1 ............................... <member("igky")>
+  [ 39] getobjprop 2 ............................ <member("igky").memberNum>
+  [ 41] pushint8 35 ............................. <35>
+  [ 44] set 6 ................................... set the memberNum of sprite 11 to member("igky").memberNum
+  [ 46] jmp [ 69]
+  [ 49] pushint8 11 ............................. <11>
+  [ 52] pushint8 11 ............................. <11>
+  [ 55] pushint8 35 ............................. <35>
+  [ 58] get 6 ................................... <the memberNum of sprite 11>
+  [ 60] pushint8 1 .............................. <1>
+  [ 63] add ..................................... <the memberNum of sprite 11 + 1>
+  [ 64] pushint8 35 ............................. <35>
+  [ 67] set 6 ................................... set the memberNum of sprite 11 to the memberNum of sprite 11 + 1
+  [ 69] jmp [213]
+  [ 72] getglobal 48 ............................ <globalday>
+  [ 75] pushint8 2 .............................. <2>
+  [ 78] eq ...................................... <globalday = 2>
+  [ 79] jmpifz [144] ............................ if globalday = 2 then / else
+  [ 82] pushint8 11 ............................. <11>
+  [ 85] pushint8 35 ............................. <35>
+  [ 88] get 6 ................................... <the memberNum of sprite 11>
+  [ 90] pushcons 16 ............................. <"prop">
+  [ 92] pushzero ................................ <0>
+  [ 93] pushint8 10 ............................. <10>
+  [ 96] get 9 ................................... <the number of member "prop">
+  [ 98] eq ...................................... <the memberNum of sprite 11 = the number of member "prop">
+  [ 99] jmpifz [121] ............................ if the memberNum of sprite 11 = the number of member "prop" then / else
+  [102] pushint8 11 ............................. <11>
+  [105] pushcons 24 ............................. <"engi">
+  [107] pusharglist 1 ........................... <"engi">
+  [109] extcall 1 ............................... <member("engi")>
+  [111] getobjprop 2 ............................ <member("engi").memberNum>
+  [113] pushint8 35 ............................. <35>
+  [116] set 6 ................................... set the memberNum of sprite 11 to member("engi").memberNum
+  [118] jmp [141]
+  [121] pushint8 11 ............................. <11>
+  [124] pushint8 11 ............................. <11>
+  [127] pushint8 35 ............................. <35>
+  [130] get 6 ................................... <the memberNum of sprite 11>
+  [132] pushint8 1 .............................. <1>
+  [135] add ..................................... <the memberNum of sprite 11 + 1>
+  [136] pushint8 35 ............................. <35>
+  [139] set 6 ................................... set the memberNum of sprite 11 to the memberNum of sprite 11 + 1
+  [141] jmp [213]
+  [144] getglobal 48 ............................ <globalday>
+  [147] pushint8 3 .............................. <3>
+  [150] eq ...................................... <globalday = 3>
+  [151] jmpifz [213] ............................ if globalday = 3 then
+  [154] pushint8 11 ............................. <11>
+  [157] pushint8 35 ............................. <35>
+  [160] get 6 ................................... <the memberNum of sprite 11>
+  [162] pushcons 32 ............................. <"joys">
+  [164] pushzero ................................ <0>
+  [165] pushint8 10 ............................. <10>
+  [168] get 9 ................................... <the number of member "joys">
+  [170] eq ...................................... <the memberNum of sprite 11 = the number of member "joys">
+  [171] jmpifz [193] ............................ if the memberNum of sprite 11 = the number of member "joys" then / else
+  [174] pushint8 11 ............................. <11>
+  [177] pushcons 40 ............................. <"sprn">
+  [179] pusharglist 1 ........................... <"sprn">
+  [181] extcall 1 ............................... <member("sprn")>
+  [183] getobjprop 2 ............................ <member("sprn").memberNum>
+  [185] pushint8 35 ............................. <35>
+  [188] set 6 ................................... set the memberNum of sprite 11 to member("sprn").memberNum
+  [190] jmp [213]
+  [193] pushint8 11 ............................. <11>
+  [196] pushint8 11 ............................. <11>
+  [199] pushint8 35 ............................. <35>
+  [202] get 6 ................................... <the memberNum of sprite 11>
+  [204] pushint8 1 .............................. <1>
+  [207] add ..................................... <the memberNum of sprite 11 + 1>
+  [208] pushint8 35 ............................. <35>
+  [211] set 6 ................................... set the memberNum of sprite 11 to the memberNum of sprite 11 + 1
+  [213] pushsymb 8 .............................. <#playFile>
+  [215] pushint8 1 .............................. <1>
+  [218] getglobal 10 ............................ <soundspath>
+  [220] pushcons 48 ............................. <"artask">
+  [222] pushint8 5 .............................. <5>
+  [225] pusharglist 1 ........................... <5>
+  [227] extcall 18 .............................. <random(5)>
+  [229] joinstr ................................. <"artask" & random(5)>
+  [230] pushcons 56 ............................. <".aif">
+  [232] joinstr ................................. <"artask" & random(5) & ".aif">
+  [233] joinstr ................................. <soundspath & "artask" & random(5) & ".aif">
+  [234] pusharglistnoret 3 ...................... <1, soundspath & "artask" & random(5) & ".aif">
+  [236] extcall 9 ............................... sound playFile 1, soundspath & "artask" & random(5) & ".aif"
+  [238] ret
+end

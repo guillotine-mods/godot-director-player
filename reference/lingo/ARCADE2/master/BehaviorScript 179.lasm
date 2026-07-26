@@ -1,0 +1,228 @@
+on exitFrame
+  [  0] getglobal 9 ............................. <zigi>
+  [  2] pushint8 1 .............................. <1>
+  [  4] sub ..................................... <zigi - 1>
+  [  5] setglobal 9 ............................. zigi = zigi - 1
+  [  7] getglobal 9 ............................. <zigi>
+  [  9] pushzero ................................ <0>
+  [ 10] eq ...................................... <zigi = 0>
+  [ 11] jmpifz [ 50] ............................ if zigi = 0 then
+  [ 14] pushint8 7 .............................. <7>
+  [ 16] pushcons 0 .............................. <"gundefault">
+  [ 18] pushint8 1 .............................. <1>
+  [ 20] pushint8 10 ............................. <10>
+  [ 22] get 9 ................................... <the number of member "gundefault" of castLib 1>
+  [ 24] pushint8 35 ............................. <35>
+  [ 26] set 6 ................................... set the memberNum of sprite 7 to the number of member "gundefault" of castLib 1
+  [ 28] pushint8 7 .............................. <7>
+  [ 30] pushint8 175 ............................ <175>
+  [ 33] pushint8 13 ............................. <13>
+  [ 35] set 6 ................................... set the locH of sprite 7 to 175
+  [ 37] pushint8 7 .............................. <7>
+  [ 39] pushint8 237 ............................ <237>
+  [ 42] pushint8 14 ............................. <14>
+  [ 44] set 6 ................................... set the locV of sprite 7 to 237
+  [ 46] pusharglistnoret 0 ...................... <>
+  [ 48] extcall 13 .............................. updateStage()
+  [ 50] pushint8 7 .............................. <7>
+  [ 52] pushint8 35 ............................. <35>
+  [ 54] get 6 ................................... <the memberNum of sprite 7>
+  [ 56] pushcons 8 .............................. <"gunup">
+  [ 58] pushzero ................................ <0>
+  [ 59] pushint8 10 ............................. <10>
+  [ 61] get 9 ................................... <the number of member "gunup">
+  [ 63] eq ...................................... <the memberNum of sprite 7 = the number of member "gunup">
+  [ 64] jmpifz [232] ............................ if the memberNum of sprite 7 = the number of member "gunup" then / else
+  [ 67] pushint8 8 .............................. <8>
+  [ 69] setlocal 0
+  [ 71] getlocal 0
+  [ 73] pushint8 18 ............................. <18>
+  [ 75] lteq
+  [ 76] jmpifz [229] ............................ repeat with i = 8 to 18
+  [ 79] pushint8 7 .............................. <7>
+  [ 81] pushint8 14 ............................. <14>
+  [ 83] get 6 ................................... <the locV of sprite 7>
+  [ 85] getlocal 0 .............................. <i>
+  [ 87] pushint8 14 ............................. <14>
+  [ 89] get 6 ................................... <the locV of sprite i>
+  [ 91] sub ..................................... <the locV of sprite 7 - the locV of sprite i>
+  [ 92] pushint8 20 ............................. <20>
+  [ 94] gt ...................................... <(the locV of sprite 7 - the locV of sprite i) > 20>
+  [ 95] pushint8 7 .............................. <7>
+  [ 97] pushint8 13 ............................. <13>
+  [ 99] get 6 ................................... <the locH of sprite 7>
+  [101] getlocal 0 .............................. <i>
+  [103] pushint8 13 ............................. <13>
+  [105] get 6 ................................... <the locH of sprite i>
+  [107] sub ..................................... <the locH of sprite 7 - the locH of sprite i>
+  [108] pushint8 40 ............................. <40>
+  [110] lt ...................................... <(the locH of sprite 7 - the locH of sprite i) < 40>
+  [111] and ..................................... <((the locV of sprite 7 - the locV of sprite i) > 20) and ((the locH of sprite 7 - the locH of sprite i) < 40)>
+  [112] pushint8 7 .............................. <7>
+  [114] pushint8 13 ............................. <13>
+  [116] get 6 ................................... <the locH of sprite 7>
+  [118] getlocal 0 .............................. <i>
+  [120] pushint8 13 ............................. <13>
+  [122] get 6 ................................... <the locH of sprite i>
+  [124] sub ..................................... <the locH of sprite 7 - the locH of sprite i>
+  [125] pushint8 40 ............................. <40>
+  [127] inv ..................................... <-40>
+  [128] gt ...................................... <(the locH of sprite 7 - the locH of sprite i) > -40>
+  [129] and ..................................... <((the locV of sprite 7 - the locV of sprite i) > 20) and ((the locH of sprite 7 - the locH of sprite i) < 40) and ((the locH of sprite 7 - the locH of sprite i) > -40)>
+  [130] getlocal 0 .............................. <i>
+  [132] pushint8 25 ............................. <25>
+  [134] get 6 ................................... <the visible of sprite i>
+  [136] pushint8 1 .............................. <1>
+  [138] eq ...................................... <the visible of sprite i = 1>
+  [139] and ..................................... <((the locV of sprite 7 - the locV of sprite i) > 20) and ((the locH of sprite 7 - the locH of sprite i) < 40) and ((the locH of sprite 7 - the locH of sprite i) > -40) and (the visible of sprite i = 1)>
+  [140] getlocal 0 .............................. <i>
+  [142] pushint8 15 ............................. <15>
+  [144] add ..................................... <i + 15>
+  [145] pushint8 25 ............................. <25>
+  [147] get 6 ................................... <the visible of sprite (i + 15)>
+  [149] pushint8 1 .............................. <1>
+  [151] eq ...................................... <the visible of sprite (i + 15) = 1>
+  [152] or ...................................... <(((the locV of sprite 7 - the locV of sprite i) > 20) and ((the locH of sprite 7 - the locH of sprite i) < 40) and ((the locH of sprite 7 - the locH of sprite i) > -40) and (the visible of sprite i = 1)) or (the visible of sprite (i + 15) = 1)>
+  [153] jmpifz [210] ............................ if (((the locV of sprite 7 - the locV of sprite i) > 20) and ((the locH of sprite 7 - the locH of sprite i) < 40) and ((the locH of sprite 7 - the locH of sprite i) > -40) and (the visible of sprite i = 1)) or (the visible of sprite (i + 15) = 1) then
+  [156] pushint8 1 .............................. <1>
+  [158] pusharglist 1 ........................... <1>
+  [160] extcall 19 .............................. <soundBusy(1)>
+  [162] not ..................................... <not soundBusy(1)>
+  [163] jmpifz [189] ............................ if not soundBusy(1) then
+  [166] pushsymb 10 ............................. <#playFile>
+  [168] pushint8 1 .............................. <1>
+  [170] getglobal 15 ............................ <soundspath>
+  [172] pushcons 16 ............................. <"foe">
+  [174] pushint8 5 .............................. <5>
+  [176] pusharglist 1 ........................... <5>
+  [178] extcall 20 .............................. <random(5)>
+  [180] joinstr ................................. <"foe" & random(5)>
+  [181] pushcons 24 ............................. <".aif">
+  [183] joinstr ................................. <"foe" & random(5) & ".aif">
+  [184] joinstr ................................. <soundspath & "foe" & random(5) & ".aif">
+  [185] pusharglistnoret 3 ...................... <1, soundspath & "foe" & random(5) & ".aif">
+  [187] extcall 11 .............................. sound playFile 1, soundspath & "foe" & random(5) & ".aif"
+  [189] getlocal 0 .............................. <i>
+  [191] pushzero ................................ <0>
+  [192] pushint8 25 ............................. <25>
+  [194] set 6 ................................... set the visible of sprite i to 0
+  [196] getlocal 0 .............................. <i>
+  [198] pushint8 15 ............................. <15>
+  [200] add ..................................... <i + 15>
+  [201] pushint8 1 .............................. <1>
+  [203] pushint8 25 ............................. <25>
+  [205] set 6 ................................... set the visible of sprite (i + 15) to 1
+  [207] jmp [220] ............................... next repeat
+  [210] getlocal 0 .............................. <i>
+  [212] pushint8 15 ............................. <15>
+  [214] add ..................................... <i + 15>
+  [215] pushzero ................................ <0>
+  [216] pushint8 25 ............................. <25>
+  [218] set 6 ................................... set the visible of sprite (i + 15) to 0
+  [220] pushint8 1
+  [222] getlocal 0
+  [224] add
+  [225] setlocal 0
+  [227] endrepeat [ 71]
+  [229] jmp [411]
+  [232] pushint8 7 .............................. <7>
+  [234] pushint8 35 ............................. <35>
+  [236] get 6 ................................... <the memberNum of sprite 7>
+  [238] pushcons 32 ............................. <"gunright">
+  [240] pushzero ................................ <0>
+  [241] pushint8 10 ............................. <10>
+  [243] get 9 ................................... <the number of member "gunright">
+  [245] eq ...................................... <the memberNum of sprite 7 = the number of member "gunright">
+  [246] jmpifz [411] ............................ if the memberNum of sprite 7 = the number of member "gunright" then
+  [249] pushint8 8 .............................. <8>
+  [251] setlocal 0
+  [253] getlocal 0
+  [255] pushint8 18 ............................. <18>
+  [257] lteq
+  [258] jmpifz [411] ............................ repeat with i = 8 to 18
+  [261] pushint8 7 .............................. <7>
+  [263] pushint8 14 ............................. <14>
+  [265] get 6 ................................... <the locV of sprite 7>
+  [267] getlocal 0 .............................. <i>
+  [269] pushint8 14 ............................. <14>
+  [271] get 6 ................................... <the locV of sprite i>
+  [273] sub ..................................... <the locV of sprite 7 - the locV of sprite i>
+  [274] pushint8 100 ............................ <100>
+  [276] lt ...................................... <(the locV of sprite 7 - the locV of sprite i) < 100>
+  [277] getlocal 0 .............................. <i>
+  [279] pushint8 13 ............................. <13>
+  [281] get 6 ................................... <the locH of sprite i>
+  [283] pushint8 7 .............................. <7>
+  [285] pushint8 13 ............................. <13>
+  [287] get 6 ................................... <the locH of sprite 7>
+  [289] sub ..................................... <the locH of sprite i - the locH of sprite 7>
+  [290] pushint8 20 ............................. <20>
+  [292] gt ...................................... <(the locH of sprite i - the locH of sprite 7) > 20>
+  [293] and ..................................... <((the locV of sprite 7 - the locV of sprite i) < 100) and ((the locH of sprite i - the locH of sprite 7) > 20)>
+  [294] getlocal 0 .............................. <i>
+  [296] pushint8 13 ............................. <13>
+  [298] get 6 ................................... <the locH of sprite i>
+  [300] pushint8 7 .............................. <7>
+  [302] pushint8 13 ............................. <13>
+  [304] get 6 ................................... <the locH of sprite 7>
+  [306] sub ..................................... <the locH of sprite i - the locH of sprite 7>
+  [307] pushint8 150 ............................ <150>
+  [310] lt ...................................... <(the locH of sprite i - the locH of sprite 7) < 150>
+  [311] and ..................................... <((the locV of sprite 7 - the locV of sprite i) < 100) and ((the locH of sprite i - the locH of sprite 7) > 20) and ((the locH of sprite i - the locH of sprite 7) < 150)>
+  [312] getlocal 0 .............................. <i>
+  [314] pushint8 25 ............................. <25>
+  [316] get 6 ................................... <the visible of sprite i>
+  [318] pushint8 1 .............................. <1>
+  [320] eq ...................................... <the visible of sprite i = 1>
+  [321] and ..................................... <((the locV of sprite 7 - the locV of sprite i) < 100) and ((the locH of sprite i - the locH of sprite 7) > 20) and ((the locH of sprite i - the locH of sprite 7) < 150) and (the visible of sprite i = 1)>
+  [322] getlocal 0 .............................. <i>
+  [324] pushint8 15 ............................. <15>
+  [326] add ..................................... <i + 15>
+  [327] pushint8 25 ............................. <25>
+  [329] get 6 ................................... <the visible of sprite (i + 15)>
+  [331] pushint8 1 .............................. <1>
+  [333] eq ...................................... <the visible of sprite (i + 15) = 1>
+  [334] or ...................................... <(((the locV of sprite 7 - the locV of sprite i) < 100) and ((the locH of sprite i - the locH of sprite 7) > 20) and ((the locH of sprite i - the locH of sprite 7) < 150) and (the visible of sprite i = 1)) or (the visible of sprite (i + 15) = 1)>
+  [335] jmpifz [392] ............................ if (((the locV of sprite 7 - the locV of sprite i) < 100) and ((the locH of sprite i - the locH of sprite 7) > 20) and ((the locH of sprite i - the locH of sprite 7) < 150) and (the visible of sprite i = 1)) or (the visible of sprite (i + 15) = 1) then
+  [338] pushint8 1 .............................. <1>
+  [340] pusharglist 1 ........................... <1>
+  [342] extcall 19 .............................. <soundBusy(1)>
+  [344] not ..................................... <not soundBusy(1)>
+  [345] jmpifz [371] ............................ if not soundBusy(1) then
+  [348] pushsymb 10 ............................. <#playFile>
+  [350] pushint8 1 .............................. <1>
+  [352] getglobal 15 ............................ <soundspath>
+  [354] pushcons 40 ............................. <"foe">
+  [356] pushint8 5 .............................. <5>
+  [358] pusharglist 1 ........................... <5>
+  [360] extcall 20 .............................. <random(5)>
+  [362] joinstr ................................. <"foe" & random(5)>
+  [363] pushcons 48 ............................. <".aif">
+  [365] joinstr ................................. <"foe" & random(5) & ".aif">
+  [366] joinstr ................................. <soundspath & "foe" & random(5) & ".aif">
+  [367] pusharglistnoret 3 ...................... <1, soundspath & "foe" & random(5) & ".aif">
+  [369] extcall 11 .............................. sound playFile 1, soundspath & "foe" & random(5) & ".aif"
+  [371] getlocal 0 .............................. <i>
+  [373] pushzero ................................ <0>
+  [374] pushint8 25 ............................. <25>
+  [376] set 6 ................................... set the visible of sprite i to 0
+  [378] getlocal 0 .............................. <i>
+  [380] pushint8 15 ............................. <15>
+  [382] add ..................................... <i + 15>
+  [383] pushint8 1 .............................. <1>
+  [385] pushint8 25 ............................. <25>
+  [387] set 6 ................................... set the visible of sprite (i + 15) to 1
+  [389] jmp [402] ............................... next repeat
+  [392] getlocal 0 .............................. <i>
+  [394] pushint8 15 ............................. <15>
+  [396] add ..................................... <i + 15>
+  [397] pushzero ................................ <0>
+  [398] pushint8 25 ............................. <25>
+  [400] set 6 ................................... set the visible of sprite (i + 15) to 0
+  [402] pushint8 1
+  [404] getlocal 0
+  [406] add
+  [407] setlocal 0
+  [409] endrepeat [253]
+  [411] ret
+end

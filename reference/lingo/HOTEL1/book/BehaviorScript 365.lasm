@@ -1,0 +1,25 @@
+on exitFrame
+  [  0] pushsymb 52 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 37 ............................ <soundspath>
+  [  9] pushzero ................................ <0>
+  [ 10] pushzero ................................ <0>
+  [ 11] pushzero ................................ <0>
+  [ 12] pushzero ................................ <0>
+  [ 13] getglobal 65 ............................ <mirror>
+  [ 16] pushzero ................................ <0>
+  [ 17] getglobal 29 ............................ <globalday>
+  [ 19] pushzero ................................ <0>
+  [ 20] pushcons 0 .............................. <"mirror">
+  [ 22] pushzero ................................ <0>
+  [ 23] getfield ................................ <field("mirror")>
+  [ 24] getchunk ................................ <item mirror of line globalday of field "mirror">
+  [ 25] getglobal 29 ............................ <globalday>
+  [ 27] joinstr ................................. <item mirror of line globalday of field "mirror" & globalday>
+  [ 28] pushcons 8 .............................. <"2.aif">
+  [ 30] joinstr ................................. <item mirror of line globalday of field "mirror" & globalday & "2.aif">
+  [ 31] joinstr ................................. <soundspath & item mirror of line globalday of field "mirror" & globalday & "2.aif">
+  [ 32] pusharglistnoret 3 ...................... <1, soundspath & item mirror of line globalday of field "mirror" & globalday & "2.aif">
+  [ 34] extcall 53 .............................. sound playFile 1, soundspath & item mirror of line globalday of field "mirror" & globalday & "2.aif"
+  [ 37] ret
+end

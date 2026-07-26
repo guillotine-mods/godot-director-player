@@ -1,0 +1,18 @@
+on exitFrame
+  [  0] getglobal 33 ............................ <freeforall>
+  [  3] pushint8 1 .............................. <1>
+  [  6] add ..................................... <freeforall + 1>
+  [  7] setglobal 33 ............................ freeforall = freeforall + 1
+  [ 10] getglobal 33 ............................ <freeforall>
+  [ 13] pushint8 2 .............................. <2>
+  [ 16] gt ...................................... <freeforall > 2>
+  [ 17] jmpifz [ 29] ............................ if freeforall > 2 then / else
+  [ 20] pushcons 0 .............................. <"choose1abc">
+  [ 22] pusharglistnoret 1 ...................... <"choose1abc">
+  [ 24] extcall 22 .............................. go("choose1abc")
+  [ 26] jmp [ 35]
+  [ 29] pushcons 8 .............................. <"choose1">
+  [ 31] pusharglistnoret 1 ...................... <"choose1">
+  [ 33] extcall 22 .............................. go("choose1")
+  [ 35] ret
+end

@@ -1,0 +1,601 @@
+on jokesfunk
+  [  0] ret
+end
+
+on runjokes y
+  [  0] pushcons 0 .............................. <"jokes">
+  [  2] pusharglistnoret 1 ...................... <"jokes">
+  [  4] extcall 5 ............................... setmoviepath("jokes")
+  [  6] pushint16 2 ............................. <2>
+  [  9] pushint16 50 ............................ <50>
+  [ 12] pushint16 1 ............................. <1>
+  [ 15] set 4 ................................... set the volume of sound 2 to 50
+  [ 17] pushcons 1 .............................. <"jokes.dxr">
+  [ 19] pusharglist 1 ........................... <"jokes.dxr">
+  [ 21] extcall 6 ............................... <window("jokes.dxr")>
+  [ 23] pushint16 2 ............................. <2>
+  [ 26] setobjprop 7 ............................ window("jokes.dxr").windowType = 2
+  [ 28] pushcons 2 .............................. <"jokes.dxr">
+  [ 30] pusharglist 1 ........................... <"jokes.dxr">
+  [ 32] extcall 6 ............................... <window("jokes.dxr")>
+  [ 34] starttell ............................... tell window("jokes.dxr")
+  [ 35] getparam 0 .............................. <y>
+  [ 37] pusharglistnoret 1 ...................... <y>
+  [ 39] tellcall 8 .............................. www(y)
+  [ 41] endtell
+  [ 42] pushcons 3 .............................. <"jokes.dxr">
+  [ 44] pusharglist 1 ........................... <"jokes.dxr">
+  [ 46] extcall 6 ............................... <window("jokes.dxr")>
+  [ 48] starttell ............................... tell window("jokes.dxr")
+  [ 49] pushint16 1 ............................. <1>
+  [ 52] pushint16 3 ............................. <3>
+  [ 55] set 7 ................................... set the centerStage to 1
+  [ 57] endtell
+  [ 58] getglobal 9 ............................. <globalday>
+  [ 60] pushint16 1 ............................. <1>
+  [ 63] eq ...................................... <globalday = 1>
+  [ 64] jmpifz [117] ............................ if globalday = 1 then / else
+  [ 67] pushcons 4 .............................. <"jokes.dxr">
+  [ 69] pusharglist 1 ........................... <"jokes.dxr">
+  [ 71] extcall 6 ............................... <window("jokes.dxr")>
+  [ 73] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [ 75] extcall 10 .............................. open(window("jokes.dxr"))
+  [ 77] pushsymb 11 ............................. <#playFile>
+  [ 79] pushint16 1 ............................. <1>
+  [ 82] getglobal 13 ............................ <soundspath>
+  [ 84] pushcons 5 .............................. <"joke">
+  [ 86] getglobal 9 ............................. <globalday>
+  [ 88] joinstr ................................. <"joke" & globalday>
+  [ 89] getparam 0 .............................. <y>
+  [ 91] joinstr ................................. <"joke" & globalday & y>
+  [ 92] pushcons 6 .............................. <"a.aif">
+  [ 94] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [ 95] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [ 96] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [ 98] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [100] pushcons 7 .............................. <"jokes.dxr">
+  [102] pusharglist 1 ........................... <"jokes.dxr">
+  [104] extcall 6 ............................... <window("jokes.dxr")>
+  [106] starttell ............................... tell window("jokes.dxr")
+  [107] pushcons 8 .............................. <"aspeak">
+  [109] pusharglistnoret 1 ...................... <"aspeak">
+  [111] tellcall 14 ............................. play frame "aspeak"
+  [113] endtell
+  [114] jmp [569]
+  [117] getglobal 9 ............................. <globalday>
+  [119] pushint16 2 ............................. <2>
+  [122] eq ...................................... <globalday = 2>
+  [123] getparam 0 .............................. <y>
+  [125] pushint16 1 ............................. <1>
+  [128] eq ...................................... <y = 1>
+  [129] getparam 0 .............................. <y>
+  [131] pushint16 5 ............................. <5>
+  [134] eq ...................................... <y = 5>
+  [135] or ...................................... <(y = 1) or (y = 5)>
+  [136] and ..................................... <(globalday = 2) and ((y = 1) or (y = 5))>
+  [137] jmpifz [190] ............................ if (globalday = 2) and ((y = 1) or (y = 5)) then / else
+  [140] pushcons 9 .............................. <"jokes.dxr">
+  [142] pusharglist 1 ........................... <"jokes.dxr">
+  [144] extcall 6 ............................... <window("jokes.dxr")>
+  [146] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [148] extcall 10 .............................. open(window("jokes.dxr"))
+  [150] pushsymb 11 ............................. <#playFile>
+  [152] pushint16 1 ............................. <1>
+  [155] getglobal 13 ............................ <soundspath>
+  [157] pushcons 10 ............................. <"joke">
+  [159] getglobal 9 ............................. <globalday>
+  [161] joinstr ................................. <"joke" & globalday>
+  [162] getparam 0 .............................. <y>
+  [164] joinstr ................................. <"joke" & globalday & y>
+  [165] pushcons 11 ............................. <"a.aif">
+  [167] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [168] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [169] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [171] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [173] pushcons 12 ............................. <"jokes.dxr">
+  [175] pusharglist 1 ........................... <"jokes.dxr">
+  [177] extcall 6 ............................... <window("jokes.dxr")>
+  [179] starttell ............................... tell window("jokes.dxr")
+  [180] pushcons 13 ............................. <"itamar">
+  [182] pusharglistnoret 1 ...................... <"itamar">
+  [184] tellcall 14 ............................. play frame "itamar"
+  [186] endtell
+  [187] jmp [569]
+  [190] getglobal 9 ............................. <globalday>
+  [192] pushint16 3 ............................. <3>
+  [195] eq ...................................... <globalday = 3>
+  [196] getparam 0 .............................. <y>
+  [198] pushint16 1 ............................. <1>
+  [201] eq ...................................... <y = 1>
+  [202] and ..................................... <(globalday = 3) and (y = 1)>
+  [203] jmpifz [256] ............................ if (globalday = 3) and (y = 1) then / else
+  [206] pushcons 14 ............................. <"jokes.dxr">
+  [208] pusharglist 1 ........................... <"jokes.dxr">
+  [210] extcall 6 ............................... <window("jokes.dxr")>
+  [212] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [214] extcall 10 .............................. open(window("jokes.dxr"))
+  [216] pushsymb 11 ............................. <#playFile>
+  [218] pushint16 1 ............................. <1>
+  [221] getglobal 13 ............................ <soundspath>
+  [223] pushcons 15 ............................. <"joke">
+  [225] getglobal 9 ............................. <globalday>
+  [227] joinstr ................................. <"joke" & globalday>
+  [228] getparam 0 .............................. <y>
+  [230] joinstr ................................. <"joke" & globalday & y>
+  [231] pushcons 16 ............................. <"a.aif">
+  [233] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [234] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [235] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [237] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [239] pushcons 17 ............................. <"jokes.dxr">
+  [241] pusharglist 1 ........................... <"jokes.dxr">
+  [243] extcall 6 ............................... <window("jokes.dxr")>
+  [245] starttell ............................... tell window("jokes.dxr")
+  [246] pushcons 18 ............................. <"joke31">
+  [248] pusharglistnoret 1 ...................... <"joke31">
+  [250] tellcall 14 ............................. play frame "joke31"
+  [252] endtell
+  [253] jmp [569]
+  [256] getglobal 9 ............................. <globalday>
+  [258] pushint16 3 ............................. <3>
+  [261] eq ...................................... <globalday = 3>
+  [262] getparam 0 .............................. <y>
+  [264] pushint16 5 ............................. <5>
+  [267] eq ...................................... <y = 5>
+  [268] and ..................................... <(globalday = 3) and (y = 5)>
+  [269] jmpifz [322] ............................ if (globalday = 3) and (y = 5) then / else
+  [272] pushcons 19 ............................. <"jokes.dxr">
+  [274] pusharglist 1 ........................... <"jokes.dxr">
+  [276] extcall 6 ............................... <window("jokes.dxr")>
+  [278] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [280] extcall 10 .............................. open(window("jokes.dxr"))
+  [282] pushsymb 11 ............................. <#playFile>
+  [284] pushint16 1 ............................. <1>
+  [287] getglobal 13 ............................ <soundspath>
+  [289] pushcons 20 ............................. <"joke">
+  [291] getglobal 9 ............................. <globalday>
+  [293] joinstr ................................. <"joke" & globalday>
+  [294] getparam 0 .............................. <y>
+  [296] joinstr ................................. <"joke" & globalday & y>
+  [297] pushcons 21 ............................. <"a.aif">
+  [299] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [300] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [301] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [303] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [305] pushcons 22 ............................. <"jokes.dxr">
+  [307] pusharglist 1 ........................... <"jokes.dxr">
+  [309] extcall 6 ............................... <window("jokes.dxr")>
+  [311] starttell ............................... tell window("jokes.dxr")
+  [312] pushcons 23 ............................. <"aspeak">
+  [314] pusharglistnoret 1 ...................... <"aspeak">
+  [316] tellcall 14 ............................. play frame "aspeak"
+  [318] endtell
+  [319] jmp [569]
+  [322] getglobal 9 ............................. <globalday>
+  [324] pushint16 4 ............................. <4>
+  [327] eq ...................................... <globalday = 4>
+  [328] getparam 0 .............................. <y>
+  [330] pushint16 1 ............................. <1>
+  [333] eq ...................................... <y = 1>
+  [334] and ..................................... <(globalday = 4) and (y = 1)>
+  [335] jmpifz [388] ............................ if (globalday = 4) and (y = 1) then / else
+  [338] pushcons 24 ............................. <"jokes.dxr">
+  [340] pusharglist 1 ........................... <"jokes.dxr">
+  [342] extcall 6 ............................... <window("jokes.dxr")>
+  [344] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [346] extcall 10 .............................. open(window("jokes.dxr"))
+  [348] pushsymb 11 ............................. <#playFile>
+  [350] pushint16 1 ............................. <1>
+  [353] getglobal 13 ............................ <soundspath>
+  [355] pushcons 25 ............................. <"joke">
+  [357] getglobal 9 ............................. <globalday>
+  [359] joinstr ................................. <"joke" & globalday>
+  [360] getparam 0 .............................. <y>
+  [362] joinstr ................................. <"joke" & globalday & y>
+  [363] pushcons 26 ............................. <"a.aif">
+  [365] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [366] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [367] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [369] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [371] pushcons 27 ............................. <"jokes.dxr">
+  [373] pusharglist 1 ........................... <"jokes.dxr">
+  [375] extcall 6 ............................... <window("jokes.dxr")>
+  [377] starttell ............................... tell window("jokes.dxr")
+  [378] pushcons 28 ............................. <"itamar">
+  [380] pusharglistnoret 1 ...................... <"itamar">
+  [382] tellcall 14 ............................. play frame "itamar"
+  [384] endtell
+  [385] jmp [569]
+  [388] getglobal 9 ............................. <globalday>
+  [390] pushint16 5 ............................. <5>
+  [393] eq ...................................... <globalday = 5>
+  [394] getparam 0 .............................. <y>
+  [396] pushint16 2 ............................. <2>
+  [399] eq ...................................... <y = 2>
+  [400] and ..................................... <(globalday = 5) and (y = 2)>
+  [401] jmpifz [446] ............................ if (globalday = 5) and (y = 2) then / else
+  [404] pushcons 29 ............................. <"jokes.dxr">
+  [406] pusharglist 1 ........................... <"jokes.dxr">
+  [408] extcall 6 ............................... <window("jokes.dxr")>
+  [410] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [412] extcall 10 .............................. open(window("jokes.dxr"))
+  [414] pushsymb 11 ............................. <#playFile>
+  [416] pushint16 1 ............................. <1>
+  [419] getglobal 13 ............................ <soundspath>
+  [421] pushcons 30 ............................. <"pip1.aif">
+  [423] joinstr ................................. <soundspath & "pip1.aif">
+  [424] pusharglistnoret 3 ...................... <1, soundspath & "pip1.aif">
+  [426] extcall 12 .............................. sound playFile 1, soundspath & "pip1.aif"
+  [428] pushcons 31 ............................. <"jokes.dxr">
+  [430] pusharglist 1 ........................... <"jokes.dxr">
+  [432] extcall 6 ............................... <window("jokes.dxr")>
+  [434] starttell ............................... tell window("jokes.dxr")
+  [435] pushcons 32 ............................. <"joke52">
+  [438] pusharglistnoret 1 ...................... <"joke52">
+  [440] tellcall 14 ............................. play frame "joke52"
+  [442] endtell
+  [443] jmp [569]
+  [446] getglobal 9 ............................. <globalday>
+  [448] pushint16 5 ............................. <5>
+  [451] eq ...................................... <globalday = 5>
+  [452] getparam 0 .............................. <y>
+  [454] pushint16 4 ............................. <4>
+  [457] eq ...................................... <y = 4>
+  [458] and ..................................... <(globalday = 5) and (y = 4)>
+  [459] jmpifz [517] ............................ if (globalday = 5) and (y = 4) then / else
+  [462] pushcons 33 ............................. <"jokes.dxr">
+  [465] pusharglist 1 ........................... <"jokes.dxr">
+  [467] extcall 6 ............................... <window("jokes.dxr")>
+  [469] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [471] extcall 10 .............................. open(window("jokes.dxr"))
+  [473] pushsymb 11 ............................. <#playFile>
+  [475] pushint16 1 ............................. <1>
+  [478] getglobal 13 ............................ <soundspath>
+  [480] pushcons 34 ............................. <"joke">
+  [483] getglobal 9 ............................. <globalday>
+  [485] joinstr ................................. <"joke" & globalday>
+  [486] getparam 0 .............................. <y>
+  [488] joinstr ................................. <"joke" & globalday & y>
+  [489] pushcons 35 ............................. <"a.aif">
+  [492] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [493] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [494] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [496] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [498] pushcons 36 ............................. <"jokes.dxr">
+  [501] pusharglist 1 ........................... <"jokes.dxr">
+  [503] extcall 6 ............................... <window("jokes.dxr")>
+  [505] starttell ............................... tell window("jokes.dxr")
+  [506] pushcons 37 ............................. <"joke54">
+  [509] pusharglistnoret 1 ...................... <"joke54">
+  [511] tellcall 14 ............................. play frame "joke54"
+  [513] endtell
+  [514] jmp [569]
+  [517] pushcons 38 ............................. <"jokes.dxr">
+  [520] pusharglist 1 ........................... <"jokes.dxr">
+  [522] extcall 6 ............................... <window("jokes.dxr")>
+  [524] pusharglistnoret 1 ...................... <window("jokes.dxr")>
+  [526] extcall 10 .............................. open(window("jokes.dxr"))
+  [528] pushsymb 11 ............................. <#playFile>
+  [530] pushint16 1 ............................. <1>
+  [533] getglobal 13 ............................ <soundspath>
+  [535] pushcons 39 ............................. <"joke">
+  [538] getglobal 9 ............................. <globalday>
+  [540] joinstr ................................. <"joke" & globalday>
+  [541] getparam 0 .............................. <y>
+  [543] joinstr ................................. <"joke" & globalday & y>
+  [544] pushcons 40 ............................. <"a.aif">
+  [547] joinstr ................................. <"joke" & globalday & y & "a.aif">
+  [548] joinstr ................................. <soundspath & "joke" & globalday & y & "a.aif">
+  [549] pusharglistnoret 3 ...................... <1, soundspath & "joke" & globalday & y & "a.aif">
+  [551] extcall 12 .............................. sound playFile 1, soundspath & "joke" & globalday & y & "a.aif"
+  [553] pushcons 41 ............................. <"jokes.dxr">
+  [556] pusharglist 1 ........................... <"jokes.dxr">
+  [558] extcall 6 ............................... <window("jokes.dxr")>
+  [560] starttell ............................... tell window("jokes.dxr")
+  [561] pushcons 42 ............................. <"youngstart">
+  [564] pusharglistnoret 1 ...................... <"youngstart">
+  [566] tellcall 14 ............................. play frame "youngstart"
+  [568] endtell
+  [569] ret
+end
+
+on cardsfunk
+  [  0] ret
+end
+
+on runcards
+  [  0] pushint16 1 ............................. <1>
+  [  3] setlocal 0 .............................. i = 1
+  [  5] pushcons 43 ............................. <"not">
+  [  8] setlocal 1 .............................. x = "not"
+  [ 10] getlocal 0 .............................. <i>
+  [ 12] pushcons 44 ............................. <"afganifield">
+  [ 15] pushzero ................................ <0>
+  [ 16] getfield ................................ <field("afganifield")>
+  [ 17] pushint16 3 ............................. <3>
+  [ 20] get 1 ................................... <the number of items in field "afganifield">
+  [ 22] lt ...................................... <i < the number of items in field "afganifield">
+  [ 23] getlocal 1 .............................. <x>
+  [ 25] pushcons 45 ............................. <"not">
+  [ 28] eq ...................................... <x = "not">
+  [ 29] and ..................................... <(i < the number of items in field "afganifield") and (x = "not")>
+  [ 30] jmpifz [ 92] ............................ repeat while (i < the number of items in field "afganifield") and (x = "not")
+  [ 33] pushzero ................................ <0>
+  [ 34] pushzero ................................ <0>
+  [ 35] pushzero ................................ <0>
+  [ 36] pushzero ................................ <0>
+  [ 37] getlocal 0 .............................. <i>
+  [ 39] pushzero ................................ <0>
+  [ 40] pushzero ................................ <0>
+  [ 41] pushzero ................................ <0>
+  [ 42] pushcons 46 ............................. <"afganifield">
+  [ 45] pushzero ................................ <0>
+  [ 46] getfield ................................ <field("afganifield")>
+  [ 47] getchunk ................................ <item i of field "afganifield">
+  [ 48] pushcons 47 ............................. <"0">
+  [ 51] eq ...................................... <item i of field "afganifield" = "0">
+  [ 52] jmpifz [ 81] ............................ if item i of field "afganifield" = "0" then
+  [ 55] pushcons 48 ............................. <"1">
+  [ 58] pushzero ................................ <0>
+  [ 59] pushzero ................................ <0>
+  [ 60] pushzero ................................ <0>
+  [ 61] pushzero ................................ <0>
+  [ 62] getlocal 0 .............................. <i>
+  [ 64] pushzero ................................ <0>
+  [ 65] pushzero ................................ <0>
+  [ 66] pushzero ................................ <0>
+  [ 67] pushcons 49 ............................. <"afganifield">
+  [ 70] pushzero ................................ <0>
+  [ 71] putchunk 22 ............................. put "1" into item i of field "afganifield"
+  [ 73] pushcons 50 ............................. <"yes">
+  [ 76] setlocal 1 .............................. x = "yes"
+  [ 78] jmp [ 89] ............................... next repeat
+  [ 81] getlocal 0 .............................. <i>
+  [ 83] pushint16 1 ............................. <1>
+  [ 86] add ..................................... <i + 1>
+  [ 87] setlocal 0 .............................. i = i + 1
+  [ 89] endrepeat [ 10]
+  [ 92] ret
+end
+
+on missionfunk
+  [  0] getglobal 9 ............................. <globalday>
+  [  2] pushint16 2 ............................. <2>
+  [  5] eq ...................................... <globalday = 2>
+  [  6] jmpifz [246] ............................ if globalday = 2 then / else
+  [  9] getglobal 18 ............................ <mission>
+  [ 11] pushint16 1 ............................. <1>
+  [ 14] eq ...................................... <mission = 1>
+  [ 15] getglobal 19 ............................ <nof>
+  [ 17] pushcons 51 ............................. <"dl5">
+  [ 20] eq ...................................... <nof = "dl5">
+  [ 21] and ..................................... <(mission = 1) and (nof = "dl5")>
+  [ 22] jmpifz [ 50] ............................ if (mission = 1) and (nof = "dl5") then / else
+  [ 25] pushint16 39 ............................ <39>
+  [ 28] pusharglist 1 ........................... <39>
+  [ 30] extcall 20 .............................. <sprite(39)>
+  [ 32] pushint16 1 ............................. <1>
+  [ 35] setobjprop 21 ........................... sprite(39).visible = 1
+  [ 37] pushint16 40 ............................ <40>
+  [ 40] pusharglist 1 ........................... <40>
+  [ 42] extcall 20 .............................. <sprite(40)>
+  [ 44] pushzero ................................ <0>
+  [ 45] setobjprop 21 ........................... sprite(40).visible = 0
+  [ 47] jmp [243]
+  [ 50] getglobal 18 ............................ <mission>
+  [ 52] pushint16 2 ............................. <2>
+  [ 55] eq ...................................... <mission = 2>
+  [ 56] getglobal 19 ............................ <nof>
+  [ 58] pushcons 52 ............................. <"kitchen">
+  [ 61] eq ...................................... <nof = "kitchen">
+  [ 62] and ..................................... <(mission = 2) and (nof = "kitchen")>
+  [ 63] jmpifz [ 98] ............................ if (mission = 2) and (nof = "kitchen") then / else
+  [ 66] pushint16 38 ............................ <38>
+  [ 69] pushcons 53 ............................. <"trgcur1">
+  [ 72] pusharglist 1 ........................... <"trgcur1">
+  [ 74] extcall 22 .............................. <member("trgcur1")>
+  [ 76] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [ 78] pushcons 54 ............................. <"trgcur2">
+  [ 81] pusharglist 1 ........................... <"trgcur2">
+  [ 83] extcall 22 .............................. <member("trgcur2")>
+  [ 85] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [ 87] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [ 89] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [ 90] pushint16 6 ............................. <6>
+  [ 93] set 6 ................................... set the cursor of sprite 38 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [ 95] jmp [243]
+  [ 98] getglobal 18 ............................ <mission>
+  [100] pushint16 3 ............................. <3>
+  [103] eq ...................................... <mission = 3>
+  [104] getglobal 18 ............................ <mission>
+  [106] pushint16 4 ............................. <4>
+  [109] eq ...................................... <mission = 4>
+  [110] or ...................................... <(mission = 3) or (mission = 4)>
+  [111] jmpifz [175] ............................ if (mission = 3) or (mission = 4) then / else
+  [114] pushint16 38 ............................ <38>
+  [117] pushcons 55 ............................. <"trgcur1">
+  [120] pusharglist 1 ........................... <"trgcur1">
+  [122] extcall 22 .............................. <member("trgcur1")>
+  [124] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [126] pushcons 56 ............................. <"trgcur2">
+  [129] pusharglist 1 ........................... <"trgcur2">
+  [131] extcall 22 .............................. <member("trgcur2")>
+  [133] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [135] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [137] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [138] pushint16 6 ............................. <6>
+  [141] set 6 ................................... set the cursor of sprite 38 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [143] pushint16 39 ............................ <39>
+  [146] pushcons 57 ............................. <"trgcur1">
+  [149] pusharglist 1 ........................... <"trgcur1">
+  [151] extcall 22 .............................. <member("trgcur1")>
+  [153] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [155] pushcons 58 ............................. <"trgcur2">
+  [158] pusharglist 1 ........................... <"trgcur2">
+  [160] extcall 22 .............................. <member("trgcur2")>
+  [162] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [164] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [166] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [167] pushint16 6 ............................. <6>
+  [170] set 6 ................................... set the cursor of sprite 39 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [172] jmp [243]
+  [175] getglobal 18 ............................ <mission>
+  [177] pushint16 5 ............................. <5>
+  [180] eq ...................................... <mission = 5>
+  [181] getglobal 19 ............................ <nof>
+  [183] pushcons 59 ............................. <"dr1">
+  [186] eq ...................................... <nof = "dr1">
+  [187] and ..................................... <(mission = 5) and (nof = "dr1")>
+  [188] jmpifz [223] ............................ if (mission = 5) and (nof = "dr1") then / else
+  [191] pushint16 39 ............................ <39>
+  [194] pushcons 60 ............................. <"trgcur1">
+  [197] pusharglist 1 ........................... <"trgcur1">
+  [199] extcall 22 .............................. <member("trgcur1")>
+  [201] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [203] pushcons 61 ............................. <"trgcur2">
+  [206] pusharglist 1 ........................... <"trgcur2">
+  [208] extcall 22 .............................. <member("trgcur2")>
+  [210] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [212] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [214] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [215] pushint16 6 ............................. <6>
+  [218] set 6 ................................... set the cursor of sprite 39 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [220] jmp [243]
+  [223] pushint16 39 ............................ <39>
+  [226] pusharglist 1 ........................... <39>
+  [228] extcall 20 .............................. <sprite(39)>
+  [230] pushzero ................................ <0>
+  [231] setobjprop 21 ........................... sprite(39).visible = 0
+  [233] pushint16 40 ............................ <40>
+  [236] pusharglist 1 ........................... <40>
+  [238] extcall 20 .............................. <sprite(40)>
+  [240] pushzero ................................ <0>
+  [241] setobjprop 21 ........................... sprite(40).visible = 0
+  [243] jmp [519]
+  [246] getglobal 18 ............................ <mission>
+  [248] pushint16 1 ............................. <1>
+  [251] eq ...................................... <mission = 1>
+  [252] getglobal 19 ............................ <nof>
+  [254] pushcons 62 ............................. <"t3">
+  [257] eq ...................................... <nof = "t3">
+  [258] and ..................................... <(mission = 1) and (nof = "t3")>
+  [259] jmpifz [287] ............................ if (mission = 1) and (nof = "t3") then / else
+  [262] pushint16 39 ............................ <39>
+  [265] pusharglist 1 ........................... <39>
+  [267] extcall 20 .............................. <sprite(39)>
+  [269] pushint16 1 ............................. <1>
+  [272] setobjprop 21 ........................... sprite(39).visible = 1
+  [274] pushint16 40 ............................ <40>
+  [277] pusharglist 1 ........................... <40>
+  [279] extcall 20 .............................. <sprite(40)>
+  [281] pushzero ................................ <0>
+  [282] setobjprop 21 ........................... sprite(40).visible = 0
+  [284] jmp [519]
+  [287] getglobal 18 ............................ <mission>
+  [289] pushint16 2 ............................. <2>
+  [292] eq ...................................... <mission = 2>
+  [293] getglobal 19 ............................ <nof>
+  [295] pushcons 63 ............................. <"engineroom">
+  [298] eq ...................................... <nof = "engineroom">
+  [299] and ..................................... <(mission = 2) and (nof = "engineroom")>
+  [300] jmpifz [345] ............................ if (mission = 2) and (nof = "engineroom") then / else
+  [303] pushint16 39 ............................ <39>
+  [306] pushcons 64 ............................. <"trgcur1">
+  [309] pusharglist 1 ........................... <"trgcur1">
+  [311] extcall 22 .............................. <member("trgcur1")>
+  [313] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [315] pushcons 65 ............................. <"trgcur2">
+  [318] pusharglist 1 ........................... <"trgcur2">
+  [320] extcall 22 .............................. <member("trgcur2")>
+  [322] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [324] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [326] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [327] pushint16 6 ............................. <6>
+  [330] set 6 ................................... set the cursor of sprite 39 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [332] pushint16 38 ............................ <38>
+  [335] pusharglist 1 ........................... <38>
+  [337] extcall 20 .............................. <sprite(38)>
+  [339] pushzero ................................ <0>
+  [340] setobjprop 21 ........................... sprite(38).visible = 0
+  [342] jmp [519]
+  [345] getglobal 18 ............................ <mission>
+  [347] pushint16 3 ............................. <3>
+  [350] eq ...................................... <mission = 3>
+  [351] getglobal 18 ............................ <mission>
+  [353] pushint16 4 ............................. <4>
+  [356] eq ...................................... <mission = 4>
+  [357] or ...................................... <(mission = 3) or (mission = 4)>
+  [358] jmpifz [434] ............................ if (mission = 3) or (mission = 4) then / else
+  [361] pushint16 38 ............................ <38>
+  [364] pusharglist 1 ........................... <38>
+  [366] extcall 20 .............................. <sprite(38)>
+  [368] pushint16 1 ............................. <1>
+  [371] setobjprop 21 ........................... sprite(38).visible = 1
+  [373] pushint16 38 ............................ <38>
+  [376] pushcons 66 ............................. <"trgcur1">
+  [379] pusharglist 1 ........................... <"trgcur1">
+  [381] extcall 22 .............................. <member("trgcur1")>
+  [383] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [385] pushcons 67 ............................. <"trgcur2">
+  [388] pusharglist 1 ........................... <"trgcur2">
+  [390] extcall 22 .............................. <member("trgcur2")>
+  [392] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [394] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [396] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [397] pushint16 6 ............................. <6>
+  [400] set 6 ................................... set the cursor of sprite 38 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [402] pushint16 39 ............................ <39>
+  [405] pushcons 68 ............................. <"trgcur1">
+  [408] pusharglist 1 ........................... <"trgcur1">
+  [410] extcall 22 .............................. <member("trgcur1")>
+  [412] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [414] pushcons 69 ............................. <"trgcur2">
+  [417] pusharglist 1 ........................... <"trgcur2">
+  [419] extcall 22 .............................. <member("trgcur2")>
+  [421] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [423] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [425] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [426] pushint16 6 ............................. <6>
+  [429] set 6 ................................... set the cursor of sprite 39 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [431] jmp [519]
+  [434] getglobal 18 ............................ <mission>
+  [436] pushint16 5 ............................. <5>
+  [439] eq ...................................... <mission = 5>
+  [440] getglobal 19 ............................ <nof>
+  [442] pushcons 70 ............................. <"ur1">
+  [445] eq ...................................... <nof = "ur1">
+  [446] and ..................................... <(mission = 5) and (nof = "ur1")>
+  [447] jmpifz [482] ............................ if (mission = 5) and (nof = "ur1") then / else
+  [450] pushint16 39 ............................ <39>
+  [453] pushcons 71 ............................. <"trgcur1">
+  [456] pusharglist 1 ........................... <"trgcur1">
+  [458] extcall 22 .............................. <member("trgcur1")>
+  [460] getobjprop 23 ........................... <member("trgcur1").memberNum>
+  [462] pushcons 72 ............................. <"trgcur2">
+  [465] pusharglist 1 ........................... <"trgcur2">
+  [467] extcall 22 .............................. <member("trgcur2")>
+  [469] getobjprop 23 ........................... <member("trgcur2").memberNum>
+  [471] pusharglist 2 ........................... <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [473] pushlist ................................ <[member("trgcur1").memberNum, member("trgcur2").memberNum]>
+  [474] pushint16 6 ............................. <6>
+  [477] set 6 ................................... set the cursor of sprite 39 to [member("trgcur1").memberNum, member("trgcur2").memberNum]
+  [479] jmp [519]
+  [482] pushint16 38 ............................ <38>
+  [485] pushint16 1 ............................. <1>
+  [488] pushint16 1 ............................. <1>
+  [491] pusharglist 2 ........................... <[1, 1]>
+  [493] pushlist ................................ <[1, 1]>
+  [494] pushint16 6 ............................. <6>
+  [497] set 6 ................................... set the cursor of sprite 38 to [1, 1]
+  [499] pushint16 39 ............................ <39>
+  [502] pusharglist 1 ........................... <39>
+  [504] extcall 20 .............................. <sprite(39)>
+  [506] pushzero ................................ <0>
+  [507] setobjprop 21 ........................... sprite(39).visible = 0
+  [509] pushint16 40 ............................ <40>
+  [512] pusharglist 1 ........................... <40>
+  [514] extcall 20 .............................. <sprite(40)>
+  [516] pushzero ................................ <0>
+  [517] setobjprop 21 ........................... sprite(40).visible = 0
+  [519] ret
+end

@@ -1,0 +1,407 @@
+on exitFrame
+  [  0] pushint8 56 ............................. <56>
+  [  3] pushint8 1 .............................. <1>
+  [  6] pusharglistnoret 2 ...................... <56, 1>
+  [  8] extcall 38 .............................. puppetSprite(56, 1)
+  [ 11] getmovieprop 60 ......................... <the movieName>
+  [ 14] pushcons 0 .............................. <"night">
+  [ 16] containsstr ............................. <the movieName contains "night">
+  [ 17] jmpifz [ 42] ............................ if the movieName contains "night" then / else
+  [ 20] pushint8 56 ............................. <56>
+  [ 23] pushcons 8 .............................. <"night">
+  [ 25] getglobal 5 ............................. <globalday>
+  [ 27] joinstr ................................. <"night" & globalday>
+  [ 28] pushzero ................................ <0>
+  [ 29] pushint8 10 ............................. <10>
+  [ 32] get 9 ................................... <the number of member ("night" & globalday)>
+  [ 34] pushint8 35 ............................. <35>
+  [ 37] set 6 ................................... set the memberNum of sprite 56 to the number of member ("night" & globalday)
+  [ 39] jmp [ 61]
+  [ 42] pushint8 56 ............................. <56>
+  [ 45] pushcons 16 ............................. <"day">
+  [ 47] getglobal 5 ............................. <globalday>
+  [ 49] joinstr ................................. <"day" & globalday>
+  [ 50] pushzero ................................ <0>
+  [ 51] pushint8 10 ............................. <10>
+  [ 54] get 9 ................................... <the number of member ("day" & globalday)>
+  [ 56] pushint8 35 ............................. <35>
+  [ 59] set 6 ................................... set the memberNum of sprite 56 to the number of member ("day" & globalday)
+  [ 61] getglobal 24 ............................ <saveB>
+  [ 63] pushcons 24 ............................. <"clickoncharacter">
+  [ 65] pushcons 32 ............................. <"master">
+  [ 67] put 22 .................................. put saveB into field "clickoncharacter" of castLib "master"
+  [ 69] getglobal 2 ............................. <saveC>
+  [ 71] pushcons 40 ............................. <"objectsfield">
+  [ 73] pushcons 48 ............................. <"master">
+  [ 75] put 22 .................................. put saveC into field "objectsfield" of castLib "master"
+  [ 77] getglobal 59 ............................ <saveG>
+  [ 80] pushcons 56 ............................. <"jokefield">
+  [ 82] pushcons 64 ............................. <"master">
+  [ 84] put 22 .................................. put saveG into field "jokefield" of castLib "master"
+  [ 86] getglobal 11 ............................ <saveF>
+  [ 88] pushcons 72 ............................. <"points">
+  [ 90] pushcons 80 ............................. <"master">
+  [ 92] put 22 .................................. put saveF into field "points" of castLib "master"
+  [ 94] getglobal 10 ............................ <saveE>
+  [ 96] pushcons 88 ............................. <"plane">
+  [ 98] pushcons 96 ............................. <"master">
+  [100] put 22 .................................. put saveE into field "plane" of castLib "master"
+  [102] getglobal 9 ............................. <saveD>
+  [104] pushcons 104 ............................ <"shellfield">
+  [106] pushcons 112 ............................ <"master">
+  [108] put 22 .................................. put saveD into field "shellfield" of castLib "master"
+  [110] getglobal 67 ............................ <saveH>
+  [113] pushcons 120 ............................ <"Dprocess">
+  [115] pushcons 128 ............................ <"master">
+  [117] put 22 .................................. put saveH into field "Dprocess" of castLib "master"
+  [119] pushzero ................................ <0>
+  [120] pushzero ................................ <0>
+  [121] pushzero ................................ <0>
+  [122] pushzero ................................ <0>
+  [123] pushint8 1 .............................. <1>
+  [126] pushzero ................................ <0>
+  [127] pushzero ................................ <0>
+  [128] pushzero ................................ <0>
+  [129] getglobal 78 ............................ <savei>
+  [132] getchunk ................................ <item 1 of savei>
+  [133] pusharglist 1 ........................... <item 1 of savei>
+  [135] extcall 77 .............................. <value(item 1 of savei)>
+  [138] setglobal 79 ............................ egozh = value(item 1 of savei)
+  [141] pushzero ................................ <0>
+  [142] pushzero ................................ <0>
+  [143] pushzero ................................ <0>
+  [144] pushzero ................................ <0>
+  [145] pushint8 2 .............................. <2>
+  [148] pushzero ................................ <0>
+  [149] pushzero ................................ <0>
+  [150] pushzero ................................ <0>
+  [151] getglobal 78 ............................ <savei>
+  [154] getchunk ................................ <item 2 of savei>
+  [155] pusharglist 1 ........................... <item 2 of savei>
+  [157] extcall 77 .............................. <value(item 2 of savei)>
+  [160] setglobal 80 ............................ egozv = value(item 2 of savei)
+  [163] pushzero ................................ <0>
+  [164] pushzero ................................ <0>
+  [165] pushzero ................................ <0>
+  [166] pushzero ................................ <0>
+  [167] pushint8 3 .............................. <3>
+  [170] pushzero ................................ <0>
+  [171] pushzero ................................ <0>
+  [172] pushzero ................................ <0>
+  [173] getglobal 78 ............................ <savei>
+  [176] getchunk ................................ <item 3 of savei>
+  [177] pusharglist 1 ........................... <item 3 of savei>
+  [179] extcall 77 .............................. <value(item 3 of savei)>
+  [182] setglobal 73 ............................ syz = value(item 3 of savei)
+  [185] pushint8 15 ............................. <15>
+  [188] setlocal 0
+  [190] getlocal 0
+  [192] pushint8 30 ............................. <30>
+  [195] lteq
+  [196] jmpifz [220] ............................ repeat with i = 15 to 30
+  [199] getlocal 0 .............................. <i>
+  [201] pusharglist 1 ........................... <i>
+  [203] extcall 14 .............................. <sprite(i)>
+  [205] pushint8 1 .............................. <1>
+  [208] setobjprop 15 ........................... sprite(i).visible = 1
+  [210] pushint8 1
+  [213] getlocal 0
+  [215] add
+  [216] setlocal 0
+  [218] endrepeat [190]
+  [220] getglobal 5 ............................. <globalday>
+  [222] pushzero ................................ <0>
+  [223] eq ...................................... <globalday = 0>
+  [224] jmpifz [271] ............................ if globalday = 0 then / else
+  [227] pushcons 136 ............................ <"strtgame">
+  [229] pusharglistnoret 1 ...................... <"strtgame">
+  [231] extcall 68 .............................. tlkpath("strtgame")
+  [234] getmovieprop 32 ......................... <the stage>
+  [237] starttell ............................... tell the stage
+  [238] pushint8 1 .............................. <1>
+  [241] getglobal 33 ............................ <cdsavepath>
+  [244] pushcons 144 ............................ <"exodus.dxr">
+  [246] joinstr ................................. <cdsavepath & "exodus.dxr">
+  [247] pusharglistnoret 2 ...................... <1, cdsavepath & "exodus.dxr">
+  [249] tellcall 4 .............................. go(1, cdsavepath & "exodus.dxr")
+  [251] endtell
+  [252] getglobal 33 ............................ <cdsavepath>
+  [255] pushcons 152 ............................ <"saveload.dxr">
+  [257] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [258] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [260] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [263] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [265] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [268] jmp [831]
+  [271] getmovieprop 32 ......................... <the stage>
+  [274] starttell ............................... tell the stage
+  [275] getmovieprop 60 ......................... <the movieName>
+  [278] setlocal 8 .............................. ccc = the movieName
+  [280] endtell
+  [281] getlocal 8 .............................. <ccc>
+  [283] pushcons 160 ............................ <"strtgame">
+  [285] containsstr ............................. <ccc contains "strtgame">
+  [286] jmpifz [580] ............................ if ccc contains "strtgame" then / else
+  [289] getglobal 73 ............................ <syz>
+  [292] setglobal 74 ............................ newsyz = syz
+  [295] getglobal 71 ............................ <nof>
+  [298] pushcons 168 ............................ <",">
+  [300] joinstr ................................. <nof & ",">
+  [301] getglobal 79 ............................ <egozh>
+  [304] joinstr ................................. <nof & "," & egozh>
+  [305] pushcons 176 ............................ <",">
+  [307] joinstr ................................. <nof & "," & egozh & ",">
+  [308] getglobal 80 ............................ <egozv>
+  [311] joinstr ................................. <nof & "," & egozh & "," & egozv>
+  [312] setglobal 75 ............................ nextroomdata = nof & "," & egozh & "," & egozv
+  [315] getglobal 86 ............................ <DorN>
+  [318] pushcons 184 ............................ <"night1">
+  [320] containsstr ............................. <DorN contains "night1">
+  [321] jmpifz [389] ............................ if DorN contains "night1" then / else
+  [324] getmovieprop 32 ......................... <the stage>
+  [327] starttell ............................... tell the stage
+  [328] getglobal 71 ............................ <nof>
+  [331] getglobal 33 ............................ <cdsavepath>
+  [334] pushcons 192 ............................ <"night1.dxr">
+  [336] joinstr ................................. <cdsavepath & "night1.dxr">
+  [337] pusharglistnoret 2 ...................... <nof, cdsavepath & "night1.dxr">
+  [339] tellcall 4 .............................. go(nof, cdsavepath & "night1.dxr")
+  [341] endtell
+  [342] getglobal 71 ............................ <nof>
+  [345] pushcons 200 ............................ <"path5">
+  [347] pushzero ................................ <0>
+  [348] pushzero ................................ <0>
+  [349] pushzero ................................ <0>
+  [350] pushzero ................................ <0>
+  [351] pushint8 3 .............................. <3>
+  [354] pushzero ................................ <0>
+  [355] pushzero ................................ <0>
+  [356] pushzero ................................ <0>
+  [357] getglobal 87 ............................ <globalnight>
+  [360] getchunk ................................ <item 3 of globalnight>
+  [361] pushcons 208 ............................ <"done">
+  [363] eq ...................................... <item 3 of globalnight = "done">
+  [364] getglobal 5 ............................. <globalday>
+  [366] pushint8 1 .............................. <1>
+  [369] eq ...................................... <globalday = 1>
+  [370] or ...................................... <(item 3 of globalnight = "done") or (globalday = 1)>
+  [371] joinstr ................................. <"path5" & (item 3 of globalnight = "done") or (globalday = 1)>
+  [372] eq ...................................... <nof = ("path5" & (item 3 of globalnight = "done") or (globalday = 1))>
+  [373] jmpifz [386] ............................ if nof = ("path5" & (item 3 of globalnight = "done") or (globalday = 1)) then
+  [376] pushint8 15 ............................. <15>
+  [379] pusharglist 1 ........................... <15>
+  [381] extcall 14 .............................. <sprite(15)>
+  [383] pushzero ................................ <0>
+  [384] setobjprop 15 ........................... sprite(15).visible = 0
+  [386] jmp [407]
+  [389] getmovieprop 32 ......................... <the stage>
+  [392] starttell ............................... tell the stage
+  [393] getglobal 71 ............................ <nof>
+  [396] getglobal 33 ............................ <cdsavepath>
+  [399] pushcons 216 ............................ <"day1.dxr">
+  [401] joinstr ................................. <cdsavepath & "day1.dxr">
+  [402] pusharglistnoret 2 ...................... <nof, cdsavepath & "day1.dxr">
+  [404] tellcall 4 .............................. go(nof, cdsavepath & "day1.dxr")
+  [406] endtell
+  [407] getmovieprop 32 ......................... <the stage>
+  [410] starttell ............................... tell the stage
+  [411] pushint8 30 ............................. <30>
+  [414] pushint8 1 .............................. <1>
+  [417] pusharglistnoret 2 ...................... <30, 1>
+  [419] tellcall 38 ............................. puppetSprite(30, 1)
+  [422] endtell
+  [423] getglobal 71 ............................ <nof>
+  [426] pushcons 224 ............................ <"shore2">
+  [428] eq ...................................... <nof = "shore2">
+  [429] getglobal 5 ............................. <globalday>
+  [431] pushint8 1 .............................. <1>
+  [434] eq ...................................... <globalday = 1>
+  [435] and ..................................... <(nof = "shore2") and (globalday = 1)>
+  [436] jmpifz [454] ............................ if (nof = "shore2") and (globalday = 1) then
+  [439] getmovieprop 32 ......................... <the stage>
+  [442] starttell ............................... tell the stage
+  [443] pushint8 6 .............................. <6>
+  [446] pusharglist 1 ........................... <6>
+  [448] tellcall 14 ............................. <sprite(6)>
+  [450] pushzero ................................ <0>
+  [451] setobjprop 15 ........................... sprite(6).visible = 0
+  [453] endtell
+  [454] getmovieprop 32 ......................... <the stage>
+  [457] starttell ............................... tell the stage
+  [458] pushint8 30 ............................. <30>
+  [461] pushcons 232 ............................ <"standright">
+  [463] getglobal 73 ............................ <syz>
+  [466] joinstr ................................. <"standright" & syz>
+  [467] pushzero ................................ <0>
+  [468] pushint8 10 ............................. <10>
+  [471] get 9 ................................... <the number of member ("standright" & syz)>
+  [473] pushint8 35 ............................. <35>
+  [476] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standright" & syz)
+  [478] endtell
+  [479] getmovieprop 32 ......................... <the stage>
+  [482] starttell ............................... tell the stage
+  [483] pusharglistnoret 0 ...................... <>
+  [485] tellcall 57 ............................. updateStage()
+  [488] endtell
+  [489] getmovieprop 32 ......................... <the stage>
+  [492] starttell ............................... tell the stage
+  [493] pushint8 30 ............................. <30>
+  [496] pusharglist 1 ........................... <30>
+  [498] tellcall 14 ............................. <sprite(30)>
+  [500] pushint8 1 .............................. <1>
+  [503] setobjprop 15 ........................... sprite(30).visible = 1
+  [505] endtell
+  [506] getmovieprop 32 ......................... <the stage>
+  [509] starttell ............................... tell the stage
+  [510] pusharglistnoret 0 ...................... <>
+  [512] tellcall 89 ............................. peoplefunk()
+  [515] endtell
+  [516] getmovieprop 32 ......................... <the stage>
+  [519] starttell ............................... tell the stage
+  [520] pusharglistnoret 0 ...................... <>
+  [522] tellcall 58 ............................. displayobject()
+  [525] endtell
+  [526] getmovieprop 32 ......................... <the stage>
+  [529] starttell ............................... tell the stage
+  [530] pusharglistnoret 0 ...................... <>
+  [532] tellcall 76 ............................. cursorfunk()
+  [535] endtell
+  [536] getmovieprop 32 ......................... <the stage>
+  [539] starttell ............................... tell the stage
+  [540] pushcons 240 ............................ <"points">
+  [542] pushzero ................................ <0>
+  [543] pushint8 2 .............................. <2>
+  [546] get 11 .................................. <the text of field "points">
+  [548] pushcons 248 ............................ <"points">
+  [550] pushzero ................................ <0>
+  [551] put 22 .................................. put the text of field "points" into field "points"
+  [553] endtell
+  [554] getglobal 33 ............................ <cdsavepath>
+  [557] pushcons 256 ............................ <"saveload.dxr">
+  [560] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [561] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [563] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [566] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [568] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [571] pushcons 264 ............................ <"0,0">
+  [574] setglobal 82 ............................ ifmovie = "0,0"
+  [577] jmp [831]
+  [580] getglobal 73 ............................ <syz>
+  [583] setglobal 74 ............................ newsyz = syz
+  [586] getglobal 71 ............................ <nof>
+  [589] pushcons 272 ............................ <",">
+  [592] joinstr ................................. <nof & ",">
+  [593] getglobal 79 ............................ <egozh>
+  [596] joinstr ................................. <nof & "," & egozh>
+  [597] pushcons 280 ............................ <",">
+  [600] joinstr ................................. <nof & "," & egozh & ",">
+  [601] getglobal 80 ............................ <egozv>
+  [604] joinstr ................................. <nof & "," & egozh & "," & egozv>
+  [605] setglobal 75 ............................ nextroomdata = nof & "," & egozh & "," & egozv
+  [608] getmovieprop 32 ......................... <the stage>
+  [611] starttell ............................... tell the stage
+  [612] getmovieprop 60 ......................... <the movieName>
+  [615] setlocal 8 .............................. ccc = the movieName
+  [617] endtell
+  [618] getglobal 86 ............................ <DorN>
+  [621] getlocal 8 .............................. <ccc>
+  [623] eq ...................................... <DorN = ccc>
+  [624] jmpifz [642] ............................ if DorN = ccc then / else
+  [627] getmovieprop 32 ......................... <the stage>
+  [630] starttell ............................... tell the stage
+  [631] getglobal 71 ............................ <nof>
+  [634] pusharglistnoret 1 ...................... <nof>
+  [636] tellcall 4 .............................. go(nof)
+  [638] endtell
+  [639] jmp [657]
+  [642] getmovieprop 32 ......................... <the stage>
+  [645] starttell ............................... tell the stage
+  [646] getglobal 71 ............................ <nof>
+  [649] getglobal 86 ............................ <DorN>
+  [652] pusharglistnoret 2 ...................... <nof, DorN>
+  [654] tellcall 4 .............................. go(nof, DorN)
+  [656] endtell
+  [657] getmovieprop 32 ......................... <the stage>
+  [660] starttell ............................... tell the stage
+  [661] pushint8 30 ............................. <30>
+  [664] pushint8 1 .............................. <1>
+  [667] pusharglistnoret 2 ...................... <30, 1>
+  [669] tellcall 38 ............................. puppetSprite(30, 1)
+  [672] endtell
+  [673] getglobal 71 ............................ <nof>
+  [676] pushcons 288 ............................ <"shore2">
+  [679] eq ...................................... <nof = "shore2">
+  [680] getglobal 5 ............................. <globalday>
+  [682] pushint8 1 .............................. <1>
+  [685] eq ...................................... <globalday = 1>
+  [686] and ..................................... <(nof = "shore2") and (globalday = 1)>
+  [687] jmpifz [705] ............................ if (nof = "shore2") and (globalday = 1) then
+  [690] getmovieprop 32 ......................... <the stage>
+  [693] starttell ............................... tell the stage
+  [694] pushint8 6 .............................. <6>
+  [697] pusharglist 1 ........................... <6>
+  [699] tellcall 14 ............................. <sprite(6)>
+  [701] pushzero ................................ <0>
+  [702] setobjprop 15 ........................... sprite(6).visible = 0
+  [704] endtell
+  [705] getmovieprop 32 ......................... <the stage>
+  [708] starttell ............................... tell the stage
+  [709] pushint8 30 ............................. <30>
+  [712] pushcons 296 ............................ <"standright">
+  [715] getglobal 73 ............................ <syz>
+  [718] joinstr ................................. <"standright" & syz>
+  [719] pushzero ................................ <0>
+  [720] pushint8 10 ............................. <10>
+  [723] get 9 ................................... <the number of member ("standright" & syz)>
+  [725] pushint8 35 ............................. <35>
+  [728] set 6 ................................... set the memberNum of sprite 30 to the number of member ("standright" & syz)
+  [730] endtell
+  [731] getmovieprop 32 ......................... <the stage>
+  [734] starttell ............................... tell the stage
+  [735] pusharglistnoret 0 ...................... <>
+  [737] tellcall 57 ............................. updateStage()
+  [740] endtell
+  [741] getmovieprop 32 ......................... <the stage>
+  [744] starttell ............................... tell the stage
+  [745] pushint8 30 ............................. <30>
+  [748] pusharglist 1 ........................... <30>
+  [750] tellcall 14 ............................. <sprite(30)>
+  [752] pushint8 1 .............................. <1>
+  [755] setobjprop 15 ........................... sprite(30).visible = 1
+  [757] endtell
+  [758] getmovieprop 32 ......................... <the stage>
+  [761] starttell ............................... tell the stage
+  [762] pusharglistnoret 0 ...................... <>
+  [764] tellcall 89 ............................. peoplefunk()
+  [767] endtell
+  [768] getmovieprop 32 ......................... <the stage>
+  [771] starttell ............................... tell the stage
+  [772] pusharglistnoret 0 ...................... <>
+  [774] tellcall 58 ............................. displayobject()
+  [777] endtell
+  [778] getmovieprop 32 ......................... <the stage>
+  [781] starttell ............................... tell the stage
+  [782] pusharglistnoret 0 ...................... <>
+  [784] tellcall 76 ............................. cursorfunk()
+  [787] endtell
+  [788] getmovieprop 32 ......................... <the stage>
+  [791] starttell ............................... tell the stage
+  [792] pushcons 304 ............................ <"points">
+  [795] pushzero ................................ <0>
+  [796] pushint8 2 .............................. <2>
+  [799] get 11 .................................. <the text of field "points">
+  [801] pushcons 312 ............................ <"points">
+  [804] pushzero ................................ <0>
+  [805] put 22 .................................. put the text of field "points" into field "points"
+  [807] endtell
+  [808] getglobal 33 ............................ <cdsavepath>
+  [811] pushcons 320 ............................ <"saveload.dxr">
+  [814] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [815] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [817] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [820] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [822] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [825] pushcons 328 ............................ <"0,0">
+  [828] setglobal 82 ............................ ifmovie = "0,0"
+  [831] ret
+end

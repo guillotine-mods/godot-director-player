@@ -1,0 +1,33 @@
+on exitFrame
+  [  0] pushint16 19 ............................ <19>
+  [  3] pusharglist 1 ........................... <19>
+  [  5] extcall 20 .............................. <sprite(19)>
+  [  7] getobjprop 21 ........................... <sprite(19).visible>
+  [  9] pushint16 1 ............................. <1>
+  [ 12] eq ...................................... <sprite(19).visible = 1>
+  [ 13] jmpifz [ 26] ............................ if sprite(19).visible = 1 then
+  [ 16] pushint16 14 ............................ <14>
+  [ 19] pusharglist 1 ........................... <14>
+  [ 21] extcall 20 .............................. <sprite(14)>
+  [ 23] pushzero ................................ <0>
+  [ 24] setobjprop 21 ........................... sprite(14).visible = 0
+  [ 26] pushint16 2 ............................. <2>
+  [ 29] pusharglist 1 ........................... <2>
+  [ 31] extcall 73 .............................. <soundBusy(2)>
+  [ 34] not ..................................... <not soundBusy(2)>
+  [ 35] getglobal 84 ............................ <whichsnd>
+  [ 38] pushcons 0 .............................. <"savamus">
+  [ 40] nteq .................................... <whichsnd <> "savamus">
+  [ 41] or ...................................... <not soundBusy(2) or (whichsnd <> "savamus")>
+  [ 42] jmpifz [ 65] ............................ if not soundBusy(2) or (whichsnd <> "savamus") then
+  [ 45] pushsymb 11 ............................. <#playFile>
+  [ 47] pushint16 2 ............................. <2>
+  [ 50] getglobal 36 ............................ <effectspath>
+  [ 53] pushcons 1 .............................. <"savamus.aif">
+  [ 55] joinstr ................................. <effectspath & "savamus.aif">
+  [ 56] pusharglistnoret 3 ...................... <2, effectspath & "savamus.aif">
+  [ 58] extcall 12 .............................. sound playFile 2, effectspath & "savamus.aif"
+  [ 60] pushcons 2 .............................. <"savamus">
+  [ 62] setglobal 84 ............................ whichsnd = "savamus"
+  [ 65] ret
+end

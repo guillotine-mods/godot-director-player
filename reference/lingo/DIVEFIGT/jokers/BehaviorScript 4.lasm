@@ -1,0 +1,138 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 2 ............................ <the clickOn>
+  [  4] pushint8 100 ............................ <100>
+  [  6] ontospr ................................. <sprite the clickOn intersects 100>
+  [  7] jmpifz [ 72] ............................ if sprite the clickOn intersects 100 then / else
+  [ 10] pushint8 100 ............................ <100>
+  [ 12] pushcons 0 .............................. <"piphead2">
+  [ 14] pushcons 8 .............................. <"master">
+  [ 16] pushint8 10 ............................. <10>
+  [ 18] get 9 ................................... <the number of member "piphead2" of castLib "master">
+  [ 20] pushint8 35 ............................. <35>
+  [ 22] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead2" of castLib "master"
+  [ 24] pusharglist 0 ........................... <>
+  [ 26] thebuiltin 2 ............................ <the clickOn>
+  [ 28] pushint8 102 ............................ <102>
+  [ 30] sub ..................................... <the clickOn - 102>
+  [ 31] setlocal 0 .............................. x = the clickOn - 102
+  [ 33] pushzero ................................ <0>
+  [ 34] pushzero ................................ <0>
+  [ 35] pushzero ................................ <0>
+  [ 36] pushzero ................................ <0>
+  [ 37] pushzero ................................ <0>
+  [ 38] pushzero ................................ <0>
+  [ 39] getlocal 0 .............................. <x>
+  [ 41] pushzero ................................ <0>
+  [ 42] pushcons 16 ............................. <"objectsfield">
+  [ 44] pushcons 24 ............................. <"master">
+  [ 46] getfield ................................ <field("objectsfield", "master")>
+  [ 47] getchunk ................................ <line x of field "objectsfield" of castLib "master">
+  [ 48] setlocal 0 .............................. x = line x of field "objectsfield" of castLib "master"
+  [ 50] pushsymb 3 .............................. <#playFile>
+  [ 52] pushint8 1 .............................. <1>
+  [ 54] getglobal 5 ............................. <soundspath>
+  [ 56] pushcons 32 ............................. <"pi">
+  [ 58] getlocal 0 .............................. <x>
+  [ 60] joinstr ................................. <"pi" & x>
+  [ 61] pushcons 40 ............................. <".aif">
+  [ 63] joinstr ................................. <"pi" & x & ".aif">
+  [ 64] joinstr ................................. <soundspath & "pi" & x & ".aif">
+  [ 65] pusharglistnoret 3 ...................... <1, soundspath & "pi" & x & ".aif">
+  [ 67] extcall 4 ............................... sound playFile 1, soundspath & "pi" & x & ".aif"
+  [ 69] jmp [192]
+  [ 72] pushcons 48 ............................. <"not">
+  [ 74] setlocal 8 .............................. r = "not"
+  [ 76] pusharglist 0 ........................... <>
+  [ 78] thebuiltin 2 ............................ <the clickOn>
+  [ 80] pushint8 17 ............................. <17>
+  [ 82] ontospr ................................. <sprite the clickOn intersects 17>
+  [ 83] jmpifz [ 90] ............................ if sprite the clickOn intersects 17 then
+  [ 86] pushcons 56 ............................. <"yes">
+  [ 88] setlocal 8 .............................. r = "yes"
+  [ 90] getlocal 8 .............................. <r>
+  [ 92] pushcons 64 ............................. <"yes">
+  [ 94] eq ...................................... <r = "yes">
+  [ 95] jmpifz [192] ............................ if r = "yes" then
+  [ 98] pusharglist 0 ........................... <>
+  [100] thebuiltin 2 ............................ <the clickOn>
+  [102] pushint8 35 ............................. <35>
+  [104] get 6 ................................... <the memberNum of sprite the clickOn>
+  [106] pushcons 72 ............................. <"master">
+  [108] pusharglist 2 ........................... <the memberNum of sprite the clickOn, "master">
+  [110] extcall 6 ............................... <member(the memberNum of sprite the clickOn, "master")>
+  [112] getobjprop 7 ............................ <member(the memberNum of sprite the clickOn, "master").name>
+  [114] setlocal 0 .............................. x = member(the memberNum of sprite the clickOn, "master").name
+  [116] getlocal 0 .............................. <x>
+  [118] pushcons 80 ............................. <"sulam">
+  [120] eq ...................................... <x = "sulam">
+  [121] pushint8 17 ............................. <17>
+  [123] pushint8 25 ............................. <25>
+  [125] get 6 ................................... <the visible of sprite 17>
+  [127] pushint8 1 .............................. <1>
+  [129] eq ...................................... <the visible of sprite 17 = 1>
+  [130] and ..................................... <(x = "sulam") and (the visible of sprite 17 = 1)>
+  [131] jmpifz [192] ............................ if (x = "sulam") and (the visible of sprite 17 = 1) then
+  [134] pushcons 88 ............................. <"000">
+  [136] setglobal 8 ............................. nextroomdata = "000"
+  [138] getglobal 9 ............................. <egozv>
+  [140] pushint8 328 ............................ <328>
+  [143] nteq .................................... <egozv <> 328>
+  [144] getglobal 10 ............................ <egozh>
+  [146] pushint8 244 ............................ <244>
+  [149] nteq .................................... <egozh <> 244>
+  [150] or ...................................... <(egozv <> 328) or (egozh <> 244)>
+  [151] jmpifz [171] ............................ if (egozv <> 328) or (egozh <> 244) then / else
+  [154] pushint8 328 ............................ <328>
+  [157] setglobal 9 ............................. egozv = 328
+  [159] pushint8 244 ............................ <244>
+  [162] setglobal 10 ............................ egozh = 244
+  [164] pusharglistnoret 0 ...................... <>
+  [166] extcall 11 .............................. walkonby()
+  [168] jmp [192]
+  [171] getglobal 12 ............................ <whatodo>
+  [173] pushcons 96 ............................. <"stand">
+  [175] eq ...................................... <whatodo = "stand">
+  [176] jmpifz [192] ............................ if whatodo = "stand" then
+  [179] pushint8 30 ............................. <30>
+  [181] pushzero ................................ <0>
+  [182] pushint8 25 ............................. <25>
+  [184] set 6 ................................... set the visible of sprite 30 to 0
+  [186] pushcons 104 ............................ <"toolstake">
+  [188] pusharglistnoret 1 ...................... <"toolstake">
+  [190] extcall 13 .............................. go("toolstake")
+  [192] pusharglist 0 ........................... <>
+  [194] thebuiltin 2 ............................ <the clickOn>
+  [196] getglobal 14 ............................ <objectxx>
+  [198] pushint8 13 ............................. <13>
+  [200] set 6 ................................... set the locH of sprite the clickOn to objectxx
+  [202] pusharglist 0 ........................... <>
+  [204] thebuiltin 2 ............................ <the clickOn>
+  [206] getglobal 15 ............................ <objectyy>
+  [208] pushint8 14 ............................. <14>
+  [210] set 6 ................................... set the locV of sprite the clickOn to objectyy
+  [212] pusharglistnoret 0 ...................... <>
+  [214] extcall 16 .............................. updateStage()
+  [216] pushint8 100 ............................ <100>
+  [218] pushcons 112 ............................ <"piphead1">
+  [220] pushcons 120 ............................ <"master">
+  [222] pushint8 10 ............................. <10>
+  [224] get 9 ................................... <the number of member "piphead1" of castLib "master">
+  [226] pushint8 35 ............................. <35>
+  [228] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead1" of castLib "master"
+  [230] ret
+end
+
+on mouseDown
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 2 ............................ <the clickOn>
+  [  4] pushint8 13 ............................. <13>
+  [  6] get 6 ................................... <the locH of sprite the clickOn>
+  [  8] setglobal 14 ............................ objectxx = the locH of sprite the clickOn
+  [ 10] pusharglist 0 ........................... <>
+  [ 12] thebuiltin 2 ............................ <the clickOn>
+  [ 14] pushint8 14 ............................. <14>
+  [ 16] get 6 ................................... <the locV of sprite the clickOn>
+  [ 18] setglobal 15 ............................ objectyy = the locV of sprite the clickOn
+  [ 20] ret
+end

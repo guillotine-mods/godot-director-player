@@ -1,0 +1,9 @@
+on exitFrame
+  [  0] pushint8 3 .............................. <3>
+  [  3] setglobal 19 ............................ globalday = 3
+  [  5] pushcons 0 .............................. <"newmorning">
+  [  7] pushcons 8 .............................. <"hotel1.dxr">
+  [  9] pusharglistnoret 2 ...................... <"newmorning", "hotel1.dxr">
+  [ 11] extcall 6 ............................... go("newmorning", "hotel1.dxr")
+  [ 13] ret
+end

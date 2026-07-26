@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"verleft">
+  [  2] pusharglistnoret 1 ...................... <"verleft">
+  [  4] extcall 68 .............................. go("verleft")
+  [  7] ret
+end

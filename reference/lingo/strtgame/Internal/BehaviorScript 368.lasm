@@ -1,0 +1,6 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"credits">
+  [  2] pusharglistnoret 1 ...................... <"credits">
+  [  4] extcall 11 .............................. go("credits")
+  [  6] ret
+end

@@ -1,0 +1,44 @@
+on mouseUp
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 31 ............................ <soundspath>
+  [  8] pushcons 0 .............................. <"pflips.aif">
+  [ 10] joinstr ................................. <soundspath & "pflips.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, soundspath & "pflips.aif">
+  [ 13] extcall 43 .............................. sound playFile 1, soundspath & "pflips.aif"
+  [ 16] pusharglist 0 ........................... <>
+  [ 18] thebuiltin 45 ........................... <the clickOn>
+  [ 21] pusharglist 1 ........................... <the clickOn>
+  [ 23] extcall 94 .............................. <sprite(the clickOn)>
+  [ 26] pushzero ................................ <0>
+  [ 27] setobjprop 95 ........................... sprite(the clickOn).visible = 0
+  [ 30] pushcons 8 .............................. <"points">
+  [ 32] pushcons 16 ............................. <"master">
+  [ 34] pushint8 2 .............................. <2>
+  [ 37] get 11 .................................. <the text of field "points" of castLib "master">
+  [ 39] pusharglist 1 ........................... <the text of field "points" of castLib "master">
+  [ 41] extcall 15 .............................. <value(the text of field "points" of castLib "master")>
+  [ 43] setlocal 0 .............................. x = value(the text of field "points" of castLib "master")
+  [ 45] getlocal 0 .............................. <x>
+  [ 47] pushint8 1 .............................. <1>
+  [ 50] add ..................................... <x + 1>
+  [ 51] setlocal 0 .............................. x = x + 1
+  [ 53] getlocal 0 .............................. <x>
+  [ 55] pushint8 10 ............................. <10>
+  [ 58] lt ...................................... <x < 10>
+  [ 59] jmpifz [ 76] ............................ if x < 10 then / else
+  [ 62] pushcons 24 ............................. <"00">
+  [ 64] getlocal 0 .............................. <x>
+  [ 66] joinstr ................................. <"00" & x>
+  [ 67] pushcons 32 ............................. <"points">
+  [ 69] pushcons 40 ............................. <"master">
+  [ 71] put 22 .................................. put "00" & x into field "points" of castLib "master"
+  [ 73] jmp [ 87]
+  [ 76] pushcons 48 ............................. <"0">
+  [ 78] getlocal 0 .............................. <x>
+  [ 80] joinstr ................................. <"0" & x>
+  [ 81] pushcons 56 ............................. <"points">
+  [ 83] pushcons 64 ............................. <"master">
+  [ 85] put 22 .................................. put "0" & x into field "points" of castLib "master"
+  [ 87] ret
+end

@@ -1,0 +1,19 @@
+on exitFrame
+  [  0] pushzero ................................ <0>
+  [  1] setglobal 12 ............................ optcount = 0
+  [  3] pushsymb 18 ............................. <#playFile>
+  [  5] pushint8 2 .............................. <2>
+  [  8] getglobal 17 ............................ <effectspath>
+  [ 10] pushcons 0 .............................. <"shoe.aif">
+  [ 12] joinstr ................................. <effectspath & "shoe.aif">
+  [ 13] pusharglistnoret 3 ...................... <2, effectspath & "shoe.aif">
+  [ 15] extcall 19 .............................. sound playFile 2, effectspath & "shoe.aif"
+  [ 17] pushsymb 18 ............................. <#playFile>
+  [ 19] pushint8 1 .............................. <1>
+  [ 22] getglobal 16 ............................ <tlkpath>
+  [ 24] pushcons 8 .............................. <"hez50.aif">
+  [ 26] joinstr ................................. <tlkpath & "hez50.aif">
+  [ 27] pusharglistnoret 3 ...................... <1, tlkpath & "hez50.aif">
+  [ 29] extcall 19 .............................. sound playFile 1, tlkpath & "hez50.aif"
+  [ 31] ret
+end

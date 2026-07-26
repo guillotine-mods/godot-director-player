@@ -1,0 +1,146 @@
+on exitFrame
+  [  0] pushsymb 111 ............................ <#stop>
+  [  3] pushint8 2 .............................. <2>
+  [  6] pusharglistnoret 2 ...................... <2>
+  [  8] extcall 49 .............................. sound stop 2
+  [ 11] getglobal 77 ............................ <catgame>
+  [ 14] pushzero ................................ <0>
+  [ 15] eq ...................................... <catgame = 0>
+  [ 16] jmpifz [263] ............................ if catgame = 0 then / else
+  [ 19] pushsymb 48 ............................. <#playFile>
+  [ 22] pushint8 1 .............................. <1>
+  [ 25] getglobal 30 ............................ <soundspath>
+  [ 27] pushcons 0 .............................. <"cats1.aif">
+  [ 29] joinstr ................................. <soundspath & "cats1.aif">
+  [ 30] pusharglistnoret 3 ...................... <1, soundspath & "cats1.aif">
+  [ 32] extcall 49 .............................. sound playFile 1, soundspath & "cats1.aif"
+  [ 35] pushcons 8 .............................. <"bothtalk">
+  [ 37] pusharglistnoret 1 ...................... <"bothtalk">
+  [ 39] extcall 81 .............................. play frame "bothtalk"
+  [ 42] pushsymb 48 ............................. <#playFile>
+  [ 45] pushint8 1 .............................. <1>
+  [ 48] getglobal 30 ............................ <soundspath>
+  [ 50] pushcons 16 ............................. <"cats2.aif">
+  [ 52] joinstr ................................. <soundspath & "cats2.aif">
+  [ 53] pusharglistnoret 3 ...................... <1, soundspath & "cats2.aif">
+  [ 55] extcall 49 .............................. sound playFile 1, soundspath & "cats2.aif"
+  [ 58] pushcons 24 ............................. <"heztalk">
+  [ 60] pusharglistnoret 1 ...................... <"heztalk">
+  [ 62] extcall 81 .............................. play frame "heztalk"
+  [ 65] pushsymb 48 ............................. <#playFile>
+  [ 68] pushint8 1 .............................. <1>
+  [ 71] getglobal 30 ............................ <soundspath>
+  [ 73] pushcons 32 ............................. <"cats3.aif">
+  [ 75] joinstr ................................. <soundspath & "cats3.aif">
+  [ 76] pusharglistnoret 3 ...................... <1, soundspath & "cats3.aif">
+  [ 78] extcall 49 .............................. sound playFile 1, soundspath & "cats3.aif"
+  [ 81] pushcons 40 ............................. <"righttalk">
+  [ 83] pusharglistnoret 1 ...................... <"righttalk">
+  [ 85] extcall 81 .............................. play frame "righttalk"
+  [ 88] pushsymb 48 ............................. <#playFile>
+  [ 91] pushint8 1 .............................. <1>
+  [ 94] getglobal 30 ............................ <soundspath>
+  [ 96] pushcons 48 ............................. <"cats4.aif">
+  [ 98] joinstr ................................. <soundspath & "cats4.aif">
+  [ 99] pusharglistnoret 3 ...................... <1, soundspath & "cats4.aif">
+  [101] extcall 49 .............................. sound playFile 1, soundspath & "cats4.aif"
+  [104] pushcons 56 ............................. <"heztalk">
+  [106] pusharglistnoret 1 ...................... <"heztalk">
+  [108] extcall 81 .............................. play frame "heztalk"
+  [111] pushsymb 48 ............................. <#playFile>
+  [114] pushint8 1 .............................. <1>
+  [117] getglobal 30 ............................ <soundspath>
+  [119] pushcons 64 ............................. <"cats5.aif">
+  [121] joinstr ................................. <soundspath & "cats5.aif">
+  [122] pusharglistnoret 3 ...................... <1, soundspath & "cats5.aif">
+  [124] extcall 49 .............................. sound playFile 1, soundspath & "cats5.aif"
+  [127] pushcons 72 ............................. <"lefttalk">
+  [129] pusharglistnoret 1 ...................... <"lefttalk">
+  [131] extcall 81 .............................. play frame "lefttalk"
+  [134] pushsymb 48 ............................. <#playFile>
+  [137] pushint8 1 .............................. <1>
+  [140] getglobal 30 ............................ <soundspath>
+  [142] pushcons 80 ............................. <"cats6.aif">
+  [144] joinstr ................................. <soundspath & "cats6.aif">
+  [145] pusharglistnoret 3 ...................... <1, soundspath & "cats6.aif">
+  [147] extcall 49 .............................. sound playFile 1, soundspath & "cats6.aif"
+  [150] pushcons 88 ............................. <"righttalk">
+  [152] pusharglistnoret 1 ...................... <"righttalk">
+  [154] extcall 81 .............................. play frame "righttalk"
+  [157] pushsymb 48 ............................. <#playFile>
+  [160] pushint8 1 .............................. <1>
+  [163] getglobal 30 ............................ <soundspath>
+  [165] pushcons 96 ............................. <"cats7.aif">
+  [167] joinstr ................................. <soundspath & "cats7.aif">
+  [168] pusharglistnoret 3 ...................... <1, soundspath & "cats7.aif">
+  [170] extcall 49 .............................. sound playFile 1, soundspath & "cats7.aif"
+  [173] pushcons 104 ............................ <"lefttalk">
+  [175] pusharglistnoret 1 ...................... <"lefttalk">
+  [177] extcall 81 .............................. play frame "lefttalk"
+  [180] pushsymb 48 ............................. <#playFile>
+  [183] pushint8 1 .............................. <1>
+  [186] getglobal 30 ............................ <soundspath>
+  [188] pushcons 112 ............................ <"cats8.aif">
+  [190] joinstr ................................. <soundspath & "cats8.aif">
+  [191] pusharglistnoret 3 ...................... <1, soundspath & "cats8.aif">
+  [193] extcall 49 .............................. sound playFile 1, soundspath & "cats8.aif"
+  [196] pushcons 120 ............................ <"righttalk">
+  [198] pusharglistnoret 1 ...................... <"righttalk">
+  [200] extcall 81 .............................. play frame "righttalk"
+  [203] pushsymb 48 ............................. <#playFile>
+  [206] pushint8 1 .............................. <1>
+  [209] getglobal 30 ............................ <soundspath>
+  [211] pushcons 128 ............................ <"cats9.aif">
+  [213] joinstr ................................. <soundspath & "cats9.aif">
+  [214] pusharglistnoret 3 ...................... <1, soundspath & "cats9.aif">
+  [216] extcall 49 .............................. sound playFile 1, soundspath & "cats9.aif"
+  [219] pushcons 136 ............................ <"heztalk">
+  [221] pusharglistnoret 1 ...................... <"heztalk">
+  [223] extcall 81 .............................. play frame "heztalk"
+  [226] pushsymb 48 ............................. <#playFile>
+  [229] pushint8 1 .............................. <1>
+  [232] getglobal 30 ............................ <soundspath>
+  [234] pushcons 144 ............................ <"cats10.aif">
+  [236] joinstr ................................. <soundspath & "cats10.aif">
+  [237] pusharglistnoret 3 ...................... <1, soundspath & "cats10.aif">
+  [239] extcall 49 .............................. sound playFile 1, soundspath & "cats10.aif"
+  [242] pushcons 152 ............................ <"bothtalk">
+  [244] pusharglistnoret 1 ...................... <"bothtalk">
+  [246] extcall 81 .............................. play frame "bothtalk"
+  [249] pushcons 160 ............................ <"nomore">
+  [251] setglobal 77 ............................ catgame = "nomore"
+  [254] pushcons 168 ............................ <"choose1">
+  [256] pusharglistnoret 1 ...................... <"choose1">
+  [258] extcall 3 ............................... go("choose1")
+  [260] jmp [327]
+  [263] pushint8 10 ............................. <10>
+  [266] pusharglist 1 ........................... <10>
+  [268] extcall 40 .............................. <random(10)>
+  [271] setlocal 0 .............................. x = random(10)
+  [273] pushsymb 48 ............................. <#playFile>
+  [276] pushint8 1 .............................. <1>
+  [279] getglobal 30 ............................ <soundspath>
+  [281] pushcons 176 ............................ <"catply">
+  [283] getlocal 0 .............................. <x>
+  [285] joinstr ................................. <"catply" & x>
+  [286] pushcons 184 ............................ <".aif">
+  [288] joinstr ................................. <"catply" & x & ".aif">
+  [289] joinstr ................................. <soundspath & "catply" & x & ".aif">
+  [290] pusharglistnoret 3 ...................... <1, soundspath & "catply" & x & ".aif">
+  [292] extcall 49 .............................. sound playFile 1, soundspath & "catply" & x & ".aif"
+  [295] getlocal 0 .............................. <x>
+  [297] pushint8 6 .............................. <6>
+  [300] lt ...................................... <x < 6>
+  [301] jmpifz [314] ............................ if x < 6 then / else
+  [304] pushcons 192 ............................ <"lefttalk">
+  [306] pusharglistnoret 1 ...................... <"lefttalk">
+  [308] extcall 81 .............................. play frame "lefttalk"
+  [311] jmp [321]
+  [314] pushcons 200 ............................ <"righttalk">
+  [316] pusharglistnoret 1 ...................... <"righttalk">
+  [318] extcall 81 .............................. play frame "righttalk"
+  [321] pushcons 208 ............................ <"choose1">
+  [323] pusharglistnoret 1 ...................... <"choose1">
+  [325] extcall 3 ............................... go("choose1")
+  [327] ret
+end

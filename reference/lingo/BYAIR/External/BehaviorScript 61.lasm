@@ -1,0 +1,77 @@
+on mouseUp
+  [  0] getglobal 1 ............................. <guard>
+  [  2] pushzero ................................ <0>
+  [  3] eq ...................................... <guard = 0>
+  [  4] jmpifz [ 75] ............................ if guard = 0 then / else
+  [  7] pushsymb 2 .............................. <#playFile>
+  [  9] pushint8 1 .............................. <1>
+  [ 12] getglobal 4 ............................. <soundspath>
+  [ 14] pushcons 0 .............................. <"guard1.aif">
+  [ 16] joinstr ................................. <soundspath & "guard1.aif">
+  [ 17] pusharglistnoret 3 ...................... <1, soundspath & "guard1.aif">
+  [ 19] extcall 3 ............................... sound playFile 1, soundspath & "guard1.aif"
+  [ 21] pushcons 8 .............................. <"guardspk">
+  [ 23] pusharglistnoret 1 ...................... <"guardspk">
+  [ 25] extcall 5 ............................... play frame "guardspk"
+  [ 27] pushsymb 2 .............................. <#playFile>
+  [ 29] pushint8 1 .............................. <1>
+  [ 32] getglobal 4 ............................. <soundspath>
+  [ 34] pushcons 16 ............................. <"guard2.aif">
+  [ 36] joinstr ................................. <soundspath & "guard2.aif">
+  [ 37] pusharglistnoret 3 ...................... <1, soundspath & "guard2.aif">
+  [ 39] extcall 3 ............................... sound playFile 1, soundspath & "guard2.aif"
+  [ 41] pushcons 24 ............................. <"hezspkguard">
+  [ 43] pusharglistnoret 1 ...................... <"hezspkguard">
+  [ 45] extcall 5 ............................... play frame "hezspkguard"
+  [ 47] pushsymb 2 .............................. <#playFile>
+  [ 49] pushint8 1 .............................. <1>
+  [ 52] getglobal 4 ............................. <soundspath>
+  [ 54] pushcons 32 ............................. <"guard3.aif">
+  [ 56] joinstr ................................. <soundspath & "guard3.aif">
+  [ 57] pusharglistnoret 3 ...................... <1, soundspath & "guard3.aif">
+  [ 59] extcall 3 ............................... sound playFile 1, soundspath & "guard3.aif"
+  [ 61] pushcons 40 ............................. <"guardspk">
+  [ 63] pusharglistnoret 1 ...................... <"guardspk">
+  [ 65] extcall 5 ............................... play frame "guardspk"
+  [ 67] pushint8 1 .............................. <1>
+  [ 70] setglobal 1 ............................. guard = 1
+  [ 72] jmp [152]
+  [ 75] getglobal 1 ............................. <guard>
+  [ 77] pushint8 1 .............................. <1>
+  [ 80] eq ...................................... <guard = 1>
+  [ 81] jmpifz [132] ............................ if guard = 1 then / else
+  [ 84] pushsymb 2 .............................. <#playFile>
+  [ 86] pushint8 1 .............................. <1>
+  [ 89] getglobal 4 ............................. <soundspath>
+  [ 91] pushcons 48 ............................. <"guard4.aif">
+  [ 93] joinstr ................................. <soundspath & "guard4.aif">
+  [ 94] pusharglistnoret 3 ...................... <1, soundspath & "guard4.aif">
+  [ 96] extcall 3 ............................... sound playFile 1, soundspath & "guard4.aif"
+  [ 98] pushcons 56 ............................. <"guardspk">
+  [100] pusharglistnoret 1 ...................... <"guardspk">
+  [102] extcall 5 ............................... play frame "guardspk"
+  [104] pushsymb 2 .............................. <#playFile>
+  [106] pushint8 1 .............................. <1>
+  [109] getglobal 4 ............................. <soundspath>
+  [111] pushcons 64 ............................. <"guard5.aif">
+  [113] joinstr ................................. <soundspath & "guard5.aif">
+  [114] pusharglistnoret 3 ...................... <1, soundspath & "guard5.aif">
+  [116] extcall 3 ............................... sound playFile 1, soundspath & "guard5.aif"
+  [118] pushcons 72 ............................. <"hezspkguard">
+  [120] pusharglistnoret 1 ...................... <"hezspkguard">
+  [122] extcall 5 ............................... play frame "hezspkguard"
+  [124] pushint8 2 .............................. <2>
+  [127] setglobal 1 ............................. guard = 2
+  [129] jmp [152]
+  [132] pushsymb 2 .............................. <#playFile>
+  [134] pushint8 1 .............................. <1>
+  [137] getglobal 4 ............................. <soundspath>
+  [139] pushcons 80 ............................. <"guard6.aif">
+  [141] joinstr ................................. <soundspath & "guard6.aif">
+  [142] pusharglistnoret 3 ...................... <1, soundspath & "guard6.aif">
+  [144] extcall 3 ............................... sound playFile 1, soundspath & "guard6.aif"
+  [146] pushcons 88 ............................. <"guardspk">
+  [148] pusharglistnoret 1 ...................... <"guardspk">
+  [150] extcall 5 ............................... play frame "guardspk"
+  [152] ret
+end

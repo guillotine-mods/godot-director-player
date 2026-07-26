@@ -1,0 +1,28 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 19 .............................. <soundBusy(2)>
+  [  7] not ..................................... <not soundBusy(2)>
+  [  8] jmpifz [ 25] ............................ if not soundBusy(2) then
+  [ 11] pushsymb 10 ............................. <#playFile>
+  [ 13] pushint8 2 .............................. <2>
+  [ 16] getglobal 12 ............................ <effectspath>
+  [ 18] pushcons 0 .............................. <"action.aif">
+  [ 20] joinstr ................................. <effectspath & "action.aif">
+  [ 21] pusharglistnoret 3 ...................... <2, effectspath & "action.aif">
+  [ 23] extcall 11 .............................. sound playFile 2, effectspath & "action.aif"
+  [ 25] pushint8 4 .............................. <4>
+  [ 28] pushcons 8 .............................. <"score">
+  [ 30] pushzero ................................ <0>
+  [ 31] put 22 .................................. put 4 into field "score"
+  [ 33] pushint8 40 ............................. <40>
+  [ 36] pushcons 16 ............................. <"zigi4">
+  [ 38] pushzero ................................ <0>
+  [ 39] pushint8 10 ............................. <10>
+  [ 42] get 9 ................................... <the number of member "zigi4">
+  [ 44] pushint8 35 ............................. <35>
+  [ 47] set 6 ................................... set the memberNum of sprite 40 to the number of member "zigi4"
+  [ 49] pusharglistnoret 0 ...................... <>
+  [ 51] extcall 13 .............................. updateStage()
+  [ 53] ret
+end

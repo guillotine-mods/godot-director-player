@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 16 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 32 ............................ <soundspath>
+  [  8] pushcons 0 .............................. <"hezog1.aif">
+  [ 10] joinstr ................................. <soundspath & "hezog1.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, soundspath & "hezog1.aif">
+  [ 13] extcall 17 .............................. sound playFile 1, soundspath & "hezog1.aif"
+  [ 15] pushcons 8 .............................. <"choose1a">
+  [ 17] pusharglistnoret 1 ...................... <"choose1a">
+  [ 19] extcall 14 .............................. go("choose1a")
+  [ 21] ret
+end

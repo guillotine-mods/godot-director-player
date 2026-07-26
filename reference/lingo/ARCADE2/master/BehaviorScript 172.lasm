@@ -1,0 +1,151 @@
+on exitFrame
+  [  0] getglobal 9 ............................. <zigi>
+  [  2] pushint8 1 .............................. <1>
+  [  4] sub ..................................... <zigi - 1>
+  [  5] setglobal 9 ............................. zigi = zigi - 1
+  [  7] getglobal 9 ............................. <zigi>
+  [  9] pushzero ................................ <0>
+  [ 10] eq ...................................... <zigi = 0>
+  [ 11] jmpifz [ 50] ............................ if zigi = 0 then
+  [ 14] pushint8 7 .............................. <7>
+  [ 16] pushcons 0 .............................. <"gundefault">
+  [ 18] pushint8 1 .............................. <1>
+  [ 20] pushint8 10 ............................. <10>
+  [ 22] get 9 ................................... <the number of member "gundefault" of castLib 1>
+  [ 24] pushint8 35 ............................. <35>
+  [ 26] set 6 ................................... set the memberNum of sprite 7 to the number of member "gundefault" of castLib 1
+  [ 28] pushint8 7 .............................. <7>
+  [ 30] pushint8 175 ............................ <175>
+  [ 33] pushint8 13 ............................. <13>
+  [ 35] set 6 ................................... set the locH of sprite 7 to 175
+  [ 37] pushint8 7 .............................. <7>
+  [ 39] pushint8 237 ............................ <237>
+  [ 42] pushint8 14 ............................. <14>
+  [ 44] set 6 ................................... set the locV of sprite 7 to 237
+  [ 46] pusharglistnoret 0 ...................... <>
+  [ 48] extcall 13 .............................. updateStage()
+  [ 50] pushint8 8 .............................. <8>
+  [ 52] setlocal 0
+  [ 54] getlocal 0
+  [ 56] pushint8 18 ............................. <18>
+  [ 58] lteq
+  [ 59] jmpifz [279] ............................ repeat with i = 8 to 18
+  [ 62] getlocal 0 .............................. <i>
+  [ 64] pushint8 7 .............................. <7>
+  [ 66] ontospr ................................. <sprite i intersects 7>
+  [ 67] getlocal 0 .............................. <i>
+  [ 69] pushint8 25 ............................. <25>
+  [ 71] get 6 ................................... <the visible of sprite i>
+  [ 73] pushzero ................................ <0>
+  [ 74] nteq .................................... <the visible of sprite i <> 0>
+  [ 75] and ..................................... <sprite i intersects 7 and (the visible of sprite i <> 0)>
+  [ 76] jmpifz [270] ............................ if sprite i intersects 7 and (the visible of sprite i <> 0) then
+  [ 79] pushint8 7 .............................. <7>
+  [ 81] pushint8 35 ............................. <35>
+  [ 83] get 6 ................................... <the memberNum of sprite 7>
+  [ 85] pushcons 8 .............................. <"action1">
+  [ 87] pushzero ................................ <0>
+  [ 88] pushint8 10 ............................. <10>
+  [ 90] get 9 ................................... <the number of member "action1">
+  [ 92] nteq .................................... <the memberNum of sprite 7 <> the number of member "action1">
+  [ 93] pushint8 7 .............................. <7>
+  [ 95] pushint8 35 ............................. <35>
+  [ 97] get 6 ................................... <the memberNum of sprite 7>
+  [ 99] pushcons 16 ............................. <"gunaii">
+  [101] pushzero ................................ <0>
+  [102] pushint8 10 ............................. <10>
+  [104] get 9 ................................... <the number of member "gunaii">
+  [106] nteq .................................... <the memberNum of sprite 7 <> the number of member "gunaii">
+  [107] and ..................................... <(the memberNum of sprite 7 <> the number of member "action1") and (the memberNum of sprite 7 <> the number of member "gunaii")>
+  [108] jmpifz [270] ............................ if (the memberNum of sprite 7 <> the number of member "action1") and (the memberNum of sprite 7 <> the number of member "gunaii") then
+  [111] pushint8 7 .............................. <7>
+  [113] pushcons 24 ............................. <"gunaii">
+  [115] pushzero ................................ <0>
+  [116] pushint8 10 ............................. <10>
+  [118] get 9 ................................... <the number of member "gunaii">
+  [120] pushint8 35 ............................. <35>
+  [122] set 6 ................................... set the memberNum of sprite 7 to the number of member "gunaii"
+  [124] pushint8 7 .............................. <7>
+  [126] pushint8 175 ............................ <175>
+  [129] pushint8 13 ............................. <13>
+  [131] set 6 ................................... set the locH of sprite 7 to 175
+  [133] pushint8 7 .............................. <7>
+  [135] pushint8 237 ............................ <237>
+  [138] pushint8 14 ............................. <14>
+  [140] set 6 ................................... set the locV of sprite 7 to 237
+  [142] pushint8 3 .............................. <3>
+  [144] setglobal 9 ............................. zigi = 3
+  [146] pushcons 32 ............................. <"score">
+  [148] pushzero ................................ <0>
+  [149] pushint8 2 .............................. <2>
+  [151] get 11 .................................. <the text of field "score">
+  [153] pusharglist 1 ........................... <the text of field "score">
+  [155] extcall 14 .............................. <value(the text of field "score")>
+  [157] pushint8 1 .............................. <1>
+  [159] sub ..................................... <value(the text of field "score") - 1>
+  [160] pushcons 40 ............................. <"score">
+  [162] pushzero ................................ <0>
+  [163] put 22 .................................. put value(the text of field "score") - 1 into field "score"
+  [165] pushcons 48 ............................. <"score">
+  [167] pushzero ................................ <0>
+  [168] pushint8 2 .............................. <2>
+  [170] get 11 .................................. <the text of field "score">
+  [172] pusharglist 1 ........................... <the text of field "score">
+  [174] extcall 14 .............................. <value(the text of field "score")>
+  [176] pushzero ................................ <0>
+  [177] eq ...................................... <value(the text of field "score") = 0>
+  [178] jmpifz [232] ............................ if value(the text of field "score") = 0 then
+  [181] pushsymb 10 ............................. <#playFile>
+  [183] pushint8 1 .............................. <1>
+  [185] getglobal 15 ............................ <soundspath>
+  [187] pushcons 56 ............................. <"zigidead.aif">
+  [189] joinstr ................................. <soundspath & "zigidead.aif">
+  [190] pusharglistnoret 3 ...................... <1, soundspath & "zigidead.aif">
+  [192] extcall 11 .............................. sound playFile 1, soundspath & "zigidead.aif"
+  [194] pushint8 3 .............................. <3>
+  [196] setlocal 0
+  [198] getlocal 0
+  [200] pushint8 15 ............................. <15>
+  [202] lteq
+  [203] jmpifz [223] ............................ repeat with i = 3 to 15
+  [206] getlocal 0 .............................. <i>
+  [208] pushint8 1 .............................. <1>
+  [210] pushint8 25 ............................. <25>
+  [212] set 6 ................................... set the visible of sprite i to 1
+  [214] pushint8 1
+  [216] getlocal 0
+  [218] add
+  [219] setlocal 0
+  [221] endrepeat [198]
+  [223] pushcons 64 ............................. <"gameover">
+  [225] pusharglistnoret 1 ...................... <"gameover">
+  [227] extcall 2 ............................... go("gameover")
+  [229] jmp [270] ............................... next repeat
+  [232] pushint8 40 ............................. <40>
+  [234] pushcons 72 ............................. <"zigi">
+  [236] pushcons 80 ............................. <"score">
+  [238] pushzero ................................ <0>
+  [239] pushint8 2 .............................. <2>
+  [241] get 11 .................................. <the text of field "score">
+  [243] pusharglist 1 ........................... <the text of field "score">
+  [245] extcall 14 .............................. <value(the text of field "score")>
+  [247] joinstr ................................. <"zigi" & value(the text of field "score")>
+  [248] pushzero ................................ <0>
+  [249] pushint8 10 ............................. <10>
+  [251] get 9 ................................... <the number of member ("zigi" & value(the text of field "score"))>
+  [253] pushint8 35 ............................. <35>
+  [255] set 6 ................................... set the memberNum of sprite 40 to the number of member ("zigi" & value(the text of field "score"))
+  [257] pushsymb 10 ............................. <#playFile>
+  [259] pushint8 1 .............................. <1>
+  [261] getglobal 15 ............................ <soundspath>
+  [263] pushcons 88 ............................. <"zigiaii.aif">
+  [265] joinstr ................................. <soundspath & "zigiaii.aif">
+  [266] pusharglistnoret 3 ...................... <1, soundspath & "zigiaii.aif">
+  [268] extcall 11 .............................. sound playFile 1, soundspath & "zigiaii.aif"
+  [270] pushint8 1
+  [272] getlocal 0
+  [274] add
+  [275] setlocal 0
+  [277] endrepeat [ 54]
+  [279] ret
+end

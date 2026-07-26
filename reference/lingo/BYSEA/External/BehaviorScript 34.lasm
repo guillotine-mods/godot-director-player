@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 5 .............................. <#playFile>
+  [  2] pushint8 2 .............................. <2>
+  [  5] getglobal 6 ............................. <effectspath>
+  [  7] pushcons 0 .............................. <"ropefall.aif">
+  [  9] joinstr ................................. <effectspath & "ropefall.aif">
+  [ 10] pusharglistnoret 3 ...................... <2, effectspath & "ropefall.aif">
+  [ 12] extcall 4 ............................... sound playFile 2, effectspath & "ropefall.aif"
+  [ 14] ret
+end

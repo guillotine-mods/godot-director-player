@@ -1,0 +1,110 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 45 ........................... <the clickOn>
+  [  5] pusharglist 1 ........................... <the clickOn>
+  [  7] extcall 94 .............................. <sprite(the clickOn)>
+  [ 10] pushzero ................................ <0>
+  [ 11] setobjprop 95 ........................... sprite(the clickOn).visible = 0
+  [ 14] pusharglistnoret 0 ...................... <>
+  [ 16] extcall 16 .............................. updateStage()
+  [ 18] pushcons 0 .............................. <"continue">
+  [ 20] setlocal 0 .............................. x = "continue"
+  [ 22] pushint8 1 .............................. <1>
+  [ 25] setlocal 8
+  [ 27] getlocal 8
+  [ 29] pushcons 8 .............................. <"objectsfield">
+  [ 31] pushcons 16 ............................. <"master">
+  [ 33] getfield ................................ <field("objectsfield", "master")>
+  [ 34] pushint8 4 .............................. <4>
+  [ 37] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 39] lteq
+  [ 40] jmpifz [102] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 43] pushzero ................................ <0>
+  [ 44] pushzero ................................ <0>
+  [ 45] pushzero ................................ <0>
+  [ 46] pushzero ................................ <0>
+  [ 47] pushzero ................................ <0>
+  [ 48] pushzero ................................ <0>
+  [ 49] getlocal 8 .............................. <i>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushcons 24 ............................. <"objectsfield">
+  [ 54] pushcons 32 ............................. <"master">
+  [ 56] getfield ................................ <field("objectsfield", "master")>
+  [ 57] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 58] pushcons 40 ............................. <"empty">
+  [ 60] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 61] getlocal 0 .............................. <x>
+  [ 63] pushcons 48 ............................. <"continue">
+  [ 65] eq ...................................... <x = "continue">
+  [ 66] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 67] jmpifz [ 91] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 70] pushcons 56 ............................. <"rotor">
+  [ 72] pushzero ................................ <0>
+  [ 73] pushzero ................................ <0>
+  [ 74] pushzero ................................ <0>
+  [ 75] pushzero ................................ <0>
+  [ 76] pushzero ................................ <0>
+  [ 77] pushzero ................................ <0>
+  [ 78] getlocal 8 .............................. <i>
+  [ 80] pushzero ................................ <0>
+  [ 81] pushcons 64 ............................. <"objectsfield">
+  [ 83] pushcons 72 ............................. <"master">
+  [ 85] putchunk 22 ............................. put "rotor" into line i of field "objectsfield" of castLib "master"
+  [ 87] pushcons 80 ............................. <"stop">
+  [ 89] setlocal 0 .............................. x = "stop"
+  [ 91] pushint8 1
+  [ 94] getlocal 8
+  [ 96] add
+  [ 97] setlocal 8
+  [ 99] endrepeat [ 27]
+  [102] pushsymb 42 ............................. <#playFile>
+  [105] pushint8 1 .............................. <1>
+  [108] getglobal 31 ............................ <soundspath>
+  [110] pushcons 88 ............................. <"pfrotor.aif">
+  [112] joinstr ................................. <soundspath & "pfrotor.aif">
+  [113] pusharglistnoret 3 ...................... <1, soundspath & "pfrotor.aif">
+  [115] extcall 43 .............................. sound playFile 1, soundspath & "pfrotor.aif"
+  [118] pushcons 96 ............................. <"done">
+  [120] pushzero ................................ <0>
+  [121] pushzero ................................ <0>
+  [122] pushzero ................................ <0>
+  [123] pushzero ................................ <0>
+  [124] pushint8 5 .............................. <5>
+  [127] pushzero ................................ <0>
+  [128] pushint8 1 .............................. <1>
+  [131] pushzero ................................ <0>
+  [132] pushcons 104 ............................ <"Dprocess">
+  [134] pushcons 112 ............................ <"master">
+  [136] putchunk 22 ............................. put "done" into item 5 of line 1 of field "Dprocess" of castLib "master"
+  [138] pushcons 120 ............................ <"points">
+  [140] pushcons 128 ............................ <"master">
+  [142] pushint8 2 .............................. <2>
+  [145] get 11 .................................. <the text of field "points" of castLib "master">
+  [147] pusharglist 1 ........................... <the text of field "points" of castLib "master">
+  [149] extcall 15 .............................. <value(the text of field "points" of castLib "master")>
+  [151] setlocal 0 .............................. x = value(the text of field "points" of castLib "master")
+  [153] getlocal 0 .............................. <x>
+  [155] pushint8 1 .............................. <1>
+  [158] add ..................................... <x + 1>
+  [159] setlocal 0 .............................. x = x + 1
+  [161] getlocal 0 .............................. <x>
+  [163] pushint8 10 ............................. <10>
+  [166] lt ...................................... <x < 10>
+  [167] jmpifz [184] ............................ if x < 10 then / else
+  [170] pushcons 136 ............................ <"00">
+  [172] getlocal 0 .............................. <x>
+  [174] joinstr ................................. <"00" & x>
+  [175] pushcons 144 ............................ <"points">
+  [177] pushcons 152 ............................ <"master">
+  [179] put 22 .................................. put "00" & x into field "points" of castLib "master"
+  [181] jmp [195]
+  [184] pushcons 160 ............................ <"0">
+  [186] getlocal 0 .............................. <x>
+  [188] joinstr ................................. <"0" & x>
+  [189] pushcons 168 ............................ <"points">
+  [191] pushcons 176 ............................ <"master">
+  [193] put 22 .................................. put "0" & x into field "points" of castLib "master"
+  [195] pusharglistnoret 0 ...................... <>
+  [197] extcall 46 .............................. displayobject()
+  [200] ret
+end

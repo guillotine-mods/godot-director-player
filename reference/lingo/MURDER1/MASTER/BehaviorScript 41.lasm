@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] getglobal 20 ............................ <pptcount>
+  [  2] pushcons 0 .............................. <"1">
+  [  4] eq ...................................... <pptcount = "1">
+  [  5] jmpifz [ 28] ............................ if pptcount = "1" then
+  [  8] pushcons 8 .............................. <"moreof">
+  [ 10] pusharglistnoret 1 ...................... <"moreof">
+  [ 12] extcall 19 .............................. go("moreof")
+  [ 14] pushsymb 13 ............................. <#playFile>
+  [ 16] pushint8 1 .............................. <1>
+  [ 19] getglobal 15 ............................ <tlkpath>
+  [ 21] pushcons 16 ............................. <"tof11.aif">
+  [ 23] joinstr ................................. <tlkpath & "tof11.aif">
+  [ 24] pusharglistnoret 3 ...................... <1, tlkpath & "tof11.aif">
+  [ 26] extcall 14 .............................. sound playFile 1, tlkpath & "tof11.aif"
+  [ 28] ret
+end

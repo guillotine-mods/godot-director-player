@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 52 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 37 ............................ <soundspath>
+  [  9] pushcons 0 .............................. <"mogroomb.aif">
+  [ 11] joinstr ................................. <soundspath & "mogroomb.aif">
+  [ 12] pusharglistnoret 3 ...................... <1, soundspath & "mogroomb.aif">
+  [ 14] extcall 53 .............................. sound playFile 1, soundspath & "mogroomb.aif"
+  [ 17] pushcons 8 .............................. <"mogspkroomb">
+  [ 19] pusharglistnoret 1 ...................... <"mogspkroomb">
+  [ 21] extcall 68 .............................. play frame "mogspkroomb"
+  [ 24] ret
+end

@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushsymb 13 ............................. <#playFile>
+  [  2] pushint8 3 .............................. <3>
+  [  5] getglobal 21 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"thudlow.aif">
+  [  9] joinstr ................................. <effectspath & "thudlow.aif">
+  [ 10] pusharglistnoret 3 ...................... <3, effectspath & "thudlow.aif">
+  [ 12] extcall 14 .............................. sound playFile 3, effectspath & "thudlow.aif"
+  [ 14] pushsymb 13 ............................. <#playFile>
+  [ 16] pushint8 1 .............................. <1>
+  [ 19] getglobal 15 ............................ <tlkpath>
+  [ 21] pushcons 8 .............................. <"hez25.aif">
+  [ 23] joinstr ................................. <tlkpath & "hez25.aif">
+  [ 24] pusharglistnoret 3 ...................... <1, tlkpath & "hez25.aif">
+  [ 26] extcall 14 .............................. sound playFile 1, tlkpath & "hez25.aif"
+  [ 28] pushsymb 13 ............................. <#playFile>
+  [ 30] pushint8 2 .............................. <2>
+  [ 33] getglobal 15 ............................ <tlkpath>
+  [ 35] pushcons 16 ............................. <"tof9b.aif">
+  [ 37] joinstr ................................. <tlkpath & "tof9b.aif">
+  [ 38] pusharglistnoret 3 ...................... <2, tlkpath & "tof9b.aif">
+  [ 40] extcall 14 .............................. sound playFile 2, tlkpath & "tof9b.aif"
+  [ 42] ret
+end

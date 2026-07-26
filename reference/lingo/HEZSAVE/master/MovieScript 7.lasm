@@ -1,0 +1,182 @@
+on dosave
+  [  0] getglobal 1 ............................. <nof>
+  [  2] pushcons 0 .............................. <"nof">
+  [  4] getglobal 2 ............................. <saveNum>
+  [  6] joinstr ................................. <"nof" & saveNum>
+  [  7] pushzero ................................ <0>
+  [  8] put 22 .................................. put nof into field ("nof" & saveNum)
+  [ 10] getglobal 3 ............................. <saveA>
+  [ 12] pushcons 1 .............................. <"gamename">
+  [ 14] getglobal 2 ............................. <saveNum>
+  [ 16] joinstr ................................. <"gamename" & saveNum>
+  [ 17] pushzero ................................ <0>
+  [ 18] put 22 .................................. put saveA into field ("gamename" & saveNum)
+  [ 20] getglobal 31 ............................ <saveB>
+  [ 22] pushcons 2 .............................. <"clickoncharacter">
+  [ 24] getglobal 2 ............................. <saveNum>
+  [ 26] joinstr ................................. <"clickoncharacter" & saveNum>
+  [ 27] pushzero ................................ <0>
+  [ 28] put 22 .................................. put saveB into field ("clickoncharacter" & saveNum)
+  [ 30] getglobal 4 ............................. <saveC>
+  [ 32] pushcons 3 .............................. <"objectsfield">
+  [ 34] getglobal 2 ............................. <saveNum>
+  [ 36] joinstr ................................. <"objectsfield" & saveNum>
+  [ 37] pushzero ................................ <0>
+  [ 38] put 22 .................................. put saveC into field ("objectsfield" & saveNum)
+  [ 40] getglobal 5 ............................. <saveD>
+  [ 42] pushcons 4 .............................. <"afganifield">
+  [ 44] getglobal 2 ............................. <saveNum>
+  [ 46] joinstr ................................. <"afganifield" & saveNum>
+  [ 47] pushzero ................................ <0>
+  [ 48] put 22 .................................. put saveD into field ("afganifield" & saveNum)
+  [ 50] getglobal 6 ............................. <saveE>
+  [ 52] pushcons 5 .............................. <"plane">
+  [ 54] getglobal 2 ............................. <saveNum>
+  [ 56] joinstr ................................. <"plane" & saveNum>
+  [ 57] pushzero ................................ <0>
+  [ 58] put 22 .................................. put saveE into field ("plane" & saveNum)
+  [ 60] getglobal 7 ............................. <saveF>
+  [ 62] pushcons 6 .............................. <"points">
+  [ 64] getglobal 2 ............................. <saveNum>
+  [ 66] joinstr ................................. <"points" & saveNum>
+  [ 67] pushzero ................................ <0>
+  [ 68] put 22 .................................. put saveF into field ("points" & saveNum)
+  [ 70] getglobal 8 ............................. <globalday>
+  [ 72] pushcons 7 .............................. <"whichday">
+  [ 74] getglobal 2 ............................. <saveNum>
+  [ 76] joinstr ................................. <"whichday" & saveNum>
+  [ 77] pushzero ................................ <0>
+  [ 78] put 22 .................................. put globalday into field ("whichday" & saveNum)
+  [ 80] getglobal 63 ............................ <inexits>
+  [ 83] pushcons 8 .............................. <"inexits">
+  [ 85] getglobal 2 ............................. <saveNum>
+  [ 87] joinstr ................................. <"inexits" & saveNum>
+  [ 88] pushzero ................................ <0>
+  [ 89] put 22 .................................. put inexits into field ("inexits" & saveNum)
+  [ 91] getglobal 26 ............................ <meetings>
+  [ 93] pushcons 9 .............................. <"meetings">
+  [ 95] getglobal 2 ............................. <saveNum>
+  [ 97] joinstr ................................. <"meetings" & saveNum>
+  [ 98] pushzero ................................ <0>
+  [ 99] put 22 .................................. put meetings into field ("meetings" & saveNum)
+  [101] getglobal 77 ............................ <foe>
+  [104] pushcons 10 ............................. <"foe">
+  [106] getglobal 2 ............................. <saveNum>
+  [108] joinstr ................................. <"foe" & saveNum>
+  [109] pushzero ................................ <0>
+  [110] put 22 .................................. put foe into field ("foe" & saveNum)
+  [112] getglobal 66 ............................ <saveG>
+  [115] pushcons 11 ............................. <"globaljokes">
+  [117] getglobal 2 ............................. <saveNum>
+  [119] joinstr ................................. <"globaljokes" & saveNum>
+  [120] pushzero ................................ <0>
+  [121] put 22 .................................. put saveG into field ("globaljokes" & saveNum)
+  [123] getglobal 78 ............................ <afganicnt>
+  [126] pushcons 12 ............................. <"afganicnt">
+  [128] getglobal 2 ............................. <saveNum>
+  [130] joinstr ................................. <"afganicnt" & saveNum>
+  [131] pushzero ................................ <0>
+  [132] put 22 .................................. put afganicnt into field ("afganicnt" & saveNum)
+  [134] getglobal 64 ............................ <wreck>
+  [137] pushcons 13 ............................. <"wreck">
+  [139] getglobal 2 ............................. <saveNum>
+  [141] joinstr ................................. <"wreck" & saveNum>
+  [142] pushzero ................................ <0>
+  [143] put 22 .................................. put wreck into field ("wreck" & saveNum)
+  [145] getglobal 65 ............................ <firsttalk>
+  [148] pushcons 14 ............................. <"firsttalk">
+  [150] getglobal 2 ............................. <saveNum>
+  [152] joinstr ................................. <"firsttalk" & saveNum>
+  [153] pushzero ................................ <0>
+  [154] put 22 .................................. put firsttalk into field ("firsttalk" & saveNum)
+  [156] getglobal 67 ............................ <shelltoday>
+  [159] pushcons 15 ............................. <"shelltoday">
+  [161] getglobal 2 ............................. <saveNum>
+  [163] joinstr ................................. <"shelltoday" & saveNum>
+  [164] pushzero ................................ <0>
+  [165] put 22 .................................. put shelltoday into field ("shelltoday" & saveNum)
+  [167] getglobal 68 ............................ <mirror>
+  [170] pushcons 16 ............................. <"mirror">
+  [172] getglobal 2 ............................. <saveNum>
+  [174] joinstr ................................. <"mirror" & saveNum>
+  [175] pushzero ................................ <0>
+  [176] put 22 .................................. put mirror into field ("mirror" & saveNum)
+  [178] getglobal 69 ............................ <sink>
+  [181] pushcons 17 ............................. <"sink">
+  [183] getglobal 2 ............................. <saveNum>
+  [185] joinstr ................................. <"sink" & saveNum>
+  [186] pushzero ................................ <0>
+  [187] put 22 .................................. put sink into field ("sink" & saveNum)
+  [189] getglobal 70 ............................ <bath>
+  [192] pushcons 18 ............................. <"bath">
+  [194] getglobal 2 ............................. <saveNum>
+  [196] joinstr ................................. <"bath" & saveNum>
+  [197] pushzero ................................ <0>
+  [198] put 22 .................................. put bath into field ("bath" & saveNum)
+  [200] getglobal 8 ............................. <globalday>
+  [202] pushcons 19 ............................. <"globalday">
+  [204] getglobal 2 ............................. <saveNum>
+  [206] joinstr ................................. <"globalday" & saveNum>
+  [207] pushzero ................................ <0>
+  [208] put 22 .................................. put globalday into field ("globalday" & saveNum)
+  [210] getglobal 72 ............................ <monk>
+  [213] pushcons 20 ............................. <"monk">
+  [215] getglobal 2 ............................. <saveNum>
+  [217] joinstr ................................. <"monk" & saveNum>
+  [218] pushzero ................................ <0>
+  [219] put 22 .................................. put monk into field ("monk" & saveNum)
+  [221] getglobal 73 ............................ <guard>
+  [224] pushcons 21 ............................. <"guard">
+  [226] getglobal 2 ............................. <saveNum>
+  [228] joinstr ................................. <"guard" & saveNum>
+  [229] pushzero ................................ <0>
+  [230] put 22 .................................. put guard into field ("guard" & saveNum)
+  [232] getglobal 74 ............................ <dubi>
+  [235] pushcons 22 ............................. <"dubi">
+  [237] getglobal 2 ............................. <saveNum>
+  [239] joinstr ................................. <"dubi" & saveNum>
+  [240] pushzero ................................ <0>
+  [241] put 22 .................................. put dubi into field ("dubi" & saveNum)
+  [243] getglobal 80 ............................ <DorN>
+  [246] pushcons 23 ............................. <"DorN">
+  [248] getglobal 2 ............................. <saveNum>
+  [250] joinstr ................................. <"DorN" & saveNum>
+  [251] pushzero ................................ <0>
+  [252] put 22 .................................. put DorN into field ("DorN" & saveNum)
+  [254] getglobal 79 ............................ <savei>
+  [257] pushcons 24 ............................. <"savei">
+  [259] getglobal 2 ............................. <saveNum>
+  [261] joinstr ................................. <"savei" & saveNum>
+  [262] pushzero ................................ <0>
+  [263] put 22 .................................. put savei into field ("savei" & saveNum)
+  [265] getglobal 75 ............................ <globalnight>
+  [268] pushcons 25 ............................. <"globalnight">
+  [270] getglobal 2 ............................. <saveNum>
+  [272] joinstr ................................. <"globalnight" & saveNum>
+  [273] pushzero ................................ <0>
+  [274] put 22 .................................. put globalnight into field ("globalnight" & saveNum)
+  [276] getglobal 76 ............................ <saveH>
+  [279] pushcons 26 ............................. <"saveH">
+  [281] getglobal 2 ............................. <saveNum>
+  [283] joinstr ................................. <"saveH" & saveNum>
+  [284] pushzero ................................ <0>
+  [285] put 22 .................................. put saveH into field ("saveH" & saveNum)
+  [287] getglobal 71 ............................ <catgame>
+  [290] pushcons 27 ............................. <"catgame">
+  [292] getglobal 2 ............................. <saveNum>
+  [294] joinstr ................................. <"catgame" & saveNum>
+  [295] pushzero ................................ <0>
+  [296] put 22 .................................. put catgame into field ("catgame" & saveNum)
+  [298] getglobal 82 ............................ <savepath>
+  [301] pushcons 28 ............................. <"hezsave.dir">
+  [303] joinstr ................................. <savepath & "hezsave.dir">
+  [304] pusharglistnoret 1 ...................... <savepath & "hezsave.dir">
+  [306] extcall 9 ............................... saveMovie(savepath & "hezsave.dir")
+  [308] pushcons 29 ............................. <"aftersave">
+  [310] getglobal 81 ............................ <cdsavepath>
+  [313] pushcons 30 ............................. <"saveload.dxr">
+  [315] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [316] pusharglistnoret 2 ...................... <"aftersave", cdsavepath & "saveload.dxr">
+  [318] extcall 10 .............................. go("aftersave", cdsavepath & "saveload.dxr")
+  [320] ret
+end

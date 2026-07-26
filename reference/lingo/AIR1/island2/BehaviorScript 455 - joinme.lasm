@@ -1,0 +1,41 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 66 ........................... <the clickOn>
+  [  5] pushint8 102 ............................ <102>
+  [  8] gt ...................................... <the clickOn > 102>
+  [  9] jmpifz [ 59] ............................ if the clickOn > 102 then
+  [ 12] pusharglist 0 ........................... <>
+  [ 14] thebuiltin 66 ........................... <the clickOn>
+  [ 17] getglobal 34 ............................ <objectxx>
+  [ 20] pushint8 13 ............................. <13>
+  [ 23] set 6 ................................... set the locH of sprite the clickOn to objectxx
+  [ 25] pusharglist 0 ........................... <>
+  [ 27] thebuiltin 66 ........................... <the clickOn>
+  [ 30] getglobal 35 ............................ <objectyy>
+  [ 33] pushint8 14 ............................. <14>
+  [ 36] set 6 ................................... set the locV of sprite the clickOn to objectyy
+  [ 38] pusharglistnoret 0 ...................... <>
+  [ 40] extcall 12 .............................. updateStage()
+  [ 42] pushint8 100 ............................ <100>
+  [ 45] pushcons 0 .............................. <"piphead1">
+  [ 47] pushcons 8 .............................. <"master">
+  [ 49] pushint8 10 ............................. <10>
+  [ 52] get 9 ................................... <the number of member "piphead1" of castLib "master">
+  [ 54] pushint8 35 ............................. <35>
+  [ 57] set 6 ................................... set the memberNum of sprite 100 to the number of member "piphead1" of castLib "master"
+  [ 59] ret
+end
+
+on mouseDown
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 66 ........................... <the clickOn>
+  [  5] pushint8 13 ............................. <13>
+  [  8] get 6 ................................... <the locH of sprite the clickOn>
+  [ 10] setglobal 34 ............................ objectxx = the locH of sprite the clickOn
+  [ 13] pusharglist 0 ........................... <>
+  [ 15] thebuiltin 66 ........................... <the clickOn>
+  [ 18] pushint8 14 ............................. <14>
+  [ 21] get 6 ................................... <the locV of sprite the clickOn>
+  [ 23] setglobal 35 ............................ objectyy = the locV of sprite the clickOn
+  [ 26] ret
+end

@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pushint8 130 ............................ <130>
+  [  6] pushint8 1 .............................. <1>
+  [  9] set 4 ................................... set the volume of sound 2 to 130
+  [ 11] pushsymb 42 ............................. <#playFile>
+  [ 14] pushint8 1 .............................. <1>
+  [ 17] getglobal 32 ............................ <effectspath>
+  [ 20] pushcons 0 .............................. <"doorup.aif">
+  [ 22] joinstr ................................. <effectspath & "doorup.aif">
+  [ 23] pusharglistnoret 3 ...................... <1, effectspath & "doorup.aif">
+  [ 25] extcall 43 .............................. sound playFile 1, effectspath & "doorup.aif"
+  [ 28] ret
+end

@@ -1,0 +1,5 @@
+on exitFrame
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 54 .............................. whatodoeveryframe3()
+  [  4] ret
+end

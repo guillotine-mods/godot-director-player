@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 14 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 16 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"man36b.aif">
+  [  9] joinstr ................................. <tlkpath & "man36b.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "man36b.aif">
+  [ 12] extcall 15 .............................. sound playFile 1, tlkpath & "man36b.aif"
+  [ 14] pushsymb 14 ............................. <#playFile>
+  [ 16] pushint8 2 .............................. <2>
+  [ 19] getglobal 20 ............................ <effectspath>
+  [ 21] pushcons 8 .............................. <"floor.aif">
+  [ 23] joinstr ................................. <effectspath & "floor.aif">
+  [ 24] pusharglistnoret 3 ...................... <2, effectspath & "floor.aif">
+  [ 26] extcall 15 .............................. sound playFile 2, effectspath & "floor.aif"
+  [ 28] ret
+end

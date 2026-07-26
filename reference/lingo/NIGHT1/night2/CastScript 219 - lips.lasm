@@ -1,0 +1,15 @@
+on mouseUp
+  [  0] pushsymb 42 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 31 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"pflips.aif">
+  [  8] joinstr ................................. <soundspath & "pflips.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "pflips.aif">
+  [ 11] extcall 43 .............................. sound playFile 1, soundspath & "pflips.aif"
+  [ 13] pusharglist 0 ........................... <>
+  [ 15] thebuiltin 45 ........................... <the clickOn>
+  [ 17] pushzero ................................ <0>
+  [ 18] pushint8 25 ............................. <25>
+  [ 20] set 6 ................................... set the visible of sprite the clickOn to 0
+  [ 22] ret
+end

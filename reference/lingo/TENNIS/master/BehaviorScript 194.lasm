@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"hezmiss">
+  [  2] pusharglistnoret 1 ...................... <"hezmiss">
+  [  4] extcall 2 ............................... go("hezmiss")
+  [  6] ret
+end

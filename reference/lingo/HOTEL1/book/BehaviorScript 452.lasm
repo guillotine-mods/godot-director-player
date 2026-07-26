@@ -1,0 +1,8 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 49 ............................ usfultalking = 1
+  [  6] pushcons 0 .............................. <"ishtalk">
+  [  8] pusharglistnoret 1 ...................... <"ishtalk">
+  [ 10] extcall 3 ............................... go("ishtalk")
+  [ 12] ret
+end

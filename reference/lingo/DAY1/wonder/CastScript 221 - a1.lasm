@@ -1,0 +1,131 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"000">
+  [  2] setglobal 17 ............................ nextroomdata = "000"
+  [  4] getglobal 10 ............................ <egozv>
+  [  6] pushint8 298 ............................ <298>
+  [  9] nteq .................................... <egozv <> 298>
+  [ 10] getglobal 6 ............................. <egozh>
+  [ 12] pushint8 218 ............................ <218>
+  [ 15] nteq .................................... <egozh <> 218>
+  [ 16] and ..................................... <(egozv <> 298) and (egozh <> 218)>
+  [ 17] jmpifz [ 37] ............................ if (egozv <> 298) and (egozh <> 218) then / else
+  [ 20] pushint8 298 ............................ <298>
+  [ 23] setglobal 10 ............................ egozv = 298
+  [ 25] pushint8 218 ............................ <218>
+  [ 28] setglobal 6 ............................. egozh = 218
+  [ 30] pusharglistnoret 0 ...................... <>
+  [ 32] extcall 4 ............................... walkonby()
+  [ 34] jmp [245]
+  [ 37] getglobal 8 ............................. <whatodo>
+  [ 39] pushcons 8 .............................. <"stand">
+  [ 41] eq ...................................... <whatodo = "stand">
+  [ 42] jmpifz [245] ............................ if whatodo = "stand" then
+  [ 45] pusharglist 0 ........................... <>
+  [ 47] thebuiltin 45 ........................... <the clickOn>
+  [ 50] pusharglist 1 ........................... <the clickOn>
+  [ 52] extcall 94 .............................. <sprite(the clickOn)>
+  [ 55] pushzero ................................ <0>
+  [ 56] setobjprop 95 ........................... sprite(the clickOn).visible = 0
+  [ 59] pusharglistnoret 0 ...................... <>
+  [ 61] extcall 16 .............................. updateStage()
+  [ 63] pushcons 16 ............................. <"continue">
+  [ 65] setlocal 0 .............................. x = "continue"
+  [ 67] pushint8 1 .............................. <1>
+  [ 70] setlocal 8
+  [ 72] getlocal 8
+  [ 74] pushcons 24 ............................. <"objectsfield">
+  [ 76] pushcons 32 ............................. <"master">
+  [ 78] getfield ................................ <field("objectsfield", "master")>
+  [ 79] pushint8 4 .............................. <4>
+  [ 82] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 84] lteq
+  [ 85] jmpifz [147] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 88] pushzero ................................ <0>
+  [ 89] pushzero ................................ <0>
+  [ 90] pushzero ................................ <0>
+  [ 91] pushzero ................................ <0>
+  [ 92] pushzero ................................ <0>
+  [ 93] pushzero ................................ <0>
+  [ 94] getlocal 8 .............................. <i>
+  [ 96] pushzero ................................ <0>
+  [ 97] pushcons 40 ............................. <"objectsfield">
+  [ 99] pushcons 48 ............................. <"master">
+  [101] getfield ................................ <field("objectsfield", "master")>
+  [102] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [103] pushcons 56 ............................. <"empty">
+  [105] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [106] getlocal 0 .............................. <x>
+  [108] pushcons 64 ............................. <"continue">
+  [110] eq ...................................... <x = "continue">
+  [111] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [112] jmpifz [136] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [115] pushcons 72 ............................. <"shovel">
+  [117] pushzero ................................ <0>
+  [118] pushzero ................................ <0>
+  [119] pushzero ................................ <0>
+  [120] pushzero ................................ <0>
+  [121] pushzero ................................ <0>
+  [122] pushzero ................................ <0>
+  [123] getlocal 8 .............................. <i>
+  [125] pushzero ................................ <0>
+  [126] pushcons 80 ............................. <"objectsfield">
+  [128] pushcons 88 ............................. <"master">
+  [130] putchunk 22 ............................. put "shovel" into line i of field "objectsfield" of castLib "master"
+  [132] pushcons 96 ............................. <"stop">
+  [134] setlocal 0 .............................. x = "stop"
+  [136] pushint8 1
+  [139] getlocal 8
+  [141] add
+  [142] setlocal 8
+  [144] endrepeat [ 72]
+  [147] pushsymb 42 ............................. <#playFile>
+  [150] pushint8 1 .............................. <1>
+  [153] getglobal 31 ............................ <soundspath>
+  [155] pushcons 104 ............................ <"pfshovel.aif">
+  [157] joinstr ................................. <soundspath & "pfshovel.aif">
+  [158] pusharglistnoret 3 ...................... <1, soundspath & "pfshovel.aif">
+  [160] extcall 43 .............................. sound playFile 1, soundspath & "pfshovel.aif"
+  [163] pushcons 112 ............................ <"done">
+  [165] pushzero ................................ <0>
+  [166] pushzero ................................ <0>
+  [167] pushzero ................................ <0>
+  [168] pushzero ................................ <0>
+  [169] pushint8 3 .............................. <3>
+  [172] pushzero ................................ <0>
+  [173] pushint8 1 .............................. <1>
+  [176] pushzero ................................ <0>
+  [177] pushcons 120 ............................ <"Dprocess">
+  [179] pushcons 128 ............................ <"master">
+  [181] putchunk 22 ............................. put "done" into item 3 of line 1 of field "Dprocess" of castLib "master"
+  [183] pushcons 136 ............................ <"points">
+  [185] pushcons 144 ............................ <"master">
+  [187] pushint8 2 .............................. <2>
+  [190] get 11 .................................. <the text of field "points" of castLib "master">
+  [192] pusharglist 1 ........................... <the text of field "points" of castLib "master">
+  [194] extcall 15 .............................. <value(the text of field "points" of castLib "master")>
+  [196] setlocal 0 .............................. x = value(the text of field "points" of castLib "master")
+  [198] getlocal 0 .............................. <x>
+  [200] pushint8 1 .............................. <1>
+  [203] add ..................................... <x + 1>
+  [204] setlocal 0 .............................. x = x + 1
+  [206] getlocal 0 .............................. <x>
+  [208] pushint8 10 ............................. <10>
+  [211] lt ...................................... <x < 10>
+  [212] jmpifz [229] ............................ if x < 10 then / else
+  [215] pushcons 152 ............................ <"00">
+  [217] getlocal 0 .............................. <x>
+  [219] joinstr ................................. <"00" & x>
+  [220] pushcons 160 ............................ <"points">
+  [222] pushcons 168 ............................ <"master">
+  [224] put 22 .................................. put "00" & x into field "points" of castLib "master"
+  [226] jmp [240]
+  [229] pushcons 176 ............................ <"0">
+  [231] getlocal 0 .............................. <x>
+  [233] joinstr ................................. <"0" & x>
+  [234] pushcons 184 ............................ <"points">
+  [236] pushcons 192 ............................ <"master">
+  [238] put 22 .................................. put "0" & x into field "points" of castLib "master"
+  [240] pusharglistnoret 0 ...................... <>
+  [242] extcall 46 .............................. displayobject()
+  [245] ret
+end

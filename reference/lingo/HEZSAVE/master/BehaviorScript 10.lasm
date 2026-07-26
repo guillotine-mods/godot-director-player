@@ -1,0 +1,5 @@
+on exitFrame
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 38 .............................. doload()
+  [  5] ret
+end

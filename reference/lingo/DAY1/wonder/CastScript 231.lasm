@@ -1,0 +1,70 @@
+on mouseUp
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 45 ........................... <the clickOn>
+  [  5] pusharglist 1 ........................... <the clickOn>
+  [  7] extcall 94 .............................. <sprite(the clickOn)>
+  [ 10] pushzero ................................ <0>
+  [ 11] setobjprop 95 ........................... sprite(the clickOn).visible = 0
+  [ 14] pusharglistnoret 0 ...................... <>
+  [ 16] extcall 16 .............................. updateStage()
+  [ 18] pushcons 0 .............................. <"continue">
+  [ 20] setlocal 0 .............................. x = "continue"
+  [ 22] pushint8 1 .............................. <1>
+  [ 25] setlocal 8
+  [ 27] getlocal 8
+  [ 29] pushcons 8 .............................. <"objectsfield">
+  [ 31] pushcons 16 ............................. <"master">
+  [ 33] getfield ................................ <field("objectsfield", "master")>
+  [ 34] pushint8 4 .............................. <4>
+  [ 37] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 39] lteq
+  [ 40] jmpifz [102] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 43] pushzero ................................ <0>
+  [ 44] pushzero ................................ <0>
+  [ 45] pushzero ................................ <0>
+  [ 46] pushzero ................................ <0>
+  [ 47] pushzero ................................ <0>
+  [ 48] pushzero ................................ <0>
+  [ 49] getlocal 8 .............................. <i>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushcons 24 ............................. <"objectsfield">
+  [ 54] pushcons 32 ............................. <"master">
+  [ 56] getfield ................................ <field("objectsfield", "master")>
+  [ 57] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 58] pushcons 40 ............................. <"empty">
+  [ 60] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 61] getlocal 0 .............................. <x>
+  [ 63] pushcons 48 ............................. <"continue">
+  [ 65] eq ...................................... <x = "continue">
+  [ 66] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [ 67] jmpifz [ 91] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [ 70] pushcons 56 ............................. <"igkey">
+  [ 72] pushzero ................................ <0>
+  [ 73] pushzero ................................ <0>
+  [ 74] pushzero ................................ <0>
+  [ 75] pushzero ................................ <0>
+  [ 76] pushzero ................................ <0>
+  [ 77] pushzero ................................ <0>
+  [ 78] getlocal 8 .............................. <i>
+  [ 80] pushzero ................................ <0>
+  [ 81] pushcons 64 ............................. <"objectsfield">
+  [ 83] pushcons 72 ............................. <"master">
+  [ 85] putchunk 22 ............................. put "igkey" into line i of field "objectsfield" of castLib "master"
+  [ 87] pushcons 80 ............................. <"stop">
+  [ 89] setlocal 0 .............................. x = "stop"
+  [ 91] pushint8 1
+  [ 94] getlocal 8
+  [ 96] add
+  [ 97] setlocal 8
+  [ 99] endrepeat [ 27]
+  [102] pushsymb 42 ............................. <#playFile>
+  [105] pushint8 1 .............................. <1>
+  [108] getglobal 31 ............................ <soundspath>
+  [110] pushcons 88 ............................. <"pfigkey.aif">
+  [112] joinstr ................................. <soundspath & "pfigkey.aif">
+  [113] pusharglistnoret 3 ...................... <1, soundspath & "pfigkey.aif">
+  [115] extcall 43 .............................. sound playFile 1, soundspath & "pfigkey.aif"
+  [118] pusharglistnoret 0 ...................... <>
+  [120] extcall 46 .............................. displayobject()
+  [123] ret
+end

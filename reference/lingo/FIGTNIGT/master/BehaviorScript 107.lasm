@@ -1,0 +1,14 @@
+on mouseUp
+  [  0] pushint8 93 ............................. <93>
+  [  2] pushzero ................................ <0>
+  [  3] pushint8 25 ............................. <25>
+  [  5] set 6 ................................... set the visible of sprite 93 to 0
+  [  7] pushsymb 3 .............................. <#playFile>
+  [  9] pushint8 1 .............................. <1>
+  [ 11] getglobal 5 ............................. <effectspath>
+  [ 13] pushcons 0 .............................. <"cling.aif">
+  [ 15] joinstr ................................. <effectspath & "cling.aif">
+  [ 16] pusharglistnoret 3 ...................... <1, effectspath & "cling.aif">
+  [ 18] extcall 4 ............................... sound playFile 1, effectspath & "cling.aif"
+  [ 20] ret
+end

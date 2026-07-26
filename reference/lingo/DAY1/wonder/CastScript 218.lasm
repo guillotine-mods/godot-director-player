@@ -1,0 +1,85 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"000">
+  [  2] setglobal 17 ............................ nextroomdata = "000"
+  [  4] getglobal 10 ............................ <egozv>
+  [  6] pushint8 276 ............................ <276>
+  [  9] nteq .................................... <egozv <> 276>
+  [ 10] getglobal 6 ............................. <egozh>
+  [ 12] pushint8 145 ............................ <145>
+  [ 15] nteq .................................... <egozh <> 145>
+  [ 16] and ..................................... <(egozv <> 276) and (egozh <> 145)>
+  [ 17] jmpifz [ 37] ............................ if (egozv <> 276) and (egozh <> 145) then / else
+  [ 20] pushint8 276 ............................ <276>
+  [ 23] setglobal 10 ............................ egozv = 276
+  [ 25] pushint8 145 ............................ <145>
+  [ 28] setglobal 6 ............................. egozh = 145
+  [ 30] pusharglistnoret 0 ...................... <>
+  [ 32] extcall 4 ............................... walkonby()
+  [ 34] jmp [155]
+  [ 37] getglobal 8 ............................. <whatodo>
+  [ 39] pushcons 8 .............................. <"stand">
+  [ 41] eq ...................................... <whatodo = "stand">
+  [ 42] jmpifz [155] ............................ if whatodo = "stand" then
+  [ 45] pushcons 16 ............................. <"show">
+  [ 47] setlocal 0 .............................. x = "show"
+  [ 49] pushint8 1 .............................. <1>
+  [ 51] setlocal 8
+  [ 53] getlocal 8
+  [ 55] pushcons 24 ............................. <"objectsfield">
+  [ 57] pushcons 32 ............................. <"master">
+  [ 59] getfield ................................ <field("objectsfield", "master")>
+  [ 60] pushint8 4 .............................. <4>
+  [ 62] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 64] lteq
+  [ 65] jmpifz [102] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 68] pushzero ................................ <0>
+  [ 69] pushzero ................................ <0>
+  [ 70] pushzero ................................ <0>
+  [ 71] pushzero ................................ <0>
+  [ 72] pushzero ................................ <0>
+  [ 73] pushzero ................................ <0>
+  [ 74] getlocal 8 .............................. <i>
+  [ 76] pushzero ................................ <0>
+  [ 77] pushcons 40 ............................. <"objectsfield">
+  [ 79] pushcons 48 ............................. <"master">
+  [ 81] getfield ................................ <field("objectsfield", "master")>
+  [ 82] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 83] pushcons 56 ............................. <"sciser">
+  [ 85] eq ...................................... <line i of field "objectsfield" of castLib "master" = "sciser">
+  [ 86] jmpifz [ 93] ............................ if line i of field "objectsfield" of castLib "master" = "sciser" then
+  [ 89] pushcons 64 ............................. <"washere">
+  [ 91] setlocal 0 .............................. x = "washere"
+  [ 93] pushint8 1
+  [ 95] getlocal 8
+  [ 97] add
+  [ 98] setlocal 8
+  [100] endrepeat [ 53]
+  [102] getlocal 0 .............................. <x>
+  [104] pushcons 72 ............................. <"show">
+  [106] eq ...................................... <x = "show">
+  [107] jmpifz [142] ............................ if x = "show" then / else
+  [110] pushint8 15 ............................. <15>
+  [112] pushint8 1 .............................. <1>
+  [114] pushint8 25 ............................. <25>
+  [116] set 6 ................................... set the visible of sprite 15 to 1
+  [118] pushint8 17 ............................. <17>
+  [120] pushint8 1 .............................. <1>
+  [122] pushint8 25 ............................. <25>
+  [124] set 6 ................................... set the visible of sprite 17 to 1
+  [126] pushsymb 42 ............................. <#playFile>
+  [128] pushint8 1 .............................. <1>
+  [130] getglobal 32 ............................ <effectspath>
+  [132] pushcons 80 ............................. <"found.aif">
+  [134] joinstr ................................. <effectspath & "found.aif">
+  [135] pusharglistnoret 3 ...................... <1, effectspath & "found.aif">
+  [137] extcall 43 .............................. sound playFile 1, effectspath & "found.aif"
+  [139] jmp [155]
+  [142] pushsymb 42 ............................. <#playFile>
+  [144] pushint8 1 .............................. <1>
+  [146] getglobal 31 ............................ <soundspath>
+  [148] pushcons 88 ............................. <"pbag.aif">
+  [150] joinstr ................................. <soundspath & "pbag.aif">
+  [151] pusharglistnoret 3 ...................... <1, soundspath & "pbag.aif">
+  [153] extcall 43 .............................. sound playFile 1, soundspath & "pbag.aif"
+  [155] ret
+end

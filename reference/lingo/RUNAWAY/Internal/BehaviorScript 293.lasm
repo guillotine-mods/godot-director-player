@@ -1,0 +1,7 @@
+on exitFrame
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 17 .............................. quit()
+  [  4] pusharglistnoret 0 ...................... <>
+  [  6] extcall 27 .............................. play done
+  [  8] ret
+end

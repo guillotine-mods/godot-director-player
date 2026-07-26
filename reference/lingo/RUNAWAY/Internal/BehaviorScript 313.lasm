@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 4 .............................. <#playFile>
+  [  2] pushint8 4 .............................. <4>
+  [  5] getglobal 19 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"rachcome.aif">
+  [  9] joinstr ................................. <effectspath & "rachcome.aif">
+  [ 10] pusharglistnoret 3 ...................... <4, effectspath & "rachcome.aif">
+  [ 12] extcall 3 ............................... sound playFile 4, effectspath & "rachcome.aif"
+  [ 14] ret
+end

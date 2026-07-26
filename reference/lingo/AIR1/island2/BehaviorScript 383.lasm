@@ -1,0 +1,81 @@
+on mouseUp
+  [  0] pushint8 9 .............................. <9>
+  [  3] pusharglist 1 ........................... <9>
+  [  5] extcall 103 ............................. <sprite(9)>
+  [  8] pushzero ................................ <0>
+  [  9] setobjprop 104 .......................... sprite(9).visible = 0
+  [ 12] pushint8 9 .............................. <9>
+  [ 15] pushint8 35 ............................. <35>
+  [ 18] get 6 ................................... <the memberNum of sprite 9>
+  [ 20] pushcons 0 .............................. <"monkright">
+  [ 22] pushzero ................................ <0>
+  [ 23] pushint8 10 ............................. <10>
+  [ 26] get 9 ................................... <the number of member "monkright">
+  [ 28] eq ...................................... <the memberNum of sprite 9 = the number of member "monkright">
+  [ 29] jmpifz [ 83] ............................ if the memberNum of sprite 9 = the number of member "monkright" then / else
+  [ 32] pushsymb 111 ............................ <#stop>
+  [ 35] pushint8 2 .............................. <2>
+  [ 38] pusharglistnoret 2 ...................... <2>
+  [ 40] extcall 49 .............................. sound stop 2
+  [ 43] pushsymb 48 ............................. <#playFile>
+  [ 46] pushint8 1 .............................. <1>
+  [ 49] getglobal 30 ............................ <soundspath>
+  [ 51] pushcons 8 .............................. <"monk6.aif">
+  [ 53] joinstr ................................. <soundspath & "monk6.aif">
+  [ 54] pusharglistnoret 3 ...................... <1, soundspath & "monk6.aif">
+  [ 56] extcall 49 .............................. sound playFile 1, soundspath & "monk6.aif"
+  [ 59] pushcons 16 ............................. <"teeth">
+  [ 61] pusharglistnoret 1 ...................... <"teeth">
+  [ 63] extcall 81 .............................. play frame "teeth"
+  [ 66] pushint8 9 .............................. <9>
+  [ 69] pusharglist 1 ........................... <9>
+  [ 71] extcall 103 ............................. <sprite(9)>
+  [ 74] pushint8 1 .............................. <1>
+  [ 77] setobjprop 104 .......................... sprite(9).visible = 1
+  [ 80] jmp [191]
+  [ 83] pushint8 9 .............................. <9>
+  [ 86] pushint8 35 ............................. <35>
+  [ 89] get 6 ................................... <the memberNum of sprite 9>
+  [ 91] pushcons 24 ............................. <"monkmiddle">
+  [ 93] pushzero ................................ <0>
+  [ 94] pushint8 10 ............................. <10>
+  [ 97] get 9 ................................... <the number of member "monkmiddle">
+  [ 99] eq ...................................... <the memberNum of sprite 9 = the number of member "monkmiddle">
+  [100] jmpifz [143] ............................ if the memberNum of sprite 9 = the number of member "monkmiddle" then / else
+  [103] pushsymb 48 ............................. <#playFile>
+  [106] pushint8 1 .............................. <1>
+  [109] getglobal 30 ............................ <soundspath>
+  [111] pushcons 32 ............................. <"monk9.aif">
+  [113] joinstr ................................. <soundspath & "monk9.aif">
+  [114] pusharglistnoret 3 ...................... <1, soundspath & "monk9.aif">
+  [116] extcall 49 .............................. sound playFile 1, soundspath & "monk9.aif"
+  [119] pushcons 40 ............................. <"speakmiddle1">
+  [121] pusharglistnoret 1 ...................... <"speakmiddle1">
+  [123] extcall 81 .............................. play frame "speakmiddle1"
+  [126] pushint8 9 .............................. <9>
+  [129] pusharglist 1 ........................... <9>
+  [131] extcall 103 ............................. <sprite(9)>
+  [134] pushint8 1 .............................. <1>
+  [137] setobjprop 104 .......................... sprite(9).visible = 1
+  [140] jmp [191]
+  [143] pushsymb 48 ............................. <#playFile>
+  [146] pushint8 1 .............................. <1>
+  [149] getglobal 30 ............................ <soundspath>
+  [151] pushcons 48 ............................. <"monk10.aif">
+  [153] joinstr ................................. <soundspath & "monk10.aif">
+  [154] pusharglistnoret 3 ...................... <1, soundspath & "monk10.aif">
+  [156] extcall 49 .............................. sound playFile 1, soundspath & "monk10.aif"
+  [159] pushsymb 111 ............................ <#stop>
+  [162] pushint8 2 .............................. <2>
+  [165] pusharglistnoret 2 ...................... <2>
+  [167] extcall 49 .............................. sound stop 2
+  [170] pushcons 56 ............................. <"speakleft">
+  [172] pusharglistnoret 1 ...................... <"speakleft">
+  [174] extcall 81 .............................. play frame "speakleft"
+  [177] pushint8 9 .............................. <9>
+  [180] pusharglist 1 ........................... <9>
+  [182] extcall 103 ............................. <sprite(9)>
+  [185] pushint8 1 .............................. <1>
+  [188] setobjprop 104 .......................... sprite(9).visible = 1
+  [191] ret
+end

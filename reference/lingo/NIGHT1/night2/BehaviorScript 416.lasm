@@ -1,0 +1,73 @@
+on mouseUp
+  [  0] pushint8 30 ............................. <30>
+  [  3] pusharglist 1 ........................... <30>
+  [  5] extcall 83 .............................. <sprite(30)>
+  [  8] getobjprop 96 ........................... <sprite(30).visible>
+  [ 11] pushint8 1 .............................. <1>
+  [ 14] eq ...................................... <sprite(30).visible = 1>
+  [ 15] jmpifz [140] ............................ if sprite(30).visible = 1 then
+  [ 18] pushcons 0 .............................. <"ok">
+  [ 20] pushzero ................................ <0>
+  [ 21] pushzero ................................ <0>
+  [ 22] pushzero ................................ <0>
+  [ 23] pushzero ................................ <0>
+  [ 24] pushint8 2 .............................. <2>
+  [ 27] pushzero ................................ <0>
+  [ 28] pushzero ................................ <0>
+  [ 29] pushzero ................................ <0>
+  [ 30] pushvarref 9 ............................ <stopornot>
+  [ 32] putchunk 18 ............................. put "ok" into item 2 of stopornot
+  [ 34] pushcons 8 .............................. <"ok">
+  [ 36] pushzero ................................ <0>
+  [ 37] pushzero ................................ <0>
+  [ 38] pushzero ................................ <0>
+  [ 39] pushzero ................................ <0>
+  [ 40] pushint8 1 .............................. <1>
+  [ 43] pushzero ................................ <0>
+  [ 44] pushzero ................................ <0>
+  [ 45] pushzero ................................ <0>
+  [ 46] pushvarref 9 ............................ <stopornot>
+  [ 48] putchunk 18 ............................. put "ok" into item 1 of stopornot
+  [ 50] getglobal 112 ........................... <cdsavepath>
+  [ 53] pushcons 16 ............................. <"saveload.dxr">
+  [ 55] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 56] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 58] extcall 97 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 61] pushint8 2 .............................. <2>
+  [ 64] setobjprop 98 ........................... window(cdsavepath & "saveload.dxr").windowType = 2
+  [ 67] getglobal 112 ........................... <cdsavepath>
+  [ 70] pushcons 24 ............................. <"saveload.dxr">
+  [ 72] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 73] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 75] extcall 97 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 78] starttell ............................... tell window(cdsavepath & "saveload.dxr")
+  [ 79] pushint8 1 .............................. <1>
+  [ 82] pushint8 3 .............................. <3>
+  [ 85] set 7 ................................... set the centerStage to 1
+  [ 87] endtell
+  [ 88] getglobal 112 ........................... <cdsavepath>
+  [ 91] pushcons 32 ............................. <"saveload.dxr">
+  [ 93] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 94] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 96] extcall 97 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 99] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [101] extcall 99 .............................. open(window(cdsavepath & "saveload.dxr"))
+  [104] getglobal 112 ........................... <cdsavepath>
+  [107] pushcons 40 ............................. <"saveload.dxr">
+  [109] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [110] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [112] extcall 97 .............................. <window(cdsavepath & "saveload.dxr")>
+  [115] starttell ............................... tell window(cdsavepath & "saveload.dxr")
+  [116] pushcons 48 ............................. <"savegame">
+  [118] pusharglistnoret 1 ...................... <"savegame">
+  [120] tellcall 3 .............................. go("savegame")
+  [122] endtell
+  [123] pushsymb 42 ............................. <#playFile>
+  [126] pushint8 1 .............................. <1>
+  [129] getglobal 32 ............................ <effectspath>
+  [132] pushcons 56 ............................. <"saveload.aif">
+  [134] joinstr ................................. <effectspath & "saveload.aif">
+  [135] pusharglistnoret 3 ...................... <1, effectspath & "saveload.aif">
+  [137] extcall 43 .............................. sound playFile 1, effectspath & "saveload.aif"
+  [140] ret
+end

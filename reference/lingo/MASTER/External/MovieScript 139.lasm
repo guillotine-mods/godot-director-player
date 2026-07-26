@@ -1,0 +1,6 @@
+on startMovie
+  [  0] pushcons 0 .............................. <"fromnow">
+  [  2] pushint16 3 ............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to "fromnow"
+  [  7] ret
+end

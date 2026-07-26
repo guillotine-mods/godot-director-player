@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushsymb 21 ............................. <#playFile>
+  [  2] pushint8 2 .............................. <2>
+  [  5] getglobal 24 ............................ <effectspath>
+  [  7] pushcons 0 .............................. <"kicked.aif">
+  [  9] joinstr ................................. <effectspath & "kicked.aif">
+  [ 10] pusharglistnoret 3 ...................... <2, effectspath & "kicked.aif">
+  [ 12] extcall 22 .............................. sound playFile 2, effectspath & "kicked.aif"
+  [ 14] pushsymb 21 ............................. <#playFile>
+  [ 16] pushint8 1 .............................. <1>
+  [ 19] getglobal 23 ............................ <tlkpath>
+  [ 21] pushcons 8 .............................. <"hez3.aif">
+  [ 23] joinstr ................................. <tlkpath & "hez3.aif">
+  [ 24] pusharglistnoret 3 ...................... <1, tlkpath & "hez3.aif">
+  [ 26] extcall 22 .............................. sound playFile 1, tlkpath & "hez3.aif"
+  [ 28] ret
+end

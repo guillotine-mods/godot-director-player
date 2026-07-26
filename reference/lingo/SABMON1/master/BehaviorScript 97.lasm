@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushsymb 27 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 32 ............................ <tlkpath>
+  [  8] pushcons 0 .............................. <"man25.aif">
+  [ 10] joinstr ................................. <tlkpath & "man25.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, tlkpath & "man25.aif">
+  [ 13] extcall 28 .............................. sound playFile 1, tlkpath & "man25.aif"
+  [ 15] pushsymb 27 ............................. <#playFile>
+  [ 17] pushint8 3 .............................. <3>
+  [ 20] getglobal 32 ............................ <tlkpath>
+  [ 23] pushcons 8 .............................. <"jump3.aif">
+  [ 25] joinstr ................................. <tlkpath & "jump3.aif">
+  [ 26] pusharglistnoret 3 ...................... <3, tlkpath & "jump3.aif">
+  [ 28] extcall 28 .............................. sound playFile 3, tlkpath & "jump3.aif"
+  [ 30] pushsymb 27 ............................. <#playFile>
+  [ 32] pushint8 4 .............................. <4>
+  [ 35] getglobal 32 ............................ <tlkpath>
+  [ 38] pushcons 16 ............................. <"jump4.aif">
+  [ 40] joinstr ................................. <tlkpath & "jump4.aif">
+  [ 41] pusharglistnoret 3 ...................... <4, tlkpath & "jump4.aif">
+  [ 43] extcall 28 .............................. sound playFile 4, tlkpath & "jump4.aif"
+  [ 45] ret
+end

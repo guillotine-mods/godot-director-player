@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"gomenu2">
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to "gomenu2"
+  [  7] ret
+end

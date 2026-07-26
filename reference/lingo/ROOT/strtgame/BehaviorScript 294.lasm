@@ -1,0 +1,17 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pushint8 255 ............................ <255>
+  [  6] pushint8 1 .............................. <1>
+  [  9] set 4 ................................... set the volume of sound 2 to 255
+  [ 11] pushcons 0 .............................. <"fromnow">
+  [ 13] pushint8 3 .............................. <3>
+  [ 16] set 0 ................................... set the keyDownScript to "fromnow"
+  [ 18] pushsymb 15 ............................. <#playFile>
+  [ 20] pushint8 2 .............................. <2>
+  [ 23] getglobal 21 ............................ <effectspath>
+  [ 25] pushcons 8 .............................. <"song1.aif">
+  [ 27] joinstr ................................. <effectspath & "song1.aif">
+  [ 28] pusharglistnoret 3 ...................... <2, effectspath & "song1.aif">
+  [ 30] extcall 16 .............................. sound playFile 2, effectspath & "song1.aif"
+  [ 32] ret
+end

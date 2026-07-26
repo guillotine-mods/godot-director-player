@@ -1,0 +1,15 @@
+on exitFrame
+  [  0] pushzero ................................ <0>
+  [  1] setglobal 14 ............................ optcount = 0
+  [  3] pushcons 0 .............................. <"s_day1">
+  [  5] pusharglistnoret 1 ...................... <"s_day1">
+  [  7] extcall 17 .............................. tlkpath("s_day1")
+  [  9] pushsymb 15 ............................. <#playFile>
+  [ 11] pushint8 1 .............................. <1>
+  [ 14] getglobal 17 ............................ <tlkpath>
+  [ 16] pushcons 8 .............................. <"man1.aif">
+  [ 18] joinstr ................................. <tlkpath & "man1.aif">
+  [ 19] pusharglistnoret 3 ...................... <1, tlkpath & "man1.aif">
+  [ 21] extcall 16 .............................. sound playFile 1, tlkpath & "man1.aif"
+  [ 23] ret
+end

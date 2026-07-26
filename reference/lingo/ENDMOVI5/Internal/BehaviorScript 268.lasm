@@ -1,0 +1,9 @@
+on exitFrame
+  [  0] pushint8 1 .............................. <1>
+  [  3] getmovieprop 21 ......................... <the moviePath>
+  [  5] pushcons 0 .............................. <"runaway.dir">
+  [  7] joinstr ................................. <the moviePath & "runaway.dir">
+  [  8] pusharglistnoret 2 ...................... <1, the moviePath & "runaway.dir">
+  [ 10] extcall 12 .............................. go(1, the moviePath & "runaway.dir")
+  [ 12] ret
+end

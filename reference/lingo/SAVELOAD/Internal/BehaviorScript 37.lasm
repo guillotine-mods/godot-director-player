@@ -1,0 +1,50 @@
+on mouseUp
+  [  0] pushint8 15 ............................. <15>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 30 ............................. <30>
+  [ 10] lteq
+  [ 11] jmpifz [ 35] ............................ repeat with i = 15 to 30
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pusharglist 1 ........................... <i>
+  [ 18] extcall 14 .............................. <sprite(i)>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] setobjprop 15 ........................... sprite(i).visible = 1
+  [ 25] pushint8 1
+  [ 28] getlocal 0
+  [ 30] add
+  [ 31] setlocal 0
+  [ 33] endrepeat [  5]
+  [ 35] getglobal 5 ............................. <globalday>
+  [ 37] pushzero ................................ <0>
+  [ 38] eq ...................................... <globalday = 0>
+  [ 39] jmpifz [ 86] ............................ if globalday = 0 then / else
+  [ 42] pushcons 0 .............................. <"strtgame">
+  [ 44] pusharglistnoret 1 ...................... <"strtgame">
+  [ 46] extcall 68 .............................. tlkpath("strtgame")
+  [ 49] getmovieprop 32 ......................... <the stage>
+  [ 52] starttell ............................... tell the stage
+  [ 53] pushint8 1 .............................. <1>
+  [ 56] getglobal 33 ............................ <cdsavepath>
+  [ 59] pushcons 8 .............................. <"exodus.dxr">
+  [ 61] joinstr ................................. <cdsavepath & "exodus.dxr">
+  [ 62] pusharglistnoret 2 ...................... <1, cdsavepath & "exodus.dxr">
+  [ 64] tellcall 4 .............................. go(1, cdsavepath & "exodus.dxr")
+  [ 66] endtell
+  [ 67] getglobal 33 ............................ <cdsavepath>
+  [ 70] pushcons 16 ............................. <"saveload.dxr">
+  [ 72] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 73] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 75] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 78] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [ 80] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [ 83] jmp [102]
+  [ 86] getglobal 33 ............................ <cdsavepath>
+  [ 89] pushcons 24 ............................. <"saveload.dxr">
+  [ 91] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 92] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 94] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 97] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [ 99] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [102] ret
+end

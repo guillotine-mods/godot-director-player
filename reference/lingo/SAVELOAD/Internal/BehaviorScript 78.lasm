@@ -1,0 +1,10 @@
+on mouseUp
+  [  0] getglobal 33 ............................ <cdsavepath>
+  [  3] pushcons 0 .............................. <"saveload.dxr">
+  [  5] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [  6] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [  8] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 11] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [ 13] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [ 16] ret
+end

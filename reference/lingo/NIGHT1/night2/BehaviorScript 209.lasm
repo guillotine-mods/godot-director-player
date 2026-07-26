@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"rachbalright">
+  [  2] pusharglistnoret 1 ...................... <"rachbalright">
+  [  4] extcall 3 ............................... go("rachbalright")
+  [  6] ret
+end

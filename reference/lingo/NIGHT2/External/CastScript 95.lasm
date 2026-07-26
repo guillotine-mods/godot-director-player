@@ -1,0 +1,10 @@
+on mouseUp
+  [  0] pushsymb 18 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 20 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"frtwndo.aif">
+  [  8] joinstr ................................. <soundspath & "frtwndo.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "frtwndo.aif">
+  [ 11] extcall 19 .............................. sound playFile 1, soundspath & "frtwndo.aif"
+  [ 13] ret
+end

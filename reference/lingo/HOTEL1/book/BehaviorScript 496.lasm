@@ -1,0 +1,28 @@
+on exitFrame
+  [  0] pushsymb 52 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 36 ............................ <effectspath>
+  [  9] pushcons 0 .............................. <"doornob.aif">
+  [ 11] joinstr ................................. <effectspath & "doornob.aif">
+  [ 12] pusharglistnoret 3 ...................... <1, effectspath & "doornob.aif">
+  [ 14] extcall 53 .............................. sound playFile 1, effectspath & "doornob.aif"
+  [ 17] pushint8 2 .............................. <2>
+  [ 20] pusharglist 1 ........................... <2>
+  [ 22] extcall 58 .............................. <soundBusy(2)>
+  [ 25] not ..................................... <not soundBusy(2)>
+  [ 26] getglobal 114 ........................... <whichsnd>
+  [ 29] pushcons 8 .............................. <"liber">
+  [ 31] nteq .................................... <whichsnd <> "liber">
+  [ 32] or ...................................... <not soundBusy(2) or (whichsnd <> "liber")>
+  [ 33] jmpifz [ 58] ............................ if not soundBusy(2) or (whichsnd <> "liber") then
+  [ 36] pushsymb 52 ............................. <#playFile>
+  [ 39] pushint8 2 .............................. <2>
+  [ 42] getglobal 36 ............................ <effectspath>
+  [ 45] pushcons 16 ............................. <"liber.aif">
+  [ 47] joinstr ................................. <effectspath & "liber.aif">
+  [ 48] pusharglistnoret 3 ...................... <2, effectspath & "liber.aif">
+  [ 50] extcall 53 .............................. sound playFile 2, effectspath & "liber.aif"
+  [ 53] pushcons 24 ............................. <"liber">
+  [ 55] setglobal 114 ........................... whichsnd = "liber"
+  [ 58] ret
+end

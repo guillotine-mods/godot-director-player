@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushsymb 52 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 36 ............................ <effectspath>
+  [  9] pushcons 0 .............................. <"clik1.aif">
+  [ 11] joinstr ................................. <effectspath & "clik1.aif">
+  [ 12] pusharglistnoret 3 ...................... <1, effectspath & "clik1.aif">
+  [ 14] extcall 53 .............................. sound playFile 1, effectspath & "clik1.aif"
+  [ 17] pushcons 8 .............................. <"godown">
+  [ 19] pusharglistnoret 1 ...................... <"godown">
+  [ 21] extcall 3 ............................... go("godown")
+  [ 23] ret
+end

@@ -1,0 +1,15 @@
+on exitFrame
+  [  0] pushint8 1 .............................. <1>
+  [  3] pusharglist 1 ........................... <1>
+  [  5] extcall 37 .............................. <soundBusy(1)>
+  [  8] not ..................................... <not soundBusy(1)>
+  [  9] jmpifz [ 26] ............................ if not soundBusy(1) then
+  [ 12] pushsymb 1 .............................. <#playFile>
+  [ 14] pushint8 1 .............................. <1>
+  [ 17] getglobal 3 ............................. <effectspath>
+  [ 19] pushcons 0 .............................. <"figtair.aif">
+  [ 21] joinstr ................................. <effectspath & "figtair.aif">
+  [ 22] pusharglistnoret 3 ...................... <1, effectspath & "figtair.aif">
+  [ 24] extcall 2 ............................... sound playFile 1, effectspath & "figtair.aif"
+  [ 26] ret
+end

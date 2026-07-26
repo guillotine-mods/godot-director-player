@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 54 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 110 ........................... <whichsnd>
+  [ 12] pushcons 0 .............................. <"clif1">
+  [ 14] nteq .................................... <whichsnd <> "clif1">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "clif1")>
+  [ 16] jmpifz [ 40] ............................ if not soundBusy(2) or (whichsnd <> "clif1") then
+  [ 19] pushsymb 48 ............................. <#playFile>
+  [ 22] pushint8 2 .............................. <2>
+  [ 25] getglobal 31 ............................ <effectspath>
+  [ 27] pushcons 8 .............................. <"clif1.aif">
+  [ 29] joinstr ................................. <effectspath & "clif1.aif">
+  [ 30] pusharglistnoret 3 ...................... <2, effectspath & "clif1.aif">
+  [ 32] extcall 49 .............................. sound playFile 2, effectspath & "clif1.aif"
+  [ 35] pushcons 16 ............................. <"clif1">
+  [ 37] setglobal 110 ........................... whichsnd = "clif1"
+  [ 40] ret
+end

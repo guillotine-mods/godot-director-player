@@ -1,0 +1,6 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"shore2down">
+  [  2] pusharglistnoret 1 ...................... <"shore2down">
+  [  4] extcall 3 ............................... go("shore2down")
+  [  6] ret
+end

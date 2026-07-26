@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pushint8 70 ............................. <70>
+  [  6] pushint8 1 .............................. <1>
+  [  9] set 4 ................................... set the volume of sound 2 to 70
+  [ 11] pushsymb 19 ............................. <#playFile>
+  [ 13] pushint8 2 .............................. <2>
+  [ 16] getglobal 29 ............................ <effectspath>
+  [ 18] pushcons 0 .............................. <"sabopen.aif">
+  [ 20] joinstr ................................. <effectspath & "sabopen.aif">
+  [ 21] pusharglistnoret 3 ...................... <2, effectspath & "sabopen.aif">
+  [ 23] extcall 20 .............................. sound playFile 2, effectspath & "sabopen.aif"
+  [ 25] ret
+end

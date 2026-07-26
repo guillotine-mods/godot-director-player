@@ -1,0 +1,55 @@
+on exitFrame
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 12 ........................... <the mouseDown>
+  [  4] jmpifz [ 92] ............................ if the mouseDown then / else
+  [  7] pushsymb 8 .............................. <#playFile>
+  [  9] pushint8 1 .............................. <1>
+  [ 11] getglobal 10 ............................ <soundspath>
+  [ 13] pushcons 0 .............................. <"art">
+  [ 15] pushint8 8 .............................. <8>
+  [ 17] pushint8 35 ............................. <35>
+  [ 19] get 6 ................................... <the memberNum of sprite 8>
+  [ 21] pusharglist 1 ........................... <the memberNum of sprite 8>
+  [ 23] extcall 1 ............................... <member(the memberNum of sprite 8)>
+  [ 25] getobjprop 13 ........................... <member(the memberNum of sprite 8).name>
+  [ 27] joinstr ................................. <"art" & member(the memberNum of sprite 8).name>
+  [ 28] pushcons 8 .............................. <".aif">
+  [ 30] joinstr ................................. <"art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 31] joinstr ................................. <soundspath & "art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 32] pusharglistnoret 3 ...................... <1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif">
+  [ 34] extcall 9 ............................... sound playFile 1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif"
+  [ 36] pushint8 8 .............................. <8>
+  [ 38] setlocal 0
+  [ 40] getlocal 0
+  [ 42] pushint8 15 ............................. <15>
+  [ 44] lteq
+  [ 45] jmpifz [ 65] ............................ repeat with i = 8 to 15
+  [ 48] getlocal 0 .............................. <i>
+  [ 50] pushint8 1 .............................. <1>
+  [ 52] pusharglistnoret 2 ...................... <i, 1>
+  [ 54] extcall 14 .............................. puppetSprite(i, 1)
+  [ 56] pushint8 1
+  [ 58] getlocal 0
+  [ 60] add
+  [ 61] setlocal 0
+  [ 63] endrepeat [ 40]
+  [ 65] pushint8 1 .............................. <1>
+  [ 67] pusharglist 1 ........................... <1>
+  [ 69] extcall 11 .............................. <marker(1)>
+  [ 71] pusharglistnoret 1 ...................... <marker(1)>
+  [ 73] extcall 6 ............................... go(marker(1))
+  [ 75] pushint8 8 .............................. <8>
+  [ 77] pushint8 35 ............................. <35>
+  [ 79] get 6 ................................... <the memberNum of sprite 8>
+  [ 81] pusharglist 1 ........................... <the memberNum of sprite 8>
+  [ 83] extcall 1 ............................... <member(the memberNum of sprite 8)>
+  [ 85] getobjprop 13 ........................... <member(the memberNum of sprite 8).name>
+  [ 87] setglobal 15 ............................ ches1 = member(the memberNum of sprite 8).name
+  [ 89] jmp [101]
+  [ 92] pushzero ................................ <0>
+  [ 93] pusharglist 1 ........................... <0>
+  [ 95] extcall 11 .............................. <marker(0)>
+  [ 97] pusharglistnoret 1 ...................... <marker(0)>
+  [ 99] extcall 6 ............................... go(marker(0))
+  [101] ret
+end

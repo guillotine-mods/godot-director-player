@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 32 ............................. <#playFile>
+  [  3] pushint8 1 .............................. <1>
+  [  6] getglobal 34 ............................ <soundspath>
+  [  9] pushcons 0 .............................. <"mrk17.aif">
+  [ 11] joinstr ................................. <soundspath & "mrk17.aif">
+  [ 12] pusharglistnoret 3 ...................... <1, soundspath & "mrk17.aif">
+  [ 14] extcall 33 .............................. sound playFile 1, soundspath & "mrk17.aif"
+  [ 17] ret
+end

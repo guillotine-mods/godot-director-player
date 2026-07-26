@@ -1,0 +1,13 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"gun">
+  [  2] pushint8 3 .............................. <3>
+  [  4] set 0 ................................... set the keyDownScript to "gun"
+  [  6] pushint8 7 .............................. <7>
+  [  8] pushcons 8 .............................. <"gundefault">
+  [ 10] pushzero ................................ <0>
+  [ 11] pushint8 10 ............................. <10>
+  [ 13] get 9 ................................... <the number of member "gundefault">
+  [ 15] pushint8 35 ............................. <35>
+  [ 17] set 6 ................................... set the memberNum of sprite 7 to the number of member "gundefault"
+  [ 19] ret
+end

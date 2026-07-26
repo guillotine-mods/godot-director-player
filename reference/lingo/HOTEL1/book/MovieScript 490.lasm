@@ -1,0 +1,375 @@
+on finishday daynum
+  [  0] getparam 0 .............................. <daynum>
+  [  2] pushint8 1 .............................. <1>
+  [  5] eq ...................................... <daynum = 1>
+  [  6] jmpifz [164] ............................ if daynum = 1 then / else
+  [  9] pushcons 0 .............................. <"endday">
+  [ 11] setlocal 0 .............................. f = "endday"
+  [ 13] pushint8 1 .............................. <1>
+  [ 16] setlocal 8
+  [ 18] getlocal 8
+  [ 20] pushzero ................................ <0>
+  [ 21] pushzero ................................ <0>
+  [ 22] pushzero ................................ <0>
+  [ 23] pushzero ................................ <0>
+  [ 24] pushzero ................................ <0>
+  [ 25] pushzero ................................ <0>
+  [ 26] pushint8 1 .............................. <1>
+  [ 29] pushzero ................................ <0>
+  [ 30] pushcons 8 .............................. <"Dprocess">
+  [ 32] pushcons 16 ............................. <"master">
+  [ 34] getfield ................................ <field("Dprocess", "master")>
+  [ 35] getchunk ................................ <line 1 of field "Dprocess" of castLib "master">
+  [ 36] pushint8 3 .............................. <3>
+  [ 39] get 1 ................................... <the number of items in line 1 of field "Dprocess" of castLib "master">
+  [ 41] lteq
+  [ 42] jmpifz [ 83] ............................ repeat with i = 1 to the number of items in line 1 of field "Dprocess" of castLib "master"
+  [ 45] pushzero ................................ <0>
+  [ 46] pushzero ................................ <0>
+  [ 47] pushzero ................................ <0>
+  [ 48] pushzero ................................ <0>
+  [ 49] getlocal 8 .............................. <i>
+  [ 51] pushzero ................................ <0>
+  [ 52] pushint8 1 .............................. <1>
+  [ 55] pushzero ................................ <0>
+  [ 56] pushcons 24 ............................. <"Dprocess">
+  [ 58] pushcons 32 ............................. <"master">
+  [ 60] getfield ................................ <field("Dprocess", "master")>
+  [ 61] getchunk ................................ <item i of line 1 of field "Dprocess" of castLib "master">
+  [ 62] pushcons 40 ............................. <"done">
+  [ 64] nteq .................................... <item i of line 1 of field "Dprocess" of castLib "master" <> "done">
+  [ 65] jmpifz [ 72] ............................ if item i of line 1 of field "Dprocess" of castLib "master" <> "done" then
+  [ 68] pushcons 48 ............................. <"notyet">
+  [ 70] setlocal 0 .............................. f = "notyet"
+  [ 72] pushint8 1
+  [ 75] getlocal 8
+  [ 77] add
+  [ 78] setlocal 8
+  [ 80] endrepeat [ 18]
+  [ 83] pushzero ................................ <0>
+  [ 84] pushzero ................................ <0>
+  [ 85] pushzero ................................ <0>
+  [ 86] pushzero ................................ <0>
+  [ 87] pushint8 1 .............................. <1>
+  [ 90] pushzero ................................ <0>
+  [ 91] pushint8 6 .............................. <6>
+  [ 94] pushzero ................................ <0>
+  [ 95] pushcons 56 ............................. <"Dprocess">
+  [ 97] pushcons 64 ............................. <"master">
+  [ 99] getfield ................................ <field("Dprocess", "master")>
+  [100] getchunk ................................ <item 1 of line 6 of field "Dprocess" of castLib "master">
+  [101] pushcons 72 ............................. <"done">
+  [103] nteq .................................... <item 1 of line 6 of field "Dprocess" of castLib "master" <> "done">
+  [104] pushzero ................................ <0>
+  [105] pushzero ................................ <0>
+  [106] pushzero ................................ <0>
+  [107] pushzero ................................ <0>
+  [108] pushint8 2 .............................. <2>
+  [111] pushzero ................................ <0>
+  [112] pushint8 6 .............................. <6>
+  [115] pushzero ................................ <0>
+  [116] pushcons 80 ............................. <"Dprocess">
+  [118] pushcons 88 ............................. <"master">
+  [120] getfield ................................ <field("Dprocess", "master")>
+  [121] getchunk ................................ <item 2 of line 6 of field "Dprocess" of castLib "master">
+  [122] pushcons 96 ............................. <"done">
+  [124] nteq .................................... <item 2 of line 6 of field "Dprocess" of castLib "master" <> "done">
+  [125] and ..................................... <(item 1 of line 6 of field "Dprocess" of castLib "master" <> "done") and (item 2 of line 6 of field "Dprocess" of castLib "master" <> "done")>
+  [126] jmpifz [133] ............................ if (item 1 of line 6 of field "Dprocess" of castLib "master" <> "done") and (item 2 of line 6 of field "Dprocess" of castLib "master" <> "done") then
+  [129] pushcons 104 ............................ <"notyet">
+  [131] setlocal 0 .............................. f = "notyet"
+  [133] getlocal 0 .............................. <f>
+  [135] pushcons 112 ............................ <"endday">
+  [137] eq ...................................... <f = "endday">
+  [138] jmpifz [157] ............................ if f = "endday" then / else
+  [141] pushint8 1 .............................. <1>
+  [144] getmovieprop 117 ........................ <the moviePath>
+  [147] pushcons 120 ............................ <"golddead.dxr">
+  [149] joinstr ................................. <the moviePath & "golddead.dxr">
+  [150] pusharglistnoret 2 ...................... <1, the moviePath & "golddead.dxr">
+  [152] extcall 3 ............................... go(1, the moviePath & "golddead.dxr")
+  [154] jmp [161]
+  [157] pusharglistnoret 0 ...................... <>
+  [159] localcall 1 ............................. bk2peoplefunk()
+  [161] jmp [676]
+  [164] getparam 0 .............................. <daynum>
+  [166] pushint8 2 .............................. <2>
+  [169] eq ...................................... <daynum = 2>
+  [170] jmpifz [362] ............................ if daynum = 2 then / else
+  [173] pushcons 128 ............................ <"endday">
+  [175] setlocal 0 .............................. f = "endday"
+  [177] pushint8 1 .............................. <1>
+  [180] setlocal 8
+  [182] getlocal 8
+  [184] pushzero ................................ <0>
+  [185] pushzero ................................ <0>
+  [186] pushzero ................................ <0>
+  [187] pushzero ................................ <0>
+  [188] pushzero ................................ <0>
+  [189] pushzero ................................ <0>
+  [190] pushint8 2 .............................. <2>
+  [193] pushzero ................................ <0>
+  [194] pushcons 136 ............................ <"Dprocess">
+  [196] pushcons 144 ............................ <"master">
+  [198] getfield ................................ <field("Dprocess", "master")>
+  [199] getchunk ................................ <line 2 of field "Dprocess" of castLib "master">
+  [200] pushint8 3 .............................. <3>
+  [203] get 1 ................................... <the number of items in line 2 of field "Dprocess" of castLib "master">
+  [205] lteq
+  [206] jmpifz [247] ............................ repeat with i = 1 to the number of items in line 2 of field "Dprocess" of castLib "master"
+  [209] pushzero ................................ <0>
+  [210] pushzero ................................ <0>
+  [211] pushzero ................................ <0>
+  [212] pushzero ................................ <0>
+  [213] getlocal 8 .............................. <i>
+  [215] pushzero ................................ <0>
+  [216] pushint8 2 .............................. <2>
+  [219] pushzero ................................ <0>
+  [220] pushcons 152 ............................ <"Dprocess">
+  [222] pushcons 160 ............................ <"master">
+  [224] getfield ................................ <field("Dprocess", "master")>
+  [225] getchunk ................................ <item i of line 2 of field "Dprocess" of castLib "master">
+  [226] pushcons 168 ............................ <"done">
+  [228] nteq .................................... <item i of line 2 of field "Dprocess" of castLib "master" <> "done">
+  [229] jmpifz [236] ............................ if item i of line 2 of field "Dprocess" of castLib "master" <> "done" then
+  [232] pushcons 176 ............................ <"notyet">
+  [234] setlocal 0 .............................. f = "notyet"
+  [236] pushint8 1
+  [239] getlocal 8
+  [241] add
+  [242] setlocal 8
+  [244] endrepeat [182]
+  [247] pushzero ................................ <0>
+  [248] setlocal 16 ............................. z = 0
+  [250] pushint8 1 .............................. <1>
+  [253] setlocal 8
+  [255] getlocal 8
+  [257] pushzero ................................ <0>
+  [258] pushzero ................................ <0>
+  [259] pushzero ................................ <0>
+  [260] pushzero ................................ <0>
+  [261] pushzero ................................ <0>
+  [262] pushzero ................................ <0>
+  [263] pushint8 6 .............................. <6>
+  [266] pushzero ................................ <0>
+  [267] pushcons 184 ............................ <"Dprocess">
+  [269] pushcons 192 ............................ <"master">
+  [271] getfield ................................ <field("Dprocess", "master")>
+  [272] getchunk ................................ <line 6 of field "Dprocess" of castLib "master">
+  [273] pushint8 3 .............................. <3>
+  [276] get 1 ................................... <the number of items in line 6 of field "Dprocess" of castLib "master">
+  [278] lteq
+  [279] jmpifz [324] ............................ repeat with i = 1 to the number of items in line 6 of field "Dprocess" of castLib "master"
+  [282] pushzero ................................ <0>
+  [283] pushzero ................................ <0>
+  [284] pushzero ................................ <0>
+  [285] pushzero ................................ <0>
+  [286] getlocal 8 .............................. <i>
+  [288] pushzero ................................ <0>
+  [289] pushint8 6 .............................. <6>
+  [292] pushzero ................................ <0>
+  [293] pushcons 200 ............................ <"Dprocess">
+  [295] pushcons 208 ............................ <"master">
+  [297] getfield ................................ <field("Dprocess", "master")>
+  [298] getchunk ................................ <item i of line 6 of field "Dprocess" of castLib "master">
+  [299] pushcons 216 ............................ <"done">
+  [301] eq ...................................... <item i of line 6 of field "Dprocess" of castLib "master" = "done">
+  [302] jmpifz [313] ............................ if item i of line 6 of field "Dprocess" of castLib "master" = "done" then
+  [305] getlocal 16 ............................. <z>
+  [307] pushint8 1 .............................. <1>
+  [310] add ..................................... <z + 1>
+  [311] setlocal 16 ............................. z = z + 1
+  [313] pushint8 1
+  [316] getlocal 8
+  [318] add
+  [319] setlocal 8
+  [321] endrepeat [255]
+  [324] getlocal 0 .............................. <f>
+  [326] pushcons 224 ............................ <"endday">
+  [328] eq ...................................... <f = "endday">
+  [329] getlocal 16 ............................. <z>
+  [331] pushint8 5 .............................. <5>
+  [334] gteq .................................... <z >= 5>
+  [335] and ..................................... <(f = "endday") and (z >= 5)>
+  [336] jmpifz [355] ............................ if (f = "endday") and (z >= 5) then / else
+  [339] pushint8 1 .............................. <1>
+  [342] getmovieprop 117 ........................ <the moviePath>
+  [345] pushcons 232 ............................ <"mirolo.dxr">
+  [347] joinstr ................................. <the moviePath & "mirolo.dxr">
+  [348] pusharglistnoret 2 ...................... <1, the moviePath & "mirolo.dxr">
+  [350] extcall 3 ............................... go(1, the moviePath & "mirolo.dxr")
+  [352] jmp [359]
+  [355] pusharglistnoret 0 ...................... <>
+  [357] localcall 1 ............................. bk2peoplefunk()
+  [359] jmp [676]
+  [362] getparam 0 .............................. <daynum>
+  [364] pushint8 3 .............................. <3>
+  [367] eq ...................................... <daynum = 3>
+  [368] jmpifz [676] ............................ if daynum = 3 then
+  [371] pushcons 240 ............................ <"endday">
+  [373] setlocal 0 .............................. f = "endday"
+  [375] pushint8 1 .............................. <1>
+  [378] setlocal 8
+  [380] getlocal 8
+  [382] pushzero ................................ <0>
+  [383] pushzero ................................ <0>
+  [384] pushzero ................................ <0>
+  [385] pushzero ................................ <0>
+  [386] pushzero ................................ <0>
+  [387] pushzero ................................ <0>
+  [388] pushint8 3 .............................. <3>
+  [391] pushzero ................................ <0>
+  [392] pushcons 248 ............................ <"Dprocess">
+  [394] pushcons 256 ............................ <"master">
+  [397] getfield ................................ <field("Dprocess", "master")>
+  [398] getchunk ................................ <line 3 of field "Dprocess" of castLib "master">
+  [399] pushint8 3 .............................. <3>
+  [402] get 1 ................................... <the number of items in line 3 of field "Dprocess" of castLib "master">
+  [404] lteq
+  [405] jmpifz [450] ............................ repeat with i = 1 to the number of items in line 3 of field "Dprocess" of castLib "master"
+  [408] pushzero ................................ <0>
+  [409] pushzero ................................ <0>
+  [410] pushzero ................................ <0>
+  [411] pushzero ................................ <0>
+  [412] getlocal 8 .............................. <i>
+  [414] pushzero ................................ <0>
+  [415] pushint8 3 .............................. <3>
+  [418] pushzero ................................ <0>
+  [419] pushcons 264 ............................ <"Dprocess">
+  [422] pushcons 272 ............................ <"master">
+  [425] getfield ................................ <field("Dprocess", "master")>
+  [426] getchunk ................................ <item i of line 3 of field "Dprocess" of castLib "master">
+  [427] pushcons 280 ............................ <"done">
+  [430] nteq .................................... <item i of line 3 of field "Dprocess" of castLib "master" <> "done">
+  [431] jmpifz [439] ............................ if item i of line 3 of field "Dprocess" of castLib "master" <> "done" then
+  [434] pushcons 288 ............................ <"notyet">
+  [437] setlocal 0 .............................. f = "notyet"
+  [439] pushint8 1
+  [442] getlocal 8
+  [444] add
+  [445] setlocal 8
+  [447] endrepeat [380]
+  [450] pushzero ................................ <0>
+  [451] setlocal 16 ............................. z = 0
+  [453] pushint8 1 .............................. <1>
+  [456] setlocal 8
+  [458] getlocal 8
+  [460] pushzero ................................ <0>
+  [461] pushzero ................................ <0>
+  [462] pushzero ................................ <0>
+  [463] pushzero ................................ <0>
+  [464] pushzero ................................ <0>
+  [465] pushzero ................................ <0>
+  [466] pushint8 6 .............................. <6>
+  [469] pushzero ................................ <0>
+  [470] pushcons 296 ............................ <"Dprocess">
+  [473] pushcons 304 ............................ <"master">
+  [476] getfield ................................ <field("Dprocess", "master")>
+  [477] getchunk ................................ <line 6 of field "Dprocess" of castLib "master">
+  [478] pushint8 3 .............................. <3>
+  [481] get 1 ................................... <the number of items in line 6 of field "Dprocess" of castLib "master">
+  [483] lteq
+  [484] jmpifz [532] ............................ repeat with i = 1 to the number of items in line 6 of field "Dprocess" of castLib "master"
+  [487] pushzero ................................ <0>
+  [488] pushzero ................................ <0>
+  [489] pushzero ................................ <0>
+  [490] pushzero ................................ <0>
+  [491] getlocal 8 .............................. <i>
+  [493] pushzero ................................ <0>
+  [494] pushint8 6 .............................. <6>
+  [497] pushzero ................................ <0>
+  [498] pushcons 312 ............................ <"Dprocess">
+  [501] pushcons 320 ............................ <"master">
+  [504] getfield ................................ <field("Dprocess", "master")>
+  [505] getchunk ................................ <item i of line 6 of field "Dprocess" of castLib "master">
+  [506] pushcons 328 ............................ <"done">
+  [509] eq ...................................... <item i of line 6 of field "Dprocess" of castLib "master" = "done">
+  [510] jmpifz [521] ............................ if item i of line 6 of field "Dprocess" of castLib "master" = "done" then
+  [513] getlocal 16 ............................. <z>
+  [515] pushint8 1 .............................. <1>
+  [518] add ..................................... <z + 1>
+  [519] setlocal 16 ............................. z = z + 1
+  [521] pushint8 1
+  [524] getlocal 8
+  [526] add
+  [527] setlocal 8
+  [529] endrepeat [458]
+  [532] pushzero ................................ <0>
+  [533] setlocal 24 ............................. t = 0
+  [535] pushint8 1 .............................. <1>
+  [538] setlocal 8
+  [540] getlocal 8
+  [542] pushcons 336 ............................ <"plane">
+  [545] pushcons 344 ............................ <"master">
+  [548] getfield ................................ <field("plane", "master")>
+  [549] pushint8 4 .............................. <4>
+  [552] get 1 ................................... <the number of lines in field "plane" of castLib "master">
+  [554] lteq
+  [555] jmpifz [601] ............................ repeat with i = 1 to the number of lines in field "plane" of castLib "master"
+  [558] pushzero ................................ <0>
+  [559] pushzero ................................ <0>
+  [560] pushzero ................................ <0>
+  [561] pushzero ................................ <0>
+  [562] pushzero ................................ <0>
+  [563] pushzero ................................ <0>
+  [564] getlocal 8 .............................. <i>
+  [566] pushzero ................................ <0>
+  [567] pushcons 352 ............................ <"plane">
+  [570] pushcons 360 ............................ <"master">
+  [573] getfield ................................ <field("plane", "master")>
+  [574] getchunk ................................ <line i of field "plane" of castLib "master">
+  [575] pushcons 368 ............................ <"empty">
+  [578] eq ...................................... <line i of field "plane" of castLib "master" = "empty">
+  [579] jmpifz [590] ............................ if line i of field "plane" of castLib "master" = "empty" then
+  [582] getlocal 24 ............................. <t>
+  [584] pushint8 1 .............................. <1>
+  [587] add ..................................... <t + 1>
+  [588] setlocal 24 ............................. t = t + 1
+  [590] pushint8 1
+  [593] getlocal 8
+  [595] add
+  [596] setlocal 8
+  [598] endrepeat [540]
+  [601] getlocal 0 .............................. <f>
+  [603] pushcons 376 ............................ <"endday">
+  [606] eq ...................................... <f = "endday">
+  [607] getlocal 16 ............................. <z>
+  [609] pushint8 9 .............................. <9>
+  [612] gteq .................................... <z >= 9>
+  [613] and ..................................... <(f = "endday") and (z >= 9)>
+  [614] getlocal 24 ............................. <t>
+  [616] pushzero ................................ <0>
+  [617] eq ...................................... <t = 0>
+  [618] and ..................................... <(f = "endday") and (z >= 9) and (t = 0)>
+  [619] jmpifz [672] ............................ if (f = "endday") and (z >= 9) and (t = 0) then / else
+  [622] pushint8 1 .............................. <1>
+  [625] getmovieprop 117 ........................ <the moviePath>
+  [628] pushcons 384 ............................ <"endmovi1.dxr">
+  [631] joinstr ................................. <the moviePath & "endmovi1.dxr">
+  [632] pusharglistnoret 2 ...................... <1, the moviePath & "endmovi1.dxr">
+  [634] extcall 3 ............................... go(1, the moviePath & "endmovi1.dxr")
+  [636] pushint8 103 ............................ <103>
+  [639] setlocal 32
+  [641] getlocal 32
+  [643] pushint8 110 ............................ <110>
+  [646] lteq
+  [647] jmpifz [669] ............................ repeat with s = 103 to 110
+  [650] getlocal 32 ............................. <s>
+  [652] pusharglist 1 ........................... <s>
+  [654] extcall 12 .............................. <sprite(s)>
+  [656] pushzero ................................ <0>
+  [657] setobjprop 13 ........................... sprite(s).visible = 0
+  [659] pushint8 1
+  [662] getlocal 32
+  [664] add
+  [665] setlocal 32
+  [667] endrepeat [641]
+  [669] jmp [676]
+  [672] pusharglistnoret 0 ...................... <>
+  [674] localcall 1 ............................. bk2peoplefunk()
+  [676] ret
+end
+
+on bk2peoplefunk
+  [  0] ret
+end

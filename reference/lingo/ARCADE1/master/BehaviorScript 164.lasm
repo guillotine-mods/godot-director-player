@@ -1,0 +1,29 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 20 ............................. <20>
+  [ 10] lteq
+  [ 11] jmpifz [ 45] ............................ repeat with i = 1 to 20
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pushzero ................................ <0>
+  [ 17] pusharglistnoret 2 ...................... <i, 0>
+  [ 19] extcall 3 ............................... puppetSprite(i, 0)
+  [ 21] getlocal 0 .............................. <i>
+  [ 23] pusharglist 1 ........................... <i>
+  [ 25] extcall 48 .............................. <sprite(i)>
+  [ 28] pushint8 1 .............................. <1>
+  [ 31] setobjprop 49 ........................... sprite(i).visible = 1
+  [ 34] pushint8 1
+  [ 37] getlocal 0
+  [ 39] add
+  [ 40] setlocal 0
+  [ 42] endrepeat [  5]
+  [ 45] pushcons 0 .............................. <EMPTY>
+  [ 47] pushint8 3 .............................. <3>
+  [ 50] set 0 ................................... set the keyDownScript to EMPTY
+  [ 52] pushcons 8 .............................. <"mainmenu">
+  [ 54] pusharglistnoret 1 ...................... <"mainmenu">
+  [ 56] extcall 2 ............................... go("mainmenu")
+  [ 58] ret
+end

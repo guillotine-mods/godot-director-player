@@ -1,0 +1,25 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 50 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 104 ........................... <whichsnd>
+  [ 12] pushcons 0 .............................. <"rachcome">
+  [ 14] nteq .................................... <whichsnd <> "rachcome">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "rachcome")>
+  [ 16] jmpifz [ 52] ............................ if not soundBusy(2) or (whichsnd <> "rachcome") then
+  [ 19] pushint8 2 .............................. <2>
+  [ 22] pushint8 200 ............................ <200>
+  [ 25] pushint8 1 .............................. <1>
+  [ 28] set 4 ................................... set the volume of sound 2 to 200
+  [ 30] pushsymb 42 ............................. <#playFile>
+  [ 33] pushint8 2 .............................. <2>
+  [ 36] getglobal 32 ............................ <effectspath>
+  [ 39] pushcons 8 .............................. <"rachcome.aif">
+  [ 41] joinstr ................................. <effectspath & "rachcome.aif">
+  [ 42] pusharglistnoret 3 ...................... <2, effectspath & "rachcome.aif">
+  [ 44] extcall 43 .............................. sound playFile 2, effectspath & "rachcome.aif"
+  [ 47] pushcons 16 ............................. <"rachcome">
+  [ 49] setglobal 104 ........................... whichsnd = "rachcome"
+  [ 52] ret
+end

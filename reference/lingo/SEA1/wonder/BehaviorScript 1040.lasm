@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pusharglist 1 ........................... <2>
+  [  5] extcall 50 .............................. <soundBusy(2)>
+  [  8] not ..................................... <not soundBusy(2)>
+  [  9] getglobal 97 ............................ <whichsnd>
+  [ 12] pushcons 0 .............................. <"dive1">
+  [ 14] nteq .................................... <whichsnd <> "dive1">
+  [ 15] or ...................................... <not soundBusy(2) or (whichsnd <> "dive1")>
+  [ 16] jmpifz [ 40] ............................ if not soundBusy(2) or (whichsnd <> "dive1") then
+  [ 19] pushsymb 42 ............................. <#playFile>
+  [ 22] pushint8 2 .............................. <2>
+  [ 25] getglobal 21 ............................ <effectspath>
+  [ 27] pushcons 8 .............................. <"dive1.aif">
+  [ 29] joinstr ................................. <effectspath & "dive1.aif">
+  [ 30] pusharglistnoret 3 ...................... <2, effectspath & "dive1.aif">
+  [ 32] extcall 43 .............................. sound playFile 2, effectspath & "dive1.aif"
+  [ 35] pushcons 16 ............................. <"dive1">
+  [ 37] setglobal 97 ............................ whichsnd = "dive1"
+  [ 40] ret
+end

@@ -1,0 +1,168 @@
+on mouseUp
+  [  0] pushsymb 26 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 66 ............................ <effectspath>
+  [  8] pushcons 0 .............................. <"clik1.aif">
+  [ 10] joinstr ................................. <effectspath & "clik1.aif">
+  [ 11] pusharglistnoret 3 ...................... <1, effectspath & "clik1.aif">
+  [ 13] extcall 27 .............................. sound playFile 1, effectspath & "clik1.aif"
+  [ 15] pushint8 1 .............................. <1>
+  [ 18] setlocal 0 .............................. i = 1
+  [ 20] getlocal 0 .............................. <i>
+  [ 22] pushcons 8 .............................. <"objectsfield">
+  [ 24] pushcons 16 ............................. <"master">
+  [ 26] getfield ................................ <field("objectsfield", "master")>
+  [ 27] pushint8 4 .............................. <4>
+  [ 30] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 32] pushint8 1 .............................. <1>
+  [ 35] sub ..................................... <the number of lines in field "objectsfield" of castLib "master" - 1>
+  [ 36] lt ...................................... <i < (the number of lines in field "objectsfield" of castLib "master" - 1)>
+  [ 37] pushzero ................................ <0>
+  [ 38] pushzero ................................ <0>
+  [ 39] pushzero ................................ <0>
+  [ 40] pushzero ................................ <0>
+  [ 41] pushzero ................................ <0>
+  [ 42] pushzero ................................ <0>
+  [ 43] getlocal 0 .............................. <i>
+  [ 45] pushzero ................................ <0>
+  [ 46] pushcons 24 ............................. <"objectsfield">
+  [ 48] pushcons 32 ............................. <"master">
+  [ 50] getfield ................................ <field("objectsfield", "master")>
+  [ 51] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 52] pushcons 40 ............................. <"empty">
+  [ 54] nteq .................................... <line i of field "objectsfield" of castLib "master" <> "empty">
+  [ 55] and ..................................... <(i < (the number of lines in field "objectsfield" of castLib "master" - 1)) and (line i of field "objectsfield" of castLib "master" <> "empty")>
+  [ 56] jmpifz [264] ............................ repeat while (i < (the number of lines in field "objectsfield" of castLib "master" - 1)) and (line i of field "objectsfield" of castLib "master" <> "empty")
+  [ 59] pushzero ................................ <0>
+  [ 60] pushzero ................................ <0>
+  [ 61] pushzero ................................ <0>
+  [ 62] pushzero ................................ <0>
+  [ 63] pushzero ................................ <0>
+  [ 64] pushzero ................................ <0>
+  [ 65] getlocal 0 .............................. <i>
+  [ 67] pushzero ................................ <0>
+  [ 68] pushcons 48 ............................. <"objectsfield">
+  [ 70] pushcons 56 ............................. <"master">
+  [ 72] getfield ................................ <field("objectsfield", "master")>
+  [ 73] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 74] setlocal 8 .............................. theobj = line i of field "objectsfield" of castLib "master"
+  [ 76] getlocal 0 .............................. <i>
+  [ 78] pushint8 1 .............................. <1>
+  [ 81] add ..................................... <i + 1>
+  [ 82] setlocal 16 ............................. y = i + 1
+  [ 84] getlocal 16 ............................. <y>
+  [ 86] pushcons 64 ............................. <"objectsfield">
+  [ 88] pushcons 72 ............................. <"master">
+  [ 90] getfield ................................ <field("objectsfield", "master")>
+  [ 91] pushint8 4 .............................. <4>
+  [ 94] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 96] lt ...................................... <y < the number of lines in field "objectsfield" of castLib "master">
+  [ 97] pushzero ................................ <0>
+  [ 98] pushzero ................................ <0>
+  [ 99] pushzero ................................ <0>
+  [100] pushzero ................................ <0>
+  [101] pushzero ................................ <0>
+  [102] pushzero ................................ <0>
+  [103] getlocal 16 ............................. <y>
+  [105] pushzero ................................ <0>
+  [106] pushcons 80 ............................. <"objectsfield">
+  [108] pushcons 88 ............................. <"master">
+  [110] getfield ................................ <field("objectsfield", "master")>
+  [111] getchunk ................................ <line y of field "objectsfield" of castLib "master">
+  [112] pushcons 96 ............................. <"empty">
+  [114] nteq .................................... <line y of field "objectsfield" of castLib "master" <> "empty">
+  [115] and ..................................... <(y < the number of lines in field "objectsfield" of castLib "master") and (line y of field "objectsfield" of castLib "master" <> "empty")>
+  [116] jmpifz [253] ............................ repeat while (y < the number of lines in field "objectsfield" of castLib "master") and (line y of field "objectsfield" of castLib "master" <> "empty")
+  [119] getlocal 8 .............................. <theobj>
+  [121] pushzero ................................ <0>
+  [122] pushzero ................................ <0>
+  [123] pushzero ................................ <0>
+  [124] pushzero ................................ <0>
+  [125] pushzero ................................ <0>
+  [126] pushzero ................................ <0>
+  [127] getlocal 16 ............................. <y>
+  [129] pushzero ................................ <0>
+  [130] pushcons 104 ............................ <"objectsfield">
+  [132] pushcons 112 ............................ <"master">
+  [134] getfield ................................ <field("objectsfield", "master")>
+  [135] getchunk ................................ <line y of field "objectsfield" of castLib "master">
+  [136] eq ...................................... <theobj = line y of field "objectsfield" of castLib "master">
+  [137] jmpifz [242] ............................ if theobj = line y of field "objectsfield" of castLib "master" then
+  [140] getlocal 16 ............................. <y>
+  [142] pushint8 1 .............................. <1>
+  [145] add ..................................... <y + 1>
+  [146] setlocal 24
+  [148] getlocal 24
+  [150] pushcons 120 ............................ <"objectsfield">
+  [152] pushcons 128 ............................ <"master">
+  [154] getfield ................................ <field("objectsfield", "master")>
+  [155] pushint8 4 .............................. <4>
+  [158] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [160] lteq
+  [161] jmpifz [209] ............................ repeat with z = y + 1 to the number of lines in field "objectsfield" of castLib "master"
+  [164] pushzero ................................ <0>
+  [165] pushzero ................................ <0>
+  [166] pushzero ................................ <0>
+  [167] pushzero ................................ <0>
+  [168] pushzero ................................ <0>
+  [169] pushzero ................................ <0>
+  [170] getlocal 24 ............................. <z>
+  [172] pushzero ................................ <0>
+  [173] pushcons 136 ............................ <"objectsfield">
+  [175] pushcons 144 ............................ <"master">
+  [177] getfield ................................ <field("objectsfield", "master")>
+  [178] getchunk ................................ <line z of field "objectsfield" of castLib "master">
+  [179] pushzero ................................ <0>
+  [180] pushzero ................................ <0>
+  [181] pushzero ................................ <0>
+  [182] pushzero ................................ <0>
+  [183] pushzero ................................ <0>
+  [184] pushzero ................................ <0>
+  [185] getlocal 24 ............................. <z>
+  [187] pushint8 1 .............................. <1>
+  [190] sub ..................................... <z - 1>
+  [191] pushzero ................................ <0>
+  [192] pushcons 152 ............................ <"objectsfield">
+  [194] pushcons 160 ............................ <"master">
+  [196] putchunk 22 ............................. put line z of field "objectsfield" of castLib "master" into line z - 1 of field "objectsfield" of castLib "master"
+  [198] pushint8 1
+  [201] getlocal 24
+  [203] add
+  [204] setlocal 24
+  [206] endrepeat [148]
+  [209] pushcons 168 ............................ <"empty">
+  [211] pushzero ................................ <0>
+  [212] pushzero ................................ <0>
+  [213] pushzero ................................ <0>
+  [214] pushzero ................................ <0>
+  [215] pushzero ................................ <0>
+  [216] pushzero ................................ <0>
+  [217] pushcons 176 ............................ <"objectsfield">
+  [219] pushcons 184 ............................ <"master">
+  [221] getfield ................................ <field("objectsfield", "master")>
+  [222] pushint8 4 .............................. <4>
+  [225] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [227] pushzero ................................ <0>
+  [228] pushcons 192 ............................ <"objectsfield">
+  [230] pushcons 200 ............................ <"master">
+  [232] putchunk 22 ............................. put "empty" into line the number of lines in field "objectsfield" of castLib "master" of field "objectsfield" of castLib "master"
+  [234] pusharglistnoret 0 ...................... <>
+  [236] extcall 55 .............................. put 
+  [239] jmp [250] ............................... next repeat
+  [242] getlocal 16 ............................. <y>
+  [244] pushint8 1 .............................. <1>
+  [247] add ..................................... <y + 1>
+  [248] setlocal 16 ............................. y = y + 1
+  [250] endrepeat [ 84]
+  [253] getlocal 0 .............................. <i>
+  [255] pushint8 1 .............................. <1>
+  [258] add ..................................... <i + 1>
+  [259] setlocal 0 .............................. i = i + 1
+  [261] endrepeat [ 20]
+  [264] getmovieprop 32 ......................... <the stage>
+  [267] starttell ............................... tell the stage
+  [268] pusharglistnoret 0 ...................... <>
+  [270] tellcall 58 ............................. displayobject()
+  [273] endtell
+  [274] ret
+end

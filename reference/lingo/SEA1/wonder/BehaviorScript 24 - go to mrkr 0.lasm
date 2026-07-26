@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 1 ............................... whatodoeveryframe()
+  [  4] pushzero ................................ <0>
+  [  5] pusharglist 1 ........................... <0>
+  [  7] extcall 2 ............................... <marker(0)>
+  [  9] pusharglistnoret 1 ...................... <marker(0)>
+  [ 11] extcall 3 ............................... go(marker(0))
+  [ 13] ret
+end

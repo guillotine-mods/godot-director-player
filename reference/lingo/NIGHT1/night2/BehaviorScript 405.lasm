@@ -1,0 +1,17 @@
+on mouseUp
+  [  0] pushsymb 107 ............................ <#stop>
+  [  3] pushint8 2 .............................. <2>
+  [  6] pusharglistnoret 2 ...................... <2>
+  [  8] extcall 43 .............................. sound stop 2
+  [ 11] pushsymb 42 ............................. <#playFile>
+  [ 14] pushint8 1 .............................. <1>
+  [ 17] getglobal 31 ............................ <soundspath>
+  [ 19] pushcons 0 .............................. <"mirolo1.aif">
+  [ 21] joinstr ................................. <soundspath & "mirolo1.aif">
+  [ 22] pusharglistnoret 3 ...................... <1, soundspath & "mirolo1.aif">
+  [ 24] extcall 43 .............................. sound playFile 1, soundspath & "mirolo1.aif"
+  [ 27] pushcons 8 .............................. <"mirolospk">
+  [ 29] pusharglistnoret 1 ...................... <"mirolospk">
+  [ 31] extcall 67 .............................. play frame "mirolospk"
+  [ 34] ret
+end

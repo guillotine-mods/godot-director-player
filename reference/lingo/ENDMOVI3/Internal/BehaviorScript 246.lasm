@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 6 .............................. <#playFile>
+  [  2] pushint8 3 .............................. <3>
+  [  5] getglobal 8 ............................. <tlkpath>
+  [  7] pushcons 0 .............................. <"choke.aif">
+  [  9] joinstr ................................. <tlkpath & "choke.aif">
+  [ 10] pusharglistnoret 3 ...................... <3, tlkpath & "choke.aif">
+  [ 12] extcall 7 ............................... sound playFile 3, tlkpath & "choke.aif"
+  [ 14] ret
+end

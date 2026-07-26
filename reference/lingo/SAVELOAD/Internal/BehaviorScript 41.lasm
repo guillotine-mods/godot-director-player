@@ -1,0 +1,47 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"points">
+  [  2] pushcons 8 .............................. <"master">
+  [  4] getfield ................................ <field("points", "master")>
+  [  5] setglobal 11 ............................ saveF = field("points", "master")
+  [  7] pushcons 16 ............................. <"plane">
+  [  9] pushcons 24 ............................. <"master">
+  [ 11] getfield ................................ <field("plane", "master")>
+  [ 12] setglobal 10 ............................ saveE = field("plane", "master")
+  [ 14] pushcons 32 ............................. <"shellfield">
+  [ 16] pushcons 40 ............................. <"master">
+  [ 18] getfield ................................ <field("shellfield", "master")>
+  [ 19] setglobal 9 ............................. saveD = field("shellfield", "master")
+  [ 21] pushcons 48 ............................. <"objectsfield">
+  [ 23] pushcons 56 ............................. <"master">
+  [ 25] getfield ................................ <field("objectsfield", "master")>
+  [ 26] setglobal 2 ............................. saveC = field("objectsfield", "master")
+  [ 28] getglobal 79 ............................ <egozh>
+  [ 31] pushcons 64 ............................. <",">
+  [ 33] joinstr ................................. <egozh & ",">
+  [ 34] getglobal 80 ............................ <egozv>
+  [ 37] joinstr ................................. <egozh & "," & egozv>
+  [ 38] pushcons 72 ............................. <",">
+  [ 40] joinstr ................................. <egozh & "," & egozv & ",">
+  [ 41] getglobal 73 ............................ <syz>
+  [ 44] joinstr ................................. <egozh & "," & egozv & "," & syz>
+  [ 45] setglobal 78 ............................ savei = egozh & "," & egozv & "," & syz
+  [ 48] pushcons 80 ............................. <"jokefield">
+  [ 50] pushcons 88 ............................. <"master">
+  [ 52] getfield ................................ <field("jokefield", "master")>
+  [ 53] setglobal 59 ............................ saveG = field("jokefield", "master")
+  [ 56] pushcons 96 ............................. <"Dprocess">
+  [ 58] pushcons 104 ............................ <"master">
+  [ 60] getfield ................................ <field("Dprocess", "master")>
+  [ 61] setglobal 67 ............................ saveH = field("Dprocess", "master")
+  [ 64] pushcons 112 ............................ <"clickoncharacter">
+  [ 66] pushcons 120 ............................ <"master">
+  [ 68] getfield ................................ <field("clickoncharacter", "master")>
+  [ 69] setglobal 24 ............................ saveB = field("clickoncharacter", "master")
+  [ 71] pushcons 128 ............................ <"fillnames2">
+  [ 73] getglobal 3 ............................. <savepath>
+  [ 75] pushcons 136 ............................ <"hezsave.dir">
+  [ 77] joinstr ................................. <savepath & "hezsave.dir">
+  [ 78] pusharglistnoret 2 ...................... <"fillnames2", savepath & "hezsave.dir">
+  [ 80] extcall 4 ............................... go("fillnames2", savepath & "hezsave.dir")
+  [ 82] ret
+end

@@ -1,0 +1,31 @@
+on tlkpath x
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 5 ............................ <the machineType>
+  [  4] pushint8 256 ............................ <256>
+  [  7] eq ...................................... <the machineType = 256>
+  [  8] jmpifz [ 18] ............................ if the machineType = 256 then / else
+  [ 11] pushcons 0 .............................. <"\\">
+  [ 13] setlocal 0 .............................. y = "\\"
+  [ 15] jmp [ 22]
+  [ 18] pushcons 8 .............................. <":">
+  [ 20] setlocal 0 .............................. y = ":"
+  [ 22] getmovieprop 3 .......................... <the moviePath>
+  [ 24] pushcons 16 ............................. <"fx">
+  [ 26] joinstr ................................. <the moviePath & "fx">
+  [ 27] getlocal 0 .............................. <y>
+  [ 29] joinstr ................................. <the moviePath & "fx" & y>
+  [ 30] setglobal 21 ............................ effectspath = the moviePath & "fx" & y
+  [ 32] getglobal 6 ............................. <soundspathstart>
+  [ 34] getparam 0 .............................. <x>
+  [ 36] joinstr ................................. <soundspathstart & x>
+  [ 37] getlocal 0 .............................. <y>
+  [ 39] joinstr ................................. <soundspathstart & x & y>
+  [ 40] setglobal 20 ............................ tlkpath = soundspathstart & x & y
+  [ 42] getglobal 6 ............................. <soundspathstart>
+  [ 44] getparam 0 .............................. <x>
+  [ 46] joinstr ................................. <soundspathstart & x>
+  [ 47] getlocal 0 .............................. <y>
+  [ 49] joinstr ................................. <soundspathstart & x & y>
+  [ 50] setglobal 22 ............................ soundspath = soundspathstart & x & y
+  [ 52] ret
+end

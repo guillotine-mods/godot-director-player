@@ -1,0 +1,39 @@
+on exitFrame
+  [  0] pushint8 93 ............................. <93>
+  [  2] pushint8 1 .............................. <1>
+  [  4] pushint8 25 ............................. <25>
+  [  6] set 6 ................................... set the visible of sprite 93 to 1
+  [  8] pushcons 0 .............................. <"trynum">
+  [ 10] pushint8 1 .............................. <1>
+  [ 12] pushint8 2 .............................. <2>
+  [ 14] get 11 .................................. <the text of field "trynum" of castLib 1>
+  [ 16] pusharglist 1 ........................... <the text of field "trynum" of castLib 1>
+  [ 18] extcall 4 ............................... <value(the text of field "trynum" of castLib 1)>
+  [ 20] pushint8 1 .............................. <1>
+  [ 22] add ..................................... <value(the text of field "trynum" of castLib 1) + 1>
+  [ 23] pushcons 8 .............................. <"trynum">
+  [ 25] pushzero ................................ <0>
+  [ 26] put 22 .................................. put value(the text of field "trynum" of castLib 1) + 1 into field "trynum"
+  [ 28] pushcons 16 ............................. <"trynum">
+  [ 30] pushint8 1 .............................. <1>
+  [ 32] pushint8 2 .............................. <2>
+  [ 34] get 11 .................................. <the text of field "trynum" of castLib 1>
+  [ 36] pusharglist 1 ........................... <the text of field "trynum" of castLib 1>
+  [ 38] extcall 4 ............................... <value(the text of field "trynum" of castLib 1)>
+  [ 40] pushint8 2 .............................. <2>
+  [ 42] gt ...................................... <value(the text of field "trynum" of castLib 1) > 2>
+  [ 43] jmpifz [ 57] ............................ if value(the text of field "trynum" of castLib 1) > 2 then / else
+  [ 46] pushint8 10 ............................. <10>
+  [ 48] pushint8 1 .............................. <1>
+  [ 50] pushint8 25 ............................. <25>
+  [ 52] set 6 ................................... set the visible of sprite 10 to 1
+  [ 54] jmp [ 64]
+  [ 57] pushint8 10 ............................. <10>
+  [ 59] pushzero ................................ <0>
+  [ 60] pushint8 25 ............................. <25>
+  [ 62] set 6 ................................... set the visible of sprite 10 to 0
+  [ 64] pushcons 24 ............................. <"goagain">
+  [ 66] pusharglistnoret 1 ...................... <"goagain">
+  [ 68] extcall 5 ............................... go("goagain")
+  [ 70] ret
+end

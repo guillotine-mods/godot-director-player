@@ -1,0 +1,8 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"joke.dxr">
+  [  2] pusharglist 1 ........................... <"joke.dxr">
+  [  4] extcall 2 ............................... <window("joke.dxr")>
+  [  6] pusharglistnoret 1 ...................... <window("joke.dxr")>
+  [  8] extcall 1 ............................... forget(window("joke.dxr"))
+  [ 10] ret
+end

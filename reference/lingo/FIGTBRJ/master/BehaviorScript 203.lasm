@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 5 .............................. <#playFile>
+  [  2] pushint8 3 .............................. <3>
+  [  5] getglobal 7 ............................. <effectspath>
+  [  7] pushcons 0 .............................. <"brjhead.aif">
+  [  9] joinstr ................................. <effectspath & "brjhead.aif">
+  [ 10] pusharglistnoret 3 ...................... <3, effectspath & "brjhead.aif">
+  [ 12] extcall 6 ............................... sound playFile 3, effectspath & "brjhead.aif"
+  [ 14] ret
+end

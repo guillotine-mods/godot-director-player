@@ -1,0 +1,14 @@
+on exitFrame
+  [  0] pushzero ................................ <0>
+  [  1] pushcons 0 .............................. <"trynum">
+  [  3] pushzero ................................ <0>
+  [  4] put 22 .................................. put 0 into field "trynum"
+  [  6] pushsymb 3 .............................. <#playFile>
+  [  8] pushint8 1 .............................. <1>
+  [ 11] getglobal 23 ............................ <effectspath>
+  [ 13] pushcons 8 .............................. <"dive1.aif">
+  [ 15] joinstr ................................. <effectspath & "dive1.aif">
+  [ 16] pusharglistnoret 3 ...................... <1, effectspath & "dive1.aif">
+  [ 18] extcall 4 ............................... sound playFile 1, effectspath & "dive1.aif"
+  [ 20] ret
+end

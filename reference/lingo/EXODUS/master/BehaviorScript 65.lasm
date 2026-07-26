@@ -1,0 +1,22 @@
+on exitFrame
+  [  0] pushsymb 21 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 23 ............................ <tlkpath>
+  [  7] pushcons 0 .............................. <"hez9.aif">
+  [  9] joinstr ................................. <tlkpath & "hez9.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, tlkpath & "hez9.aif">
+  [ 12] extcall 22 .............................. sound playFile 1, tlkpath & "hez9.aif"
+  [ 14] pushint8 2 .............................. <2>
+  [ 17] pusharglist 1 ........................... <2>
+  [ 19] extcall 28 .............................. <soundBusy(2)>
+  [ 21] not ..................................... <not soundBusy(2)>
+  [ 22] jmpifz [ 39] ............................ if not soundBusy(2) then
+  [ 25] pushsymb 21 ............................. <#playFile>
+  [ 27] pushint8 2 .............................. <2>
+  [ 30] getglobal 24 ............................ <effectspath>
+  [ 32] pushcons 8 .............................. <"sea.aif">
+  [ 34] joinstr ................................. <effectspath & "sea.aif">
+  [ 35] pusharglistnoret 3 ...................... <2, effectspath & "sea.aif">
+  [ 37] extcall 22 .............................. sound playFile 2, effectspath & "sea.aif"
+  [ 39] ret
+end

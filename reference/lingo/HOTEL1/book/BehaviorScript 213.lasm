@@ -1,0 +1,22 @@
+on exitFrame
+  [  0] pushint8 32 ............................. <32>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 35 ............................. <35>
+  [ 10] lteq
+  [ 11] jmpifz [ 35] ............................ repeat with i = 32 to 35
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pusharglist 1 ........................... <i>
+  [ 18] extcall 12 .............................. <sprite(i)>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] setobjprop 13 ........................... sprite(i).visible = 1
+  [ 25] pushint8 1
+  [ 28] getlocal 0
+  [ 30] add
+  [ 31] setlocal 0
+  [ 33] endrepeat [  5]
+  [ 35] pushcons 0 .............................. <"downstairs2">
+  [ 37] pusharglistnoret 1 ...................... <"downstairs2">
+  [ 39] extcall 3 ............................... go("downstairs2")
+  [ 41] ret
+end

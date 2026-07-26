@@ -1,0 +1,26 @@
+on mouseUp
+  [  0] pushint8 15 ............................. <15>
+  [  3] setlocal 0
+  [  5] getlocal 0
+  [  7] pushint8 30 ............................. <30>
+  [ 10] lteq
+  [ 11] jmpifz [ 35] ............................ repeat with i = 15 to 30
+  [ 14] getlocal 0 .............................. <i>
+  [ 16] pusharglist 1 ........................... <i>
+  [ 18] extcall 14 .............................. <sprite(i)>
+  [ 20] pushint8 1 .............................. <1>
+  [ 23] setobjprop 15 ........................... sprite(i).visible = 1
+  [ 25] pushint8 1
+  [ 28] getlocal 0
+  [ 30] add
+  [ 31] setlocal 0
+  [ 33] endrepeat [  5]
+  [ 35] getglobal 33 ............................ <cdsavepath>
+  [ 38] pushcons 0 .............................. <"saveload.dxr">
+  [ 40] joinstr ................................. <cdsavepath & "saveload.dxr">
+  [ 41] pusharglist 1 ........................... <cdsavepath & "saveload.dxr">
+  [ 43] extcall 36 .............................. <window(cdsavepath & "saveload.dxr")>
+  [ 46] pusharglistnoret 1 ...................... <window(cdsavepath & "saveload.dxr")>
+  [ 48] extcall 35 .............................. forget(window(cdsavepath & "saveload.dxr"))
+  [ 51] ret
+end

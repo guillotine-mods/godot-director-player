@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] getglobal 27 ............................ <globalday>
+  [  2] pushint8 2 .............................. <2>
+  [  5] nteq .................................... <globalday <> 2>
+  [  6] jmpifz [ 15] ............................ if globalday <> 2 then
+  [  9] pushcons 0 .............................. <"leddown">
+  [ 11] pusharglistnoret 1 ...................... <"leddown">
+  [ 13] extcall 22 .............................. go("leddown")
+  [ 15] ret
+end

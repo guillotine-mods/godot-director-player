@@ -1,0 +1,10 @@
+on exitFrame
+  [  0] pushsymb 10 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  4] getglobal 15 ............................ <soundspath>
+  [  6] pushcons 0 .............................. <"zigend64.aif">
+  [  8] joinstr ................................. <soundspath & "zigend64.aif">
+  [  9] pusharglistnoret 3 ...................... <1, soundspath & "zigend64.aif">
+  [ 11] extcall 11 .............................. sound playFile 1, soundspath & "zigend64.aif"
+  [ 13] ret
+end

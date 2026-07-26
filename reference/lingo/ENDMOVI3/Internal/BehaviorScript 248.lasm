@@ -1,0 +1,21 @@
+on exitFrame
+  [  0] pushint8 2 .............................. <2>
+  [  3] pushint8 75 ............................. <75>
+  [  6] pushint8 1 .............................. <1>
+  [  9] set 4 ................................... set the volume of sound 2 to 75
+  [ 11] pushsymb 6 .............................. <#playFile>
+  [ 13] pushint8 1 .............................. <1>
+  [ 16] getglobal 8 ............................. <tlkpath>
+  [ 18] pushcons 0 .............................. <"hez42.aif">
+  [ 20] joinstr ................................. <tlkpath & "hez42.aif">
+  [ 21] pusharglistnoret 3 ...................... <1, tlkpath & "hez42.aif">
+  [ 23] extcall 7 ............................... sound playFile 1, tlkpath & "hez42.aif"
+  [ 25] pushsymb 6 .............................. <#playFile>
+  [ 27] pushint8 2 .............................. <2>
+  [ 30] getglobal 23 ............................ <effectspath>
+  [ 32] pushcons 8 .............................. <"drama.aif">
+  [ 34] joinstr ................................. <effectspath & "drama.aif">
+  [ 35] pusharglistnoret 3 ...................... <2, effectspath & "drama.aif">
+  [ 37] extcall 7 ............................... sound playFile 2, effectspath & "drama.aif"
+  [ 39] ret
+end

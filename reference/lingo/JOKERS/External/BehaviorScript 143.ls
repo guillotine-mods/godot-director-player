@@ -1,0 +1,26 @@
+on exitFrame
+  global egozv, egozh, nextroomdata, meetings, wreck, ifmovie
+  y2 = 207
+  x2 = 460
+  put "done" into item 6 of meetings
+  put x2 into item 2 of nextroomdata
+  put y2 into item 3 of nextroomdata
+  put "hall1" into item 1 of nextroomdata
+  nextroomdata = "000"
+  put "done" into item 4 of wreck
+  go("hall1b4", "sea1.dir")
+  sprite(22).visible = 1
+  sprite(23).visible = 1
+  sprite(24).visible = 1
+  sprite(29).visible = 0
+  sprite(14).visible = 0
+  egozv = 207
+  egozh = 460
+  puppetSprite(30, 1)
+  set the locV of sprite 30 to egozv
+  set the locH of sprite 30 to egozh
+  sprite(30).visible = 1
+  displayobject()
+  cursorfunk()
+  ifmovie = "0,0"
+end

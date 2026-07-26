@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushcons 0 .............................. <"sea">
+  [  2] pusharglistnoret 1 ...................... <"sea">
+  [  4] extcall 13 .............................. soundspath("sea")
+  [  6] pushcons 8 .............................. <"0">
+  [  8] pushcons 16 ............................. <"trynum">
+  [ 10] pushzero ................................ <0>
+  [ 11] put 22 .................................. put "0" into field "trynum"
+  [ 13] pushsymb 5 .............................. <#playFile>
+  [ 15] pushint8 1 .............................. <1>
+  [ 18] getglobal 7 ............................. <effectspath>
+  [ 20] pushcons 24 ............................. <"wreck3.aif">
+  [ 22] joinstr ................................. <effectspath & "wreck3.aif">
+  [ 23] pusharglistnoret 3 ...................... <1, effectspath & "wreck3.aif">
+  [ 25] extcall 6 ............................... sound playFile 1, effectspath & "wreck3.aif"
+  [ 27] pushsymb 5 .............................. <#playFile>
+  [ 29] pushint8 2 .............................. <2>
+  [ 32] getglobal 7 ............................. <effectspath>
+  [ 34] pushcons 32 ............................. <"action.aif">
+  [ 36] joinstr ................................. <effectspath & "action.aif">
+  [ 37] pusharglistnoret 3 ...................... <2, effectspath & "action.aif">
+  [ 39] extcall 6 ............................... sound playFile 2, effectspath & "action.aif"
+  [ 41] ret
+end

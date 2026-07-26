@@ -1,0 +1,15 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"top">
+  [  2] setglobal 77 ............................ catgame = "top"
+  [  4] pushsymb 48 ............................. <#playFile>
+  [  6] pushint8 1 .............................. <1>
+  [  8] getglobal 30 ............................ <soundspath>
+  [ 10] pushcons 8 .............................. <"choose1.aif">
+  [ 12] joinstr ................................. <soundspath & "choose1.aif">
+  [ 13] pusharglistnoret 3 ...................... <1, soundspath & "choose1.aif">
+  [ 15] extcall 49 .............................. sound playFile 1, soundspath & "choose1.aif"
+  [ 17] pushcons 16 ............................. <"game1cont">
+  [ 19] pusharglistnoret 1 ...................... <"game1cont">
+  [ 21] extcall 3 ............................... go("game1cont")
+  [ 23] ret
+end

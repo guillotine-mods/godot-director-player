@@ -1,0 +1,90 @@
+on mouseUp
+  [  0] pushcons 0 .............................. <"000">
+  [  2] setglobal 8 ............................. nextroomdata = "000"
+  [  4] getglobal 9 ............................. <egozv>
+  [  6] pushint8 390 ............................ <390>
+  [  9] nteq .................................... <egozv <> 390>
+  [ 10] getglobal 10 ............................ <egozh>
+  [ 12] pushint8 390 ............................ <390>
+  [ 15] nteq .................................... <egozh <> 390>
+  [ 16] and ..................................... <(egozv <> 390) and (egozh <> 390)>
+  [ 17] jmpifz [ 37] ............................ if (egozv <> 390) and (egozh <> 390) then / else
+  [ 20] pushint8 390 ............................ <390>
+  [ 23] setglobal 9 ............................. egozv = 390
+  [ 25] pushint8 390 ............................ <390>
+  [ 28] setglobal 10 ............................ egozh = 390
+  [ 30] pusharglistnoret 0 ...................... <>
+  [ 32] extcall 19 .............................. walkonby2()
+  [ 34] jmp [155]
+  [ 37] getglobal 12 ............................ <whatodo>
+  [ 39] pushcons 8 .............................. <"stand">
+  [ 41] eq ...................................... <whatodo = "stand">
+  [ 42] jmpifz [155] ............................ if whatodo = "stand" then
+  [ 45] pusharglist 0 ........................... <>
+  [ 47] thebuiltin 2 ............................ <the clickOn>
+  [ 49] pushzero ................................ <0>
+  [ 50] pushint8 25 ............................. <25>
+  [ 52] set 6 ................................... set the visible of sprite the clickOn to 0
+  [ 54] pushcons 16 ............................. <"continue">
+  [ 56] setlocal 0 .............................. x = "continue"
+  [ 58] pushint8 1 .............................. <1>
+  [ 60] setlocal 8
+  [ 62] getlocal 8
+  [ 64] pushcons 24 ............................. <"objectsfield">
+  [ 66] pushcons 32 ............................. <"master">
+  [ 68] getfield ................................ <field("objectsfield", "master")>
+  [ 69] pushint8 4 .............................. <4>
+  [ 71] get 1 ................................... <the number of lines in field "objectsfield" of castLib "master">
+  [ 73] lteq
+  [ 74] jmpifz [134] ............................ repeat with i = 1 to the number of lines in field "objectsfield" of castLib "master"
+  [ 77] pushzero ................................ <0>
+  [ 78] pushzero ................................ <0>
+  [ 79] pushzero ................................ <0>
+  [ 80] pushzero ................................ <0>
+  [ 81] pushzero ................................ <0>
+  [ 82] pushzero ................................ <0>
+  [ 83] getlocal 8 .............................. <i>
+  [ 85] pushzero ................................ <0>
+  [ 86] pushcons 40 ............................. <"objectsfield">
+  [ 88] pushcons 48 ............................. <"master">
+  [ 90] getfield ................................ <field("objectsfield", "master")>
+  [ 91] getchunk ................................ <line i of field "objectsfield" of castLib "master">
+  [ 92] pushcons 56 ............................. <"empty">
+  [ 94] eq ...................................... <line i of field "objectsfield" of castLib "master" = "empty">
+  [ 95] getlocal 0 .............................. <x>
+  [ 97] pushcons 64 ............................. <"continue">
+  [ 99] eq ...................................... <x = "continue">
+  [100] and ..................................... <(line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue")>
+  [101] jmpifz [125] ............................ if (line i of field "objectsfield" of castLib "master" = "empty") and (x = "continue") then
+  [104] pushcons 72 ............................. <"glass">
+  [106] pushzero ................................ <0>
+  [107] pushzero ................................ <0>
+  [108] pushzero ................................ <0>
+  [109] pushzero ................................ <0>
+  [110] pushzero ................................ <0>
+  [111] pushzero ................................ <0>
+  [112] getlocal 8 .............................. <i>
+  [114] pushzero ................................ <0>
+  [115] pushcons 80 ............................. <"objectsfield">
+  [117] pushcons 88 ............................. <"master">
+  [119] putchunk 22 ............................. put "glass" into line i of field "objectsfield" of castLib "master"
+  [121] pushcons 96 ............................. <"stop">
+  [123] setlocal 0 .............................. x = "stop"
+  [125] pushint8 1
+  [127] getlocal 8
+  [129] add
+  [130] setlocal 8
+  [132] endrepeat [ 62]
+  [134] pushint8 2 .............................. <2>
+  [136] setglobal 20 ............................ dubi = 2
+  [138] pushsymb 3 .............................. <#playFile>
+  [140] pushint8 1 .............................. <1>
+  [142] getglobal 5 ............................. <soundspath>
+  [144] pushcons 104 ............................ <"pfglass.aif">
+  [146] joinstr ................................. <soundspath & "pfglass.aif">
+  [147] pusharglistnoret 3 ...................... <1, soundspath & "pfglass.aif">
+  [149] extcall 4 ............................... sound playFile 1, soundspath & "pfglass.aif"
+  [151] pusharglistnoret 0 ...................... <>
+  [153] extcall 21 .............................. displayobject()
+  [155] ret
+end

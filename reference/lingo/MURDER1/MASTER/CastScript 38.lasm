@@ -1,0 +1,15 @@
+on mouseUp
+  [  0] pushint8 1 .............................. <1>
+  [  3] setglobal 20 ............................ pptcount = 1
+  [  5] pushsymb 13 ............................. <#playFile>
+  [  7] pushint8 1 .............................. <1>
+  [ 10] getglobal 15 ............................ <tlkpath>
+  [ 12] pushcons 0 .............................. <"hez27.aif">
+  [ 14] joinstr ................................. <tlkpath & "hez27.aif">
+  [ 15] pusharglistnoret 3 ...................... <1, tlkpath & "hez27.aif">
+  [ 17] extcall 14 .............................. sound playFile 1, tlkpath & "hez27.aif"
+  [ 19] pushcons 8 .............................. <"choose2a">
+  [ 21] pusharglistnoret 1 ...................... <"choose2a">
+  [ 23] extcall 19 .............................. go("choose2a")
+  [ 25] ret
+end

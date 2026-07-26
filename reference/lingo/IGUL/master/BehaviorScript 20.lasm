@@ -1,0 +1,24 @@
+on exitFrame
+  [  0] pushsymb 26 ............................. <#playFile>
+  [  2] pushint8 1 .............................. <1>
+  [  5] getglobal 28 ............................ <soundspath>
+  [  7] pushcons 0 .............................. <"circ8b.aif">
+  [  9] joinstr ................................. <soundspath & "circ8b.aif">
+  [ 10] pusharglistnoret 3 ...................... <1, soundspath & "circ8b.aif">
+  [ 12] extcall 27 .............................. sound playFile 1, soundspath & "circ8b.aif"
+  [ 14] pushsymb 26 ............................. <#playFile>
+  [ 16] pushint8 2 .............................. <2>
+  [ 19] getglobal 28 ............................ <soundspath>
+  [ 21] pushcons 8 .............................. <"circ9.aif">
+  [ 23] joinstr ................................. <soundspath & "circ9.aif">
+  [ 24] pusharglistnoret 3 ...................... <2, soundspath & "circ9.aif">
+  [ 26] extcall 27 .............................. sound playFile 2, soundspath & "circ9.aif"
+  [ 28] pushsymb 26 ............................. <#playFile>
+  [ 30] pushint8 3 .............................. <3>
+  [ 33] getglobal 28 ............................ <soundspath>
+  [ 35] pushcons 16 ............................. <"circ7.aif">
+  [ 37] joinstr ................................. <soundspath & "circ7.aif">
+  [ 38] pusharglistnoret 3 ...................... <3, soundspath & "circ7.aif">
+  [ 40] extcall 27 .............................. sound playFile 3, soundspath & "circ7.aif"
+  [ 42] ret
+end

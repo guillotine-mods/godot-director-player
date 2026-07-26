@@ -1,0 +1,39 @@
+on gomenu
+  [  0] pushcons 0 .............................. <" go to \"mainmenub4\"\r">
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... when keyDown then go to "mainmenub4"
+  [  7] ret
+end
+
+on fromnow
+  [  0] pusharglist 0 ........................... <>
+  [  2] thebuiltin 29 ........................... <the keyCode>
+  [  4] pushcons 8 .............................. <"49">
+  [  6] eq ...................................... <the keyCode = "49">
+  [  7] jmpifz [ 22] ............................ if the keyCode = "49" then / else
+  [ 10] pushsymb 30 ............................. <#stop>
+  [ 12] pushint8 1 .............................. <1>
+  [ 15] pusharglistnoret 2 ...................... <1>
+  [ 17] extcall 16 .............................. sound stop 1
+  [ 19] jmp [ 26]
+  [ 22] pusharglistnoret 0 ...................... <>
+  [ 24] extcall 31 .............................. nothing()
+  [ 26] ret
+end
+
+on gomenu2
+  [  0] pushcons 16 ............................. <" gulu\r">
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... when keyDown then gulu
+  [  7] ret
+end
+
+on gulu
+  [  0] pushcons 24 ............................. <"fromnow">
+  [  2] pushint8 3 .............................. <3>
+  [  5] set 0 ................................... set the keyDownScript to "fromnow"
+  [  7] pushcons 32 ............................. <"mainmenub4">
+  [  9] pusharglistnoret 1 ...................... <"mainmenub4">
+  [ 11] extcall 11 .............................. go("mainmenub4")
+  [ 13] ret
+end

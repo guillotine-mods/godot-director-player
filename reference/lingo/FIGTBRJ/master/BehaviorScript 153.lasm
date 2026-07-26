@@ -1,0 +1,5 @@
+on mouseUp
+  [  0] pusharglistnoret 0 ...................... <>
+  [  2] extcall 4 ............................... dontPassEvent()
+  [  4] ret
+end
