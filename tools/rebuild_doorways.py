@@ -178,7 +178,40 @@ def build(m):
         repaired["%s|%d|%s" % (room, ch, t)] = {
             "walk_to": {"x": new[0][0], "y": new[0][1]},
             "arrive_at": {"x": new[1][0], "y": new[1][1]},
+            "source": "reciprocity",
         }
+
+    # Exits whose doorway no surviving pair can reach. Their exported walk_to
+    # belongs to a hotspot on the other side of the room, so it walks Piposh
+    # backwards; standing him in the exit he clicked at least faces him the
+    # right way. arrive_at is left alone -- nothing here can recover it.
+    for (room, ch, t), rect in sorted(m["hotspots"].items()):
+        key = "%s|%d|%s" % (room, ch, t)
+        if key in repaired:
+            continue
+        x, y, w, h = rect
+        wx = m["navs"][(room, ch, t)]["walk_to"]["x"]
+        if x - 100.0 <= wx <= x + w + 100.0:
+            continue
+        floor = m["floors"].get(room)
+        if floor is None:
+            continue
+        # Only the height is taken from the walk_here band, to stand him on the
+        # ground rather than in the sky. Its width often stops short of the exit
+        # itself, so clamping x there would drag him back across the room.
+        _fx, fy, _fw, fh = floor
+        point = (
+            int(round(x + w / 2.0)),
+            int(round(min(max(y + h / 2.0, fy), fy + fh))),
+        )
+        exported = m["navs"][(room, ch, t)]["walk_to"]
+        if rect_dist(rect, point) > rect_dist(rect, (exported["x"], exported["y"])):
+            continue
+        repaired[key] = {
+            "walk_to": {"x": point[0], "y": point[1]},
+            "source": "hotspot-centre",
+        }
+        unresolved -= 1
     return canon, why, doorway, repaired, kept, unresolved
 
 

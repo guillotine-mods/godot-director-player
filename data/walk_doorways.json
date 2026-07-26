@@ -6,24 +6,53 @@
 		"room therefore reuses one room's coordinates, so Piposh walks away from the",
 		"hotspot that was clicked and then enters the next room on the wrong side.",
 		"",
-		"Recovered from the export itself, using the original's own model: a doorway is",
-		"a place. The spot Piposh walks to in room S on his way to room D is the same",
-		"spot he stands on when he arrives in S from D. The surviving pair for label T",
-		"is one edge's doorway pair -- walk_to(T) is the doorway in T's canonical",
-		"source room, arrive_at(T) the doorway in T facing it -- so identifying that",
-		"source room fills both directions of that edge and re-derives its other",
-		"hotspots. tools/rebuild_doorways.py regenerates this file.",
+		"Each entry names its provenance in 'source'. tools/rebuild_doorways.py",
+		"regenerates the file; the runtime reads walk_to / arrive_at and ignores the",
+		"rest.",
 		"",
-		"Covers 154 of 212 same-movie walk hotspots: 116 already carried the right",
-		"values, 38 are corrected here. The remaining 58 are mostly HOTEL1 and AIR1,",
-		"whose transition destinations are still in unmapped_transitions and so have no",
-		"reverse edge to read. They keep the exported values and stay wrong.",
+		"  reciprocity (38) -- recovered using the original's own model: a doorway is a",
+		"  place, so the spot Piposh walks to in room S on his way to D is the spot he",
+		"  stands on when he arrives in S from D. The surviving pair for label T is one",
+		"  edge's doorway pair, walk_to(T) the doorway in T's canonical source room and",
+		"  arrive_at(T) the doorway in T facing it, so identifying that source room",
+		"  fills both directions of the edge and re-derives its other hotspots. These",
+		"  carry both points.",
+		"",
+		"  hotspot-centre (39) -- exits whose doorway no surviving pair can reach,",
+		"  because both labels' pairs were claimed by other edges. Their exported",
+		"  walk_to sits on the far side of the room, so it walked Piposh backwards;",
+		"  standing him in the middle of the exit he clicked at least faces him the",
+		"  right way. Height comes from the room's walk_here band so he stays on the",
+		"  ground, never the width, which often stops short of the exit itself. These",
+		"  carry walk_to only: nothing recoverable fixes their arrive_at, so those",
+		"  rooms can still put him down on the wrong side.",
+		"",
+		"Together they cover 193 of 212 same-movie walk hotspots; the other 19 already",
+		"carried values consistent with the hotspot that was clicked. No override moves",
+		"Piposh further from that hotspot than the exported value did. The durable fix",
+		"is the export emitting nav per hotspot.",
 		"",
 		"Key: \"<room>|<channel>|<target_label>\", room lowercased with any 'go' suffix",
 		"stripped (MovieContext._room_key), matching the marker under the playhead.",
 		"NOT under assets/ on purpose: that tree is mirrored with robocopy /MIR."
 	],
 	"overrides": {
+		"AIR1": {
+			"plane|13|climbupfort": {
+				"walk_to": {
+					"x": 42,
+					"y": 185
+				},
+				"source": "hotspot-centre"
+			},
+			"rachdown|11|movingup": {
+				"walk_to": {
+					"x": 464,
+					"y": 319
+				},
+				"source": "hotspot-centre"
+			}
+		},
 		"DAY1": {
 			"check|12|forest1fromcheck": {
 				"walk_to": {
@@ -33,7 +62,8 @@
 				"arrive_at": {
 					"x": 399,
 					"y": 366
-				}
+				},
+				"source": "reciprocity"
 			},
 			"clif2|12|swingup": {
 				"walk_to": {
@@ -43,7 +73,15 @@
 				"arrive_at": {
 					"x": 30,
 					"y": 328
-				}
+				},
+				"source": "reciprocity"
+			},
+			"dwarfs|11|forest2": {
+				"walk_to": {
+					"x": 604,
+					"y": 228
+				},
+				"source": "hotspot-centre"
 			},
 			"edge1|12|edge2": {
 				"walk_to": {
@@ -53,7 +91,15 @@
 				"arrive_at": {
 					"x": 200,
 					"y": 380
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge2|10|gatetoedge1": {
+				"walk_to": {
+					"x": 30,
+					"y": 286
+				},
+				"source": "hotspot-centre"
 			},
 			"edge3|12|edge4": {
 				"walk_to": {
@@ -63,7 +109,15 @@
 				"arrive_at": {
 					"x": 289,
 					"y": 287
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge3|13|edge2up": {
+				"walk_to": {
+					"x": 124,
+					"y": 215
+				},
+				"source": "hotspot-centre"
 			},
 			"edge4|11|path4tofield": {
 				"walk_to": {
@@ -73,7 +127,15 @@
 				"arrive_at": {
 					"x": 235,
 					"y": 193
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge4|13|rachbal": {
+				"walk_to": {
+					"x": 492,
+					"y": 155
+				},
+				"source": "hotspot-centre"
 			},
 			"edge5|10|edge6down": {
 				"walk_to": {
@@ -83,7 +145,8 @@
 				"arrive_at": {
 					"x": 186,
 					"y": 396
-				}
+				},
+				"source": "reciprocity"
 			},
 			"exitforest1|10|exitforest1toclif": {
 				"walk_to": {
@@ -93,7 +156,8 @@
 				"arrive_at": {
 					"x": 581,
 					"y": 381
-				}
+				},
+				"source": "reciprocity"
 			},
 			"exitforest1|11|forest1fromcheck": {
 				"walk_to": {
@@ -103,7 +167,15 @@
 				"arrive_at": {
 					"x": 268,
 					"y": 359
-				}
+				},
+				"source": "reciprocity"
+			},
+			"field|11|path3up": {
+				"walk_to": {
+					"x": 620,
+					"y": 200
+				},
+				"source": "hotspot-centre"
 			},
 			"forest1|12|dwarfdown": {
 				"walk_to": {
@@ -113,7 +185,8 @@
 				"arrive_at": {
 					"x": 205,
 					"y": 206
-				}
+				},
+				"source": "reciprocity"
 			},
 			"forest2|11|exitforest2frompath3": {
 				"walk_to": {
@@ -123,7 +196,8 @@
 				"arrive_at": {
 					"x": 171,
 					"y": 228
-				}
+				},
+				"source": "reciprocity"
 			},
 			"gate|10|swingup": {
 				"walk_to": {
@@ -133,7 +207,22 @@
 				"arrive_at": {
 					"x": 326,
 					"y": 371
-				}
+				},
+				"source": "reciprocity"
+			},
+			"gate|11|gatetoedge1": {
+				"walk_to": {
+					"x": 600,
+					"y": 244
+				},
+				"source": "hotspot-centre"
+			},
+			"lighthouse|11|edge3": {
+				"walk_to": {
+					"x": 608,
+					"y": 217
+				},
+				"source": "hotspot-centre"
 			},
 			"lighttop|14|stairsclimbdown": {
 				"walk_to": {
@@ -143,7 +232,8 @@
 				"arrive_at": {
 					"x": 161,
 					"y": 425
-				}
+				},
+				"source": "reciprocity"
 			},
 			"path1|10|path2": {
 				"walk_to": {
@@ -153,7 +243,8 @@
 				"arrive_at": {
 					"x": 600,
 					"y": 276
-				}
+				},
+				"source": "reciprocity"
 			},
 			"path2|10|path3": {
 				"walk_to": {
@@ -163,7 +254,8 @@
 				"arrive_at": {
 					"x": 600,
 					"y": 380
-				}
+				},
+				"source": "reciprocity"
 			},
 			"path3|10|exitforest2frompath3": {
 				"walk_to": {
@@ -173,7 +265,43 @@
 				"arrive_at": {
 					"x": 364,
 					"y": 247
-				}
+				},
+				"source": "reciprocity"
+			},
+			"path4|10|path4tofield": {
+				"walk_to": {
+					"x": 62,
+					"y": 302
+				},
+				"source": "hotspot-centre"
+			},
+			"path4|11|path3": {
+				"walk_to": {
+					"x": 622,
+					"y": 177
+				},
+				"source": "hotspot-centre"
+			},
+			"path4|13|path4up": {
+				"walk_to": {
+					"x": 146,
+					"y": 177
+				},
+				"source": "hotspot-centre"
+			},
+			"rachbal|10|edge4": {
+				"walk_to": {
+					"x": 28,
+					"y": 276
+				},
+				"source": "hotspot-centre"
+			},
+			"rachbal|11|edge5": {
+				"walk_to": {
+					"x": 618,
+					"y": 276
+				},
+				"source": "hotspot-centre"
 			},
 			"shore1|10|shore2": {
 				"walk_to": {
@@ -183,7 +311,8 @@
 				"arrive_at": {
 					"x": 625,
 					"y": 364
-				}
+				},
+				"source": "reciprocity"
 			},
 			"shore3|11|shore2": {
 				"walk_to": {
@@ -193,7 +322,8 @@
 				"arrive_at": {
 					"x": 33,
 					"y": 324
-				}
+				},
+				"source": "reciprocity"
 			},
 			"veranda|10|path1": {
 				"walk_to": {
@@ -203,7 +333,8 @@
 				"arrive_at": {
 					"x": 620,
 					"y": 230
-				}
+				},
+				"source": "reciprocity"
 			},
 			"veranda|11|gatefromedge1": {
 				"walk_to": {
@@ -213,7 +344,87 @@
 				"arrive_at": {
 					"x": 321,
 					"y": 359
-				}
+				},
+				"source": "reciprocity"
+			}
+		},
+		"HOTEL1": {
+			"arcade|11|recepttohall": {
+				"walk_to": {
+					"x": 578,
+					"y": 205
+				},
+				"source": "hotspot-centre"
+			},
+			"hall|10|receptfromhall": {
+				"walk_to": {
+					"x": 16,
+					"y": 250
+				},
+				"source": "hotspot-centre"
+			},
+			"hall|11|toarcade": {
+				"walk_to": {
+					"x": 495,
+					"y": 246
+				},
+				"source": "hotspot-centre"
+			},
+			"hall|14|tolib": {
+				"walk_to": {
+					"x": 575,
+					"y": 246
+				},
+				"source": "hotspot-centre"
+			},
+			"lib|10|recepttohall": {
+				"walk_to": {
+					"x": 15,
+					"y": 152
+				},
+				"source": "hotspot-centre"
+			},
+			"prosdor|10|torooma": {
+				"walk_to": {
+					"x": 18,
+					"y": 258
+				},
+				"source": "hotspot-centre"
+			},
+			"prosdor|11|recepttohall": {
+				"walk_to": {
+					"x": 530,
+					"y": 296
+				},
+				"source": "hotspot-centre"
+			},
+			"recept|10|lobyfromrecept": {
+				"walk_to": {
+					"x": 24,
+					"y": 200
+				},
+				"source": "hotspot-centre"
+			},
+			"rooma|10|prosdor": {
+				"walk_to": {
+					"x": 91,
+					"y": 249
+				},
+				"source": "hotspot-centre"
+			},
+			"roomb|10|tobath": {
+				"walk_to": {
+					"x": 168,
+					"y": 282
+				},
+				"source": "hotspot-centre"
+			},
+			"roomb|14|toroomc": {
+				"walk_to": {
+					"x": 186,
+					"y": 142
+				},
+				"source": "hotspot-centre"
 			}
 		},
 		"NIGHT1": {
@@ -225,7 +436,8 @@
 				"arrive_at": {
 					"x": 399,
 					"y": 366
-				}
+				},
+				"source": "reciprocity"
 			},
 			"clif2|12|swingup": {
 				"walk_to": {
@@ -235,7 +447,15 @@
 				"arrive_at": {
 					"x": 30,
 					"y": 328
-				}
+				},
+				"source": "reciprocity"
+			},
+			"dwarfs|11|forest2": {
+				"walk_to": {
+					"x": 604,
+					"y": 240
+				},
+				"source": "hotspot-centre"
 			},
 			"edge1|12|edge2": {
 				"walk_to": {
@@ -245,7 +465,15 @@
 				"arrive_at": {
 					"x": 200,
 					"y": 380
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge2|10|gatetoedge1": {
+				"walk_to": {
+					"x": 30,
+					"y": 345
+				},
+				"source": "hotspot-centre"
 			},
 			"edge3|12|edge4": {
 				"walk_to": {
@@ -255,7 +483,15 @@
 				"arrive_at": {
 					"x": 289,
 					"y": 287
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge3|13|edge2up": {
+				"walk_to": {
+					"x": 124,
+					"y": 308
+				},
+				"source": "hotspot-centre"
 			},
 			"edge4|11|path4tofield": {
 				"walk_to": {
@@ -265,7 +501,15 @@
 				"arrive_at": {
 					"x": 235,
 					"y": 193
-				}
+				},
+				"source": "reciprocity"
+			},
+			"edge4|13|rachbal": {
+				"walk_to": {
+					"x": 492,
+					"y": 286
+				},
+				"source": "hotspot-centre"
 			},
 			"edge5|10|edge6down": {
 				"walk_to": {
@@ -275,7 +519,8 @@
 				"arrive_at": {
 					"x": 186,
 					"y": 396
-				}
+				},
+				"source": "reciprocity"
 			},
 			"exitforest1|10|exitforest1toclif": {
 				"walk_to": {
@@ -285,7 +530,8 @@
 				"arrive_at": {
 					"x": 581,
 					"y": 381
-				}
+				},
+				"source": "reciprocity"
 			},
 			"exitforest1|11|forest1fromcheck": {
 				"walk_to": {
@@ -295,7 +541,15 @@
 				"arrive_at": {
 					"x": 268,
 					"y": 359
-				}
+				},
+				"source": "reciprocity"
+			},
+			"field|11|path3up": {
+				"walk_to": {
+					"x": 620,
+					"y": 200
+				},
+				"source": "hotspot-centre"
 			},
 			"forest1|12|dwarfdown": {
 				"walk_to": {
@@ -305,7 +559,8 @@
 				"arrive_at": {
 					"x": 205,
 					"y": 206
-				}
+				},
+				"source": "reciprocity"
 			},
 			"forest2|11|exitforest2frompath3": {
 				"walk_to": {
@@ -315,7 +570,8 @@
 				"arrive_at": {
 					"x": 171,
 					"y": 228
-				}
+				},
+				"source": "reciprocity"
 			},
 			"gate|10|swingup": {
 				"walk_to": {
@@ -325,7 +581,22 @@
 				"arrive_at": {
 					"x": 326,
 					"y": 371
-				}
+				},
+				"source": "reciprocity"
+			},
+			"gate|11|gatetoedge1": {
+				"walk_to": {
+					"x": 600,
+					"y": 321
+				},
+				"source": "hotspot-centre"
+			},
+			"lighthouse|11|edge3": {
+				"walk_to": {
+					"x": 608,
+					"y": 316
+				},
+				"source": "hotspot-centre"
 			},
 			"path1|10|path2": {
 				"walk_to": {
@@ -335,7 +606,8 @@
 				"arrive_at": {
 					"x": 600,
 					"y": 276
-				}
+				},
+				"source": "reciprocity"
 			},
 			"path2|10|path3": {
 				"walk_to": {
@@ -345,7 +617,8 @@
 				"arrive_at": {
 					"x": 600,
 					"y": 380
-				}
+				},
+				"source": "reciprocity"
 			},
 			"path3|10|exitforest2frompath3": {
 				"walk_to": {
@@ -355,7 +628,50 @@
 				"arrive_at": {
 					"x": 364,
 					"y": 247
-				}
+				},
+				"source": "reciprocity"
+			},
+			"path4|10|path4tofield": {
+				"walk_to": {
+					"x": 62,
+					"y": 302
+				},
+				"source": "hotspot-centre"
+			},
+			"path4|11|path3": {
+				"walk_to": {
+					"x": 622,
+					"y": 283
+				},
+				"source": "hotspot-centre"
+			},
+			"path4|13|path4up": {
+				"walk_to": {
+					"x": 146,
+					"y": 283
+				},
+				"source": "hotspot-centre"
+			},
+			"rachbal|10|edge4": {
+				"walk_to": {
+					"x": 28,
+					"y": 340
+				},
+				"source": "hotspot-centre"
+			},
+			"rachbal|11|edge5": {
+				"walk_to": {
+					"x": 618,
+					"y": 340
+				},
+				"source": "hotspot-centre"
+			},
+			"rachdown|11|movingup": {
+				"walk_to": {
+					"x": 464,
+					"y": 319
+				},
+				"source": "hotspot-centre"
 			},
 			"shore1|10|shore2": {
 				"walk_to": {
@@ -365,7 +681,15 @@
 				"arrive_at": {
 					"x": 625,
 					"y": 364
-				}
+				},
+				"source": "reciprocity"
+			},
+			"shore2|32|shore2up": {
+				"walk_to": {
+					"x": 640,
+					"y": 400
+				},
+				"source": "hotspot-centre"
 			},
 			"shore3|11|shore2": {
 				"walk_to": {
@@ -375,7 +699,8 @@
 				"arrive_at": {
 					"x": 33,
 					"y": 324
-				}
+				},
+				"source": "reciprocity"
 			},
 			"veranda|10|path1": {
 				"walk_to": {
@@ -385,7 +710,8 @@
 				"arrive_at": {
 					"x": 620,
 					"y": 230
-				}
+				},
+				"source": "reciprocity"
 			},
 			"veranda|11|gatefromedge1": {
 				"walk_to": {
@@ -395,7 +721,8 @@
 				"arrive_at": {
 					"x": 321,
 					"y": 359
-				}
+				},
+				"source": "reciprocity"
 			}
 		},
 		"SEA1": {
@@ -407,7 +734,8 @@
 				"arrive_at": {
 					"x": 514,
 					"y": 410
-				}
+				},
+				"source": "reciprocity"
 			}
 		}
 	}
