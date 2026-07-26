@@ -439,12 +439,20 @@ func call_builtin(name: String, args: Array) -> Variant:
 			if stem == "":
 				return 0
 			acted_on_window = true
+			# Opening a window is a navigation, so `record` has to capture it like
+			# any other. Without this the convergence sweep wandered out of DAY1
+			# into SAVELOAD on the first save button it dispatched, and
+			# _run_skipped_entry_scripts — which replays under record precisely so
+			# a `go` cannot hijack the arrival — could be hijacked by an `open`.
+			if record:
+				recorded_navs.append(stem.to_lower())
+				return 0
 			runtime.goto_movie(stem)
 			return 0
 		"forget", "close":
 			## The window closing itself: JOKE frame 5 runs
 			## `forget(window("joke.dxr"))` once its wait-for-click frame is past.
-			if runtime == null:
+			if runtime == null or record:
 				return 0
 			runtime.go_back()
 			return 0
