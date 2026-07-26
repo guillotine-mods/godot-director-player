@@ -361,6 +361,12 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"label":
 			if runtime == null or args.is_empty():
 				return 0
+			# `label(0)` is not a lookup of a marker named "0": with a number it
+			# means the current marker, the same as `marker(0)`. The rooms record
+			# themselves with `whereami = label(0)` and every hotspot compares
+			# that against `label("<room>")`, so both spellings must agree.
+			if typeof(args[0]) != TYPE_STRING:
+				return _marker(args)
 			var index: int = int(runtime.loader.lookup_label(LingoValue.to_str(args[0])))
 			return index + 1 if index >= 0 else 0
 		"rollover":
