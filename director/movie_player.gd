@@ -518,13 +518,13 @@ func draw_current_frame(canvas: Control) -> void:
 					false
 				)
 
-	if AppSettings.show_debug_overlays or AppSettings.show_hotspot_hints:
+	if AppSettings.show_press_marks() or AppSettings.show_hotspot_hints:
 		for sprite in runtime.clickable_sprites(frame):
 			var r: Rect2 = runtime.sprite_stage_rect(sprite)
 			var rect: Rect2 = Rect2(r.position.x * sx, r.position.y * sy, r.size.x * sx, r.size.y * sy)
 			var color: Color = (
 				Color(0.35, 0.8, 1.0, 0.85)
-				if AppSettings.show_debug_overlays
+				if AppSettings.show_press_marks()
 				else Color(1.0, 0.9, 0.2, 0.55)
 			)
 			canvas.draw_rect(rect, color, false, 2.0)

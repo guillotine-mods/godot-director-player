@@ -1008,6 +1008,31 @@ func skip_current() -> void:
 		_on_movie_end()
 
 
+func dev_skip_scene() -> String:
+	## Development aid: leave the current movie the way finishing it would, with
+	## none of skip_current()'s restrictions. skip_current() only fires for the
+	## title, EXODUS and the declared minigames, which is most of what you want
+	## to skip while playing but useless when you are trying to reach a specific
+	## room. Returns a short description for the caller to surface.
+	var movie := loader.movie_name
+	if movie == "" or loader.frames.is_empty():
+		return "nothing loaded"
+	AudioDirector.stop_all()
+	waiting_for_click = false
+	puppet.reset()
+	if context.is_hub(movie):
+		# A hub has nowhere to exit to, so hand it to its own phase transition,
+		# or fall through to the next room the score would reach.
+		_try_phase_transition()
+		if loader.movie_name == movie:
+			_advance_or_hold()
+		nav_event.emit("dev skip: %s" % movie)
+		return "advanced %s" % movie
+	_on_movie_end()
+	nav_event.emit("dev skip: %s → %s" % [movie, loader.movie_name])
+	return "%s → %s" % [movie, loader.movie_name]
+
+
 func hint() -> void:
 	var clicks := clickable_sprites(loader.get_frame(frame_index))
 	if clicks.is_empty():

@@ -4,6 +4,7 @@ extends Control
 @onready var debug_hud: PanelContainer = %DebugHud
 @onready var save_editor: PanelContainer = %SaveEditor
 @onready var settings_panel: PanelContainer = %SettingsPanel
+@onready var dev_bar: HBoxContainer = %DevBar
 
 
 func _ready() -> void:
@@ -15,6 +16,17 @@ func _ready() -> void:
 	save_editor.close_requested.connect(func(): save_editor.visible = false)
 	settings_panel.close_requested.connect(func(): settings_panel.visible = false)
 	movie_player.save_ui_requested.connect(_on_save_ui_requested)
+	AppSettings.settings_changed.connect(_sync_dev_bar)
+	_sync_dev_bar()
+
+
+func _sync_dev_bar() -> void:
+	dev_bar.visible = AppSettings.dev_mode
+
+
+func _on_skip_scene_pressed() -> void:
+	var what: String = movie_player.runtime.dev_skip_scene()
+	GameState.emit_log("Dev skip: %s" % what, "info")
 
 
 func _on_save_ui_requested(_mode: String) -> void:
