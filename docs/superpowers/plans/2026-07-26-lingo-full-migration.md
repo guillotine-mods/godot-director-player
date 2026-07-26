@@ -169,3 +169,68 @@ Run the game under the interpreter and compare against the lifted export: every 
 - **Field state is global and persistent.** Director fields double as save state. Aliasing `objectsfield`, `Dprocess` and `points` onto `GameState` is required; getting it wrong corrupts saves.
 - **This supersedes plans 2 to 6 of the inventory work.** `talkproc`, `searchfunk`, `invleft`/`invright`, `planefunk`, `ishspec`, `Dprocess` and `points` are all just scripts once the interpreter runs. Do not hand-port them.
 - **Scale.** Six phases, and phases 3 to 5 each touch the core loop. This is not a one-sitting change.
+
+
+---
+
+## Execution record
+
+**Phases 1 to 6 implemented 2026-07-26.** Numbers are measured, not estimated.
+
+| Phase | Result |
+|---|---|
+| 1 Parser | **3349/3349 scripts (100%)**, 3457 handlers, matching an independent grep count |
+| 2 Interpreter | Director value semantics + full control flow, 22 semantic cases verified |
+| 3 Host | Original `displayobject` drives the live engine; 60 fields and 1979 member names recovered |
+| 4 Attachment | 14,855 script-bearing intervals across 61 movies, validated against the ten known drop behaviours |
+| 5 Event loop | `mouseDown`/`mouseUp` through the four-level message hierarchy, behind `AppSettings.use_lingo_clicks` |
+| 6 Convergence | **534/540 clickable cases reached (98.9%), 505/534 accounted for (94.6%)** |
+
+### Convergence detail
+
+`tools/lingo_converge.gd` replays every distinct clickable case against the
+export's `on_click`, which is an independent oracle: a different tool produced it
+from the same originals years earlier.
+
+| Movie | Cases | Reached | Agree | Partial | Differ | Deferred walk |
+|---|---:|---:|---:|---:|---:|---:|
+| DAY1 | 112 | 112 | 21 | 24 | 1 | 66 |
+| NIGHT1 | 126 | 125 | 17 | 39 | 0 | 69 |
+| HOTEL1 | 104 | 99 | 29 | 40 | 0 | 30 |
+| SEA1 | 131 | 131 | 34 | 56 | 27 | 14 |
+| AIR1 | 67 | 67 | 16 | 39 | 1 | 11 |
+
+"Deferred walk" is not a failure: a click on an exit sets `egozh`/`egozv` and lets
+`walkonby` carry the player there over later frames, so there is no immediate
+navigation to compare. "Partial" means one of navigation or sound matched. Most
+partials are semantic equivalences rather than errors, for example the Lingo
+going to the label `savegame` where the export lifted it as movie `saveload`.
+
+The 29 remaining disagreements are 27 in SEA1 plus 2 elsewhere, so SEA1 has a
+systematic problem of its own and is the next thing to look at.
+
+### Three semantics bugs the convergence run found
+
+Each was silent, and each moved the numbers:
+
+1. **`sound playFile 1, x` parsed as `sound(playFile(1, x))`**, a nested command
+   call, so no sound was ever recorded. Director has two-word commands; the
+   second word is a literal. Fixed with a `COMMAND_WORDS` table.
+2. **An unset global read as 0 instead of VOID.** `effectspath & "saveload.aif"`
+   became `"0saveload.aif"`. This affects all 2515 `sound playFile` lines.
+   Fixing it took agreement from 48 to 117 and disagreement from 51 to 29.
+3. **`dot` and `prop_of` were not assignable targets**, so `sprite(N).visible = 1`
+   parsed as a comparison and did nothing. 904 statements across the corpus.
+
+All three are the same shape as the earlier assignment-versus-equality bug: Lingo
+is a language where a mistake produces silence rather than an error, so a
+measurable oracle is worth more than careful reading.
+
+### State of the switch
+
+`AppSettings.use_lingo_clicks` is **off**. With it on, `DirectorRuntime` builds a
+`LingoEngine`, prepares each movie's scripts on load, and lets an interpreted
+`mouseUp` take a click whenever one exists, falling back to the lifted `on_click`
+when it does not. 94.6% is promising, not finished: turning it on by default
+should wait until SEA1 is understood and the deferred-walk path is wired through
+`walkonby` rather than counted as out of scope.

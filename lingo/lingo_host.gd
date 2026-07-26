@@ -33,6 +33,11 @@ var mouse_stage: Vector2 = Vector2.ZERO
 ## missing binding is visible without spamming the log.
 var unhandled: Dictionary = {}
 var stage_dirty: bool = false
+## When true, navigation and sound are captured instead of performed, so a script
+## can be compared against the exported on_click without touching the game.
+var record: bool = false
+var recorded_navs: PackedStringArray = PackedStringArray()
+var recorded_sounds: PackedStringArray = PackedStringArray()
 
 
 func _init(director_runtime: Object = null) -> void:
@@ -362,8 +367,31 @@ func call_builtin(name: String, args: Array) -> Variant:
 			return null
 
 
+func begin_record() -> void:
+	record = true
+	recorded_navs = PackedStringArray()
+	recorded_sounds = PackedStringArray()
+
+
 func _go(args: Array) -> Variant:
 	if runtime == null or args.is_empty():
+		return 0
+	# `go to frame 5` and `play frame "x"` carry their command words as leading
+	# string arguments; `go to movie "x"` keeps "movie" because it changes meaning.
+	var trimmed: Array = []
+	for arg in args:
+		var word := LingoValue.to_str(arg).to_lower()
+		if trimmed.is_empty() and word in ["to", "frame", "the", "loop", "done"]:
+			continue
+		trimmed.append(arg)
+	args = trimmed
+	if args.is_empty():
+		return 0
+	if record:
+		for arg in args:
+			var text := LingoValue.to_str(arg).to_lower()
+			if text != "" and text != "movie" and text != "frame":
+				recorded_navs.append(text.get_basename())
 		return 0
 	var first: Variant = args[0]
 	# `go to movie "x"` arrives as two arguments in command form.
@@ -394,7 +422,11 @@ func _sound(args: Array) -> Variant:
 	match verb:
 		"playfile":
 			if args.size() >= 3:
-				AudioDirector.play_file(LingoValue.to_int(args[1]), LingoValue.to_str(args[2]))
+				if record:
+					recorded_sounds.append(
+						LingoValue.to_str(args[2]).to_lower().get_file().get_basename())
+				else:
+					AudioDirector.play_file(LingoValue.to_int(args[1]), LingoValue.to_str(args[2]))
 			return 0
 		"stop":
 			if args.size() >= 2:
