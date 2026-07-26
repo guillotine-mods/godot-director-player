@@ -74,25 +74,27 @@
 			}
 		],
 
-		"_disabled": [
+		"DAY1": [
 			{
 				"target_channel": 9,
 				"items": ["tools"],
 				"action": "reveal",
 				"reveal_channels": [7, 8],
-				"sets_flag": "tools_used_on_9",
+				"sets_flag": "day1_tools_used",
 				"sounds": [{"channel": 1, "file": "zzz.aif"}],
 				"consume": false,
-				"enabled": false,
-				"lingo": "MASTER/External/BehaviorScript 128.ls",
-				"why_disabled": [
-					"The movie cannot be determined from the Lingo: zzz.aif appears in",
-					"no other script and the handler names no marker. Placing it needs",
-					"the sprite-script fields from VWSC-*.bin in the ProjectorRays dump.",
-					"The Lingo also requires sprites 7 and 8 to both be invisible first."
+				"lingo": [
+					"MASTER/External/BehaviorScript 128.ls. The movie could not be",
+					"determined from the Lingo alone, so this rule was parked. The score",
+					"settles it: tools/dump_sprite_scripts.py finds master member 128 on",
+					"DAY1's slot channels. The Lingo also requires sprites 7 and 8 to be",
+					"invisible first, which the runtime has no representation for yet, so",
+					"a second drop replays the reveal harmlessly."
 				]
 			}
-		]
+		],
+
+		"_disabled": []
 	},
 
 	"_deferred": [
