@@ -22,16 +22,38 @@ There is no test suite. What remains are measurement tools, each printing a
 number rather than pass/fail:
 
 ```
+godot --headless --script tools/smoke.gd            # the first minute of play, pass/fail
 python3 tools/lingo_compile.py                      # 3349/3349 scripts parse
+python3 tools/check_cast_coverage.py                # every referenced cast member resolves
 python3 tools/dump_sprite_scripts.py                # sprite -> script attachment
 python3 tools/dump_fields.py                        # Director fields + member names
+python3 tools/add_cast_script_names.py              # linked-cast member names
+godot --headless --script tools/verify_film_loops.gd # film loops resolve to children
 godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
+godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 ```
+
+`smoke.gd` is the only one that is pass/fail. Read
+`.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the
+others: agreement with the lifted export falls as the port becomes more faithful,
+so those numbers are not higher-is-better.
 
 Writing a `--script` tool: autoloads are not compile-time globals, because the
 script loads before the tree exists, so reach them with
 `root.get_node("GameState")`.
+
+## Skills
+
+`.claude/skills/` carries what this port cost to learn, written to be reused for
+another Director title:
+
+| skill | when |
+|-------|------|
+| `director-data-recovery` | extracting from installers and chunk dumps; read the version warning before copying an offset |
+| `director-lingo-semantics` | interpreting or debugging Lingo; a handler runs but does nothing |
+| `director-port-architecture` | structuring the port, deciding what to interpret versus lift |
+| `porting-fidelity-verification` | reading any metric here, or before flipping a behaviour flag |
 
 Boot: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVELOAD` (JSON slots).
 
