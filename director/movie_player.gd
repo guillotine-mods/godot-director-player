@@ -477,7 +477,7 @@ func draw_current_frame(canvas: Control) -> void:
 				y = stage_position.y * sy
 			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
-	if puppet.active:
+	if puppet.active and not runtime.is_channel_hidden(DirectorRuntime.PUPPET_CHANNEL):
 		# Piposh is a character on paper: key the paper out everywhere, not just
 		# where the flood fill can reach in from the edge.
 		var ptex: Texture2D = runtime.loader.get_texture(

@@ -3,7 +3,8 @@
 Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decoded `render_model` data plus WAV audio.
 
 **Project overview:** [`docs/PROJECT.md`](docs/PROJECT.md)  
-**Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Android:** [`docs/ANDROID.md`](docs/ANDROID.md)
+**Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Android:** [`docs/ANDROID.md`](docs/ANDROID.md)  
+**Known bugs:** [`bugs.md`](bugs.md)
 
 ## Open in Godot
 
@@ -29,12 +30,13 @@ python3 tools/dump_sprite_scripts.py                # sprite -> script attachmen
 python3 tools/dump_fields.py                        # Director fields + member names
 python3 tools/add_cast_script_names.py              # linked-cast member names
 godot --headless --script tools/verify_film_loops.gd # film loops resolve to children
+godot --headless --script tools/puppet_visibility.gd # sprite 30 across a transition, pass/fail
 godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
 godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 ```
 
-`smoke.gd` is the only one that is pass/fail. Read
+`smoke.gd` and `puppet_visibility.gd` are the pass/fail ones. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the
 others: agreement with the lifted export falls as the port becomes more faithful,
 so those numbers are not higher-is-better.

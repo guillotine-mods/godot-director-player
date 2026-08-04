@@ -30,6 +30,18 @@ var walk_tick: int = 0
 var scene: String = ""
 var just_arrived: bool = false
 var pending_arrive: Dictionary = {}
+## `the visible of sprite 30`. The puppet is channel 30, so this is a real score
+## property, not a port invention: every hub's `init all` runs `puppetSprite(30, 1)`
+## and from then on Lingo owns the channel, with `visible` its only off switch.
+##
+## The original uses it to keep exactly one Piposh on screen. Room transitions are
+## canned animations that draw Piposh themselves, in a low channel — DAY1's
+## `edge2up` runs him up channel 3 for frames 406-421 while channel 30 still holds
+## a sprite. `whatodoeveryframe` hides sprite 30 when it hands the playhead to one
+## (`sprite(30).visible = 0` before `go`), and `BehaviorScript 207` turns it back
+## on when the animation ends. Without this the walking animation and the standing
+## puppet are both drawn and Piposh appears twice.
+var visible: bool = true
 
 
 func reset() -> void:
@@ -38,6 +50,7 @@ func reset() -> void:
 	nextroom = {}
 	pending_arrive = {}
 	just_arrived = false
+	visible = true
 	changed.emit()
 
 
@@ -137,6 +150,7 @@ func bootstrap(stage_pt: Vector2, stage_size: Vector2i, scene_name: String) -> v
 	scene = scene_name
 	walk_tick = 0
 	just_arrived = false
+	visible = true
 	changed.emit()
 
 
@@ -167,6 +181,10 @@ func start_walk(nav: Dictionary, stage_pt: Vector2, stage_size: Vector2i, scene_
 			"x": float(arrive.get("x", walk_x)),
 			"y": float(arrive.get("y", walk_y)),
 			"newsyz": nav.get("newsyz", syz),
+			# The lifted export's stand-in for `ifmovie`: an `after` means the walk
+			# lands on a canned animation or another movie rather than on a spot in
+			# this room, which is exactly when the original hides sprite 30.
+			"transition": false,
 		}
 		var after: Variant = nav.get("after", null)
 		if typeof(after) == TYPE_DICTIONARY:
@@ -174,9 +192,11 @@ func start_walk(nav: Dictionary, stage_pt: Vector2, stage_size: Vector2i, scene_
 			if ak == "movie":
 				dest.movie = after.get("value")
 				dest.label = after.get("label", dest.label)
+				dest.transition = true
 			elif ak == "label":
 				dest.label = after.get("value")
 				dest.movie = null
+				dest.transition = true
 
 	if walk_x < loc_h - 10.0:
 		facing = "left"
@@ -233,6 +253,11 @@ func step() -> bool:
 		loc_h = float(next.get("x", loc_h))
 		loc_v = float(next.get("y", loc_v))
 		just_arrived = true
+		# `whatodoeveryframe`, arrival branch: the handover to a canned animation
+		# runs `sprite(30).visible = 0` before its `go`. Hidden here, before
+		# apply_stand() emits `changed`, so no frame is drawn with both Piposhes.
+		if bool(next.get("transition", false)):
+			visible = false
 		apply_stand()
 		arrived.emit(next)
 	else:

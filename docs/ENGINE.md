@@ -177,21 +177,72 @@ any one alone measured identically, which is worth knowing before touching this:
   one namespace and the last load won. DAY1 asking island2 for member 59 got
   MASTER's `invleft` instead of `to forest1`.
 
-Walk outcomes over 117 hotspots in DAY1, NIGHT1 and HOTEL1: identical 51 → 89,
-dead clicks 8 → 0, wrong room 25 → 18, facing-only 33 → 10
-(`tools/lingo_walk_diff.gd`).
+Walk outcomes over 117 hotspots in DAY1, NIGHT1 and HOTEL1, flag off against on
+(`tools/lingo_walk_diff.gd`): identical 85, facing-only 11, wrong room 19, clicks
+that no longer walk 2. Re-measure rather than trusting this line; an earlier
+edition of it quoted 89/10/18/0, which no run since reproduces.
 
-The 18 remaining are all HOTEL1, where the export is the weaker reference:
+Most of the 19 are HOTEL1, where the export is the weaker reference:
 `movie_context.json` has 23 unmapped transitions there and zero verified ones,
 and its destinations repeat per channel across unrelated rooms.
+
+## The interpreter decides navigation, then the tables
+
+`game_step` dispatches `exitFrame` first and consults the exported nav and
+`MovieContext` only when no script navigated or held. Two things had to be true
+for that order to mean anything:
+
+- **`LingoHost.navigated` was never set.** It was cleared on every dispatch and
+  assigned `false` on the failure paths, and nothing ever raised it. So the
+  runtime's "a script decided where to go" test could never fire, and every
+  interpreted `go` was followed by the exported fallthrough: `BehaviorScript 207`
+  sent DAY1 to `lighthouse` at frame 441 and `_advance_or_hold()` immediately
+  moved it to 442. `_enter()` now raises it, and keeps it distinct from `held`,
+  which is what `go to the frame` sets.
+- **The redirect ran before the dispatch.** `_try_transition_redirect` intercepted
+  every frame carrying `frame_script 207` and answered "where does this transition
+  go" out of `movie_context.json`. The original script answers the same question
+  from `item 1 of nextroomdata`, which the room's own `mouseUp` handler wrote, and
+  it also carries `set the visible of sprite 30 to 1`. Both now come from the
+  Lingo; the redirect is the fallback for movies where that script does not run,
+  and stands in for the whole handler, visibility line included.
+
+This is the first of `movie_context.json`'s tables to become answerable from the
+scripts. It is not deleted: it still serves the un-interpreted path.
+
+## Piposh is sprite 30, and sprite 30 can be invisible
+
+Every hub's `init all` runs `puppetSprite(30, 1)`, so Lingo owns the channel and
+`visible` is its only off switch. The original uses it to keep exactly one Piposh
+on screen: a room transition is a canned animation that draws him itself in a low
+channel — DAY1's `edge2up` runs him up channel 3 for frames 406-421 while channel
+30 still holds a sprite — so `whatodoeveryframe` hides sprite 30 when it hands the
+playhead to one, and `BehaviorScript 207` turns it back on at the end.
+
+`PuppetController.visible` is that property, and `is_channel_hidden(30)` /
+`set_channel_visible(30, …)` route to it, so an interpreted
+`set the visible of sprite 30 to 1` reaches it from SEA1's and AIR1's room scripts
+as well. The hide fires on the condition the original uses, `ifmovie` item 1 = "1",
+which `LingoHost._ifmovie_label()` already reads. Without it the canned animation
+and the standing puppet both draw and Piposh appears twice, before or after he
+walks into frame.
+
+Deriving that condition from the score instead does not work: a
+"span ends in `frame_script 207`" test misses 35 of the 104 `ifmovie` transitions,
+because chains like `edge3up` → `lighthouseleft` reach their 207 only at the end.
 
 ## Still open
 
 - Talk trees / lip-sync
 - Day 2 room content: MORN2, MORN3, DTCDAY2, MENADAY2, HATDAY2/3, HATSIKUM and
   INVESTIG have no triggers yet
-- `keyDown`, `startMovie`, `stopMovie` and `idle` are still not dispatched
-- Retirement of `movie_context.json` and `walk_doorways.json` has not started
+- Interpreted `memberNum` / `locH` / `locV` writes never reach the renderer, so
+  any Lingo-driven animation is dead. See `bugs.md` 1.
+- Retirement of `movie_context.json` and `walk_doorways.json`: only the transition
+  destinations have a Lingo answer, and both paths are still live
+- `whatodoeveryframe` is still native. `PuppetController` reads `ifmovie` and
+  `nextroomdata` but reimplements the walk itself, so its `sprite(30).visible = 0`
+  is a port-side copy of the original's line rather than the line running
 - Convergence measured on 5 of 61 movies
 Closed: the 222 unresolvable cast members. 13 were genuinely missing film loops,
 now recovered; 149 are Director shapes, which are the game's invisible hotspots

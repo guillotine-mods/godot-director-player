@@ -41,6 +41,9 @@ const MAX_SCORE_STEPS_PER_TICK := 3
 ## Lingo's dynamic room-redirect handler. Present in DAY1, NIGHT1, HOTEL1 and
 ## AIR1, so this is not a Day 1 concern. Destinations live in MovieContext.
 const DYNAMIC_REDIRECT_SCRIPT := 207
+## Piposh. Puppeted by every hub's `init all`, so the score never drives it and
+## PuppetController is what the channel shows.
+const PUPPET_CHANNEL := 30
 ## Boot movies that are never treated as a hub the player can return to.
 const BOOT_MOVIES := ["strtgame", "exodus"]
 ## Piposh's head. Every drop handler tests this first: an item dropped on it is
@@ -142,8 +145,6 @@ func game_step() -> void:
 		return
 
 	var frame: Dictionary = loader.get_frame(frame_index)
-	if _try_transition_redirect(frame):
-		return
 
 	# The original `on exitFrame` is 2504 of the game's 3457 handlers. When one
 	# exists and navigates, it decides where the score goes and the exported nav
@@ -156,6 +157,14 @@ func game_step() -> void:
 				redraw_requested.emit()
 			if lingo.host.navigated or lingo.host.held:
 				return
+
+	# Only once the interpreter has passed. A room transition ends on
+	# BehaviorScript 207, and that script already knows where to go — it reads
+	# `item 1 of nextroomdata`, which the room's own mouseUp handler wrote. The
+	# redirect below is the stand-in for movies where that script does not run,
+	# and it answers the same question out of a hand-authored table.
+	if _try_transition_redirect(frame):
+		return
 
 	var nav: Variant = frame.get("nav", null)
 	var action: Dictionary = NavActions.resolve(nav, loader, frame_index)
@@ -209,6 +218,13 @@ func _try_transition_redirect(frame: Dictionary) -> bool:
 	if frame.get("frame_script") != DYNAMIC_REDIRECT_SCRIPT:
 		return false
 
+	# Reaching here means the interpreted BehaviorScript 207 did not run or did
+	# not navigate, so this is standing in for it — and the whole script, not
+	# only its `go`. Its second line is `set the visible of sprite 30 to 1`,
+	# which ends the hide the walk's handover started. Dropping it would leave
+	# the puppet invisible for the rest of the movie.
+	set_channel_visible(PUPPET_CHANNEL, true)
+
 	var movie := loader.movie_name
 	var transition := _pending_transition
 	var walked := transition != ""
@@ -250,11 +266,23 @@ func _remember_transition(nav: Variant) -> void:
 
 func is_channel_hidden(channel: int) -> bool:
 	## Story-gated score channel: present in the export, not yet in the story.
+	if channel == PUPPET_CHANNEL:
+		return not puppet.visible
 	return _hidden_channels.has(channel) or _lingo_hidden.has(channel)
 
 
 func set_channel_visible(channel: int, visible: bool) -> void:
 	## `sprite(N).visible = 0` from an interpreted script.
+	if channel == PUPPET_CHANNEL:
+		# Channel 30 is the puppet, so its visibility is the puppet's, not a
+		# separate entry in _lingo_hidden that the renderer would have to consult
+		# twice. This is the path `set the visible of sprite 30 to 1` takes out of
+		# BehaviorScript 207 and out of SEA1's and AIR1's room scripts.
+		if puppet.visible == visible:
+			return
+		puppet.visible = visible
+		redraw_requested.emit()
+		return
 	if visible:
 		if not _lingo_hidden.has(channel):
 			return

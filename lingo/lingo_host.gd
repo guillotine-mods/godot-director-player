@@ -544,6 +544,7 @@ func _walkonby() -> Variant:
 	# `nextroomdata` is the original's room handover and item 1 is the destination
 	# label; "000" means stay in this room.
 	var destination := ""
+	var transition := false
 	if interpreter != null:
 		var raw := LingoValue.to_str((interpreter.globals as Dictionary).get("nextroomdata", ""))
 		var first := LingoValue.get_chunk(raw, "item", 1, 1)
@@ -559,7 +560,16 @@ func _walkonby() -> Variant:
 		var after := _ifmovie_label()
 		if after != "":
 			destination = after
-	puppet.nextroom = {"label": destination} if destination != "" else {}
+			# `ifmovie` item 1 = "1" is the original's own answer to "does this walk
+			# end on a canned animation", and it is the condition
+			# `whatodoeveryframe` hides sprite 30 on. Recorded rather than acted on
+			# here: the hide belongs at arrival, and _ifmovie_label() consumes the
+			# global the way the original clears it, so there is nothing left to
+			# read by then.
+			transition = true
+	puppet.nextroom = (
+		{"label": destination, "transition": transition} if destination != "" else {}
+	)
 	puppet.whatodo = "walktime"
 	puppet.walk_tick = 0
 	puppet.apply_walk_frame()
@@ -629,6 +639,7 @@ func _go(args: Array) -> Variant:
 	# `go to movie "x"` arrives as two arguments in command form.
 	if args.size() >= 2 and LingoValue.to_str(first).to_lower() == "movie":
 		runtime.goto_movie(LingoValue.to_str(args[1]))
+		navigated = true
 		return 0
 	# `go(1, "exodus.dir")` is "frame 1 of that movie". Without this the second
 	# argument was dropped and the first read as a frame in the *current* movie,
@@ -642,11 +653,13 @@ func _go(args: Array) -> Variant:
 		var lowered := target.to_lower()
 		if lowered.ends_with(".dxr") or lowered.ends_with(".dir"):
 			runtime.goto_movie(target.get_file().get_basename(), LingoValue.to_int(first))
+			navigated = true
 			return 0
 	if typeof(first) == TYPE_STRING:
 		var text := (first as String)
 		if text.to_lower().ends_with(".dxr") or text.to_lower().ends_with(".dir"):
 			runtime.goto_movie(text.get_basename())
+			navigated = true
 			return 0
 		var index: int = int(runtime.loader.resolve_label(text, false))
 		if index >= 0:
@@ -668,10 +681,14 @@ func _enter(index: int) -> void:
 		return
 	if index == runtime.frame_index:
 		# `go to the frame`: hold here rather than re-entering, which would
-		# restart the frame's sounds and delay timer on every step.
+		# restart the frame's sounds and delay timer on every step. A hold is not
+		# a navigation, so the two flags stay distinct.
 		held = true
 		return
 	runtime.enter_frame(index)
+	# Set after the call, not before: enter_frame dispatches the destination's
+	# entry scripts and its begin_dispatch() clears this.
+	navigated = true
 
 
 func _sound(args: Array) -> Variant:
