@@ -51,10 +51,21 @@ class Container:
         self.raw = path.read_bytes()
         magic = self.raw[:4]
         if magic not in RIFX_MAGIC:
-            # Little-endian files spell every fourCC backwards, including the
-            # magic. Endianness varies per file in this corpus: one movie is
-            # big-endian and the cast it links is not.
             raise ValueError(f"{path.name}: not a RIFX container ({magic!r})")
+        if magic == b"XFIR":
+            # Refused rather than guessed at. This reader is validated only
+            # against big-endian dumps, and its little-endian output for
+            # `strtgame` — the corpus's one XFIR file — differed from
+            # ProjectorRays in 441 of 912 chunks: same offsets, different
+            # payload boundaries. Emitting those silently is worse than having
+            # no dump, because everything downstream treats a chunk as truth.
+            #
+            # strtgame is also the one XFIR file that already has a real dump,
+            # filed under STRT_CHUNKS, so nothing is lost by refusing here.
+            raise ValueError(
+                f"{path.name}: little-endian (XFIR) containers are not supported; "
+                "use the ProjectorRays dump"
+            )
         self.endian = RIFX_MAGIC[magic]
         self.entries: list[tuple[str, int, int]] = []
         self._read_map()
@@ -129,9 +140,15 @@ def verify(limit: int) -> int:
     27 movies were dumped by ProjectorRays. They are the oracle: a reader that
     cannot reproduce them exactly has no business writing the other 31.
     """
-    dumps = {p.parts[-3]: p for p in (WEB_ALPHA / "decompiled_chunks").glob("*/*/chunks")}
+    # Keyed by the *inner* directory, not the outer one. `STRT_CHUNKS/strtgame`
+    # is strtgame's dump, and keying on the outer name meant it matched no source
+    # file and was silently skipped — which is exactly how a reader that gets
+    # little-endian containers wrong passed a verification claiming to cover
+    # every dump.
+    dumps = {p.parts[-2]: p for p in (WEB_ALPHA / "decompiled_chunks").glob("*/*/chunks")}
     checked = matched = 0
     failures: list[str] = []
+    skipped: list[str] = []
     for name, chunks_dir in sorted(dumps.items())[:limit]:
         source = None
         for candidate in [
@@ -139,16 +156,19 @@ def verify(limit: int) -> int:
             WEB_ALPHA / "PIP2DATA" / f"{name}.CXT",
             WEB_ALPHA / "PIP2DATA" / f"{name}.CST",
             WEB_ALPHA / f"{name.lower()}.dxr",
+            WEB_ALPHA / f"{name}.DXR",
         ]:
             if candidate.is_file():
                 source = candidate
                 break
         if source is None:
+            skipped.append(f"{name}: no source binary")
             continue
         try:
             container = Container(source)
         except ValueError as error:
-            failures.append(f"{name}: {error}")
+            # A refused container is a known limit, not a wrong answer.
+            skipped.append(f"{name}: {error}")
             continue
 
         produced = {f"{safe_name(t)}-{i}.bin": b for i, t, b in container.payloads()}
@@ -168,7 +188,9 @@ def verify(limit: int) -> int:
                     f"{name}/{existing.name}: {len(mine)}B vs {existing.stat().st_size}B")
             else:
                 matched += 1
-    print(f"chunks compared: {checked}   identical: {matched}")
+    print(f"dumps found: {len(dumps)}   compared: {checked}   identical: {matched}")
+    for note in skipped:
+        print(f"  skipped {note}")
     for failure in failures[:15]:
         print(f"  FAIL {failure}")
     if failures:
