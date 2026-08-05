@@ -289,6 +289,82 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 
 ---
 
+## 14. Members whose decoded size is half their true size draw as a smear
+
+**Status:** open, player-visible, root cause narrowed not proven · **Area:** assets
+
+Reported twice from play: art "scratching over too much". The clearest instance is
+the raft in the opening, where the bearded man's head is smeared horizontally
+across the sky.
+
+That head is `strtgame` member 26, channel 15, frames 122-128. `members.json`
+records it 45x34 and the score draws it at 135x34: a 3x stretch on width with
+height untouched. On the same channel member 25 draws at exactly its natural
+37x26, so the score is not stretching the channel — this member's recorded size is
+wrong, and the renderer stretches a too-small bitmap into a correct sprite rect.
+
+Three signals agree that the member, not the score, is wrong:
+
+- its registration point is (68, 17) on a 45-wide bitmap, outside the image, and
+  68 is half of 135 while 17 is half of 34;
+- `BITD-2774` PackBits-decodes to 13,568 bytes consuming its payload exactly, not
+  the 1,564 that stride 46 x 34 rows implies;
+- its `CASt` rect nonetheless reads 45x34, so rect and raster disagree.
+
+Corpus-wide, searching for the signature — one axis stretched more than 1.8x while
+the other stays within 5% of natural — finds **979 sprites in 9 movies**:
+
+| movie | sprites | example |
+|---|---|---|
+| ALLIN | 839 | `1:1` 640x441 -> 1280x441 |
+| DAGI | 51 | `1:13` 129x19 -> 129x35 |
+| INVESTIG | 34 | `1:76` 186x13 -> 368x13 |
+| SEA1 | 32 | `1:245` 56x12 -> 109x12 |
+| strtgame | 7 | `1:26` 45x34 -> 135x34 |
+| NIGHT1 | 6 | `1:371` 6x174 -> 6x325 |
+| ARCADE2 | 5 | `1:103` 34x10 -> 68x10 |
+| CHESS | 4 | `1:21` 60x27 -> 117x26 |
+| MORN3 | 1 | `1:10` 136x13 -> 335x13 |
+
+The ratio is close to 2x in most cases, which is the shape of a member decoded at
+half its true width or height. ALLIN carries 839 of the 979, including a 640-wide
+background drawn at 1280, so it is where the diagnosis can be confirmed fastest.
+
+**Ruled out: endianness.** The first theory was that little-endian containers were
+being mis-read, because `strtgame.dxr` is XFIR. Only two files in the whole corpus
+are — `strtgame.dxr` and `MASTER.CST` — and every other affected movie is
+big-endian, so that explains at most one of the nine. Recorded because it is a
+plausible-looking dead end.
+
+Not the same bug as entry 11. That one is 1-bit members read as 8-bit and is fixed.
+These are members whose geometry is wrong in some other way, and the fix is the
+same shape: re-derive from the container, then require the member's size and the
+score's own sprite rect to agree rather than trusting either alone.
+
+Reproduce, and re-run after any change:
+
+```
+python3 - <<'EOF'
+import json, glob, os, collections
+hits=collections.Counter()
+for p in sorted(glob.glob('assets/render_model/*/frames.json')):
+    m=os.path.basename(os.path.dirname(p))
+    fr=json.load(open(p)); me=json.load(open(f'assets/render_model/{m}/members.json'))['members']
+    for f in fr.get('frames',[]):
+        for s in f.get('sprites',[]):
+            mm=me.get(f"{s.get('cast_lib',1)}:{s.get('cast_id')}")
+            if not (mm and s.get('has_image')): continue
+            mw,mh,sw,sh=mm.get('width'),mm.get('height'),s.get('width'),s.get('height')
+            if not all((mw,mh,sw,sh)): continue
+            rw,rh=sw/mw,sh/mh
+            if (abs(rh-1)<0.05 and rw>1.8) or (abs(rw-1)<0.05 and rh>1.8): hits[m]+=1
+print(sum(hits.values()), hits.most_common())
+EOF
+```
+
+The stage-clipping fix and the film-loop fix were both landed against this report
+and neither addressed it. They fixed real but different defects.
+
 ---
 
 ## Closed
