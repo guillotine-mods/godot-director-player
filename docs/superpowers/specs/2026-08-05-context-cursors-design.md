@@ -50,8 +50,13 @@ are the row stride in bytes.
 
 The upstream exporter recorded that high byte as `bpp_marker` and then ignored it,
 reading every member as 8-bit and inferring geometry from the decoded byte count.
-It is right for 8-bit members and wrong for every 1-bit member. Measured over the
-26 movies with a local chunk dump: 5,751 members correct, 176 wrong.
+It is right for 8-bit members and wrong for every 1-bit member.
+
+**108** members were repaired, across 6 movies. An earlier count of 176 in this
+document was wrong: it looked every member's chunks up in its own movie's dump,
+which for a shared-library member resolves to whichever member happens to hold that
+resource id, and counted the resulting nonsense as 1-bit. Re-run
+`python3 tools/verify_1bit_members.py` rather than trusting either number.
 
 | member | true rect | stride | chunk | exporter said |
 |--------|-----------|--------|-------|---------------|

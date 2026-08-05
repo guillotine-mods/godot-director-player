@@ -51,6 +51,9 @@ const BOOT_MOVIES := ["strtgame", "exodus"]
 const EXAMINE_CHANNEL := 100
 ## master member piphead2, shown for a single stage refresh while he looks.
 const PIPHEAD_LOOK_MEMBER := 55
+## Cursor members live in the movie's own internal cast in every movie that has
+## them, which is what an unqualified `member("wlkcur1").memberNum` resolves to.
+const CURSOR_CAST_LIB := 1
 
 var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
@@ -619,6 +622,37 @@ func handle_key(code: int) -> bool:
 	return true
 
 
+func _run_cursor_funk() -> void:
+	## `cursorfunk` is what gives each channel its cursor: channel 2 the walking
+	## legs, 7 to 9 the magnifier, 10 to 13 the exit arrows, 14 the target, and each
+	## room's init the hand on an occupied inventory slot.
+	##
+	## The original reaches it through each hub's `init all` at frame 1, which this
+	## port never plays: jumping straight to a room's `*go` frame skips it, and
+	## running the rest of `init all` here would reset `shelltoday`, `wreck` and
+	## `inexits` over whatever the save had just restored. So only this handler is
+	## called, which is not the port choosing a cursor mapping — the gate lives
+	## inside the handler (`the movieName contains hotel / day1 / sea / night1 /
+	## air`), so a movie it does not cover still gets nothing. The original calls it
+	## again on every room arrival out of `whatodoeveryframe` regardless.
+	##
+	## After enter_frame, not before. The handler's other job is
+	## `set the memberNum of sprite 93 to the number of member ("day" & globalday)
+	## of castLib "master"`, and `the number of member ... of castLib` yields a plain
+	## integer, so the sprite keeps whichever library it already had. Run before the
+	## score has filled the channels, channel 93 is empty and defaults to library 1,
+	## which resolved master's member 3 against the movie's own internal cast and
+	## warned about a missing member on every SEA1 load.
+	##
+	## That `init all` never runs at all is a wider gap than cursors. See bugs.md.
+	if lingo == null or not AppSettings.use_lingo_frames:
+		return
+	if not lingo.interpreter.has_handler("cursorfunk"):
+		return
+	lingo.host.begin_dispatch()
+	lingo.interpreter.call_handler("cursorfunk")
+
+
 func _run_skipped_entry_scripts() -> void:
 	## Jumping straight to a room's `*go` frame skips the frames the score would
 	## have played on the way in, and one of them is where the room announces
@@ -834,6 +868,7 @@ func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {
 			lingo.interpreter.call_handler("startmovie")
 	movie_changed.emit(movie_name)
 	enter_frame(start)
+	_run_cursor_funk()
 	nav_event.emit(
 		"go movie: %s%s" % [
 			movie_name,
@@ -1359,6 +1394,66 @@ func sprite_stage_rect(sprite: Dictionary) -> Rect2:
 
 func sprite_contains(sprite: Dictionary, stage_pos: Vector2) -> bool:
 	return sprite_stage_rect(sprite).has_point(stage_pos)
+
+
+func cursor_at(stage_pos: Vector2) -> Dictionary:
+	## Which cursor the point is under: {} for the default arrow, otherwise the
+	## composed image and its hotspot.
+	##
+	## Walks channels high to low, because high is topmost in Director, and takes
+	## the first that both covers the point and has a cursor. `cursorfunk` assigns
+	## channel 2 the walking legs, 7 to 9 the magnifier, 10 to 13 the exit arrows
+	## and 14 the target; each room's init puts the hand on inventory slots 103-110.
+	##
+	## Every visible channel, not `clickable_sprites()`. That filter keeps only
+	## sprites carrying lifted `on_click` data or a Lingo `mouseUp` handler, and the
+	## searchable scenery on 7 to 9 has neither: what it does lives in MASTER's
+	## `searchfunk`. Filtering here would silently drop the magnifier, which is the
+	## one cursor that tells the player where to look.
+	##
+	## Reuses `sprite_contains`, so the cursor and the click agree by construction.
+	## Director's own rollover respects the sprite's ink and would be tighter at the
+	## edge of an irregular sprite, but a cursor promising a click that the click
+	## handler will not honour is the worse failure.
+	if loader.movie_name == "":
+		return {}
+	var numbers: Array = channels.keys()
+	numbers.sort()
+	numbers.reverse()
+	for number in numbers:
+		var entry: SpriteChannel = channels[number]
+		if entry.is_empty() or is_channel_hidden(number):
+			continue
+		var pair := _cursor_pair(entry.cursor)
+		if pair.is_empty() or not sprite_contains(entry.sprite, stage_pos):
+			continue
+		# The movie's own cast, never the sprite's. `member("wlkcur1").memberNum`
+		# drops the library, and the number that survives means whatever the name
+		# lookup meant: the movie's internal cast, which is where every cursor
+		# member lives. Reading it against the channel's own library instead made
+		# DAY1's channel 2 compose island2's members 10 and 11, which are a 640x124
+		# piece of scenery rather than a 13x17 cursor.
+		return loader.cursor_image(CURSOR_CAST_LIB, int(pair.data), int(pair.mask))
+	return {}
+
+
+func _cursor_pair(value: Variant) -> Dictionary:
+	## {} unless this is a usable [data, mask] pair.
+	##
+	## `set the cursor of sprite N to [1, 1]` appears 104 times and is the original's
+	## idiom for "back to the default arrow" — member 1 is not cursor art in any of
+	## these casts. Treated as no cursor, so arbitration falls through to whatever is
+	## underneath rather than stopping on a sprite that meant to opt out.
+	if typeof(value) != TYPE_ARRAY:
+		return {}
+	var list: Array = value
+	if list.size() < 2:
+		return {}
+	var data := int(list[0])
+	var mask := int(list[1])
+	if data <= 1 or mask <= 1:
+		return {}
+	return {"data": data, "mask": mask}
 
 
 func marker_name_for_frame(idx: int) -> String:

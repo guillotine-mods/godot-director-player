@@ -21,6 +21,15 @@ const STRTGAME_MENU_HOVER := {
 
 var runtime: DirectorRuntime = DirectorRuntime.new()
 var _view: Dictionary = {}
+## Which cursor is currently installed, as "<pair>@<scale>". Held so the hardware
+## cursor is only replaced when it actually changes: hover fires every mouse move,
+## and re-uploading a texture per move is visible as a flicker on Windows.
+var _cursor_key: String = ""
+## The composed cursor for the gamepad's on-stage pointer, which cannot use the
+## hardware cursor because it is not where the OS pointer is. Held unscaled: the
+## canvas already draws in stage-scaled coordinates.
+var _cursor_texture: Texture2D = null
+var _cursor_hotspot: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -100,20 +109,47 @@ var frame_index: int:
 
 func _on_stage_hover(stage_pos: Vector2) -> void:
 	runtime.update_hover(stage_pos)
-	# displayobject() sets the cursor of an occupied slot to
-	# [member "hand1", member "hand2"]. Those two members decode to 5x6 and 8x8
-	# pixels, and a Director cursor cast pair is 1-bit 16x16, so the export is
-	# wrong and the built-in hand stands in until the BITD decode is fixed.
-	var over_item := false
-	var slot: Dictionary = runtime.slot_sprite_at(stage_pos)
-	if not slot.is_empty():
-		var slot_index: int = GameState.slot_channels().find(int(slot.get("channel", 0)))
-		over_item = GameState.item_in_slot(slot_index) != ""
-	mouse_default_cursor_shape = (
-		Control.CURSOR_POINTING_HAND
-		if over_item or runtime.drag.active
-		else Control.CURSOR_ARROW
+	_apply_cursor(stage_pos)
+
+
+func _apply_cursor(stage_pos: Vector2) -> void:
+	## The cursor the original would show here, from the channel under the point.
+	##
+	## Scaled to the stage rather than shown at its native size: these are 13x17 to
+	## 17x17 pixels, authored for a 640x480 screen, and at 1440p an unscaled one is
+	## a speck. Nearest-neighbour, because they are 1-bit art and any filtering
+	## turns a two-colour cursor into grey mush.
+	var cursor: Dictionary = runtime.cursor_at(stage_pos)
+	if cursor.is_empty():
+		if _cursor_key != "":
+			_cursor_key = ""
+			_cursor_texture = null
+			Input.set_custom_mouse_cursor(null)
+		mouse_default_cursor_shape = Control.CURSOR_ARROW
+		return
+
+	var image: Image = cursor.image
+	var hotspot: Vector2i = cursor.hotspot
+	var scale := maxi(1, int(floor(_stage_scale())))
+	var key := "%s@%d" % [str(cursor.get("key", "")), scale]
+	if key == _cursor_key:
+		return
+	_cursor_key = key
+	_cursor_texture = ImageTexture.create_from_image(image)
+	_cursor_hotspot = Vector2(hotspot)
+
+	var scaled := image
+	if scale > 1:
+		scaled = image.duplicate()
+		scaled.resize(
+			image.get_width() * scale, image.get_height() * scale, Image.INTERPOLATE_NEAREST
+		)
+	Input.set_custom_mouse_cursor(
+		ImageTexture.create_from_image(scaled),
+		Input.CURSOR_ARROW,
+		Vector2(hotspot.x * scale, hotspot.y * scale),
 	)
+	mouse_default_cursor_shape = Control.CURSOR_ARROW
 
 
 func _on_stage_click(stage_pos: Vector2) -> void:
@@ -330,6 +366,16 @@ func screen_to_stage(local_pos: Vector2) -> Vector2:
 	return (local_pos - origin) / maxf(fit, 0.0001)
 
 
+func _stage_scale() -> float:
+	## Stage pixels to screen pixels, so a 13x17 cursor can be drawn at the size the
+	## rest of the artwork is being shown at.
+	_update_view_transform()
+	if AppSettings.aspect_mode == AppSettings.AspectMode.STRETCH_FILL:
+		var stage := Vector2(runtime.loader.stage_size)
+		return minf(size.x / maxf(stage.x, 1.0), size.y / maxf(stage.y, 1.0))
+	return float(_view.get("fit_scale", 1.0))
+
+
 func stage_to_screen(stage_pos: Vector2) -> Vector2:
 	_update_view_transform()
 	var stage := Vector2(runtime.loader.stage_size)
@@ -378,7 +424,9 @@ func _update_view_transform() -> void:
 func _update_virtual_cursor_visual() -> void:
 	if virtual_cursor == null:
 		return
-	virtual_cursor.visible = InputRouter.using_gamepad
+	# The plain block stands in only where the original has no cursor for what the
+	# pointer is over; where it does, draw_current_frame draws that instead.
+	virtual_cursor.visible = InputRouter.using_gamepad and _cursor_texture == null
 	var screen := stage_to_screen(InputRouter.virtual_cursor)
 	virtual_cursor.position = screen - virtual_cursor.size * 0.5
 
@@ -536,6 +584,24 @@ func draw_current_frame(canvas: Control) -> void:
 					),
 					false
 				)
+
+	# The gamepad's pointer is on the stage, not where the OS pointer is, so the
+	# hardware cursor cannot show it and it is drawn here instead. Same composed
+	# image as the mouse gets, at its registration point, so both inputs show the
+	# player the same thing.
+	if InputRouter.using_gamepad and _cursor_texture != null:
+		var chotspot: Vector2 = _cursor_hotspot
+		var cpos: Vector2 = InputRouter.virtual_cursor
+		canvas.draw_texture_rect(
+			_cursor_texture,
+			Rect2(
+				(cpos.x - chotspot.x) * sx,
+				(cpos.y - chotspot.y) * sy,
+				float(_cursor_texture.get_width()) * sx,
+				float(_cursor_texture.get_height()) * sy,
+			),
+			false
+		)
 
 	if AppSettings.show_press_marks() or AppSettings.show_hotspot_hints:
 		for sprite in runtime.clickable_sprites(frame):

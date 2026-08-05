@@ -405,7 +405,11 @@ func get_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 			if typeof(by_number) == TYPE_DICTIONARY and (by_number as Dictionary).has(number):
 				return str((by_number as Dictionary)[number])
 		return ""
-	if key == "number":
+	if key == "number" or key == "membernum":
+		# `member("wlkcur1").memberNum` and `the number of member "wlkcur1"` are the
+		# same question. Only the second was answered, so the first fell through to
+		# the 0 below: every cursor pair in `cursorfunk` resolved to [0, 0], and the
+		# failure is silent because 0 is a plausible member number.
 		return member_number(which, cast)
 	if key == "text":
 		return get_field(LingoValue.to_str(which), cast)
@@ -565,7 +569,7 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			runtime.go_back()
 			return 0
-		"cursor", "preloadmember", "unloadmember", "alert", "beep", "nothing", "cursorfunk", "updatelock":
+		"cursor", "preloadmember", "unloadmember", "alert", "beep", "nothing", "updatelock":
 			return 0
 		_:
 			unhandled[name.to_lower()] = true

@@ -53,6 +53,9 @@ var _registry_texture_cache: Dictionary = {}
 var _missing_registry_texture_keys: Dictionary = {}
 var _film_loop_cache: Dictionary = {}
 var _missing_film_loop_keys: Dictionary = {}
+## Composed cursor images, keyed by the member pair. Small and few — the game uses
+## nine distinct cursors — so they are held for the life of the movie.
+var _cursor_cache: Dictionary = {}
 
 
 func load_index() -> Error:
@@ -671,6 +674,72 @@ func _apply_transparency(img: Image, mode: Transparency) -> void:
 			_apply_background_key(img)
 		_:
 			pass
+
+
+func cursor_image(cast_lib: int, data_id: int, mask_id: int) -> Dictionary:
+	## Composes a Director cursor from its two 1-bit members.
+	##
+	## `set the cursor of sprite N to [member("wlkcur1").memberNum,
+	## member("wlkcur2").memberNum]` is a (data, mask) pair, which the pixels
+	## confirm: `wlkcur2` is the filled silhouette of `wlkcur1`'s outline. Mask bit
+	## clear is transparent; where the mask is set the data bit chooses black or
+	## white. The result is what makes a white-on-black cursor readable over dark
+	## artwork, which a single-bitmap reading loses.
+	##
+	## Hotspot is the data member's registration point. These are not the classic
+	## 16x16 Mac cursor: `wlkcur` is 13x17, `trgcur` 17x17, `hand` 15x17, so nothing
+	## here may assume a size.
+	##
+	## Returns {} when either member is missing, so the caller falls back to the
+	## system arrow rather than drawing a hole.
+	var key := "%d:%d:%d" % [cast_lib, data_id, mask_id]
+	if _cursor_cache.has(key):
+		return _cursor_cache[key]
+
+	var data_img := _member_image(cast_lib, data_id)
+	var mask_img := _member_image(cast_lib, mask_id)
+	if data_img == null or mask_img == null:
+		_cursor_cache[key] = {}
+		return {}
+
+	var w := data_img.get_width()
+	var h := data_img.get_height()
+	var out := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			# The mask is authored at the same size as its data member in every pair
+			# the game uses, but clamp rather than trust it: a mismatch should cost
+			# an edge pixel, not an out-of-bounds read.
+			var mx := mini(x, mask_img.get_width() - 1)
+			var my := mini(y, mask_img.get_height() - 1)
+			if mask_img.get_pixel(mx, my).r > 0.5:
+				out.set_pixel(x, y, Color(0, 0, 0, 0))
+				continue
+			var ink := data_img.get_pixel(x, y).r <= 0.5
+			out.set_pixel(x, y, Color(0, 0, 0, 1) if ink else Color(1, 1, 1, 1))
+
+	var member := get_member(cast_lib, data_id)
+	var made := {
+		"image": out,
+		"hotspot": Vector2i(
+			int(member.get("reg_offset_x", w / 2)),
+			int(member.get("reg_offset_y", h / 2)),
+		),
+		# Identifies the pair, so a caller can tell two cursors apart without
+		# comparing images. Size and hotspot alone do not: `wlkcur` and `magni` are
+		# both 13x17.
+		"key": key,
+	}
+	_cursor_cache[key] = made
+	return made
+
+
+func _member_image(cast_lib: int, cast_id: int) -> Image:
+	var member := get_member(cast_lib, cast_id)
+	if member.is_empty():
+		return null
+	var abs_path := _resolve_bitmap_path(member, false)
+	return null if abs_path.is_empty() else _load_bmp(abs_path)
 
 
 func _apply_background_key(img: Image) -> void:

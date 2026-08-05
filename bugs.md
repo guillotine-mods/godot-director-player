@@ -191,6 +191,61 @@ An engine change can only be checked against the five.
 
 ---
 
+## 11. The upstream exporter decodes every 1-bit member as 8-bit
+
+**Status:** open upstream, worked around here · **Area:** assets / export
+
+Director's CASt chunk holds a `u16` pitch whose `0x8000` bit is the depth flag and
+whose low 15 bits are the row stride, then a **signed** rect. The exporter records
+that high byte as `bpp_marker`, ignores it, reads every member as 8 bits per pixel
+and infers geometry from the decoded byte count. Correct for 8-bit members, wrong
+for every 1-bit one: `wlkcur1` came out 5x6 pixels of colour noise instead of
+13x17.
+
+That exporter is not in any repo on this machine. `assets/SOURCE.txt` records the
+assets as a robocopy from `E:\games\piposh2\reports\render_model\` on a Windows
+box; `Piposh2-Port` is a separate migration effort whose `spike/bitd-export`
+self-describes as disposable and emits a different format, and
+`~/Projects/_private_projects/piposh2/` has no exporter either.
+
+`tools/repair_1bit_members.py` re-decodes the affected members in place from the
+raw chunks and `tools/verify_1bit_members.py` is the pass/fail check. **A future
+re-export from the Windows toolchain will silently undo the repair** unless the
+decoder is fixed there first, or the repair is re-run after syncing.
+
+Reproduce:
+
+```
+python3 tools/verify_1bit_members.py     # PASS once repaired
+python3 -c "import struct;b=open('/Users/yonatankarp-rudin/Projects/_private_projects/Piposh2-Port/originals/recovery/web-alpha/decompiled_chunks/DAY1/DAY1/chunks/CASt-51.bin','rb').read();t,c,s=struct.unpack_from('>III',b,0);p,=struct.unpack_from('>H',b,12+c);print('pitch',hex(p),'rect',struct.unpack_from('>hhhh',b,14+c))"
+```
+
+Not repaired: 62 of the 88 movies have no local chunk dump, so their 1-bit members
+are still wrong. Only 6 movies contain any, and of the cursor-carrying ones NIGHT1
+and ENDMOVI4 are the two left broken. Reaching the rest needs imap/mmap traversal
+of the `.DXR` files under `Piposh2-Port/originals/recovery/web-alpha/PIP2DATA/`.
+
+---
+
+## 12. `init all` never runs on movie entry
+
+**Status:** open · **Area:** interpreter / score
+
+Each hub's `init all` sits at the movie's frame 1 and the port jumps straight to a
+room's `*go` frame, so it is never played. `DAY1/wonder/BehaviorScript 56` sets
+`shelltoday`, `bath`, `dubi`, `mirror`, `inexits`, `wreck` and `firsttalk`, and
+calls `cursorfunk()` and `peoplefunk()`. None of that happens; `GameState` supplies
+its own new-game values instead, which is why the game plays at all.
+
+`_run_cursor_funk()` calls the one handler cursors need, deliberately and no more:
+running the rest here would reset that state over whatever a save had just
+restored. Everything else `init all` does is still missing.
+
+Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
+`runtime.lingo.interpreter.globals`.
+
+---
+
 ---
 
 ## Closed
