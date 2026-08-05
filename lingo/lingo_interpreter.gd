@@ -27,6 +27,9 @@ var globals: Dictionary = {}
 var host: Object = null
 var item_delimiter: String = ","
 var errors: PackedStringArray = PackedStringArray()
+## Names the runtime could not bind, with where each was reached from. Host
+## bindings report through here too, via `report()`.
+var diagnostics := LingoDiagnostics.new()
 
 ## Handlers reachable from anywhere: movie scripts.
 var _movie_handlers: Dictionary = {}
@@ -35,6 +38,14 @@ var _scripts: Dictionary = {}
 var _steps: int = 0
 var _return_value: Variant = null
 var _depth: int = 0
+## Where execution is, for locating a diagnostic. Statement granularity: the
+## line of the statement being run, not of the expression inside it.
+var _script_name: String = ""
+var _handler_name: String = ""
+var _line: int = 0
+var _current_handler: Dictionary = {}
+## script|handler -> {name: true}, built the first time a handler reports.
+var _assigned_names: Dictionary = {}
 
 
 func _init(host_object: Object = null) -> void:
@@ -137,6 +148,15 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 		_fail("handler recursion too deep at %s" % str(handler.get("name", "?")))
 		return null
 	_depth += 1
+	# Saved on the stack rather than pushed onto one: a nested call must not
+	# leave the caller reporting from the callee's line.
+	var outer_script := _script_name
+	var outer_handler := _handler_name
+	var outer_body := _current_handler
+	var outer_line := _line
+	_script_name = str(script.get("script", ""))
+	_handler_name = str(handler.get("name", ""))
+	_current_handler = handler
 	var frame := {
 		"locals": {},
 		"script": script,
@@ -147,6 +167,10 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 		frame["locals"][str(params[i]).to_lower()] = args[i] if i < args.size() else 0
 	_return_value = null
 	var flow := _exec_block(handler.get("body", []), frame)
+	_script_name = outer_script
+	_handler_name = outer_handler
+	_current_handler = outer_body
+	_line = outer_line
 	_depth -= 1
 	if flow == Flow.RETURN:
 		return _return_value
@@ -167,6 +191,19 @@ func run_handler_in_script(script: Dictionary, name: String, args: Array = []) -
 func reset_steps() -> void:
 	_steps = 0
 	errors.clear()
+	# Diagnostics deliberately survive: they accumulate over a session so the
+	# emitted set covers the whole run rather than the last dispatch.
+
+
+func report(category: String, name: String) -> void:
+	## Host bindings report through here, so the location comes from one place.
+	diagnostics.report(category, name, _script_name, _handler_name, _line)
+
+
+func location() -> Array:
+	## Where execution is, for a trace record. The same three values `report`
+	## hands the sink, so a trace entry and a diagnostic about one access agree.
+	return [_script_name, _handler_name, _line]
 
 
 # ---------------------------------------------------------------- statements
@@ -189,6 +226,7 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 	if _steps > MAX_STEPS:
 		_fail("step budget exhausted")
 		return Flow.ABORT
+	_line = int(stmt.get("line", _line))
 	match str(stmt.get("node", "")):
 		"global", "property":
 			for name in stmt.get("names", []):
@@ -588,7 +626,13 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	if host != null and host.has_method("owns_global") and host.owns_global(key):
 		return host.get_global(key)
 	if globals.has(key):
-		return globals[key]
+		var value: Variant = globals[key]
+		if value == null:
+			# Declared with `global x` and never assigned. VOID is the right
+			# answer, but which name and where is still worth knowing, and it is
+			# the script's own unset variable rather than a binding the port owes.
+			report(LingoDiagnostics.UNSET_VARIABLE, key)
+		return value
 	# An unknown bare identifier is a parameterless handler call in Lingo.
 	if host != null and host.has_method("is_native_handler") and host.is_native_handler(key):
 		var native: Variant = _host_call("call_builtin", [key, []])
@@ -599,7 +643,54 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	if handled != null:
 		return handled
 	# Unknown identifiers are VOID, which concatenates as "" and counts as 0.
+	report(
+		LingoDiagnostics.UNSET_VARIABLE if _handler_assigns(key) else LingoDiagnostics.UNBOUND_NAME,
+		key)
 	return null
+
+
+func _handler_assigns(key: String) -> bool:
+	## Whether the running handler assigns this name anywhere. If it does, the
+	## read is an uninitialised local — the branch that would have set it was not
+	## taken — and not a name the port failed to bind. Scanning the body is only
+	## ever paid for by a handler that already has something to report, and the
+	## answer is cached per handler.
+	var cache_key := "%s|%s" % [_script_name, _handler_name]
+	var names: Variant = _assigned_names.get(cache_key, null)
+	if names == null:
+		names = {}
+		for param in _current_handler.get("params", []):
+			(names as Dictionary)[str(param).to_lower()] = true
+		_collect_assigned(_current_handler.get("body", []), names)
+		_assigned_names[cache_key] = names
+	return (names as Dictionary).has(key)
+
+
+func _collect_assigned(stmts: Variant, out: Dictionary) -> void:
+	if typeof(stmts) != TYPE_ARRAY:
+		return
+	for stmt in stmts:
+		if typeof(stmt) != TYPE_DICTIONARY:
+			continue
+		var node: Dictionary = stmt
+		match str(node.get("node", "")):
+			"assign", "put":
+				var target: Variant = node.get("target", {})
+				if typeof(target) == TYPE_DICTIONARY \
+						and str((target as Dictionary).get("node", "")) == "var":
+					out[str((target as Dictionary).get("name", "")).to_lower()] = true
+			"if":
+				_collect_assigned(node.get("then", []), out)
+				_collect_assigned(node.get("else", []), out)
+			"repeat_while", "repeat_forever", "tell":
+				_collect_assigned(node.get("body", []), out)
+			"repeat_with", "repeat_in":
+				out[str(node.get("var", "")).to_lower()] = true
+				_collect_assigned(node.get("body", []), out)
+			"case":
+				for branch in node.get("branches", []):
+					_collect_assigned((branch as Dictionary).get("body", []), out)
+				_collect_assigned(node.get("default", []), out)
 
 
 func _script_has_handler(script: Variant, key: String) -> bool:
@@ -670,6 +761,10 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	if _script_has_handler(script, name) or has_handler(name):
 		return call_handler(name, args, script)
 	var result: Variant = _host_call("call_builtin", [name, args])
+	if result == null and name != "":
+		# The host binds no builtin by this name. Distinguishable from one that
+		# answers VOID, because every bound branch returns a value.
+		report(LingoDiagnostics.BUILTIN, name)
 	return result if result != null else 0
 
 

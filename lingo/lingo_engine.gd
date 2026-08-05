@@ -20,6 +20,8 @@ const LINGO_ROOT := "res://data/lingo"
 var interpreter: LingoInterpreter
 var host: LingoHost
 var runtime: Object = null
+## Null unless PIPOSH2_TRACE asked for dispatch records — see lingo/lingo_trace.gd.
+var trace: LingoTrace = null
 
 ## Loaded bundle directories, so a movie change only pays for what is new.
 var _loaded: Dictionary = {}
@@ -28,6 +30,14 @@ var _intervals: Dictionary = {}
 var _current_movie: String = ""
 ## dir name -> bundle keys, so member lookups do not hit the filesystem.
 var _cast_keys: Dictionary = {}
+## dir name -> handler name -> {handler, cast, script}. Indexed as a directory is
+## scanned, which happens once per session, so re-entering a movie rebuilds its
+## table from the cache rather than from disk.
+var _handlers_by_dir: Dictionary = {}
+## The current movie's own table and the archive its linked casts supply, kept
+## apart so resolution can say which tier answered.
+var _movie_table: Dictionary = {}
+var _archive_table: Dictionary = {}
 ## Names of scripts that were reached but had no handler for the event, for
 ## reporting. Not an error: falling through is normal.
 var missing_handlers: Dictionary = {}
@@ -46,6 +56,7 @@ func prepare_movie(movie: String) -> void:
 		return
 	_current_movie = movie.to_upper()
 	_load_bundles_for(_current_movie)
+	var archive_dirs := PackedStringArray()
 	if runtime != null and runtime.get("loader") != null:
 		var libs: Dictionary = runtime.loader.cast_libs
 		for key in libs.keys():
@@ -55,7 +66,11 @@ func prepare_movie(movie: String) -> void:
 			var name := str((entry as Dictionary).get("name", "")).strip_edges()
 			if name == "" or name.to_lower() == "internal":
 				continue
-			_load_bundles_for(name.to_upper())
+			var dir_name := name.to_upper()
+			_load_bundles_for(dir_name)
+			if dir_name != _current_movie and not archive_dirs.has(dir_name):
+				archive_dirs.append(dir_name)
+	_install_handler_table(archive_dirs)
 	_load_intervals(_current_movie)
 
 
@@ -74,8 +89,86 @@ func _load_bundles_for(dir_name: String) -> void:
 			var parsed: Variant = JSON.parse_string(text)
 			if typeof(parsed) == TYPE_DICTIONARY:
 				interpreter.load_bundle(parsed, dir_name)
+				_index_movie_handlers(dir_name, parsed as Dictionary)
 		file = dir.get_next()
 	dir.list_dir_end()
+
+
+func _index_movie_handlers(dir_name: String, bundle: Dictionary) -> void:
+	## A MovieScript's handlers are the ones reachable without a sprite or member
+	## to hang them off, which is what a handler table holds. Indexed per
+	## directory, because the directory is what owns them: a movie's own casts
+	## fill its own table, a cast library's fill the shared archive.
+	##
+	## `cast` has to be spelled exactly as `load_bundle` keys `_scripts`,
+	## "<dir>/<cast>", or `call_handler` looks the owning script up, finds
+	## nothing, and the handler runs with no script to resolve or report from.
+	var cast := "%s/%s" % [dir_name, str(bundle.get("cast", ""))]
+	var table: Dictionary = _handlers_by_dir.get(dir_name, {})
+	var scripts: Dictionary = bundle.get("scripts", {})
+	for script_name in scripts.keys():
+		if not str(script_name).to_lower().begins_with("moviescript"):
+			continue
+		var ast: Dictionary = scripts[script_name]
+		for handler in ast.get("handlers", []):
+			var key := str((handler as Dictionary).get("name", "")).to_lower()
+			if key == "" or table.has(key):
+				continue
+			table[key] = {"handler": handler, "cast": cast, "script": str(script_name),
+				"owner": dir_name}
+	_handlers_by_dir[dir_name] = table
+
+
+func _install_handler_table(archive_dirs: PackedStringArray) -> void:
+	## Director builds a movie's handler table from that movie's own casts, and a
+	## handler another movie defines is not reachable at all. Both tables are
+	## replaced wholesale on every movie change, so nothing the previous movie
+	## loaded survives into the next one.
+	##
+	## The archive is the casts *this* movie links, not every cast the session has
+	## ever loaded. WONDER, ISLAND2 and BOOK all define `peoplefunk`, so an archive
+	## that accumulated would make a movie's resolution depend on which rooms the
+	## player passed through on the way in.
+	_movie_table = (_handlers_by_dir.get(_current_movie, {}) as Dictionary).duplicate()
+	_archive_table = {}
+	for dir_name in archive_dirs:
+		var table: Dictionary = _handlers_by_dir.get(dir_name, {})
+		for key in table.keys():
+			if not _archive_table.has(key):
+				_archive_table[key] = table[key]
+	## The interpreter resolves script-to-script calls against its own table, so
+	## the scoping has to reach that table and not only this file's dispatch.
+	## Merged with the movie's own entries winning, which is the two-tier lookup:
+	## the movie's casts first, the shared archive only after.
+	var installed: Dictionary = _archive_table.duplicate()
+	installed.merge(_movie_table, true)
+	interpreter._movie_handlers = installed
+
+
+func resolve_movie_handler(name: String) -> Dictionary:
+	## Which definition wins for a movie-script handler name, and which tier
+	## answered. Empty when the name is in neither table. Dispatch goes through
+	## here, so anything else asking the same question gets the game's answer
+	## rather than a second opinion.
+	var key := name.to_lower()
+	if _movie_table.has(key):
+		return _resolution("movie", _movie_table[key])
+	if _archive_table.has(key):
+		return _resolution("archive", _archive_table[key])
+	return {}
+
+
+func _resolution(tier: String, entry: Dictionary) -> Dictionary:
+	## `handler` is the AST `call_handler` invokes, not a second lookup of it, so
+	## a caller checking what actually runs cannot be fooled by the owner label
+	## this table wrote next to it.
+	return {
+		"tier": tier,
+		"owner": str(entry.get("owner", "")),
+		"cast": str(entry.get("cast", "")),
+		"script": str(entry.get("script", "")),
+		"handler": entry.get("handler", {}),
+	}
 
 
 func _load_intervals(movie: String) -> void:
@@ -212,6 +305,7 @@ func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> boo
 
 	var behaviour := behaviour_for_sprite(channel, frame_index)
 	if not behaviour.is_empty() and interpreter.run_handler_in_script(behaviour, event):
+		_trace_dispatch(event, "behaviour", channel, behaviour)
 		return true
 
 	var sprite := _sprite_in_frame(channel, frame_index)
@@ -219,17 +313,44 @@ func dispatch_sprite_event(event: String, channel: int, frame_index: int) -> boo
 		var member_script := script_for_member(
 			int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0)))
 		if not member_script.is_empty() and interpreter.run_handler_in_script(member_script, event):
+			_trace_dispatch(event, "member", channel, member_script)
 			return true
 
 	var frame := frame_script(frame_index)
 	if not frame.is_empty() and interpreter.run_handler_in_script(frame, event):
+		_trace_dispatch(event, "frame", channel, frame)
 		return true
 
-	if interpreter.has_handler(event):
+	var resolved := resolve_movie_handler(event)
+	if not resolved.is_empty():
+		_trace_movie_dispatch(event, channel, resolved)
 		interpreter.call_handler(event)
 		return true
+	if trace != null:
+		trace.dispatch(event, "unresolved", channel, "", "", "", false)
 	missing_handlers["%s:ch%d" % [event, channel]] = true
+	_report_unresolved(event)
 	return false
+
+
+func _trace_dispatch(event: String, source: String, channel: int, script: Dictionary) -> void:
+	## A record at each tier that answers, not only at the movie tier. The movie
+	## tier is the last resort in dispatch_sprite_event, so hooking resolution
+	## alone would trace the rarest source and miss every sprite behaviour — and
+	## "the source type" is the one field a dispatch record exists to carry.
+	## Movie-script identity still comes only from resolve_movie_handler; see
+	## _trace_movie_dispatch.
+	if trace == null:
+		return
+	trace.dispatch(event, source, channel, str(script.get("script", "")),
+		LingoTrace.UNAVAILABLE, "", true)
+
+
+func _trace_movie_dispatch(event: String, channel: int, resolved: Dictionary) -> void:
+	if trace == null:
+		return
+	trace.dispatch(event, "movie", channel, str(resolved.get("script", "")),
+		str(resolved.get("cast", "")), str(resolved.get("tier", "")), true)
 
 
 func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
@@ -256,6 +377,7 @@ func dispatch_sprite_behaviours(event: String, frame_index: int) -> int:
 		host.click_on = channel
 		interpreter.reset_steps()
 		if interpreter.run_handler_in_script(behaviour, event):
+			_trace_dispatch(event, "behaviour", channel, behaviour)
 			ran += 1
 	host.click_on = 0
 	return ran
@@ -267,11 +389,24 @@ func dispatch_frame_event(event: String, frame_index: int) -> bool:
 	interpreter.reset_steps()
 	var frame := frame_script(frame_index)
 	if not frame.is_empty() and interpreter.run_handler_in_script(frame, event):
+		_trace_dispatch(event, "frame", 0, frame)
 		return true
-	if interpreter.has_handler(event):
+	var resolved := resolve_movie_handler(event)
+	if not resolved.is_empty():
+		_trace_movie_dispatch(event, 0, resolved)
 		interpreter.call_handler(event)
 		return true
+	if trace != null:
+		trace.dispatch(event, "unresolved", 0, "", "", "", false)
+	_report_unresolved(event)
 	return false
+
+
+func _report_unresolved(event: String) -> void:
+	## A name that reached the movie-script tier and resolved in neither table.
+	## Deduplicated by the sink, so an event the game raises on every frame and
+	## nobody handles costs one entry and not one per frame.
+	interpreter.report(LingoDiagnostics.EVENT, event)
 
 
 func _sprite_in_frame(channel: int, frame_index: int) -> Dictionary:
@@ -312,7 +447,11 @@ func stats() -> Dictionary:
 	return {
 		"scripts": interpreter.script_count(),
 		"movie_handlers": interpreter.movie_handler_names().size(),
+		"movie_handlers_own": _movie_table.size(),
+		"movie_handlers_archive": _archive_table.size(),
 		"interval_channels": (_intervals.get(_current_movie, {}) as Dictionary).size(),
 		"unhandled_builtins": host.unhandled_names(),
 		"errors": interpreter.errors,
+		"diagnostics": interpreter.diagnostics.entries(),
+		"diagnostics_dropped": interpreter.diagnostics.dropped,
 	}
