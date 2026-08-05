@@ -137,6 +137,41 @@ just be the movie stem. Window trimmings (`windowType`, `centerStage`,
 property write on a window handle must not fall into the interpreter's
 assign-failure path.
 
+### What the swap breaks
+
+**In Director the parent movie never unloads.** Modelling the window as a movie
+swap means every piece of state the port keeps *per movie* now crosses a boundary
+it never crossed in the original. Each of these cost a play session on Piposh 2,
+and they were found separately before the pattern was obvious:
+
+- **Cast library 1 means "the current movie's own cast".** Any member reference
+  held across the swap silently re-resolves. The port drew the player character
+  into the window using `cast_lib 1` plus the member number its own controller
+  held; JOKE's member 29 is the joke bitmap `joke33`, and the character's
+  largest standing member is also 29. The result was a *second joke* on the page,
+  at his stage position. Sizes 84, 110, 136 and 162 do not exist in JOKE, so it
+  drew nothing at those and the fault looked room-dependent and random.
+  Corollary: a sprite belongs to the movie whose channel it is. Ask whether the
+  loaded movie's score uses that channel **anywhere** — per movie, not per frame,
+  because a transition span can legitimately omit a channel for its whole length
+  while the character walks through it.
+- **Returning has to re-scope the interpreter.** The go-back path reloaded the
+  movie without the "prepare movie" step its forward counterpart runs, so script
+  resolution still pointed at the movie being *left*. Frame scripts resolved to
+  nothing and the room's entry handlers silently did not run — which read as
+  unrelated bugs: every collectable in the room on show, and stale room-identity
+  globals sending hotspots down dead branches. One line, and nothing errored.
+- **State the destination's own initialisation established is gone.** `init all`
+  runs `puppetSprite` on a set of channels once, on the movie's first frame. The
+  return lands mid-room and never re-runs it, so puppet ownership evaporates on
+  the first round trip and the score reclaims channels Lingo is supposed to own.
+
+The rule: for each piece of per-movie state, decide explicitly whether the swap
+preserves it or resets it. The answers differ per item — channel contents should
+reset, script scope must follow the movie, adventure state must survive, and
+initialisation-established ownership needs re-establishing — so a blanket clear
+and a blanket keep are both wrong.
+
 ## Other bindings worth knowing
 
 - `go(1, "movie.dxr")` means *frame 1 of that movie*. The two-argument form is

@@ -1,6 +1,6 @@
 ---
 name: porting-fidelity-verification
-description: Use when verifying a port against derived or lifted reference data, when a fidelity metric moves unexpectedly, before flipping a behavioural flag on by default, or when deciding whether a measured difference is a regression. Covers why agreement metrics invert as a port gets more faithful, and why to distrust the harness before the code.
+description: Use when verifying a port against derived or lifted reference data, when writing a new harness or assertion about the original's behaviour, when a fidelity metric moves unexpectedly, before flipping a behavioural flag on by default, or when deciding whether a measured difference is a regression. Covers why agreement metrics invert as a port gets more faithful, why to distrust the harness before the code, and how an assertion can pass while proving nothing.
 ---
 
 # Verifying a port whose oracle is derived data
@@ -55,6 +55,39 @@ Every metric that surprised me was wrong, and the code was right:
 The discipline: when a metric jumps, prove the harness still exercises the path
 before explaining the result. A cheap way is to assert something you already know
 to be true and check it still holds.
+
+## Do not assert a tidier game than the one being ported
+
+A new harness is a set of assumptions about the original, written down. Two of mine
+were wrong where the code was right:
+
+- **Uniqueness.** A check that every room's collectable key is distinct failed on
+  three rooms — which genuinely share one background member in the original, so the
+  original shares the key too. It now reports sharing instead of failing on it.
+- **A behaviour the port structurally cannot have.** A check that an item stayed
+  hidden after a window closed was asserting Director's two stages. Worth keeping
+  only once restated as what the player actually sees on the way back.
+
+Before believing a new assertion, ask what in the original guarantees it. If the
+answer is "it would be tidier that way", the assertion is the bug.
+
+## Make a round-trip assertion show the state crossing the boundary
+
+A smoke check asserted "the window shows this day's picture" and passed for months
+by reading a property back out of the dictionary the write had just gone into. The
+renderer never consulted that dictionary, so the picture was never drawn. The
+assertion proved the setter and the getter agreed with each other.
+
+Assert at the far end: the rect the renderer will use, the pixels, the value the
+consumer reads — not the value you just stored.
+
+## Look at the asset before reasoning about its coordinates
+
+Two screenshots of a mispositioned image produced a long run of plausible theories
+about registration points and sprite rects, none of which fitted, partly because
+the "before" and "after" were mixed up. Converting the suspect bitmap and simply
+viewing it identified the culprit outright, in seconds. Where an asset pipeline is
+involved, extract and look before deducing.
 
 ## Find the silent caps
 
