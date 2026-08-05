@@ -163,6 +163,17 @@ def chunk_dirs(root: Path) -> dict:
     return found
 
 
+def dump_members(doc) -> str:
+    """Serialises members.json the way the exporter did.
+
+    `indent=2` with no trailing newline round-trips the originals byte for byte.
+    Writing compact JSON instead collapsed seven of these files, 22k to 42k lines
+    each, onto a single line: a 160,000-line diff of pure formatting that buried
+    the seven values actually changed and would have left the files undiffable.
+    """
+    return json.dumps(doc, indent=2, ensure_ascii=False)
+
+
 def repair_movie(movie_dir: Path, dumps: dict, dry_run: bool):
     """Repairs every 1-bit member of one movie. Returns (repaired, digests)."""
     members_path = movie_dir / "members.json"
@@ -216,7 +227,7 @@ def repair_movie(movie_dir: Path, dumps: dict, dry_run: bool):
         repaired += 1
 
     if repaired and not dry_run:
-        members_path.write_text(json.dumps(doc, separators=(",", ":")))
+        members_path.write_text(dump_members(doc))
     return repaired, digests
 
 
@@ -281,7 +292,7 @@ def borrow_by_name(movies, dumps, donors, names, dry_run: bool):
             changed += 1
 
         if changed and not dry_run:
-            members_path.write_text(json.dumps(doc, separators=(",", ":")))
+            members_path.write_text(dump_members(doc))
         if changed:
             print(f"  {movie_dir.name:<10} {changed:>4} borrowed by name")
     return borrowed, skipped
