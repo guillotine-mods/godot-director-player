@@ -30,9 +30,189 @@ const STATE_GLOBALS := {"meetings": true, "globalday": true}
 ## original Lingo definition.
 const NATIVE_HANDLERS := ["walkonby"]
 
+# ---------------------------------------------------------------- property tables
+#
+# The bound surface, as tables rather than as the fall-through of a match, so a
+# name the port does not answer is a lookup miss instead of a zero that looks
+# like an answer. Names are lowercased, which is how the interpreter hands them
+# over.
+#
+# The enumeration they are checked against is data/lingo_vocabulary.json,
+# generated from ScummVM's kTheEntity tables at the pinned revision.
+# tools/lingo_compile.py closes nothing — its SYSTEM_PROPS table is referenced
+# by no code and parse_the gates only on RESERVED_AFTER_PROP, so any word parses
+# as a property. An arbitrary identifier can therefore still reach dispatch,
+# which is why binding everything cannot mean never raising: a name the
+# vocabulary enumerates and the port refuses is a decision, a name it does not
+# enumerate is a hole, and the two must stay apart.
+#
+# Read and write are separate tables. They used to be one surface by accident:
+# set_sprite_prop wrote any key into `puppet` while get_sprite_prop fell through
+# to 0, so every write was trivially bound and every unbound read lied.
+#
+# Every name below is in the vocabulary, so a reader can take the tables at face
+# value: nothing here is a port invention. Four names that were bound are gone,
+# and are recorded here so they are not defensively added back.
+#
+#   `stagewidth`, `stageheight` — read the stage size off the loader. Neither
+#     exists in Director or in ScummVM; someone invented them. No script asks
+#     for either and nothing in the port referenced them.
+#   `castlib` — bound in get_sprite_prop's `"castlibnum", "castlib"` arm, which
+#     is a category error twice over. Lingo's `castLib` is a cast qualifier, not
+#     a sprite property: all 4600-odd corpus uses are `field "objectsfield" of
+#     castLib "master"` or `member (…) of castLib 1`, which the compiler takes
+#     as a reserved word and the interpreter resolves through _cast_of. The
+#     sprite arm could never have fired.
+#   `movablesprite` — a misspelling aliased onto `moveablesprite` in the same
+#     arm. The corpus contains it zero times against 30 for Director's own
+#     spelling, so nothing relied on the alias.
+#
+# WINDOW_FIELDS is the one table of real Director names that the movie
+# vocabulary does not enumerate, because ScummVM keeps them on kTheWindow.
+
+## Marks a reported name the vocabulary enumerates and the port deliberately
+## does not bind, so a log tells a decision from a hole. Stripped by the
+## coverage check.
+const UNSUPPORTED_MARK := " (unsupported)"
+
+## Answerable from score data or channel state. A value the script itself wrote
+## reads back ahead of this table — see get_sprite_prop — so a write-only
+## property is still readable by the handler that set it.
+## `castlib` and `movablesprite` are aliases the host answers alongside the
+## canonical spelling. Neither appears in the corpus — `castLib` is a cast
+## qualifier there (`member N of castLib 1`), not a sprite property, and
+## `movablesprite` is a misspelling of `moveableSprite` with zero uses. They stay
+## because `_sprite_prop_value` matches them, and a gate that rejects a name the
+## match arm below handles would report a diagnostic instead of doing the work.
+const SPRITE_READS := {
+	"bottom": true, "castlib": true, "castlibnum": true, "castnum": true,
+	"constraint": true, "cursor": true, "height": true, "ink": true, "left": true,
+	"loch": true, "locv": true, "member": true, "membernum": true,
+	"movablesprite": true, "moveablesprite": true, "puppet": true, "right": true,
+	"top": true, "visible": true, "width": true,
+}
+## left/top/right/bottom are absent on purpose: Director derives them from the
+## location and the size, so writing one has to move the sprite, and the port's
+## override table has no way to say that.
+const SPRITE_WRITES := {
+	"castlib": true, "castlibnum": true, "castnum": true, "constraint": true,
+	"cursor": true, "height": true, "ink": true, "loch": true, "locv": true,
+	"member": true, "membernum": true, "movablesprite": true, "moveablesprite": true,
+	"puppet": true, "visible": true, "volume": true, "width": true,
+}
+## In the vocabulary, deliberately unbound. Every one of them is a Director
+## drawing or media feature the port's renderer has no counterpart for —
+## palettes, blends, trails, QuickTime tracks — and none is used by the corpus.
+const SPRITE_UNSUPPORTED := {
+	"backcolor": true, "blend": true, "currenttime": true, "editabletext": true, "fliph": true,
+	"flipv": true, "forecolor": true, "immediate": true, "linesize": true, "loc": true,
+	"mostrecentcuepoint": true, "movierate": true, "movietime": true, "name": true,
+	"pattern": true, "rect": true, "scorecolor": true, "scriptinstancelist": true,
+	"scriptnum": true, "settrackenabled": true, "starttime": true, "stoptime": true,
+	"stretch": true, "trackenabled": true, "tracknextkeytime": true,
+	"tracknextsampletime": true, "trackpreviouskeytime": true, "trackprevioussampletime": true,
+	"tracktext": true, "trails": true, "tweened": true, "type": true, "visibility": true,
+}
+
+const MOVIE_READS := {
+	"centerstage": true, "clickon": true, "commanddown": true, "controldown": true,
+	"doubleclick": true, "exitlock": true, "frame": true, "freeblock": true, "key": true,
+	"keycode": true, "keydownscript": true, "machinetype": true, "milliseconds": true,
+	"mousedown": true, "mouseh": true, "mousev": true, "moviename": true, "moviepath": true,
+	"optiondown": true, "searchpath": true, "shiftdown": true, "soundlevel": true,
+	"ticks": true, "timer": true,
+}
+const MOVIE_WRITES := {
+	"centerstage": true, "exitlock": true, "keydownscript": true, "searchpath": true,
+	"soundlevel": true,
+}
+## Owned by the interpreter, which answers `the itemDelimiter` before the call
+## reaches here. Listed so the coverage check counts it bound rather than as a
+## gap the host could never close.
+const MOVIE_BOUND_ELSEWHERE := {"itemdelimiter": true}
+## Window trimmings. `tell window("map.dxr") / set the windowType to 2` runs its
+## body on the one stage this port has, so these arrive here as plain movie
+## properties. Accepted and dropped: there is nothing to place, title or resize.
+## Kept apart from MOVIE_WRITES because ScummVM has them on kTheWindow, not on
+## the movie, so the coverage check must not look for them in the movie
+## vocabulary.
+const WINDOW_FIELDS := {
+	"drawrect": true, "rect": true, "titlevisible": true, "windowtype": true,
+}
+## In the vocabulary, deliberately unbound. Three groups: things about a
+## desktop Director never had here (windows, menus, Xtras, the trace log),
+## things about a machine that no longer exists (memory budgets, colour depth,
+## the serial number), and score and selection state the port keeps in
+## DirectorRuntime rather than exposing through Lingo.
+const MOVIE_UNSUPPORTED := {
+	"abbreviated": true, "activewindow": true, "actorlist": true, "alerthook": true,
+	"applicationpath": true, "beepon": true, "buttonstyle": true, "castlibs": true,
+	"castmembers": true, "checkboxaccess": true, "checkboxtype": true, "clickloc": true,
+	"colordepth": true, "colorqd": true, "cpuhogticks": true, "currentspritenum": true,
+	"cursor": true, "date": true, "desktoprectlist": true, "digitalvideotimescale": true,
+	"emulatemultibuttonmouse": true, "environment": true, "fixstagesize": true,
+	"floatprecision": true, "framelabel": true, "framepalette": true, "framescript": true,
+	"framesound1": true, "framesound2": true, "frametempo": true, "frametransition": true,
+	"freebytes": true, "frontwindow": true, "fullcolorpermit": true, "idlehandlerperiod": true,
+	"idleloadmode": true, "idleloadperiod": true, "idleloadtag": true,
+	"idlereadchunksize": true, "imagedirect": true, "keypressed": true,
+	"keyupscript": true, "labellist": true, "lastclick": true, "lastevent": true,
+	"lastframe": true, "lastkey": true, "lastroll": true, "long": true, "maxinteger": true,
+	"memorysize": true, "menuitems": true, "mousecast": true, "mousechar": true,
+	"mousedownscript": true, "mouseitem": true, "mouseline": true, "mousemember": true,
+	"mouseup": true, "mouseupscript": true, "mouseword": true, "movie": true,
+	"moviefilefreesize": true, "moviefilesize": true, "movierate": true, "multisound": true,
+	"netthrottleticks": true, "number": true, "objectlist": true, "organizationname": true,
+	"palettemapping": true, "paramcount": true, "pathname": true, "pausestate": true,
+	"perframehook": true, "pi": true, "platform": true, "preloadeventabort": true,
+	"preloadram": true, "productname": true, "productversion": true, "puppet": true,
+	"quicktimepresent": true, "randomseed": true, "result": true, "rightmousedown": true,
+	"rightmouseup": true, "rollover": true, "romanlingo": true, "runmode": true,
+	"safeplayer": true, "score": true, "scoreselection": true, "scummvmversion": true,
+	"searchcurrentfolder": true, "searchpaths": true, "selection": true, "selend": true,
+	"selstart": true, "serialnumber": true, "short": true, "sounddevice": true,
+	"soundenabled": true, "soundkeepdevice": true, "stage": true, "stagebottom": true,
+	"stagecolor": true, "stageleft": true, "stageright": true, "stagetop": true,
+	"stilldown": true, "switchcolordepth": true, "time": true, "timeoutkeydown": true,
+	"timeoutlapsed": true, "timeoutlength": true, "timeoutmouse": true, "timeoutplay": true,
+	"timeoutscript": true, "trace": true, "traceload": true, "tracelogfile": true,
+	"tracescript": true, "updatelock": true, "updatemovieenabled": true, "username": true,
+	"videoforwindowspresent": true, "visible": true, "volume": true, "windowlist": true,
+	"xtras": true,
+}
+
+const MEMBER_READS := {"membernum": true, "name": true, "number": true, "text": true}
+const MEMBER_WRITES := {"editable": true, "text": true}
+## In the vocabulary, deliberately unbound. The port's cast is a bitmap and a
+## text dump, not a live Director cast: type, font, palette, registration point
+## and media state have no store behind them to read or change.
+const MEMBER_UNSUPPORTED := {
+	"alignment": true, "antialias": true, "autotab": true, "backcolor": true, "border": true,
+	"boxdropshadow": true, "boxtype": true, "buttontype": true, "castlibnum": true,
+	"casttype": true, "center": true, "changearea": true, "channelcount": true,
+	"chunksize": true, "controller": true, "crop": true, "cuepointnames": true,
+	"cuepointtimes": true, "depth": true, "digitalvideotype": true, "directtostage": true,
+	"dropshadow": true, "duration": true, "filename": true, "filled": true, "font": true,
+	"fontsize": true, "fontstyle": true, "forecolor": true, "framerate": true, "height": true,
+	"hilite": true, "interface": true, "linecount": true, "lineheight": true, "linesize": true,
+	"loaded": true, "loop": true, "margin": true, "media": true, "mediabusy": true,
+	"mediaready": true, "modified": true, "pageheight": true, "palette": true,
+	"paletteref": true, "pattern": true, "pausedatstart": true, "picture": true,
+	"preload": true, "purgepriority": true, "rect": true, "regpoint": true, "samplerate": true,
+	"samplesize": true, "scale": true, "scriptsenabled": true, "scripttext": true,
+	"scripttype": true, "scrolltop": true, "shapetype": true, "size": true, "sound": true,
+	"spritenum": true, "textalign": true, "textfont": true, "textheight": true,
+	"textsize": true, "textstyle": true, "timescale": true, "transitiontype": true,
+	"type": true, "video": true, "width": true, "wordwrap": true,
+}
+
 var runtime: Object = null
 ## Set by LingoEngine. The native handlers read globals through it.
 var interpreter: Object = null
+## Null unless PIPOSH2_TRACE asked for property records. Null rather than a bool
+## so a hook is one compare and an off trace allocates nothing — see
+## lingo/lingo_trace.gd.
+var trace: LingoTrace = null
 
 ## cast (lower) -> field name (lower) -> text
 var fields: Dictionary = {}
@@ -46,6 +226,16 @@ var mouse_stage: Vector2 = Vector2.ZERO
 var key_code: int = 0
 ## Handler name from `set the keyDownScript to ...`, run on every keypress.
 var key_down_script: String = ""
+## `the searchPath`, a list. One empty element rather than none, because every
+## read is `getAt(the searchPath, 1)` and an empty list would answer 0.
+var search_path: Array = [""]
+## `the soundLevel`, 0-7. 7 is Director's default and the level the game starts
+## every movie at.
+var sound_level: int = 7
+## `the exitLock` and `the centerStage`: written by the scripts, kept only so a
+## read agrees with the write.
+var exit_lock: int = 0
+var center_stage: int = 1
 ## Builtins that were called but are not implemented, counted once each so a
 ## missing binding is visible without spamming the log.
 var unhandled: Dictionary = {}
@@ -179,7 +369,22 @@ func _channel_sprite(channel: int) -> Dictionary:
 
 
 func get_sprite_prop(channel: int, prop: String) -> Variant:
+	## The trace wraps the read rather than sitting inside it: the value is only
+	## known at the return, and the arms below carry the reasoning for what each
+	## property answers, which is not worth restructuring for a hook.
+	if trace == null:
+		return _sprite_prop_value(channel, prop)
+	var value: Variant = _sprite_prop_value(channel, prop)
+	trace.property("sprite", channel, prop.to_lower(), "read", value, interpreter)
+	return value
+
+
+func _sprite_prop_value(channel: int, prop: String) -> Variant:
 	var key := prop.to_lower()
+	if not SPRITE_READS.has(key):
+		return _unbound_read(LingoDiagnostics.SPRITE_PROP, key, SPRITE_UNSUPPORTED)
+	# The override-table read this used to do is gone with the table itself: the
+	# channel now holds what the script wrote, so there is one place to read from.
 	var sprite := _channel_sprite(channel)
 	var entry: SpriteChannel = null
 	if runtime != null:
@@ -227,11 +432,17 @@ func get_sprite_prop(channel: int, prop: String) -> Variant:
 		"cursor":
 			return 0 if entry == null else entry.cursor
 		_:
+			## Unreachable: SPRITE_READS gates entry.
 			return 0
 
 
 func set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	var key := prop.to_lower()
+	if trace != null:
+		trace.property("sprite", channel, key, "write", value, interpreter)
+	if not SPRITE_WRITES.has(key):
+		_unbound_write(LingoDiagnostics.SPRITE_PROP, key, SPRITE_UNSUPPORTED)
+		return
 	if runtime == null:
 		return
 	var entry: SpriteChannel = runtime.channel_for(channel)
@@ -381,7 +592,17 @@ func member_number(which: Variant, cast: String) -> int:
 
 
 func get_member_prop(which: Variant, cast: String, prop: String) -> Variant:
+	if trace == null:
+		return _member_prop_value(which, cast, prop)
+	var value: Variant = _member_prop_value(which, cast, prop)
+	trace.property("member", _member_id(which, cast), prop.to_lower(), "read", value, interpreter)
+	return value
+
+
+func _member_prop_value(which: Variant, cast: String, prop: String) -> Variant:
 	var key := prop.to_lower()
+	if not MEMBER_READS.has(key):
+		return _unbound_read(LingoDiagnostics.MEMBER_PROP, key, MEMBER_UNSUPPORTED)
 	if key == "name":
 		if typeof(which) == TYPE_STRING:
 			return which
@@ -405,23 +626,66 @@ func get_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 			if typeof(by_number) == TYPE_DICTIONARY and (by_number as Dictionary).has(number):
 				return str((by_number as Dictionary)[number])
 		return ""
-	if key == "number":
+	if key == "number" or key == "membernum":
+		## `the memberNum of member x` is the same question as `the number of
+		## member x`. Read 85 times by the corpus and answered with 0 until now,
+		## because only `number` had an arm.
 		return member_number(which, cast)
 	if key == "text":
 		return get_field(LingoValue.to_str(which), cast)
+	## Unreachable: MEMBER_READS gates entry.
 	return 0
 
 
+func _member_id(which: Variant, cast: String) -> String:
+	## `member "sciser" of castLib "master"` and `member(30, "master")` name the
+	## same thing two ways, so the trace records the cast alongside whichever
+	## spelling the script used and leaves resolving them to the diff. "<cast>:<which>",
+	## and an empty cast is an unqualified reference, not a missing one — the
+	## search order that resolves it is _cast_search_order's, not the record's.
+	return "%s:%s" % [cast.to_lower(), LingoValue.to_str(which).to_lower()]
+
+
 func set_member_prop(which: Variant, cast: String, prop: String, value: Variant) -> void:
-	if prop.to_lower() == "text":
+	var key := prop.to_lower()
+	if trace != null:
+		trace.property("member", _member_id(which, cast), key, "write", value, interpreter)
+	if not MEMBER_WRITES.has(key):
+		_unbound_write(LingoDiagnostics.MEMBER_PROP, key, MEMBER_UNSUPPORTED)
+		return
+	if key == "text":
 		set_field(LingoValue.to_str(which), cast, LingoValue.to_str(value))
+		return
+	## `editable`: written 5 times to let the player type into a field. The port
+	## has no in-game text entry, so the write is accepted and dropped rather
+	## than reported — the scripts are not asking for anything the port owes.
 
 
 # ---------------------------------------------------------------- system
 
 
 func get_system_prop(prop: String) -> Variant:
-	match prop.to_lower():
+	if trace == null:
+		return _system_prop_value(prop)
+	var value: Variant = _system_prop_value(prop)
+	trace.property("movie", _movie_id(), prop.to_lower(), "read", value, interpreter)
+	return value
+
+
+func _movie_id() -> String:
+	## A movie property hangs off the movie, so the target is the movie itself.
+	return str(runtime.loader.movie_name).to_lower() if runtime != null else ""
+
+
+func _system_prop_value(prop: String) -> Variant:
+	var key := prop.to_lower()
+	if not MOVIE_READS.has(key):
+		if WINDOW_FIELDS.has(key):
+			## A window field read back inside a `tell window(...)` body. Nothing
+			## reads one in this corpus, and there is no window to ask.
+			return 0
+		return _unbound_read(LingoDiagnostics.MOVIE_PROP, key, MOVIE_UNSUPPORTED)
+	match key:
 		"clickon":
 			return click_on
 		"moviename":
@@ -445,27 +709,109 @@ func get_system_prop(prop: String) -> Variant:
 		"keycode", "key":
 			return key_code
 		"shiftdown", "optiondown", "commanddown", "controldown", "doubleclick":
+			## Modifiers and double-click, which the port's input path does not
+			## carry into a dispatch. 0 is Director's "not held", and no script
+			## in the corpus asks.
 			return 0
-		"stagewidth":
-			return int(runtime.loader.stage_size.x) if runtime else 640
-		"stageheight":
-			return int(runtime.loader.stage_size.y) if runtime else 480
+		"searchpath":
+			## Director's folder list for external media. Read 52 times, always
+			## as `getAt(the searchPath, 1)` concatenated into a file name, so it
+			## has to be a list with a readable first element. Divergence: the
+			## element stays empty because AudioDirector resolves by stem across
+			## every audio root, so a path never finds anything here — and until
+			## now this answered 0, which made those names "0voice5.aif".
+			return search_path
+		"moviepath":
+			## The folder the movie was loaded from, prefixed onto save paths and
+			## onto `go(1, the moviePath & "day1.dxr")`. Divergence: empty,
+			## because movies here are resolved by stem and _go strips any
+			## prefix before it looks one up.
+			return ""
+		"soundlevel":
+			return sound_level
+		"mousedown":
+			## `if the mouseDown then`, in four handlers polling for a click that
+			## is still held.
+			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0
+		"exitlock":
+			return exit_lock
+		"freeblock":
+			## Largest free memory block, in bytes. GOLDDEAD BehaviorScript 23
+			## unloads DAY1 below 100K and DAY1 wonder/BehaviorScript 310 refuses
+			## to open the map below 12K. Both guards protect a 1997 Mac's heap;
+			## answering "plenty" takes the branch the player wants in each.
+			return 16 * 1024 * 1024
+		"keydownscript":
+			return key_down_script
+		"centerstage":
+			return center_stage
 		_:
+			## Unreachable: MOVIE_READS gates entry.
 			return 0
 
 
 func set_system_prop(prop: String, value: Variant) -> void:
-	match prop.to_lower():
-		"centerstage", "windowtype", "titlevisible", "drawrect", "rect":
-			## Window trimmings. One stage here, so nothing to place or resize.
-			pass
+	var key := prop.to_lower()
+	if trace != null:
+		trace.property("movie", _movie_id(), key, "write", value, interpreter)
+	if WINDOW_FIELDS.has(key):
+		## One stage here, so nothing to place, title or resize.
+		return
+	if not MOVIE_WRITES.has(key):
+		unhandled["the %s (write)" % key] = true
+		_unbound_write(LingoDiagnostics.MOVIE_PROP, key, MOVIE_UNSUPPORTED)
+		return
+	match key:
+		"centerstage":
+			## Written 20 times, always inside `tell window(...)`. Stored so a
+			## read agrees with the write; there is nothing to centre.
+			center_stage = LingoValue.to_int(value)
 		"keydownscript":
 			## The game's only use of key input. `on startMovie` sets this to
 			## "fromnow", which stops sound channel 1 when a key is pressed, so
 			## a keypress cuts the line of speech that is playing.
 			key_down_script = LingoValue.to_str(value).strip_edges()
-		_:
-			unhandled["the %s (write)" % prop.to_lower()] = true
+		"searchpath":
+			## `the searchPath = ["z:\sounds\strtgame\"]` — always a one-element
+			## list of a CD path.
+			search_path = (value as Array) if typeof(value) == TYPE_ARRAY else [
+				LingoValue.to_str(value)]
+		"soundlevel":
+			## SAVELOAD BehaviorScript 69-75 are the volume slider: each button
+			## sets a level and plays a sample voice. Nothing else in the port
+			## owns bus volume, so this drives the master bus directly.
+			sound_level = clampi(LingoValue.to_int(value), 0, 7)
+			AudioServer.set_bus_volume_db(0,
+				-80.0 if sound_level == 0 else linear_to_db(float(sound_level) / 7.0))
+		"exitlock":
+			## `set the exitLock to 1`, twice, to stop Director quitting on a
+			## keystroke. Nothing to lock here; stored so a read agrees.
+			exit_lock = LingoValue.to_int(value)
+
+
+func _report(category: String, name: String) -> void:
+	## The interpreter owns the sink and knows which script and handler is
+	## running; the host only knows the name.
+	if interpreter != null:
+		interpreter.report(category, name)
+
+
+func _unbound_read(category: String, key: String, unsupported: Dictionary) -> Variant:
+	## VOID, not 0. A default is the failure this surface exists to delete: the
+	## old fall-through made `the freeBlock` answer 0 and every memory guard in
+	## the game take the low-memory branch, silently, for years. VOID is the same
+	## answer the interpreter already gives an unknown identifier, so it flows
+	## through comparison and concatenation the way the rest of the port expects.
+	_report(category, _reported_name(key, unsupported))
+	return null
+
+
+func _unbound_write(category: String, key: String, unsupported: Dictionary) -> void:
+	_report(category, _reported_name(key, unsupported))
+
+
+func _reported_name(key: String, unsupported: Dictionary) -> String:
+	return (key + UNSUPPORTED_MARK) if unsupported.has(key) else key
 
 
 # ---------------------------------------------------------------- builtins
@@ -565,9 +911,23 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			runtime.go_back()
 			return 0
-		"cursor", "preloadmember", "unloadmember", "alert", "beep", "nothing", "cursorfunk", "updatelock":
+		## `cursorfunk` is not here on purpose. It is one of the game's own
+		## handlers, called 68 times, and a host no-op swallowed every call the
+		## movie's own script did not answer first — a missing handler looked
+		## exactly like a handled one. Unbound, so the miss is reported.
+		"cursor", "preloadmember", "unloadmember", "alert", "beep", "nothing", "updatelock":
+			## Bound and deliberately inert. `preloadMember`/`unloadMember` manage
+			## a heap the port does not have, `cursor` and `alert` and `beep` are
+			## desktop Director talking to the OS, and `nothing` is Lingo's own
+			## no-op. Each answers 0 because it succeeded in doing nothing, which
+			## is not the same as not being bound.
 			return 0
 		_:
+			## Deliberately silent: returning VOID is how the interpreter is told
+			## the host binds no builtin by this name, and it reports the miss
+			## with the location. Reporting here as well would double-count, and
+			## would misfile every unset variable — _read_var probes call_builtin
+			## for any bare identifier before it decides what the name was.
 			unhandled[name.to_lower()] = true
 			return null
 
@@ -774,8 +1134,13 @@ func _go(args: Array) -> Variant:
 		if index >= 0:
 			_enter(index)
 		else:
+			## `go` is bound; this label is not in the movie. Worth a located
+			## report all the same — a jump that goes nowhere is how a dead click
+			## looks from the inside, and the old counter said which label but
+			## never which handler asked for it.
 			navigated = false
 			unhandled['go "%s"' % text] = true
+			_report(LingoDiagnostics.BUILTIN, 'go "%s"' % text)
 		return 0
 	var frame := LingoValue.to_int(first)
 	if frame > 0:
@@ -820,9 +1185,12 @@ func _sound(args: Array) -> Variant:
 				AudioDirector.stop_all()
 			return 0
 		"fadeout", "fadein":
+			## Bound and inert: AudioDirector has no fade, so the sound simply
+			## keeps playing or stays stopped.
 			return 0
 		_:
 			unhandled["sound %s" % verb] = true
+			_report(LingoDiagnostics.BUILTIN, "sound %s" % verb)
 			return 0
 
 

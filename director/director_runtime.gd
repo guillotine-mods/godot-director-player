@@ -81,6 +81,16 @@ var _pending_destination: String = ""
 var _entered_from: int = -1
 var _hidden_channels: Dictionary = {}
 var _head_look_until_ms: float = -1.0
+## Null unless PIPOSH2_TRACE is set — see lingo/lingo_trace.gd. Held here and not
+## on the engine because the playback step is the score's, and the score runs
+## whether or not the interpreter was built. `_trace` carries the step context
+## every kind of record needs; `_trace_channels` is null when channel records
+## themselves were not asked for.
+var _trace: LingoTrace = null
+var _trace_channels: LingoTrace = null
+## smoke.gd builds six runtimes into one file, so a record has to say which.
+var _trace_run: int = 0
+var _trace_step: int = 0
 
 ## channel -> SpriteChannel. Director's live channel array: the score writes it when
 ## the playhead moves, a puppeted channel belongs to Lingo, and drawing and
@@ -105,8 +115,23 @@ func boot() -> Error:
 	drops.load_table()
 	if AppSettings.use_lingo_clicks or AppSettings.use_lingo_frames:
 		lingo = LingoEngine.new(self)
+	_install_trace()
 	GameState.set_meeting_triggers(context.meeting_triggers())
 	return loader.load_index()
+
+
+func _install_trace() -> void:
+	var trace: LingoTrace = LingoTrace.shared()
+	if trace == null:
+		return
+	_trace_run = LingoTrace.next_run()
+	_trace = trace
+	## Each hook site holds the reference for its own kind, so a kind the run did
+	## not ask for costs exactly what an off trace does: one null compare.
+	_trace_channels = trace.for_kind(LingoTrace.KIND_CHANNEL)
+	if lingo != null:
+		lingo.trace = trace.for_kind(LingoTrace.KIND_DISPATCH)
+		lingo.host.trace = trace.for_kind(LingoTrace.KIND_PROP)
 
 
 func available_movies() -> PackedStringArray:
@@ -206,6 +231,15 @@ func tick(delta: float) -> void:
 
 
 func game_step() -> void:
+	if _trace != null:
+		# Every step, including the ones that hold: the reference ticks those too,
+		# and a trace that skipped them would drift out of alignment at the first
+		# wait-for-click frame and stay wrong for the rest of the run.
+		_trace_step += 1
+		_trace.context(_trace_run, _trace_step, loader.movie_name, frame_index)
+		if _trace_channels != null and not loader.frames.is_empty():
+			_trace_channels.step_channels(self, lingo.host if lingo != null else null)
+
 	if puppet.is_walking():
 		puppet.step()
 		redraw_requested.emit()
@@ -574,6 +608,10 @@ func enter_frame(index: int) -> void:
 	var came_from := frame_index
 	frame_index = clampi(index, 0, loader.frames.size() - 1)
 	_entered_from = came_from
+	if _trace != null:
+		# The frame moves under the step, and enterFrame dispatches from here, so
+		# without this those records would name the frame the step began on.
+		_trace.context(_trace_run, _trace_step, loader.movie_name, frame_index)
 	frame_entered_ms = _time_ms
 	var frame: Dictionary = loader.get_frame(frame_index)
 	reconcile_channels(frame)
