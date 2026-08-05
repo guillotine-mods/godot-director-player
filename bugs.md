@@ -360,9 +360,21 @@ depth 8 with stride equal to width.
 ALLIN carries 839 of the 979 and is the clearest score-side case; strtgame 26 is
 the only confirmed member-side case. Treat them as separate investigations.
 
-Note also that the stage-clipping fix now hides ALLIN's off-stage half, so what
-the player sees there has already changed and should be re-checked before the
-count above is trusted.
+**The score-side half is confirmed player-visible, in ALLIN.** Member `1:1` is a
+whole hotel room: bed and door on the left, a window onto a balustrade in the
+middle, a bathroom with toilet and sink on the right. Rendered, the stage shows
+only the window and the bathroom, at double size. With the sprite at `(-641,-12)`
+sized `1280x441`, stage x 0..639 maps back to member x 320..640, which is exactly
+that right half. The bed and the door are never on screen.
+
+So this is not a legitimate off-stage composition. The correct draw is the whole
+room at 640x441 filling the stage, and what the player gets is half of it
+magnified. Render `goto_movie("ALLIN")` and compare against
+`assets/render_model/ALLIN/bitmaps/cast_0001.bmp` to see it.
+
+The stage-clipping fix cuts the off-stage remainder cleanly, so the symptom is
+now "wrong half, too big" rather than art spilling past the stage. The underlying
+rect is unchanged.
 
 **Ruled out: endianness.** The first theory was that little-endian containers were
 being mis-read, because `strtgame.dxr` is XFIR. Only two files in the whole corpus
