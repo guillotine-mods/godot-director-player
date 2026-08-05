@@ -4,6 +4,9 @@ extends RefCounted
 
 const INDEX_PATH := "res://assets/render_model/index.json"
 const CAST_REGISTRY_PATH := "res://assets/render_model/cast_registry.json"
+## The sprite stretch flags the upstream exporter drops, recovered from the
+## containers by `tools/generate_sprite_stretch.py`. See `_resolve_sprite_rects`.
+const SPRITE_STRETCH_PATH := "res://assets/render_model/sprite_stretch.json"
 const MODEL_ROOT := "res://assets/render_model"
 ## How a sprite's ink keys out its paper colour.
 ##
@@ -29,6 +32,16 @@ const PAPER_MIN_BYTE := 241
 
 var index: Dictionary = {}
 var cast_registry: Dictionary = {}
+## Which sprite records the score marks as stretched, per movie. A movie absent
+## from this is a movie whose score could not be read back, and its rects are left
+## exactly as exported.
+var sprite_stretch: Dictionary = {}
+## Whether the loaded movie's stretch flags were recovered, and how many of its
+## sprite rects that put back to the member's own size. Read by
+## `tools/sprite_stretch.gd`.
+var stretch_flags_known: bool = false
+var resolved_sprite_rects: int = 0
+var skipped_film_loop_rects: int = 0
 var movie_name: String = ""
 var frames: Array = []
 var members: Dictionary = {}
@@ -73,7 +86,46 @@ func load_index() -> Error:
 		return ERR_INVALID_DATA
 	index = parsed
 	cast_registry = _resolve_cast_aliases(casts)
+	sprite_stretch = _load_sprite_stretch()
 	return OK
+
+
+func _load_sprite_stretch() -> Dictionary:
+	## Missing is not fatal: without it every movie keeps the rects the exporter
+	## wrote, which is what the port did before the flags were recovered.
+	##
+	## Flattened to `{movie: {frame index: channels}}` with real integers on the way
+	## in. `JSON.parse_string` produces floats and string keys, so the frame lookup
+	## and the channel test would both silently miss — which they did, and the two
+	## stretched sprites the harness checks were shrunk like the rest.
+	if not FileAccess.file_exists(SPRITE_STRETCH_PATH):
+		push_warning("No sprite_stretch.json; score sprite rects are used as exported")
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SPRITE_STRETCH_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("sprite_stretch.json is not readable; rects are used as exported")
+		return {}
+	var movies: Variant = (parsed as Dictionary).get("movies", {})
+	if typeof(movies) != TYPE_DICTIONARY:
+		return {}
+	var out: Dictionary = {}
+	for movie in (movies as Dictionary).keys():
+		var entry: Variant = (movies as Dictionary)[movie]
+		var by_frame: Dictionary = {}
+		var stretched: Variant = (
+			(entry as Dictionary).get("frames", {}) if typeof(entry) == TYPE_DICTIONARY else {}
+		)
+		if typeof(stretched) == TYPE_DICTIONARY:
+			for key in (stretched as Dictionary).keys():
+				var channels: Variant = (stretched as Dictionary)[key]
+				if typeof(channels) != TYPE_ARRAY:
+					continue
+				var numbers := PackedInt32Array()
+				for channel in channels as Array:
+					numbers.append(int(channel))
+				by_frame[int(str(key))] = numbers
+		out[str(movie)] = by_frame
+	return out
 
 
 func _resolve_cast_aliases(casts: Dictionary) -> Dictionary:
@@ -170,7 +222,82 @@ func load_movie(name: String) -> Error:
 	# AIR1, HOTEL1 and SEA1 — but CHESS sets its own from `cc1`/`cc1b` and is not
 	# in cursorfunk's gate, so a collision there would serve DAY1's art.
 	_cursor_cache.clear()
+	_resolve_sprite_rects()
 	return OK
+
+
+func _resolve_sprite_rects() -> void:
+	## Put back the rect Director would have drawn, for every sprite the score does
+	## not mark as stretched.
+	##
+	## A Director sprite draws its member at the member's own size and anchors it on
+	## the member's registration point. The width and height in the score are the
+	## drawn rect only when the sprite's stretch flag is set; with it clear they are
+	## authoring residue — whatever the channel was last resized to, or the size of
+	## a member that used to be there. The upstream exporter masks the score's ink
+	## byte to its low 6 bits, which throws the flag away, and writes the residue
+	## into `frames.json` regardless, so the port scaled 22,806 sprite records to a
+	## rect the original ignores — 9,185 of them members `members.json` describes and
+	## 13,621 resolved through `cast_registry.json`.
+	##
+	## ALLIN is the case that shows it: channel 1 holds member `1:1`, a whole hotel
+	## room, at the same registration point for all 1438 frames, and the stored
+	## width is 1280 on 835 of them, 640 on 259 and 639 on 337. The member's raster
+	## is 640 wide. A backdrop that never moves cannot be twice its own width on
+	## some frames and 0.998 of it on others; Director drew 640 throughout, and the
+	## player saw the right half of the room at double size for most of the scene.
+	##
+	## Done here, once per movie load, so the channel array, the draw path, hit
+	## testing and any script reading the sprite all see one rect. Film loops are
+	## left alone: they are scaled against their own initial rect, and the score
+	## already agrees with that rect on all 26,738 unstretched film-loop records.
+	resolved_sprite_rects = 0
+	skipped_film_loop_rects = 0
+	stretch_flags_known = sprite_stretch.has(movie_name)
+	if not stretch_flags_known:
+		return
+	var stretched_frames: Dictionary = sprite_stretch[movie_name]
+
+	for index in frames.size():
+		var frame: Variant = frames[index]
+		if typeof(frame) != TYPE_DICTIONARY:
+			continue
+		var sprites: Variant = (frame as Dictionary).get("sprites", [])
+		if typeof(sprites) != TYPE_ARRAY:
+			continue
+		var stretched_channels: PackedInt32Array = stretched_frames.get(
+			index, PackedInt32Array()
+		)
+		for sprite_value in sprites as Array:
+			if typeof(sprite_value) != TYPE_DICTIONARY:
+				continue
+			var sprite: Dictionary = sprite_value
+			if stretched_channels.has(int(sprite.get("channel", 0))):
+				# Kept for `SpriteChannel.set_member`, which must not re-anchor a
+				# stretched sprite on a new member's registration point.
+				sprite["stretch"] = true
+				continue
+			var cast_lib := int(sprite.get("cast_lib", 1))
+			var cast_id := int(sprite.get("cast_id", 0))
+			if not get_film_loop(cast_lib, cast_id).is_empty():
+				skipped_film_loop_rects += 1
+				continue
+			var member := member_if_known(cast_lib, cast_id)
+			var width := float(member.get("width", 0.0))
+			var height := float(member.get("height", 0.0))
+			if width <= 0.0 or height <= 0.0:
+				continue
+			if is_equal_approx(float(sprite.get("width", 0.0)), width) and is_equal_approx(
+				float(sprite.get("height", 0.0)), height
+			):
+				continue
+			var loc_h := float(sprite.get("loc_h", sprite.get("x", 0)))
+			var loc_v := float(sprite.get("loc_v", sprite.get("y", 0)))
+			sprite["width"] = width
+			sprite["height"] = height
+			sprite["x"] = loc_h - float(member.get("reg_offset_x", width * 0.5))
+			sprite["y"] = loc_v - float(member.get("reg_offset_y", height * 0.5))
+			resolved_sprite_rects += 1
 
 
 func score_uses_channel(channel: int) -> bool:
@@ -452,7 +579,10 @@ func _cache_missing_linked_member(cache_key: String) -> Dictionary:
 	return {}
 
 
-func get_member(cast_lib: int, cast_id: int) -> Dictionary:
+func member_if_known(cast_lib: int, cast_id: int) -> Dictionary:
+	## `get_member` without the complaint. Sweeping a whole movie's score touches
+	## members that are film loops, fields or shapes rather than bitmaps, and those
+	## are expected absences rather than something to warn about.
 	var cache_key := "%d:%d" % [cast_lib, cast_id]
 	if _resolved_member_cache.has(cache_key):
 		return _resolved_member_cache[cache_key]
@@ -465,11 +595,18 @@ func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 		_resolved_member_cache[cache_key] = local_member
 		return local_member
 
-	var cast_name := _linked_cast_name(cast_lib)
-	var linked_member := get_linked_member(cast_lib, cast_id)
-	if not linked_member.is_empty():
-		return linked_member
+	return get_linked_member(cast_lib, cast_id)
 
+
+func get_member(cast_lib: int, cast_id: int) -> Dictionary:
+	var member := member_if_known(cast_lib, cast_id)
+	if not member.is_empty():
+		return member
+
+	var cache_key := "%d:%d" % [cast_lib, cast_id]
+	if _missing_member_keys.has(cache_key):
+		return {}
+	var cast_name := _linked_cast_name(cast_lib)
 	_missing_member_keys[cache_key] = true
 	push_warning(
 		"Missing cast member for movie %s, linked cast %s, member %d" % [

@@ -525,7 +525,9 @@ func draw_current_frame(canvas: Control) -> void:
 			var cy: float = y + h * 0.5
 			canvas.draw_texture_rect(tex, Rect2(cx - reg_x, cy - reg_y, nw, nh), false)
 		else:
-			# Score sprites stretch to sprite rect (Director default).
+			# The sprite's rect, which `RenderModelLoader._resolve_sprite_rects` has
+			# already put back to the member's own size unless the score marks this
+			# sprite as stretched. Drawing into it covers both cases.
 			if member.is_empty():
 				member = runtime.loader.get_member(draw_lib, cast_id)
 			if member.has("_registry_directory"):

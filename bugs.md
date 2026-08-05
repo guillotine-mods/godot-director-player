@@ -294,13 +294,21 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 
 ---
 
-## 14. Art draws stretched on one axis. At least two different causes.
+## 14. Art draws stretched on one axis. Two causes; the score-side one is fixed.
 
-**Status:** open, player-visible, and NOT one bug · **Area:** assets and score
+**Status:** the score-side half is CLOSED — the stretch flag, see the Closed
+section. The member-side half below is open. · **Area:** assets and score
 
 Reported twice from play: art "scratching over too much". The clearest instance is
 the raft in the opening, where the bearded man's head is smeared horizontally
 across the sky.
+
+**Read the Closed entry first.** The score's stored width and height are only the
+drawn rect when the sprite's stretch flag is set, and that flag was being dropped
+on export. That accounts for 925 of the 979 sprites counted below, and a further 47
+of them — SEA1 32, NIGHT1 6, ARCADE2 5, CHESS 4 — turn out to be genuinely
+stretched sprites that were never bugs. What is left in this entry is `strtgame`,
+where the member's own geometry is wrong and the score is right.
 
 That head is `strtgame` member 26, channel 15, frames 122-128. `members.json`
 records it 45x34 and the score draws it at 135x34: a 3x stretch on width with
@@ -348,62 +356,63 @@ right and the stretch comes from the score's sprite rect instead. strtgame membe
 26 is the only one measured so far where the member itself is inconsistent. Two
 different causes wearing the same symptom.
 
-The score-side group looks like a coordinate problem, not a scale one. ALLIN's
-background sits at `(-641, -12)` sized `1280x441` on a 640x480 stage, so it spans
--641..639 and only its right edge reaches the stage. 1280 is exactly twice 640 and
--641 is one off -640, which is the shape of a left coordinate and a width that
-were derived from each other wrongly rather than a bitmap that was scaled.
+**The score-side group was the score's rect being read as an instruction.** The
+theory recorded here was that ALLIN's `(-641, -12)` at `1280x441` looked like "a
+left coordinate and a width derived from each other wrongly". It was not: the
+score really does store 1280, and Director really does ignore it, because the
+sprite's stretch flag is clear. That is the Closed entry below.
 
 A 4-bit-read-as-8-bit theory was tested and rejected: every member above reports
 depth 8 with stride equal to width.
 
-ALLIN carries 839 of the 979 and is the clearest score-side case; strtgame 26 is
-the only confirmed member-side case. Treat them as separate investigations.
+**What is left is the member-side case, and only in `strtgame`.** Member 26 is the
+one member measured anywhere in the corpus that does not agree with its own
+container, per the three signals above.
 
-**The score-side half is confirmed player-visible, in ALLIN.** Member `1:1` is a
-whole hotel room: bed and door on the left, a window onto a balustrade in the
-middle, a bathroom with toilet and sink on the right. Rendered, the stage shows
-only the window and the bathroom, at double size. With the sprite at `(-641,-12)`
-sized `1280x441`, stage x 0..639 maps back to member x 320..640, which is exactly
-that right half. The bed and the door are never on screen.
+`strtgame` is also the one movie whose stretch flags could not be recovered, so it
+keeps the rects the exporter wrote for all 4,500 of its sprite records where the
+rect and the member disagree — see the Closed entry. Both halves of the remaining
+work are therefore in the same movie, and both are blocked on the same thing: its
+container is XFIR (little-endian) and `tools/dump_movie_chunks.py` refuses to dump
+it, so there are no chunks to re-derive from. Fixing the little-endian reader
+unblocks both.
 
-So this is not a legitimate off-stage composition. The correct draw is the whole
-room at 640x441 filling the stage, and what the player gets is half of it
-magnified. Render `goto_movie("ALLIN")` and compare against
-`assets/render_model/ALLIN/bitmaps/cast_0001.bmp` to see it.
-
-The stage-clipping fix cuts the off-stage remainder cleanly, so the symptom is
-now "wrong half, too big" rather than art spilling past the stage. The underlying
-rect is unchanged.
-
-**Ruled out: endianness.** The first theory was that little-endian containers were
-being mis-read, because `strtgame.dxr` is XFIR. Only two files in the whole corpus
-are — `strtgame.dxr` and `MASTER.CST` — and every other affected movie is
-big-endian, so that explains at most one of the nine. Recorded because it is a
-plausible-looking dead end.
+**Ruled out: endianness as the cause of the other eight movies.** The first theory
+was that little-endian containers were being mis-read, because `strtgame.dxr` is
+XFIR. Only two files in the whole corpus are — `strtgame.dxr` and `MASTER.CST` —
+and every other affected movie is big-endian. Recorded because it is a
+plausible-looking dead end. It is, however, exactly what blocks `strtgame` now.
 
 Not the same bug as entry 11. That one is 1-bit members read as 8-bit and is fixed.
-These are members whose geometry is wrong in some other way, and the fix is the
-same shape: re-derive from the container, then require the member's size and the
-score's own sprite rect to agree rather than trusting either alone.
+This is a member whose geometry is wrong in some other way, and the fix is the
+same shape: re-derive from the container.
 
-Reproduce, and re-run after any change:
+Reproduce. Note what this counts: it reads `frames.json`, which still holds the
+rect the exporter wrote, so it reports the same 979 as before the fix. The score-
+side ones are no longer drawn that way — `tools/sprite_stretch.gd` is the check for
+that. What this is still good for is finding the member-side cases, which are the
+rows the stretch flag does *not* explain:
 
 ```
 python3 - <<'EOF'
 import json, glob, os, collections
+stretch=json.load(open('assets/render_model/sprite_stretch.json'))['movies']
 hits=collections.Counter()
 for p in sorted(glob.glob('assets/render_model/*/frames.json')):
     m=os.path.basename(os.path.dirname(p))
     fr=json.load(open(p)); me=json.load(open(f'assets/render_model/{m}/members.json'))['members']
-    for f in fr.get('frames',[]):
+    flags=stretch.get(m, {}).get('frames')
+    for i,f in enumerate(fr.get('frames',[])):
         for s in f.get('sprites',[]):
             mm=me.get(f"{s.get('cast_lib',1)}:{s.get('cast_id')}")
             if not (mm and s.get('has_image')): continue
             mw,mh,sw,sh=mm.get('width'),mm.get('height'),s.get('width'),s.get('height')
             if not all((mw,mh,sw,sh)): continue
             rw,rh=sw/mw,sh/mh
-            if (abs(rh-1)<0.05 and rw>1.8) or (abs(rw-1)<0.05 and rh>1.8): hits[m]+=1
+            if not ((abs(rh-1)<0.05 and rw>1.8) or (abs(rw-1)<0.05 and rh>1.8)): continue
+            if flags is None: hits[(m,'flags unread')]+=1
+            elif s['channel'] in flags.get(str(i),[]): hits[(m,'stretched, correct')]+=1
+            else: hits[(m,'residue, now ignored')]+=1
 print(sum(hits.values()), hits.most_common())
 EOF
 ```
@@ -554,6 +563,40 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
 ---
 
 ## Closed
+
+- **Art drew scaled to a rect Director ignores** (the score-side half of 14).
+  A Director sprite draws its member at the member's own size, anchored on the
+  member's registration point. The width and height in the score are the drawn rect
+  only when the sprite's **stretch** flag — bit `0x80` of the sprite record's ink
+  byte — is set. With it clear they are authoring residue: the last size the channel
+  was dragged to, or the size of a member that used to be there. The upstream
+  exporter masks the ink byte to its low 6 bits, dropping the flag, and writes the
+  residue into `frames.json` regardless, so the port scaled 22,806 sprite records
+  into a rect the original never draws.
+
+  Three independent measurements say that is the flag, two of them on populations
+  not used to find it. Of 437,926 sprite records whose rect already equals the
+  member's natural size, **zero** carry the bit; 12,265 records differ from their
+  member and carry it. On film loops, which the fix does not touch: all 26,738
+  records with the bit clear have a rect exactly equal to the loop's own initial
+  rect, and all 95 with it set differ. And in ALLIN, channel 1 holds the same member
+  at the same registration point for all 1438 frames with a stored width of 1280 on
+  835 of them, 640 on 259 and 639 on 337, the member being 640 wide — so the
+  backdrop popped between the hotel room and its right half at double size as the
+  playhead stepped, and the 640 frames are what the fixed 1280 frames now look like.
+
+  `tools/generate_sprite_stretch.py` recovers the flags from the containers into
+  `assets/render_model/sprite_stretch.json`, verifying each movie's score against
+  `frames.json` field by field and refusing the movie outright if it does not
+  reproduce the export. `RenderModelLoader._resolve_sprite_rects()` applies them
+  once per movie load, so the channel array, drawing, hit-testing and any script
+  reading the sprite all see one rect. Covered by `tools/sprite_stretch.gd`.
+
+  Two things to know. **16 movies have no recovered flags and keep the exported
+  rects**; only `strtgame` matters, and it is entry 14's remaining work. And **820
+  of the moved rects belong to sprites with click data** (477 smaller, 343 larger),
+  which is intended — Director hit-tests the sprite it drew — and `lingo_walk_diff`,
+  `lingo_converge` and `lingo_frames` are row-for-row identical across it.
 
 - **An uncovered shell or bottle vanished after one frame.**
   `_run_skipped_entry_scripts()` replayed the room's entry frames on every entry into

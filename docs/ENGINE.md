@@ -118,6 +118,16 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 - Textures cache per (member, mode); the same member can be opaque in one room
   and keyed in another.
 - Sprites drawn low→high channel; inventory icons use reg-point on slot center.
+- A sprite draws its member at the **member's own size**, anchored on the member's
+  registration point, unless the score marks the sprite as stretched. The width and
+  height in the score are the drawn rect only in the stretched case; with the flag
+  clear they are authoring residue — the last size the channel was dragged to, or
+  the size of a member that used to be there. The upstream exporter masks the ink
+  byte to its low 6 bits and drops the flag with it, so it is recovered from the
+  containers into `assets/render_model/sprite_stretch.json` by
+  `tools/generate_sprite_stretch.py` and applied once per movie load in
+  `RenderModelLoader._resolve_sprite_rects()`. A movie absent from that file keeps
+  the rects the exporter wrote.
 - `assets/render_model/cast_registry.json` is generated data owned by
   `tools/generate_cast_registry.py`. Movie-local `members.json` entries win;
   missing linked members resolve through the movie's `cast_libs` name and the

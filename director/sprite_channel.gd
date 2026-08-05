@@ -102,6 +102,12 @@ func set_member(cast_lib: int, cast_id: int, member: Dictionary = {}) -> void:
 	## member and re-anchors it on the member's registration point, which is what
 	## makes a walk cycle of unequal frames hold still. Without member dimensions
 	## the rect is left alone, so the caller can pass {} when the member is unknown.
+	##
+	## A stretched sprite is the exception: its rect is the author's, not the
+	## member's, so the new member is scaled into the rect it already has. That is
+	## the same distinction `RenderModelLoader._resolve_sprite_rects` applies to the
+	## score's own sprites.
+	var stretched := bool(sprite.get("stretch", false))
 	if sprite.is_empty():
 		sprite = {"channel": number}
 	sprite["cast_lib"] = cast_lib
@@ -112,11 +118,12 @@ func set_member(cast_lib: int, cast_id: int, member: Dictionary = {}) -> void:
 	var h := float(member.get("height", 0))
 	if w <= 0.0 or h <= 0.0:
 		return
-	var here := loc()
-	sprite["width"] = w
-	sprite["height"] = h
-	sprite["x"] = here.x - float(member.get("reg_offset_x", w * 0.5))
-	sprite["y"] = here.y - float(member.get("reg_offset_y", h * 0.5))
+	if not stretched:
+		var here := loc()
+		sprite["width"] = w
+		sprite["height"] = h
+		sprite["x"] = here.x - float(member.get("reg_offset_x", w * 0.5))
+		sprite["y"] = here.y - float(member.get("reg_offset_y", h * 0.5))
 	# The member changed, so any film loop on this channel starts again.
 	loop_frame = 0
 	loop_cast_lib = -1
