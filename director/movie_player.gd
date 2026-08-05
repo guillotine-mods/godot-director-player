@@ -478,7 +478,20 @@ func draw_current_frame(canvas: Control) -> void:
 				y = stage_position.y * sy
 			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
-	if puppet.active and not runtime.is_channel_hidden(DirectorRuntime.PUPPET_CHANNEL):
+	# Piposh is channel 30 of the movie he is in, and only of that movie. The joke is a
+	# Movie In A Window with its own channels, and it never mentions 30 — so with the
+	# live channel array there is nothing here to draw once JOKE is loaded.
+	#
+	# Without this the puppet was drawn over every movie, at `cast_lib 1` plus whatever
+	# member PuppetController held, resolved against the *new* movie's internal cast.
+	# JOKE's member 29 is `joke33`, so Piposh at syz 9 — the beach — put a second joke
+	# on the page at his stage position. Other sizes and the walk frames land on
+	# members 31-54, which in JOKE are more jokes, so it changed room to room.
+	if (
+		puppet.active
+		and not runtime.effective_sprite(DirectorRuntime.PUPPET_CHANNEL).is_empty()
+		and not runtime.is_channel_hidden(DirectorRuntime.PUPPET_CHANNEL)
+	):
 		# Piposh is a character on paper: key the paper out everywhere, not just
 		# where the flood fill can reach in from the edge.
 		var ptex: Texture2D = runtime.loader.get_texture(

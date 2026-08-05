@@ -205,6 +205,14 @@ up to the return; the assertion for this was removed rather than left failing.
   iteration looked like an arrival; each replay re-ran `b4 bk's` and its
   `set the visible of sprite 15 to 0`. Arrival is now decided by the marker.
   Covered by `tools/collectables.gd`.
+- **A second joke was drawn on the page.** The puppet was drawn over every movie, at
+  `cast_lib 1` plus whatever member `PuppetController` held, resolved against the new
+  movie's own internal cast. JOKE's member 29 is the joke bitmap `joke33`, and Piposh's
+  syz-9 stand member is 29, so on the beach his sprite came out as a second joke at his
+  stage position. Other sizes and the walk frames land on members 31-54, which in JOKE
+  are more jokes, so it changed from room to room. Piposh is channel 30 of his own
+  movie; a Movie In A Window has its own channels and JOKE never mentions 30, so there
+  is nothing to draw there.
 - **The joke picture was never drawn.** JOKE parks channel 3 on `jokepfff`, a 1x1
   placeholder at (318, 199); the Lingo swaps in a 214x120 joke with its own
   registration point. With member writes reaching the channel it now lands at

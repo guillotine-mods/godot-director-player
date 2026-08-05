@@ -127,5 +127,17 @@ func _initialize() -> void:
 	runtime.puppet.reset()
 	_check("reset restores the puppet", not runtime.is_channel_hidden(channel))
 
+	# Piposh belongs to the movie whose channel 30 he is. A Movie In A Window has its
+	# own channels and JOKE never mentions 30, so nothing of his may be drawn there —
+	# and drawing him anyway resolved his member number against JOKE's own cast, where
+	# 29 is the joke bitmap `joke33`.
+	runtime.goto_movie("DAY1", null, {"label": "shore1go"})
+	_check("the puppet is on stage in his own movie",
+		not runtime.effective_sprite(channel).is_empty())
+	runtime.goto_movie("JOKE", null, {})
+	_check("the puppet is not on stage in a window movie",
+		runtime.effective_sprite(channel).is_empty(),
+		str(runtime.effective_sprite(channel).get("cast_id")))
+
 	print("\n%d failure(s)" % _fails)
 	quit(1 if _fails > 0 else 0)
