@@ -50,6 +50,68 @@ def path_stem(value: object) -> str:
     return tail
 
 
+def film_loop_children(cast: dict):
+    """Every child sprite of every film loop in one registry cast entry."""
+    film_loops = cast.get("film_loops")
+    if not isinstance(film_loops, dict):
+        return
+    for film_loop in film_loops.values():
+        if not isinstance(film_loop, dict):
+            continue
+        frames = film_loop.get("frames")
+        if not isinstance(frames, list):
+            continue
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            sprites = frame.get("sprites")
+            if isinstance(sprites, list):
+                yield frame, sprites
+
+
+def resolve_child_casts(casts: dict[str, dict]) -> tuple[int, int]:
+    """Drop film-loop children naming a cast that cannot answer for the member.
+
+    A child carrying `cast` says its member lives in another library, which the
+    runtime looks up by that name. Nothing downstream checks the name resolves, and
+    a child that silently does not is invisible on the stage, so it is refused here
+    and counted instead.
+    """
+    def members_of(name: str) -> dict:
+        seen: set[str] = set()
+        while name not in seen:
+            seen.add(name)
+            cast = casts.get(name)
+            if not isinstance(cast, dict):
+                return {}
+            alias = cast.get("alias_of")
+            if not isinstance(alias, str):
+                members = cast.get("members")
+                return members if isinstance(members, dict) else {}
+            name = alias
+        return {}
+
+    external = 0
+    dropped = 0
+    for cast in casts.values():
+        if not isinstance(cast, dict):
+            continue
+        for frame, sprites in film_loop_children(cast):
+            kept = []
+            for sprite in sprites:
+                child_cast = sprite.get("cast") if isinstance(sprite, dict) else None
+                if not isinstance(child_cast, str):
+                    kept.append(sprite)
+                    continue
+                if str(sprite.get("cast_id", 0)) in members_of(child_cast):
+                    external += 1
+                    kept.append(sprite)
+                else:
+                    dropped += 1
+            frame["sprites"] = kept
+    return external, dropped
+
+
 def internal_members(source: dict, path: Path) -> dict[str, dict]:
     """Return one complete internal member record per cast ID."""
     members: dict[str, dict] = {}
@@ -133,9 +195,17 @@ def main() -> int:
     if not isinstance(previous, dict):
         previous = {}
 
+    ## A film loop's children name their cast by the path in the owning file's
+    ## `ccl ` chunk, which is the same Director path the cast libraries carry, so
+    ## the same stem lookup answers both.
+    def resolve_cast(path: object) -> str:
+        stem = path_stem(path)
+        return stem if stem in directories else ""
+
     casts: dict[str, dict] = {}
     film_loop_count = 0
     non_drawing_count = 0
+    dropped_children = 0
     aliased: dict[str, str] = {}
     for name in sorted(linked):
         directory = directories.get(name)
@@ -163,7 +233,8 @@ def main() -> int:
         carried = previous.get(name) if isinstance(previous.get(name), dict) else {}
         chunks_dir = args.chunks_root / directory.name / directory.name / "chunks"
         if chunks_available and chunks_dir.is_dir():
-            film_loops = extract_film_loops(chunks_dir)
+            film_loops, dropped = extract_film_loops(chunks_dir, resolve_cast)
+            dropped_children += dropped
             non_drawing = non_drawing_members(chunks_dir)
         else:
             film_loops = carried.get("film_loops") or {}
@@ -201,7 +272,8 @@ def main() -> int:
         carried = previous.get(directory_name) if isinstance(previous.get(directory_name), dict) else {}
         chunks_dir = args.chunks_root / directory.name / directory.name / "chunks"
         if chunks_available and chunks_dir.is_dir():
-            film_loops = extract_film_loops(chunks_dir)
+            film_loops, dropped = extract_film_loops(chunks_dir, resolve_cast)
+            dropped_children += dropped
             non_drawing = non_drawing_members(chunks_dir)
         else:
             film_loops = carried.get("film_loops") or {}
@@ -227,6 +299,15 @@ def main() -> int:
             casts[name] = {"alias_of": target}
         else:
             print(f"warning: alias {name} points at missing cast {target}")
+
+    ## After the aliases, because a child may name a cast the movie links under
+    ## another name.
+    external_children, unresolved_children = resolve_child_casts(casts)
+    dropped_children += unresolved_children
+    print(
+        f"film-loop children in another cast: {external_children} resolved, "
+        f"{dropped_children} dropped as unresolvable"
+    )
 
     contents = json.dumps({"casts": casts}, indent=2, sort_keys=True) + "\n"
     temporary_path: Path | None = None

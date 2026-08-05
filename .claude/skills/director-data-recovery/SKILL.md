@@ -88,6 +88,24 @@ counting anything as missing.
 **Cast-library names are not unique and not stable.** One movie links the same
 cast file twice under two names. Resolve by path stem, not by name.
 
+**A film loop's children can live in another cast, and the library number in a
+mini-score does not mean what it means in the score.** Both keep the member
+reference at offset 4 of the 48-byte sprite record, and `0xFFFF` means the owning
+cast in both. But in a loop's `SCVW` any other value is a zero-based index into the
+file's `ccl ` chunk — an ordered list of the cast paths that file's loops reference
+— and that order is not the cast-library order. In Piposh 2's MURDER1 the libraries
+run internal, goldolin, hezi, tofi while the `ccl ` runs tofi, goldolin, hezi.
+
+Resolving the child against the cast that owns the loop is the wrong default and it
+fails quietly: 1,529 of 2,145 external children in this corpus land on a real but
+unrelated member of the owning cast and draw a stranger's bitmap, the other 616 on
+nothing. Layout: `<u32 4> <u16 count>` then `count+1` u32 offsets from byte 6, then
+the paths as length-prefixed strings; pick the data base as the one that makes every
+entry parse, because it sits a byte or two past the table depending on the dump. A
+file with no `ccl ` references nothing outside its own cast, which is the check that
+its loops' children should all be `0xFFFF` — cross-check that before trusting the
+reading anywhere else.
+
 ## What the score gives you that sprite records do not
 
 Sprite records do not say which script is attached. `VWSC` carries frame intervals

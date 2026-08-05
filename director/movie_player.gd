@@ -289,12 +289,20 @@ func _draw_film_loop(
 	for child_value in child_sprites:
 		var child: Dictionary = child_value
 		var child_cast_id: int = int(child.cast_id)
-		var child_member: Dictionary = runtime.loader.get_registry_member(registry_cast_name, child_cast_id)
+		# A loop's children are usually members of the cast the loop itself lives in,
+		# but not always: MURDER1 keeps `tofi right` and `goldolin left` in its own
+		# cast while the frames they play are members of tofi.cst and goldolin.cst.
+		# The mini-score names that library and the export resolves it, so the owning
+		# cast is only the default.
+		var child_cast_name: String = str(child.get("cast", registry_cast_name))
+		if child_cast_name.is_empty():
+			child_cast_name = registry_cast_name
+		var child_member: Dictionary = runtime.loader.get_registry_member(child_cast_name, child_cast_id)
 		if child_member.is_empty():
 			continue
 		var child_ink: int = int(child.ink)
 		var child_texture: Texture2D = runtime.loader.get_registry_texture(
-			registry_cast_name,
+			child_cast_name,
 			child_cast_id,
 			RenderModelLoader.transparency_for_ink(child_ink),
 		)

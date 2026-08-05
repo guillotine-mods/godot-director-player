@@ -11,7 +11,11 @@ extends SceneTree
 ##
 ##   godot --headless --script tools/verify_film_loops.gd
 
-## Each newly recovered loop, with a movie that references it.
+## Each newly recovered loop, with a movie that references it. `in` names the cast
+## the loop's children are expected to come from where that is not the cast the
+## loop itself lives in, with the member and its size the port must find there:
+## a child resolved against the wrong library is either invisible or a stranger's
+## bitmap, and both look like a loop that works from a count alone.
 const CASES := [
 	{"cast": "black", "id": 173, "movie": "SAMNIGHT"},
 	{"cast": "detectiv", "id": 202, "movie": "ENDMOVI5"},
@@ -26,6 +30,14 @@ const CASES := [
 	{"cast": "jokers", "id": 105, "movie": "DIVEFIGT"},
 	{"cast": "sabmon", "id": 135, "movie": "SABMON2"},
 	{"cast": "sabmon", "id": 140, "movie": "SABMON2"},
+	# The cliff: both characters animate out of a loop kept in MURDER1's own cast
+	# whose frames are members of the linked casts.
+	{"cast": "murder1", "id": 5, "movie": "MURDER1", "in": "tofi", "member": 4, "size": [108, 273]},
+	{"cast": "murder1", "id": 10, "movie": "MURDER1", "in": "goldolin", "member": 63, "size": [115, 252]},
+	{"cast": "murder1", "id": 13, "movie": "MURDER1", "in": "tofi", "member": 10, "size": [103, 267]},
+	{"cast": "murder1", "id": 15, "movie": "MURDER1", "in": "hezi", "member": 81, "size": [118, 254]},
+	{"cast": "mirolo", "id": 143, "movie": "MIROLO", "in": "hatuli", "member": 49, "size": [130, 259]},
+	{"cast": "mirolo", "id": 179, "movie": "MIROLO", "in": "ishurun", "member": 150, "size": [173, 269]},
 ]
 
 
@@ -60,7 +72,9 @@ func _check(loader: RenderModelLoader, case: Dictionary) -> int:
 	var cast_name: String = case["cast"]
 	var cast_id: int = case["id"]
 	var movie: String = case["movie"]
-	var lib := loader.cast_lib_index(cast_name)
+	# A loop kept in the movie's own cast is library 1; a loop in a linked cast is
+	# whichever library the movie links it as.
+	var lib := 1 if cast_name == movie.to_lower() else loader.cast_lib_index(cast_name)
 	if lib < 0:
 		print("%-9s %3d  %-9s FAIL: movie does not link the cast" % [cast_name, cast_id, movie])
 		return 1
@@ -74,16 +88,31 @@ func _check(loader: RenderModelLoader, case: Dictionary) -> int:
 	var distinct_members := {}
 	var drawable := 0
 	var undrawable := 0
+	# What the named member was found as, so an expectation can be checked against
+	# the cast the child itself names rather than against the loop's owner.
+	var expected_member: int = int(case.get("member", -1))
+	var expected_in: String = str(case.get("in", ""))
+	var found_in := ""
+	var found_size := Vector2i.ZERO
 	for loop_frame in loop_frames:
 		for child in (loop_frame as Dictionary).get("sprites", []):
-			var child_id := int((child as Dictionary).get("cast_id", 0))
-			if distinct_members.has(child_id):
+			var child_dict: Dictionary = child
+			var child_id := int(child_dict.get("cast_id", 0))
+			var child_cast := str(child_dict.get("cast", cast_name))
+			var key := "%s:%d" % [child_cast, child_id]
+			if distinct_members.has(key):
 				continue
-			distinct_members[child_id] = true
-			if loader.get_registry_texture(cast_name, child_id) != null:
+			distinct_members[key] = true
+			var member := loader.get_registry_member(child_cast, child_id)
+			if loader.get_registry_texture(child_cast, child_id) != null:
 				drawable += 1
 			else:
 				undrawable += 1
+			if child_id == expected_member and not member.is_empty():
+				found_in = child_cast
+				found_size = Vector2i(
+					int(member.get("width", 0)), int(member.get("height", 0))
+				)
 
 	var status := "ok"
 	var failed := 0
@@ -93,7 +122,27 @@ func _check(loader: RenderModelLoader, case: Dictionary) -> int:
 	elif drawable == 0:
 		status = "FAIL: no child member resolves to a bitmap"
 		failed = 1
-	elif undrawable > 0:
+	elif expected_member >= 0:
+		var expected_size := Vector2i(
+			int((case.get("size", [0, 0]) as Array)[0]),
+			int((case.get("size", [0, 0]) as Array)[1]),
+		)
+		if found_in != expected_in:
+			status = "FAIL: member %d came from %s, expected %s" % [
+				expected_member, found_in if not found_in.is_empty() else "nowhere", expected_in,
+			]
+			failed = 1
+		elif found_size != expected_size:
+			status = "FAIL: %s member %d is %dx%d, expected %dx%d" % [
+				expected_in, expected_member,
+				found_size.x, found_size.y, expected_size.x, expected_size.y,
+			]
+			failed = 1
+		else:
+			status = "ok, member %d from %s at %dx%d" % [
+				expected_member, found_in, found_size.x, found_size.y,
+			]
+	if failed == 0 and undrawable > 0:
 		status = "WARN: %d of %d children have no bitmap" % [undrawable, drawable + undrawable]
 
 	print("%-9s %3d  %-9s %2d frames, %2d children  %s" % [

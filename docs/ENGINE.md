@@ -140,8 +140,17 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
   `cast_registry.json`. Its `--chunks-root` option defaults to the sibling
   `../Piposh2-Web-Alpha/decompiled_chunks` research tree; supply another dump
   root with `python3 tools/generate_cast_registry.py --chunks-root <path>`.
-- At runtime, a linked film-loop parent resolves its child bitmap members from
-  that canonical registry cast. The loop cursor advances once per entered main
+- A film loop's children are not always members of the cast the loop lives in. The
+  mini-score names the library at offset 4 of each sprite record, `0xFFFF` for the
+  owning cast, and any other value is a zero-based index into the file's `ccl `
+  chunk — an ordered list of the cast paths its loops reference, in a different
+  order from the movie's cast libraries. The generator resolves that index to the
+  cast's registered name and writes it on the child as `cast`; the runtime reads
+  `cast` and falls back on the owning cast only when it is absent. Without this,
+  MURDER1's cliff characters, whose loops live in the movie's own cast but play
+  members of `tofi.cst` and `goldolin.cst`, drew a stranger's bitmap or nothing.
+- At runtime, a film-loop parent resolves each child bitmap member from the
+  registry cast the child names. The loop cursor advances once per entered main
   score frame, resets independently when a channel's member changes, and is
   cleared when a new movie loads. The renderer expands the selected mini-score
   frame's children in channel order and applies Director Scale semantics:

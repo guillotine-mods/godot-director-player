@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Extract Director 7 film-loop scores from decompiled cast chunks."""
+"""Extract Director 7 film-loop scores from decompiled cast chunks.
+
+A loop's mini-score is the same channel-buffer format as the movie's own score,
+so `tools/director_score.py` documents the 48-byte sprite record. The one place
+they differ is the member reference at offset 4: in the movie's score that u16 is
+the cast library, `0xFFFF` for the movie's own cast. In a loop's mini-score it is
+a **zero-based index into the owning file's `ccl ` chunk**, an ordered list of the
+external cast files the loops reference, which is not the movie's cast-library
+order. MURDER1's cast libraries run internal, goldolin, hezi, tofi; its `ccl `
+runs tofi, goldolin, hezi, and its loop children index the latter.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +21,10 @@ MAIN_CHANNEL_SIZE = 288
 SPRITE_CHANNEL_SIZE = 48
 MAX_D7_SPRITE_CHANNELS = 200
 MAX_D7_CHANNEL_DATA = MAIN_CHANNEL_SIZE + SPRITE_CHANNEL_SIZE * MAX_D7_SPRITE_CHANNELS
+## Offset 4 of a mini-score sprite record: the owning file's own cast.
+OWN_CAST = 0xFFFF
+## A `ccl ` chunk is a handful of cast paths, never a hundred.
+MAX_CCL_ENTRIES = 64
 
 
 def _u32(data: bytes, offset: int, endian: str = ">") -> int:
@@ -103,6 +117,55 @@ def parse_key(chunks_dir: Path) -> dict[int, int]:
     return loops
 
 
+def parse_ccl(chunks_dir: Path) -> list[str]:
+    """The external cast paths a film loop's sprite records index into, in order.
+
+        <u32 4> <u16 count> then count+1 u32 offsets, then length-prefixed paths
+
+    The offsets are relative to a base a couple of bytes past the end of the
+    table, and which couple varies with the dump, so the base is chosen as the one
+    that makes every entry a length-prefixed printable string. An empty list means
+    the loops here reference nothing outside their own cast, which is what the 9
+    cast-only exports carry; a file with no `ccl ` at all says the same.
+    """
+    paths = sorted(chunks_dir.glob("ccl -*.bin"), key=lambda path: path.name.upper())
+    if not paths:
+        return []
+    data = _read_bytes(paths[0])
+    if data is None or len(data) < 10:
+        return []
+    count = _u16(data, 4)
+    if count == 0 or count > MAX_CCL_ENTRIES:
+        if count > MAX_CCL_ENTRIES:
+            _warning(f"implausible ccl entry count {count} in {paths[0]}")
+        return []
+    table_end = 6 + 4 * (count + 1)
+    if table_end + 2 > len(data):
+        _warning(f"truncated ccl offset table in {paths[0]}")
+        return []
+    offsets = [_u32(data, 6 + 4 * index) for index in range(count + 1)]
+    if offsets[0] != 0 or offsets != sorted(offsets):
+        _warning(f"unrecognized ccl offset table in {paths[0]}")
+        return []
+    for base in (table_end + 2, table_end, table_end + 1, table_end + 3):
+        entries: list[str] = []
+        for offset in offsets[:count]:
+            start = base + offset
+            if start >= len(data):
+                break
+            end = start + 1 + data[start]
+            if end > len(data):
+                break
+            text = data[start + 1 : end]
+            if any(byte < 32 or byte > 126 for byte in text):
+                break
+            entries.append(text.decode("latin1"))
+        if len(entries) == count:
+            return entries
+    _warning(f"cannot read ccl paths in {paths[0]}")
+    return []
+
+
 def parse_film_cast(path: Path) -> dict | None:
     """Read a Director 4+ type-2 CASt film-loop definition."""
     data = _read_bytes(path)
@@ -136,8 +199,15 @@ def parse_film_cast(path: Path) -> dict | None:
     }
 
 
-def _frame_sprites(buffer: bytearray) -> list[dict]:
+def _frame_sprites(buffer: bytearray, external_casts: list[str]) -> tuple[list[dict], int]:
+    """One frame's children, plus how many were dropped as unresolvable.
+
+    A child naming a cast this file's `ccl ` cannot resolve is dropped rather than
+    left to fall back on the cast that owns the loop: that fallback is the bug this
+    reading fixes, and it draws a wrong member rather than nothing.
+    """
     sprites: list[dict] = []
+    dropped = 0
     for index in range(MAX_D7_SPRITE_CHANNELS):
         base = MAIN_CHANNEL_SIZE + index * SPRITE_CHANNEL_SIZE
         cast_id = _u16(buffer, base + 6)
@@ -145,22 +215,41 @@ def _frame_sprites(buffer: bytearray) -> list[dict]:
         height = _i16(buffer, base + 16)
         if cast_id <= 0 or width <= 0 or height <= 0:
             continue
-        sprites.append(
-            {
-                "channel": index + 1,
-                "cast_id": cast_id,
-                "start_x": _i16(buffer, base + 14),
-                "start_y": _i16(buffer, base + 12),
-                "width": width,
-                "height": height,
-                "ink": buffer[base + 1] & 0x3F,
-            }
-        )
-    return sprites
+        cast_index = _u16(buffer, base + 4)
+        cast_name = ""
+        if cast_index != OWN_CAST:
+            if cast_index >= len(external_casts):
+                dropped += 1
+                continue
+            cast_name = external_casts[cast_index]
+            if not cast_name:
+                dropped += 1
+                continue
+        sprite = {
+            "channel": index + 1,
+            "cast_id": cast_id,
+            "start_x": _i16(buffer, base + 14),
+            "start_y": _i16(buffer, base + 12),
+            "width": width,
+            "height": height,
+            "ink": buffer[base + 1] & 0x3F,
+        }
+        if cast_name:
+            sprite["cast"] = cast_name
+        sprites.append(sprite)
+    return sprites, dropped
 
 
-def parse_scvw(path: Path) -> list[dict] | None:
-    """Parse a Director 7 SCVW mini-score into persistent sprite frames."""
+def parse_scvw(
+    path: Path, external_casts: list[str] | None = None
+) -> tuple[list[dict], int] | None:
+    """Parse a Director 7 SCVW mini-score into persistent sprite frames.
+
+    Returns the frames and how many children were dropped for naming a cast the
+    `ccl ` chunk could not resolve.
+    """
+    casts = external_casts or []
+    dropped_children = 0
     data = _read_bytes(path)
     if data is None:
         return None
@@ -224,15 +313,30 @@ def parse_scvw(path: Path) -> list[dict] | None:
             buffer[channel_offset:end] = data[position : position + channel_size]
             position += channel_size
             remaining -= channel_size
-        frames.append({"sprites": _frame_sprites(buffer)})
-    return frames if frames else None
+        sprites, dropped = _frame_sprites(buffer, casts)
+        dropped_children += dropped
+        frames.append({"sprites": sprites})
+    return (frames, dropped_children) if frames else None
 
 
-def extract_film_loops(chunks_dir: Path) -> dict[str, dict]:
-    """Return stable cast-ID keyed film-loop records for one canonical cast."""
+def extract_film_loops(
+    chunks_dir: Path, resolve_cast=None
+) -> tuple[dict[str, dict], int]:
+    """Return stable cast-ID keyed film-loop records for one canonical cast.
+
+    `resolve_cast` turns one of the `ccl ` chunk's Director paths into the name the
+    cast is registered under, or "" when nothing answers to it. Without it every
+    child is read as belonging to the cast that owns the loop, which is only true
+    of the loops whose children carry `0xFFFF`.
+    """
     cas = parse_cas(chunks_dir)
     key = parse_key(chunks_dir)
+    external = [
+        resolve_cast(path) if resolve_cast is not None else ""
+        for path in parse_ccl(chunks_dir)
+    ]
     loops: dict[str, dict] = {}
+    dropped_children = 0
     for cast_id, cast_resource_id in sorted(cas.items()):
         scvw_id = key.get(cast_resource_id)
         if scvw_id is None:
@@ -240,8 +344,10 @@ def extract_film_loops(chunks_dir: Path) -> dict[str, dict]:
         cast = parse_film_cast(chunks_dir / f"CASt-{cast_resource_id}.bin")
         if cast is None:
             continue
-        frames = parse_scvw(chunks_dir / f"SCVW-{scvw_id}.bin")
-        if frames is None:
+        parsed = parse_scvw(chunks_dir / f"SCVW-{scvw_id}.bin", external)
+        if parsed is None:
             continue
+        frames, dropped = parsed
+        dropped_children += dropped
         loops[str(cast_id)] = {"cast_id": cast_id, **cast, "frames": frames}
-    return loops
+    return loops, dropped_children

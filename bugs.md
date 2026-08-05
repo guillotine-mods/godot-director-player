@@ -243,8 +243,9 @@ not like a missing cursor.
 
 This entry began as the report now filed as 15, and was rewritten into a
 film-loop entry when that fix was believed to have closed it. It had not been
-confirmed with the reporter, and it had not. Do not read this entry as covering
-the reported symptom.
+confirmed with the reporter, and it had not: the loops resolved, and then their
+children resolved against the wrong cast library. 15 is now closed by that second
+fix. What is left here is one loop that still does not parse at all.
 
 A movie's internal cast is now registered under the movie's name, so film loops
 living there resolve. Before that, `get_film_loop` refused `cast_lib 1` outright
@@ -426,20 +427,29 @@ and neither addressed it. They fixed real but different defects.
 
 ## 15. A character is missing or flickering while it moves within a room
 
-**Status:** open, reported from play, NOT reproduced · **Area:** unknown
+**Status:** CLOSED — the film-loop child cast library, see the Closed section ·
+**Area:** assets / renderer
 
 Reported: characters that should animate while moving around inside a room are
-missing, and the one clearest case flickers rather than being absent outright,
-which is what makes it hard to catch in a screenshot. Reported as worst "on the
-cliff between Tofi and Gondolin", and still present after entry 12's fix.
+missing, and the one clearest case flickers rather than being absent outright.
+Reported as worst "on the cliff between Tofi and Gondolin", and still present after
+entry 12's fix, which is why this entry outlived it.
 
-**No reproduction yet, and no room.** "The cliff" was read as MURDER1, where Tofi
-and Goldolin do appear and where their film loops genuinely were unresolvable. That
-was fixed and the reporter confirms the symptom remains, so MURDER1 was either the
-wrong scene or only part of it. Nothing here should be treated as located until a
-room is known.
+The room was MURDER1 after all, and entry 12's fix was necessary but not
+sufficient. It made the loops in the movie's own cast *resolve*; their children
+still resolved against the wrong cast library, so the frames the loops play were
+either missing or a stranger's bitmap. The cause is in the Closed section.
 
-What is already ruled out, from the investigation that led to entry 12:
+The reporter's two symptoms were the two halves of the same defect. Goldolin is
+absent for the 11 frames from 108 where channel 3 holds loop `goldolin left`,
+whose children are goldolin members 63-69: none resolved, so she vanished and
+came back, which is the flicker. And "at the beginning Tofi's mouth appears but he
+does not" is frames 5-18: channel 11 carries tofi member 34, the mouth, as a
+plain score sprite, which drew, while channel 9 carries loop `tofi right`, whose
+child is tofi member 4, the body, which did not. A floating mouth over Goldolin.
+
+What was ruled out along the way, all still true and all still worth not
+re-checking:
 
 - **Not the transition spans being skipped.** They play: walking `edge1go` to
   `gatego` visits frames 237..338, covering `gatefromedge1` at 324.
@@ -449,29 +459,19 @@ What is already ruled out, from the investigation that led to entry 12:
   opaque, and 32 at 948 sprites.
 - **Not film loops failing to advance**, at least where they resolve: MURDER1 1 of
   1 film-loop channels advances over 60 ticks, RUNAWAY 3 of 3, SHUFFLE 2 of 2.
-
 - **Not the sprite stretch flag**, checked because the fix for 14's score-side half
   moved 22,806 sprite rects and many of them are character members: `fat` 3,491,
   `hatuli` 3,414, `rinati` 3,008, `hezi` 586. But almost all of those are in the
   ENDMOVI cutscenes, and the two characters actually named in the report are the two
-  it barely touches — `tofi` 20 records, `goldolin` none. MURDER1 has 40 changed
-  rects across channels 41, 16 and 9. Their in-room animation runs through film
-  loops, which that fix deliberately leaves alone. So it is worth re-checking the
-  symptom against the current build, but it is not the explanation.
+  it barely touches — `tofi` 20 records, `goldolin` none. Their in-room animation
+  runs through film loops, which that fix deliberately leaves alone. Independently
+  confirmed by this fix: every one of the 2,145 external children has a rect exactly
+  equal to its member's own size, so no stretch question arises on them.
 
-Flickering specifically suggests something toggling per frame rather than art that
-is absent: a channel whose visibility is rewritten each `exitFrame`, or a member
-swap that lands on a frame where the channel is empty. Entry 3 (`_lingo_hidden`
-never cleared) and entry 9 (`init all`'s puppeting lost on every movie change) are
-both in that family and are the first places to look once a room is known.
-
-To progress this, what is needed is the room and whether the character is absent
-entirely or appearing and vanishing. Without that, any fix is a guess.
-
-**History worth keeping:** this entry existed before, describing the same symptom,
-and was rewritten into entry 12 when the film-loop fix was believed to have closed
-it. It had not been confirmed with the reporter. Do not retire this entry on the
-strength of a fix alone.
+**History worth keeping:** this entry was twice believed closed by a fix that had
+not been confirmed with the reporter — once when it was rewritten into entry 12,
+and the ruled-out list above is what that cost. It is closed now on a
+screenshot A/B of the two frames the reporter described, not on a resolve count.
 
 ---
 
@@ -509,25 +509,28 @@ missing-member warning.
 
 ---
 
-## 17. 484 of the registry's 497 film loops are unverified
+## 17. 478 of the registry's 497 film loops are unverified
 
 **Status:** open · **Area:** verification
 
-`tools/verify_film_loops.gd` walks a hardcoded `CASES` list of 13 loops across
-seven shared casts. It predates internal-cast film loops, which took the registry
-from 295 loops in 21 casts to 497 in 60, and it enumerates none of them: it still
-reports "all 13 recovered film loops resolve to drawable children" and passes.
+`tools/verify_film_loops.gd` walks a hardcoded `CASES` list, now 19 loops: 13 in
+seven shared casts, plus 6 added with the child-cast fix that also pin which cast a
+named child comes from and its size there. It predates internal-cast film loops,
+which took the registry from 295 loops in 21 casts to 497 in 60, and it still
+enumerates none of them.
 
-So the harness that gates film loops covers 2.6% of them, and the 60 internal
-casts added for the cliff characters are covered by nothing. A film loop that
-resolves to a rectangle of nothing, or to children whose textures are missing,
-would not fail any check in the repo.
+So the harness that gates film loops covers 3.8% of them. A film loop that resolves
+to a rectangle of nothing, or to children whose textures are missing, would not fail
+any check in the repo unless it is one of the 19.
 
-The fix is to enumerate `cast_registry.json` rather than a literal list, keeping
-the same per-loop assertion it already makes, and to report the count so a drop in
-coverage is visible.
+Two sweeps written for the child-cast fix show what enumeration would buy and are
+the shape to keep: every film-loop child any score plays resolves to a bitmap
+(7,843 of 7,843), and every sprite and child in MURDER1's 884 frames does too. Both
+were throwaway scripts. The fix is to enumerate `cast_registry.json` rather than a
+literal list, keep the per-loop assertion it already makes, and report the count so
+a drop in coverage is visible.
 
-Reproduce: `godot --headless --script tools/verify_film_loops.gd` prints 13
+Reproduce: `godot --headless --script tools/verify_film_loops.gd` prints 19
 against `python3 -c "import json;c=json.load(open('assets/render_model/cast_registry.json'))['casts'];print(sum(len(v.get('film_loops',{})) for v in c.values() if isinstance(v,dict)))"`.
 
 ---
@@ -574,6 +577,54 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
 ---
 
 ## Closed
+
+- **A film loop's frames were looked for in the wrong cast library** (was 15).
+  A loop's children are usually members of the cast the loop itself lives in, and
+  `_draw_film_loop` assumed always: it resolved every child against the loop's owning
+  cast. MURDER1 keeps `tofi right`, `goldolin left` and `hezi right + angry` in its
+  own cast while the frames they play are members of `tofi.cst`, `goldolin.cst` and
+  `hezi.cst`, so the children resolved to whatever the movie's own cast happened to
+  have at that number — nothing at all for most, and MURDER1's own member 4, a
+  533x17 strip, for the rest, stretched into the child's 108x273 rect as a green
+  smear. Both characters on the cliff were drawn from those loops.
+
+  A loop's mini-score does say which library, at offset 4 of the 48-byte sprite
+  record, the same place the movie's own score keeps it. `0xFFFF` is the owning cast,
+  as in the main score. What differs is that a number there is **not** a cast-library
+  index: it is a zero-based index into the file's `ccl ` chunk, an ordered list of the
+  cast paths its loops reference, which is a different order. MURDER1's libraries run
+  internal, goldolin, hezi, tofi; its `ccl ` runs tofi, goldolin, hezi.
+
+  Read off the containers, not recalled: `ccl [raw]` predicts the cast for all
+  **2,145** external children in the corpus, and the member is present in the named
+  cast for every one of them — 0 out of range, 0 absent. The parse agrees with a byte
+  scan of the same chunk in 29 of 31 dumps, the two exceptions being the chunks whose
+  single entry is a genuinely empty path. The negative control holds too: the 9
+  cast-only exports have no `ccl ` and emit nothing but `0xFFFF`.
+
+  `tools/director_film_loops.py` now resolves the index to the cast's registered
+  name and `generate_cast_registry.py` writes it on the child as `cast`, checking
+  against the built registry that the name can answer for the member. A child that
+  cannot be resolved is dropped and counted rather than left to fall back on the
+  owner, because that fallback is this bug. **98 are dropped**, all in WONDER, whose
+  `ccl ` holds one empty path; their members (222 at 70x51 and 983 at 153x197) are in
+  no cast in the corpus, so there is nothing yet to point them at.
+
+  Of those 2,145 children, **1,529 previously drew a real but unrelated member of
+  the owning cast** and 616 drew nothing, so most of this was wrong art rather than
+  absent art — which is why it read as flicker. Counting only the loops a score
+  actually plays, 592 of 7,917 children came out blank before and 0 of 7,843 do now,
+  across 21 movies (ALLIN 111, SEA1 74, MURDER1 62, SAMNIGHT 59, MORN3 44, …). The 74
+  fewer are SEA1's `wonder` loop 673 shedding the unresolvable children described
+  above; they drew nothing before and are simply no longer claimed.
+
+  Every sprite and every film-loop child in MURDER1's 884 frames now resolves to a
+  bitmap: 5,378 plain sprites and 1,534 children, 0 blank. `lingo_converge`,
+  `lingo_frames`, `verify_1bit_members`, `check_cast_coverage` and
+  `generate_sprite_stretch --check` are byte-identical across the change, and
+  `lingo_walk_diff` differs only in Godot's exit-time leak counters. Covered by
+  `tools/verify_film_loops.gd`, which now asserts the cast a named child comes from
+  and its size there, and fails on all 6 of the added cases without the fix.
 
 - **Art drew scaled to a rect Director ignores** (the score-side half of 14).
   A Director sprite draws its member at the member's own size, anchored on the
