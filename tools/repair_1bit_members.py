@@ -36,10 +36,10 @@ REPO = Path(__file__).resolve().parent.parent
 
 # The pre-dumped ProjectorRays chunks. Not in this repo: 139 MB, and
 # reference/README.md records them as already processed into render_model.
-DEFAULT_CHUNKS = Path.home() / (
-    "Projects/_private_projects/Piposh2-Port/originals/recovery"
-    "/web-alpha/decompiled_chunks"
-)
+## Chunks for every movie: the 27 ProjectorRays already dumped, symlinked
+## alongside the rest produced by tools/dump_movie_chunks.py. Not in the repo,
+## and rebuildable from the originals at any time.
+DEFAULT_CHUNKS = Path.home() / "Projects/_private_projects/piposh2-toolcache/chunks"
 
 CAST_TYPE_BITMAP = 1
 DEPTH_FLAG_8BPP = 0x8000

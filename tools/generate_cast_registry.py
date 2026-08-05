@@ -82,7 +82,7 @@ def main() -> int:
     parser.add_argument(
         "--chunks-root",
         type=Path,
-        default=Path("../Piposh2-Web-Alpha/decompiled_chunks"),
+        default=Path.home() / "Projects/_private_projects/piposh2-toolcache/chunks",
         help="Director chunk-dump root used to export film loops and member types",
     )
     args = parser.parse_args()

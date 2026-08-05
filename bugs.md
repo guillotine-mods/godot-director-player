@@ -220,27 +220,26 @@ python3 tools/verify_1bit_members.py     # PASS once repaired
 python3 -c "import struct;b=open('/Users/yonatankarp-rudin/Projects/_private_projects/Piposh2-Port/originals/recovery/web-alpha/decompiled_chunks/DAY1/DAY1/chunks/CASt-51.bin','rb').read();t,c,s=struct.unpack_from('>III',b,0);p,=struct.unpack_from('>H',b,12+c);print('pitch',hex(p),'rect',struct.unpack_from('>hhhh',b,14+c))"
 ```
 
-108 members repaired from their own chunks, and 24 more in NIGHT1 borrowed by
-member name from a movie that has the art. The borrow is only taken where every
-donor agrees byte for byte, checked by SHA over the raw chunks rather than assumed;
-a name whose donors disagree is reported and skipped.
+**134 members repaired, every one from its own chunks.** `tools/dump_movie_chunks.py`
+reads the `.DXR`/`.CXT` containers directly, so the coverage gap that once forced
+NIGHT1 to borrow its cursors by name is closed, and ENDMOVI4's `handcur1` and
+`handcur2` — which appear in no other movie and so had no donor — are repaired too.
+Nothing is borrowed any more.
 
-Not repaired: 62 of the 88 movies have no local chunk dump. ENDMOVI4's `handcur1`
-and `handcur2` appear nowhere else, so they have no donor and are still the broken
-export. Reaching the rest needs imap/mmap traversal of the `.DXR` files under
-`Piposh2-Port/originals/recovery/web-alpha/PIP2DATA/`.
+Only `HEZSAVE` still has no chunks, and the port intercepts it for JSON saves
+rather than running it.
 
 Note that an unrepaired cursor does *not* degrade to the arrow. The size guard in
 `cursor_image` catches only a wildly wrong decode; NIGHT1's members came out 5x6 to
 24x26, all small enough to compose into a plausible-looking block of noise and
-install as the cursor. That is what borrowing by name fixes, and what ENDMOVI4
-still has.
+install as the cursor. Anything that regresses the decode will look like static,
+not like a missing cursor.
 
 ---
 
-## 12. Film loops in a movie's own cast are still unresolved in 28 movies
+## 12. One DAY1 film loop still does not parse
 
-**Status:** partly fixed · **Area:** assets / renderer
+**Status:** almost closed · **Area:** assets / renderer
 
 A movie's internal cast is now registered under the movie's name, so film loops
 living there resolve. Before that, `get_film_loop` refused `cast_lib 1` outright
@@ -253,14 +252,21 @@ Corpus-wide there were 17,506 sprites across 49 of the 88 movies pointing at an
 internal member with no bitmap, which is what a film loop looks like from
 `members.json`. 21 internal casts now carry their loops.
 
-Still broken: only 26 of the 88 movies have a local chunk dump, and film loops can
-only be extracted from chunks. ARCADE1 (2,357 sprites), DIVEFIGT (1,911), RUNAWAY
-(1,215), SHUFFLE (724) and ENDMOVI3 (344) are among those with no dump, so their
-characters still do not animate. Reaching them needs the same imap/mmap traversal
-of `PIP2DATA/*.DXR` that entry 11 needs.
+The coverage half is closed. `tools/dump_movie_chunks.py` reads the containers
+directly, so 84 of the 88 movies now have chunks and the registry carries 497 film
+loops across 60 internal casts. **17,426 of those 17,506 sprites now resolve**, up
+from none.
 
-Reproduce: `goto_movie("MURDER1")` then `loader.get_film_loop(1, 5)`. It resolves
-to 7 frames at 168x279 where a movie without a dump returns `{}`.
+What is left is one member: DAY1's 309, `loshuaa`, on channel 19 for 80 sprites.
+Its `SCVW-1800` trips "channel data exceeds D7 limit" in
+`tools/director_film_loops.py`, so the loop is skipped rather than mis-parsed. The
+D7 constants in that file (`MAIN_CHANNEL_SIZE = 288`, `SPRITE_CHANNEL_SIZE = 48`,
+`MAX_D7_SPRITE_CHANNELS = 200`) are the thing to re-derive against this one chunk;
+the recovery skill warns that score format is the part that moved most between
+versions.
+
+Reproduce: `goto_movie("MURDER1")` then `loader.get_film_loop(1, 5)` resolves to 7
+frames at 168x279; `goto_movie("DAY1")` then `get_film_loop(1, 309)` returns `{}`.
 
 ---
 

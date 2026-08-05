@@ -36,6 +36,8 @@ godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach 
 godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
 python3 tools/repair_1bit_members.py                # re-decode 1-bit members from the raw chunks
+python3 tools/dump_movie_chunks.py --verify         # container reader vs the ProjectorRays dumps, pass/fail
+python3 tools/dump_movie_chunks.py --out <dir>      # dump chunks straight from the .DXR originals
 godot --headless --script tools/puppet_visibility.gd # sprite 30 across a transition, pass/fail
 godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
 godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
