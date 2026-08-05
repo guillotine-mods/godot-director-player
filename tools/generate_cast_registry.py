@@ -176,6 +176,52 @@ def main() -> int:
             non_drawing_count += len(non_drawing)
         casts[name] = cast
 
+    ## A movie's own cast, under the movie's name.
+    ##
+    ## Film loops are not only a shared-cast thing. MURDER1 keeps `tofi right`,
+    ## `goldolin left` and `tofi walking back` as members 5, 10 and 13 of its own
+    ## internal cast, and the score puts them on channels 9, 3 and 17. Collecting
+    ## only linked casts left every one of those unresolvable, so the characters
+    ## never animated: 17,506 sprites across 49 of the 88 movies point at an
+    ## internal member that has no bitmap because it is a film loop.
+    ##
+    ## Keyed by the movie directory rather than "internal", which every one of them
+    ## is called. A cast-only export such as TOFI or ISLAND is already registered
+    ## under that same name as a linked cast, so it is skipped rather than
+    ## overwritten: the entry it already has is the same cast.
+    internal_count = 0
+    for directory_name in sorted(directories):
+        if directory_name in casts or directory_name in aliased:
+            continue
+        directory = directories[directory_name]
+        source = read_object(directory / "members.json").get("members", {})
+        if not isinstance(source, dict):
+            continue
+        members = internal_members(source, directory / "members.json")
+        carried = previous.get(directory_name) if isinstance(previous.get(directory_name), dict) else {}
+        chunks_dir = args.chunks_root / directory.name / directory.name / "chunks"
+        if chunks_available and chunks_dir.is_dir():
+            film_loops = extract_film_loops(chunks_dir)
+            non_drawing = non_drawing_members(chunks_dir)
+        else:
+            film_loops = carried.get("film_loops") or {}
+            non_drawing = carried.get("non_drawing") or {}
+        ## Only worth an entry when it carries something the movie's own
+        ## members.json does not already answer.
+        if not film_loops and not non_drawing:
+            continue
+        cast = {"directory": directory.name, "members": members}
+        if film_loops:
+            cast["film_loops"] = film_loops
+            film_loop_count += len(film_loops)
+        if non_drawing:
+            cast["non_drawing"] = non_drawing
+            non_drawing_count += len(non_drawing)
+        casts[directory_name] = cast
+        internal_count += 1
+    if internal_count:
+        print(f"internal casts registered for their own film loops: {internal_count}")
+
     for name, target in sorted(aliased.items()):
         if target in casts:
             casts[name] = {"alias_of": target}

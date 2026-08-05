@@ -238,30 +238,29 @@ still has.
 
 ---
 
-## 12. Animations are missing on the cliff, and elsewhere between rooms
+## 12. Film loops in a movie's own cast are still unresolved in 28 movies
 
-**Status:** open, root cause NOT found · **Area:** score / renderer
+**Status:** partly fixed · **Area:** assets / renderer
 
-Reported: many animations missing, mainly while a character moves from one place
-to another, worst on the cliff. Investigated and not explained. What was ruled out:
+A movie's internal cast is now registered under the movie's name, so film loops
+living there resolve. Before that, `get_film_loop` refused `cast_lib 1` outright
+and `generate_cast_registry.py` collected only linked casts, so MURDER1's `tofi
+right`, `goldolin left` and `tofi walking back` — members 5, 10 and 13 of its own
+cast, used by the score on channels 9, 3 and 17 — could never be found, and the
+characters never animated.
 
-- **Not the transition spans being skipped.** They do play. Walking `edge1go` to
-  `gatego` visits frames 237..338, which covers `gatefromedge1` at 324.
-- **Not a frozen sprite rect during animation.** Across all of DAY1 there is
-  exactly one frame-step where a member changes size and the rect does not.
-- **Not the puppet's size.** Channel 30 is drawn at the member's natural size in
-  1290 of 1290 room sprites, which is what the score does.
-- **Not ink coverage.** The only unhandled inks are 0 (Copy, correctly opaque) and
-  32 (948 sprites, 0.2%).
+Corpus-wide there were 17,506 sprites across 49 of the 88 movies pointing at an
+internal member with no bitmap, which is what a film loop looks like from
+`members.json`. 21 internal casts now carry their loops.
 
-What is known: the spans hold Piposh's own walk cycle on channel 3, scaled
-continuously as he walks away (`gatetoedge1` is 306..322, sixteen members, natural
-74x219 drawn at 68x200 and shrinking). The port substitutes `PuppetController` on
-channel 30, which steps through discrete `syz` art at natural size instead. Whether
-that is what the reporter is seeing is unconfirmed.
+Still broken: only 26 of the 88 movies have a local chunk dump, and film loops can
+only be extracted from chunks. ARCADE1 (2,357 sprites), DIVEFIGT (1,911), RUNAWAY
+(1,215), SHUFFLE (724) and ENDMOVI3 (344) are among those with no dump, so their
+characters still do not animate. Reaching them needs the same imap/mmap traversal
+of `PIP2DATA/*.DXR` that entry 11 needs.
 
-Reproduce: `godot --script` a scene instance, `goto_movie("DAY1", null,
-{"label": "edge1go"})`, and compare against the original.
+Reproduce: `goto_movie("MURDER1")` then `loader.get_film_loop(1, 5)`. It resolves
+to 7 frames at 168x279 where a movie without a dump returns `{}`.
 
 ---
 

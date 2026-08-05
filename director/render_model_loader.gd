@@ -253,7 +253,15 @@ func _linked_cast_name(cast_lib: int) -> String:
 	if typeof(library) != TYPE_DICTIONARY:
 		return ""
 	var name: Variant = library.get("name", "")
-	return name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
+	var resolved: String = name.strip_edges().to_lower() if typeof(name) == TYPE_STRING else ""
+	# Every movie calls its own cast "internal", so that name identifies nothing in
+	# a registry shared by all of them. The movie's own name does, and it is what
+	# the registry keys a movie's internal cast under. Without this, a film loop
+	# living in the movie's own cast — which is where MURDER1 keeps `tofi right`
+	# and `goldolin left` — could never be looked up.
+	if resolved == "internal" or resolved == "":
+		return movie_name.strip_edges().to_lower()
+	return resolved
 
 
 func cast_lib_index(name: String) -> int:
@@ -274,8 +282,6 @@ func cast_lib_index(name: String) -> int:
 
 
 func get_film_loop(cast_lib: int, cast_id: int) -> Dictionary:
-	if cast_lib == 1:
-		return {}
 	var cache_key := "%d:%d" % [cast_lib, cast_id]
 	if _film_loop_cache.has(cache_key):
 		return _film_loop_cache[cache_key]
