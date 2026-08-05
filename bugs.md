@@ -294,9 +294,9 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 
 ---
 
-## 14. Members whose decoded size is half their true size draw as a smear
+## 14. Art draws stretched on one axis. At least two different causes.
 
-**Status:** open, player-visible, root cause narrowed not proven · **Area:** assets
+**Status:** open, player-visible, and NOT one bug · **Area:** assets and score
 
 Reported twice from play: art "scratching over too much". The clearest instance is
 the raft in the opening, where the bearded man's head is smeared horizontally
@@ -331,9 +331,38 @@ the other stays within 5% of natural — finds **979 sprites in 9 movies**:
 | CHESS | 4 | `1:21` 60x27 -> 117x26 |
 | MORN3 | 1 | `1:10` 136x13 -> 335x13 |
 
-The ratio is close to 2x in most cases, which is the shape of a member decoded at
-half its true width or height. ALLIN carries 839 of the 979, including a 640-wide
-background drawn at 1280, so it is where the diagnosis can be confirmed fastest.
+**These are not all the same bug.** The first draft of this entry generalised the
+strtgame finding to all nine movies, on the strength of the ratio being close to
+2x, and that was wrong. Checking the other movies' `CASt` chunks:
+
+| member | members.json | CASt rect | stride | depth |
+|---|---|---|---|---|
+| ALLIN `1:1` | 640x441 | 640x441 | 640 | 8 |
+| INVESTIG `1:76` | 186x13 | 186x13 | 186 | 8 |
+| SEA1 `1:245` | 56x12 | 56x12 | 56 | 8 |
+| DAGI `1:13` | 129x19 | 129x19 | 130 | 8 |
+| CHESS `1:21` | 60x27 | 60x27 | 60 | 8 |
+
+Every one of those agrees with the container exactly, so their member geometry is
+right and the stretch comes from the score's sprite rect instead. strtgame member
+26 is the only one measured so far where the member itself is inconsistent. Two
+different causes wearing the same symptom.
+
+The score-side group looks like a coordinate problem, not a scale one. ALLIN's
+background sits at `(-641, -12)` sized `1280x441` on a 640x480 stage, so it spans
+-641..639 and only its right edge reaches the stage. 1280 is exactly twice 640 and
+-641 is one off -640, which is the shape of a left coordinate and a width that
+were derived from each other wrongly rather than a bitmap that was scaled.
+
+A 4-bit-read-as-8-bit theory was tested and rejected: every member above reports
+depth 8 with stride equal to width.
+
+ALLIN carries 839 of the 979 and is the clearest score-side case; strtgame 26 is
+the only confirmed member-side case. Treat them as separate investigations.
+
+Note also that the stage-clipping fix now hides ALLIN's off-stage half, so what
+the player sees there has already changed and should be re-checked before the
+count above is trusted.
 
 **Ruled out: endianness.** The first theory was that little-endian containers were
 being mis-read, because `strtgame.dxr` is XFIR. Only two files in the whole corpus
