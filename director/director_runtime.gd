@@ -647,10 +647,30 @@ func _run_cursor_funk() -> void:
 	## That `init all` never runs at all is a wider gap than cursors. See bugs.md.
 	if lingo == null or not AppSettings.use_lingo_frames:
 		return
-	if not lingo.interpreter.has_handler("cursorfunk"):
-		return
-	lingo.host.begin_dispatch()
-	lingo.interpreter.call_handler("cursorfunk")
+	if lingo.interpreter.has_handler("cursorfunk"):
+		lingo.host.begin_dispatch()
+		lingo.interpreter.call_handler("cursorfunk")
+	# The hand over a held item is the one cursor `cursorfunk` does not assign:
+	# `displayobject` sets it on slots 103-110, and the port reimplements that
+	# handler natively for drawing and dragging without ever running it. Run it for
+	# the cursor. Its other writes agree with the native path rather than fighting
+	# it: it sets each slot's memberNum from `objectsfield`, which is the same
+	# source `GameState.inventory_override_for_channel` draws from, and puppets
+	# 103-110, which is puppeting bugs.md 9 records as lost.
+	#
+	# Only in a hub, which is where the original calls it from and where the HUD
+	# actually is. Its empty-slot branch is `the number of member "object0" of
+	# castLib "master"`, a plain integer, so the library is dropped and master's
+	# member 9 resolves against the movie's own internal cast. MURDER1, HATDAY1 and
+	# GOLDDEAD have no member 9 and warned on every load. Testing the score for
+	# channel 103 was not enough: GOLDDEAD carries the channels without the cast.
+	if (
+		lingo.interpreter.has_handler("displayobject")
+		and context.is_hub(loader.movie_name)
+		and loader.score_uses_channel(103)
+	):
+		lingo.host.begin_dispatch()
+		lingo.interpreter.call_handler("displayobject")
 
 
 func _run_skipped_entry_scripts() -> void:

@@ -45,14 +45,24 @@ func _initialize() -> void:
 	var settings: Object = root.get_node("AppSettings")
 	settings.use_lingo_frames = true
 	settings.use_lingo_clicks = true
-	root.get_node("GameState").new_game()
+	var state: Object = root.get_node("GameState")
+	state.new_game()
+
+	# Occupy a slot before booting, so `displayobject` has an item to put the hand
+	# on. The hand is the one cursor `cursorfunk` does not assign, and replacing the
+	# old `CURSOR_POINTING_HAND` substitution with the general path silently dropped
+	# it once already.
+	var field: PackedStringArray = state.objects_field
+	field[0] = "masor"
+	state.objects_field = field
 
 	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
 	runtime.boot()
 
-	# The movies cursorfunk's own gate covers, minus NIGHT1, whose cursor members
-	# have no local chunk dump and so are still the broken export.
-	for movie in ["DAY1", "HOTEL1", "SEA1", "AIR1"]:
+	# Every movie cursorfunk's own gate covers. NIGHT1 has no chunk dump of its own
+	# and its cursor art is borrowed by name from a movie that does, so it is the
+	# one most worth checking rather than excusing.
+	for movie in ["DAY1", "HOTEL1", "SEA1", "AIR1", "NIGHT1"]:
 		runtime.goto_movie(movie, null, {})
 		var host: Object = runtime.lingo.host
 
@@ -125,6 +135,24 @@ func _initialize() -> void:
 				_check("%s: the floor cursor is cursor-sized" % movie,
 					got.get_width() <= 32 and got.get_height() <= 32,
 					"%dx%d" % [got.get_width(), got.get_height()])
+
+		# The hand over a held item, which comes from `displayobject` rather than
+		# `cursorfunk` and so is the assignment most easily lost.
+		var slots: Array = state.slot_channels()
+		var slot_entry: Variant = runtime.channels.get(int(slots[0]), null)
+		if slot_entry != null and not (slot_entry as SpriteChannel).is_empty():
+			var slot_rect: Rect2 = runtime.sprite_stage_rect(
+				(slot_entry as SpriteChannel).sprite)
+			var on_item: Dictionary = runtime.cursor_at(slot_rect.get_center())
+			var slot_pair: Variant = (slot_entry as SpriteChannel).cursor
+			var slot_named := ""
+			if typeof(slot_pair) == TYPE_ARRAY and (slot_pair as Array).size() == 2:
+				slot_named = _member_name(host, movie, int((slot_pair as Array)[0]))
+			_check("%s: an occupied slot gets the hand" % movie,
+				slot_named.begins_with("hand") and not on_item.is_empty(),
+				"member %s, cursor_at %s" % [
+					slot_named if slot_named != "" else "<none>",
+					"found" if not on_item.is_empty() else "empty"])
 
 		# The negative half. An arbitration that answered everywhere would pass every
 		# check above while telling the player nothing, so somewhere off the stage

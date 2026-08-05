@@ -21,6 +21,9 @@ const MATTE_INKS := [8, 9]
 ## 1=Transparent, 36=Background Transparent, 39=Ghost-ish in some exports.
 const BACKGROUND_INKS := [1, 36, 39]
 const MATTE_TOLERANCE := 14.0 / 255.0
+## Widest a member may be and still be treated as cursor art. `trgcur` at 17x17 is
+## the largest the game actually uses.
+const MAX_CURSOR_SIZE := 32
 ## Paper is near-white; at or above this in all three channels counts as paper.
 const PAPER_MIN_BYTE := 241
 
@@ -161,6 +164,12 @@ func load_movie(name: String) -> Error:
 	_missing_registry_texture_keys.clear()
 	_film_loop_cache.clear()
 	_missing_film_loop_keys.clear()
+	# Keyed by member number, which means nothing across a movie: `1:10:11` is
+	# `wlkcur` in DAY1 and whatever holds 10 and 11 in the next one. The gated
+	# movies happen to agree — every cursor member is byte-identical across DAY1,
+	# AIR1, HOTEL1 and SEA1 — but CHESS sets its own from `cc1`/`cc1b` and is not
+	# in cursorfunk's gate, so a collision there would serve DAY1's art.
+	_cursor_cache.clear()
 	return OK
 
 
@@ -704,6 +713,15 @@ func cursor_image(cast_lib: int, data_id: int, mask_id: int) -> Dictionary:
 
 	var w := data_img.get_width()
 	var h := data_img.get_height()
+	# A cursor is small. Anything larger is not one, and composing it anyway puts a
+	# piece of scenery or a block of noise under the pointer instead of falling back
+	# to the arrow. NIGHT1 and ENDMOVI4 carry cursor members that no local chunk
+	# dump covers, so they are still the 8-bit misread the export produced and would
+	# otherwise install as static. The biggest real cursor here is `trgcur` at
+	# 17x17. See bugs.md 11.
+	if w > MAX_CURSOR_SIZE or h > MAX_CURSOR_SIZE:
+		_cursor_cache[key] = {}
+		return {}
 	var out := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
 	for y in h:
 		for x in w:

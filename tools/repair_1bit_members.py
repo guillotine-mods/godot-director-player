@@ -203,7 +203,7 @@ def repair_movie(movie_dir: Path, dumps: dict, dry_run: bool):
                   file=sys.stderr)
             continue
 
-        digests[key] = hashlib.sha1(bitmap.bits).hexdigest()
+        digests[key] = (hashlib.sha1(bitmap.bits).hexdigest(), bitmap, palette)
         if not dry_run:
             bmp_path.write_bytes(encode_bmp(bitmap, palette, black, white))
             info["width"] = bitmap.width
@@ -218,6 +218,73 @@ def repair_movie(movie_dir: Path, dumps: dict, dry_run: bool):
     if repaired and not dry_run:
         members_path.write_text(json.dumps(doc, separators=(",", ":")))
     return repaired, digests
+
+
+def borrow_by_name(movies, dumps, donors, names, dry_run: bool):
+    """Repairs members whose own cast has no chunk dump, by member name.
+
+    NIGHT1 and ENDMOVI4 carry cursors and neither has a dump, so without this they
+    keep the 8-bit misread: NIGHT1's `wlkcur1` stays 5x6 and composes into a small
+    block of noise that is under any size guard and installs as the cursor.
+
+    Only where the name is unambiguous. Every cursor member is byte-identical
+    across DAY1, AIR1, HOTEL1 and SEA1 — checked by SHA over the raw chunks, not
+    assumed — so a name backed by exactly one digest is the same art wherever it
+    appears. A name whose donors disagree is skipped and reported rather than
+    guessed at.
+    """
+    borrowed = 0
+    skipped = []
+    for movie_dir in movies:
+        members_path = movie_dir / "members.json"
+        doc = json.loads(members_path.read_text())
+        members = doc["members"]
+        per_movie = names.get(movie_dir.name, {})
+        changed = 0
+
+        for key, info in members.items():
+            if ":" not in key or not isinstance(info, dict):
+                continue
+            owner = str(info.get("cast_lib_name", "")).upper()
+            chunks = (dumps.get(owner) if owner and owner != "INTERNAL"
+                      else dumps.get(movie_dir.name))
+            if chunks is not None:
+                continue  # its own chunks are available; already handled
+            name = str(per_movie.get(key.split(":")[1], "")).lower()
+            if name not in donors:
+                continue
+            variants = donors[name]
+            if len(variants) != 1:
+                skipped.append(f"{movie_dir.name} {name}")
+                continue
+            bitmap, palette_source = next(iter(variants.values()))
+
+            bmp_path = movie_dir / info["path"].removeprefix("./")
+            palette = existing_palette(bmp_path) if bmp_path.exists() else b""
+            if not palette:
+                palette = palette_source
+            black, white = palette_indices(palette)
+            if black is None or white is None:
+                continue
+
+            if not dry_run:
+                bmp_path.parent.mkdir(parents=True, exist_ok=True)
+                bmp_path.write_bytes(encode_bmp(bitmap, palette, black, white))
+                info["width"] = bitmap.width
+                info["height"] = bitmap.height
+                info["decoded_bytes"] = bitmap.stride * bitmap.height
+                info["row_stride_source"] = bitmap.stride
+                info["bpp_marker"] = 1
+                info["reg_offset_x"] = bitmap.reg_x
+                info["reg_offset_y"] = bitmap.reg_y
+            borrowed += 1
+            changed += 1
+
+        if changed and not dry_run:
+            members_path.write_text(json.dumps(doc, separators=(",", ":")))
+        if changed:
+            print(f"  {movie_dir.name:<10} {changed:>4} borrowed by name")
+    return borrowed, skipped
 
 
 def main() -> int:
@@ -244,10 +311,11 @@ def main() -> int:
         total += count
         if count:
             print(f"  {movie_dir.name:<10} {count:>4} members")
-        for key, digest in digests.items():
+        for key, entry in digests.items():
             name = names.get(movie_dir.name, {}).get(key.split(":")[1])
             if name:
-                per_name.setdefault(str(name).lower(), set()).add(digest)
+                digest, bitmap, palette = entry
+                per_name.setdefault(str(name).lower(), {})[digest] = (bitmap, palette)
 
     reachable = sum(1 for m in movies if m.name in dumps)
     disagreeing = {n: d for n, d in per_name.items() if len(d) > 1}
@@ -257,6 +325,11 @@ def main() -> int:
     if disagreeing:
         print(f"WARNING: {len(disagreeing)} names differ between movies: "
               f"{sorted(disagreeing)[:6]}")
+
+    borrowed, ambiguous = borrow_by_name(movies, dumps, per_name, names, args.dry_run)
+    print(f"{borrowed} more repaired by name, from a movie that does have the art")
+    if ambiguous:
+        print(f"NOT borrowed, donors disagree: {sorted(set(ambiguous))[:8]}")
     return 0
 
 

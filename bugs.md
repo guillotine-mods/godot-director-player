@@ -220,10 +220,21 @@ python3 tools/verify_1bit_members.py     # PASS once repaired
 python3 -c "import struct;b=open('/Users/yonatankarp-rudin/Projects/_private_projects/Piposh2-Port/originals/recovery/web-alpha/decompiled_chunks/DAY1/DAY1/chunks/CASt-51.bin','rb').read();t,c,s=struct.unpack_from('>III',b,0);p,=struct.unpack_from('>H',b,12+c);print('pitch',hex(p),'rect',struct.unpack_from('>hhhh',b,14+c))"
 ```
 
-Not repaired: 62 of the 88 movies have no local chunk dump, so their 1-bit members
-are still wrong. Only 6 movies contain any, and of the cursor-carrying ones NIGHT1
-and ENDMOVI4 are the two left broken. Reaching the rest needs imap/mmap traversal
-of the `.DXR` files under `Piposh2-Port/originals/recovery/web-alpha/PIP2DATA/`.
+108 members repaired from their own chunks, and 24 more in NIGHT1 borrowed by
+member name from a movie that has the art. The borrow is only taken where every
+donor agrees byte for byte, checked by SHA over the raw chunks rather than assumed;
+a name whose donors disagree is reported and skipped.
+
+Not repaired: 62 of the 88 movies have no local chunk dump. ENDMOVI4's `handcur1`
+and `handcur2` appear nowhere else, so they have no donor and are still the broken
+export. Reaching the rest needs imap/mmap traversal of the `.DXR` files under
+`Piposh2-Port/originals/recovery/web-alpha/PIP2DATA/`.
+
+Note that an unrepaired cursor does *not* degrade to the arrow. The size guard in
+`cursor_image` catches only a wildly wrong decode; NIGHT1's members came out 5x6 to
+24x26, all small enough to compose into a plausible-looking block of noise and
+install as the cursor. That is what borrowing by name fixes, and what ENDMOVI4
+still has.
 
 ---
 
