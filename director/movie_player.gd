@@ -244,32 +244,36 @@ func _film_loop_child_channel(child: Dictionary) -> int:
 	return int(child.channel)
 
 
-func _draw_film_loop(
-	canvas: Control,
+func film_loop_draw_commands(
 	sprite: Dictionary,
 	film_loop: Dictionary,
 	channel: int,
-	sx: float,
-	sy: float,
-) -> void:
+) -> Array:
+	## The loop's current frame as `{cast, cast_id, texture, rect}` per child, in
+	## stage coordinates and Director's channel order.
+	##
+	## Split out from the drawing so what a loop composes can be asserted without a
+	## window: a child resolved against the wrong cast library draws a stranger's
+	## bitmap or nothing, and neither is visible in a resolve count.
+	var commands: Array = []
 	var parent_rect := _film_loop_parent_rect(sprite, film_loop)
 	if parent_rect.size.x <= 0.0 or parent_rect.size.y <= 0.0:
-		return
+		return commands
 	var frames_value: Variant = film_loop.get("frames", [])
 	if typeof(frames_value) != TYPE_ARRAY:
-		return
+		return commands
 	var frames: Array = frames_value
 	if frames.is_empty():
-		return
+		return commands
 
 	var selected_index: int = clampi(runtime.film_loop_frame(channel), 0, frames.size() - 1)
 	var selected_frame_value: Variant = frames[selected_index]
 	if typeof(selected_frame_value) != TYPE_DICTIONARY:
-		return
+		return commands
 	var selected_frame: Dictionary = selected_frame_value
 	var child_sprites_value: Variant = selected_frame.get("sprites", [])
 	if typeof(child_sprites_value) != TYPE_ARRAY:
-		return
+		return commands
 	var child_sprites: Array = []
 	for child_value in child_sprites_value:
 		if _is_valid_film_loop_child(child_value):
@@ -278,7 +282,7 @@ func _draw_film_loop(
 
 	var initial_rect := _film_loop_initial_rect(film_loop)
 	if initial_rect.is_empty():
-		return
+		return commands
 	var initial_left: float = float(initial_rect.left)
 	var initial_top: float = float(initial_rect.top)
 	var initial_width: float = float(initial_rect.right) - initial_left
@@ -327,11 +331,32 @@ func _draw_film_loop(
 			reg_x * draw_width / member_width,
 			reg_y * draw_height / member_height,
 		)
+		commands.append({
+			"cast": child_cast_name,
+			"cast_id": child_cast_id,
+			"texture": child_texture,
+			"rect": Rect2(child_top_left, Vector2(draw_width, draw_height)),
+		})
+	return commands
+
+
+func _draw_film_loop(
+	canvas: Control,
+	sprite: Dictionary,
+	film_loop: Dictionary,
+	channel: int,
+	sx: float,
+	sy: float,
+) -> void:
+	for command_value in film_loop_draw_commands(sprite, film_loop, channel):
+		var command: Dictionary = command_value
+		var rect: Rect2 = command.rect
 		canvas.draw_texture_rect(
-			child_texture,
-			Rect2(child_top_left.x * sx, child_top_left.y * sy, draw_width * sx, draw_height * sy),
+			command.texture,
+			Rect2(rect.position.x * sx, rect.position.y * sy, rect.size.x * sx, rect.size.y * sy),
 			false,
 		)
+
 
 func _log_frame_texture_stats(tag: String) -> void:
 	var frame: Dictionary = runtime.loader.get_frame(runtime.frame_index)

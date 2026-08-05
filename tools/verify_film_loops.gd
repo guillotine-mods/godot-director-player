@@ -41,6 +41,28 @@ const CASES := [
 ]
 
 
+## The two frames the cliff was reported on, asserted through the renderer rather
+## than through the registry: the channel, the score frame, and the members the
+## composition must come out as, `<cast>:<id>` low channel first.
+const COMPOSITIONS := [
+	{
+		"movie": "MURDER1", "frame": 10, "channel": 9,
+		"children": ["tofi:4"],
+		"note": "Tofi's body, whose mouth on channel 11 drew without him",
+	},
+	{
+		"movie": "MURDER1", "frame": 110, "channel": 3,
+		"children": ["goldolin:63"],
+		"note": "Goldolin walking, absent in the reported screenshot",
+	},
+	{
+		"movie": "MURDER1", "frame": 145, "channel": 9,
+		"children": ["tofi:4", "tofi:31"],
+		"note": "Tofi's body and his mouth, both children of one loop",
+	},
+]
+
+
 func _initialize() -> void:
 	var loader := RenderModelLoader.new()
 	if loader.load_index() != OK:
@@ -65,7 +87,68 @@ func _initialize() -> void:
 		print("all %d recovered film loops resolve to drawable children" % CASES.size())
 	else:
 		print("%d of %d film loops did not resolve" % [failures, CASES.size()])
-	quit(1 if failures > 0 else 0)
+
+	print("")
+	var composition_failures := 0
+	for case in COMPOSITIONS:
+		composition_failures += _check_composition(case)
+	if composition_failures == 0:
+		print("all %d loop compositions draw the expected members" % COMPOSITIONS.size())
+	else:
+		print("%d of %d loop compositions are wrong" % [
+			composition_failures, COMPOSITIONS.size(),
+		])
+	quit(1 if failures + composition_failures > 0 else 0)
+
+
+func _check_composition(case: Dictionary) -> int:
+	## What `MoviePlayer.film_loop_draw_commands` actually resolves for one score
+	## frame's loop channel. This is the renderer's own decision, so a regression in
+	## it fails here; the case list above is what the fix was reported against.
+	var movie: String = case["movie"]
+	var frame: int = case["frame"]
+	var channel: int = case["channel"]
+	var expected: Array = case["children"]
+
+	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
+	if runtime.boot() != OK or not runtime.goto_movie(movie, frame):
+		print("%-9s frame %4d  FAIL: cannot reach the frame" % [movie, frame])
+		return 1
+	# Park the playhead rather than let the clock carry it off the frame.
+	runtime.running = false
+	runtime.frame_index = frame - 1
+	runtime.reconcile_channels(runtime.loader.get_frame(runtime.frame_index))
+
+	var sprite: Dictionary = runtime.effective_sprite(channel)
+	if sprite.is_empty():
+		print("%-9s frame %4d  FAIL: channel %d is empty" % [movie, frame, channel])
+		return 1
+	var loop: Dictionary = runtime.loader.get_film_loop(
+		int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0))
+	)
+	if loop.is_empty():
+		print("%-9s frame %4d  FAIL: channel %d is not a film loop" % [movie, frame, channel])
+		return 1
+
+	var player: Control = load("res://director/movie_player.gd").new()
+	player.runtime = runtime
+	var commands: Array = player.film_loop_draw_commands(sprite, loop, channel)
+	var drawn: Array = []
+	for command_value in commands:
+		var command: Dictionary = command_value
+		drawn.append("%s:%d" % [command.cast, command.cast_id])
+	player.free()
+
+	# An empty composition is a failure even where none is expected: it is what a
+	# broken call into the renderer looks like, and it must not read as agreement.
+	var ok: bool = not drawn.is_empty() and drawn == expected
+	print("%-9s frame %4d ch%-3d %s  %s  %s" % [
+		movie, frame, channel,
+		"ok  " if ok else "FAIL",
+		str(drawn) if ok else "%s, expected %s" % [str(drawn), str(expected)],
+		str(case.get("note", "")),
+	])
+	return 0 if ok else 1
 
 
 func _check(loader: RenderModelLoader, case: Dictionary) -> int:

@@ -622,9 +622,19 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
   bitmap: 5,378 plain sprites and 1,534 children, 0 blank. `lingo_converge`,
   `lingo_frames`, `verify_1bit_members`, `check_cast_coverage` and
   `generate_sprite_stretch --check` are byte-identical across the change, and
-  `lingo_walk_diff` differs only in Godot's exit-time leak counters. Covered by
-  `tools/verify_film_loops.gd`, which now asserts the cast a named child comes from
-  and its size there, and fails on all 6 of the added cases without the fix.
+  `lingo_walk_diff` differs only in Godot's exit-time leak counters.
+
+  Covered by `tools/verify_film_loops.gd` in two ways, and the difference matters.
+  Its 6 added `CASES` assert which cast a named child comes from and its size
+  there — but that check resolves the child itself, so it gates the **exported
+  data** and passes with the renderer reverted. Its `COMPOSITIONS` list gates the
+  **renderer**: `MoviePlayer.film_loop_draw_commands()` was split out of
+  `_draw_film_loop` so a loop's composition can be asserted without a window, and
+  the harness runs it on the two frames the cliff was reported on. Revert the child
+  cast lookup in the renderer alone and all three go red with the wrong members
+  named — `["murder1:4"]` for Tofi's body, `[]` for Goldolin — which is the check
+  the data assertion could not make. The split is behaviour-neutral: the five
+  MURDER1 frames render byte-identical PNGs across it.
 
 - **Art drew scaled to a rect Director ignores** (the score-side half of 14).
   A Director sprite draws its member at the member's own size, anchored on the

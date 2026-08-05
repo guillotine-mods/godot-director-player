@@ -137,9 +137,11 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
   after render-model exports change: `python3 tools/generate_cast_registry.py`.
 - When raw Director chunk dumps are available, that generator also exports
   `film_loops` SCVW mini-scores into each matching canonical cast in
-  `cast_registry.json`. Its `--chunks-root` option defaults to the sibling
-  `../Piposh2-Web-Alpha/decompiled_chunks` research tree; supply another dump
+  `cast_registry.json`. Its `--chunks-root` option defaults to
+  `~/Projects/_private_projects/piposh2-toolcache/chunks`; supply another dump
   root with `python3 tools/generate_cast_registry.py --chunks-root <path>`.
+  Without it the generator carries forward what the previous run recovered rather
+  than dropping it, so a regeneration on a machine with no dump is safe.
 - A film loop's children are not always members of the cast the loop lives in. The
   mini-score names the library at offset 4 of each sprite record, `0xFFFF` for the
   owning cast, and any other value is a zero-based index into the file's `ccl `
