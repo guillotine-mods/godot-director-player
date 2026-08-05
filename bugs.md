@@ -414,6 +414,104 @@ strength of a fix alone.
 
 ---
 
+## 16. `the number of member X of castLib Y` drops the library
+
+**Status:** open, worked around in one place · **Area:** interpreter host
+
+`LingoHost.member_number()` resolves the name through the cast search order and
+returns a bare integer, so the library the script named is lost. Writing that
+integer to `the memberNum of sprite N` then keeps whichever library the sprite
+already had, which for an empty channel defaults to 1, the movie's own cast.
+
+Seen twice while wiring cursors. `cursorfunk` does
+
+    set the memberNum of sprite 93 to the number of member ("day" & globalday) of castLib "master"
+
+and `displayobject` does the same with `member "object0" of castLib "master"`.
+Run against an empty channel both resolved master's member into the movie's
+internal cast, and MURDER1, HATDAY1 and GOLDDEAD warned "Missing cast member ...
+linked cast internal, member 9" on every load. `_run_cursor_funk()` gates
+`displayobject` to hubs to avoid it, which is a workaround at one call site, not
+a fix.
+
+1064 sites in the corpus use `of castLib`, so this is not a two-handler problem.
+
+The fix is the same one `the castNum` already has: return a packed reference
+(`_pack_member`) so the library survives the assignment. The risk is that
+`the number of member ...` results are also compared and used in arithmetic, and
+a packed value is a large integer, so every consumer has to be checked first.
+That is why it was not done alongside the cursor work.
+
+Reproduce: `goto_movie` any non-hub movie with an empty channel 103 after
+removing the `context.is_hub` gate in `_run_cursor_funk()`, and watch for the
+missing-member warning.
+
+---
+
+## 17. 484 of the registry's 497 film loops are unverified
+
+**Status:** open · **Area:** verification
+
+`tools/verify_film_loops.gd` walks a hardcoded `CASES` list of 13 loops across
+seven shared casts. It predates internal-cast film loops, which took the registry
+from 295 loops in 21 casts to 497 in 60, and it enumerates none of them: it still
+reports "all 13 recovered film loops resolve to drawable children" and passes.
+
+So the harness that gates film loops covers 2.6% of them, and the 60 internal
+casts added for the cliff characters are covered by nothing. A film loop that
+resolves to a rectangle of nothing, or to children whose textures are missing,
+would not fail any check in the repo.
+
+The fix is to enumerate `cast_registry.json` rather than a literal list, keeping
+the same per-loop assertion it already makes, and to report the count so a drop in
+coverage is visible.
+
+Reproduce: `godot --headless --script tools/verify_film_loops.gd` prints 13
+against `python3 -c "import json;c=json.load(open('assets/render_model/cast_registry.json'))['casts'];print(sum(len(v.get('film_loops',{})) for v in c.values() if isinstance(v,dict)))"`.
+
+---
+
+## 18. The gamepad cursor is drawn by code that has never run
+
+**Status:** open, untested rather than known-broken · **Area:** input / renderer
+
+The mouse gets a hardware cursor. The gamepad pointer is somewhere else on the
+stage than the OS pointer, so `MoviePlayer.draw_current_frame()` draws the same
+composed cursor at `InputRouter.virtual_cursor` instead, and
+`_update_virtual_cursor_visual()` hides the plain block while it does.
+
+Neither branch has ever executed. Every check on the cursor work drove the mouse
+path: the harness calls `cursor_at` directly, and the scene probes called
+`_apply_cursor` without touching `using_gamepad`. The code parses and the game
+boots, which is all that is established.
+
+Two things to look at when someone first plays with a controller: whether
+`_apply_cursor` installing a hardware cursor while on the gamepad path leaves a
+stray OS cursor wherever the physical mouse happens to sit, and whether the drawn
+cursor lands on the hotspot or half a cursor away from it.
+
+---
+
+## 19. The cursor never scales at the most common window sizes
+
+**Status:** open, cosmetic · **Area:** renderer
+
+`MoviePlayer._apply_cursor()` scales the cursor with
+`maxi(1, int(floor(_stage_scale())))`. Director cursors here are 13x17 to 17x17,
+authored for a 640x480 screen, so at a stage scale of 1.5 — which is what a
+default window gives — `floor` yields 1 and the cursor is drawn at native size
+against artwork that is half again as large. It only doubles once the window is
+big enough for scale 2.
+
+Flooring is deliberate: rounding 1.5 up would draw the cursor larger than the art
+around it. The result is still that the cursor is visibly small at the size most
+people will play at, and it steps rather than tracking the stage.
+
+Reproduce: run the game at the default window size, hover the floor in DAY1, and
+compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
+
+---
+
 ## Closed
 
 - **An uncovered shell or bottle vanished after one frame.**
