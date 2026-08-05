@@ -4,7 +4,7 @@ Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decode
 
 **Project overview:** [`docs/PROJECT.md`](docs/PROJECT.md)  
 **Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Android:** [`docs/ANDROID.md`](docs/ANDROID.md)  
-**Known bugs:** [`bugs.md`](bugs.md)
+**Known bugs:** [`bugs.md`](bugs.md) · **Working on it:** [`AGENTS.md`](AGENTS.md)
 
 ## Open in Godot
 
