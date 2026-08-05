@@ -239,7 +239,12 @@ not like a missing cursor.
 
 ## 12. One DAY1 film loop still does not parse
 
-**Status:** almost closed · **Area:** assets / renderer
+**Status:** almost closed · **Area:** assets / renderer · **See also:** 15
+
+This entry began as the report now filed as 15, and was rewritten into a
+film-loop entry when that fix was believed to have closed it. It had not been
+confirmed with the reporter, and it had not. Do not read this entry as covering
+the reported symptom.
 
 A movie's internal cast is now registered under the movie's name, so film loops
 living there resolve. Before that, `get_film_loop` refused `cast_lib 1` outright
@@ -364,6 +369,48 @@ EOF
 
 The stage-clipping fix and the film-loop fix were both landed against this report
 and neither addressed it. They fixed real but different defects.
+
+---
+
+## 15. A character is missing or flickering while it moves within a room
+
+**Status:** open, reported from play, NOT reproduced · **Area:** unknown
+
+Reported: characters that should animate while moving around inside a room are
+missing, and the one clearest case flickers rather than being absent outright,
+which is what makes it hard to catch in a screenshot. Reported as worst "on the
+cliff between Tofi and Gondolin", and still present after entry 12's fix.
+
+**No reproduction yet, and no room.** "The cliff" was read as MURDER1, where Tofi
+and Goldolin do appear and where their film loops genuinely were unresolvable. That
+was fixed and the reporter confirms the symptom remains, so MURDER1 was either the
+wrong scene or only part of it. Nothing here should be treated as located until a
+room is known.
+
+What is already ruled out, from the investigation that led to entry 12:
+
+- **Not the transition spans being skipped.** They play: walking `edge1go` to
+  `gatego` visits frames 237..338, covering `gatefromedge1` at 324.
+- **Not the puppet's size.** Channel 30 draws at the member's natural size in 1290
+  of 1290 room sprites, which is what the score does.
+- **Not ink coverage.** The only unhandled inks are 0, which is Copy and correctly
+  opaque, and 32 at 948 sprites.
+- **Not film loops failing to advance**, at least where they resolve: MURDER1 1 of
+  1 film-loop channels advances over 60 ticks, RUNAWAY 3 of 3, SHUFFLE 2 of 2.
+
+Flickering specifically suggests something toggling per frame rather than art that
+is absent: a channel whose visibility is rewritten each `exitFrame`, or a member
+swap that lands on a frame where the channel is empty. Entry 3 (`_lingo_hidden`
+never cleared) and entry 9 (`init all`'s puppeting lost on every movie change) are
+both in that family and are the first places to look once a room is known.
+
+To progress this, what is needed is the room and whether the character is absent
+entirely or appearing and vanishing. Without that, any fix is a guess.
+
+**History worth keeping:** this entry existed before, describing the same symptom,
+and was rewritten into entry 12 when the film-loop fix was believed to have closed
+it. It had not been confirmed with the reporter. Do not retire this entry on the
+strength of a fix alone.
 
 ---
 
