@@ -104,12 +104,10 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 
 	# A bottle opens joke.dxr, so the hide landed on a movie the port has since swapped
 	# out — Director floats the joke over a DAY1 that never unloads, and a single-stage
-	# port cannot. What matters here is that the joke itself is right.
-	#
-	# Not asserted: that the bottle is still gone after the window closes. It is not,
-	# and that is a real defect with its own entry in bugs.md — the entry replay runs
-	# on the way back and its blanking does not stick, which this harness is the wrong
-	# place to chase.
+	# port cannot. What has to hold is what the player sees on the way back, which is
+	# the room's own entry blanking. That needs the interpreter to know it is back in
+	# this movie: `go_back` did not tell it, so the entry scripts resolved against JOKE
+	# and did not run at all.
 	_check("%s: taking it opens the joke" % label, runtime.loader.movie_name == "JOKE",
 		runtime.loader.movie_name)
 	_check("%s: the joke picture is on stage, at its own size" % label,
@@ -117,6 +115,10 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 	runtime.lingo.host.call_builtin("forget", ["joke"])
 	_check("%s: closing it returns to the room" % label,
 		runtime.loader.movie_name == room_movie, runtime.loader.movie_name)
+	_check("%s: and it is still gone" % label, runtime.is_channel_hidden(channel))
+	_check("%s: the interpreter came back with it" % label,
+		runtime.lingo.script_for_member(1, 83).has("handlers"),
+		"frame scripts resolve in %s" % runtime.loader.movie_name)
 
 
 func _joke_picture_ok(runtime: RefCounted) -> bool:

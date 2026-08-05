@@ -925,6 +925,15 @@ func go_back() -> bool:
 	route_stack.pop_back()
 	AudioDirector.stop_all()
 	waiting_for_click = false
+	# Same as goto_movie: the interpreter has to be told which movie it is in, or every
+	# script resolves against the one being left. Without this, coming back from the
+	# joke window left `_current_movie` on JOKE, so `frame_script(1858)` looked for
+	# member 83 in JOKE's casts, found nothing, and the room's entry scripts silently
+	# did not run. That is what left every collectable on show after a round trip: the
+	# blanking in `b4 bk's` never executed. It killed the room's `enterFrame` work too,
+	# so `whereami` went stale and the hotspots gated on it took their dead branches.
+	if lingo != null:
+		lingo.prepare_movie(loader.movie_name)
 	movie_changed.emit(loader.movie_name)
 	enter_frame(frame)
 	nav_event.emit("back → %s @ %d" % [loader.movie_name, frame + 1])

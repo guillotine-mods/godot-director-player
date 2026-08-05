@@ -40,6 +40,11 @@ var _texture_cache: Dictionary = {}
 var _matte_cache: Dictionary = {}
 var _resolved_member_cache: Dictionary = {}
 var _missing_member_keys: Dictionary = {}
+## Channels this movie's score uses anywhere, computed once per movie. Answers "does
+## this channel belong to this movie at all", which is not the same question as "is it
+## in the current frame": a room transition span carries no channel 30 even though
+## Piposh is standing in it.
+var _score_channels: Dictionary = {}
 var _missing_linked_member_keys: Dictionary = {}
 var _missing_texture_keys: Dictionary = {}
 var _registry_member_cache: Dictionary = {}
@@ -140,6 +145,7 @@ func load_movie(name: String) -> Error:
 	members = next_members
 	first_playable_frame = next_first_playable_frame
 	stage_size = next_stage_size
+	_score_channels.clear()
 	_texture_cache.clear()
 	_matte_cache.clear()
 	_resolved_member_cache.clear()
@@ -153,6 +159,26 @@ func load_movie(name: String) -> Error:
 	_film_loop_cache.clear()
 	_missing_film_loop_keys.clear()
 	return OK
+
+
+func score_uses_channel(channel: int) -> bool:
+	## Whether the movie's score mentions this channel on any frame.
+	##
+	## Used to decide whether a channel belongs to the loaded movie at all. Piposh is
+	## channel 30, and JOKE — a Movie In A Window with its own channels — never uses it,
+	## so nothing of his may be drawn there. Asking per frame instead breaks the walk:
+	## a transition span such as `edge3up` carries no channel 30 for twelve frames while
+	## Piposh is mid-animation, and DAY1's `puppetSprite(30, 1)` runs once in `init all`
+	## and is lost with the channels on the next movie change, so the puppet flag cannot
+	## be relied on to carry him through.
+	if _score_channels.is_empty():
+		for frame in frames:
+			if typeof(frame) != TYPE_DICTIONARY:
+				continue
+			for sprite in (frame as Dictionary).get("sprites", []):
+				if typeof(sprite) == TYPE_DICTIONARY:
+					_score_channels[int((sprite as Dictionary).get("channel", 0))] = true
+	return _score_channels.has(channel)
 
 
 func lookup_label(name: String) -> int:

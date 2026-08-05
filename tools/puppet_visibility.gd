@@ -132,12 +132,21 @@ func _initialize() -> void:
 	# and drawing him anyway resolved his member number against JOKE's own cast, where
 	# 29 is the joke bitmap `joke33`.
 	runtime.goto_movie("DAY1", null, {"label": "shore1go"})
-	_check("the puppet is on stage in his own movie",
-		not runtime.effective_sprite(channel).is_empty())
+	_check("the puppet belongs to his own movie",
+		runtime.loader.score_uses_channel(channel))
+	# Per movie, not per frame. A transition span carries no channel 30 for its whole
+	# length while Piposh walks through it, and asking per frame hid him for all of it.
+	var span: int = runtime.loader.resolve_label("edge3up", false)
+	var carried := true
+	for i in range(span, span + 12):
+		runtime.enter_frame(i)
+		if not runtime.loader.score_uses_channel(channel):
+			carried = false
+	_check("the puppet survives a span whose score omits him", carried)
+
 	runtime.goto_movie("JOKE", null, {})
-	_check("the puppet is not on stage in a window movie",
-		runtime.effective_sprite(channel).is_empty(),
-		str(runtime.effective_sprite(channel).get("cast_id")))
+	_check("the puppet does not belong to a window movie",
+		not runtime.loader.score_uses_channel(channel))
 
 	print("\n%d failure(s)" % _fails)
 	quit(1 if _fails > 0 else 0)

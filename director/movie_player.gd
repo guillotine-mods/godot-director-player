@@ -479,17 +479,22 @@ func draw_current_frame(canvas: Control) -> void:
 			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
 	# Piposh is channel 30 of the movie he is in, and only of that movie. The joke is a
-	# Movie In A Window with its own channels, and it never mentions 30 — so with the
-	# live channel array there is nothing here to draw once JOKE is loaded.
+	# Movie In A Window with its own channels and never uses 30, so nothing of his may
+	# be drawn there.
 	#
 	# Without this the puppet was drawn over every movie, at `cast_lib 1` plus whatever
 	# member PuppetController held, resolved against the *new* movie's internal cast.
 	# JOKE's member 29 is `joke33`, so Piposh at syz 9 — the beach — put a second joke
 	# on the page at his stage position. Other sizes and the walk frames land on
 	# members 31-54, which in JOKE are more jokes, so it changed room to room.
+	#
+	# The test is per movie, not per frame: a transition span such as `edge3up` carries
+	# no channel 30 for twelve frames while Piposh is walking through it, so asking
+	# whether *this* frame has one made him disappear for the length of every
+	# transition.
 	if (
 		puppet.active
-		and not runtime.effective_sprite(DirectorRuntime.PUPPET_CHANNEL).is_empty()
+		and runtime.loader.score_uses_channel(DirectorRuntime.PUPPET_CHANNEL)
 		and not runtime.is_channel_hidden(DirectorRuntime.PUPPET_CHANNEL)
 	):
 		# Piposh is a character on paper: key the paper out everywhere, not just

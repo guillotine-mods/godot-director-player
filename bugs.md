@@ -157,7 +157,31 @@ paths live.
 
 ---
 
-## 9. Convergence is measured on 5 of 61 movies
+## 9. `init all`'s puppeting is lost on every movie change
+
+**Status:** open · **Area:** score runner / Movie-In-A-Window
+
+DAY1's `init all` runs `puppetSprite` on channels 30, 100 and 103-110, once, on frame
+1. `_mark_movie_loaded()` clears the channels on every movie load, so one round trip
+through the joke window drops all of it:
+
+    after init all:            puppeted=[30, 100, 103, 104, 105, 106, 107, 108, 109, 110]
+    after a JOKE round trip:   puppeted=[]
+
+Clearing is right — channel N in the next movie is unrelated artwork — but Director
+never unloads the parent movie for a Movie In A Window in the first place, so the
+question does not arise there. The port returns mid-room without re-running `init all`,
+so the score reclaims channels Lingo is supposed to own. Nothing depends on it today:
+the puppet draw asks `score_uses_channel()` instead, and the inventory slots are drawn
+from their own override. It will matter the moment a script drives one of those
+channels after a round trip.
+
+**Reproduce:** enter DAY1 at frame 1, tick, read `channels[103].puppet`; open and
+forget the joke window; read it again.
+
+---
+
+## 10. Convergence is measured on 5 of 61 movies
 
 **Status:** open · **Area:** verification
 
@@ -166,33 +190,6 @@ AIR1. Nothing measures the other 56, including every minigame and meeting movie.
 An engine change can only be checked against the five.
 
 ---
-
-## 10. A taken bottle is back on the shelf after the joke closes
-
-**Status:** open · **Area:** Movie-In-A-Window / score runner
-
-`CastScript 69` hides the bottle with `sprite(the clickOn).visible = 0` and then
-opens `joke.dxr`. Director floats that over a DAY1 that never unloads, so the hide
-survives. The port has one stage: it pushes DAY1 on the route stack, loads JOKE, and
-`_mark_movie_loaded()` clears the channels — the hide with them.
-
-Coming back should not matter, because `go_back` re-enters `swinggo` and the entry
-replay runs `b4 bk's`, which blanks channels 15, 17 and 33. Measured, it runs and the
-blank does not stick:
-
-    entry:        frame 1860 label=swinggo  hidden15=true   ch15.visible=false
-    after forget: frame 1860 label=swinggo  hidden15=false  ch15.visible=true
-
-Same frame, same replay, opposite outcome, so something after the replay puts it
-back on the return path only. Not chased further; the reveal work it turned up in
-was a different defect.
-
-In practice the bottle cannot be taken twice — `jokefield` has the room, so
-`searchfunk` answers "wasalready" and will not re-reveal it — but it is on screen
-when it should not be.
-
-**Reproduce:** `godot --headless --script tools/collectables.gd` covers everything
-up to the return; the assertion for this was removed rather than left failing.
 
 ---
 
@@ -205,6 +202,20 @@ up to the return; the assertion for this was removed rather than left failing.
   iteration looked like an arrival; each replay re-ran `b4 bk's` and its
   `set the visible of sprite 15 to 0`. Arrival is now decided by the marker.
   Covered by `tools/collectables.gd`.
+- **Every interpreted script died after a window, meeting or minigame.** `go_back`
+  reloaded the movie but never called `lingo.prepare_movie()`, so the interpreter's
+  current movie stayed on the one being left. `frame_script(1858)` then looked for
+  member 83 in JOKE's casts, found nothing, and the room's entry scripts silently did
+  not run — which left every collectable in the room on show, because the blanking in
+  `b4 bk's` never executed, and left `whereami` stale so hotspots gated on it took
+  their dead branches. This was `bugs.md` 10, and it was far wider than the bottle it
+  was found through.
+- **Piposh vanished for the length of every room transition.** The first version of
+  the fix below tested whether the *current frame* has a channel 30. A transition span
+  such as `edge3up` carries none for twelve frames while he walks through it. The test
+  is now per movie, via `RenderModelLoader.score_uses_channel()`, which also does not
+  depend on the puppet flag — `init all` sets that once and `channels.clear()` drops it
+  on the next movie change.
 - **A second joke was drawn on the page.** The puppet was drawn over every movie, at
   `cast_lib 1` plus whatever member `PuppetController` held, resolved against the new
   movie's own internal cast. JOKE's member 29 is the joke bitmap `joke33`, and Piposh's
