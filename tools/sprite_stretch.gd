@@ -10,6 +10,12 @@ extends SceneTree
 ## The checks are on the drawn rect, which is also what hit-testing uses, not on the
 ## flag round-tripping through a getter.
 ##
+## The named cases — ALLIN, its stale channel 19, CHESS and NIGHT1 — are what carry
+## the correctness claim. The corpus check at the end re-runs the resolver's own
+## predicate, so it guards the pipeline (the flag file present, loaded, and applied
+## before anything reads a frame) rather than the semantics, and it cannot tell you
+## the rects are right.
+##
 ##   godot --headless --script tools/sprite_stretch.gd
 
 var failed := 0

@@ -304,11 +304,13 @@ the raft in the opening, where the bearded man's head is smeared horizontally
 across the sky.
 
 **Read the Closed entry first.** The score's stored width and height are only the
-drawn rect when the sprite's stretch flag is set, and that flag was being dropped
-on export. That accounts for 925 of the 979 sprites counted below, and a further 47
-of them — SEA1 32, NIGHT1 6, ARCADE2 5, CHESS 4 — turn out to be genuinely
-stretched sprites that were never bugs. What is left in this entry is `strtgame`,
-where the member's own geometry is wrong and the score is right.
+drawn rect when the sprite's stretch flag is set, and that flag was being dropped on
+export. The 979 sprites counted below split three ways on it: **925** were the
+residue and are no longer drawn that way (ALLIN 839, DAGI 51, INVESTIG 34, MORN3 1);
+**47** carry the flag, so Director really does stretch them and they were never bugs
+at all (SEA1 32, NIGHT1 6, ARCADE2 5, CHESS 4); and **7** are `strtgame`, whose
+flags could not be read. What is left in this entry is that `strtgame`, where the
+member's own geometry is wrong and the score is right.
 
 That head is `strtgame` member 26, channel 15, frames 122-128. `members.json`
 records it 45x34 and the score draws it at 135x34: a 3x stretch on width with
@@ -448,6 +450,15 @@ What is already ruled out, from the investigation that led to entry 12:
 - **Not film loops failing to advance**, at least where they resolve: MURDER1 1 of
   1 film-loop channels advances over 60 ticks, RUNAWAY 3 of 3, SHUFFLE 2 of 2.
 
+- **Not the sprite stretch flag**, checked because the fix for 14's score-side half
+  moved 22,806 sprite rects and many of them are character members: `fat` 3,491,
+  `hatuli` 3,414, `rinati` 3,008, `hezi` 586. But almost all of those are in the
+  ENDMOVI cutscenes, and the two characters actually named in the report are the two
+  it barely touches — `tofi` 20 records, `goldolin` none. MURDER1 has 40 changed
+  rects across channels 41, 16 and 9. Their in-room animation runs through film
+  loops, which that fix deliberately leaves alone. So it is worth re-checking the
+  symptom against the current build, but it is not the explanation.
+
 Flickering specifically suggests something toggling per frame rather than art that
 is absent: a channel whose visibility is rewritten each `exitFrame`, or a member
 swap that lands on a frame where the channel is empty. Entry 3 (`_lingo_hidden`
@@ -577,13 +588,14 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
   Three independent measurements say that is the flag, two of them on populations
   not used to find it. Of 437,926 sprite records whose rect already equals the
   member's natural size, **zero** carry the bit; 12,265 records differ from their
-  member and carry it. On film loops, which the fix does not touch: all 26,738
+  member and carry it. On film loops, which the fix does not touch: all 37,329
   records with the bit clear have a rect exactly equal to the loop's own initial
-  rect, and all 95 with it set differ. And in ALLIN, channel 1 holds the same member
-  at the same registration point for all 1438 frames with a stored width of 1280 on
-  835 of them, 640 on 259 and 639 on 337, the member being 640 wide — so the
+  rect, and all 1,295 with it set differ. And in ALLIN, channel 1 holds the same
+  member at the same registration point for all 1438 frames with a stored width of
+  1280 on 835 of them, 640 on 259 and 639 on 337, the member being 640 wide — so the
   backdrop popped between the hotel room and its right half at double size as the
   playhead stepped, and the 640 frames are what the fixed 1280 frames now look like.
+  That within-movie A/B is the cheapest way to see it: render frame 718 and frame 0.
 
   `tools/generate_sprite_stretch.py` recovers the flags from the containers into
   `assets/render_model/sprite_stretch.json`, verifying each movie's score against
@@ -592,11 +604,15 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
   once per movie load, so the channel array, drawing, hit-testing and any script
   reading the sprite all see one rect. Covered by `tools/sprite_stretch.gd`.
 
-  Two things to know. **16 movies have no recovered flags and keep the exported
-  rects**; only `strtgame` matters, and it is entry 14's remaining work. And **820
-  of the moved rects belong to sprites with click data** (477 smaller, 343 larger),
+  Three things to know. **16 movies have no recovered flags and keep the exported
+  rects**; only `strtgame` matters, and it is entry 14's remaining work. **820 of
+  the moved rects belong to sprites with click data** (477 smaller, 343 larger),
   which is intended — Director hit-tests the sprite it drew — and `lingo_walk_diff`,
-  `lingo_converge` and `lingo_frames` are row-for-row identical across it.
+  `lingo_converge` and `lingo_frames` are row-for-row identical across it. And
+  `data/walk_doorways.json` derives its walk targets from these rects offline, from
+  `frames.json`, which still holds the residue: checked, and 1 of its 77 overrides
+  sits on a channel whose rect moved, that one sourced from `reciprocity` rather
+  than a hotspot centre. Regenerating it would have to apply the flags first.
 
 - **An uncovered shell or bottle vanished after one frame.**
   `_run_skipped_entry_scripts()` replayed the room's entry frames on every entry into

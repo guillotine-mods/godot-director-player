@@ -250,13 +250,19 @@ func _resolve_sprite_rects() -> void:
 	## Done here, once per movie load, so the channel array, the draw path, hit
 	## testing and any script reading the sprite all see one rect. Film loops are
 	## left alone: they are scaled against their own initial rect, and the score
-	## already agrees with that rect on all 26,738 unstretched film-loop records.
+	## already agrees with that rect on all 37,329 unstretched film-loop records.
 	resolved_sprite_rects = 0
 	skipped_film_loop_rects = 0
 	stretch_flags_known = sprite_stretch.has(movie_name)
 	if not stretch_flags_known:
 		return
 	var stretched_frames: Dictionary = sprite_stretch[movie_name]
+	# One entry per distinct member rather than per sprite record: DAY1 has 40,297
+	# records over a few hundred members, and both lookups below format their cache
+	# key as a string before they reach their own cache. Keyed on an int so this one
+	# does not. Empty means "no bitmap geometry here", which includes film loops.
+	var geometry: Dictionary = {}
+	var film_loops: Dictionary = {}
 
 	for index in frames.size():
 		var frame: Variant = frames[index]
@@ -279,14 +285,24 @@ func _resolve_sprite_rects() -> void:
 				continue
 			var cast_lib := int(sprite.get("cast_lib", 1))
 			var cast_id := int(sprite.get("cast_id", 0))
-			if not get_film_loop(cast_lib, cast_id).is_empty():
-				skipped_film_loop_rects += 1
+			var geometry_key := cast_lib * 100000 + cast_id
+			if not geometry.has(geometry_key):
+				var is_loop := not get_film_loop(cast_lib, cast_id).is_empty()
+				var found: Dictionary = {} if is_loop else member_if_known(cast_lib, cast_id)
+				if (
+					float(found.get("width", 0.0)) <= 0.0
+					or float(found.get("height", 0.0)) <= 0.0
+				):
+					found = {}
+				geometry[geometry_key] = found
+				film_loops[geometry_key] = is_loop
+			var member: Dictionary = geometry[geometry_key]
+			if member.is_empty():
+				if film_loops[geometry_key]:
+					skipped_film_loop_rects += 1
 				continue
-			var member := member_if_known(cast_lib, cast_id)
-			var width := float(member.get("width", 0.0))
-			var height := float(member.get("height", 0.0))
-			if width <= 0.0 or height <= 0.0:
-				continue
+			var width := float(member.get("width"))
+			var height := float(member.get("height"))
 			if is_equal_approx(float(sprite.get("width", 0.0)), width) and is_equal_approx(
 				float(sprite.get("height", 0.0)), height
 			):
