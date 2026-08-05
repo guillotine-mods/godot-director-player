@@ -75,16 +75,17 @@ var _time_ms: float = 0.0
 var _movie_transition_attempt_generation: int = 0
 var _pending_transition: String = ""
 var _pending_destination: String = ""
-var _film_loop_channels: Dictionary = {}
 ## The frame the playhead came from, so _run_skipped_entry_scripts() can tell an
 ## arrival from a step taken inside the room it is already in. -1 means "nowhere in
 ## this movie", which is the state a movie load leaves behind.
 var _entered_from: int = -1
 var _hidden_channels: Dictionary = {}
-## Channels hidden by an interpreted script's `sprite(N).visible = 0`. Kept apart
-## from _hidden_channels, which refresh_sprite_gates() replaces wholesale.
-var _lingo_hidden: Dictionary = {}
 var _head_look_until_ms: float = -1.0
+
+## channel -> SpriteChannel. Director's live channel array: the score writes it when
+## the playhead moves, a puppeted channel belongs to Lingo, and drawing and
+## hit-testing read it rather than the score frame. Built by reconcile_channels().
+var channels: Dictionary = {}
 
 
 func _s(v: Variant, fallback: String = "") -> String:
@@ -119,12 +120,71 @@ func _mark_movie_transition_attempted() -> void:
 func _mark_movie_loaded() -> void:
 	_accum_ms = 0.0
 	_clear_pending_transition()
-	_film_loop_channels.clear()
+	# Channels belong to the movie. Clearing them drops the previous movie's puppet
+	# ownership, its `sprite(N).visible = 0` hides and its film-loop cursors in one
+	# go: channel N in the next movie is unrelated artwork. The destination's own
+	# `init all` re-hides whatever it wants hidden.
+	channels.clear()
 	# Frame numbers do not carry across a movie, so the previous one says nothing
 	# about whether the next entry skipped anything.
 	_entered_from = -1
 	if context.is_hub(loader.movie_name):
 		GameState.enter_hub(loader.movie_name)
+
+
+func channel_for(channel: int) -> SpriteChannel:
+	## Channels are created on demand: a script may puppet and drive a channel the
+	## current frame does not mention.
+	var existing: Variant = channels.get(channel, null)
+	if existing != null:
+		return existing
+	var made := SpriteChannel.new()
+	made.number = channel
+	channels[channel] = made
+	return made
+
+
+func effective_sprite(channel: int) -> Dictionary:
+	## What channel N actually holds: score sprite with Lingo's writes applied.
+	var entry: Variant = channels.get(channel, null)
+	return {} if entry == null else (entry as SpriteChannel).sprite
+
+
+func channel_sprites() -> Array:
+	## Every non-empty channel, low to high, which is Director's draw order.
+	var out: Array = []
+	var numbers: Array = channels.keys()
+	numbers.sort()
+	for number in numbers:
+		var entry: SpriteChannel = channels[number]
+		if not entry.is_empty():
+			out.append(entry.sprite)
+	return out
+
+
+func reconcile_channels(frame: Dictionary) -> void:
+	## Director's per-frame reconcile: overwrite each channel from the incoming
+	## frame's sprite, except where a script owns the channel. Channels the frame
+	## does not mention are emptied, again except when puppeted.
+	##
+	## This runs before the frame's own scripts are dispatched, so an `on enterFrame`
+	## that reads `the memberNum of sprite N` sees the new frame, not the old one.
+	var seen: Dictionary = {}
+	var sprites: Variant = frame.get("sprites", [])
+	if typeof(sprites) == TYPE_ARRAY:
+		for sprite_value in sprites as Array:
+			if typeof(sprite_value) != TYPE_DICTIONARY:
+				continue
+			var sprite: Dictionary = sprite_value
+			var number := int(sprite.get("channel", 0))
+			if number <= 0:
+				continue
+			seen[number] = true
+			channel_for(number).replace_from_score(sprite)
+	for number in channels.keys():
+		if not seen.has(number):
+			(channels[number] as SpriteChannel).clear_score()
+	_sync_film_loops()
 
 
 func tick(delta: float) -> void:
@@ -275,14 +335,17 @@ func is_channel_hidden(channel: int) -> bool:
 	## Story-gated score channel: present in the export, not yet in the story.
 	if channel == PUPPET_CHANNEL:
 		return not puppet.visible
-	return _hidden_channels.has(channel) or _lingo_hidden.has(channel)
+	if _hidden_channels.has(channel):
+		return true
+	var entry: Variant = channels.get(channel, null)
+	return entry != null and not (entry as SpriteChannel).visible
 
 
 func set_channel_visible(channel: int, visible: bool) -> void:
 	## `sprite(N).visible = 0` from an interpreted script.
 	if channel == PUPPET_CHANNEL:
 		# Channel 30 is the puppet, so its visibility is the puppet's, not a
-		# separate entry in _lingo_hidden that the renderer would have to consult
+		# separate flag on the channel that the renderer would have to consult
 		# twice. This is the path `set the visible of sprite 30 to 1` takes out of
 		# BehaviorScript 207 and out of SEA1's and AIR1's room scripts.
 		if puppet.visible == visible:
@@ -290,14 +353,10 @@ func set_channel_visible(channel: int, visible: bool) -> void:
 		puppet.visible = visible
 		redraw_requested.emit()
 		return
-	if visible:
-		if not _lingo_hidden.has(channel):
-			return
-		_lingo_hidden.erase(channel)
-	else:
-		if _lingo_hidden.has(channel):
-			return
-		_lingo_hidden[channel] = true
+	var entry := channel_for(channel)
+	if entry.visible == visible:
+		return
+	entry.visible = visible
 	redraw_requested.emit()
 
 
@@ -323,14 +382,10 @@ func slot_sprite_at(stage_pt: Vector2) -> Dictionary:
 	## sprite whose on_click has no nav, inventory or sounds, which is all of
 	## 103-110. Find them by channel in the score frame instead.
 	var slots: Array = GameState.slot_channels()
-	var frame: Dictionary = loader.get_frame(frame_index)
-	for sprite in frame.get("sprites", []):
-		if typeof(sprite) != TYPE_DICTIONARY:
-			continue
-		var channel := int((sprite as Dictionary).get("channel", 0))
-		if slots.find(channel) < 0:
-			continue
-		if is_channel_hidden(channel):
+	for slot_channel in slots:
+		var channel := int(slot_channel)
+		var sprite := effective_sprite(channel)
+		if sprite.is_empty() or is_channel_hidden(channel):
 			continue
 		if sprite_contains(sprite, stage_pt):
 			return sprite
@@ -393,16 +448,10 @@ func end_inventory_drag(stage_pt: Vector2) -> void:
 
 
 func _channel_rect(channel: int) -> Rect2:
-	var frame: Dictionary = loader.get_frame(frame_index)
-	for sprite in frame.get("sprites", []):
-		if typeof(sprite) != TYPE_DICTIONARY:
-			continue
-		if int((sprite as Dictionary).get("channel", 0)) != channel:
-			continue
-		if is_channel_hidden(channel):
-			return Rect2()
-		return sprite_stage_rect(sprite)
-	return Rect2()
+	var sprite := effective_sprite(channel)
+	if sprite.is_empty() or is_channel_hidden(channel):
+		return Rect2()
+	return sprite_stage_rect(sprite)
 
 
 func _drag_intersects(channel: int) -> bool:
@@ -527,7 +576,7 @@ func enter_frame(index: int) -> void:
 	_entered_from = came_from
 	frame_entered_ms = _time_ms
 	var frame: Dictionary = loader.get_frame(frame_index)
-	_sync_film_loop_channels(frame)
+	reconcile_channels(frame)
 	var fps := float(frame.get("fps", 0))
 	if fps > 0.0:
 		current_fps = fps
@@ -629,49 +678,39 @@ func _run_skipped_entry_scripts() -> void:
 	frame_index = landed
 
 
-func _sync_film_loop_channels(frame: Dictionary) -> void:
-	var active_channels: Dictionary = {}
-	var sprites_value: Variant = frame.get("sprites", [])
-	if typeof(sprites_value) != TYPE_ARRAY:
-		_film_loop_channels = active_channels
-		return
-
-	for sprite_value in sprites_value:
-		if typeof(sprite_value) != TYPE_DICTIONARY:
+func _sync_film_loops() -> void:
+	## The loop cursor lives on the channel now, so a puppeted `set the memberNum of
+	## sprite N` restarts the loop through SpriteChannel.set_member() rather than
+	## going unnoticed because the score frame never changed.
+	for number in channels.keys():
+		var entry: SpriteChannel = channels[number]
+		if entry.is_empty():
 			continue
-		var sprite: Dictionary = sprite_value
-		if not sprite.has("channel") or not sprite.has("cast_lib") or not sprite.has("cast_id"):
+		var cast_lib := int(entry.sprite.get("cast_lib", -1))
+		var cast_id := int(entry.sprite.get("cast_id", -1))
+		if cast_lib < 0 or cast_id < 0:
 			continue
-		var channel := int(sprite.channel)
-		var cast_lib := int(sprite.cast_lib)
-		var cast_id := int(sprite.cast_id)
 		var film_loop := loader.get_film_loop(cast_lib, cast_id)
 		var loop_frame_count := _film_loop_frame_count(film_loop)
 		if loop_frame_count == 0:
+			entry.loop_cast_lib = -1
+			entry.loop_cast_id = -1
+			entry.loop_frame = 0
 			continue
 
-		var previous_value: Variant = _film_loop_channels.get(channel, {})
-		var previous: Dictionary = previous_value if typeof(previous_value) == TYPE_DICTIONARY else {}
-		var same_loop := (
-			int(previous.get("cast_lib", -1)) == cast_lib
-			and int(previous.get("cast_id", -1)) == cast_id
-		)
-		var loop_frame := 0
-		if same_loop:
-			loop_frame = clampi(int(previous.get("frame", 0)), 0, loop_frame_count - 1)
-			if int(previous.get("score_frame", -1)) != frame_index:
+		var same_loop := entry.loop_cast_lib == cast_lib and entry.loop_cast_id == cast_id
+		if not same_loop:
+			entry.loop_frame = 0
+		else:
+			entry.loop_frame = clampi(entry.loop_frame, 0, loop_frame_count - 1)
+			if entry.loop_score_frame != frame_index:
 				if bool(film_loop.get("looping", false)):
-					loop_frame = (loop_frame + 1) % loop_frame_count
+					entry.loop_frame = (entry.loop_frame + 1) % loop_frame_count
 				else:
-					loop_frame = mini(loop_frame + 1, loop_frame_count - 1)
-		active_channels[channel] = {
-			"cast_lib": cast_lib,
-			"cast_id": cast_id,
-			"frame": loop_frame,
-			"score_frame": frame_index,
-		}
-
-	_film_loop_channels = active_channels
+					entry.loop_frame = mini(entry.loop_frame + 1, loop_frame_count - 1)
+		entry.loop_cast_lib = cast_lib
+		entry.loop_cast_id = cast_id
+		entry.loop_score_frame = frame_index
 
 
 func _film_loop_frame_count(film_loop: Dictionary) -> int:
@@ -688,10 +727,8 @@ func _film_loop_frame_count(film_loop: Dictionary) -> int:
 
 
 func film_loop_frame(channel: int) -> int:
-	var state_value: Variant = _film_loop_channels.get(channel, {})
-	if typeof(state_value) != TYPE_DICTIONARY:
-		return 0
-	return maxi(0, int((state_value as Dictionary).get("frame", 0)))
+	var entry: Variant = channels.get(channel, null)
+	return 0 if entry == null else maxi(0, (entry as SpriteChannel).loop_frame)
 
 
 func goto_movie(stem: String, frame_number: Variant = null, opts: Dictionary = {}) -> bool:
@@ -1234,9 +1271,30 @@ func _lingo_takes_clicks(channel: int) -> bool:
 	return lingo.has_any_handler_for(channel, frame_index, "mouseUp")
 
 
-func clickable_sprites(frame: Dictionary) -> Array:
+func clickable_sprites(frame: Dictionary = {}) -> Array:
+	## For the frame the playhead is on, this reads channels rather than the score, so
+	## a hotspot a script has moved or re-membered is clickable where it is now.
+	##
+	## An explicit *other* frame still reads that frame's own sprites. Harnesses sweep
+	## frames they have not entered (tools/lingo_walk_diff.gd enumerates every walk
+	## hotspot in a movie), and channels only ever describe the current frame. Making
+	## the argument a no-op took that sweep from 117 cases to 0 while still reporting
+	## success, which is the failure mode this repo has been bitten by before.
+	var source: Array = []
+	var current := frame.is_empty() or int(frame.get("frame_index", frame_index)) == frame_index
+	if current:
+		source = channel_sprites()
+	if source.is_empty() and not frame.is_empty():
+		# Either an explicitly different frame, or a frame whose channels were never
+		# populated: tools/lingo_walk_diff.gd assigns `frame_index` directly to sweep
+		# rooms it does not enter. Fall back to the score's own sprites rather than to
+		# nothing, so a caller that never reconciled sees what it saw before.
+		var listed: Variant = frame.get("sprites", [])
+		source = (listed as Array).duplicate() if typeof(listed) == TYPE_ARRAY else []
+		source.sort_custom(func(a, b): return int(a.get("channel", 0)) < int(b.get("channel", 0)))
+
 	var out: Array = []
-	for sprite in frame.get("sprites", []):
+	for sprite in source:
 		if typeof(sprite) != TYPE_DICTIONARY:
 			continue
 		var channel := int(sprite.get("channel", 0))

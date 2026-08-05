@@ -385,9 +385,10 @@ func _update_virtual_cursor_visual() -> void:
 
 func draw_current_frame(canvas: Control) -> void:
 	var frame: Dictionary = runtime.loader.get_frame(runtime.frame_index)
-	var sprites: Array = frame.get("sprites", []).duplicate()
-	# Low channel under high channel (Director score layering).
-	sprites.sort_custom(func(a, b): return int(a.get("channel", 0)) < int(b.get("channel", 0)))
+	# The live channel array, low channel under high, which is Director's layering.
+	# Reading the score frame here is what made `set the memberNum of sprite N` and
+	# every Lingo-driven move invisible: the score has no idea a script moved it.
+	var sprites: Array = runtime.channel_sprites()
 	var sx: float = canvas.size.x / maxf(float(runtime.loader.stage_size.x), 1.0)
 	var sy: float = canvas.size.y / maxf(float(runtime.loader.stage_size.y), 1.0)
 	var puppet: PuppetController = runtime.puppet

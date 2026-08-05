@@ -13,7 +13,7 @@ regression: see `.claude/skills/porting-fidelity-verification/SKILL.md`.
 
 ## 1. Interpreted sprite property writes never reach the renderer
 
-**Status:** open · **Area:** renderer / interpreter host
+**Status:** CLOSED — `SpriteChannel`, see the Closed section · **Area:** renderer / interpreter host
 
 `LingoHost.set_sprite_prop()` writes every `set the <prop> of sprite N` into its
 `puppet` override dictionary, and nothing outside `lingo_host.gd` ever reads that
@@ -68,7 +68,7 @@ what the renderer ignores today. Fix 1 and this script becomes runnable.
 
 ## 3. `_lingo_hidden` is never cleared on a movie change
 
-**Status:** open · **Area:** score runner
+**Status:** CLOSED — channels are cleared on movie load, see the Closed section · **Area:** score runner
 
 `DirectorRuntime._mark_movie_loaded()` clears the timing accumulator, the pending
 transition and the film-loop cursors. It does not clear `_lingo_hidden`, and
@@ -167,7 +167,60 @@ An engine change can only be checked against the five.
 
 ---
 
+## 10. A taken bottle is back on the shelf after the joke closes
+
+**Status:** open · **Area:** Movie-In-A-Window / score runner
+
+`CastScript 69` hides the bottle with `sprite(the clickOn).visible = 0` and then
+opens `joke.dxr`. Director floats that over a DAY1 that never unloads, so the hide
+survives. The port has one stage: it pushes DAY1 on the route stack, loads JOKE, and
+`_mark_movie_loaded()` clears the channels — the hide with them.
+
+Coming back should not matter, because `go_back` re-enters `swinggo` and the entry
+replay runs `b4 bk's`, which blanks channels 15, 17 and 33. Measured, it runs and the
+blank does not stick:
+
+    entry:        frame 1860 label=swinggo  hidden15=true   ch15.visible=false
+    after forget: frame 1860 label=swinggo  hidden15=false  ch15.visible=true
+
+Same frame, same replay, opposite outcome, so something after the replay puts it
+back on the return path only. Not chased further; the reveal work it turned up in
+was a different defect.
+
+In practice the bottle cannot be taken twice — `jokefield` has the room, so
+`searchfunk` answers "wasalready" and will not re-reveal it — but it is on screen
+when it should not be.
+
+**Reproduce:** `godot --headless --script tools/collectables.gd` covers everything
+up to the return; the assertion for this was removed rather than left failing.
+
+---
+
 ## Closed
+
+- **An uncovered shell or bottle vanished after one frame.**
+  `_run_skipped_entry_scripts()` replayed the room's entry frames on every entry into
+  a `*go` frame. The room loop is `go(marker(0))`, which throws the playhead from
+  anywhere in the idle span back to the `*go` frame, so by frame number every
+  iteration looked like an arrival; each replay re-ran `b4 bk's` and its
+  `set the visible of sprite 15 to 0`. Arrival is now decided by the marker.
+  Covered by `tools/collectables.gd`.
+- **The joke picture was never drawn.** JOKE parks channel 3 on `jokepfff`, a 1x1
+  placeholder at (318, 199); the Lingo swaps in a 214x120 joke with its own
+  registration point. With member writes reaching the channel it now lands at
+  (133, 67) at full size. This is what made the joke text look off-centre and
+  partly cut off.
+- **Interpreted sprite property writes never reached the renderer** (was 1).
+  `SpriteChannel` is Director's live channel array; drawing and hit-testing read it.
+- **`_lingo_hidden` leaked across movies** (was 3). Channels belong to the movie and
+  are cleared on load, which drops the previous movie's puppet ownership, its hides
+  and its film-loop cursors together.
+- **Shells and bottles recorded against the wrong room.** `the castNum` dropped the
+  cast library, so `member(...)` resolved in the movie's own cast: DAY1's sprite 1 is
+  `island:10` (`shore2`) while DAY1's own member 10 is the cursor `wlkcur1`. 25 of 32
+  rooms answered with a cursor name and 7 with the empty string, and `nof` is the key
+  `shellfield` and `jokefield` are written under, so one shell taken in any of those
+  7 marked all of them collected. Covered by `tools/room_names.gd`.
 
 - **Piposh drawn twice across a room transition.** The canned transition animation
   draws him in a low channel while the puppet drew unconditionally. `the visible of

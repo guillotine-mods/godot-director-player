@@ -2,11 +2,11 @@ class_name LingoHost
 extends RefCounted
 ## Binds the Lingo interpreter to the live engine.
 ##
-## Everything Director-specific lands here: sprite properties become a puppet
-## override table that `DirectorRuntime` and `MoviePlayer` read, fields become a
-## text table with `objectsfield` aliased onto `GameState` so saves keep working,
-## and navigation and sound go straight to the existing runtime and
-## `AudioDirector`.
+## Everything Director-specific lands here: sprite properties read and write
+## `DirectorRuntime.channels`, the live channel array that the renderer and
+## hit-testing also read, fields become a text table with `objectsfield` aliased onto
+## `GameState` so saves keep working, and navigation and sound go straight to the
+## existing runtime and `AudioDirector`.
 
 const FIELDS_PATH := "res://data/lingo/fields.json"
 const MEMBER_NAMES_PATH := "res://data/lingo/member_names.json"
@@ -34,11 +34,6 @@ var runtime: Object = null
 ## Set by LingoEngine. The native handlers read globals through it.
 var interpreter: Object = null
 
-## channel -> {property (lower) -> value}. A property present here overrides the
-## score; absent falls through to the score frame.
-var puppet: Dictionary = {}
-## channel -> true once `puppetSprite N, 1` has been seen.
-var puppeted: Dictionary = {}
 ## cast (lower) -> field name (lower) -> text
 var fields: Dictionary = {}
 ## cast (lower) -> member number (int) -> name (lower)
@@ -175,22 +170,20 @@ func _cast_search_order(cast: String) -> PackedStringArray:
 # ---------------------------------------------------------------- sprites
 
 
-func _score_sprite(channel: int) -> Dictionary:
+func _channel_sprite(channel: int) -> Dictionary:
+	## What the channel holds now: the score's sprite with Lingo's writes applied.
+	## Reading the score frame here is what made every write invisible.
 	if runtime == null:
 		return {}
-	var frame: Dictionary = runtime.loader.get_frame(runtime.frame_index)
-	for sprite in frame.get("sprites", []):
-		if typeof(sprite) == TYPE_DICTIONARY and int((sprite as Dictionary).get("channel", 0)) == channel:
-			return sprite
-	return {}
+	return runtime.effective_sprite(channel)
 
 
 func get_sprite_prop(channel: int, prop: String) -> Variant:
 	var key := prop.to_lower()
-	var overrides: Variant = puppet.get(channel, {})
-	if typeof(overrides) == TYPE_DICTIONARY and (overrides as Dictionary).has(key):
-		return (overrides as Dictionary)[key]
-	var sprite := _score_sprite(channel)
+	var sprite := _channel_sprite(channel)
+	var entry: SpriteChannel = null
+	if runtime != null:
+		entry = runtime.channel_for(channel)
 	match key:
 		"membernum":
 			# Per cast library, and paired with `the castLibNum`. `whatodoeveryframe`
@@ -218,7 +211,7 @@ func get_sprite_prop(channel: int, prop: String) -> Variant:
 				return 0
 			return 0 if runtime != null and runtime.is_channel_hidden(channel) else 1
 		"puppet":
-			return 1 if puppeted.has(channel) else 0
+			return 1 if entry != null and entry.puppet else 0
 		"left":
 			return int(sprite.get("x", 0))
 		"top":
@@ -228,16 +221,76 @@ func get_sprite_prop(channel: int, prop: String) -> Variant:
 		"bottom":
 			return int(sprite.get("y", 0)) + int(sprite.get("height", 0))
 		"movablesprite", "moveablesprite":
-			return 0
+			return 1 if entry != null and entry.moveable else 0
+		"constraint":
+			return 0 if entry == null else entry.constraint
+		"cursor":
+			return 0 if entry == null else entry.cursor
 		_:
 			return 0
 
 
 func set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	var key := prop.to_lower()
-	if not puppet.has(channel):
-		puppet[channel] = {}
-	(puppet[channel] as Dictionary)[key] = value
+	if runtime == null:
+		return
+	var entry: SpriteChannel = runtime.channel_for(channel)
+	match key:
+		"membernum", "castnum", "member":
+			# Director resizes the sprite to the new member and re-anchors it on that
+			# member's registration point. `whatodoeveryframe` depends on it: the walk
+			# cycle members are not all the same size, and without the re-anchor
+			# Piposh jitters as he walks.
+			#
+			# A written reference may carry its own library, in which case it moves the
+			# sprite to that cast rather than keeping the one it had. Nothing in the
+			# corpus writes `the castNum` today; this is here so the property round
+			# trips rather than silently losing half of what it was handed.
+			var cast_lib := int(entry.sprite.get("cast_lib", 1))
+			var member := LingoValue.to_int(value)
+			var packed := _unpack_member(value)
+			if not packed.is_empty():
+				cast_lib = int(packed.cast_lib)
+				member = int(packed.member)
+			entry.set_member(cast_lib, member, runtime.loader.get_member(cast_lib, member))
+			stage_dirty = true
+			return
+		"castlibnum", "castlib":
+			entry.sprite["cast_lib"] = LingoValue.to_int(value)
+			stage_dirty = true
+			return
+		"loch":
+			entry.set_loc(float(LingoValue.to_num(value)), entry.loc().y)
+			stage_dirty = true
+			return
+		"locv":
+			entry.set_loc(entry.loc().x, float(LingoValue.to_num(value)))
+			stage_dirty = true
+			return
+		"width":
+			entry.set_size(LingoValue.to_num(value), null)
+			stage_dirty = true
+			return
+		"height":
+			entry.set_size(null, LingoValue.to_num(value))
+			stage_dirty = true
+			return
+		"ink":
+			entry.sprite["ink"] = LingoValue.to_int(value)
+			stage_dirty = true
+			return
+		"movablesprite", "moveablesprite":
+			entry.moveable = LingoValue.truthy(value)
+			return
+		"constraint":
+			entry.constraint = LingoValue.to_int(value)
+			return
+		"cursor":
+			# `[the number of member "hand1", the number of member "hand2"]` on the
+			# inventory slots. Recorded; the port stands in a system cursor because
+			# the cast pair does not decode to a 1-bit 16x16 Director cursor.
+			entry.cursor = value
+			return
 	if key == "visible" and runtime != null:
 		# Visibility is the one property the existing renderer already gates, so
 		# keep the two in step rather than introducing a second mechanism.
@@ -259,21 +312,15 @@ func set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 
 
 func sprite_rect(channel: int) -> Rect2:
+	## `intersects`, `within` and `rollOver` measure where the sprite is *now*. The
+	## channel already carries the script's writes, so there is no override pass to
+	## apply on top and no assumption that the registration point is the centre.
 	if runtime == null:
 		return Rect2()
-	var sprite := _score_sprite(channel)
+	var sprite := _channel_sprite(channel)
 	if sprite.is_empty():
 		return Rect2()
-	var rect: Rect2 = runtime.sprite_stage_rect(sprite)
-	var overrides: Variant = puppet.get(channel, {})
-	if typeof(overrides) == TYPE_DICTIONARY:
-		var over: Dictionary = overrides
-		if over.has("loch") or over.has("locv"):
-			var centre := rect.position + rect.size * 0.5
-			var x := float(LingoValue.to_num(over.get("loch", centre.x)))
-			var y := float(LingoValue.to_num(over.get("locv", centre.y)))
-			rect.position = Vector2(x, y) - rect.size * 0.5
-	return rect
+	return runtime.sprite_stage_rect(sprite)
 
 
 # ---------------------------------------------------------------- members
@@ -436,13 +483,12 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"walkonby":
 			return _walkonby()
 		"puppetsprite":
-			if args.size() >= 1:
-				var channel := LingoValue.to_int(args[0])
+			if args.size() >= 1 and runtime != null:
+				var entry: SpriteChannel = runtime.channel_for(LingoValue.to_int(args[0]))
 				if args.size() >= 2 and not LingoValue.truthy(args[1]):
-					puppeted.erase(channel)
-					puppet.erase(channel)
+					entry.release_puppet()
 				else:
-					puppeted[channel] = true
+					entry.puppet = true
 			stage_dirty = true
 			return 0
 		"updatestage":

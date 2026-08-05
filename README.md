@@ -32,14 +32,15 @@ python3 tools/add_cast_script_names.py              # linked-cast member names
 godot --headless --script tools/verify_film_loops.gd # film loops resolve to children
 godot --headless --script tools/collectables.gd     # shells/bottles reveal, stay, take, pass/fail
 godot --headless --script tools/room_names.gd       # `nof` resolves to the room, pass/fail
+godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach the stage, pass/fail
 godot --headless --script tools/puppet_visibility.gd # sprite 30 across a transition, pass/fail
 godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
 godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 ```
 
-`smoke.gd`, `puppet_visibility.gd`, `collectables.gd` and `room_names.gd` are the
-pass/fail ones. Read
+`smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd` and
+`sprite_channels.gd` are the pass/fail ones. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the
 others: agreement with the lifted export falls as the port becomes more faithful,
 so those numbers are not higher-is-better.
