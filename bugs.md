@@ -238,7 +238,34 @@ still has.
 
 ---
 
-## 12. `init all` never runs on movie entry
+## 12. Animations are missing on the cliff, and elsewhere between rooms
+
+**Status:** open, root cause NOT found · **Area:** score / renderer
+
+Reported: many animations missing, mainly while a character moves from one place
+to another, worst on the cliff. Investigated and not explained. What was ruled out:
+
+- **Not the transition spans being skipped.** They do play. Walking `edge1go` to
+  `gatego` visits frames 237..338, which covers `gatefromedge1` at 324.
+- **Not a frozen sprite rect during animation.** Across all of DAY1 there is
+  exactly one frame-step where a member changes size and the rect does not.
+- **Not the puppet's size.** Channel 30 is drawn at the member's natural size in
+  1290 of 1290 room sprites, which is what the score does.
+- **Not ink coverage.** The only unhandled inks are 0 (Copy, correctly opaque) and
+  32 (948 sprites, 0.2%).
+
+What is known: the spans hold Piposh's own walk cycle on channel 3, scaled
+continuously as he walks away (`gatetoedge1` is 306..322, sixteen members, natural
+74x219 drawn at 68x200 and shrinking). The port substitutes `PuppetController` on
+channel 30, which steps through discrete `syz` art at natural size instead. Whether
+that is what the reporter is seeing is unconfirmed.
+
+Reproduce: `godot --script` a scene instance, `goto_movie("DAY1", null,
+{"label": "edge1go"})`, and compare against the original.
+
+---
+
+## 13. `init all` never runs on movie entry
 
 **Status:** open · **Area:** interpreter / score
 

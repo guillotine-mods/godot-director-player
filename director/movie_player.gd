@@ -34,6 +34,14 @@ var _cursor_hotspot: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	# Director clips every sprite to the stage. A Godot Control does not clip by
+	# default, so a sprite reaching past the stage was drawn over the letterbox and
+	# the HUD instead of being cut off at the edge. 19.8% of the corpus's image
+	# sprites extend past the stage rect and so were spilling: EXODUS frame 22 puts
+	# member `d5` at x=-40, which drew Piposh's arm and a stump of scenery out into
+	# the black bar to the left of the beach.
+	if stage_canvas:
+		stage_canvas.clip_contents = true
 	if runtime.boot() != OK:
 		push_error("Failed to load render_model index")
 		return
