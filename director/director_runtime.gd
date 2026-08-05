@@ -76,6 +76,10 @@ var _movie_transition_attempt_generation: int = 0
 var _pending_transition: String = ""
 var _pending_destination: String = ""
 var _film_loop_channels: Dictionary = {}
+## The frame the playhead came from, so _run_skipped_entry_scripts() can tell an
+## arrival from a step taken inside the room it is already in. -1 means "nowhere in
+## this movie", which is the state a movie load leaves behind.
+var _entered_from: int = -1
 var _hidden_channels: Dictionary = {}
 ## Channels hidden by an interpreted script's `sprite(N).visible = 0`. Kept apart
 ## from _hidden_channels, which refresh_sprite_gates() replaces wholesale.
@@ -116,6 +120,9 @@ func _mark_movie_loaded() -> void:
 	_accum_ms = 0.0
 	_clear_pending_transition()
 	_film_loop_channels.clear()
+	# Frame numbers do not carry across a movie, so the previous one says nothing
+	# about whether the next entry skipped anything.
+	_entered_from = -1
 	if context.is_hub(loader.movie_name):
 		GameState.enter_hub(loader.movie_name)
 
@@ -515,7 +522,9 @@ func enter_frame(index: int) -> void:
 	if loader.frames.is_empty():
 		frame_index = 0
 		return
+	var came_from := frame_index
 	frame_index = clampi(index, 0, loader.frames.size() - 1)
+	_entered_from = came_from
 	frame_entered_ms = _time_ms
 	var frame: Dictionary = loader.get_frame(frame_index)
 	_sync_film_loop_channels(frame)
@@ -589,6 +598,23 @@ func _run_skipped_entry_scripts() -> void:
 	if base < 0 or base >= frame_index:
 		return
 	var landed := frame_index
+	# Only on arrival from outside the room. Replaying the entry frames re-runs their
+	# blanking — `b4 bk's` sets sprites 15, 17 and 33 invisible, which are the
+	# collectable channels — so a shell `searchfunk` had just uncovered vanished
+	# again. The conditional restore in script 286 does not bring it back: it only
+	# ever shows what the player does *not* already hold.
+	#
+	# "Inside the room" is the marker, not the entry span. The room's own loop is
+	# `go(marker(0))`, which jumps the playhead from anywhere in the idle span back to
+	# the `*go` frame — 266 → 239 at DAY1's gate, where `gatego` runs 239 to 269 and
+	# `gatetoshore` starts at 270. Every one of those jumps looks like an arrival by
+	# frame number and is not one. Arriving from the base label is not one either:
+	# those frames just played, which is the case this whole function exists to
+	# compensate for when they do not.
+	if _entered_from >= 0:
+		var came_from_room := marker_name_for_frame(_entered_from).to_lower()
+		if came_from_room == room or came_from_room == room.substr(0, room.length() - 2):
+			return
 	var was_recording: bool = lingo.host.record
 	lingo.host.begin_record()
 	for index in range(base, landed):

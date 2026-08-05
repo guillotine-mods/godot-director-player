@@ -231,6 +231,62 @@ Deriving that condition from the score instead does not work: a
 "span ends in `frame_script 207`" test misses 35 of the 104 `ifmovie` transitions,
 because chains like `edge3up` → `lighthouseleft` reach their 207 only at the end.
 
+## Entry scripts replay on arrival, once
+
+Jumping straight to a room's `*go` frame skips the frames the score would have
+played on the way in, so `_run_skipped_entry_scripts()` runs their handlers where
+they sit. It must do that **only on arrival from outside the room**, and "outside"
+means a different marker, not a frame number outside the entry span.
+
+The room's own loop is `go(marker(0))`, which throws the playhead from anywhere in
+the idle span back to the `*go` frame: 266 → 239 at DAY1's gate, where `gatego` runs
+239 to 269 and `gatetoshore` starts at 270. By frame number every one of those looks
+like an arrival. Replaying there re-runs `b4 bk's`, whose `set the visible of sprite
+15 to 0` (and 17, and 33) are the collectable channels, so a shell `searchfunk` had
+just uncovered was blanked again on the next frame the room ran — visible for a
+single frame at `gatego`, and the same for the bottle at `swinggo`. Script 286's
+conditional restore does not bring it back: it only ever shows what the player does
+*not* already hold.
+
+Arriving from the base label is not an arrival either. Those frames just played,
+which is the case this function exists to compensate for when they do not.
+
+`tools/collectables.gd` covers the whole sequence for a shell and a bottle: hidden on
+entry, uncovered by searching, still uncovered while the room runs, hidden again when
+taken, and the room written into `shellfield` / `jokefield`.
+
+## A member reference carries its cast library
+
+`the castNum of sprite N` and `the member of sprite N` return the member packed
+with its library; `the memberNum` stays the per-library number, paired with
+`the castLibNum`. One-argument `member()` unpacks the first form and resolves it in
+that library alone.
+
+Both forms are needed, and the corpus shows why. `nof = member(the castNum of
+sprite 1).name` is how all 18 room-entry scripts name the room, and sprite 1 is the
+background from a linked cast — `island:10`, named `shore2`, where DAY1's own member
+10 is the cursor `wlkcur1`. Resolving without the library answered 25 of DAY1's 32
+rooms with a cursor name and the other 7 with nothing. Meanwhile
+`whatodoeveryframe` reads `member(the memberNum of sprite 30).name` to decide which
+walk cycle is running, and that works precisely because sprite 30 is cast library 1,
+where the two numberings coincide. Packing `the memberNum` too would break it.
+
+`nof` is the key the collectables are recorded under, so those seven rooms shared
+one: taking a shell in any of them marked all seven collected, and `searchfunk`
+never revealed another.
+
+The packing constant is the port's own. Director packs the pair as well, but the
+export carries no per-library slot offsets, so its encoding cannot be recovered from
+anything here. It does not need to be: the integer is produced and consumed inside
+one expression by `lingo_host.gd`, never stored, compared or arithmetic'd, so only
+the round trip has to hold. `tools/room_names.gd` asserts the result against the
+score for every room in DAY1, NIGHT1 and HOTEL1.
+
+Rooms do share a key, in the original too: HOTEL1's rooms A, B, C and the bathroom
+all score `hotel:6` in sprite 1, and NIGHT1 carries two distinct members both named
+`path4`. That is the game's own behaviour and the harness reports it rather than
+failing on it.
+
 ## Still open
 
 - Talk trees / lip-sync

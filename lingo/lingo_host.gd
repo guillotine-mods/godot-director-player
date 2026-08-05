@@ -192,8 +192,15 @@ func get_sprite_prop(channel: int, prop: String) -> Variant:
 		return (overrides as Dictionary)[key]
 	var sprite := _score_sprite(channel)
 	match key:
-		"membernum", "castnum", "member":
+		"membernum":
+			# Per cast library, and paired with `the castLibNum`. `whatodoeveryframe`
+			# reads it back through `member(the memberNum of sprite 30).name`, which
+			# works because sprite 30 is cast library 1 and there the two numberings
+			# coincide — so this must stay unpacked.
 			return int(sprite.get("cast_id", 0))
+		"castnum", "member":
+			# Library-spanning, because that is what one-argument `member()` expects.
+			return _pack_member(int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0)))
 		"castlibnum", "castlib":
 			return int(sprite.get("cast_lib", 1))
 		"loch":
@@ -272,10 +279,52 @@ func sprite_rect(channel: int) -> Rect2:
 # ---------------------------------------------------------------- members
 
 
+## Multiplier that carries a cast library alongside a member number in the single
+## integer `the castNum` evaluates to. A movie links at most a handful of casts and
+## the largest here has 1349 members, so nothing real can reach this.
+##
+## Director packs the pair too, because from D5 a movie can link several casts and a
+## sprite records its member as (castLib, memberNum); `the castNum` collapses that
+## into one integer and one-argument `member()` expands it again. This is *not* a
+## claim to reproduce Director's own packing: the export carries no per-library slot
+## offsets, so that encoding cannot be recovered from anything here. It does not have
+## to be. All 18 `castNum` sites in the corpus are the same line —
+## `nof = member(the castNum of sprite 1).name` — so the integer is produced and
+## consumed inside one expression by this file, and never stored, compared or
+## arithmetic'd. Only the round trip has to hold.
+const CAST_MULTIPLEX := 0x20000
+
+
+func _pack_member(cast_lib: int, member: int) -> int:
+	return maxi(cast_lib, 1) * CAST_MULTIPLEX + member
+
+
+func _unpack_member(which: Variant) -> Dictionary:
+	## {} when this is a plain member number rather than a packed reference.
+	if typeof(which) == TYPE_STRING:
+		return {}
+	var value := LingoValue.to_int(which)
+	if value < CAST_MULTIPLEX:
+		return {}
+	return {"cast_lib": value / CAST_MULTIPLEX, "member": value % CAST_MULTIPLEX}
+
+
+func _cast_name_for_lib(cast_lib: int) -> String:
+	if runtime == null or runtime.get("loader") == null:
+		return ""
+	var entry: Variant = runtime.loader.cast_libs.get(str(cast_lib), null)
+	if typeof(entry) != TYPE_DICTIONARY:
+		return ""
+	var name := str((entry as Dictionary).get("name", "")).strip_edges().to_lower()
+	# Cast library 1 is the movie's own, which member_names keys by movie name.
+	return _default_cast() if name == "" or name == "internal" else name
+
+
 func member_number(which: Variant, cast: String) -> int:
 	## `the number of member "sciser"` and `member(30, "master")` both land here.
 	if typeof(which) != TYPE_STRING:
-		return LingoValue.to_int(which)
+		var packed := _unpack_member(which)
+		return int(packed.member) if not packed.is_empty() else LingoValue.to_int(which)
 	var wanted := (which as String).to_lower()
 	for candidate in _cast_search_order(cast):
 		var by_name: Variant = _member_numbers.get(candidate, {})
@@ -287,9 +336,23 @@ func member_number(which: Variant, cast: String) -> int:
 func get_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 	var key := prop.to_lower()
 	if key == "name":
-		var number := LingoValue.to_int(which)
 		if typeof(which) == TYPE_STRING:
 			return which
+		var number := LingoValue.to_int(which)
+		# A reference that carries its own library resolves there and nowhere else.
+		# `nof = member(the castNum of sprite 1).name` is the room's background, and
+		# in DAY1 that sprite is island:10 while DAY1's own member 10 is the cursor
+		# `wlkcur1`. Searching the movie's cast first answered every room with a
+		# cursor name, and left 7 of 32 rooms sharing the empty string, which is what
+		# made `shellfield` and `jokefield` mark rooms collected that were not.
+		var packed := _unpack_member(which)
+		if not packed.is_empty():
+			number = int(packed.member)
+			var owner := _cast_name_for_lib(int(packed.cast_lib))
+			var owned: Variant = member_names.get(owner, {})
+			if typeof(owned) == TYPE_DICTIONARY and (owned as Dictionary).has(number):
+				return str((owned as Dictionary)[number])
+			return ""
 		for candidate in _cast_search_order(cast):
 			var by_number: Variant = member_names.get(candidate, {})
 			if typeof(by_number) == TYPE_DICTIONARY and (by_number as Dictionary).has(number):
