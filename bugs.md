@@ -81,6 +81,19 @@ entries 9 and 13 — and needs the 117-hotspot walk diff measured before and aft
 because this replaces the walk state machine wholesale. Read
 `porting-fidelity-verification` before reading those numbers.
 
+**Baseline for that comparison, measured 2026-08-06 at `176f08ca`**, so the next
+attempt can attribute rather than re-derive: `tools/lingo_walk_diff.gd` reports
+117 walk cases across 3 movies, **identical outcome 85/117**, 19 of the
+differences `[wrong-room]`. All nine pass/fail harnesses green at that commit:
+`smoke`, `puppet_visibility`, `sprite_channels`, `room_names`, `collectables`,
+`cursors`, `sprite_stretch`, `film_loop_stretch`, `verify_film_loops`. Do not
+copy these numbers forward without re-running them — stale figures pasted into
+prose have already cost this project a session.
+
+An attempt was made and stopped short; what it established, and what it ruled
+out, is in entry 21 rather than here, because the block is in invoking the
+handlers at all.
+
 ---
 
 ## 3. `_lingo_hidden` is never cleared on a movie change
@@ -693,6 +706,39 @@ Observed: `peoplefunk=true peoplecont=true inexits=<unset>`, and all four
 Not the same bug as 14's film-loop half, which was found in the same rooms in the
 same pass. That one drew these characters at the wrong size; this one draws twice
 as many of them as there should be.
+
+**Attempted and not finished — the handlers resolve but invoking them does
+nothing.** This is the next thing to chase, and it is narrower than where this
+entry started. Booting DAY1, seeding the globals `init all` would have left, and
+calling the handlers straight off the interpreter changes no observable state:
+
+| call | `inexits` after | channels 18-21 |
+|---|---|---|
+| `call_handler("peoplefunk")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
+| `call_handler("peoplecont", [1])` | `0,0,0,0,0,0,0,0,0,0` | all shown |
+| `call_handler("whatodoeveryframe")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
+
+`peoplecont(1)` on `inexits = "0,0,…"` must leave `1,0,0,…` and hide 20 and 21.
+It leaves both untouched, so the body is not running — the handler is not merely
+taking a branch that skips the writes.
+
+Ruled out on the way, so they do not get re-checked:
+
+- **The handler is missing.** `has_handler` is true for `whatodoeveryframe`,
+  `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`.
+- **Chunk assignment is unimplemented.** `put x into item i of inexits` has a
+  path: `_assign_chunk` at `lingo_interpreter.gd:408`.
+- **The `global` declaration wipes the seeded value.** It is guarded by
+  `if not globals.has(key)` at `lingo_interpreter.gd:234`, and keys are
+  lowercased, which is what the probe wrote.
+- **Sprite writes cannot reach the stage.** Entry 1 is closed and
+  `tools/sprite_channels.gd` passes.
+
+Two candidates not yet separated: `call_handler` outside a frame dispatch may not
+establish whatever scope the body needs, or `sprite(N).visible` for a channel
+other than 30 may not land where `is_channel_hidden` reads. Test the second
+first — it is one assertion — because if it is true then the body may have been
+running all along and `inexits` is a separate defect.
 
 **The fix is entry 2, not a patch here.** The original calls `peoplefunk()` from
 `whatodoeveryframe` and nowhere else, so there is no engine-level place to put
