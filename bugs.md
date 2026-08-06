@@ -44,6 +44,16 @@ the same exported nav, `{kind: marker, rel: 1, offset: 0, guard_channel: 1,
 guard_when: idle}`, which is a loop, and one frame carries a `busy_nav` of
 `{rel: 0, offset: 1}`.
 
+**The loop is the sound guard, and that part IS engine-level.** `resolve_marker_frame`
+is correct — `rel 1` resolves to the *next* marker, so the main nav would leave the
+scene. The observed frame 25 is `marker(0) + 1`, which is the `busy_nav`
+(`{rel: 0, offset: 1}`), so the runtime is taking the *busy* branch every time:
+`soundBusy(1)` never goes idle, and the scene waits forever for a line of speech
+that never finishes. Check `AudioDirector` first — a guard that waits on a sound
+which never starts (missing WAV, unresolved stem) must time out rather than hold
+the playhead for ever. That is a general engine rule and would unblock any cutscene
+built this way, not just this one.
+
 **Why nothing breaks the loop.** Those frames carry `frame_script 119`, and the
 port does not have it. `data/lingo/MURDER1/` holds only `MASTER.json`,
 `attach.json` and `sprite_scripts.json`; `attach.json` never mentions 119, and
