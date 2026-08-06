@@ -589,6 +589,96 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
 
 ---
 
+## 21. Every wandering character is on screen twice, because only half of `peoplefunk` is ported
+
+**Status:** open · **Area:** interpreter host / score runner
+
+Reported from play as "bugs in the scenes of characters that appear multiple
+times", with screenshots of DAY1 `@field`, `@edge1` and `@veranda`. It was first
+mistaken for authentic crowd art — the two loops in `@veranda` really do name the
+same member — and that reading was wrong. The **member names** settle it:
+
+| room | channels | loops | names |
+|---|---|---|---|
+| `field` | 18 / 21 | wonder 98 / 94 | `arinlop1` / `brinlop1` |
+| `field` | 19 / 20 | wonder 22 / 47 | `apatlop1` / `bpatlop1` |
+| `edge1` | 18 / 20 | wonder 150 / 175 | `amoglop1` / `bmoglop1` |
+| `veranda` | 18 / 20 | wonder 196 / 201 | `atoflop1` / `btoflop1` |
+
+Each room carries an `a` and a `b` loop of **one** character — Rinati, Pat,
+Mogul, Tofi — at two positions. The original shows one of each pair; the port
+draws both, so every one of these characters appears twice.
+
+**The original picks with a counter.** `WONDER/MovieScript 246` is `peoplefunk`,
+and after its meeting-routing chain it does:
+
+```
+repeat with i = 18 to 21
+  puppetSprite(i, 0)
+end repeat
+if item 1 of nextroomdata = "field" then peoplecont(1)
+  else if ... "tennis" then peoplecont(2)
+  else if ... "edge1"  then peoplecont(3)   -- but on day 3, hide 18 and 20 outright
+  else if ... "veranda" then peoplecont(4)
+  else if ... "dwarfs" then dwarfscont(8) / dwarfscont(9)
+  else if ... "exitforest3" then dwarfscont2(10)
+```
+
+and `peoplecont(i)` advances `item i of inexits` 1..10, wrapping, then shows one
+pair and hides the other:
+
+```
+if x > 5 then  18,19 invisible; 20,21 visible
+else           18,19 visible;   20,21 invisible
+```
+
+So the guests move around the estate as you re-enter rooms. The talk behaviours
+read that state back — `BehaviorScript 290` and `291` both branch on
+`if sprite(18).visible = 1`, and `BehaviorScript 249` picks `xxx = "a"` or `"b"`
+with the channel numbers to match — so with nothing hidden they also take the
+wrong branch and drive the wrong sprite.
+
+**Two things are missing, and the second is an old friend.**
+
+1. `DirectorRuntime._try_people_funk` calls `GameState.people_funk`, which is a
+   `meeting_triggers` table lookup and nothing else. It reproduces only the
+   routing chain at the top of the original handler; the `puppetSprite` /
+   `peoplecont` half below it has no port at all.
+2. `inexits` is never set. `init all` seeds it as `"0,0,0,0,0,0,0,0,0,0"` and
+   `init all` never runs — that is entries 9 and 13, biting a third time. Even if
+   `peoplecont` were called, `value(item i of inexits)` has nothing to read.
+
+Not a rendering bug: the interpreter has both handlers loaded and sprite writes
+do reach the stage (entry 1 is closed, `tools/sprite_channels.gd` covers it).
+
+Reproduce — all four channels present and none hidden, with both globals unset:
+
+```
+godot --headless --script - <<'EOF'
+extends SceneTree
+func _initialize(): call_deferred("_run")
+func _run():
+    var r: RefCounted = load("res://director/director_runtime.gd").new()
+    r.boot(); r.goto_movie("DAY1", null, {"label": "field"}); r.running = false
+    print("peoplefunk=%s peoplecont=%s inexits=%s" % [
+        r.lingo.interpreter.has_handler("peoplefunk"),
+        r.lingo.interpreter.has_handler("peoplecont"),
+        str(r.lingo.interpreter.globals.get("inexits", "<unset>"))])
+    for c in [18, 19, 20, 21]:
+        print("ch%d hidden=%s" % [c, r.is_channel_hidden(c)])
+    quit(0)
+EOF
+```
+
+Observed: `peoplefunk=true peoplecont=true inexits=<unset>`, and all four
+`hidden=false`.
+
+Not the same bug as 14's film-loop half, which was found in the same rooms in the
+same pass. That one drew these characters at the wrong size; this one draws twice
+as many of them as there should be.
+
+---
+
 ## 20. `wonder.cst` has a degenerate `ccl `, so 98 film-loop children draw nothing
 
 **Status:** open · **Area:** assets / cast registry
