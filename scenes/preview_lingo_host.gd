@@ -72,6 +72,15 @@ func call_builtin(name: String, args: Array) -> Variant:
 			if args.size() == 1:
 				return _play(1, str(args[0]))
 			return 0
+		"puppetsprite":
+			# `puppetSprite N, TRUE` hands a channel to the scripts; FALSE gives
+			# it back to the score. Ignoring it meant a script's writes outlived
+			# the moment the score should have taken the channel back.
+			if preview != null and args.size() >= 2:
+				preview.lingo_puppet_sprite(
+					LingoValue.to_int(args[0]), LingoValue.to_int(args[1]) != 0
+				)
+			return 0
 		"soundbusy":
 			# Scripts wait on this before speaking. Unbound it answers 0, which
 			# reads as "nothing is playing" and lets a room talk over itself.
@@ -108,8 +117,17 @@ func _go(args: Array) -> Variant:
 	var words: Array = []
 	for a in args:
 		words.append(str(a).to_lower() if typeof(a) == TYPE_STRING else a)
-	# `to` is a bare command word and carries no meaning here.
-	words = words.filter(func(w): return w != "to")
+	# `to` is a bare command word and carries no meaning here. The type test is
+	# not decoration: this array mixes the command's bare words with evaluated
+	# arguments, and GDScript raises on `int != String` rather than answering
+	# true — so `go to marker(+1)` threw on this line every time and the
+	# playhead never moved, with the error buried in a lambda.
+	var kept: Array = []
+	for w in words:
+		if typeof(w) == TYPE_STRING and str(w) == "to":
+			continue
+		kept.append(w)
+	words = kept
 	if words.is_empty():
 		return 0
 	var first: Variant = words[0]

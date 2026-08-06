@@ -249,10 +249,17 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 	var tempo := buffer[54]
 	var tempo_cue := buffer[53]
 	var script_member := _u16(buffer, 2)
+	# The library the frame script lives in, recorded beside the member number.
+	# Dropping it forces the caller to find the script by number alone, and
+	# member numbers are per cast: a shared cast's script 105 loses to any
+	# internal script that happens to be numbered 105, silently, and what runs
+	# is a stranger.
+	var script_lib := _u16(buffer, 0)
 	var out := {
 		"frame_index": index,
 		"sprites": sprites,
 		"frame_script": script_member if script_member > 0 else null,
+		"frame_script_lib": 1 if script_lib == OWN_CAST_LIB or script_lib == 0 else script_lib,
 		"tempo": tempo,
 		"tempo_cue": tempo_cue,
 		"delay_ms": tempo_cue * 1000 if tempo == TEMPO_DELAY else 0,

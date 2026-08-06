@@ -703,11 +703,26 @@ func _parse_primary() -> Dictionary:
 		return _parse_chunk()
 	if kind == "ident" or kind == "kw":
 		var name_text := _advance()
+		var keywords = Grammar.COMMAND_WORDS.get(name_text.to_lower())
+		# A command word followed by one of its own keywords is a command call,
+		# whatever `_starts_command_args` thinks. That gate answers false for
+		# `to`, which makes `go to the frame` — the statement every Director room
+		# holds itself with — parse as a bare variable named `go` and abandon the
+		# rest of the line. Silently: no error, no handler, and every room runs
+		# on as though the script were empty.
+		#
+		# `tools/lingo_compile.py:765-784` has the same gate and never met the
+		# spelling, because ProjectorRays rewrites it to the function form
+		# `go(...)`. Author source writes it the way Director documents it.
+		var command_head: bool = (
+			keywords != null
+			and (_k() == "ident" or _k() == "kw")
+			and keywords.has(_v().to_lower())
+		)
 		# Command-form call: `go "label"`, `sound playFile 1, x`. An operator or
 		# a newline means a bare variable reference instead.
-		if _starts_command_args():
+		if command_head or _starts_command_args():
 			var args: Array = []
-			var keywords = Grammar.COMMAND_WORDS.get(name_text.to_lower())
 			while (keywords != null and (_k() == "ident" or _k() == "kw")
 					and keywords.has(_v().to_lower()) and not _at_op("(", 1)):
 				args.append({"node": "str", "value": _advance(), "line": line})

@@ -70,6 +70,7 @@ var _lingo_on := true
 ## to run it. The gap between the two is the whole diagnosis.
 var _sent: Dictionary = {}
 var _ran: Dictionary = {}
+var _traced: Array = []
 
 
 func _ready() -> void:
@@ -277,6 +278,10 @@ func _report() -> void:
 	if _host != null:
 		print("builtins reached : %s" % JSON.stringify(_host.reached))
 		print("builtins unbound : %s" % JSON.stringify(_host.unbound))
+	if not _traced.is_empty():
+		print("sound trace (last %d):" % _traced.size())
+		for line in _traced:
+			print("   %s" % line)
 	if _score != null:
 		var kinds: Dictionary = {}
 		var resolved := 0
@@ -293,8 +298,12 @@ func _report() -> void:
 		print("  scripts found  : %d of %d" % [resolved, _score.intervals().size()])
 		if not unresolved.is_empty():
 			print("  unresolved mbr : %s" % str(unresolved))
-		print("  frame %d script: %s" % [
-			_index, "found" if not _frame_script(_index).is_empty() else "NONE",
+		var fs: Dictionary = _frame_script(_index)
+		var handlers: Array = []
+		for handler in fs.get("handlers", []):
+			handlers.append(str((handler as Dictionary).get("name", "")))
+		print("  frame %d script: %s  handlers: %s" % [
+			_index, str(fs.get("script", "NONE")), ", ".join(handlers),
 		])
 	if _interpreter != null:
 		var names: PackedStringArray = _interpreter.movie_handler_names()
@@ -320,24 +329,44 @@ func _exit_tree() -> void:
 ## found a script on almost no frame, so `exitFrame` dispatched every tick and
 ## ran nothing: rooms did not hold and hotspots did not answer.
 func _frame_script(index: int) -> Dictionary:
-	var member = _score.frame(index).get("frame_script")
+	var frame: Dictionary = _score.frame(index)
+	var member = frame.get("frame_script")
 	if member != null:
-		var direct := _script_for_member(int(member))
+		# Resolved in the library the score names, not by number alone: the
+		# talking loop's last-frame script lives in the shared cast, and a
+		# number-only search hands the frame to whichever cast answers first.
+		var direct := _script_in_lib(int(frame.get("frame_script_lib", 1)), int(member))
+		if direct.is_empty():
+			direct = _script_for_member(int(member))
 		if not direct.is_empty():
 			return direct
 	if _score == null:
 		return {}
+	# The narrowest interval covering this frame wins. A movie carries both
+	# room-specific frame scripts and one that spans everything — DAY1's
+	# `what to do everyframe` covers the whole movie — so taking the first match
+	# hands every frame to the movie-wide script and the room-specific one never
+	# runs. In DAY1 that is `go to mrkr 0`, the `go(marker(0))` that holds the
+	# room: the playhead simply ran on, with no error anywhere.
+	var best: Dictionary = {}
+	var narrowest := 0x7FFFFFFF
 	for interval in _score.intervals():
 		if str(interval["kind"]) != "frame":
 			continue
-		if index < int(interval["start"]) or index > int(interval["end"]):
+		var from := int(interval["start"])
+		var to := int(interval["end"])
+		if index < from or index > to:
+			continue
+		var span := to - from
+		if span >= narrowest:
 			continue
 		var script := _script_in_lib(
 			int(interval["script_cast_lib"]), int(interval["script_member"])
 		)
 		if not script.is_empty():
-			return script
-	return {}
+			best = script
+			narrowest = span
+	return best
 
 
 ## Fit the stage into the canvas the way `[display] aspect` asks.
@@ -415,14 +444,20 @@ func _advance() -> void:
 	if not _lingo_on:
 		_index = (_index + 1) % maxi(_score.frame_count, 1)
 		return
+	# Director's order within one tick, all on the frame the playhead is on:
+	# prepareFrame, enterFrame, then exitFrame. Firing enterFrame after the
+	# advance instead makes it a once-per-room event rather than a per-tick one,
+	# and a room whose logic hangs off it runs that logic exactly once.
 	_held = false
-	_dispatch("exitFrame", _frame_script(_index))
+	var script := _frame_script(_index)
+	_dispatch("prepareFrame", script)
+	_dispatch("enterFrame", script)
+	_dispatch("exitFrame", script)
 	if _held:
 		return
 	_index += 1
 	if _index >= _score.frame_count:
 		_index = 0
-	_dispatch("enterFrame", _frame_script(_index))
 
 
 func _input(event: InputEvent) -> void:
@@ -467,7 +502,25 @@ func _draw() -> void:
 		return
 
 	var frame: Dictionary = _score.frame(_index)
-	for sprite in frame.get("sprites", []):
+	for raw_sprite in frame.get("sprites", []):
+		# What a script puppeted wins over what the score recorded. Ignoring it
+		# leaves sprites the Lingo hid still on screen and members it swapped
+		# still showing the old art — which looks like a layering fault and is
+		# not one: the draw order here is already ascending channel, which is
+		# Director's stacking order.
+		var sprite: Dictionary = raw_sprite
+		var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
+		if not over.is_empty():
+			if over.has("visible") and int(over["visible"]) == 0:
+				continue
+			sprite = sprite.duplicate()
+			for key in ["membernum", "castnum"]:
+				if over.has(key):
+					sprite["cast_id"] = int(over[key])
+			if over.has("loch"):
+				sprite["loc_h"] = int(over["loch"])
+			if over.has("locv"):
+				sprite["loc_v"] = int(over["locv"])
 		var texture: Texture2D = _texture_for(sprite)
 		if texture == null:
 			continue
@@ -540,9 +593,15 @@ func _click(at: Vector2) -> void:
 		_host.click_sprite = channel
 		# The sprite's own behaviour, then the member's script, then any movie
 		# script — Director's hierarchy, and the first handler that exists wins.
+		# Director's resolution order: the sprite's behaviour, then the script on
+		# the cast member it displays, then the frame script, then any movie
+		# script. The frame script was missing here, which is a whole tier of
+		# hotspot handling that simply never ran.
 		var script := _sprite_script(channel, _index)
 		if script.is_empty():
 			script = _script_for_member(int(sprite["cast_id"]))
+		if script.is_empty():
+			script = _frame_script(_index)
 		_dispatch("mouseUp", script)
 		queue_redraw()
 		return
@@ -569,9 +628,19 @@ func lingo_hold() -> void:
 	_held = true
 
 
+## Entering a different room drops what scripts puppeted in the last one.
+##
+## Without this an override outlives its room: a script hides sprite 15 to take
+## a collectable off the beach, the playhead moves somewhere else, and channel 15
+## stays invisible for the rest of the session even though the score has put
+## something entirely different there. It reads as a layering fault — art missing
+## from in front of other art — and it is stale state, not stacking order.
 func lingo_go_frame(frame: int) -> void:
 	_held = true
-	_index = clampi(frame, 0, maxi(_score.frame_count - 1, 0))
+	var target := clampi(frame, 0, maxi(_score.frame_count - 1, 0))
+	if _labels != null and _labels.marker_at(target) != _labels.marker_at(_index):
+		_overrides.clear()
+	_index = target
 
 
 func lingo_go_label(label: String) -> void:
@@ -587,12 +656,26 @@ func lingo_go_label(label: String) -> void:
 func lingo_play_sound(channel: int, file: String) -> void:
 	if _audio != null:
 		_audio.call("play_file", channel, file)
+	_trace("f%d play ch%d %s" % [_index, channel, file])
 
 
 func lingo_sound_busy(channel: int) -> bool:
 	if _audio == null or not _audio.has_method("sound_busy"):
+		_trace("f%d soundBusy ch%d -> no audio" % [_index, channel])
 		return false
-	return bool(_audio.call("sound_busy", channel))
+	var busy := bool(_audio.call("sound_busy", channel))
+	_trace("f%d soundBusy ch%d -> %s" % [_index, channel, busy])
+	return busy
+
+
+## A short tail of what the Lingo asked the world to do. The loop that holds a
+## room while a line plays is `soundBusy` answering true on the same channel the
+## line was played on, and every way that fails looks identical from outside:
+## the room simply moves on.
+func _trace(line: String) -> void:
+	_traced.append(line)
+	if _traced.size() > 40:
+		_traced.remove_at(0)
 
 
 ## `label("name")` is the frame a marker sits on. `label(0)` is playhead-relative
@@ -648,6 +731,16 @@ func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 			"ink":
 				return int(sprite["ink"])
 	return 0
+
+
+## `puppetSprite N, FALSE` returns the channel to the score, which means
+## discarding whatever the scripts wrote to it rather than merely stopping.
+func lingo_puppet_sprite(channel: int, on: bool) -> void:
+	if on:
+		if not _overrides.has(channel):
+			_overrides[channel] = {}
+	else:
+		_overrides.erase(channel)
 
 
 func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
