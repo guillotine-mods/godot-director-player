@@ -177,6 +177,69 @@ installed here.
 
 ---
 
+## 25. Skipping the opening entered DAY1 past its init region, so Piposh had no walk cycle and no spawn point
+
+**Status:** FIXED for the three skip doors · **Area:** skip routing ·
+F6 warp and the save editor can still do it, see the end
+
+Reported from play: *"I pressed skip scene, and when I wanted to step off the
+beach Piposh walked to the other side; on the next screen there was no character,
+only a background."* One cause for both halves.
+
+DAY1's globals are seeded by `BehaviorScript 56 - init all`, which sits on **frame
+1**: `egozh = 600`, `egozv = 325`, `syz = 7`, `whatodo = "stand"`,
+`nextroomdata = "000"`, `ifmovie = "0,0"`, and the inventory channels puppeted.
+`whatodoeveryframe` then walks Piposh toward `egozh`/`egozv` and builds his member
+name as `"walkleft" & syz & x`. Enter DAY1 anywhere past frame 1 and none of that
+is set: he walks toward **0,0** — the far corner — and the next room places him
+off-stage, which is the missing character.
+
+Three doors entered DAY1 past frame 1, none of which the original has:
+
+| door | landed | `egozh`/`egozv` |
+|---|---|---|
+| dev bar **Skip scene** in the opening | `DAY1:39` `shore2go` | `0,0` |
+| dev bar **Skip scene** at the menu | `DAY1:39` `shore2go` | `0,0` |
+| **Esc** during EXODUS | `DAY1:39` `shore2go` | `0,0` |
+
+All three now use the movie's own ending instead of an invented destination, and
+every route into a hub passes through the hub's frame 1 again:
+
+* **EXODUS** declares its ending in the score — frame 447 is
+  `{kind: movie, value: day1, frame: 1}` — so `skip_current` calls `_on_movie_end()`
+  and lets `hub_return` read it. It used to invent `{"label": "shore2"}`: the right
+  room, past the init region. Deleting a literal in favour of the export.
+* **The title** is the one movie with *no* ending nav anywhere in its export, which
+  is why `_on_movie_end` fell through `hub_return` and `go_back` to
+  `goto_movie(current_hub())` and the boot frame. Its real endings are its menu,
+  and from the menu, New Game — so `dev_skip_scene` now takes them one at a time.
+
+After: the opening skip lands on `mainmenu`; a second press goes to EXODUS; a
+third reaches DAY1 with `egozh=600, egozv=325, nextroomdata=000, ifmovie=0,0`.
+Reproduce either side with `tools/_devskip_probe.gd` (scratch, deleted — the A/B is
+in the commit message).
+
+**Seeding was tried first and is the wrong shape.** Running the hub's frame-1
+handler on any cold entry — so a labelled entry could seed itself — broke **9**
+green checks: `cursors` ("an occupied slot gets the hand", 4 movies) and `smoke`
+("collectable hidden when masor held", "handbag visible before the murder is
+done", and two more). `init all` *empties `objectsfield` and resets `meetings`*, so
+seeding wipes whatever state the caller had set up. That is entry 22's bug
+re-introduced at the other end. **Do not add an init-seeding path; route the entry
+through frame 1 instead.**
+
+**Still open, and left open on purpose.** `F6` warp and the save editor's **Apply**
+both call `goto_movie(movie, label)`, so from a cold boot they can still drop the
+player into a hub at a room marker with the same unset globals. The workaround is
+to start a game first, then warp. Whether they should instead auto-start one —
+which would mean either a seeding path (rejected above) or a two-step "run the
+init region, then jump" — is **an open decision, not a pending task**: deferred
+deliberately after the fix above, because both options add a mechanism the
+original does not have, and the dev tools' docstrings already say they do not
+replay the walk that would normally get you there.
+
+---
+
 ## 24. Every room entry skips the room's own entry frames
 
 **Status:** open, deliberately not fixed · **Area:** label resolution ·
@@ -203,7 +266,11 @@ handover scripts also set `nextroomdata`, and the idle script the port *does* ru
 a step late. Measured: `tools/room_names.gd` enters every room through exactly this
 path and reports **0 rooms without a `nof` and 0 wrong** across DAY1 (32), NIGHT1
 (35) and HOTEL1 (10) — and `nof` is set in the skipped handler, so it is being set
-somewhere.
+somewhere. That figure was taken *before* entry 25 was investigated and does not
+depend on it: 25's fix changed skip routing only, not `goto_movie`, so
+`room_names.gd` still enters rooms the same way. Re-read it if `goto_movie` ever
+gains an init-seeding path — the abandoned attempt in 25 would have made this
+number measure `init all` instead of the score's repair.
 
 What is not established is the case where `nextroomdata` is already `"000"` on
 arrival, when nothing re-enters the entry frames: `whereami` then stays whatever

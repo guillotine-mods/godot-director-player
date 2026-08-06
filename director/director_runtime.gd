@@ -1320,9 +1320,16 @@ func skip_current() -> void:
 			enter_frame(menu_frame)
 			return
 	if m == "EXODUS":
-		nav_event.emit("QoL skip → DAY1")
+		# The intro's own ending is its last frame's `go(1, "day1.dir")`, which
+		# `_on_movie_end` reads off the export — DAY1 frame 1, where `init all`
+		# lives. Skipping used to invent `@shore2` instead, which is the same room
+		# but *past* the init region, so the day's globals were never seeded:
+		# `egozh`/`egozv` stayed 0,0 and `whatodoeveryframe` built the walk member
+		# name from an unset `syz`. Reported from play as "Piposh walked to the
+		# other side, and on the next screen there was no character".
+		nav_event.emit("QoL skip → EXODUS exit")
 		GameState.new_game()
-		goto_movie("DAY1", null, {"label": "shore2"})
+		_on_movie_end()
 		return
 	if GameState.is_minigame_movie(m):
 		# Skipping a minigame exits the same way finishing it would, so skipping
@@ -1343,6 +1350,22 @@ func dev_skip_scene() -> String:
 	AudioDirector.stop_all()
 	waiting_for_click = false
 	puppet.reset()
+	# The title has no ending nav anywhere in its export — it is the only movie that
+	# does not — so `_on_movie_end` fell through `hub_return` and `go_back` to
+	# `goto_movie(current_hub())`, which dropped DAY1 on its boot frame with the init
+	# region skipped and the day's globals unseeded. Its two real endings are its own
+	# menu and, from the menu, New Game. Taking them one at a time means every route
+	# into a hub still passes through the hub's frame 1, which is where `init all` is.
+	var menu_frame := loader.lookup_label("mainmenu")
+	if menu_frame >= 0:
+		if frame_index != menu_frame:
+			nav_event.emit("dev skip: %s → main menu" % movie)
+			enter_frame(menu_frame)
+			return "%s → main menu" % movie
+		GameState.new_game()
+		if goto_movie("EXODUS"):
+			nav_event.emit("dev skip: main menu → EXODUS")
+			return "main menu → EXODUS (skip again to reach the hub)"
 	if context.is_hub(movie):
 		# A hub has nowhere to exit to, so hand it to its own phase transition,
 		# or fall through to the next room the score would reach.
