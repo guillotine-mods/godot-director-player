@@ -11,22 +11,83 @@ by how visible the absence is.
 
 ## Placement
 
-**A film loop's cast swap must not move the sprite.** When the member on a
-channel changes, Director captures the bounding box before the swap and shifts
-the sprite's start point by the difference, so a new registration offset does not
-jump the sprite. Without it, a channel that swaps between loops of different
-sizes moves every time it swaps — which reads as a character teleporting rather
-than as a placement bug. `scenes/director_preview.gd`, wherever the member
-override is applied.
+**Withdrawn: "a cast swap must shift the start point by the bbox delta."** This
+was listed here as a gap, implemented, and it corrupted every animation in the
+game. The claim was that Director captures the bounding box before a member
+change and shifts the start point by the difference so a new registration offset
+does not move the sprite. No such rule appears anywhere in `DIRECTOR_ENGINE.md`'s
+placement chapter, which is the deeper reading — the sprite's own start point is
+authoritative on every frame, and for a non-puppet channel the score's start
+point is copied in wholesale.
 
-**A genuine member change resets a film loop's frame counter to 1.** Ours keeps
-counting from the movie clock, so a loop entered a second time starts wherever
-the first one left off. `director/director_film_loop.gd`.
+The reason it is destructive rather than merely useless: the score changes
+members on a channel constantly, because that is how a walk cycle is authored,
+and it supplies its own `loc` for each of those members. The correction was being
+added to a position that was already right, and accumulating.
+`tools/nudge_drift.gd` replays the real score and measures it — 451px of drift on
+one DAY1 channel, 9 of 17 channels displaced; 12 of 13 on EXODUS. Kept runnable
+as the evidence.
+
+**Done: a genuine member change resets a film loop's frame counter to 1.** The
+counter is channel state, not member state, so two sprites showing the same loop
+animate independently. `scenes/director_preview.gd` `_note_member`.
+
+**Done: one placement rule, not two.** The renderer scaled the registration
+offset by the drawn size and the hit test took it raw, so a resized sprite was
+clickable somewhere it was not drawn. `_stage_rect` is now the single rule, used
+by the renderer, the hit test, `rollOver` and the debug boxes.
+
+**Done: a sprite is drawn at its own size, not its member's.** The preview
+honoured the score's rect only when the stretch flag was set, treating it as
+authoring residue otherwise. That rule is right for a film loop's *children* —
+`tools/film_loop_stretch.gd` separates those two populations cleanly on the flag
+— and wrong for the main score, where §1.2 says the sprite's own width and height
+always win and the member's size enters only as the denominator when scaling the
+registration offset.
+
+`tools/drawn_size.gd` settles it against the export. The new rule reproduces the
+export's top-left for 95% of EXODUS's sprites, 98% of STRTGAME's and 99.8% of
+DAY1's; the old rule scored 2,762 of 3,172 on EXODUS — which is *exactly* the
+number of sprites whose score rect already equalled their member's size. It only
+ever landed where the question did not arise. Worst single miss 136px on
+STRTGAME, 55px on DAY1.
+
+The two rules now live at their own call sites rather than as a branch in the
+shared path: `_drawn_size` is the main score's, `_child_sprite` is the film
+loop's. The texture cache key gained the drawn size with it, since one member
+legitimately appears at several sizes in a movie.
 
 **`setCast` overwrites width and height from the member only when `stretch` is
-clear.** In puppet mode a script may set the dimensions first and then the cast
-number and expect its dimensions to survive. Ours always takes the member's
-size. `scenes/director_preview.gd`.
+clear.** Still open, and smaller than it looked: `stretch` does not mean "is
+resized", it means "the author resized this deliberately", and all it governs is
+whether a cast swap may reset the size back to the member's natural one. The
+preview has no reset-on-swap path at all — it takes width and height from the
+score record every frame — so there is nothing yet for the flag to protect.
+`director/sprite_channel.gd:110-126` already implements the real rule correctly.
+
+**Flip is in the data and is not decoded.** Horizontal and vertical flip live in
+the sprite record's thickness byte (`0x20`, `0x40`), along with the has-blend
+flag (`0x10`) and the thickness itself. `director/director_score.gd` `_snapshot`
+reads bytes 1, 2, 3, 12, 14, 16, 18 and never touches byte 4, so all of it is
+dropped. ScummVM parses the byte and never applies the flip anywhere in its
+render path, so it is not a specification for how flip interacts with
+registration or hit testing — the reasoned reading is that flip mirrors the image
+within the sprite's rect, leaving the rect, the position and the hit rectangle
+unchanged. Worth checking early: if the original mirrors walk-cycle art rather
+than shipping left and right versions, ignoring this makes characters face the
+wrong way.
+
+**Colourisation is decoded and dropped.** `director_score.gd:248-249` reads
+`fore_color` and `back_color` and nothing consumes them. When they differ from
+black and white, Director repaints the image's black pixels `foreColor` and its
+white pixels `backColor` — which is how one 1-bit member appears in a dozen
+colours without a dozen bitmaps existing. A movie that recolours 1-bit art
+currently renders monochrome, which is wrong without looking broken. Both colours
+have to join the texture cache key.
+
+**Rotation and skew do not exist in D4.** Stated so it stops being a suspect:
+they are D7-only sprite fields. Anything that looks rotated in this game is
+pre-rendered art or a film loop.
 
 ## Mouse
 

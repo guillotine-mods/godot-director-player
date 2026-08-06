@@ -125,6 +125,15 @@ var _cursor_now := "arrow"
 ## delta, and survives frame changes and member swaps â€” where `_overrides` is
 ## per-field puppet state that is dropped when the score moves a channel on.
 var _channel_cursors: Dictionary = {}
+## channel -> the member it last showed, so a genuine swap can be detected.
+var _last_member: Dictionary = {}
+## channel -> the tick its current film loop began on. A loop restarts from its
+## first frame when the member genuinely changes; counting from the movie clock
+## instead makes a loop entered a second time resume wherever the first left off.
+var _loop_start: Dictionary = {}
+## The channel being dragged, and the offset from the cursor to its position.
+var _drag_channel := 0
+var _drag_offset := Vector2.ZERO
 ## What the `cursor` builtin last set, used when no channel supplies one.
 var _global_cursor: Variant = 0
 ## What is actually on screen, so the cursor is only pushed when it changes.
@@ -535,18 +544,33 @@ func _advance() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed \
+	if event is InputEventMouseButton \
 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		var at := stage_mouse()
+		if not (event as InputEventMouseButton).pressed:
+			# A drag ends on mouse-up, and the cursor is re-resolved then.
+			_drag_channel = 0
+			_resolve_cursor()
+			return
 		# Tested before the sprite hit-test, or a hotspot underneath would eat it.
 		if SKIP_RECT.has_point(at):
 			skip_to_end()
 			return
+		_begin_drag(at)
 		_click(at)
 		return
 	if event is InputEventMouseMotion:
 		var was := _hover_channel
 		_hover_channel = _channel_at(stage_mouse())
+		if _drag_channel > 0:
+			# The dragged sprite follows the cursor by the offset recorded when
+			# the drag began, so it does not snap its registration point to the
+			# pointer on the first movement.
+			var to := stage_mouse() + _drag_offset
+			lingo_set_sprite_prop(_drag_channel, "loch", int(to.x))
+			lingo_set_sprite_prop(_drag_channel, "locv", int(to.y))
+			queue_redraw()
+			return
 		# The cursor is resolved on mouse movement, not once per frame. Director
 		# recomputes it on move, on button-up, on entering the window and on a
 		# new movie â€” so a sprite that swaps to a member with a different cursor
@@ -608,6 +632,7 @@ func _draw() -> void:
 		var sprite: Dictionary = _effective(raw_sprite)
 		if sprite.is_empty():
 			continue
+		_note_member(int(sprite["channel"]), int(sprite["cast_id"]))
 		var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
 		# A film loop draws its own children rather than a bitmap of its own.
 		if _draw_film_loop(sprite):
@@ -615,11 +640,12 @@ func _draw() -> void:
 		var texture: Texture2D = _texture_for(sprite)
 		if texture == null:
 			continue
-		var size := texture.get_size()
-		# `loc` is the registration point, not the corner.
+		# One rule for where a sprite is, shared with the hit test. `loc` is the
+		# registration point, not the corner.
 		var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		var reg := _scaled_reg(m, size, bool(sprite["stretch"]))
-		var top_left := Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg
+		var placed := _stage_rect(sprite)
+		var top_left := placed.position
+		var reg := Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - top_left
 		# Only the channels a script is driving. A member swap re-anchors on the
 		# new member's registration point, so a walk cycle whose frames register
 		# differently moves vertically on every frame unless that is honoured â€”
@@ -661,14 +687,14 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 	var lib := int(sprite["cast_lib"])
 	var id := int(sprite["cast_id"])
 	var ink := int(sprite["ink"])
-	var key := "%d:%d:%d:%d" % [lib, id, ink, 1 if sprite["stretch"] else 0]
+	var m: Dictionary = _table.get_member(lib, id)
+	if m.is_empty() or int(m.get("type", 0)) != 1:
+		return null
+	var key := _texture_key(sprite, _drawn_size(sprite, m))
 	if _textures.has(key):
 		return _textures[key]
 
 	_textures[key] = null
-	var m: Dictionary = _table.get_member(lib, id)
-	if m.is_empty() or int(m.get("type", 0)) != 1:
-		return null
 	var f = _table.file_for(lib)
 	if f == null:
 		return null
@@ -677,11 +703,10 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 	var image: Image = Bitmap.decode(m, chunk, _palette, error)
 	if image == null:
 		return null
-	if bool(sprite["stretch"]):
-		var w := int(sprite["width"])
-		var h := int(sprite["height"])
-		if w > 0 and h > 0 and (w != image.get_width() or h != image.get_height()):
-			image.resize(w, h, Image.INTERPOLATE_NEAREST)
+	var drawn := _drawn_size(sprite, m)
+	if drawn.x > 0 and drawn.y > 0 \
+			and (int(drawn.x) != image.get_width() or int(drawn.y) != image.get_height()):
+		image.resize(int(drawn.x), int(drawn.y), Image.INTERPOLATE_NEAREST)
 	# Matte keys only the paper a flood fill can reach from the edge; Background
 	# Transparent keys the paper colour everywhere. Treating both as the second
 	# punches holes through anything whose artwork encloses white â€” the gaps
@@ -705,10 +730,8 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 ## contains the point, and one large mostly-transparent sprite in a high channel
 ## then swallows the whole screen. Director tests the artwork, not the box.
 func _opaque_at(sprite: Dictionary, at: Vector2) -> bool:
-	var key := "%d:%d:%d:%d" % [
-		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
-		1 if sprite["stretch"] else 0,
-	]
+	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	var key := _texture_key(sprite, _drawn_size(sprite, m))
 	if not _hit_images.has(key):
 		# Populates the cache as a side effect.
 		if _texture_for(sprite) == null:
@@ -729,6 +752,30 @@ func _opaque_at(sprite: Dictionary, at: Vector2) -> bool:
 ## Topmost sprite under the point gets the click, highest channel first â€” that is
 ## Director's stacking order, and hit-testing from channel 1 up would hand every
 ## click to the room background.
+##
+## A mouse-down over a moveable sprite starts a drag first: Director records the
+## channel and the offset from the click to the sprite's position, then follows
+## the cursor until mouse-up or until the sprite stops being moveable. The offset
+## matters, or the sprite snaps its registration point onto the pointer.
+func _begin_drag(at: Vector2) -> void:
+	_drag_channel = 0
+	var channel := _channel_at(at)
+	if channel <= 0:
+		return
+	if int((_overrides.get(channel, {}) as Dictionary).get("moveable", 0)) == 0:
+		return
+	for sprite in _score.frame(_index).get("sprites", []):
+		if int(sprite["channel"]) != channel:
+			continue
+		var here := Vector2(
+			float(_effective(sprite).get("loc_h", 0)),
+			float(_effective(sprite).get("loc_v", 0))
+		)
+		_drag_channel = channel
+		_drag_offset = here - at
+		return
+
+
 func _click(at: Vector2) -> void:
 	if not _lingo_on or _interpreter == null:
 		return
@@ -809,7 +856,11 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 	var rect: Dictionary = m.get("initial_rect", {})
 	var loop_origin := Vector2(int(rect.get("left", 0)), int(rect.get("top", 0)))
 
-	var kids: Array = loop.children(_ticks)
+	# Counted from when this loop arrived on the channel, not from the movie
+	# clock: a loop entered a second time starts at its first frame rather than
+	# resuming wherever the previous one left off.
+	var since := maxi(0, _ticks - int(_loop_start.get(int(sprite["channel"]), 0)))
+	var kids: Array = loop.children(since)
 	_tally(_loop_stats, "children offered")
 	if kids.is_empty():
 		_tally(_loop_stats, "loop has no children this tick")
@@ -819,11 +870,7 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 			_tally(_loop_stats, "child unresolved cast=%s" % str(child["cast_name"]))
 			continue
 		var cm: Dictionary = _table.get_member(child_lib, int(child["cast_id"]))
-		var texture: Texture2D = _texture_for({
-			"cast_lib": child_lib, "cast_id": int(child["cast_id"]),
-			"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
-			"width": int(child["width"]), "height": int(child["height"]),
-		})
+		var texture: Texture2D = _texture_for(_child_sprite(child, child_lib, cm))
 		if texture == null:
 			_tally(_loop_stats, "child has no art")
 			continue
@@ -920,11 +967,31 @@ func _child_texture(child: Dictionary) -> Texture2D:
 				break
 		if lib < 0:
 			return null
-	return _texture_for({
+	return _texture_for(
+		_child_sprite(child, lib, _table.get_member(lib, int(child["cast_id"])))
+	)
+
+
+## A film-loop child as a sprite record the rest of the renderer understands.
+##
+## The size rule here is the opposite of the main score's, and deliberately so.
+## `tools/film_loop_stretch.gd` separates the two populations on the flag: of the
+## 2,053 children carrying it, **zero** have a rect equal to their member's
+## natural size, so with the flag clear the recorded rect really is authoring
+## residue and the child draws at its member's size. The main score does not
+## behave that way — see `_drawn_size` — so the resolution happens here, before
+## the shared path sees it, rather than as a branch inside it.
+func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:
+	var w := int(member.get("width", 0))
+	var h := int(member.get("height", 0))
+	if bool(child["stretch"]) and int(child["width"]) > 0 and int(child["height"]) > 0:
+		w = int(child["width"])
+		h = int(child["height"])
+	return {
 		"cast_lib": lib, "cast_id": int(child["cast_id"]),
 		"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
-		"width": int(child["width"]), "height": int(child["height"]),
-	})
+		"width": w, "height": h,
+	}
 
 
 ## A sprite as it currently stands: the score's record with whatever a script has
@@ -935,6 +1002,27 @@ func _child_texture(child: Dictionary) -> Texture2D:
 ## a click was tested against the score's, so a menu button was only clickable
 ## where its two states happened to overlap, and moving the mouse made it
 ## flicker in and out of reach.
+##
+## Notice a member change on a channel, so a film loop arriving there starts at
+## its first frame rather than resuming wherever the previous one left off. The
+## loop's frame counter is channel state, not member state: two sprites showing
+## the same loop animate independently.
+##
+## This deliberately does *not* adjust the sprite's position. A previous version
+## carried a running per-channel correction for the change in registration
+## anchor across a swap, on the theory that Director shifts the start point so a
+## new offset does not move the sprite. The score changes members on a channel
+## constantly — that is how a walk cycle is authored — and it supplies its own
+## `loc` for each of those members, so the correction was being added on top of a
+## position that was already right, and accumulating. `tools/nudge_drift.gd`
+## measures it: 451px of drift on one DAY1 channel, 9 of 17 channels displaced.
+func _note_member(channel: int, cast_id: int) -> void:
+	if int(_last_member.get(channel, -1)) == cast_id:
+		return
+	_last_member[channel] = cast_id
+	_loop_start[channel] = _ticks
+
+
 func _effective(sprite: Dictionary) -> Dictionary:
 	var channel := int(sprite["channel"])
 	var over: Dictionary = _overrides.get(channel, {})
@@ -961,6 +1049,16 @@ func _effective(sprite: Dictionary) -> Dictionary:
 	for key in ["membernum", "castnum"]:
 		if over.has(key):
 			out["cast_id"] = int(over[key])
+	# A script that writes `the width of sprite` resizes it. Deliberately without
+	# setting `stretch`: the flag does not mean "is resized", it means "the author
+	# resized this deliberately", and all it governs is whether a cast swap is
+	# allowed to reset the size back to the member's natural one. Forcing it here
+	# changed which branch the drawn size and the texture cache took, for a
+	# property that should only have changed a number.
+	if over.has("width"):
+		out["width"] = int(over["width"])
+	if over.has("height"):
+		out["height"] = int(over["height"])
 	if over.has("loch"):
 		out["loc_h"] = int(over["loch"])
 	if over.has("locv"):
@@ -1067,13 +1165,61 @@ func _draw_hotspots(frame: Dictionary) -> void:
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
 
 
-func _sprite_rect(sprite: Dictionary) -> Rect2:
+## The size a sprite is actually drawn at: its own width and height, always.
+##
+## This used to honour the score's rect only when the stretch flag was set, on
+## the reading that the stored rect is authoring residue otherwise —
+## `director_score.gd:243-245` says so, and `tools/film_loop_stretch.gd` proves
+## it for a film loop's *children*, where the flag separates the two populations
+## cleanly. Carrying that rule over to the main score was the mistake.
+##
+## `tools/drawn_size.gd` settles it against the export, which is the decode the
+## previously working renderer drew from. Taking the score's rect and scaling the
+## registration offset into it places 98% of STRTGAME's sprites, 99.8% of DAY1's
+## and 96% of EXODUS's exactly where the export puts them; taking the member's
+## natural size with a raw offset only ever lands when the two sizes happen to
+## agree anyway — 7,241 of 11,739 on STRTGAME against 11,483. `DIRECTOR_ENGINE.md`
+## §1.2 says the same independently: the sprite's own width and height always
+## win, and the member's size enters only as the denominator when scaling the
+## offset.
+##
+## The member's size is the fallback for a record with a degenerate rect, and
+## mirrors `_texture_for`'s refusal to resize to one, so the rect and the pixels
+## can never disagree about how big the sprite is.
+func _drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
+	var w := int(sprite.get("width", 0))
+	var h := int(sprite.get("height", 0))
+	if w > 0 and h > 0:
+		return Vector2(w, h)
+	return Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
+
+
+## The cache key for a sprite's decoded artwork. The drawn size belongs in it:
+## one member legitimately appears at several sizes in the same movie, and a key
+## that omits the size hands the second appearance the first one's pixels.
+func _texture_key(sprite: Dictionary, drawn: Vector2) -> String:
+	return "%d:%d:%d:%dx%d" % [
+		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
+		int(drawn.x), int(drawn.y),
+	]
+
+
+## Where a sprite is on the stage. The single placement rule, used by the
+## renderer, the hit test, `rollOver` and the debug boxes alike.
+##
+## There used to be two: the renderer scaled the registration offset by the drawn
+## size and the hit test took it raw. They agree at natural size and part company
+## as soon as a sprite is resized, so a stretched sprite was clickable somewhere
+## it was not drawn — and the further from natural size, the further off.
+func _stage_rect(sprite: Dictionary) -> Rect2:
 	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-	var size := Vector2(int(m.get("width", 0)), int(m.get("height", 0)))
-	if bool(sprite["stretch"]):
-		size = Vector2(int(sprite["width"]), int(sprite["height"]))
-	var reg := Vector2(int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0)))
+	var size := _drawn_size(sprite, m)
+	var reg := _scaled_reg(m, size, bool(sprite["stretch"]))
 	return Rect2(Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg, size)
+
+
+func _sprite_rect(sprite: Dictionary) -> Rect2:
+	return _stage_rect(sprite)
 
 
 ## Jump to the last frame of the movie currently playing.
@@ -1204,6 +1350,12 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_hit_images.clear()
 	_loops.clear()
 	_overrides.clear()
+	# Both are keyed by channel and measured against `_ticks`, which restarts
+	# below. Left behind, a channel's loop start would sit in the *previous*
+	# movie's clock and every film loop in the new room would be asked for a
+	# negative frame.
+	_last_member.clear()
+	_loop_start.clear()
 	_index = 0
 	_ticks = 0
 	_held = true
