@@ -719,40 +719,50 @@ machine replaced.
 
 ---
 
-## 22. Cannot come back from the cliff — regression from 21's fix
+## 22. MURDER1 never returns, so the cliff meeting is a progression blocker
 
-**Status:** open, REGRESSION · **Area:** score runner · **Introduced by:** `9cae9f59`
+**Status:** open · **Area:** assets / decompilation · **NOT a regression**
 
-Reported from play immediately after 21's fix: the player reaches the cliff and
-cannot return. Present only on `worktree-shell-bottle-reveal`; `main` is unaffected.
+Reported from play as "I cannot come back from the cliff now". Walking into
+`clif2` with `murder1` pending fires the meeting, MURDER1 loads, and the player
+never comes back.
 
-`DirectorRuntime._run_arrival_frame_script()` dispatches the arrival frame's
-`exitFrame` under `record`. Record suppresses the `go` — which is why it was used —
-but **not the handler's other side effects**. Both candidate scripts consume state
-the port still needs afterwards: `BehaviorScript 207` sets `nextroomdata = "000"`
-and `set the visible of sprite 30 to 1`, and `whatodoeveryframe`'s transition
-branch also ends `nextroomdata = "000"`. Clearing that global one dispatch early is
-the leading suspect — the cliff return is a transition whose next hop reads
-`nextroomdata` and now finds it empty.
+**First filed here as a regression from `9cae9f59` and that was wrong.** Running
+the same walk with `director/director_runtime.gd` restored from `cdb0bdb9` — the
+commit before the fix — reproduces it identically, so the arrival-frame dispatch
+is exonerated. It reproduces on `main` too. The reason it *looked* like a
+regression is that it was reported minutes after that fix landed, which is not
+evidence. Attribute before believing a report is about the change in front of you.
 
-Not yet confirmed by a run; that is the first job. `clif` and `clif2` are DAY1
-labels, and MURDER1 is the cliff meeting.
+**What it does.** MURDER1 does not freeze, it loops. Sampled every 200 ticks the
+playhead reads 33, 38, 44, 25, 30, 36 — cycling the span between the markers at
+frames 24 and 49, forever, with `running = true`. Every frame in that span carries
+the same exported nav, `{kind: marker, rel: 1, offset: 0, guard_channel: 1,
+guard_when: idle}`, which is a loop, and one frame carries a `busy_nav` of
+`{rel: 0, offset: 1}`.
 
-**Why every harness stayed green.** None of the ten walks *out* of a room it
-walked into. `lingo_walk_diff` scores the arrival room only, so a transition that
-strands the player on the next hop is invisible to it — the same shape as the
-"smoke the user's first minute" lesson in `porting-fidelity-verification`. Any fix
-here needs a case that walks in **and** back out.
+**Why nothing breaks the loop.** Those frames carry `frame_script 119`, and the
+port does not have it. `data/lingo/MURDER1/` holds only `MASTER.json`,
+`attach.json` and `sprite_scripts.json`; `attach.json` never mentions 119, and
+`reference/lingo/MURDER1/` has only a `MASTER/` subdirectory. The chunk dump is no
+help either — `toolcache/chunks/MURDER1/MURDER1/casts/` contains `MASTER` alone.
+So MURDER1's own cast, and its linked `goldolin`, `hezi` and `tofi`, were never
+decompiled. The interpreter has no frame handler to run, `game_step` falls through
+to the exported nav, and the exported nav is the loop. In the original, script 119
+is what advances the scene when the line of speech finishes.
 
-**Two candidate fixes.** Do not dispatch when the score is already mid-transition
-(the arrival frame carries `frame_script 207`), or stop the recorded dispatch
-consuming `nextroomdata` — record already suppresses navigation, so suppressing
-this global write is the same idea carried further. The second is more general and
-probably right, but check what else `record` ought to be suppressing before
-special-casing one global.
+That makes this a decompilation gap rather than an engine bug, and the same shape
+as entry 20: something the extraction never produced, surfacing much later as
+behaviour. Re-run the decompiler over MURDER1's internal cast and the loop should
+resolve itself.
 
-Reverting `9cae9f59` fixes this and reopens 21. The film-loop stretch fix
-(`4d91022e`, `b5c2fd3c`) is independent and unaffected either way.
+**Worth checking how wide it is** before fixing one movie: any movie whose
+cutscene frames carry a frame script the port does not have will loop the same
+way. `data/lingo/<MOVIE>/` versus the `frame_script` ids in
+`assets/render_model/<MOVIE>/frames.json` is the query.
+
+Reproduce: boot, leave `murder1` pending, walk `swing` -> `clif2`, tick. The
+playhead stays in MURDER1 cycling frames 25-44 indefinitely.
 
 ---
 
