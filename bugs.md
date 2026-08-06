@@ -65,7 +65,8 @@ recorded because each one cost a session.
    indistinguishable from a logic bug.
 
 3. *"Headless has no audio device, so `soundBusy` is always false."* This was in
-   `tools/_stuck.gd`'s docstring, now corrected. The Dummy driver does advance
+   the docstring of `tools/_stuck.gd`, since promoted to `tools/probe.gd` with the
+   claim corrected and the real-time loop made the default. The Dummy driver does advance
    playback, at roughly 0.35x real time: `TOF1.wav` reports `length 6.68`, and
    `get_playback_position()` climbs 0 → 2.33 over 400 process frames.
 

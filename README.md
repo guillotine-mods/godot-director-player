@@ -47,7 +47,13 @@ godot --headless --script tools/puppet_visibility.gd # sprite 30 across a transi
 godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
 godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
+godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # where the playhead goes
 ```
+
+`probe.gd` is the general one: point it at any room and it reports where the score
+went, what it repeated and where it stopped. `--click-prompts` plays a dialogue
+prompt the way a player would. Reach for it before writing another one-off
+harness — that is what `tools/lib/` exists to make cheap.
 
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,

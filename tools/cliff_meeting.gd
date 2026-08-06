@@ -22,6 +22,10 @@ extends SceneTree
 ##     The playhead moves every step while waiting. What marks a prompt is that
 ##     the frame is offering a clickable sprite, not that it stopped moving.
 
+const Driver := preload("res://tools/lib/driver.gd")
+const Harness := preload("res://tools/lib/harness.gd")
+const Hooks := preload("res://tools/lib/game_hooks.gd")
+
 ## Long enough for the whole conversation to play out at 8 fps with its speech.
 const BUDGET_MS := 420000
 ## Frames spent looking at a prompt before picking a line, as a player would.
@@ -29,13 +33,7 @@ const DWELL_FRAMES := 120
 ## After clicking, ignore the prompt long enough for the score to leave it.
 const AFTER_CLICK_FRAMES := 600
 
-var _fails := 0
-
-
-func _check(name: String, ok: bool, detail: String = "") -> void:
-	if not ok:
-		_fails += 1
-	print("%s  %s%s" % ["ok  " if ok else "FAIL", name, ("  (%s)" % detail) if detail != "" else ""])
+var _h := Harness.new()
 
 
 func _initialize() -> void:
@@ -43,60 +41,46 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var settings: Node = root.get_node("AppSettings")
-	settings.use_lingo_frames = true
-	settings.use_lingo_clicks = true
-	var state: Node = root.get_node("GameState")
-	state.new_game()
+	_h.begin("the cliff meeting")
+	if await _play():
+		_h.complete("the cliff meeting")
+	quit(_h.finish())
 
-	var rt: RefCounted = load("res://director/director_runtime.gd").new()
-	rt.boot()
+
+## Returns whether it ran to a conclusion, not whether the checks passed. A
+## GDScript runtime error would abort this handler and hand `_run` `false`, which
+## leaves the case open and reports it rather than ending the run early and quiet.
+func _play() -> bool:
+	var hooks := Hooks.new()
+	var driver := Driver.new(self, hooks)
 
 	# Arriving at the cliff with `murder1` pending is what fires the meeting.
-	rt.goto_movie("DAY1", null, {"label": "clif2"})
-	_check("walking to clif2 fires the meeting", rt.loader.movie_name.to_upper() == "MURDER1",
-		rt.loader.movie_name)
-	if rt.loader.movie_name.to_upper() != "MURDER1":
-		quit(1)
-		return
+	driver.open({
+		"movie": "DAY1", "label": "clif2",
+		"flags": {"lingo_frames": true, "lingo_clicks": true},
+	})
+	if not _h.check("walking to clif2 fires the meeting",
+			driver.movie().to_upper() == "MURDER1", driver.movie()):
+		return true
 
-	var start_ms := Time.get_ticks_msec()
-	var dwell := 0
-	var clicks := 0
-	var prompts: Array = []
-	var reached_exit := false
-	while Time.get_ticks_msec() - start_ms < BUDGET_MS:
-		await process_frame
-		rt.tick(0.016)
-		if rt.loader.movie_name.to_upper() != "MURDER1":
-			reached_exit = true
-			break
+	var run: Dictionary = await driver.run_for(BUDGET_MS, {
+		"click_prompts": true,
+		"dwell": DWELL_FRAMES,
+		"after_click": AFTER_CLICK_FRAMES,
+		"until_movie_change": true,
+	})
+	var clicks := int(run["clicks"])
+	var seconds := int(run["elapsed_ms"]) / 1000
 
-		var offered: Array = rt.clickable_sprites(rt.loader.get_frame(rt.frame_index))
-		if offered.is_empty():
-			dwell = 0
-			continue
-		dwell += 1
-		if dwell <= DWELL_FRAMES:
-			continue
-		dwell = -AFTER_CLICK_FRAMES
-		clicks += 1
-		var picked: Dictionary = offered[0]
-		prompts.append(rt.frame_index)
-		print("   prompt at frame %d, clicking channel %d" % [
-			rt.frame_index, int(picked.get("channel", 0))])
-		rt.perform_click(rt.sprite_stage_rect(picked).get_center())
-
-	var elapsed := Time.get_ticks_msec() - start_ms
-	_check("both dialogue prompts offer a choice", clicks == 2,
-		"%d prompts at frames %s" % [clicks, str(prompts)])
-	_check("the scene leaves MURDER1", reached_exit,
-		"" if reached_exit else "still in MURDER1:%d after %d s" % [rt.frame_index, elapsed / 1000])
-	_check("it returns to the DAY1 hub", rt.loader.movie_name.to_upper() == "DAY1",
-		rt.loader.movie_name)
-	_check("the meeting marks itself done, so it cannot retrigger",
+	_h.check("both dialogue prompts offer a choice", clicks == 2,
+		"%d prompts at frames %s" % [clicks, str(run["click_frames"])])
+	_h.check("the scene leaves MURDER1", bool(run["movie_changed"]),
+		"" if run["movie_changed"] else "still in MURDER1:%d after %d s" % [
+			driver.frame(), seconds])
+	_h.check("it returns to the DAY1 hub", driver.movie().to_upper() == "DAY1", driver.movie())
+	var state: Node = hooks.game_state(self)
+	_h.check("the meeting marks itself done, so it cannot retrigger",
 		state.is_meeting_done("murder1"), str(Array(state.meetings)))
 
-	print("%s (%d s, %d clicks)" % [
-		"PASS" if _fails == 0 else "FAIL", elapsed / 1000, clicks])
-	quit(1 if _fails > 0 else 0)
+	print("   %d s, %d clicks at frames %s" % [seconds, clicks, str(run["click_frames"])])
+	return true

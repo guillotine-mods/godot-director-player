@@ -14,21 +14,21 @@ extends SceneTree
 ## `shellfield` (MASTER CastScript 77) or `jokefield` (CastScript 69), so this
 ## asserts the reveal survives, the click hides it, and the record is written.
 
-var _fails := 0
+const Driver := preload("res://tools/lib/driver.gd")
+const Harness := preload("res://tools/lib/harness.gd")
+const Hooks := preload("res://tools/lib/game_hooks.gd")
+
+var _h := Harness.new()
 
 
 func _check(name: String, ok: bool, detail: String = "") -> void:
-	if not ok:
-		_fails += 1
-	print("%s  %s%s" % ["ok  " if ok else "FAIL", name, ("  (%s)" % detail) if detail != "" else ""])
+	_h.check(name, ok, detail)
 
 
 func _fresh(movie: String, room: String) -> RefCounted:
-	var r: RefCounted = load("res://director/director_runtime.gd").new()
-	r.boot()
-	root.get_node("GameState").new_game()
-	r.goto_movie(movie, null, {"label": room})
-	return r
+	var driver := Driver.new(self, Hooks.new())
+	driver.open({"movie": movie, "label": room})
+	return driver.runtime
 
 
 func _sprite_on(runtime: RefCounted, channel: int) -> Dictionary:
@@ -38,9 +38,19 @@ func _sprite_on(runtime: RefCounted, channel: int) -> Dictionary:
 	return {}
 
 
-func _case(movie: String, room: String, channel: int, field: String) -> void:
+## Declares the case, then closes it only if the body says it reached a conclusion.
+## An aborted body returns `false` — a GDScript runtime error unwinds the handler it
+## happens in and hands the caller the type's zero value — so the case stays open and
+## `finish` reports it. Completing from here unconditionally would hide exactly that.
+func _run_case(movie: String, room: String, channel: int, field: String) -> void:
 	var label := "%s @%s ch%d" % [movie, room, channel]
+	_h.begin(label)
+	if _case(movie, room, channel, field, label):
+		_h.complete(label)
 
+
+## Returns whether it ran to a conclusion, not whether the checks passed.
+func _case(movie: String, room: String, channel: int, field: String, label: String) -> bool:
 	# Find the scenery that hides it. Each candidate gets a fresh runtime, because a
 	# wrong guess can walk Piposh somewhere else or leave the movie entirely.
 	var scan: RefCounted = _fresh(movie, room)
@@ -71,7 +81,7 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 	_check("%s: searching the scenery uncovers it" % label, runtime != null,
 		"tried %s" % str(candidates))
 	if runtime == null:
-		return
+		return true
 
 	# The regression: it used to be blanked again by the next frame the room ran.
 	var lost := -1
@@ -83,7 +93,7 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 	_check("%s: stays uncovered while the room runs" % label, lost < 0,
 		("re-hidden after %d ticks at frame %d" % [lost, runtime.frame_index]) if lost >= 0 else "")
 	if lost >= 0:
-		return
+		return true
 
 	# And taking it hides it and records the room.
 	var before := str(runtime.lingo.host.get_field(field, "master"))
@@ -91,7 +101,7 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 	_check("%s: uncovered means clickable" % label, not target.is_empty(),
 		"scenery was ch%d" % searched)
 	if target.is_empty():
-		return
+		return true
 	var room_movie: String = runtime.loader.movie_name
 	runtime._activate_sprite(target, runtime.sprite_stage_rect(target).get_center())
 	var after := str(runtime.lingo.host.get_field(field, "master"))
@@ -100,7 +110,7 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 
 	if runtime.loader.movie_name == room_movie:
 		_check("%s: taking it hides it" % label, runtime.is_channel_hidden(channel))
-		return
+		return true
 
 	# A bottle opens joke.dxr, so the hide landed on a movie the port has since swapped
 	# out — Director floats the joke over a DAY1 that never unloads, and a single-stage
@@ -119,6 +129,7 @@ func _case(movie: String, room: String, channel: int, field: String) -> void:
 	_check("%s: the interpreter came back with it" % label,
 		runtime.lingo.script_for_member(1, 83).has("handlers"),
 		"frame scripts resolve in %s" % runtime.loader.movie_name)
+	return true
 
 
 func _joke_picture_ok(runtime: RefCounted) -> bool:
@@ -147,13 +158,10 @@ func _joke_picture_ok(runtime: RefCounted) -> bool:
 
 
 func _initialize() -> void:
-	var settings: Object = root.get_node("AppSettings")
-	settings.use_lingo_frames = true
-	settings.use_lingo_clicks = true
+	Hooks.new().configure(self, {"lingo_frames": true, "lingo_clicks": true})
 
-	_case("DAY1", "gatego", 33, "shellfield")
-	_case("DAY1", "edge1go", 15, "shellfield")
-	_case("DAY1", "swinggo", 15, "jokefield")
+	_run_case("DAY1", "gatego", 33, "shellfield")
+	_run_case("DAY1", "edge1go", 15, "shellfield")
+	_run_case("DAY1", "swinggo", 15, "jokefield")
 
-	print("\n%d failure(s)" % _fails)
-	quit(1 if _fails > 0 else 0)
+	quit(_h.finish())

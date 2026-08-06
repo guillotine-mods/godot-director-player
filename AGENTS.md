@@ -66,9 +66,18 @@ the opposite and had been available from the first minute. Read
 
 ## Fixing something
 
-Reproduce it headlessly before theorising. A short throwaway script driving
-`DirectorRuntime` is usually enough, and it beats reasoning about what the code
-should do. Where an asset is involved, extract and look at it: converting one bitmap
+Reproduce it headlessly before theorising, and reach for
+`tools/probe.gd -- --movie X --label Y --seconds N` before writing a throwaway
+script: it boots anywhere, steps in real time and reports where the playhead went.
+Where a harness is still the answer, build it on `tools/lib/` — `harness.gd` for
+pass/fail, `driver.gd` for boot/step/click/trace, `args.gd` for the command line.
+The scenario stays in the tool; only the driving is shared. Two rules there:
+`harness.gd`, `driver.gd` and `args.gd` may not know which game this is, and
+everything that does lives in `game_hooks.gd`, the one file rewritten when the lib
+is carried to another Director port. And `driver.run_for` awaits real frames on
+purpose — a synthetic `for i in N: tick()` loop advances the runtime's clock and
+not the audio server's, so every `soundBusy` guard holds for ever and any scene
+with speech in it looks stuck (bugs.md 22, diagnosed wrong twice). Where an asset is involved, extract and look at it: converting one bitmap
 and viewing it identified a mystery sprite in seconds after a long run of wrong
 theories about coordinates.
 
