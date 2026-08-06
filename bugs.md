@@ -60,9 +60,26 @@ that the port needs has to be copied across by hand. The room-transition hide
 (`sprite(30).visible = 0`) is the most recent example, and every one of these is a
 place the copy can drift from the script.
 
-Blocked on 1: `whatodoeveryframe` drives Piposh entirely through
-`the memberNum of sprite 30` and `the locH/locV of sprite 30`, which is exactly
-what the renderer ignores today. Fix 1 and this script becomes runnable.
+~~Blocked on 1~~ — **no longer blocked, and this is now the highest-value open
+entry.** The blocker was that `whatodoeveryframe` drives Piposh entirely through
+`the memberNum of sprite 30` and `the locH / locV of sprite 30`, which the
+renderer ignored. Entry 1 is closed, so those writes land: booting DAY1 `@field`
+and writing `loc_h` / `loc_v` on channel 30 reads back through
+`effective_sprite(30)`, and `has_handler("whatodoeveryframe")` is true, as it is
+for `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`.
+
+**What it now also costs to leave open.** `whatodoeveryframe` is where the
+original calls `peoplefunk()` — three times, once per transition shape. The port
+never runs it, so it substitutes `GameState.people_funk`, which reproduces only
+the meeting-routing half of that handler. The dropped half places the wandering
+characters, and its absence is entry 21: every guest in `field`, `tennis`,
+`edge1`, `veranda`, `dwarfs` and `exitforest3` is on screen twice. Running this
+script fixes 21 as a side effect and retires `meeting_triggers` with it.
+
+Doing it needs `init all`'s globals to exist first — `inexits` at minimum, see
+entries 9 and 13 — and needs the 117-hotspot walk diff measured before and after,
+because this replaces the walk state machine wholesale. Read
+`porting-fidelity-verification` before reading those numbers.
 
 ---
 
@@ -676,6 +693,14 @@ Observed: `peoplefunk=true peoplecont=true inexits=<unset>`, and all four
 Not the same bug as 14's film-loop half, which was found in the same rooms in the
 same pass. That one drew these characters at the wrong size; this one draws twice
 as many of them as there should be.
+
+**The fix is entry 2, not a patch here.** The original calls `peoplefunk()` from
+`whatodoeveryframe` and nowhere else, so there is no engine-level place to put
+this that does not amount to teaching the engine that `field` is slot 1 and that
+channels 18-21 hold guests — which is the standing rule in `AGENTS.md` broken in
+the same shape that caused the bug. `whatodoeveryframe` is runnable now that
+entry 1 is closed; running it fixes this one for free and retires
+`GameState.people_funk` at the same time. Deliberately **not** patched natively.
 
 ---
 
