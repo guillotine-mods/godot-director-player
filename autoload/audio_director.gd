@@ -29,8 +29,27 @@ func _ensure_index() -> void:
 	_build_index()
 
 
+## Preloaded rather than reached by `class_name`: an autoload resolves global
+## classes out of the editor's script cache, which a headless run has no reason
+## to have refreshed, and the failure is "Identifier not declared" in a file
+## nobody touched.
+const Paths := preload("res://director/director_paths.gd")
+const AiffLoader := preload("res://autoload/aiff_loader.gd")
+
+
 func _build_index() -> void:
 	_stem_index.clear()
+	# The game's own tree first. `_index_dir_recursive` is first-writer-wins, and
+	# the game's files are the source of truth: everything under `assets/audio`
+	# was produced from them by the Python pipeline and is scheduled for
+	# deletion, so indexing it first would mean the port quietly played the
+	# derived copy until the day that folder went away and then changed
+	# behaviour with nothing to point at.
+	var paths := Paths.new()
+	if paths.load_config():
+		_index_dir_recursive(paths.root)
+	# Then the generated WAVs, as a fallback for as long as they exist. Delete
+	# these two lines with the folder.
 	_index_dir_recursive("res://assets/audio/sounds")
 	_index_dir_recursive("res://assets/audio/fx")
 	GameState.emit_log("Audio index: %d stems" % _stem_index.size(), "info")
@@ -51,7 +70,7 @@ func _index_dir_recursive(path: String) -> void:
 			_index_dir_recursive(full)
 		else:
 			var ext := name.get_extension().to_lower()
-			if ext in ["wav", "ogg", "mp3"]:
+			if ext in ["wav", "ogg", "mp3", "aif"]:
 				var stem := name.get_basename().to_lower()
 				if not _stem_index.has(stem):
 					_stem_index[stem] = full
@@ -170,8 +189,16 @@ func _load_stream(path: String) -> AudioStream:
 		var res: Variant = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE)
 		if res is AudioStream:
 			stream = res
-	if stream == null and path.get_extension().to_lower() == "wav":
+	var extension := path.get_extension().to_lower()
+	if stream == null and extension == "wav":
 		stream = _load_wav_runtime(path)
+	# Godot recognises neither AIFF nor AIFF-C, so a title whose sounds ship as
+	# `.aif` is silent with nothing logged. See `autoload/aiff_loader.gd`.
+	if stream == null and extension == "aif":
+		var error: Array = []
+		stream = AiffLoader.load_from_buffer(FileAccess.get_file_as_bytes(path), error)
+		if stream == null and not error.is_empty():
+			GameState.emit_log("aiff %s: %s" % [path.get_file(), "; ".join(error)], "warn")
 	if stream != null:
 		_stream_cache[path] = stream
 	return stream
