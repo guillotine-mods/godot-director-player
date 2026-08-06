@@ -623,3 +623,54 @@ running the hub's frame-1 handler on any cold entry broke 9 green checks, becaus
 the caller had set up. Do not add an init-seeding path; route the entry through
 frame 1 instead. The decision to make is whether these two dev tools should
 auto-start a game, not how to seed.
+
+---
+
+## 27. `tools/walk_arrivals.gd` reaches 9 of ~460 exits, so its verdict says nothing
+
+**Status:** open · **Area:** tooling · the tool is untracked, not on main
+
+Written to cover entry 26 — `walkonby` read `item 1` of `nextroomdata` and dropped
+the arrival point in items 2 and 3, fixed in `c1ada647` — and it does not do its
+job. It sweeps every `*go` marker in DAY1, HOTEL1 and NIGHT1 (32 + 10 + 35 rooms)
+and activates each room's candidate exit sprites, asserting that whatever the
+sprite's script writes into `nextroomdata` is what reaches `puppet.nextroom`:
+
+```
+godot --headless --script tools/walk_arrivals.gd
+```
+
+Observed on `f0ede1a8`, ~16 minutes of real time:
+
+```
+ok    every exit that names an arrival point hands it to the puppet  (0 wrong: [])
+FAIL  the sweep reached a useful number of exits  (9 exits name coordinates, 0 name only a room, 453 set nothing)
+ok    walking out of gate lands where its script says   (loc_h=344.0 wanted 344)
+ok    walking out of clif2 lands where its script says  (loc_h=33.0 wanted 33)
+ok    walking out of edge1 lands where its script says  (loc_h=300.0 wanted 300)
+```
+
+The failing check is the harness's **own** coverage guard, and its docstring says
+what a low `named` means: the sweep stopped reaching exits. 453 of 462 activations
+left `nextroomdata` untouched, so `0 wrong` is not evidence of anything — the
+invariant was tested nine times. The three end-to-end walks are the part that
+genuinely exercises entry 26, and they pass.
+
+So the tool is **left untracked deliberately**, rather than committed red: a
+harness whose verdict cannot be trusted in either direction is worse on main than
+absent, and it would be the third time this port trusted a number from a sweep that
+had stopped exercising its path (see `porting-fidelity-verification`). It is real
+work and worth finishing — the seam-only approach checks the whole corpus of exits
+without walking each one in real time, which is the right idea.
+
+To finish it, the question is why `_activate_sprite` on a candidate exit writes
+nothing. `_exits` accepts a sprite if the interpreter answers `mouseUp` for its
+channel or the lifted nav is a walk, and the docstring records that clicking a
+doorway's *centre* reached only 2 of 21 because channel 2's `walk_here` covers the
+floor — so the current version calls the sprite's handler directly instead. Nine
+reaching means that fix was incomplete, not that it was wrong. Start by printing,
+for one room with known exits, which sprites `_exits` returned and what each
+activation changed.
+
+Not the same as entry 5. That one is nineteen walks reaching a different *room*
+under the interpreter; this is a tool that cannot see the arrival point at all.
