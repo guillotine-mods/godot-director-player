@@ -72,12 +72,74 @@ func _run() -> void:
 			print("%-18s FAIL: the check did not complete (see the errors above)" % label)
 			failures += 1
 
+	# The arrival above is `goto_movie`'s, whose label is the room. A player mostly
+	# arrives the other way, and that shape was broken while every check above
+	# passed: `_on_puppet_arrived` hands over the arrival *label*, and for a walk
+	# inside one movie that is a transition marker — `edge2up`, `lighthousein` — not
+	# a room. Asserting only the shape the harness finds convenient is how a fix
+	# ships and the player still sees the bug.
+	print("")
+	failures += _walked_in_shape()
+
 	print("")
 	if failures == 0:
 		print("every wandering character is on screen once")
 	else:
 		print("%d of %d rooms draw a character twice" % [failures, ROOMS.size()])
 	quit(1 if failures > 0 else 0)
+
+
+## Arriving as a walk does: a transition marker for the label, the destination room
+## in item 1 of `nextroomdata` where the exit's own `mouseUp` put it.
+func _walked_in_shape() -> int:
+	var failed := 0
+	for room_value in ROOMS:
+		var room: Dictionary = room_value
+		var name := str(room["label"])
+		var runtime: RefCounted = load("res://director/director_runtime.gd").new()
+		if runtime.boot() != OK:
+			print("walk-in %-11s FAIL: cannot boot" % name)
+			failed += 1
+			continue
+		var state: Object = root.get_node("GameState")
+		for meeting in ["hatday1", "patpip1"]:
+			var at: int = Array(state.meetings).find(meeting)
+			if at >= 0:
+				state.meetings[at] = "done"
+		if not runtime.goto_movie(str(room["movie"]), null, {"label": name}):
+			print("walk-in %-11s FAIL: cannot reach the room" % name)
+			failed += 1
+			continue
+		runtime.running = false
+		# Clear what the arrival already did, then re-arrive the walk's way.
+		for pair_value in room["pairs"]:
+			for channel in pair_value as Array:
+				runtime.set_channel_visible(int(channel), true)
+		runtime.lingo.interpreter.globals.erase("inexits")
+		runtime.lingo.interpreter.globals["nextroomdata"] = "%s,300,200" % name
+		runtime._people_funk("edge2up")
+
+		var report: Array = []
+		var wrong := 0
+		for pair_value in room["pairs"]:
+			var pair: Array = pair_value
+			var a: int = int(pair[0])
+			var b: int = int(pair[1])
+			if runtime.is_channel_hidden(a) == runtime.is_channel_hidden(b):
+				report.append("ch%d/%d both %s" % [
+					a, b, "hidden" if runtime.is_channel_hidden(a) else "shown"])
+				wrong += 1
+			else:
+				report.append("ch%d/%d ok" % [a, b])
+		print("walk-in %-11s %s  %s" % [
+			name, "ok  " if wrong == 0 else "FAIL", ", ".join(PackedStringArray(report))])
+		if wrong > 0:
+			failed += 1
+	if failed == 0:
+		print("a walk arrival hides a pair too, not only a goto_movie arrival")
+	else:
+		print("%d rooms draw both on a walk arrival" % failed)
+	return failed
 
 
 func _check(room: Dictionary, label: String) -> int:

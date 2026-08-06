@@ -1267,16 +1267,27 @@ func _people_funk(room_label: String) -> String:
 			or not lingo.interpreter.has_handler("peoplefunk"):
 		return GameState.people_funk(room_label)
 
-	# The handler's only input is `item 1 of nextroomdata`. A walk leaves all three
-	# items there, but an arrival that did not walk — a meeting handing the player
-	# back, the map, a load — leaves the previous room's, and a stale room name
-	# routes to the wrong meeting. Restored rather than overwritten: items 2 and 3
-	# are the arrival point the destination's own script named, and `whatodoeveryframe`
-	# still has to read them.
+	# The handler's only input is `item 1 of nextroomdata`, which the exit's own
+	# `mouseUp` wrote and which names the destination room. **Do not clobber it when
+	# it already names a room.** `_on_puppet_arrived` passes the arrival *label*, and
+	# for a walk inside one movie that label is a transition marker rather than a
+	# room — `edge2up`, `lighthousein` — so writing it in makes every branch of the
+	# handler miss and nothing is hidden. That left the guests doubled on exactly the
+	# arrivals a player walks to, while the `goto_movie` path, whose label really is a
+	# room, passed; a harness that only arrived the second way could not see it.
+	#
+	# `<room>go` is how this port names a room's arrival frame throughout — the same
+	# test `_run_skipped_entry_scripts` uses — so it is what tells a room apart from a
+	# transition marker. When the label is not a room, fall back to what the exit
+	# wrote. When neither names a room the handler runs anyway and hides nothing,
+	# which is what the original does on `nextroomdata = "000"`.
 	var globals: Dictionary = lingo.interpreter.globals
 	var had_room: bool = globals.has("nextroomdata")
 	var saved: Variant = globals.get("nextroomdata", null)
-	globals["nextroomdata"] = room_label.to_lower().trim_suffix("go")
+	var room := room_label.to_lower().trim_suffix("go")
+	if loader.lookup_label(room + "go") < 0:
+		room = _s(LingoValue.get_chunk(_s(saved), "item", 1, 1, ",")).strip_edges().to_lower()
+	globals["nextroomdata"] = room
 
 	var was_recording: bool = lingo.host.record
 	lingo.host.begin_record()
