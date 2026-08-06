@@ -7,9 +7,14 @@ extends SceneTree
 ## clear they are authoring residue. `tools/director_film_loops.py` masked the ink
 ## byte to its low 6 bits and dropped the flag with it — the same loss
 ## `generate_sprite_stretch.py` exists to undo for the main score — so the renderer
-## scaled every child into its recorded rect. 235 of the corpus's 13,612 children
-## disagree with their member, `wonder` member 27 worst: 101x144 blown up to
-## 203x289, which is the giant black dress that appears over DAY1's field.
+## scaled every child into its recorded rect. Of the corpus's 13,694 children,
+## 13,596 resolve to a member and 235 of those disagree with it, `wonder` member 27
+## worst: 101x144 blown up to 203x289, which is the giant black dress that appears
+## over DAY1's field.
+##
+## That bit 0x80 is the flag is the same separation argument the main score rests
+## on: of the 2,053 children carrying it, **zero** have a rect equal to their
+## member's natural size, so the 235 are provably the whole of the residue.
 ##
 ## The checks are on the rect `MoviePlayer.film_loop_draw_commands` hands the
 ## canvas, not on the flag round-tripping through a getter. The flagged case is the
@@ -30,21 +35,25 @@ const CASES := [
 	{
 		"movie": "DAY1", "frame": 1805, "channel": 20, "loop_frame": 0,
 		"cast": "wonder", "member": 27, "size": [101, 144], "residue": [203, 289],
+		"at": [372.0, -14.0],
 		"note": "the giant black dress over the field, reported from play",
 	},
 	{
 		"movie": "DAY1", "frame": 1805, "channel": 19, "loop_frame": 0,
 		"cast": "wonder", "member": 1, "size": [142, 192], "residue": [101, 144],
+		"at": [-16.0, 45.0],
 		"note": "residue smaller than the member: the guest on the bench, drawn shrunk",
 	},
 	{
 		"movie": "DAY1", "frame": 1805, "channel": 21, "loop_frame": 0,
 		"cast": "wonder", "member": 59, "size": [84, 159], "residue": [97, 159],
+		"at": [530.0, 1.0],
 		"note": "one axis only, which is what 'scratching over too much' looks like",
 	},
 	{
 		"movie": "DAY1", "frame": 342, "channel": 20, "loop_frame": 0,
 		"cast": "wonder", "member": 156, "size": [94, 172], "residue": [94, 172],
+		"at": [468.0, -18.45],
 		"stretched": true,
 		"note": "NEGATIVE CONTROL: flag set, so the recorded rect is the drawn rect",
 	},
@@ -100,6 +109,12 @@ func _check(case: Dictionary, label: String) -> int:
 	var residue := Vector2(
 		float((case["residue"] as Array)[0]), float((case["residue"] as Array)[1])
 	)
+	# Size alone is the weaker assertion: a child is anchored on its registration
+	# point, so changing the drawn size moves the top-left too, and case 2 travels
+	# from (-12.25, 95.25) to (-16, 45). Asserting both pins the whole rect.
+	var expected_at := Vector2(
+		float((case["at"] as Array)[0]), float((case["at"] as Array)[1])
+	)
 
 	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
 	if runtime.boot() != OK or not runtime.goto_movie(movie, frame):
@@ -135,11 +150,13 @@ func _check(case: Dictionary, label: String) -> int:
 	player.free()
 
 	var drawn := Vector2.ZERO
+	var drawn_at := Vector2.ZERO
 	var found := false
 	for command_value in commands:
 		var command: Dictionary = command_value
 		if int(command.cast_id) == member and str(command.cast) == str(case["cast"]):
 			drawn = (command.rect as Rect2).size
+			drawn_at = (command.rect as Rect2).position
 			found = true
 			break
 	if not found:
@@ -148,13 +165,14 @@ func _check(case: Dictionary, label: String) -> int:
 		])
 		return _complete(label, 1)
 
-	var ok := drawn.is_equal_approx(expected)
+	var ok := drawn.is_equal_approx(expected) and drawn_at.distance_to(expected_at) < 0.01
 	# Only meaningful where the two differ; on the flagged case they are the same
 	# number and this line would accuse a correct draw.
 	var still_residue := (not expected.is_equal_approx(residue)) and drawn.is_equal_approx(residue)
-	print("%-26s %s  %s %d drew %dx%d, expected %dx%d%s  %s" % [
+	print("%-26s %s  %s %d drew %dx%d at (%.2f, %.2f), expected %dx%d at (%.2f, %.2f)%s  %s" % [
 		label, "ok  " if ok else "FAIL", case["cast"], member,
-		int(drawn.x), int(drawn.y), int(expected.x), int(expected.y),
+		int(drawn.x), int(drawn.y), drawn_at.x, drawn_at.y,
+		int(expected.x), int(expected.y), expected_at.x, expected_at.y,
 		"  (still the stored rect)" if still_residue else "",
 		str(case.get("note", "")),
 	])

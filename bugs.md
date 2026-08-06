@@ -300,8 +300,8 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 **Status:** the score-side half is CLOSED — the stretch flag, see the Closed
 section. The **film-loop-child** half is CLOSED — the same flag one level down,
 also in the Closed section, and it is what the "scratching" on DAY1's `field`,
-`edge1` and `veranda` was. The member-side half below is open. ·
-**Area:** assets and score
+`edge1` and `veranda` was. The member-side half below is open, and it is still
+what the opening video's smeared head is. · **Area:** assets and score
 
 **A loop's children were the third cause and are now fixed.** The report that
 reopened this was four screenshots of DAY1 `@field`, `@edge1` and `@veranda` —
@@ -712,15 +712,33 @@ print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
   reader written months apart from the first. `MoviePlayer.film_loop_draw_commands`
   then scaled every child into its recorded rect.
 
-  Of the corpus's 13,694 children, **2,053 carry the flag** and Director really
-  does scale them; 11,234 have it clear with a rect already equal to their member,
-  so nothing changes; and **235 have it clear and disagree**, which is the bug.
-  `wonder` is 130 of the 235 and holds the worst: member 27 is 101x144 and its
-  record says 203x289, so DAY1 `@field` channel 20 drew a guest at double size for
-  6 of the loop's 24 frames — the giant black dress in the report — and back to
-  normal for the other 18. The one-axis cases are the "scratching": `wonder` 59 at
-  84x159 recorded 97x159. Also affected: TENNIS 55, MASTER 16, INVESTIG 10,
-  ENDMOVI1 7, GARDUG 6, SAMNIGHT 6, ARCADE2 3, ISHURUN 2.
+  Of the corpus's 13,694 children, 13,596 resolve to a member. **2,053 carry the
+  flag** and Director really does scale them; 11,308 have it clear with a rect
+  already equal to their member, so nothing changes; and **235 have it clear and
+  disagree**, which is the bug. By cast: `wonder` 130, `tennis` 55, `master` 16,
+  `investig` 10, `endmovi1` 7, `gardug` 6, `samnight` 6, `arcade2` 3, `ishurun` 2.
+
+  **The separation is perfect, which is what identifies the bit.** Of the 2,053
+  flagged children, **zero** have a rect equal to their member's natural size —
+  the same argument the main-score entry below rests on, run on the child
+  population. So bit 0x80 is the stretch flag here too, and the 235 are provably
+  the whole of the residue rather than however many happened to be noticed.
+
+  `wonder` holds the worst: member 27 is 101x144 and its record says 203x289, so
+  DAY1 `@field` channel 20 drew a guest at double size on 6 of the loop's 24
+  frames — the giant black dress in the report — and normally on the other 18.
+  The one-axis cases are the "scratching": `wonder` 59 at 84x159 recorded 97x159.
+
+  Per reported room, child records whose drawn rect changed: `@field` **54 of
+  242**, `@edge1` **17 of 166**, `@veranda` **16 of 154**. All three move, but
+  only `field` carries a blow-up big enough to read as a different bug — its
+  worst is 2.01x against 1.16x on `edge1` and 1.15x on `veranda`, which are
+  smears rather than giants. `edge1`'s other loop, `wonder` 175, is a zoom with
+  every child flagged and is deliberately left alone.
+
+  **This does not touch the opening video.** `strtgame` contributes 0 of the 235,
+  so the smeared head there is still 14's member-side half, blocked on the XFIR
+  little-endian reader.
 
   The flag is written on the child as `stretch` and only where set, so its absence
   means "draw the member at its own size". Regenerating `cast_registry.json` over
@@ -734,6 +752,12 @@ print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
   cases and silently un-animate the zoom. Reverting the renderer alone turns the
   three positives red with the stored rect named in each failure and leaves the
   control green.
+
+  Both position and size are asserted. A child is anchored on its registration
+  point, so changing the drawn size moves the top-left with it, and size alone is
+  the weaker claim: the giant goes from 203x289 at `(362.91, -159.00)` to 101x144
+  at `(372.00, -14.00)`, and the guest on the bench from 101x144 at
+  `(-12.25, 95.25)` to 142x192 at `(-16.00, 45.00)`.
 
 - **Art drew scaled to a rect Director ignores** (the score-side half of 14).
   A Director sprite draws its member at the member's own size, anchored on the
