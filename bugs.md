@@ -490,13 +490,16 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 
 ---
 
-## 14. Art draws stretched on one axis. Three causes; two of them are fixed.
+## 14. Art draws stretched on one axis. The dropped stretch flag, at three levels.
 
 **Status:** the score-side half is CLOSED — the stretch flag, see the Closed
 section. The **film-loop-child** half is CLOSED — the same flag one level down,
 also in the Closed section, and it is what the "scratching" on DAY1's `field`,
-`edge1` and `veranda` was. The member-side half below is open, and it is still
-what the opening video's smeared head is. · **Area:** assets and score
+`edge1` and `veranda` was. The **strtgame flags** half is CLOSED — its score was
+being looked for under a directory name nothing is filed under, see the Closed
+section, and recovering it is what the opening video's smeared head was. What
+remains open is a **suspicion only**, recorded below and no longer supported by
+the evidence this entry was arguing from. · **Area:** assets and score
 
 **A loop's children were the third cause and are now fixed.** The report that
 reopened this was four screenshots of DAY1 `@field`, `@edge1` and `@veranda` —
@@ -514,26 +517,39 @@ across the sky.
 
 **Read the Closed entry first.** The score's stored width and height are only the
 drawn rect when the sprite's stretch flag is set, and that flag was being dropped on
-export. The 979 sprites counted below split three ways on it: **925** were the
-residue and are no longer drawn that way (ALLIN 839, DAGI 51, INVESTIG 34, MORN3 1);
-**47** carry the flag, so Director really does stretch them and they were never bugs
-at all (SEA1 32, NIGHT1 6, ARCADE2 5, CHESS 4); and **7** are `strtgame`, whose
-flags could not be read. What is left in this entry is that `strtgame`, where the
-member's own geometry is wrong and the score is right.
+export. The 979 sprites now split **two** ways on it, with the third group gone:
+**932** are the residue and are no longer drawn that way (ALLIN 839, DAGI 51,
+INVESTIG 34, strtgame 7, MORN3 1) and **47** carry the flag, so Director really
+does stretch them and they were never bugs at all (SEA1 32, NIGHT1 6, ARCADE2 5,
+CHESS 4). The "flags unread" category is empty. The reproduce block below prints
+this.
 
-That head is `strtgame` member 26, channel 15, frames 122-128. `members.json`
-records it 45x34 and the score draws it at 135x34: a 3x stretch on width with
-height untouched. On the same channel member 25 draws at exactly its natural
-37x26, so the score is not stretching the channel — this member's recorded size is
-wrong, and the renderer stretches a too-small bitmap into a correct sprite rect.
+That head is `strtgame` member 26, channel 15, frames 122-128, and **all 7 of its
+records have the stretch flag clear**. Director therefore ignores the score's
+135x34 and draws the member at its own size, which is exactly what the port now
+does. The smear was the dropped flag, the same cause as the other two halves — not
+a member whose geometry is wrong.
 
-Three signals agree that the member, not the score, is wrong:
+**The three signals this entry used to argue the opposite do not survive
+measurement.** Recorded because they looked conclusive:
 
-- its registration point is (68, 17) on a 45-wide bitmap, outside the image, and
-  68 is half of 135 while 17 is half of 34;
-- `BITD-2774` PackBits-decodes to 13,568 bytes consuming its payload exactly, not
-  the 1,564 that stride 46 x 34 rows implies;
-- its `CASt` rect nonetheless reads 45x34, so rect and raster disagree.
+- the registration point (68, 17) on a 45-wide bitmap does sit outside the image,
+  with 68 half of 135. This one still has no innocent explanation and is the whole
+  of what keeps the suspicion alive;
+- `BITD-2774` PackBits-decoding to 13,568 rather than the 1,564 that stride 46 x 34
+  implies proves nothing. **Member 25, this entry's own control, does the same** —
+  988 declared against 16,536 decoded — and so do **388 of strtgame's 390** 8-bit
+  members. Decoding to a target instead shows member 26's image is a clean prefix
+  of 194 bytes in a 3,293-byte chunk. The overrun is a payload-boundary problem
+  across strtgame's whole dump, not a fact about this member. For contrast, DAY1
+  decodes 440 of 452 members exactly and MURDER1 24 of 24;
+- "its `CASt` rect nonetheless reads 45x34" is not a disagreement. 45x34 is the
+  declared geometry; that it is declared is not evidence against it.
+
+Anyone picking this up should settle strtgame's chunk boundaries first — only
+**17 of 195** 8-bit members reach their declared size as a clean prefix — because
+no claim about one member's geometry can be made on top of a dump that is wrong
+movie-wide. The visible symptom is fixed either way.
 
 Corpus-wide, searching for the signature — one axis stretched more than 1.8x while
 the other stays within 5% of natural — finds **979 sprites in 9 movies**:
@@ -576,33 +592,33 @@ sprite's stretch flag is clear. That is the Closed entry below.
 A 4-bit-read-as-8-bit theory was tested and rejected: every member above reports
 depth 8 with stride equal to width.
 
-**What is left is the member-side case, and only in `strtgame`.** Member 26 is the
-one member measured anywhere in the corpus that does not agree with its own
-container, per the three signals above.
-
-`strtgame` is also the one movie whose stretch flags could not be recovered, so it
-keeps the rects the exporter wrote for all 4,500 of its sprite records where the
-rect and the member disagree — see the Closed entry. Both halves of the remaining
-work are therefore in the same movie, and both are blocked on the same thing: its
-container is XFIR (little-endian) and `tools/dump_movie_chunks.py` refuses to dump
-it, so there are no chunks to re-derive from. Fixing the little-endian reader
-unblocks both.
+**`strtgame`'s flags were never blocked on endianness.** This entry claimed both
+halves were stuck behind `tools/dump_movie_chunks.py` refusing XFIR containers, so
+that "there are no chunks to re-derive from" and "fixing the little-endian reader
+unblocks both". Both statements were wrong. `strtgame` has had a complete
+ProjectorRays dump the whole time — 1,019 chunks including the score — filed under
+`STRT_CHUNKS/strtgame/chunks`, and `dump_movie_chunks.py` says so in the very
+comment explaining the refusal. `generate_sprite_stretch.py` simply looked for it
+at `<root>/<movie>/<movie>/chunks` and missed it, then recorded the miss as `no
+chunk dump for VWSC-3148.bin` — a missing file, which is what the entry read as
+"could not be recovered". See the Closed entry.
 
 **Ruled out: endianness as the cause of the other eight movies.** The first theory
 was that little-endian containers were being mis-read, because `strtgame.dxr` is
 XFIR. Only two files in the whole corpus are — `strtgame.dxr` and `MASTER.CST` —
 and every other affected movie is big-endian. Recorded because it is a
-plausible-looking dead end. It is, however, exactly what blocks `strtgame` now.
+plausible-looking dead end. It did not block `strtgame` either, contrary to what
+this entry used to say. The XFIR reader's own disagreement with ProjectorRays —
+441 of 912 chunks, same offsets, different payload boundaries — is a separate,
+still-unretested fact, and is not the same claim as "there are no chunks".
 
 Not the same bug as entry 11. That one is 1-bit members read as 8-bit and is fixed.
-This is a member whose geometry is wrong in some other way, and the fix is the
-same shape: re-derive from the container.
 
 Reproduce. Note what this counts: it reads `frames.json`, which still holds the
-rect the exporter wrote, so it reports the same 979 as before the fix. The score-
-side ones are no longer drawn that way — `tools/sprite_stretch.gd` is the check for
-that. What this is still good for is finding the member-side cases, which are the
-rows the stretch flag does *not* explain:
+rect the exporter wrote, so it still reports 979 — the sprites are no longer drawn
+that way, and `tools/sprite_stretch.gd` is the check for that. What changed is the
+split. Every row now lands in `stretched, correct` or `residue, now ignored`, and
+a row in `flags unread` would mean a movie's score has stopped verifying:
 
 ```
 python3 - <<'EOF'
@@ -969,6 +985,29 @@ print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
 ---
 
 ## Closed
+
+- **A movie's chunk dump was looked for under the wrong directory name** (part of
+  14). `generate_sprite_stretch.py` built its path as `<root>/<movie>/<movie>/
+  chunks`, but a dump's outer and inner directory names are not always the same:
+  `strtgame`'s is filed under `STRT_CHUNKS/strtgame/chunks`. So the one movie whose
+  stretch flags mattered most was the one movie the lookup could not find, and it
+  reported the miss as `no chunk dump for VWSC-3148.bin`. Read as "no dump exists",
+  that became entry 14's claim that recovering strtgame's flags was blocked on
+  little-endian container support. It was blocked on a directory name.
+
+  `dump_movie_chunks.py` already keys dumps by the **inner** directory for exactly
+  this reason, and its comment names `STRT_CHUNKS` as the case. That keying is now
+  shared: `chunk_dirs()` globs `*/*/chunks` and keys on `parts[-2]`.
+
+  The reading it unblocked verifies as strictly as every other movie, which is why
+  it can be trusted rather than merely accepted: 1,375 score frames against 1,375
+  exported frames, **11,863 sprite records compared field by field with 0
+  mismatches** across `cast_lib`, `cast_id`, `width`, `height`, `loc_h` and
+  `loc_v`. 293 records carry the stretch flag. `strtgame` is no longer in
+  `sprite_stretch.gd`'s "no recovered flags" list, the verified count went 69 to
+  70, and the 7 sprites entry 14 was still chasing moved from "flags unread" to
+  "residue, now ignored" — Director ignores those rects, so member 26 draws at its
+  own 45x34 and the opening video's smeared head is the flag, not the member.
 
 - **A film loop's size guard measured the whole stream against one frame's buffer**
   (was 12). `parse_scvw` read the third word of the `SCVW` list header as a channel

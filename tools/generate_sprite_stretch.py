@@ -16,9 +16,9 @@ toolchain cannot silently undo it.
 Every movie is verified before it is trusted: each frame's sprite records are
 compared field by field against `frames.json`, and a movie whose score does not
 reproduce the export exactly is left out of the file entirely. The port then
-leaves that movie's rects alone rather than acting on an unverified reading —
-`strtgame` is the one movie in the corpus this matters for, because its container
-is little-endian and has no chunk dump.
+leaves that movie's rects alone rather than acting on an unverified reading. The
+15 movies left out today all lack a score chunk in `frames.json` or a dump
+directory; none is excluded for disagreeing with its container.
 
 Usage:
     python3 tools/generate_sprite_stretch.py [--check] [--chunks PATH]
@@ -50,13 +50,29 @@ def movie_dirs() -> list[Path]:
     return sorted(p.parent for p in MODEL_ROOT.glob("*/frames.json"))
 
 
-def verify_and_collect(movie: str, chunks: Path) -> tuple[dict | None, str]:
+def chunk_dirs(root: Path) -> dict[str, Path]:
+    """Maps a movie to its chunk directory, keyed by the *inner* directory name.
+
+    A dump is `<root>/<outer>/<movie>/chunks`, and the two names are not always
+    the same: `strtgame`'s ProjectorRays dump is filed under `STRT_CHUNKS`. The
+    same keying is in `dump_movie_chunks.py`; assuming `<movie>/<movie>` here is
+    what left strtgame's score unread and its stretch flags unrecovered, which
+    bugs.md 14 recorded as a little-endian problem. Its score chunk was simply
+    being looked for under a name nothing is filed under.
+    """
+    return {p.parts[-2]: p for p in root.glob("*/*/chunks")}
+
+
+def verify_and_collect(movie: str, chunks: dict[str, Path]) -> tuple[dict | None, str]:
     """Returns ({score_chunk, frames}, note) for a movie whose score verifies."""
     export = json.loads((MODEL_ROOT / movie / "frames.json").read_text())
     score_chunk = export.get("score_chunk") or ""
     if not score_chunk:
         return None, "no score chunk named in frames.json"
-    path = chunks / movie / movie / "chunks" / score_chunk
+    directory = chunks.get(movie)
+    if directory is None:
+        return None, "no chunk dump directory"
+    path = directory / score_chunk
     if not path.exists():
         return None, f"no chunk dump for {score_chunk}"
     try:
@@ -107,9 +123,10 @@ def main() -> int:
 
     movies: dict[str, dict] = {}
     refused: dict[str, str] = {}
+    dumps = chunk_dirs(args.chunks)
     for directory in movie_dirs():
         movie = directory.name
-        collected, note = verify_and_collect(movie, args.chunks)
+        collected, note = verify_and_collect(movie, dumps)
         if collected is None:
             refused[movie] = note
             continue
