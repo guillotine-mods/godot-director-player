@@ -11,81 +11,163 @@ regression: see `.claude/skills/porting-fidelity-verification/SKILL.md`.
 
 ---
 
-## 22. MURDER1 never returns, so the cliff meeting is a progression blocker
+## 22. The cliff meeting looks stuck at its dialogue prompt, and is not
 
-**Status:** open · **PROGRESSION BLOCKER — the game cannot be completed** ·
-**Area:** the port is missing a script the game requires · **NOT a regression**
+**Status:** NOT A BUG at the prompt · **not a progression blocker** ·
+**Area:** none — the score is faithful here
 
-Listed first because this file is worst-first and nothing else here stops the
-game. `murder1` is one of the seven day-1 meetings the phase transition to NIGHT1
-requires, so a player who walks to the cliff is stuck for good and one who avoids
-it can never finish day 1 either.
+Reported twice from play, most recently as "when the scene ends it sends you to
+the beginning again in a loop". Both reports are the same thing and the scene
+completes.
 
-An earlier draft of this entry called it "a decompilation gap rather than an engine
-bug". That framing is wrong and worth not repeating: where the missing piece came
-from is a repair detail, and a script the game requires and the port does not have
-is a bug in the port whatever produced it.
+**MURDER1 stalls at frames 489-508, and that span is a dialogue prompt.** Frame
+508's exported nav is `{kind: marker, rel: 0, offset: 0}` — Director's
+`go to marker(0)` — which resolves to 489, so the last twenty frames cycle. There
+is a second one at 676-695. Both are wait-for-click loops and both are authentic:
+the score offers three subtitle lines on channels 41/42/43, each carrying its own
+`mouseUp` handler (`CastScript 31/32/33` → `go("choose1a")`, `37/38/39` →
+`go("choose2a")`), and the playhead waits until one is clicked. The player has to
+pick a line. Nothing advances on its own, by design.
 
-Reported from play as "I cannot come back from the cliff now". Walking into
-`clif2` with `murder1` pending fires the meeting, MURDER1 loads, and the player
-never comes back.
+**Measured end to end.** Entering DAY1 at `clif2` with `murder1` pending fires
+the meeting; clicking one line at each of the two prompts leaves MURDER1 after
+141 s, reaching frame 846 (`go movie day1, label clif2`) and returning to the
+cliff with `meetings[0] == "done"`. So the meeting completes, marks itself done
+and does not retrigger — the phase transition to NIGHT1 is not blocked. The
+earlier **PROGRESSION BLOCKER** verdict on this entry was wrong.
 
-**First filed here as a regression from `9cae9f59` and that was wrong.** Running
-the same walk with `director/director_runtime.gd` restored from `cdb0bdb9` — the
-commit before the fix — reproduces it identically, so the arrival-frame dispatch
-is exonerated. It reproduces on `main` too. The reason it *looked* like a
-regression is that it was reported minutes after that fix landed, which is not
-evidence. Attribute before believing a report is about the change in front of you.
+**The port renders the prompt and the hotspots sit on it.** The three lines draw
+in the subtitle panel, `clickable_sprites()` offers all three, and a screenshot
+taken with `AppSettings.show_hotspot_hints` on puts the outlines tightly around
+the drawn text. `perform_click` on a line reaches frame 549 (`choose1a`), and the
+live path — `InputRouter` → `MoviePlayer._on_stage_click` → `runtime.perform_click`
+— is the same call. There is no cursor change over the lines, but that is faithful
+too: MURDER1's `MovieScript 47` is `on cursorfunk / end`, an empty stub.
 
-**What it does.** MURDER1 does not freeze, it loops. Sampled every 200 ticks the
-playhead reads 33, 38, 44, 25, 30, 36 — cycling the span between the markers at
-frames 24 and 49, forever, with `running = true`. Every frame in that span carries
-the same exported nav, `{kind: marker, rel: 1, offset: 0, guard_channel: 1,
-guard_when: idle}`, which is a loop, and one frame carries a `busy_nav` of
-`{rel: 0, offset: 1}`.
+**Three claims in the previous version of this entry were wrong.** They are
+recorded because each one cost a session.
 
-**The loop is the sound guard, and that part IS engine-level.** `resolve_marker_frame`
-is correct — `rel 1` resolves to the *next* marker, so the main nav would leave the
-scene. The observed frame 25 is `marker(0) + 1`, which is the `busy_nav`
-(`{rel: 0, offset: 1}`), so the runtime is taking the *busy* branch every time:
-`soundBusy(1)` never goes idle, and the scene waits forever for a line of speech
-that never finishes. Check `AudioDirector` first — a guard that waits on a sound
-which never starts (missing WAV, unresolved stem) must time out rather than hold
-the playhead for ever. That is a general engine rule and would unblock any cutscene
-built this way, not just this one.
+1. *"The port is missing frame script 119 and that is why nothing breaks the
+   loop."* Scripts 119 and 120 are the mouth-flap-while-speaking loops, and their
+   semantics are already in the exported nav: `guard_channel 1, guard_when idle`
+   plus, on 120, `busy_nav {rel: 0, offset: 1}` to replay the segment while the
+   line plays. 116 and 117 are the choice wait loop, also exported. The
+   decompilation gap below is real, but it is not what stalls the scene.
 
-**Why nothing breaks the loop.** Those frames carry `frame_script 119`, and the
-port does not have it. `data/lingo/MURDER1/` holds only `MASTER.json`,
-`attach.json` and `sprite_scripts.json`; `attach.json` never mentions 119, and
-`reference/lingo/MURDER1/` has only a `MASTER/` subdirectory. The chunk dump is no
-help either — `toolcache/chunks/MURDER1/MURDER1/casts/` contains `MASTER` alone.
-So MURDER1's own cast, and its linked `goldolin`, `hezi` and `tofi`, were never
-decompiled. The interpreter has no frame handler to run, `game_step` falls through
-to the exported nav, and the exported nav is the loop. In the original, script 119
-is what advances the scene when the line of speech finishes.
+2. *"Sampled every 200 ticks the playhead reads 33, 38, 44, 25, 30, 36 — cycling
+   forever."* **That measurement is an artifact of the harness, not behaviour.** A
+   tight `for i in N: rt.tick(0.016)` loop advances the runtime's clock but not
+   the audio server's, so the WAV never progresses, `soundBusy(1)` never goes
+   idle, and every speech guard holds for ever. Awaiting `process_frame` between
+   ticks walks straight through. **Any guard that reads a real-time subsystem has
+   to be exercised in real time**; a synthetic delta makes the engine and the
+   subsystem disagree about how much time passed, and the resulting stall is
+   indistinguishable from a logic bug.
 
-**The scripts are in the binary; the decompiler is what is missing them.**
-`toolcache/chunks/MURDER1/MURDER1/chunks/` holds **33 `Lscr-*.bin` chunks**, so
-MURDER1's Lingo exists. But every decompilation pass on this machine produced
-`MASTER` and nothing else for it — `originals/recovery/godot-reference/lingo/MURDER1/`,
-`originals/recovery/web-alpha/decompiled_chunks/MURDER1/` and
-`originals/recovery/web-alpha/decompiled_true/PIP2DATA/MURDER1/casts/` all contain
-a lone `MASTER` directory. So it is not that nobody ran the decompiler: it ran and
-silently emitted one cast out of five.
+3. *"Headless has no audio device, so `soundBusy` is always false."* This was in
+   `tools/_stuck.gd`'s docstring, now corrected. The Dummy driver does advance
+   playback, at roughly 0.35x real time: `TOF1.wav` reports `length 6.68`, and
+   `get_playback_position()` climbs 0 → 2.33 over 400 process frames.
 
-That makes this a decompilation gap rather than an engine bug, the same shape as
-entry 20. Fixing it means finding why the decompiler drops MURDER1's internal cast
-and its linked `goldolin` / `hezi` / `tofi`, not re-running it as-is. ProjectorRays
-is not installed here (`which projectorrays` finds nothing); the source is at
-`originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`.
+**The decompilation gap is real and stays open, but it is not this.** MURDER1's
+frame scripts 116, 117, 119, 120 and 424 resolve to nothing, and
+`toolcache/chunks/MURDER1/MURDER1/chunks/` holds 33 `Lscr-*.bin` chunks, so the
+Lingo is in the binary and the decompiler emitted one cast out of five. What that
+costs in practice is entry 23: where a frame script *is* present, the export's
+lossy copy of it can still win. Source for a re-run:
+`originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`; ProjectorRays is not
+installed here.
 
-**Worth checking how wide it is** before fixing one movie: any movie whose
-cutscene frames carry a frame script the port does not have will loop the same
-way. `data/lingo/<MOVIE>/` versus the `frame_script` ids in
-`assets/render_model/<MOVIE>/frames.json` is the query.
+Reproduce: `godot --headless --script tools/cliff_meeting.gd`. Do not drive it on
+a tight tick loop — see 2 above.
 
-Reproduce: boot, leave `murder1` pending, walk `swing` -> `clif2`, tick. The
-playhead stays in MURDER1 cycling frames 25-44 indefinitely.
+---
+
+## 23. An interpreted `exitFrame` that decides *not* to navigate is overridden by the export
+
+**Status:** open · **Area:** interpreter host / score runner · **general, not one movie**
+
+`game_step` dispatches the frame's own `on exitFrame`, and honours it only when it
+navigated or held:
+
+```gdscript
+if lingo.dispatch_frame_event("exitFrame", frame_index):
+    if lingo.host.navigated or lingo.host.held:
+        return
+```
+
+Everything else falls through to the exported nav. But **"the script ran and chose
+to go nowhere" is a decision, not an absence of one**, and the exported nav is a
+lossy summary of that same script with its conditions stripped. So when a handler
+navigates conditionally, the port runs the condition, gets `false`, and then jumps
+anyway.
+
+MURDER1 frame 789 is the measured case. `BehaviorScript 41` is present and
+decompiled:
+
+```lingo
+on exitFrame
+  global pptcount, tlkpath
+  if pptcount = "1" then
+    go("moreof")
+    sound playFile 1, tlkpath & "tof11.aif"
+  end if
+end
+```
+
+`pptcount` is set to 1 by exactly one script — `CastScript 38`, the middle option
+at the *later* `choose2` prompt — so on any other path the handler must fall
+through to frame 790 and the scene skips the "more of" branch. The export wrote
+frame 789's nav as an unconditional `{kind: label, value: "moreof"}`.
+
+Measured with `tools/_ppt_probe.gd` (scratch, deleted; the transcript is the
+evidence):
+
+```
+frame 789 script resolves to: BehaviorScript 41
+  handlers: ["exitFrame"]
+dispatch_frame_event('exitFrame', 789) handled=true  navigated=false  held=false
+after one step -> frame 850 label=moreof
+```
+
+`handled=true, navigated=false` is the script correctly declining, and the port
+went to 850 regardless. Every player therefore sees the optional branch, on every
+path through the scene.
+
+**Do not just suppress the export when a script ran — the blast radius is
+measured and it is large.** Counting every frame that carries both a
+`frame_script` resolving to a movie-local script with an `on exitFrame` and a
+non-null exported nav:
+
+| frame's `on exitFrame` | frames |
+|---|---|
+| navigates **conditionally** (`if` … `go`) | **2,441** |
+| navigates unconditionally | 984 |
+| never navigates | 4,426 |
+| no script resolves at all (export is the only source) | 33,307 |
+
+The 2,441 are the frames this rule change would alter, across **156** distinct
+`(movie, script)` pairs — among them `DAY1 BehaviorScript 56 - init all`, every
+`gameover` / `end` branch in ARCADE1 and ARCADE2, and the marker-0 hold scripts.
+The failure mode is a frame whose handler the interpreter runs but whose `go` it
+cannot execute: today the export catches it, and after the change that frame stops
+dead. With 33,307 frames having no script at all, the export is load-bearing and
+cannot simply lose to the interpreter.
+
+So the fix is not one condition. It needs `tools/lingo_walk_diff.gd` and
+`tools/lingo_frames.gd` run either side of it, and the conditional cases read
+rather than counted. The count above comes from a static sweep of the handler ASTs
+in `data/lingo/*/[cast].json` against the `frame_script` and `nav` fields in
+`assets/render_model/*/frames.json` — cheap to redo, and worth redoing before
+acting on the figure.
+
+**`MAX_GUARD_HOLD_MS` is dead code in the same function.** `held` is
+`_time_ms - frame_entered_ms`, and every branch out of the soundBusy guard —
+`busy_nav`'s `enter_frame`, and `_advance_or_hold` — calls `enter_frame`, which
+resets `frame_entered_ms`. `held` can never exceed one frame, so the 20-second
+timeout has never fired. It matters if a guard ever waits on a sound that does not
+start; today `AudioDirector.sound_busy` returns false for a failed channel, so
+nothing reaches it.
 
 ---
 

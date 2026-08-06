@@ -36,6 +36,7 @@ godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach 
 godot --headless --script tools/sprite_stretch.gd   # a sprite draws at its member's size, pass/fail
 godot --headless --script tools/film_loop_stretch.gd # a film-loop child draws at its member's size, pass/fail
 godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
+godot --headless --script tools/cliff_meeting.gd    # MURDER1 through both dialogue prompts, pass/fail (minutes, real time)
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
 python3 tools/repair_1bit_members.py                # re-decode 1-bit members from the raw chunks
 python3 tools/generate_sprite_stretch.py            # recover the sprite stretch flags from the containers

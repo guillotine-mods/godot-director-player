@@ -1,7 +1,12 @@
 extends SceneTree
-## Boot the way a player does, with real audio, and report any frame the score
-## sits on. Headless cannot do this: with no audio device soundBusy is always
-## false, so `if soundBusy(1) then go to the frame` never holds.
+## Boot the way a player does and report any frame the score sits on.
+##
+## Headless is fine — the Dummy driver does advance playback, at roughly 0.35x
+## real time, so `soundBusy` still goes idle. What is *not* fine is driving this
+## on a tight `for i in N: tick()` loop: that advances the runtime's clock and
+## not the audio server's, so no sound ever finishes and every
+## `if soundBusy(1) then go to the frame` guard holds for ever. The
+## `await process_frame` below is load-bearing. See bugs.md 22.
 var _r = null
 var _counts := {}
 var _ticks := 0
