@@ -72,15 +72,20 @@ func _initialize() -> void:
 
 	var failures := 0
 	var loaded := ""
+	var loop_labels: Array = []
 	for case in CASES:
+		var label := "%s %d" % [case["cast"], case["id"]]
+		loop_labels.append(label)
 		var movie: String = case["movie"]
 		if movie != loaded:
 			if loader.load_movie(movie) != OK:
 				print("%s: cannot load movie" % movie)
+				_complete(label, 1)
 				failures += 1
 				continue
 			loaded = movie
 		failures += _check(loader, case)
+	failures += _report_incomplete(loop_labels)
 
 	print("")
 	if failures == 0:
@@ -90,8 +95,11 @@ func _initialize() -> void:
 
 	print("")
 	var composition_failures := 0
+	var composition_labels: Array = []
 	for case in COMPOSITIONS:
+		composition_labels.append("%s frame %d" % [case["movie"], case["frame"]])
 		composition_failures += _check_composition(case)
+	composition_failures += _report_incomplete(composition_labels)
 	if composition_failures == 0:
 		print("all %d loop compositions draw the expected members" % COMPOSITIONS.size())
 	else:
@@ -99,6 +107,32 @@ func _initialize() -> void:
 			composition_failures, COMPOSITIONS.size(),
 		])
 	quit(1 if failures + composition_failures > 0 else 0)
+
+
+## Every check that ran to completion, by label. A check is only counted from its
+## own last line, so one that died part-way is missing rather than passing.
+##
+## A GDScript runtime error aborts the handler and hands back the return type's
+## zero value — `0` for a function typed `-> int` — so `failures += _check(...)`
+## scores a dead check as a pass. This harness printed "all 3 loop compositions
+## draw the expected members" twice while every one of them had aborted: once on a
+## mistyped call, once when a stale `global_script_class_cache.cfg` made every
+## `load()` of a script fail to parse. Neither was visible in the summary.
+var _completed: Dictionary = {}
+
+
+func _complete(label: String, failed: int) -> int:
+	_completed[label] = failed
+	return failed
+
+
+func _report_incomplete(labels: Array) -> int:
+	var missing := 0
+	for label in labels:
+		if not _completed.has(label):
+			print("%-32s FAIL: the check did not complete (see the errors above)" % label)
+			missing += 1
+	return missing
 
 
 func _check_composition(case: Dictionary) -> int:
@@ -109,11 +143,12 @@ func _check_composition(case: Dictionary) -> int:
 	var frame: int = case["frame"]
 	var channel: int = case["channel"]
 	var expected: Array = case["children"]
+	var label := "%s frame %d" % [movie, frame]
 
 	var runtime: RefCounted = load("res://director/director_runtime.gd").new()
 	if runtime.boot() != OK or not runtime.goto_movie(movie, frame):
 		print("%-9s frame %4d  FAIL: cannot reach the frame" % [movie, frame])
-		return 1
+		return _complete(label, 1)
 	# Park the playhead rather than let the clock carry it off the frame.
 	runtime.running = false
 	runtime.frame_index = frame - 1
@@ -122,13 +157,13 @@ func _check_composition(case: Dictionary) -> int:
 	var sprite: Dictionary = runtime.effective_sprite(channel)
 	if sprite.is_empty():
 		print("%-9s frame %4d  FAIL: channel %d is empty" % [movie, frame, channel])
-		return 1
+		return _complete(label, 1)
 	var loop: Dictionary = runtime.loader.get_film_loop(
 		int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0))
 	)
 	if loop.is_empty():
 		print("%-9s frame %4d  FAIL: channel %d is not a film loop" % [movie, frame, channel])
-		return 1
+		return _complete(label, 1)
 
 	var player: Control = load("res://director/movie_player.gd").new()
 	player.runtime = runtime
@@ -148,24 +183,25 @@ func _check_composition(case: Dictionary) -> int:
 		str(drawn) if ok else "%s, expected %s" % [str(drawn), str(expected)],
 		str(case.get("note", "")),
 	])
-	return 0 if ok else 1
+	return _complete(label, 0 if ok else 1)
 
 
 func _check(loader: RenderModelLoader, case: Dictionary) -> int:
 	var cast_name: String = case["cast"]
 	var cast_id: int = case["id"]
 	var movie: String = case["movie"]
+	var label := "%s %d" % [cast_name, cast_id]
 	# A loop kept in the movie's own cast is library 1; a loop in a linked cast is
 	# whichever library the movie links it as.
 	var lib := 1 if cast_name == movie.to_lower() else loader.cast_lib_index(cast_name)
 	if lib < 0:
 		print("%-9s %3d  %-9s FAIL: movie does not link the cast" % [cast_name, cast_id, movie])
-		return 1
+		return _complete(label, 1)
 
 	var loop := loader.get_film_loop(lib, cast_id)
 	if loop.is_empty():
 		print("%-9s %3d  %-9s FAIL: loop did not resolve" % [cast_name, cast_id, movie])
-		return 1
+		return _complete(label, 1)
 
 	var loop_frames: Array = loop.get("frames", [])
 	var distinct_members := {}
@@ -231,4 +267,4 @@ func _check(loader: RenderModelLoader, case: Dictionary) -> int:
 	print("%-9s %3d  %-9s %2d frames, %2d children  %s" % [
 		cast_name, cast_id, movie, loop_frames.size(), distinct_members.size(), status,
 	])
-	return failed
+	return _complete(label, failed)
