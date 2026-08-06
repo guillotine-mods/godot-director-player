@@ -21,6 +21,11 @@ const CHANNEL_BIAS := 5
 const STRETCH_FLAG := 0x80
 const TRAILS_FLAG := 0x40
 const INK_MASK := 0x3F
+## Bits of the thickness byte (byte 4), which is not only thickness.
+const BLEND_FLAG := 0x10
+const FLIP_H_FLAG := 0x20
+const FLIP_V_FLAG := 0x40
+const TWEENED_FLAG := 0x80
 ## A sprite record naming this library means "the movie's own cast".
 const OWN_CAST_LIB := 0xFFFF
 ## Tempo is a sentinel code and `tempo_cue` its operand.
@@ -247,6 +252,17 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 			"sprite_type": buffer[at],
 			"fore_color": buffer[at + 2],
 			"back_color": buffer[at + 3],
+			# Byte 4 is the thickness byte and carries four things nobody would
+			# guess from its name: the low nibble is the line thickness, 0x10
+			# says the sprite carries a blend, 0x20 and 0x40 are horizontal and
+			# vertical flip, and 0x80 marks the sprite as tweened. All of it was
+			# being dropped, flip included.
+			"thickness": buffer[at + 4] & 0x0F,
+			"has_blend": (buffer[at + 4] & BLEND_FLAG) != 0,
+			"flip_h": (buffer[at + 4] & FLIP_H_FLAG) != 0,
+			"flip_v": (buffer[at + 4] & FLIP_V_FLAG) != 0,
+			"tweened": (buffer[at + 4] & TWEENED_FLAG) != 0,
+			"blend_amount": buffer[at + 19],
 		})
 
 	var tempo := buffer[54]

@@ -32,29 +32,9 @@ const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 
+const Ink := preload("res://director/director_ink.gd")
+
 const STAGE := Vector2i(640, 480)
-## Inks that key the paper colour. 8/9 are Matte and 1/36/39 Background
-## Transparent; this preview treats them alike, so artwork enclosing white shows
-## a hole here that the real renderer does not.
-## Two different keying rules, not one. 8 and 9 are Matte, which removes only
-## the paper a flood fill reaches from the sprite's edge; 1, 36 and 39 are
-## Background Transparent, which removes the paper colour everywhere including
-## pockets enclosed by artwork. Treating them alike â€” which this preview did â€”
-## punches holes through anything that encloses white, and those holes are
-## invisible against a light background and fully clickable-through.
-const MATTE_INKS := [8, 9]
-const BACKGROUND_INKS := [1, 36, 39]
-const KEYED_INKS := [1, 8, 9, 36, 39]
-## Background Transparent keys an exact paper colour: at or above this in all
-## three channels.
-const PAPER_MIN_BYTE := 241
-## Matte is fuzzier, and has to be. It keys what the *edge* colour is, within a
-## tolerance, because scanned and dithered art does not hold one exact white â€”
-## `render_model_loader` uses the same figure. Keying matte on the strict paper
-## threshold instead leaves a one-pixel fringe of near-white around every
-## sprite, which reads as a halo and, on a hit test, as a border that responds
-## when the middle does not.
-const MATTE_TOLERANCE := 14.0 / 255.0
 ## What Director falls back to when no frame has set a tempo.
 const DEFAULT_FPS := 15.0
 ## Floating skip control, in stage coordinates so it scales and letterboxes with
@@ -657,7 +637,12 @@ func _draw() -> void:
 				int(m.get("width", 0)), int(m.get("height", 0)),
 				int(reg.x), int(reg.y), int(top_left.x), int(top_left.y),
 			])
-		draw_texture(texture, top_left)
+		# Blend is a draw-time alpha, not something baked into the artwork. A
+		# blended sprite that ignored this drew fully opaque and unkeyed, which is
+		# how EXODUS's selection highlight -- a semi-transparent bar meant to sit
+		# over the option you are pointing at -- came out as a solid black
+		# rectangle covering the text.
+		draw_texture(texture, top_left, Color(1, 1, 1, Ink.blend_alpha(sprite)))
 
 	if _show_boxes:
 		_draw_hotspots(frame)
@@ -709,13 +694,19 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 		image.resize(int(drawn.x), int(drawn.y), Image.INTERPOLATE_NEAREST)
 	# Matte keys only the paper a flood fill can reach from the edge; Background
 	# Transparent keys the paper colour everywhere. Treating both as the second
-	# punches holes through anything whose artwork encloses white â€” the gaps
-	# inside and between letters on a text button â€” and a click then falls
+	# punches holes through anything whose artwork encloses white -- the gaps
+	# inside and between letters on a text button -- and a click then falls
 	# straight through the middle of the button.
-	if MATTE_INKS.has(ink):
-		_key_matte(image)
-	elif KEYED_INKS.has(ink):
-		_key_paper(image)
+	#
+	# The paper is the sprite's own backColor, resolved through the palette
+	# rather than assumed: Director's 8-bit convention puts white at index 0, and
+	# 99.9% of this corpus stores exactly that, but a sprite is free to name
+	# another colour and the ink rule is defined against whatever it names.
+	match Ink.key_for(ink):
+		Ink.KEY_MATTE:
+			Ink.key_matte(image)
+		Ink.KEY_PAPER:
+			Ink.key_paper(image, Ink.colour_of(_palette, int(sprite.get("back_color", 0))))
 	# Kept alongside the texture for hit-testing: a click lands on a sprite only
 	# where the sprite actually has pixels, so a keyed-out region passes the
 	# click through to whatever is behind it.
@@ -888,7 +879,13 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 		# half the loop's size.
 		var child_reg := _scaled_reg(cm, texture.get_size(), bool(child["stretch"]))
 		var at := Vector2(float(child["loc_h"]), float(child["loc_v"]))
-		draw_texture(texture, origin + (at - loop_origin) - child_reg)
+		# A child carries its own ink and its own blend, and the loop's alpha
+		# multiplies through: a blended loop dims everything inside it.
+		draw_texture(
+			texture,
+			origin + (at - loop_origin) - child_reg,
+			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
+		)
 	return true
 
 
@@ -1095,7 +1092,7 @@ func _channel_at(at: Vector2) -> int:
 		# Only Matte samples the artwork. Every other ink is a plain rectangle
 		# for hit-testing even when it renders per-pixel â€” the asymmetry is
 		# deliberate in Director and easy to get wrong in both directions.
-		if _hit_pixels and MATTE_INKS.has(int(sprite["ink"])) and not _opaque_at(sprite, at):
+		if _hit_pixels and Ink.hits_per_pixel(int(sprite["ink"])) and not _opaque_at(sprite, at):
 			continue
 		# Eligibility is tested HERE, inside the descent, not applied to the
 		# answer afterwards. A sprite the point is over but which cannot respond
@@ -1194,13 +1191,20 @@ func _drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 	return Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
 
 
-## The cache key for a sprite's decoded artwork. The drawn size belongs in it:
-## one member legitimately appears at several sizes in the same movie, and a key
-## that omits the size hands the second appearance the first one's pixels.
+## The cache key for a sprite's decoded artwork.
+##
+## Everything that changes the pixels belongs in it. The drawn size does, because
+## one member legitimately appears at several sizes in the same movie and a key
+## that omits it hands the second appearance the first one's pixels. So does the
+## back colour, because it is what Background Transparent keys against — two
+## sprites sharing a member and naming different papers key differently.
+##
+## The blend amount deliberately does *not*: blending is applied as a draw-time
+## modulate rather than baked into the image, so one decode serves every alpha.
 func _texture_key(sprite: Dictionary, drawn: Vector2) -> String:
-	return "%d:%d:%d:%dx%d" % [
+	return "%d:%d:%d:%dx%d:%d" % [
 		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
-		int(drawn.x), int(drawn.y),
+		int(drawn.x), int(drawn.y), int(sprite.get("back_color", 0)),
 	]
 
 
@@ -1752,66 +1756,3 @@ func _resolve_member(which: Variant, _cast: String) -> int:
 	return cast.number_of(str(which))
 
 
-## Matte: key the paper reachable from the border, and nothing enclosed.
-##
-## Four-connected, seeded from every edge pixel, so white surrounded by artwork
-## stays opaque exactly as Director leaves it. The frontier is an explicit stack
-## rather than recursion â€” a 640x480 backdrop would be hundreds of thousands of
-## frames deep and GDScript has no catchable stack limit.
-func _key_matte(image: Image) -> void:
-	var w := image.get_width()
-	var h := image.get_height()
-	if w <= 0 or h <= 0:
-		return
-	# The paper colour is taken from a corner rather than assumed to be white.
-	# Not every sprite's paper is pure white, and keying the wrong colour removes
-	# nothing at all â€” the sprite then draws as an opaque rectangle and swallows
-	# every click inside it.
-	var paper := image.get_pixel(0, 0)
-	var stack: Array[Vector2i] = []
-	for x in w:
-		stack.append(Vector2i(x, 0))
-		stack.append(Vector2i(x, h - 1))
-	for y in h:
-		stack.append(Vector2i(0, y))
-		stack.append(Vector2i(w - 1, y))
-	var seen := {}
-	while not stack.is_empty():
-		var p: Vector2i = stack.pop_back()
-		if p.x < 0 or p.y < 0 or p.x >= w or p.y >= h:
-			continue
-		var key := p.y * w + p.x
-		if seen.has(key):
-			continue
-		seen[key] = true
-		var c := image.get_pixel(p.x, p.y)
-		if c.a <= 0.01:
-			continue
-		# Within tolerance of the paper colour, or of white. Dithered and scanned
-		# art does not hold one exact value, and an exact test leaves a fringe of
-		# near-paper pixels around every sprite.
-		var near_paper := (
-			absf(c.r - paper.r) <= MATTE_TOLERANCE
-			and absf(c.g - paper.g) <= MATTE_TOLERANCE
-			and absf(c.b - paper.b) <= MATTE_TOLERANCE
-		)
-		var near_white := (
-			c.r >= 1.0 - MATTE_TOLERANCE
-			and c.g >= 1.0 - MATTE_TOLERANCE
-			and c.b >= 1.0 - MATTE_TOLERANCE
-		)
-		if not (near_paper or near_white):
-			continue
-		image.set_pixel(p.x, p.y, Color(c.r, c.g, c.b, 0.0))
-		stack.append(Vector2i(p.x + 1, p.y))
-		stack.append(Vector2i(p.x - 1, p.y))
-		stack.append(Vector2i(p.x, p.y + 1))
-		stack.append(Vector2i(p.x, p.y - 1))
-
-
-func _key_paper(image: Image) -> void:
-	for y in image.get_height():
-		for x in image.get_width():
-			var c := image.get_pixel(x, y)
-			if c.r8 >= PAPER_MIN_BYTE and c.g8 >= PAPER_MIN_BYTE and c.b8 >= PAPER_MIN_BYTE:
-				image.set_pixel(x, y, Color(c.r, c.g, c.b, 0.0))
