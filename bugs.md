@@ -751,10 +751,20 @@ decompiled. The interpreter has no frame handler to run, `game_step` falls throu
 to the exported nav, and the exported nav is the loop. In the original, script 119
 is what advances the scene when the line of speech finishes.
 
-That makes this a decompilation gap rather than an engine bug, and the same shape
-as entry 20: something the extraction never produced, surfacing much later as
-behaviour. Re-run the decompiler over MURDER1's internal cast and the loop should
-resolve itself.
+**The scripts are in the binary; the decompiler is what is missing them.**
+`toolcache/chunks/MURDER1/MURDER1/chunks/` holds **33 `Lscr-*.bin` chunks**, so
+MURDER1's Lingo exists. But every decompilation pass on this machine produced
+`MASTER` and nothing else for it — `originals/recovery/godot-reference/lingo/MURDER1/`,
+`originals/recovery/web-alpha/decompiled_chunks/MURDER1/` and
+`originals/recovery/web-alpha/decompiled_true/PIP2DATA/MURDER1/casts/` all contain
+a lone `MASTER` directory. So it is not that nobody ran the decompiler: it ran and
+silently emitted one cast out of five.
+
+That makes this a decompilation gap rather than an engine bug, the same shape as
+entry 20. Fixing it means finding why the decompiler drops MURDER1's internal cast
+and its linked `goldolin` / `hezi` / `tofi`, not re-running it as-is. ProjectorRays
+is not installed here (`which projectorrays` finds nothing); the source is at
+`originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`.
 
 **Worth checking how wide it is** before fixing one movie: any movie whose
 cutscene frames carry a frame script the port does not have will loop the same
