@@ -145,7 +145,10 @@ func _read_frames(stream: PackedByteArray) -> bool:
 
 	var at := header_len
 	var limit: int = min(stream.size(), stream_size if stream_size > 0 else stream.size())
-	var carried_fps := 0.0
+	# Director's default until a frame writes a tempo. Starting at zero made
+	# every frame before the first tempo report 0 fps, and six movies in this
+	# game never set one at all, so they reported 0 for their whole length.
+	var carried_fps := 15.0
 	while at + 2 <= limit:
 		var frame_size := _u16(stream, at)
 		if frame_size == 0:

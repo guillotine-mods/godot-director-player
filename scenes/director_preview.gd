@@ -99,6 +99,10 @@ var _hover_channel := 0
 var _show_boxes := true
 ## Kept so a `go to movie` can resolve the next file the way the first was found.
 var _paths = null
+## Where `play` came from, so `play done` can return there.
+var _play_stack: Array = []
+## channel -> Director's 0-255 volume, so a read gives back what was written.
+var _sound_volume: Dictionary = {}
 
 
 func _ready() -> void:
@@ -1064,6 +1068,70 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	get_window().title = "%s  —  %d frames" % [target.get_file(), _score.frame_count]
 	print("go movie -> %s frame %d" % [target.get_file(), _index])
 	queue_redraw()
+
+
+## `play frame X` / `play movie Y` — go there, remembering where to come back to.
+##
+## Director keeps a stack, so a cut scene can be entered from anywhere and
+## return to its caller. Without it `play done` has nowhere to go and the movie
+## reads as having simply stopped at the end of the interlude.
+func lingo_play_push(args: Array) -> void:
+	_play_stack.append({"movie": str(_movie.path), "frame": _index})
+	var movie := ""
+	var where: Variant = null
+	for a in args:
+		if typeof(a) == TYPE_STRING:
+			var text := str(a)
+			if text.ends_with(".dir") or text.ends_with(".dxr") or text.ends_with(".cst"):
+				movie = text
+			elif text != "frame" and text != "movie" and where == null:
+				where = text
+		elif where == null:
+			where = a
+	if movie != "":
+		lingo_go_movie(movie, where)
+	elif typeof(where) == TYPE_STRING:
+		lingo_go_label(str(where))
+	elif where != null:
+		lingo_go_frame(int(where) - 1)
+
+
+## `play done` — return to whatever called `play`.
+func lingo_play_done() -> void:
+	if _play_stack.is_empty():
+		_held = true
+		return
+	var back: Dictionary = _play_stack.pop_back()
+	if str(back["movie"]) != str(_movie.path):
+		lingo_go_movie(str(back["movie"]).get_file(), null)
+	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
+	_held = true
+	queue_redraw()
+
+
+## A sound channel's properties. `volume` is the one this game sets, 52 times.
+func lingo_sound_prop(channel: int, prop: String) -> Variant:
+	match prop:
+		"volume":
+			return int(_sound_volume.get(channel, 255))
+		"loop", "looping":
+			return 0
+	return 0
+
+
+## Director's volume is 0-255. Godot wants decibels, and a linear-to-dB curve is
+## what makes 128 sound like half rather than nearly full.
+func lingo_set_sound_prop(channel: int, prop: String, value: Variant) -> void:
+	if prop != "volume":
+		return
+	var level := clampi(int(value), 0, 255)
+	_sound_volume[channel] = level
+	if _audio == null:
+		return
+	var player: Node = _audio.call("_ensure_player", channel)
+	if player != null:
+		player.set("volume_db", -80.0 if level <= 0 else linear_to_db(level / 255.0))
+	_trace("f%d volume ch%d = %d" % [_index, channel, level])
 
 
 func lingo_play_sound(channel: int, file: String) -> void:

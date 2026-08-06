@@ -36,7 +36,21 @@ const HANDLED := [
 const IGNORED := [
 	"puppettransition", "updatestage", "beep", "delay", "preloadmember",
 	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
-	"dontpassevent", "puppetsprite", "halt", "quit", "startTimer",
+	"dontpassevent", "puppetsprite", "halt", "quit", "starttimer",
+	# Bound deliberately inert rather than left unbound. An unbound name is
+	# reported as a gap every time it is reached, which buries the ones that
+	# matter; these are real Director builtins this preview has no state to
+	# implement, and answering VOID is the honest response.
+	#
+	# `pass` and `stopEvent` control message propagation, which is only
+	# equivalent here by accident: this dispatcher stops at the first handler
+	# that answers, so there is nothing further along to suppress. If the
+	# hierarchy ever queues the whole chain the way Director does, these stop
+	# being no-ops and become the mechanism.
+	"pass", "stopevent", "printfrom", "savemovie", "unloadmovie",
+	"clearglobals", "showglobals", "showlocals", "puppetpalette",
+	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
+	"shutdown", "abort", "continue", "installmenu", "setcallback",
 ]
 
 
@@ -80,6 +94,25 @@ func call_builtin(name: String, args: Array) -> Variant:
 				preview.lingo_puppet_sprite(
 					LingoValue.to_int(args[0]), LingoValue.to_int(args[1]) != 0
 				)
+			return 0
+		"pause":
+			# Halts the playhead where it is. The room stays drawn and its
+			# scripts keep running, which is what distinguishes it from `halt`.
+			if preview != null:
+				preview.lingo_hold()
+			return 0
+		"play":
+			# `play frame X` pushes the playhead and `play done` pops it back.
+			# 48 authored statements in this game use `play done`, so treating
+			# the whole builtin as inert loses a real control-flow path — the
+			# return from a cut scene reads as the movie simply stopping.
+			if preview == null:
+				return 0
+			var verb := str(args[0]).to_lower() if not args.is_empty() else ""
+			if verb == "done":
+				preview.lingo_play_done()
+				return 0
+			preview.lingo_play_push(args)
 			return 0
 		"rollover":
 			# The whole of this game's menu is built on it: a frame script asks
@@ -250,6 +283,18 @@ func get_member_prop(which: Variant, cast: Variant, prop: String) -> Variant:
 
 func set_member_prop(_which: Variant, _cast: Variant, _prop: String, _value: Variant) -> void:
 	pass
+
+
+## A sound channel's own properties, `the volume of sound 2` above all.
+func get_sound_prop(channel: int, prop: String) -> Variant:
+	if preview == null:
+		return 0
+	return preview.lingo_sound_prop(channel, prop.to_lower())
+
+
+func set_sound_prop(channel: int, prop: String, value: Variant) -> void:
+	if preview != null:
+		preview.lingo_set_sound_prop(channel, prop.to_lower(), value)
 
 
 func get_field(name: String, cast: Variant) -> Variant:

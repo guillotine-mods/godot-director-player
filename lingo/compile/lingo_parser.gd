@@ -852,6 +852,21 @@ func _parse_the() -> Dictionary:
 				"node": "member_prop", "prop": prop, "which": mwhich,
 				"cast": mcast, "line": line,
 			}
+		# `the volume of sound 2`. A sound channel is a designator, exactly like
+		# `sprite` and `member`, and it is not a keyword — so without this it
+		# falls through to the generic branch, `sound 2` parses as a command-form
+		# call, and the assignment target becomes a property of a call, which
+		# nothing can write to. The statement is then dropped with an error the
+		# player never sees, in 52 scripts.
+		if _at_word("sound"):
+			_advance()
+			var which_sound: Dictionary
+			if _at_op("("):
+				var sargs := _parse_call_args()
+				which_sound = sargs[0] if sargs.size() > 0 else {"node": "num", "value": 0}
+			else:
+				which_sound = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+			return {"node": "sound_prop", "prop": prop, "which": which_sound, "line": line}
 		if _at_kw("field"):
 			_advance()
 			var fname := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)

@@ -373,6 +373,11 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				item_delimiter = LingoValue.to_str(value)
 				return
 			_host_call("set_system_prop", [prop, value])
+		"sound_prop":
+			_host_call("set_sound_prop", [
+				LingoValue.to_int(_eval(target.get("which", {}), frame)),
+				str(target.get("prop", "")), value,
+			])
 		"prop_of":
 			var owner: Dictionary = target.get("target", {})
 			if str(owner.get("node", "")) == "sprite_ref":
@@ -520,6 +525,15 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			return _host_call("get_member_prop", [
 				_eval(expr.get("which", {}), frame),
 				_cast_of(expr, frame),
+				str(expr.get("prop", "")),
+			])
+		"sound_prop":
+			## `the volume of sound 2`. A sound channel is a designator like a
+			## sprite, not a call; parsing it as one made every such assignment
+			## unreachable, and 52 scripts here set a channel's volume with none
+			## of them taking effect.
+			return _host_call("get_sound_prop", [
+				LingoValue.to_int(_eval(expr.get("which", {}), frame)),
 				str(expr.get("prop", "")),
 			])
 		"prop":
