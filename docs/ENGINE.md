@@ -155,9 +155,20 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
   registry cast the child names. The loop cursor advances once per entered main
   score frame, resets independently when a channel's member changes, and is
   cleared when a new movie loads. The renderer expands the selected mini-score
-  frame's children in channel order and applies Director Scale semantics:
-  each child draw width and height are its own dimensions scaled by the parent
-  rectangle's X/Y scale relative to the loop's initial rectangle.
+  frame's children in channel order and applies Director Scale semantics: each
+  child draws at its **member's** own size, scaled by the parent rectangle's X/Y
+  scale relative to the loop's initial rectangle, and anchored on the member's
+  registration point.
+- A child's stored width and height are the drawn rect only when its own stretch
+  flag is set, exactly as for a sprite in the movie's score — a loop's children
+  are sprite records in the same 48-byte format. `director_film_loops.py` masked
+  the ink byte to its low 6 bits and dropped bit 0x80 with it, the same loss
+  `generate_sprite_stretch.py` undoes for the main score, so every child was
+  scaled into a rect Director ignores. It is now written on the child as
+  `stretch` and only where set: 2,053 of the corpus's 13,694 children carry it,
+  and 235 of the rest disagree with their member, `wonder` member 27 worst at
+  101x144 stored as 203x289. Covered by `tools/film_loop_stretch.gd`, whose
+  flagged case is the negative control.
 
 ## Controls
 

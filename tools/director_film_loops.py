@@ -23,6 +23,12 @@ MAX_D7_SPRITE_CHANNELS = 200
 MAX_D7_CHANNEL_DATA = MAIN_CHANNEL_SIZE + SPRITE_CHANNEL_SIZE * MAX_D7_SPRITE_CHANNELS
 ## Offset 4 of a mini-score sprite record: the owning file's own cast.
 OWN_CAST = 0xFFFF
+## Bit 0x80 of a sprite record's ink byte, in a loop's mini-score exactly as in the
+## movie's own score: the child's stored width and height are the drawn rect only
+## when it is set. Masking the byte to its low 6 bits for the ink drops it, which is
+## the same loss `generate_sprite_stretch.py` exists to undo for the main score.
+STRETCH_FLAG = 0x80
+INK_MASK = 0x3F
 ## A `ccl ` chunk is a handful of cast paths, never a hundred.
 MAX_CCL_ENTRIES = 64
 
@@ -205,6 +211,9 @@ def _frame_sprites(buffer: bytearray, external_casts: list[str]) -> tuple[list[d
     A child naming a cast this file's `ccl ` cannot resolve is dropped rather than
     left to fall back on the cast that owns the loop: that fallback is the bug this
     reading fixes, and it draws a wrong member rather than nothing.
+
+    `stretch` is written only where the flag is set, so a child without it says
+    "draw the member at its own size" and the recorded rect is authoring residue.
     """
     sprites: list[dict] = []
     dropped = 0
@@ -225,6 +234,7 @@ def _frame_sprites(buffer: bytearray, external_casts: list[str]) -> tuple[list[d
             if not cast_name:
                 dropped += 1
                 continue
+        ink_byte = buffer[base + 1]
         sprite = {
             "channel": index + 1,
             "cast_id": cast_id,
@@ -232,8 +242,10 @@ def _frame_sprites(buffer: bytearray, external_casts: list[str]) -> tuple[list[d
             "start_y": _i16(buffer, base + 12),
             "width": width,
             "height": height,
-            "ink": buffer[base + 1] & 0x3F,
+            "ink": ink_byte & INK_MASK,
         }
+        if ink_byte & STRETCH_FLAG:
+            sprite["stretch"] = True
         if cast_name:
             sprite["cast"] = cast_name
         sprites.append(sprite)

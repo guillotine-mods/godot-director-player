@@ -34,6 +34,7 @@ godot --headless --script tools/collectables.gd     # shells/bottles reveal, sta
 godot --headless --script tools/room_names.gd       # `nof` resolves to the room, pass/fail
 godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach the stage, pass/fail
 godot --headless --script tools/sprite_stretch.gd   # a sprite draws at its member's size, pass/fail
+godot --headless --script tools/film_loop_stretch.gd # a film-loop child draws at its member's size, pass/fail
 godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
 python3 tools/repair_1bit_members.py                # re-decode 1-bit members from the raw chunks
@@ -48,8 +49,9 @@ godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs t
 ```
 
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
-`sprite_channels.gd`, `sprite_stretch.gd`, `cursors.gd`, `verify_1bit_members.py`
-and `generate_sprite_stretch.py --check` are the pass/fail ones. Read
+`sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
+`verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
+pass/fail ones. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the
 others: agreement with the lifted export falls as the port becomes more faithful,
 so those numbers are not higher-is-better.

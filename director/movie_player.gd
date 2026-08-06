@@ -313,8 +313,19 @@ func film_loop_draw_commands(
 		if child_texture == null:
 			continue
 
-		var child_width: float = float(child.width)
-		var child_height: float = float(child.height)
+		var member_width: float = maxf(float(child_member.get("width", 1)), 1.0)
+		var member_height: float = maxf(float(child_member.get("height", 1)), 1.0)
+		# Same rule the main score got: the width and height a sprite record stores
+		# are the drawn rect only when its stretch flag is set, and with the flag
+		# clear they are authoring residue — the last size the channel was dragged
+		# to. A loop's children are sprite records too, so 235 of them were being
+		# scaled into a rect Director ignores, `wonder` member 27 worst at 101x144
+		# blown up to 203x289 (bugs.md 14).
+		var child_width: float = member_width
+		var child_height: float = member_height
+		if bool(child.get("stretch", false)):
+			child_width = float(child.width)
+			child_height = float(child.height)
 		var draw_width: float = child_width * stage_scale.x
 		var draw_height: float = child_height * stage_scale.y
 		if draw_width <= 0.0 or draw_height <= 0.0:
@@ -323,8 +334,6 @@ func film_loop_draw_commands(
 			(float(child.start_x) - initial_left) * stage_scale.x,
 			(float(child.start_y) - initial_top) * stage_scale.y,
 		)
-		var member_width: float = maxf(float(child_member.get("width", 1)), 1.0)
-		var member_height: float = maxf(float(child_member.get("height", 1)), 1.0)
 		var reg_x: float = float(child_member.get("reg_offset_x", member_width * 0.5))
 		var reg_y: float = float(child_member.get("reg_offset_y", member_height * 0.5))
 		var child_top_left := child_start - Vector2(

@@ -295,10 +295,23 @@ Reproduce: after `goto_movie("DAY1")`, every global above reads `<unset>` from
 
 ---
 
-## 14. Art draws stretched on one axis. Two causes; the score-side one is fixed.
+## 14. Art draws stretched on one axis. Three causes; two of them are fixed.
 
 **Status:** the score-side half is CLOSED — the stretch flag, see the Closed
-section. The member-side half below is open. · **Area:** assets and score
+section. The **film-loop-child** half is CLOSED — the same flag one level down,
+also in the Closed section, and it is what the "scratching" on DAY1's `field`,
+`edge1` and `veranda` was. The member-side half below is open. ·
+**Area:** assets and score
+
+**A loop's children were the third cause and are now fixed.** The report that
+reopened this was four screenshots of DAY1 `@field`, `@edge1` and `@veranda` —
+rooms whose guests are `wonder` film loops — with a character intermittently
+drawn at double size and others smeared on one axis. A loop's children are sprite
+records in the same 48-byte format as the movie's score, so the same flag governs
+them, and `tools/director_film_loops.py` was masking it off exactly as the
+upstream exporter did for the main score. See the Closed entry; the counts below
+are unaffected, because they read `frames.json`, which holds main-score records
+only.
 
 Reported twice from play: art "scratching over too much". The clearest instance is
 the raft in the opening, where the bearded man's head is smeared horizontally
@@ -576,6 +589,59 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
 
 ---
 
+## 20. `wonder.cst` has a degenerate `ccl `, so 98 film-loop children draw nothing
+
+**Status:** open · **Area:** assets / cast registry
+
+`tools/generate_cast_registry.py` prints `2145 resolved, 98 dropped as
+unresolvable`, and **all 98 are WONDER's**. Every other cast in the corpus
+resolves every child.
+
+The cause is in the container. `ccl -3333.bin` is 18 bytes — header, `count = 1`,
+offsets `[0, 4]`, then `00 01 00 00` — so its single entry is a **zero-length
+path**. Compare MURDER1's, which is 131 bytes and holds three real paths
+(`macintosh hd:pip2 full:tofi.cst` and so on). `parse_ccl` therefore answers
+`['']`, `resolve_cast('')` answers `""`, and `_frame_sprites` refuses every child
+whose `cast_index` is 0 rather than let it fall back on the owning cast — that
+refusal is deliberate and correct, because the fallback draws a stranger's bitmap
+(see the Closed entry for 15). The children are simply invisible instead.
+
+They are only two distinct members, but neither is small and one is on screen a
+lot:
+
+| member | size | channel | records |
+|---|---|---|---|
+| 983 | 153x197 | 10 | 74 |
+| 222 | 70x51 | 17 | 24 |
+
+**Which cast they belong to is not yet known, and the usual method fails here.**
+Sizing the children against every registered cast is what identified `tofi` and
+`goldolin` for MURDER1; it finds nothing this time. Member 983 exists in **no**
+registered cast at any size — only `sea1` even reaches that far, at 1033 — and no
+member anywhere in the corpus is 153x197 or 70x51. So the referenced cast is
+plausibly one that was never exported, which would make this an extraction gap
+rather than a parsing one. WONDER is the crowd cast for DAY1, NIGHT1 and SEA1, so
+whatever is missing is missing from the three biggest hubs.
+
+Not the same bug as 14's film-loop half. That one drew children at the wrong
+size; this one does not draw them at all, and the two were found in the same pass
+over the same rooms.
+
+Reproduce:
+
+```
+python3 tools/generate_cast_registry.py    # "98 dropped as unresolvable"
+python3 -c "
+import sys; sys.path.insert(0,'tools')
+from pathlib import Path
+import director_film_loops as dfl
+root = Path.home()/'Projects/_private_projects/piposh2-toolcache/chunks'
+print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
+"
+```
+
+---
+
 ## Closed
 
 - **A film loop's frames were looked for in the wrong cast library** (was 15).
@@ -635,6 +701,39 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
   named — `["murder1:4"]` for Tofi's body, `[]` for Goldolin — which is the check
   the data assertion could not make. The split is behaviour-neutral: the five
   MURDER1 frames render byte-identical PNGs across it.
+
+- **A film loop's children drew scaled to a rect Director ignores** (the
+  film-loop half of 14). The entry below fixed this for the movie's own score and
+  said in passing that film loops were untouched. That was true and it was the
+  gap: a loop's children are sprite records in the same 48-byte format, carrying
+  the same **stretch** flag at bit `0x80` of the ink byte, and
+  `tools/director_film_loops.py` masked the byte to its low 6 bits for the ink and
+  dropped the flag with it — the identical loss, one level down, in a second
+  reader written months apart from the first. `MoviePlayer.film_loop_draw_commands`
+  then scaled every child into its recorded rect.
+
+  Of the corpus's 13,694 children, **2,053 carry the flag** and Director really
+  does scale them; 11,234 have it clear with a rect already equal to their member,
+  so nothing changes; and **235 have it clear and disagree**, which is the bug.
+  `wonder` is 130 of the 235 and holds the worst: member 27 is 101x144 and its
+  record says 203x289, so DAY1 `@field` channel 20 drew a guest at double size for
+  6 of the loop's 24 frames — the giant black dress in the report — and back to
+  normal for the other 18. The one-axis cases are the "scratching": `wonder` 59 at
+  84x159 recorded 97x159. Also affected: TENNIS 55, MASTER 16, INVESTIG 10,
+  ENDMOVI1 7, GARDUG 6, SAMNIGHT 6, ARCADE2 3, ISHURUN 2.
+
+  The flag is written on the child as `stretch` and only where set, so its absence
+  means "draw the member at its own size". Regenerating `cast_registry.json` over
+  the fix leaves the file **identical once `stretch` is stripped**, which is how
+  the change was attributed.
+
+  Covered by `tools/film_loop_stretch.gd`. Its fourth case is a **negative
+  control** and is the reason the harness is worth having: `wonder` loop 175 is a
+  zoom, every child flagged, its members recorded at ~88% of natural size. A "fix"
+  that simply stopped honouring the recorded rect would pass all three positive
+  cases and silently un-animate the zoom. Reverting the renderer alone turns the
+  three positives red with the stored rect named in each failure and leaves the
+  control green.
 
 - **Art drew scaled to a rect Director ignores** (the score-side half of 14).
   A Director sprite draws its member at the member's own size, anchored on the
