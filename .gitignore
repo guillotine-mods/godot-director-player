@@ -37,3 +37,7 @@ reference/scummvm/
 
 # Agent worktrees: full checkouts, 2.5 GB and counting. Never committed.
 .claude/worktrees/
+
+# The original Director game data the runtime reads: hundreds of megabytes, and
+# not ours to redistribute. Point `director_game.cfg` at a local copy.
+games/
