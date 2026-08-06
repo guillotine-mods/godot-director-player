@@ -273,11 +273,18 @@ def parse_scvw(
         _warning(f"malformed SCVW list header {path}")
         return None
     list_size = _u32(data, list_start + 4)
-    max_data_len = _u32(data, list_start + 8)
-    if max_data_len > MAX_D7_CHANNEL_DATA:
-        _warning(f"SCVW channel data exceeds D7 limit in {path}")
-        return None
+    # The header's third word is the byte length of the whole frame-data region,
+    # not one frame's channel buffer: it equals the bytes left after the index
+    # table for all 287 SCVW chunks in the corpus. Measuring it against the D7
+    # channel capacity compared two different quantities, and rejected DAY1's
+    # `loshuaa` — the one loop whose stream is longer than a single frame's
+    # buffer (bugs.md 12). Its deltas in fact reach byte 1344 of 9888. The
+    # capacity bound that does apply is enforced per delta against `buffer`.
+    frame_data_len = _u32(data, list_start + 8)
     index_start = list_start + 12
+    if index_start + list_size * 4 + frame_data_len > len(data):
+        _warning(f"SCVW frame data overruns resource {path}")
+        return None
     frame_data_offset = index_start + list_size * 4
     if list_size == 0 or index_start + 4 > len(data) or frame_data_offset > len(data):
         _warning(f"malformed SCVW index {path}")

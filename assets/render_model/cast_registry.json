@@ -38273,6 +38273,2801 @@
           "looping": true,
           "width": 52
         },
+        "309": {
+          "cast_id": 309,
+          "frames": [
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                }
+              ]
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                },
+                {
+                  "cast_id": 306,
+                  "channel": 21,
+                  "height": 65,
+                  "ink": 32,
+                  "start_x": 124,
+                  "start_y": 169,
+                  "width": 123
+                },
+                {
+                  "cast_id": 308,
+                  "channel": 22,
+                  "height": 102,
+                  "ink": 32,
+                  "start_x": 135,
+                  "start_y": 110,
+                  "width": 65
+                }
+              ]
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": []
+            },
+            {
+              "sprites": [
+                {
+                  "cast_id": 307,
+                  "channel": 20,
+                  "height": 53,
+                  "ink": 32,
+                  "start_x": 155,
+                  "start_y": 205,
+                  "width": 98
+                }
+              ]
+            }
+          ],
+          "height": 173,
+          "initial_rect": {
+            "bottom": 232,
+            "left": 62,
+            "right": 204,
+            "top": 59
+          },
+          "looping": true,
+          "width": 142
+        },
         "337": {
           "cast_id": 337,
           "frames": [

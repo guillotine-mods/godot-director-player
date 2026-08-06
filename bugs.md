@@ -430,7 +430,8 @@ not like a missing cursor.
 
 ## 12. One DAY1 film loop still does not parse
 
-**Status:** almost closed · **Area:** assets / renderer · **See also:** 15
+**Status:** CLOSED — the guard measured the wrong quantity, see the Closed
+section · **Area:** assets / renderer · **See also:** 15
 
 This entry began as the report now filed as 15, and was rewritten into a
 film-loop entry when that fix was believed to have closed it. It had not been
@@ -454,16 +455,19 @@ directly, so 84 of the 88 movies now have chunks and the registry carries 497 fi
 loops across 60 internal casts. **17,426 of those 17,506 sprites now resolve**, up
 from none.
 
-What is left is one member: DAY1's 309, `loshuaa`, on channel 19 for 80 sprites.
-Its `SCVW-1800` trips "channel data exceeds D7 limit" in
-`tools/director_film_loops.py`, so the loop is skipped rather than mis-parsed. The
-D7 constants in that file (`MAIN_CHANNEL_SIZE = 288`, `SPRITE_CHANNEL_SIZE = 48`,
-`MAX_D7_SPRITE_CHANNELS = 200`) are the thing to re-derive against this one chunk;
-the recovery skill warns that score format is the part that moved most between
-versions.
+The last member was DAY1's 309, `loshuaa`, on channel 19 for 80 sprites. Its
+`SCVW-1800` tripped "channel data exceeds D7 limit" in
+`tools/director_film_loops.py` and the loop was skipped. **The D7 constants were
+not the cause and did not need re-deriving** — the guard compared two different
+quantities. See the Closed entry. The registry now carries 498 loops and
+`get_film_loop(1, 309)` returns 161 frames on channels 20, 21 and 22.
 
 Reproduce: `goto_movie("MURDER1")` then `loader.get_film_loop(1, 5)` resolves to 7
-frames at 168x279; `goto_movie("DAY1")` then `get_film_loop(1, 309)` returns `{}`.
+frames; `goto_movie("DAY1")` then `get_film_loop(1, 309)` gives 161 frames where
+it gave `{}`. The "168x279" this line used to quote for the MURDER1 control is
+wrong and predates the film-loop child fix: that child's rect is 108x273, which is
+what the Closed entry for 15 also records. The control's frame count, 7, is the
+part worth checking.
 
 ---
 
@@ -965,6 +969,35 @@ print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
 ---
 
 ## Closed
+
+- **A film loop's size guard measured the whole stream against one frame's buffer**
+  (was 12). `parse_scvw` read the third word of the `SCVW` list header as a channel
+  data length and refused the resource when it exceeded `MAX_D7_CHANNEL_DATA`, the
+  288 + 48 x 200 capacity of a single frame's channel buffer. That word is not a
+  buffer size: it is the byte length of the whole frame-data region. It equals
+  `len(data) - (index_start + list_size * 4)` for **287 of 287** `SCVW` chunks in
+  the corpus, exactly, which is what identifies it.
+
+  So the guard grew with the *length of the loop* and had nothing to do with how
+  many channels a frame touches. Only one loop in the corpus was long enough to
+  cross the line — DAY1's 309, `loshuaa`, declaring 13,184 against the 9,888
+  ceiling. Its deltas in fact reach byte **1,344** of that 9,888 buffer, using 22
+  sprite channels of the 200 allowed, so the D7 constants were right the whole
+  time and re-deriving them, which this entry previously called for, would have
+  found nothing wrong.
+
+  The parse was never in doubt either. Every loop measured, working ones included,
+  terminates with the frame-data stream exactly exhausted (`consumed ==
+  inner_stream_size`), and `frames != list_size` is normal throughout — DAY1's
+  `SCVW-1777` yields 20 frames from a `list_size` of 16, SEA1's `SCVW-5694` yields
+  27 from 256. 1800 behaves like all of them: 161 frames, stream exhausted.
+
+  The bound that does matter was already there and is untouched — each channel
+  delta is checked against the real buffer before it is written. What replaced the
+  guard is the sanity check the header supports: the frame-data region must fit
+  inside the resource. The registry went from 497 loops to 498, the diff is pure
+  insertion with nothing existing altered, and `verify_film_loops`,
+  `sprite_stretch` and `film_loop_stretch` all still pass.
 
 - **A film loop's frames were looked for in the wrong cast library** (was 15).
   A loop's children are usually members of the cast the loop itself lives in, and
