@@ -719,6 +719,43 @@ machine replaced.
 
 ---
 
+## 22. Cannot come back from the cliff — regression from 21's fix
+
+**Status:** open, REGRESSION · **Area:** score runner · **Introduced by:** `9cae9f59`
+
+Reported from play immediately after 21's fix: the player reaches the cliff and
+cannot return. Present only on `worktree-shell-bottle-reveal`; `main` is unaffected.
+
+`DirectorRuntime._run_arrival_frame_script()` dispatches the arrival frame's
+`exitFrame` under `record`. Record suppresses the `go` — which is why it was used —
+but **not the handler's other side effects**. Both candidate scripts consume state
+the port still needs afterwards: `BehaviorScript 207` sets `nextroomdata = "000"`
+and `set the visible of sprite 30 to 1`, and `whatodoeveryframe`'s transition
+branch also ends `nextroomdata = "000"`. Clearing that global one dispatch early is
+the leading suspect — the cliff return is a transition whose next hop reads
+`nextroomdata` and now finds it empty.
+
+Not yet confirmed by a run; that is the first job. `clif` and `clif2` are DAY1
+labels, and MURDER1 is the cliff meeting.
+
+**Why every harness stayed green.** None of the ten walks *out* of a room it
+walked into. `lingo_walk_diff` scores the arrival room only, so a transition that
+strands the player on the next hop is invisible to it — the same shape as the
+"smoke the user's first minute" lesson in `porting-fidelity-verification`. Any fix
+here needs a case that walks in **and** back out.
+
+**Two candidate fixes.** Do not dispatch when the score is already mid-transition
+(the arrival frame carries `frame_script 207`), or stop the recorded dispatch
+consuming `nextroomdata` — record already suppresses navigation, so suppressing
+this global write is the same idea carried further. The second is more general and
+probably right, but check what else `record` ought to be suppressing before
+special-casing one global.
+
+Reverting `9cae9f59` fixes this and reopens 21. The film-loop stretch fix
+(`4d91022e`, `b5c2fd3c`) is independent and unaffected either way.
+
+---
+
 ## 20. `wonder.cst` has a degenerate `ccl `, so 98 film-loop children draw nothing
 
 **Status:** open · **Area:** assets / cast registry
