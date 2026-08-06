@@ -143,6 +143,43 @@ Not the same bug as entry 14's film-loop half, found in the same rooms in the sa
 pass. That one drew these characters at the wrong size; this one drew twice as many
 of them as there should be.
 
+**It shipped half-fixed once, and the harness is why.** `31fd217d` passed all four
+rooms and the player reported the guests still doubled, "e.g. in edge1go". The report
+was right. `_people_funk` was *overwriting* `nextroomdata` with the label it was
+handed, and `peoplefunk`'s input is `item 1 of nextroomdata` — the destination the
+exit's own `mouseUp` wrote. For `goto_movie` the label is a room, so it worked. For a
+walk inside one movie `_on_puppet_arrived` hands over a **transition marker**:
+
+```
+nav| arrived → edge2up (frame 407)      → actually landed in lighthousego
+nav| arrived → lighthousein (frame 475) → actually landed in stairsgo
+```
+
+`edge2up` matches no branch, so the handler fell through to `isthere = "no"` and hid
+nothing — on every arrival a player walks to, which is most of them. Fixed in
+`38317b1b`: the label is used only when `lookup_label(room + "go")` says it names a
+room, and otherwise item 1 of what the exit wrote is read instead, with the rest of
+`nextroomdata` left alone.
+
+**The lesson is about the harness, not the handler.** The harness arrived by
+`goto_movie` because that is the call a harness reaches for — one line, lands exactly
+where you asked. The player arrives by walking, and those are different code paths
+with different label conventions. Four green checks could not tell the broken commit
+from the fixed one. `wandering_characters.gd` now asserts both shapes, and the
+discriminating run is what makes it worth having — with only `director_runtime.gd`
+reverted:
+
+```
+DAY1 @field/@edge1/@veranda/@tennis   ok    ok      <- cannot tell the commits apart
+walk-in field/edge1/veranda/tennis    FAIL  ok
+```
+
+**Still not verified end to end.** No harness drives a real walk *into* one of these
+four rooms — the walk-in case reproduces the arrival's *shape* (transition-marker
+label, destination in `nextroomdata`) rather than clicking an exit and waiting. The
+exits that lead into `field`, `edge1`, `veranda` and `tennis` were not identified;
+entry 27 is the same reachability gap seen from the other side.
+
 **Not closed by this.** Entry 2 — `whatodoeveryframe` is reimplemented natively
 rather than run — is still open, and the original calls `peoplefunk` from inside
 it. This fix runs the handler from the port's own arrival path instead, so it is a
