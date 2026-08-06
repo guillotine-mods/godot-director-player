@@ -5,7 +5,9 @@ in `reference/lingo/`, its decoded score and art in `assets/render_model/`, and 
 the reference for every behavioural question.
 
 Read `docs/ENGINE.md` for how the engine works, `bugs.md` for what is known broken,
-and `README.md` for the verification tools. The skills in `.claude/skills/` carry
+`docs/bugs-closed.md` for what was fixed and what was ruled out along the way, and
+`README.md` for the verification tools. A source comment citing `bugs.md <n>` may
+mean either file: resolved entries keep their number and move to the second. The skills in `.claude/skills/` carry
 what the port cost to learn; the one-line descriptions in `README.md` say when each
 applies.
 
