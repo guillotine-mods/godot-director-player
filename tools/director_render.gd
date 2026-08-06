@@ -75,8 +75,8 @@ func _init() -> void:
 			print("no label %s" % label)
 			quit(1)
 			return
-	if index < 0 or index >= score.frames.size():
-		print("frame %d is outside 0..%d" % [index, score.frames.size() - 1])
+	if index < 0 or index >= score.frame_count:
+		print("frame %d is outside 0..%d" % [index, score.frame_count - 1])
 		quit(1)
 		return
 
@@ -100,7 +100,7 @@ func _init() -> void:
 	var started := Time.get_ticks_usec()
 
 	print("")
-	for sprite in score.frames[index]["sprites"]:
+	for sprite in score.frame(index)["sprites"]:
 		var lib := int(sprite["cast_lib"])
 		var id := int(sprite["cast_id"])
 		var m: Dictionary = table.get_member(lib, id)

@@ -29,6 +29,10 @@ const TEMPO_DELAY := 247
 const TEMPO_WAIT_CLICK := 248
 ## The score-list marker the D5+ format writes at offset 4.
 const SCORE_LIST_MARKER := -3
+## Frames between buffer snapshots. Seeking replays at most this many deltas, so
+## it trades a little memory for random access: 44 snapshots of 48 KB on the
+## longest movie here, against decoding all 2784 frames up front.
+const KEYFRAME_INTERVAL := 64
 
 var frame_count: int = 0
 var frames_version: int = 0
@@ -37,16 +41,26 @@ var channels: int = 0
 ## How many sprite channels this movie actually uses. Read, never assumed: the
 ## widely-quoted 120 truncates the movies that write up to channel 150.
 var channels_displayed: int = 0
-## One entry per frame, in the shape the runtime consumes.
-var frames: Array[Dictionary] = []
 var error: String = ""
 
 var _intervals: Array[Dictionary] = []
+## The frame stream, kept so a frame can be materialised on demand.
+var _stream := PackedByteArray()
+## Where each frame's record starts in `_stream`.
+var _frame_at := PackedInt32Array()
+## Buffer state after every KEYFRAME_INTERVAL-th frame, keyed by frame index.
+var _keyframes: Dictionary = {}
+## Frame rate per frame. Tempo is rewritten to zero on frames that carry none
+## while the rate it set persists, so the carry-forward is resolved during the
+## scan rather than needing the previous frame to already be decoded.
+var _fps := PackedFloat32Array()
+var _buffer_size := 0
+var _cached_index := -1
+var _cached: Dictionary = {}
 
 
 func parse(payload: PackedByteArray) -> bool:
 	error = ""
-	frames.clear()
 	_intervals.clear()
 	if payload.size() < 28:
 		error = "VWSC too short (%d bytes)" % payload.size()
@@ -118,29 +132,83 @@ func _read_frames(stream: PackedByteArray) -> bool:
 	var buffer := PackedByteArray()
 	buffer.resize(MAIN_CHANNEL_SIZE + SPRITE_RECORD_SIZE * (channels + 1))
 
+	# The stream is scanned once: frame boundaries are recorded, the buffer is
+	# snapshotted periodically, and nothing is decoded. Building every frame's
+	# sprite list here cost 481 ms on the longest movie to answer a question the
+	# runtime asks about one frame at a time.
+	_stream = stream
+	_buffer_size = buffer.size()
+	_frame_at = PackedInt32Array()
+	_fps = PackedFloat32Array()
+	_keyframes.clear()
+	_cached_index = -1
+
 	var at := header_len
 	var limit: int = min(stream.size(), stream_size if stream_size > 0 else stream.size())
+	var carried_fps := 0.0
 	while at + 2 <= limit:
 		var frame_size := _u16(stream, at)
 		if frame_size == 0:
 			break
-		var frame_end: int = at + frame_size
-		var cursor := at + 2
-		while cursor + 4 <= frame_end and cursor + 4 <= stream.size():
-			var chunk_size := _u16(stream, cursor)
-			var offset := _u16(stream, cursor + 2)
-			cursor += 4
-			if offset < 0 or offset + chunk_size > buffer.size() or cursor + chunk_size > stream.size():
-				error = "frame %d writes %d bytes at %d, outside the channel buffer" % [
-					frames.size(), chunk_size, offset,
-				]
-				return false
-			for k in chunk_size:
-				buffer[offset + k] = stream[cursor + k]
-			cursor += chunk_size
-		frames.append(_snapshot(buffer, frames.size()))
-		at = frame_end
+		var index := _frame_at.size()
+		_frame_at.append(at)
+		if not _apply(stream, at, buffer):
+			error = "frame %d writes outside the channel buffer" % index
+			return false
+		if buffer[54] == TEMPO_SET_FPS:
+			carried_fps = float(buffer[53])
+		_fps.append(carried_fps)
+		if index % KEYFRAME_INTERVAL == 0:
+			_keyframes[index] = buffer.duplicate()
+		at += frame_size
+	# The header's count is what the movie declares; the stream is what it has.
+	frame_count = _frame_at.size()
 	return true
+
+
+## Apply one frame's deltas to the channel buffer. Deltas are byte ranges, not
+## channel records — Director writes several adjacent 48-byte records in one go.
+func _apply(stream: PackedByteArray, at: int, buffer: PackedByteArray) -> bool:
+	var frame_end: int = at + _u16(stream, at)
+	var cursor := at + 2
+	while cursor + 4 <= frame_end and cursor + 4 <= stream.size():
+		var chunk_size := _u16(stream, cursor)
+		var offset := _u16(stream, cursor + 2)
+		cursor += 4
+		if offset < 0 or offset + chunk_size > buffer.size() or cursor + chunk_size > stream.size():
+			return false
+		for k in chunk_size:
+			buffer[offset + k] = stream[cursor + k]
+		cursor += chunk_size
+	return true
+
+
+## Frame N, decoded on demand. Replays from the nearest snapshot at or before it,
+## so a seek costs at most KEYFRAME_INTERVAL deltas rather than the whole movie.
+func frame(index: int) -> Dictionary:
+	if index == _cached_index:
+		return _cached
+	if index < 0 or index >= _frame_at.size():
+		return {}
+	var base: int = (index / KEYFRAME_INTERVAL) * KEYFRAME_INTERVAL
+	while base > 0 and not _keyframes.has(base):
+		base -= KEYFRAME_INTERVAL
+	var buffer: PackedByteArray = (
+		_keyframes[base].duplicate() if _keyframes.has(base)
+		else _fresh_buffer()
+	)
+	var from: int = base + 1 if _keyframes.has(base) else 0
+	for i in range(from, index + 1):
+		_apply(_stream, _frame_at[i], buffer)
+	_cached_index = index
+	_cached = _snapshot(buffer, index)
+	return _cached
+
+
+func _fresh_buffer() -> PackedByteArray:
+	var buffer := PackedByteArray()
+	buffer.resize(_buffer_size)
+	return buffer
 
 
 ## The channel buffer as it stands is frame N. Only the decoded view is kept —
@@ -192,10 +260,7 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		"transition_member": _u16(buffer, 98),
 		"palette_member": _u16(buffer, 242),
 	}
-	# Tempo is rewritten to zero on frames that carry none, but the frame rate it
-	# set persists, so it is carried forward rather than read per frame.
-	var previous: float = float(frames[index - 1].get("fps", 0.0)) if index > 0 else 0.0
-	out["fps"] = float(tempo_cue) if tempo == TEMPO_SET_FPS else previous
+	out["fps"] = _fps[index] if index < _fps.size() else 0.0
 	return out
 
 
@@ -222,11 +287,12 @@ func intervals() -> Array[Dictionary]:
 	return _intervals
 
 
-## Highest sprite channel this score ever writes.
+## Highest sprite channel this score ever writes. Walks every frame, so it is a
+## question to ask once and keep, not one to ask per frame.
 func max_channel() -> int:
 	var highest := 0
-	for frame in frames:
-		for sprite in frame["sprites"]:
+	for i in _frame_at.size():
+		for sprite in frame(i)["sprites"]:
 			highest = max(highest, int(sprite["channel"]))
 	return highest
 

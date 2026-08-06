@@ -72,12 +72,11 @@ func _init() -> void:
 
 	print("%s  %s" % [path, "XFIR" if not f.big_endian else "RIFX"])
 	print("frames     : %d  (version %d, %d channels, %d displayed)" % [
-		score.frames.size(), score.frames_version, score.channels, score.channels_displayed,
+		score.frame_count, score.frames_version, score.channels, score.channels_displayed,
 	])
 	print("parsed in  : %.0f ms" % elapsed)
 	print("markers    : %d, labels %d" % [labels.markers.size(), labels.labels.size()])
 	print("intervals  : %d" % score.intervals().size())
-	print("max channel: %d" % score.max_channel())
 
 	var index := Args.number(args, "frame", -1)
 	var label := Args.text(args, "label")
@@ -98,13 +97,15 @@ func _init() -> void:
 		quit(0)
 		return
 
-	if index >= score.frames.size():
-		print("frame %d is past the end (%d frames)" % [index, score.frames.size()])
+	if index >= score.frame_count:
+		print("frame %d is past the end (%d frames)" % [index, score.frame_count])
 		f.close()
 		quit(1)
 		return
 
-	var frame: Dictionary = score.frames[index]
+	var seek_started := Time.get_ticks_usec()
+	var frame: Dictionary = score.frame(index)
+	print("seek       : %.1f ms" % ((Time.get_ticks_usec() - seek_started) / 1000.0))
 	print("")
 	print("frame %d  (%s)  fps %.0f  script %s%s%s" % [
 		index, labels.marker_at(index), frame["fps"],
@@ -150,9 +151,9 @@ func _sweep(paths) -> int:
 			failures.append("%s: %s" % [path.get_file(), score.error])
 			f.close()
 			continue
-		total_frames += score.frames.size()
-		for frame in score.frames:
-			total_sprites += frame["sprites"].size()
+		total_frames += score.frame_count
+		for i in score.frame_count:
+			total_sprites += score.frame(i)["sprites"].size()
 		var vwlb: Array = f.ids_of("VWLB")
 		if not vwlb.is_empty():
 			var labels := Labels.new()
