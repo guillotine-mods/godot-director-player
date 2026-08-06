@@ -40,6 +40,9 @@ const KEYED_INKS := [1, 8, 9, 36, 39]
 const PAPER_MIN_BYTE := 241
 ## What Director falls back to when no frame has set a tempo.
 const DEFAULT_FPS := 15.0
+## Floating skip control, in stage coordinates so it scales and letterboxes with
+## everything else rather than drifting when the window is resized.
+const SKIP_RECT := Rect2(STAGE.x - 62, 8, 54, 22)
 
 var _movie = null
 var _score = null
@@ -54,6 +57,9 @@ var _status := ""
 var _aspect := "native_4_3"
 ## "<lib>:<member>:<ink>" -> Texture2D, or null where the member draws nothing.
 var _textures: Dictionary = {}
+## Same keys as `_textures`, holding the decoded Image so a click can be tested
+## against the artwork rather than against its bounding box.
+var _hit_images: Dictionary = {}
 var _interpreter = null
 var _host = null
 var _audio: Node = null
@@ -84,6 +90,15 @@ var _ticks := 0
 ## screen, and a loop that silently draws nothing looks identical to one that
 ## was never attempted.
 var _loop_stats: Dictionary = {}
+## Channel under the cursor, 0 for none. Recomputed on motion rather than per
+## draw, because `rollOver` asks for it many times a tick.
+var _hover_channel := 0
+## Outline every sprite, brighter for the one under the cursor. On by default:
+## in a preview with no cursor art and no hotspot feedback, "nothing happens" and
+## "nothing is there" look the same.
+var _show_boxes := true
+## Kept so a `go to movie` can resolve the next file the way the first was found.
+var _paths = null
 
 
 func _ready() -> void:
@@ -121,6 +136,7 @@ func _ready() -> void:
 	_table = CastTable.new()
 	_table.open(_movie, paths)
 	_palette = Palette.system_mac()
+	_paths = paths
 
 	var label := Args.text(args, "label")
 	if label != "":
@@ -485,7 +501,18 @@ func _advance() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed \
 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		_click(stage_mouse())
+		var at := stage_mouse()
+		# Tested before the sprite hit-test, or a hotspot underneath would eat it.
+		if SKIP_RECT.has_point(at):
+			skip_to_end()
+			return
+		_click(at)
+		return
+	if event is InputEventMouseMotion:
+		var was := _hover_channel
+		_hover_channel = _channel_at(stage_mouse())
+		if was != _hover_channel:
+			queue_redraw()
 		return
 	if not (event is InputEventKey and event.pressed):
 		return
@@ -502,6 +529,9 @@ func _input(event: InputEvent) -> void:
 			queue_redraw()
 		KEY_R:
 			_index = 0
+			queue_redraw()
+		KEY_B:
+			_show_boxes = not _show_boxes
 			queue_redraw()
 		KEY_L:
 			_report()
@@ -530,19 +560,10 @@ func _draw() -> void:
 		# still showing the old art — which looks like a layering fault and is
 		# not one: the draw order here is already ascending channel, which is
 		# Director's stacking order.
-		var sprite: Dictionary = raw_sprite
+		var sprite: Dictionary = _effective(raw_sprite)
+		if sprite.is_empty():
+			continue
 		var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
-		if not over.is_empty():
-			if over.has("visible") and int(over["visible"]) == 0:
-				continue
-			sprite = sprite.duplicate()
-			for key in ["membernum", "castnum"]:
-				if over.has(key):
-					sprite["cast_id"] = int(over[key])
-			if over.has("loch"):
-				sprite["loc_h"] = int(over["loch"])
-			if over.has("locv"):
-				sprite["loc_v"] = int(over["locv"])
 		# A film loop draws its own children rather than a bitmap of its own.
 		if _draw_film_loop(sprite):
 			continue
@@ -566,6 +587,18 @@ func _draw() -> void:
 				int(reg.x), int(reg.y), int(top_left.x), int(top_left.y),
 			])
 		draw_texture(texture, top_left)
+
+	if _show_boxes:
+		_draw_hotspots(frame)
+
+	# Drawn last so it sits above the stage, and in stage coordinates so it
+	# scales with everything else.
+	draw_rect(SKIP_RECT, Color(0, 0, 0, 0.55), true)
+	draw_rect(SKIP_RECT, Color(1, 1, 1, 0.65), false, 1.0)
+	draw_string(
+		ThemeDB.fallback_font, SKIP_RECT.position + Vector2(11, 16), "SKIP",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.9)
+	)
 
 	var marker: String = _labels.marker_at(_index) if _labels != null else ""
 	var hud := "frame %d/%d  %s  fps %.0f%s" % [
@@ -605,8 +638,37 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 			image.resize(w, h, Image.INTERPOLATE_NEAREST)
 	if KEYED_INKS.has(ink):
 		_key_paper(image)
+	# Kept alongside the texture for hit-testing: a click lands on a sprite only
+	# where the sprite actually has pixels, so a keyed-out region passes the
+	# click through to whatever is behind it.
+	_hit_images[key] = image
 	_textures[key] = ImageTexture.create_from_image(image)
 	return _textures[key]
+
+
+## Does this sprite have a visible pixel at a stage point?
+##
+## Rect-only hit-testing hands every click to the topmost sprite whose *box*
+## contains the point, and one large mostly-transparent sprite in a high channel
+## then swallows the whole screen. Director tests the artwork, not the box.
+func _opaque_at(sprite: Dictionary, at: Vector2) -> bool:
+	var key := "%d:%d:%d:%d" % [
+		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
+		1 if sprite["stretch"] else 0,
+	]
+	if not _hit_images.has(key):
+		# Populates the cache as a side effect.
+		if _texture_for(sprite) == null:
+			return false
+	var image: Image = _hit_images.get(key)
+	if image == null:
+		return false
+	var rect := _sprite_rect(sprite)
+	var local := (at - rect.position).floor()
+	if local.x < 0 or local.y < 0 \
+			or local.x >= image.get_width() or local.y >= image.get_height():
+		return false
+	return image.get_pixel(int(local.x), int(local.y)).a > 0.1
 
 
 # ------------------------------------------------------- what the host calls
@@ -622,6 +684,11 @@ func _click(at: Vector2) -> void:
 	for i in range(sprites.size() - 1, -1, -1):
 		var sprite: Dictionary = sprites[i]
 		if not _sprite_rect(sprite).has_point(at):
+			continue
+		# Transparent pixels pass the click through, as Director does. Without
+		# this one large keyed-out sprite in a high channel takes every click on
+		# the stage and nothing beneath it is ever reachable.
+		if not _opaque_at(sprite, at):
 			continue
 		var channel := int(sprite["channel"])
 		_host.click_sprite = channel
@@ -776,6 +843,70 @@ func _child_texture(child: Dictionary) -> Texture2D:
 	})
 
 
+## A sprite as it currently stands: the score's record with whatever a script has
+## puppeted onto it. `{}` when a script has hidden it.
+##
+## Every path that asks about a sprite goes through this — drawing, hit-testing,
+## `rollOver`. They diverged before: the screen showed the puppeted member while
+## a click was tested against the score's, so a menu button was only clickable
+## where its two states happened to overlap, and moving the mouse made it
+## flicker in and out of reach.
+func _effective(sprite: Dictionary) -> Dictionary:
+	var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
+	if over.is_empty():
+		return sprite
+	if over.has("visible") and int(over["visible"]) == 0:
+		return {}
+	var out := sprite.duplicate()
+	for key in ["membernum", "castnum"]:
+		if over.has(key):
+			out["cast_id"] = int(over[key])
+	if over.has("loch"):
+		out["loc_h"] = int(over["loch"])
+	if over.has("locv"):
+		out["loc_v"] = int(over["locv"])
+	return out
+
+
+## The topmost sprite whose rect contains a point, or 0. Highest channel first,
+## which is Director's stacking order and therefore its hit order.
+func _channel_at(at: Vector2) -> int:
+	# Score geometry, for the same reason as `lingo_rollover`.
+	var sprites: Array = _score.frame(_index).get("sprites", [])
+	for i in range(sprites.size() - 1, -1, -1):
+		if _sprite_rect(sprites[i]).has_point(at) and _opaque_at(sprites[i], at):
+			return int(sprites[i]["channel"])
+	return 0
+
+
+## Outline every sprite on the frame, and say which of them a script could
+## actually answer for. A sprite with a behaviour attached is a hotspot in the
+## ordinary sense; the rest are only reachable if a frame script asks
+## `rollOver` or `the clickOn`, which is how this game's menu works — so both
+## are drawn, distinguished rather than filtered.
+func _draw_hotspots(frame: Dictionary) -> void:
+	var font := ThemeDB.fallback_font
+	for sprite in frame.get("sprites", []):
+		var channel := int(sprite["channel"])
+		var rect := _sprite_rect(sprite)
+		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+			continue
+		var scripted := not _sprite_script(channel, _index).is_empty()
+		var hovered := channel == _hover_channel
+		var tint := Color(0.2, 1.0, 0.4) if scripted else Color(0.35, 0.6, 1.0)
+		if hovered:
+			draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.18), true)
+		draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.35),
+			false, 2.0 if hovered else 1.0)
+		if hovered:
+			draw_string(font, rect.position + Vector2(2, -3),
+				"ch%d  %d:%d%s" % [
+					channel, int(sprite["cast_lib"]), int(sprite["cast_id"]),
+					"  script" if scripted else "",
+				],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
+
+
 func _sprite_rect(sprite: Dictionary) -> Rect2:
 	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
 	var size := Vector2(int(m.get("width", 0)), int(m.get("height", 0)))
@@ -783,6 +914,41 @@ func _sprite_rect(sprite: Dictionary) -> Rect2:
 		size = Vector2(int(sprite["width"]), int(sprite["height"]))
 	var reg := Vector2(int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0)))
 	return Rect2(Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg, size)
+
+
+## Jump to the last frame of the movie currently playing.
+##
+## Deliberately blunt: it moves the playhead and nothing else. Whatever the room
+## was holding for — a line of speech, a walk — is abandoned rather than
+## unwound, so the last frame is entered with whatever state the skipped frames
+## never got to set. That is fine for looking at a movie's end and would not be
+## fine in the game.
+func skip_to_end() -> void:
+	if _score == null or _score.frame_count <= 0:
+		return
+	_index = _score.frame_count - 1
+	_held = false
+	_accumulated = 0.0
+	_dispatch("enterFrame", _frame_script(_index))
+	queue_redraw()
+
+
+## Is the cursor over sprite `channel` right now?
+##
+## `rollOver` with no argument means "any sprite", which Director answers with
+## the channel number rather than a boolean; nothing here needs that yet.
+func lingo_rollover(channel: int) -> bool:
+	if channel <= 0:
+		return _hover_channel > 0
+	# Measured against the score's geometry, never the puppeted one. A menu
+	# script swaps a button's art *because* rollOver is true, so testing the
+	# swapped member's rect feeds the answer back into the question: the
+	# highlight changes the rect, the new rect no longer holds the cursor, the
+	# highlight drops, and nothing ever settles.
+	for sprite in _score.frame(_index).get("sprites", []):
+		if int(sprite["channel"]) == channel:
+			return _sprite_rect(sprite).has_point(stage_mouse())
+	return false
 
 
 func current_frame() -> int:
@@ -820,6 +986,84 @@ func lingo_go_label(label: String) -> void:
 		lingo_go_frame(frame)
 	else:
 		_held = true
+
+
+## `go to movie "day1.dir"` — open another container and start playing it.
+##
+## Resolved from the current movie's own directory first, because a linked name
+## means the file beside the one that named it; this game ships two containers
+## called MASTER.CST and the same hazard applies to movies.
+##
+## Everything derived from the old movie is dropped rather than carried: the
+## score, labels, cast table, `ccl `, decoded textures and compiled scripts all
+## belong to the file that is being left. Keeping any of it means the next movie
+## draws with the last one's art and resolves members in the last one's casts,
+## which resolves to real members and looks like corruption rather than an error.
+func lingo_go_movie(name: String, where: Variant) -> void:
+	if _paths == null:
+		return
+	var here := str(_movie.path).get_base_dir()
+	var target: String = _paths.resolve(name, here)
+	if target == "":
+		target = _paths.resolve(name.replace(":", "/").get_file(), here)
+	if target == "":
+		_trace("go movie %s -> not found" % name)
+		return
+
+	var next := ContainerFile.new()
+	if not next.open(target):
+		_trace("go movie %s -> %s" % [name, next.error])
+		return
+	var vwsc: Array = next.ids_of("VWSC")
+	if vwsc.is_empty():
+		_trace("go movie %s -> no score" % name)
+		return
+	var score = Score.new()
+	if not score.parse(next.read_chunk(vwsc[0])):
+		_trace("go movie %s -> %s" % [name, score.error])
+		return
+
+	if _table != null:
+		_table.close()
+	if _movie != null:
+		_movie.close()
+	_movie = next
+	_score = score
+	_labels = Labels.new()
+	var vwlb: Array = next.ids_of("VWLB")
+	if not vwlb.is_empty():
+		_labels.parse(next.read_chunk(vwlb[0]))
+	_table = CastTable.new()
+	_table.open(_movie, _paths)
+	_ccl = PackedStringArray()
+	var ccl_ids: Array = _movie.ids_of("ccl ")
+	if not ccl_ids.is_empty():
+		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
+
+	_textures.clear()
+	_hit_images.clear()
+	_loops.clear()
+	_overrides.clear()
+	_index = 0
+	_ticks = 0
+	_held = true
+	_accumulated = 0.0
+
+	if _lingo_on:
+		_start_lingo(target)
+		_dispatch("prepareMovie", {})
+		_dispatch("startMovie", {})
+	# A destination is resolved after startMovie, since a label only exists once
+	# the new movie's own labels are loaded.
+	if typeof(where) == TYPE_STRING and str(where) != "":
+		_index = int(_labels.labels.get(str(where).to_lower(), 0))
+	elif where != null:
+		_index = clampi(int(where) - 1, 0, maxi(_score.frame_count - 1, 0))
+	if _lingo_on:
+		_dispatch("enterFrame", _frame_script(_index))
+	get_window().title = "%s  —  %d frames" % [target.get_file(), _score.frame_count]
+	print("go movie -> %s frame %d" % [target.get_file(), _index])
+	queue_redraw()
 
 
 func lingo_play_sound(channel: int, file: String) -> void:

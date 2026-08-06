@@ -1141,3 +1141,922 @@ Stated as inference, and worth confirming before anything depends on it.
   one script and a name used once in ten scripts score the same. For ordering a
   priority list that is usually the right weighting; for judging blast radius
   it is not.
+
+---
+
+# 11. The grammar
+
+Sections 1–10 catalogue *names*. This section catalogues *shapes*. It is the
+half a hand-written parser actually collides with, and every parser bug this
+port has hit so far was a missing shape rather than a missing name:
+`go to marker(+1)` (unary plus), `case whatsound of :` (a colon after `of`),
+`go to the frame` (a command word followed by another keyword).
+
+Read off `lingo-lex.l`, `lingo-gr.y` and `lingo-preprocessor.cpp` on `master`.
+Nothing is copied; the productions below are restated in prose and in a
+notation of this document's own. **ScummVM's `.y` file is a lower bound on
+Lingo, not a definition of it** — §11.12 lists four constructs this game uses
+several thousand times that ScummVM's source-level parser cannot read at all,
+because ScummVM meets them as compiled bytecode instead.
+
+## 11.1 What happens before the parser sees the text
+
+Four passes run over the source before a single token is produced. A port that
+skips them will hit "syntax errors" that are not syntax at all.
+
+1. **Line continuation is resolved first.** Director's continuation character
+   is `¬` (U+00AC, byte 0xC2 in Mac Roman). The preprocessor deletes the
+   newline *after* it and keeps the `¬`, so the line-number counter still sees
+   one character per source line while the parser sees one logical line. Inside
+   a string literal the `¬` is replaced with a space. Everything downstream —
+   whitespace skipping, token scanning — has to treat a bare `¬` as whitespace.
+2. **Comments are stripped, string-aware.** `--` to end of line, but only
+   outside a string, and the "inside a string" flag is force-cleared at every
+   CR or LF because **Lingo has no multi-line strings**. That last rule is what
+   stops one unbalanced quote from eating the rest of the file.
+3. **CR becomes LF**, and trailing whitespace before a newline is dropped.
+4. **Per-game patches are applied, line by line** (§12), and for D3-era movie
+   and cast scripts every line before the first `macro`, `factory`, `on`,
+   `global` or `property` is discarded — Director let authors leave prose above
+   the first definition.
+
+There is also one format-specific rewrite: in `.MMM` movies an `mci` command is
+followed by an unquoted command string, and the preprocessor wraps the rest of
+the line in quotes so the normal grammar can see one argument.
+
+## 11.2 Tokens
+
+The lexer is **case-insensitive throughout**. Keyword matching, identifier
+comparison and `end`-clause matching all fold case, so `MouseUp`, `mouseup` and
+`MOUSEUP` are one name.
+
+| Class | Shape | Notes |
+|---|---|---|
+| identifier | letter or `_`, then letters, digits, `_` **or `.`** | The dot is part of an identifier. `foo.bar` is *one* token naming a variable literally called `foo.bar`. |
+| integer | one or more digits | |
+| float | digits `.` digits, either side optional | `.5` and `5.` both lex. So does a lone `.`, which is why dot notation cannot work at this level (§11.12). |
+| string | `"` … `"` | **No escape character exists.** A quote cannot appear in a literal; scripts use the `QUOTE` constant and concatenate. No newline may appear either. |
+| symbol | `#` then an identifier | The `#` is stripped; the value is the name. |
+| operator | one of `- + * / % ^ : , ( ) > < & [ ]` | `%` and `^` lex but **no grammar rule uses them**, so they are a syntax error rather than an operator. |
+| two-char operator | `<>` `>=` `<=` `&&` | Must be tried before their first character. |
+| `=` | its own token | Spelled the same for equality and assignment; resolved by position, not by spelling. |
+| newline | optional spaces/tabs/`¬`, then CR or LF | **A significant token.** The grammar is newline-terminated. |
+
+Three tokens are not what they look like, and each one breaks a naive lexer:
+
+- **`end` swallows the word after it.** `end` plus an optional identifier is a
+  single token. `end if`, `end repeat` and `end tell` become three dedicated
+  block-terminator tokens; everything else — `end mouseUp`, `end`, and notably
+  `end case` — becomes one "end clause" token carrying the trailing name.
+  `end case` is therefore *not* a block terminator in ScummVM; it is a generic
+  handler end. A lexer that emits `end` and `case` separately has a different
+  language.
+- **`go to` is one token.** The lexer matches `go` optionally followed by
+  whitespace and `to`. There is no separate `to` to consume, and `go` and
+  `go to` are indistinguishable to the parser.
+- **`when <event> then <rest of line>` is one token.** It matches only the five
+  events `keyDown`, `keyUp`, `mouseDown`, `mouseUp`, `timeOut`, and the text
+  after `then` is captured **raw, unparsed, to end of line** and compiled
+  separately as a primary event handler (§6.3). A parser that tries to parse
+  the tail as a statement in the enclosing context is doing something else.
+
+`factory` is recognised only at the start of a line.
+
+## 11.3 Reserved words, and the two-tier split that makes them not reserved
+
+This is the single most important structural fact about Lingo's grammar and the
+one most likely to be missed.
+
+The lexer gives about sixty words their own token. The grammar then hands
+almost all of them straight back as identifiers, through two non-terminals:
+
+- **`CMDID`** — words that may begin a command statement *and* be used as an
+  ordinary identifier: `abbreviated` `abbrev` `abbr` `after` `before` `cast`
+  `castLib` `char` `chars` `date` `delete` `down` `field` `frame` `hilite` `in`
+  `intersects` `into` `item` `items` `last` `line` `lines` `long` `member`
+  `menu` `menuItem` `menuItems` `movie` `next` `number` `of` `previous`
+  `repeat` `script` `short` `sound` `sprite` `the` `time` `to` `while` `window`
+  `with` `within` `word` `words`.
+- **`ID`** — `CMDID` plus `else` `end` `exit` `factory` `global` `go` `if`
+  `instance` `macro` `method` `on` `open` `play` `property` `put` `return`
+  `set` `tell` `then`.
+
+`ID` is what a handler name, a parameter name, a `global`/`property` name, a
+`repeat with` loop variable and a plain variable reference all accept. So
+**`the`, `to`, `of`, `end`, `if` and `then` are all legal variable names**, and
+`on end` is a legal handler. Nothing in Lingo is truly reserved; a word is a
+keyword only where the grammar is looking for one.
+
+The practical consequence for a port: a lexer that classifies tokens as
+`keyword` versus `identifier` and a parser that trusts that classification will
+reject valid scripts, and — worse — will parse `set the keyDownScript to EMPTY`
+as a property called `to` unless the property-name scan knows which words can
+close a `the` phrase. This port already carries a `RESERVED_AFTER_PROP` table
+for exactly that reason and a comment saying why.
+
+## 11.4 Script structure
+
+A script is a sequence of parts, each ending in a newline:
+
+- a blank line,
+- a **macro** — `macro NAME [params] ⏎ statements`, ending where the next
+  definition begins (D2/D3 compatibility form),
+- a **factory** — `factory NAME ⏎` followed by zero or more `method NAME
+  [params] ⏎ statements`,
+- a **handler** — `on NAME [params] ⏎ statements [end [NAME]]`,
+- a bare **statement**, or
+- a **stray `end`**, which the grammar accepts and discards at script level and
+  between factory methods, with the comment that it happens "for some reason".
+
+Two forms of handler exist and both are accepted unconditionally:
+
+- **D3 form**, terminated by `end` (optionally naming the handler; the name is
+  compared case-insensitively and a mismatch is only a warning).
+- **D4 form, with no `end` at all** — the handler runs to the next definition.
+
+Parameter lists are comma-separated `ID`s and **a trailing comma is legal**.
+The `end` clause may itself be followed by a comma-separated list of names,
+which is parsed and thrown away.
+
+## 11.5 Statements
+
+Every statement is terminated by a newline. Sometimes that newline belongs to a
+statement nested inside it — `if x then put y` ends when `put y` ends — which
+is why "consume the line" is the wrong mental model.
+
+**Command call.** `CMDID args` (§11.7). This is the general form and it is why
+almost every keyword also appears in `CMDID`: any of them can be a command name.
+
+**Navigation.** `put args`, `go args`, `play args`, `open args` each get their
+own production so their keyword token can head a statement. `go` and `play`
+additionally accept **frame arguments**, a small grammar of their own:
+
+| Written | Compiles to |
+|---|---|
+| `go frame E` / `go to frame E` | one argument, marked as a frame |
+| `go movie E` | *two* arguments — the integer `1`, then the movie |
+| `go frame E of movie F` | frame, then movie |
+| `go E of movie F` | expression, then movie (no `frame` keyword; ScummVM calls this "weird but valid") |
+| `go frame E F` | frame, then a second expression with no separator |
+
+The frame argument is wrapped in a marker node purely so that `play frame done`
+is not mistaken for `play done`. That is the shape of the problem: the same
+words mean different things depending on what precedes them.
+
+**`open E with F`** is a separate two-argument form.
+
+**Loop control.** `next repeat`, `exit repeat`, `exit`. Note there is no bare
+`next`.
+
+**`return`** with or without an expression.
+
+**Chunk statements.** `delete <chunk>` and `hilite <chunk>` — both take a chunk
+expression, not a general expression, and neither is a builtin call.
+
+**`put` assignment.** `put E into P`, `put E after P`, `put E before P`, where
+`P` is a variable or a chunk expression. `put E` with no target is the
+message-window echo and goes through the command-call path instead.
+
+**`set` assignment.** `set P to E` or `set P = E` — **`to` and `=` are
+interchangeable here**, and `P` is a variable or a writable `the` phrase.
+
+**Declarations.** `global`, `property`, `instance`, each followed by a
+comma-separated `ID` list with an optional trailing comma.
+
+**Conditionals.** Six shapes, all in the grammar explicitly:
+
+```
+if E then S
+if E then ⏎ S… [end if]
+if E then S else S
+if E then S else ⏎ S… [end if]
+if E then ⏎ S… else S
+if E then ⏎ S… else ⏎ S… [end if]
+```
+
+**`end if` is optional.** A missing one produces a warning and parses anyway.
+The block body uses a restricted statement list that cannot itself contain a
+stray `end if`, which is how nesting stays unambiguous.
+
+**Loops.**
+
+```
+repeat while E ⏎ S… end repeat
+repeat with ID = E to E ⏎ S… end repeat
+repeat with ID = E down to E ⏎ S… end repeat
+repeat with ID in E ⏎ S… end repeat
+```
+
+Note the loop bound uses `=`, not `to`, for the initial value, and that
+`end repeat` is **required** here where `end if` is not.
+
+**`tell`.** `tell E to S` (one statement only) or `tell E ⏎ S… end tell`.
+
+**`when <event> then <text>`** — see §11.2.
+
+There is **no `case`/`otherwise` in ScummVM's source grammar.** The tokens are
+declared and commented out. See §11.12.
+
+## 11.6 Expressions
+
+Precedence, lowest to highest:
+
+| Level | Operators | Associativity |
+|---|---|---|
+| 1 | `and` `or` | left — **both at the same level** |
+| 2 | `<` `<=` `>` `>=` `=` `<>` `contains` `starts` | left |
+| 3 | `&` `&&` | left |
+| 4 | `+` `-` | left |
+| 5 | `*` `/` `mod` | left |
+| 6 | unary `-`, unary `+`, `not` | right |
+
+`and` and `or` sharing one level is a real difference from the C-family
+ranking, and it is silent: `a or b and c` groups as `(a or b) and c`, not as
+`a or (b and c)`.
+
+Unary `+` exists and **means nothing** — the grammar returns the operand
+unchanged. It is not decoration: `go to marker(+1)` is in this game's own
+scripts and a parser without a unary-plus case fails on it.
+
+Unary operators take a *simple* expression, not a full one, so `not a = b`
+groups as `(not a) = b` and `-a * b` as `(-a) * b`.
+
+`intersects` and `within` are **not** in the precedence table. They have a
+dedicated production: `sprite E intersects S` / `sprite E within S`, where the
+left side must be the literal word `sprite` followed by an expression and the
+right side is a *simple* expression — commonly a bare channel number, as in
+`sprite 5 intersects 3`. A parser that treats them as ordinary infix operators
+gets the same answer here but will diverge on the right operand's extent.
+
+**Simple expressions** are integer, float, symbol, string, `not S`, a
+parenthesised expression, a function call, a variable, a chunk expression, an
+object reference, a `the` phrase, or a list. The grammar carries **three
+near-duplicate copies** of the expression rules — the full one, one that cannot
+begin with unary `+`/`-`, and one that excludes `=`. They exist to disambiguate
+two specific situations and both matter to a hand-written parser:
+
+- **No unary math in a second argument.** `cmd 1 + 1` must be `cmd(1 + 1)` and
+  never `cmd(1, +1)`. The only way to say that in an LALR grammar is to forbid
+  the second of two adjacent expressions from starting with a sign.
+- **No `=` in a `the`-phrase object.** `set the volume of sound 2 = 50` must
+  not read `sound (2 = 50)`.
+
+## 11.7 Command calls versus function calls
+
+Lingo has one call, spelled two ways, and the spelling is not the difference —
+**position is**. A call in statement position is a command (its result is
+discarded); a call in expression position is a function. The bytecode makes
+this explicit by pushing a different argument-count marker for the two cases
+(§13), so "command" and "function" are properties of the *call site*, never of
+the name.
+
+Argument syntax, for a command:
+
+| Written | Meaning |
+|---|---|
+| `cmd` | no arguments |
+| `cmd a` | one |
+| `cmd a, b, c` | three |
+| `cmd a b` | **two**, with no separator |
+| `cmd a b, c, d` | three, first two unseparated |
+| `cmd()` | none |
+| `cmd(a, b)` | two |
+| `cmd(a,)` | one, trailing comma |
+| `cmd(obj method arg)` | two — an object and a method name, D3 style |
+| `cmd(obj method arg, …)` | the same plus more |
+
+A trailing comma is legal in every list. The `cmd a b` form with no comma is
+the one that surprises: it is why the "no unary math" expression copy exists,
+and it is the ambiguity behind a whole class of shipped-game patches (§12).
+
+For a **function** call in an expression, the parenthesised forms are the same
+minus the bare `cmd a` form. So `foo 1, 2` is a statement and `foo(1, 2)` is
+either.
+
+**Reference arguments** — used by `field`, `cast`, `member`, `castLib`,
+`script` and `window` — are a smaller set: one bare simple expression
+(`field "x"`), or `()`, or a parenthesised list. `field "x"` and `field("x")`
+are the same thing.
+
+## 11.8 Chunk expressions
+
+```
+char E of S              char E to E of S
+word E of S              word E to E of S
+item E of S              item E to E of S
+line E of S              line E to E of S
+the last char|word|item|line in|of S
+```
+
+The source `S` is a *simple* expression, so chunk expressions nest naturally
+right-to-left: `word 2 of line 3 of x`. The index `E` is a full expression, so
+`line i - 102 of field "x"` works and the arithmetic binds before the `of`.
+
+`in` and `of` are interchangeable wherever the grammar writes `in|of`.
+
+The reference forms share this production because Director treats them as the
+same kind of thing — a designator you can read, write and take a chunk of:
+
+```
+field <refargs>
+cast <refargs>            cast S of castLib S
+member <refargs>          member S of castLib S
+castLib <refargs>
+```
+
+`of castLib` is part of the *reference*, not a trailing modifier. A parser that
+handles `member "x" of castLib "y"` but forgets the same suffix after the
+parenthesised form `field("x") of castLib 1` will drop the library and leave
+`of castLib 1` dangling as a separate statement. That is not hypothetical; it is
+one of this port's live grammar bugs (§16.3).
+
+## 11.9 `the` phrases
+
+```
+the ID                              -- a system property
+the ID of <theobj>                  -- a qualified property
+the number of <theobj>              -- the entity's number
+the abbreviated|abbrev|abbr|long|short date|time
+the number of chars|words|items|lines in|of S
+the number of menuItems in|of menu S
+the number of menus
+the number of xtras                 -- D5
+the number of castLibs              -- D5
+the last char|word|item|line in|of S
+```
+
+`<theobj>` is where the qualified-entity kinds live, and they are **distinct
+grammar productions, not ordinary expressions**:
+
+- a simple expression (covers `of sprite(5)`, `of member "x"`, `of field "f"`,
+  `of window "w"` written as calls),
+- `menu S`,
+- `menuItem S of menu S`,
+- **`sound S`**,
+- **`sprite S`**.
+
+`sound` and `sprite` earn their own node because the word is not a function —
+there is no `sound(2)` object to evaluate. `the volume of sound 2` is a
+two-part designator, and a port that lowers it to "property of the result of
+calling `sound(2)`" has built a value where Director has an address. This game
+writes `set the volume of sound 2 to …` 65 times and this port drops every one
+(§16.3).
+
+The **writable** variants (the left-hand side of `set`) use the `=`-free
+expression copy for the object, so `set the X of sprite N to …` cannot mis-read
+the `to`.
+
+## 11.10 Lists and property lists
+
+```
+[ ]  [ e, e, e ]        -- linear list
+[ : ]                   -- empty property list
+[ k: v, k: v ]          -- property list
+```
+
+A property list must *start* with a key/value pair; after that, bare
+expressions are allowed and are compiled as if keyed by their index. Keys may
+be a symbol, an identifier (treated as a symbol), a string, an integer or a
+float.
+
+`[:]` is the only way to write an empty property list — `[]` is an empty linear
+list — and it is a lexical trap, because `:` is otherwise only a property-list
+separator.
+
+## 11.11 Error recovery is part of the grammar
+
+Roughly forty productions have a duplicate carrying an explicit `error`
+symbol. When ScummVM's "trim garbage" flag is on, it warns, discards the tokens
+from the error to the end of the line, and **keeps the statement it had already
+built**. When the flag is off, the parse aborts.
+
+This is not defensive coding, it is a statement about the corpus: real Director
+movies contain lines that no grammar accepts, and a parser that only has
+"accept" and "reject" cannot run them. §12 is the catalogue of what it is
+recovering from.
+
+## 11.12 What ScummVM's source grammar cannot read
+
+ScummVM compiles D4-and-later movies from **bytecode**, not from source text.
+Its `.y` file therefore covers the D3/D4 authoring language and stops. Four
+constructs this game uses heavily are absent from it entirely:
+
+| Construct | In this game | Why it is missing |
+|---|---|---|
+| Bare assignment `x = 1` | **4,244 statements in 690 scripts** | There is no production for it. `set x = 1` is the only assignment. `x = 1` would be recovered as the command `x` with the rest trimmed. |
+| Dot notation `sprite(N).locH` | **940 hits in 323 scripts**, plus 213 in 93 for `member(…).prop` | `.` is not an operator in the lexer, and a lone `.` matches the float rule. There is no member-access production. |
+| `case E of` / `otherwise` | **78 statements in 43 scripts** | The `tCASE`/`tOTHERWISE` tokens are declared and commented out. |
+| `sprite(N)` as a value | throughout | `sprite` appears only inside `the … of sprite …` and the intersects/within rules. |
+
+**This is the concrete form of "ScummVM is a source, not an authority."** Its
+builtin and property tables are near-complete because they are shared with the
+bytecode path; its *grammar* is not, because the grammar is only used for the
+minority of movies that ship source. Anywhere this port's parser accepts more
+than `lingo-gr.y` does, the port is right and the `.y` file is out of scope.
+
+## 11.13 The naive-parser checklist
+
+Every item here is a place where a reasonable first implementation is wrong.
+
+1. **A newline is a token.** Not whitespace.
+2. **Keywords are not reserved.** `the`, `to`, `of`, `end`, `if` are all legal
+   variable and parameter names.
+3. **`end` eats the next word.** `end case` is not a block terminator.
+4. **`go to` is one token**, and `go` takes bare words (`frame`, `movie`,
+   `loop`, `next`, `previous`) that are not variables.
+5. **`play done` is not `play("done")`** — it compiles to a zero-argument
+   `play`, which pops the play stack.
+6. **`go frame E of movie F`** is a two-argument navigation, not a chunk
+   expression with a trailing modifier.
+7. **`when <event> then <text>` is one lexical unit** and the text is not
+   parsed in place.
+8. **A command can take two arguments with no comma between them**, which
+   forces the "second argument cannot start with a sign" rule.
+9. **Unary `+` exists and is a no-op.**
+10. **`and` and `or` have equal precedence.**
+11. **`intersects`/`within` are a dedicated production**, not infix operators,
+    and their left operand must be spelled `sprite E`.
+12. **`set X to E` and `set X = E` are the same statement.**
+13. **`=` is both assignment and equality**, resolved by position.
+14. **`in` and `of` are interchangeable** in `the number of … in|of`.
+15. **`of castLib` is part of a reference**, including after `field(…)`.
+16. **`the … of sound N` and `the … of sprite N` are designators**, not
+    property access on a call result.
+17. **`end if` is optional; `end repeat` and `end tell` are not.**
+18. **A handler may have no `end` at all** (D4 form).
+19. **Strings have no escape character** and cannot span lines.
+20. **`#name` is a symbol literal**; the `#` is not an operator.
+21. **`[:]` is the empty property list.**
+22. **`¬` is the line-continuation character**, and it counts as whitespace
+    everywhere, including mid-token scanning.
+23. **A dot inside an identifier is part of the identifier.** `a.b` is one
+    name; `sprite(1).locH` only splits because `)` precedes the dot.
+24. **Trailing commas are legal** in argument lists, parameter lists and
+    declaration lists.
+25. **Stray `end` and stray `end if` at top level are legal.**
+26. **`the number of X` has two unrelated meanings** — a chunk count
+    (`the number of lines in f`) and an entity number (`the number of member
+    "x"`). Same three words.
+
+---
+
+# 12. What the patch table says about real Lingo
+
+`lingo-patcher.cpp` is a table of per-game, per-line source substitutions
+applied during preprocessing. The individual entries are worthless to this port
+— they name other games' movies — but the *classes* are evidence about what
+ships in commercial Director movies, and therefore about what a parser meets.
+
+**Score-window text concatenated into the script.** By far the largest class.
+Director's Score window let authors annotate frames, and that annotation ends up
+appended to the script text: `Channels 17 to 18`, `Frames 150 to 160`, absolute
+Mac file paths, and free prose (`Are you sure to cut off  KANJI Talk`). Nothing
+parses. This is what the `error` productions and the trim-garbage flag exist for.
+
+**Prose spliced onto the end of a valid statement.** `go to frame "Info b"If
+you have not paid` — a valid statement followed immediately, with no separator,
+by a sentence. Trimming to end of line keeps the navigation.
+
+**A missing operator.** `"Error message number: " string(filer)` — the `&` was
+dropped. Note that this is *almost* the legal two-adjacent-arguments form, which
+is why it got past the author.
+
+**A stray keyword.** `set Spacesuit = 0 then` — a copy/paste `then` on an
+assignment.
+
+**A doubled word.** `set the the soundLevel to 7`.
+
+**Unbalanced delimiters.** An extra `)`, and an unterminated string literal
+(`alert("Sorry. No keyword was entered for this recipe.)`). The second is
+exactly why the comment stripper force-closes the in-string flag at every line
+end: without that, one missing quote silently consumes the rest of the script.
+
+**Space where a comma was meant.** `FileIO(mnew, "read" mymovie)` appears in
+four different games. It is legal-looking because the D3 method-call form
+`obj(method arg)` really does allow one unseparated pair — so `"read" mymovie`
+is grammatically the same shape as a valid construct, and parses to something
+other than what was intended. ScummVM's note calls it "ambiguous syntax that's
+parsed differently between D3 and later versions", which is the honest
+description: this is not a typo class, it is a *language* class.
+
+**A trailing argument on a form that takes none.** `go to the frame 0`, patched
+to `go to the frame`. And a `GO "…" OF MOVIE "…","242,197"` with an extra
+argument the form does not accept.
+
+**A missing block terminator.** One game is patched by *inserting* `end repeat`.
+
+**A lexer edge case.** ScummVM's own FIXME records that `LoopIt .5` does not
+come out as `0.5`, and the patch deletes the line rather than fix the lexer.
+
+**Whole-handler replacements** make up the rest of the file — CD-drive
+detection, dead loops, timing. Those are environment fixes, not language
+evidence, and are not relevant here.
+
+The lesson for this port is narrow and useful. **A Director script is not
+guaranteed to be a Lingo program.** ScummVM's answer is two-layered: a grammar
+that can discard a line tail and keep the statement, and a per-game table for
+what that cannot save. This port currently parses 3,307 of 3,307 authored
+scripts in this game with neither mechanism, which means it does not need them —
+but the moment the same compiler is pointed at another title, the absence of any
+recovery path is a hard stop rather than a warning.
+
+---
+
+# 13. What the bytecode layer adds
+
+Only the parts that say something about *semantics*. The file format is not
+relevant to a port that compiles from source text.
+
+**`and` and `or` do not short-circuit.** They are single opcodes that pop two
+operands. Both sides are always evaluated, both are coerced with an integer
+conversion, and the result is the integer `0` or `1` — not a boolean and not the
+operand. §2.3 above says they short-circuit; that is wrong, and §17 records the
+correction. It matters whenever an operand has a side effect or is expensive:
+`if soundBusy(1) and startTalk() then` calls `startTalk` in Director whether or
+not the sound is busy.
+
+**Command and function are the same call.** Every call pushes an argument-count
+marker first, and the marker has two flavours — one meaning "a result is wanted",
+one meaning "discard it". The call opcode is identical. So the command/function
+distinction lives at the call site and is decided by the grammar's
+statement-versus-expression position, never by the name. A port with two
+dispatch tables has invented a distinction Director does not make.
+
+**`put into`, `put after` and `put before` are one opcode** with the mode packed
+into a nibble of its operand alongside the variable's storage class. They are
+three spellings of one operation on a designator, which is the same grouping the
+grammar uses.
+
+**Property lists are built key-first.** The constructor pops value then key,
+repeatedly, and inserts at the front — so a source-order key/value stream comes
+out in source order. An odd argument count is tolerated with a warning and the
+stray entry discarded.
+
+**A method call re-types its first argument.** The object-call opcode looks at
+the first argument on the stack and, if it is a symbol, converts it to a variable
+reference. This is the runtime half of the `obj(mMethod, args)` form: the method
+name travels as data.
+
+**`of` is an opcode.** Chunk access is a runtime operation on a reference, not
+something the compiler flattens.
+
+**`delete` and `hilite` operate on a chunk reference** read out of a variable —
+consistent with the grammar giving them chunk-only argument positions.
+
+**There are four distinct "the" access opcodes**, differing in whether the entity
+is identified by number or by name and whether a field id follows. The name-based
+one exists because D4 bytecode can address a property of an object with no entity
+number. A source-only port needs the entity/field pair; the name form is a hint
+that the entity table is not closed.
+
+---
+
+# 14. What the code generator confirms
+
+`lingo-codegen.cpp` lowers the AST, and a few of its decisions settle questions a
+source-level reading leaves open.
+
+**Evaluation order is left, then right, then operate.** Binary operators compile
+both operands unconditionally before the opcode — the other half of the
+no-short-circuit finding. `put` compiles the *value* first and the *target
+reference* second. Conditions in `if` and in all three `repeat` forms compile to a
+single "jump if zero", so a condition is evaluated once per iteration.
+
+**Bare words after certain commands become symbols, not strings.** `go loop`,
+`go next` and `go previous` compile their bare word to a symbol. Every bare
+identifier argument to `playAccel` does the same. So does the verb of
+`sound close|fadeIn|fadeOut|playFile|stop`. A port that passes these as strings is
+relying on its own host to compare loosely.
+
+**`play done` compiles to `play` with zero arguments.** Not `play("done")`.
+
+**Any first argument that is a bare variable is compiled by reference**, for both
+commands and functions — because it might be a method name or an out-parameter.
+Only the first. This is the mechanism that makes `obj(mMethod, arg)` work without
+a separate syntax.
+
+**Constants beat variables.** A bare identifier is checked against the builtin
+constant table *before* any variable lookup, so a local named `empty` cannot
+shadow `EMPTY`. This port resolves constants in the same place, which is the
+right one.
+
+**`field` used as a function name is special-cased** to a dedicated field opcode
+rather than a generic call, in both value and reference mode.
+
+**`the X of <thing>` resolves at compile time where it can.** Chunk, cast and
+field objects look up a numeric field id in the entity table and compile to a
+direct entity access; anything else falls back to generic object property access.
+An unknown property on `set the X` is a *compile-time* warning, not a runtime
+miss — the opposite of this port's design, where an unbound property is reported
+when it is read. Both are defensible; only one of them can tell you about a
+property the game never actually reaches.
+
+**In D3-era movies a bare identifier that looks like a cast reference becomes an
+integer** (`A13` → a slot number). Version-gated, and not applicable to this game,
+but it explains the patch that deletes an `installmenu A13`.
+
+---
+
+# 15. Files read, and files skipped
+
+From `engines/director/lingo` on `master`, in addition to the seven files the
+header of this document already names.
+
+**Read for §11–§14:**
+
+| File | Used for |
+|---|---|
+| `lingo-lex.l` | §11.1–11.2, the token classes and the three composite tokens |
+| `lingo-gr.y` | §11.3–11.12, the whole grammar |
+| `lingo-preprocessor.cpp` | §11.1 — continuation, comments, the D3 header rule, `mci` |
+| `lingo-patcher.cpp` | §12 |
+| `lingo-bytecode.cpp` | §13, semantics only |
+| `lingo-codegen.cpp` | §14 |
+| `lingo-code.cpp` | spot-checked to confirm `and`/`or` evaluate both sides |
+| `lingo-ast.h` | node inventory, cross-checked that §11.5 lists every statement form |
+| `lingo-gr.h` | token enum, used to confirm `case`/`otherwise` are absent |
+| `docs/d7-keywords.txt` | the Director 7 keyword inventory, cross-check on §11.3 |
+
+**Skipped, with reasons:**
+
+- `xlibs/` — out of scope by instruction.
+- `xtras/`, `xtras-cast/` — per-Xtra implementations. §7.3 already covers the
+  standard XObject method set, which is the only part that is language.
+- `lingodec/` — the Lingo *decompiler*, used to turn bytecode back into source.
+  It defines no language behaviour; it consumes it. Its `codewritervisitor.cpp`
+  would be a second opinion on statement shapes but a worse one than the grammar.
+- `tests/*.lingo` — ScummVM's own test scripts. Useful as examples but not
+  normative, and reading them would risk transcribing their content.
+- `lingo-mci.cpp` — Windows MCI command strings. A separate mini-language inside
+  a string argument, and this game has no `mci` call.
+- `lingo-utils.cpp` — character-normalisation tables for non-Latin scripts.
+  Relevant only to Japanese and Korean titles.
+- `lingo.cpp`, `lingo.h`, `lingo-object.h`, `lingo-the.h`, `lingo-builtins.h`,
+  `lingo-code.h`, `lingo-codegen.h`, `lingo-bytecode.h` — already covered by
+  §1–§7, or headers for files listed above.
+
+---
+
+# 16. Cross-reference against this port's parser
+
+The port's compiler is `lingo/compile/lingo_grammar.gd` (tables),
+`lingo/compile/lingo_lexer.gd` and `lingo/compile/lingo_parser.gd`, a
+transliteration of `tools/lingo_compile.py`. It is a hand-written
+recursive-descent parser with a 44-word keyword set, six precedence levels, and a
+small table of commands whose first argument is a bare word.
+
+## 16.1 How the evidence was gathered
+
+Every script in the game was extracted from its container in **authored source
+form** —
+
+```
+godot --headless --path . --script tools/director_extract.gd -- --file <container> --out <dir>
+```
+
+— over all 83 containers under `games/piposh2/PIP2DATA/` plus `MASTER.CST`,
+`strtgame.dir` and `HEZSAVE.DIR`. That yields **3,267 scripts, 811 KB, 3,371
+handlers**. This is not the same corpus as `reference/lingo/`: that tree is the
+ProjectorRays decompilation of the same movies, and a decompiler normalises
+syntax. Where the two disagree about *shape*, the extracted text is the original.
+
+The port's parser was then run over all 3,267 — via the Python original with the
+three GDScript-only fixes applied (unary plus, the command-word head gate, and
+`case … of :`), so the result reflects the shipping parser. **All 3,267 parse.**
+There are no hard failures, which is why the analysis below is about *silent*
+misparses. Those were found two ways: by looking for statements whose parse left
+a keyword such as `of` or `then` heading a statement of its own, and by
+pattern-matching the corpus against each grammar form in §11.
+
+## 16.2 Grammar ScummVM supports, this parser does not, and this game never uses
+
+Listed so that each absence is a recorded decision rather than a hole. All have
+**zero** occurrences in the extracted corpus.
+
+- **`#symbol` literals.** The lexer has no `#` in either operator table and
+  raises "unexpected character". This is the only item here that fails *loudly*.
+- **`[:]`**, the empty property list. Parse error.
+- **`the last char|word|item|line of X`.** Parse error — `last` is read as a
+  property name and the chunk head that follows has nowhere to go.
+- **`macro`, `factory`, `method` definitions.** Only `on` is recognised.
+- **`delete <chunk>` and `hilite <chunk>`** as statements. They parse as command
+  calls named `delete`/`hilite`, which the interpreter does not bind.
+- **`cast N` / `cast N of castLib M`** as a reference. `cast` is not a keyword
+  here; it parses as a command call.
+- **`put E after|before P`.** The parser has the modes; nothing uses them.
+- **Two space-separated arguments** (`cmd a b`). The argument loop only continues
+  on a comma, so the second argument becomes a statement of its own. The one
+  candidate in the corpus, `savemovie savepath & "hezsave.dir"`, is a single
+  expression and parses correctly.
+- **`open E with F`.**
+- **`the number of menus|xtras|castLibs|menuItems`.** The `menuItems` form parses
+  to a chunk count with the unit `menuitem`, which is meaningless.
+- **`¬` line continuation.** The lexer knows only `\`. No byte 0xAC appears
+  anywhere in the corpus, in either encoding — this game's authors never used it.
+- **Trailing commas** in argument lists, and `cmd(arg,)`.
+- **Handlers with no `end`** (D4 form). All 3,371 handlers here are terminated.
+- **`%` and `^`**, which ScummVM lexes and then has no rule for; the port rejects
+  them at the lexer. Same outcome by a different route.
+- **`error`-production garbage recovery.** The port has none, and has not needed
+  any for this game.
+
+Two divergences are about *shape agreement* rather than support:
+
+- **`and`/`or` precedence.** ScummVM puts them on one left-associative level;
+  this port ranks `or` below `and`. Fifteen lines in the corpus mix the two
+  operators and **every one of them is fully parenthesised**, so no site depends
+  on the ranking. It is still worth fixing, because the next title will not be so
+  careful.
+- **`intersects`/`within`** are infix operators at the comparison level here and a
+  dedicated production in ScummVM. Both accept `sprite 5 intersects 3` and
+  `sprite the clickOn intersects 36`, which are the forms this game uses.
+
+## 16.3 Grammar gaps this game's scripts actually contain
+
+### `the <prop> of sound N` — 65 statements, 52 scripts
+
+Every one is `set the volume of sound N to …`. ScummVM's grammar makes `sound N`
+a qualified entity (§11.9). This parser has no case for it, so `_parse_the` falls
+through to its generic branch and produces `prop_of(prop: "volume", target: call
+sound(N))` — a property of the *result of calling* a function named `sound`.
+`lingo/lingo_interpreter.gd` then reaches its assignment path for `prop_of`, which
+accepts only a `sprite_ref` owner, and records `cannot assign to prop_of call`
+before continuing. **The volume is never set.** Because `_fail` only appends to an
+error list, nothing stops and nothing is visibly wrong except that speech and
+effects play at whatever volume the last successful write left behind.
+
+This is the largest real gap in the parser by script count, and the clearest
+example of why §11.9 draws the distinction it does: Director has an *address*
+here and the port built a *value*.
+
+### `play done` — 48 statements, 48 scripts
+
+The parser reads it correctly, as `play("done")`, and `lingo/lingo_host.gd` maps
+`play` onto `go` and trims the leading word — so it becomes a no-op. §1.4 above
+states that "this game does not [use `play done`]"; **that is wrong.** The claim
+was drawn from `reference/lingo/`, and 96 files in that tree contain `play done`
+too. The game has 160 `play frame …` calls and 48 `play done`s, which is a
+matched-looking pair: the port is running the calls and dropping the returns.
+Whether that is visible depends on whether any of the 48 sites relies on returning
+to where `play` was issued rather than continuing from where the played sequence
+ended — a behavioural question this note does not answer, and one worth answering
+before the pairing is dismissed a second time.
+
+### `go to frame E of movie F` — 6 statements, 6 scripts
+
+`HEZSAVE.DIR` scripts 7, 11, 14 and 15, and `MASTER.CST` scripts 87 and 95:
+
+```
+go to frame "aftersave" of movie cdsavepath & "saveload.dxr"
+go to frame "path5" of movie "day1.dir"
+```
+
+The command-word loop collects `to` and `frame`, parses the label, then stops
+because the next token is not a comma. **The movie is dropped**, so the call
+becomes a jump to a marker named `aftersave` in the *current* movie, and the
+leftover `of movie …` is parsed as a separate statement — a call to a handler
+named `of`. Four of the six are the save/load round trip and two are the return
+into `day1` after a cutscene, so this is a navigation bug in a save path, which is
+the worst place to have one.
+
+The grammar form needed is the frame-argument set in §11.5. The host already
+understands the two-argument `(frame_or_marker, movie)` shape — `_go` in
+`lingo/lingo_host.gd` handles it for the `go(1, "exodus.dir")` spelling — so this
+is a parser fix that needs no host work.
+
+### `field (E) of castLib N` — 4 statements, 4 scripts
+
+`SAVELOAD.dir` scripts 20, 24, 38 and 39:
+
+```
+put item i of SaveNames into field ("save" & i) of castLib 1
+```
+
+`_parse_primary`'s `field` branch takes the parenthesised path and never looks for
+a trailing `of castLib`, so the library is dropped and `of castLib 1` becomes
+another `of` statement. The bare-string path (`field "x" of castLib "master"`, 640
+hits in 154 scripts) does call `_parse_optional_castlib`, and so does the
+`the number of member (…) of castLib …` branch in `_parse_the` — which is the fix:
+`cast = args[1] if args.size() > 1 else _parse_optional_castlib()`, a line that
+already exists three functions away. `member(…)` has the same omission but no site
+in this game.
+
+### `when <event> then <stmt>` — 2 statements, 1 script
+
+`strtgame.dir` script 306:
+
+```
+when keyDown then go to "mainmenub4"
+when keyDown then gulu
+```
+
+`when` is not a keyword here, so this parses as a call to a handler named `when`
+with the argument `keyDown`, followed by a second statement starting at `then`.
+Both are junk. §9.1 above already notes four uses of this construct in the
+decompiled tree and correctly calls it grammar rather than a binding. It is
+Director 3's primary-handler installation (§6.3), and the port implements no
+tier-1 handlers at all, so parsing it would only convert a silent misparse into a
+recorded unimplemented feature — which is still the better of the two.
+
+### `the <prop> of window "x"` — 2 statements, 2 scripts
+
+`MASTER.CST` scripts 12 and 69, both `set the windowType of window "…" to 2`.
+Same mechanism as `of sound`: a generic `prop_of` over a call, and the
+interpreter's assignment path rejects it. The dot spelling
+`window("x").windowType = 2` *does* work, because the `dot` assignment path has a
+case for an owner that evaluates to a string. So two spellings of the same thing
+behave differently, which is exactly the kind of divergence that looks like a data
+problem later.
+
+## 16.4 The work queue
+
+Ordered by how many of this game's scripts hit each gap.
+
+| # | Gap | Scripts | Statements | Where |
+|---|---|---|---|---|
+| 1 | `the <prop> of sound N` is not a designator | **52** | 65 | `lingo_parser.gd:_parse_the`, plus an assignment case in `lingo_interpreter.gd` |
+| 2 | `play done` is a no-op; there is no play stack | **48** | 48 | `lingo_host.gd:_go` and the navigation model |
+| 3 | `go to frame E of movie F` drops the movie | **6** | 6 | `lingo_parser.gd:_parse_primary`, command-word argument loop |
+| 4 | `field (E) of castLib N` drops the library | **4** | 4 | `lingo_parser.gd:_parse_primary`, `field` parenthesised branch |
+| 5 | `the <prop> of window "x"` cannot be assigned | **2** | 2 | same fix as #1 |
+| 6 | `when <event> then <stmt>` misparses into two junk statements | **1** | 2 | `lingo_parser.gd`, and tier-1 dispatch in `lingo_engine.gd` |
+
+Items 1, 3, 4 and 5 share a shape: **a suffix that is part of a designator,
+parsed as though it were a trailing modifier that could be ignored.** Fixing them
+together is one change to how `_parse_the` and the reference forms handle their
+tails, not four patches.
+
+Item 2 is not a parser change at all, and is the only one that needs a decision
+rather than a fix.
+
+Below that line, the highest-value non-gap work is the `and`/`or` precedence
+ranking (§16.2) — zero sites here, but it is wrong, it is one table, and it will
+not announce itself in the next movie.
+
+One near-miss is worth recording because it looks like a gap and is not. A bare
+command word on a line of its own — `updateStage`, `cursorfunk`, `nothing`,
+`dontPassEvent`, and 44 sites of `updateStage` alone — parses to a *variable
+read*, not a call, because the port has no empty-argument command form. It works
+anyway: `lingo/lingo_interpreter.gd:_read_var` falls through to "an unknown bare
+identifier is a parameterless handler call in Lingo" and dispatches. The
+equivalence holds only while no local or global shares the name with a handler,
+which is an accident of this game rather than a property of the design.
+
+---
+
+# 17. Corrections to the sections above
+
+Two claims in §1–§10 are contradicted by what §11–§16 read.
+
+- **§2.3 says `and` and `or` short-circuit. They do not.** They are single
+  opcodes that pop both operands, coerce each to an integer and push `0` or `1`
+  (§13). The code generator emits no jump for them (§14). Both sides of a logical
+  operator are always evaluated, so a side-effecting or expensive operand runs
+  regardless of the other. This port's interpreter short-circuits (§9.3 records it
+  as implemented behaviour); that is a divergence from Director, not a fidelity
+  win, and it should be recorded as a deliberate one or removed.
+- **§1.4 says this game does not use `play done`. It does** — 48 statements in 48
+  authored scripts, and 96 files in the decompiled tree. The reasoning that
+  followed it ("a port that inherits that shortcut into a title which *does* use
+  the play stack will return to the wrong place with no error") therefore applies
+  to *this* title. See §16.3.
+
+One claim is refined rather than corrected: §9.1 lists `when keyDown then …` as
+"grammar rather than a builtin", which is right. §11.2 adds the mechanism — it is
+a single lexical token whose tail is captured raw — and §16.3 names the one script
+that contains it.
+
+---
+
+# 18. Not verified (part two)
+
+- **ScummVM's trim-garbage flag is not always on.** §11.11 describes the error
+  productions as if recovery always happens. The flag that selects between "trim
+  and continue" and "abort" is set elsewhere in the engine and was not traced, so
+  when a shipped movie gets recovery rather than a hard failure is unstated.
+- **The `.5` lexing claim.** ScummVM's own FIXME says the parser "treats `.5` as
+  `5`", but the float rule as written should match `.5` as `0.5`. The mechanism
+  behind their note was not found. §11.2's remark that a lone `.` lexes as a float
+  follows from rule ordering and longest-match, and was not tested.
+- **Bare assignment is genuinely absent from `lingo-gr.y`.** Read off the `asgn`
+  production, which has only the three `put` forms and `set`. Not cross-checked
+  against a running ScummVM, and the error productions make it hard to prove by
+  observation — `x = 1` would be *recovered*, not rejected.
+- **Whether any of the 48 `play done` sites depends on the return.** Not tested.
+  §16.3's entry states the risk, not a measured symptom.
+- **The corpus in §16 is the authored source, not what the port runs.** The port
+  executes ASTs compiled from `reference/lingo/`, the decompiled tree. The two
+  agree on `play done` (48 statements versus 96 files) and on the existence of
+  `case`, but a decompiler normalises syntax, so a shape present in one and absent
+  from the other proves nothing about the other. Every statement count in §16 is
+  from the extracted authored text.
+- **§16.3's claim that `set the volume of sound N` is dropped** was read out of
+  `lingo_interpreter.gd`'s assignment path, not observed at runtime. The path is
+  short and unambiguous, but no harness was run.
+- **The parse survey used the Python compiler with the GDScript fixes patched
+  in**, not `lingo_parser.gd` itself, because there is no tool that compiles a
+  directory of `.ls` files through the GDScript path. The two are meant to agree
+  script for script; if they have drifted, the survey reflects the Python.
+- **The D7 keyword list in ScummVM's `docs/` includes `{`, `}` and `..`**, none of
+  which appear in the grammar or the lexer. Whether they are real Lingo syntax
+  somewhere, or artefacts of how that list was compiled, was not chased.

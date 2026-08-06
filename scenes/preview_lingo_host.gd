@@ -81,6 +81,15 @@ func call_builtin(name: String, args: Array) -> Variant:
 					LingoValue.to_int(args[0]), LingoValue.to_int(args[1]) != 0
 				)
 			return 0
+		"rollover":
+			# The whole of this game's menu is built on it: a frame script asks
+			# `rollOver(4)` every tick and swaps the button art. Unbound it
+			# answers 0, so nothing ever highlights and nothing looks clickable —
+			# which is indistinguishable from the score being wrong.
+			if preview == null:
+				return 0
+			var which := LingoValue.to_int(args[0]) if not args.is_empty() else 0
+			return 1 if preview.lingo_rollover(which) else 0
 		"soundbusy":
 			# Scripts wait on this before speaking. Unbound it answers 0, which
 			# reads as "nothing is playing" and lets a room talk over itself.
@@ -130,6 +139,29 @@ func _go(args: Array) -> Variant:
 	words = kept
 	if words.is_empty():
 		return 0
+
+	# A movie name can arrive in either shape: `go to movie "day1.dir"` puts the
+	# bare word `movie` first, and `go(1, "day1.dir")` puts the frame first and
+	# the file second. Both are in this game, so the file is found by looking
+	# like one rather than by its position.
+	var movie := ""
+	var where: Variant = null
+	for w in words:
+		if typeof(w) == TYPE_STRING:
+			var text := str(w)
+			if text.ends_with(".dir") or text.ends_with(".dxr") or text.ends_with(".cst"):
+				movie = text
+				continue
+			if text == "movie":
+				continue
+			if where == null:
+				where = text
+		elif where == null:
+			where = w
+	if movie != "":
+		preview.lingo_go_movie(movie, where)
+		return 0
+
 	var first: Variant = words[0]
 	if typeof(first) == TYPE_STRING:
 		match str(first):
@@ -143,9 +175,10 @@ func _go(args: Array) -> Variant:
 			"loop":
 				preview.lingo_hold()
 				return 0
-			"next", "previous", "movie":
-				# Leaving the movie is out of this preview's scope; holding is
-				# closer to right than running on into unrelated frames.
+			"next", "previous":
+				# Relative score navigation, which nothing here models yet.
+				# Holding is closer to right than running on into unrelated
+				# frames, and it is visible rather than silent.
 				preview.lingo_hold()
 				return 0
 		preview.lingo_go_label(str(first))
