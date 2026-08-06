@@ -77,6 +77,12 @@ func resolve(name: String, from_dir: String = "") -> String:
 	var bare := tail.get_file()
 	if _by_name.has(bare):
 		var hits: Array = _by_name[bare]
+		# Two containers can share a filename: this game ships MASTER.CST twice,
+		# at the root and under PIP2DATA, and they are not the same file. Picking
+		# the first silently loads whichever the scan met first, so the ambiguity
+		# is reported rather than resolved by luck.
+		if hits.size() > 1:
+			push_warning("%s is ambiguous: %s" % [bare, ", ".join(hits)])
 		return hits[0]
 	return ""
 

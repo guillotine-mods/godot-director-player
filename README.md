@@ -3,7 +3,8 @@
 Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decoded `render_model` data plus WAV audio.
 
 **Project overview:** [`docs/PROJECT.md`](docs/PROJECT.md)  
-**Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Save format, widescreen, hooks:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **Android:** [`docs/ANDROID.md`](docs/ANDROID.md)  
+**Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Save format, widescreen, hooks:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+**Android install:** [`docs/ANDROID.md`](docs/ANDROID.md) · **What mobile imposes on the design:** [`docs/MOBILE.md`](docs/MOBILE.md)  
 **Known bugs:** [`bugs.md`](bugs.md) · **Fixed ones:** [`docs/bugs-closed.md`](docs/bugs-closed.md) · **Working on it:** [`AGENTS.md`](AGENTS.md)
 
 ## What this is
