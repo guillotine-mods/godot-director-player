@@ -101,10 +101,14 @@ def main() -> int:
             print(f"MISSING  {entry['name']}")
             missing += 1
             continue
-        size = candidates[0].stat().st_size
-        if size != entry["uncompressed"]:
+        # A name can appear twice with different contents: the installer holds
+        # two MASTER.CST, 483150 bytes in PIP2DATA and 481764 in the root. Take
+        # any copy at the expected size, or comparing both entries against
+        # whichever one rglob happened to return first fails a good extraction.
+        sizes = [c.stat().st_size for c in candidates]
+        if entry["uncompressed"] not in sizes:
             print(
-                f"SIZE     {entry['name']}: {size} on disk, "
+                f"SIZE     {entry['name']}: {sizes[0]} on disk, "
                 f"{entry['uncompressed']} expected"
             )
             missing += 1

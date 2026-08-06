@@ -29,3 +29,11 @@ user://
 # Python bytecode
 __pycache__/
 *.pyc
+
+# ScummVM reference sources, fetched by tools/fetch_scummvm_reference.sh.
+# GPL-2.0-or-later, read for the model only — never vendored.
+reference/scummvm/
+.traces/
+
+# Agent worktrees: full checkouts, 2.5 GB and counting. Never committed.
+.claude/worktrees/

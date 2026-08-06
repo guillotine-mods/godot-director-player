@@ -1,0 +1,5064 @@
+{
+ "generated_by": "tools/generate_lingo_vocabulary.py",
+ "director_version": {
+  "resolved": 700,
+  "status": "resolved by OpenSpec task 2.1; see openspec/changes/director-playback-machine/director-version.md",
+  "applied_as_filter": false,
+  "candidates": [
+   {
+    "version": 700,
+    "source": ".claude/skills/director-data-recovery/SKILL.md",
+    "describes": "the movies, and it is correct",
+    "detail": "Confirmed: every file the game plays reports config version 0x57E at DRCF payload offset 36, which humanVersion() maps to 700, and carries a VERS chunk of 7.0."
+   },
+   {
+    "version": 850,
+    "source": "reference/scummvm/detection_tables.h",
+    "describes": "the projector, not the movies",
+    "detail": "Correct about what it fingerprints - the executable. Two genuine D8.5 files ship at the install root; they are outside the movie set under PIP2DATA/."
+   },
+   {
+    "version": null,
+    "source": "assets/render_model/*/summary.json",
+    "describes": "the score format, and it agrees with 700",
+    "detail": "frames_version 13 with sprite_record_size 48 is what a D7 movie writes: 48 is kSprChannelSizeD7, and ScummVM dispatches sprite layout on the config version, never on framesVersion. Never evidence of an older score format."
+   }
+  ]
+ },
+ "categories_order": [
+  "sprite",
+  "movie",
+  "member",
+  "builtin"
+ ],
+ "sources": {
+  "compiler": {
+   "file": "tools/lingo_compile.py",
+   "tables": [
+    "SYSTEM_PROPS"
+   ],
+   "note": "SYSTEM_PROPS is unreferenced by the parser; it closes nothing."
+  },
+  "reference": {
+   "files": [
+    "reference/scummvm/lingo/lingo-the.cpp",
+    "reference/scummvm/lingo/lingo-builtins.cpp"
+   ],
+   "revision": "805f259a19d71eb12db1e3b0b9b24c27ee18e8b6",
+   "pinned_by": "tools/fetch_scummvm_reference.sh",
+   "taken": "Property and builtin names, their canonical spelling, and the entity each property belongs to. These transcribe Director's own language and object model: `the windowType of window \"x\"` is Lingo syntax, and window, castLib, menu, menuItem, chunk, date and time are Director objects.",
+   "not_taken": "The Director release each name was introduced in, and the property and builtin type tags. Determining those is the reference's own research rather than a fact about the language, so they are read to route a name into a category and then discarded. Do not reintroduce them.",
+   "authority": "A source, not an authority. It is wrong about this game in at least one measured case: score.cpp:1976 hard-codes 120 displayed channels on the framesVersion <= 13 branch, skipping the uint16 that follows, but 21 of the 60 movies declare 150 and ENDMOVI1.DXR writes sprite channel 150 - past that ceiling, so the reference truncates it. The port reads the per-movie field at VWSC-header offset 18. Evidence: openspec/changes/director-playback-machine/director-version.md. Where the two disagree, the game's own data decides."
+  },
+  "corpus": {
+   "root": "reference/lingo",
+   "scripts": 3349,
+   "unparsed": 0
+  }
+ },
+ "categories": {
+  "sprite": {
+   "closed": true,
+   "closure_source": "reference",
+   "counts": {
+    "total": 52,
+    "compiler": 0,
+    "reference": 52,
+    "corpus": 9
+   },
+   "names": [
+    {
+     "name": "backcolor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "backColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "blend",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "blend",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "bottom",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "bottom",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castlibnum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "castLibNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castnum",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "castNum",
+     "reads": 18,
+     "writes": 0
+    },
+    {
+     "name": "constraint",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "constraint",
+     "reads": 0,
+     "writes": 10
+    },
+    {
+     "name": "currenttime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "currentTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cursor",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "cursor",
+     "reads": 0,
+     "writes": 155
+    },
+    {
+     "name": "editabletext",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "editableText",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "fliph",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "flipH",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "flipv",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "flipV",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "forecolor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "foreColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "height",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "height",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "immediate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "immediate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "ink",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "ink",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "left",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "left",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "linesize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lineSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "loc",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "loc",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "loch",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "locH",
+     "reads": 296,
+     "writes": 347
+    },
+    {
+     "name": "locv",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "locV",
+     "reads": 325,
+     "writes": 397
+    },
+    {
+     "name": "member",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "member",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "membernum",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "memberNum",
+     "reads": 196,
+     "writes": 624
+    },
+    {
+     "name": "mostrecentcuepoint",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mostRecentCuePoint",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "moveablesprite",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "moveableSprite",
+     "reads": 0,
+     "writes": 15
+    },
+    {
+     "name": "movierate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "movieRate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "movietime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "movieTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "name",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "name",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pattern",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pattern",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "puppet",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "puppet",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rect",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rect",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "right",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "right",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scorecolor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scoreColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scriptinstancelist",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scriptInstanceList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scriptnum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scriptNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "settrackenabled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setTrackEnabled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "starttime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "startTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stoptime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stopTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stretch",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stretch",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "top",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "top",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trackenabled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackEnabled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracknextkeytime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackNextKeyTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracknextsampletime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackNextSampleTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trackpreviouskeytime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackPreviousKeyTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trackprevioussampletime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackPreviousSampleTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracktext",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackText",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trails",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trails",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tweened",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "tweened",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "type",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "type",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "visibility",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "visibility",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "visible",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "visible",
+     "reads": 172,
+     "writes": 1283
+    },
+    {
+     "name": "volume",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "volume",
+     "reads": 0,
+     "writes": 2
+    },
+    {
+     "name": "width",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "width",
+     "reads": 0,
+     "writes": 0
+    }
+   ]
+  },
+  "movie": {
+   "closed": true,
+   "closure_source": "reference",
+   "counts": {
+    "total": 156,
+    "compiler": 73,
+    "reference": 143,
+    "corpus": 16
+   },
+   "names": [
+    {
+     "name": "abbreviated",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "activewindow",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "activeWindow",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "actorlist",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "actorList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "alerthook",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "alertHook",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "applicationpath",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "applicationPath",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "beepon",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "beepOn",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "buttonstyle",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "buttonStyle",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castlibs",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "castLibs",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castmembers",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "castmembers",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "centerstage",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "centerStage",
+     "reads": 0,
+     "writes": 20
+    },
+    {
+     "name": "checkboxaccess",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "checkBoxAccess",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "checkboxtype",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "checkBoxType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "clickloc",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "clickLoc",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "clickon",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "clickOn",
+     "reads": 396,
+     "writes": 0
+    },
+    {
+     "name": "colordepth",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "colorDepth",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "colorqd",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "colorQD",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "commanddown",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "commandDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "controldown",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "controlDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cpuhogticks",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cpuHogTicks",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "currentspritenum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "currentSpriteNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cursor",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "date",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "date",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "desktoprectlist",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "deskTopRectList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "digitalvideotimescale",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "digitalVideoTimeScale",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "doubleclick",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "doubleClick",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "emulatemultibuttonmouse",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "emulateMultiButtonMouse",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "environment",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "exitlock",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "exitLock",
+     "reads": 0,
+     "writes": 2
+    },
+    {
+     "name": "fixstagesize",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "fixStageSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "floatprecision",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "floatPrecision",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "frame",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "frame",
+     "reads": 13,
+     "writes": 0
+    },
+    {
+     "name": "framelabel",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "frameLabel",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framepalette",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "framePalette",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framescript",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "frameScript",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framesound1",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "frameSound1",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framesound2",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "frameSound2",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "frametempo",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "frameTempo",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "frametransition",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "frameTransition",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "freeblock",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "freeBlock",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "freebytes",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "freeBytes",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "frontwindow",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "frontWindow",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "fullcolorpermit",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "fullColorPermit",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idlehandlerperiod",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleHandlerPeriod",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idleloadmode",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleLoadMode",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idleloadperiod",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleLoadPeriod",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idleloadtag",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleLoadTag",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idlereadchunksize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleReadChunkSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "imagedirect",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "imageDirect",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "itemdelimiter",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "itemDelimiter",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "key",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "key",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "keycode",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "keyCode",
+     "reads": 30,
+     "writes": 0
+    },
+    {
+     "name": "keydownscript",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "keyDownScript",
+     "reads": 2,
+     "writes": 63
+    },
+    {
+     "name": "keypressed",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "keyPressed",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "keyupscript",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "keyUpScript",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "labellist",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "labelList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lastclick",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "lastClick",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lastevent",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lastEvent",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lastframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lastFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lastkey",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lastKey",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lastroll",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lastRoll",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "long",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "machinetype",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "machineType",
+     "reads": 6,
+     "writes": 0
+    },
+    {
+     "name": "maxinteger",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "maxInteger",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "memorysize",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "memorySize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "menuitems",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "menuitems",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "milliseconds",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mousecast",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseCast",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mousechar",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseChar",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mousedown",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "mouseDown",
+     "reads": 4,
+     "writes": 0
+    },
+    {
+     "name": "mousedownscript",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseDownScript",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mouseh",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "mouseH",
+     "reads": 85,
+     "writes": 0
+    },
+    {
+     "name": "mouseitem",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseItem",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mouseline",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseLine",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mousemember",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseMember",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mouseup",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "mouseUp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mouseupscript",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseUpScript",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mousev",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "mouseV",
+     "reads": 85,
+     "writes": 0
+    },
+    {
+     "name": "mouseword",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mouseWord",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "movie",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "movie",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "moviefilefreesize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "movieFileFreeSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "moviefilesize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "movieFileSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "moviename",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "movieName",
+     "reads": 35,
+     "writes": 0
+    },
+    {
+     "name": "moviepath",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "moviePath",
+     "reads": 32,
+     "writes": 0
+    },
+    {
+     "name": "movierate",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "multisound",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "multiSound",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "netthrottleticks",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "netThrottleTicks",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "number",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "objectlist",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "optiondown",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "optionDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "organizationname",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "organizationName",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "palettemapping",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "paletteMapping",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "paramcount",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "paramCount",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pathname",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "pathName",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pausestate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pauseState",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "perframehook",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "perFrameHook",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pi",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pi",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "platform",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "platform",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preloadeventabort",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preloadEventAbort",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preloadram",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoadRAM",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "productname",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "productName",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "productversion",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "productVersion",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "puppet",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "quicktimepresent",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "quickTimePresent",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "randomseed",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "randomSeed",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "result",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "result",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rightmousedown",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rightMouseDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rightmouseup",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rightMouseUp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rollover",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rollOver",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "romanlingo",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "romanLingo",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "runmode",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "runMode",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "safeplayer",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "safePlayer",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "score",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "score",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scoreselection",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scoreSelection",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scummvmversion",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scummvmVersion",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "searchcurrentfolder",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "searchCurrentFolder",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "searchpath",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "searchPath",
+     "reads": 52,
+     "writes": 52
+    },
+    {
+     "name": "searchpaths",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "searchPaths",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "selection",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "selection",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "selend",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "selEnd",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "selstart",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "selStart",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "serialnumber",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "serialNumber",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "shiftdown",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "shiftDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "short",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sounddevice",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "soundDevice",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "soundenabled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "soundEnabled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "soundkeepdevice",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "soundKeepDevice",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "soundlevel",
+     "sources": [
+      "compiler",
+      "reference",
+      "corpus"
+     ],
+     "spelling": "soundLevel",
+     "reads": 7,
+     "writes": 7
+    },
+    {
+     "name": "stage",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "stage",
+     "reads": 135,
+     "writes": 0
+    },
+    {
+     "name": "stagebottom",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stageBottom",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stagecolor",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "stageColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stageleft",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stageLeft",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stageright",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stageRight",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stagetop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stageTop",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stilldown",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stillDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "switchcolordepth",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "switchColorDepth",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "ticks",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "ticks",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "time",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "time",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutkeydown",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutKeyDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutlapsed",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutLapsed",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutlength",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutLength",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutmouse",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutMouse",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutplay",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutPlay",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timeoutscript",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeoutScript",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timer",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "timer",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trace",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trace",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "traceload",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "traceLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracelogfile",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "traceLogFile",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracescript",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "updatelock",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "updateLock",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "updatemovieenabled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "updateMovieEnabled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "username",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "userName",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "videoforwindowspresent",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "videoForWindowsPresent",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "visible",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "volume",
+     "sources": [
+      "compiler"
+     ],
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "windowlist",
+     "sources": [
+      "compiler",
+      "reference"
+     ],
+     "spelling": "windowList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "xtras",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "xtras",
+     "reads": 0,
+     "writes": 0
+    }
+   ]
+  },
+  "member": {
+   "closed": true,
+   "closure_source": "reference",
+   "counts": {
+    "total": 80,
+    "compiler": 0,
+    "reference": 80,
+    "corpus": 4
+   },
+   "names": [
+    {
+     "name": "alignment",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "alignment",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "antialias",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "antiAlias",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "autotab",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "autoTab",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "backcolor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "backColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "border",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "border",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "boxdropshadow",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "boxDropShadow",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "boxtype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "boxType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "buttontype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "buttonType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castlibnum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "castLibNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "casttype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "castType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "center",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "center",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "changearea",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "changeArea",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "channelcount",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "channelCount",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "chunksize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "chunkSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "controller",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "controller",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "crop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "crop",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cuepointnames",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cuePointNames",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cuepointtimes",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cuePointTimes",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "depth",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "depth",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "digitalvideotype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "digitalVideoType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "directtostage",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "directToStage",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "dropshadow",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "dropShadow",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "duration",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "duration",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "editable",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "editable",
+     "reads": 0,
+     "writes": 5
+    },
+    {
+     "name": "filename",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "filename",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "filled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "filled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "font",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "font",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "fontsize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "fontSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "fontstyle",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "fontStyle",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "forecolor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "foreColor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framerate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "frameRate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "height",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "height",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "hilite",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "hilite",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "interface",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "interface",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "linecount",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lineCount",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lineheight",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lineHeight",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "linesize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lineSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "loaded",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "loaded",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "loop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "loop",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "margin",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "margin",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "media",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "media",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mediabusy",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mediaBusy",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mediaready",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mediaReady",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "membernum",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "memberNum",
+     "reads": 85,
+     "writes": 0
+    },
+    {
+     "name": "modified",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "modified",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "name",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "name",
+     "reads": 181,
+     "writes": 0
+    },
+    {
+     "name": "number",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "number",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pageheight",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pageHeight",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "palette",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "palette",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "paletteref",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "paletteRef",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pattern",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pattern",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pausedatstart",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pausedAtStart",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "picture",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "picture",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preload",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "purgepriority",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "purgePriority",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rect",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rect",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "regpoint",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "regPoint",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "samplerate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sampleRate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "samplesize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sampleSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scale",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scale",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scriptsenabled",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scriptsEnabled",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scripttext",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scriptText",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scripttype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scriptType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scrolltop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scrollTop",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "shapetype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "shapeType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "size",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "size",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sound",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sound",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "spritenum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "spriteNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "text",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "text",
+     "reads": 95,
+     "writes": 0
+    },
+    {
+     "name": "textalign",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "textAlign",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "textfont",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "textFont",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "textheight",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "textHeight",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "textsize",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "textSize",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "textstyle",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "textStyle",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "timescale",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "timeScale",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "transitiontype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "transitionType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "type",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "type",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "video",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "video",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "width",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "width",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "wordwrap",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "wordWrap",
+     "reads": 0,
+     "writes": 0
+    }
+   ]
+  },
+  "builtin": {
+   "closed": true,
+   "closure_source": "reference",
+   "counts": {
+    "total": 243,
+    "compiler": 0,
+    "reference": 201,
+    "corpus": 69
+   },
+   "names": [
+    {
+     "name": "abort",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "abort",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "abs",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "abs",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "add",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "add",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "addat",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "addAt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "addprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "addProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "alert",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "alert",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "append",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "append",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "atan",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "atan",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "backspace",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "backspace",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "badmov",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 8,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "beep",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "beep",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "beginrecording",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "beginRecording",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "bk2peoplefunk",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 3,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "call",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "call",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "callancestor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "callAncestor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cancelidleload",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cancelIdleLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cast",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cast",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "castlib",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "castLib",
+     "reads": 4,
+     "writes": 0
+    },
+    {
+     "name": "charpostoloc",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "charPosToLoc",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "chars",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "chars",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "chartonum",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "charToNum",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "clearframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "clearFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "clearglobals",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "clearGlobals",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "closeda",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "closeDA",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "closeresfile",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "closeResFile",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "closexlib",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "closeXlib",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "constrainh",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "constrainH",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "constrainv",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "constrainV",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "continue",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "continue",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "copytoclipboard",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "copyToClipBoard",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cos",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cos",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "count",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "count",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cursor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "cursor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "cursorfunk",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 68,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "delay",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "delay",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "deleteat",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "deleteAt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "deleteframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "deleteFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "deleteone",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "deleteOne",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "deleteprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "deleteProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "displayobject",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 128,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "do",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "do",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "doload",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "dont",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "dontpassevent",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "dontPassEvent",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "dosave",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "duplicate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "duplicate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "duplicateframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "duplicateFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "dwarfscont",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "dwarfscont2",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "editabletext",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "editableText",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "empty",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "empty",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "endrecording",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "endRecording",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "enter",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "enter",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "erase",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "erase",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "exp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "exp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "externalparamcount",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "externalParamCount",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "externalparamname",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "externalParamName",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "externalparamvalue",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "externalParamValue",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "factory",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "factory",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "false",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "false",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "fillnames",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "fillnames2",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "findempty",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "findEmpty",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "findpos",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "findPos",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "findposnear",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "findPosNear",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "finishday",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 3,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "finishidleload",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "finishIdleLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "float",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "float",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "floatp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "floatP",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "forget",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 22,
+     "writes": 0
+    },
+    {
+     "name": "frameready",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "frameReady",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "framestohms",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "framesToHMS",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "gamad",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "getaprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getaProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getat",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "getAt",
+     "reads": 52,
+     "writes": 0
+    },
+    {
+     "name": "getlast",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getLast",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getmacdiscinfo",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "getnthfilenameinfolder",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getNthFileNameInFolder",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getone",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getOne",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getpos",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getPos",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getpref",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getPref",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getpropat",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "getPropAt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "getvolumes",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "GetVolumes",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "go",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "go",
+     "reads": 1066,
+     "writes": 0
+    },
+    {
+     "name": "halt",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "halt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "hathitball",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "hathitball2",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "hitballlong",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 3,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "hitballshrt",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 3,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "hmstoframes",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "HMStoFrames",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "idleloaddone",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "idleLoadDone",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "ilk",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "ilk",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "immediatesprite",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "immediateSprite",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "importfileinto",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "importFileInto",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "inflate",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "inflate",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "insertframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "insertFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "inside",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "inside",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "installmenu",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "installMenu",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "integer",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "integer",
+     "reads": 5,
+     "writes": 0
+    },
+    {
+     "name": "integerp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "integerp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "intersect",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "intersect",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "ishspec",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "ispastcuepoint",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "isPastCuePoint",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "label",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "label",
+     "reads": 180,
+     "writes": 0
+    },
+    {
+     "name": "length",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "length",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "lineheight",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "lineHeight",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "linepostolocv",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "linePosToLocV",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "list",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "list",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "listp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "listP",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "loctocharpos",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "locToCharPos",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "locvtolinepos",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "locVToLinePos",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "log",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "log",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "map",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "map",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "marker",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "marker",
+     "reads": 206,
+     "writes": 0
+    },
+    {
+     "name": "max",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "max",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mci",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mci",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "mciwait",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "mciwait",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "member",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "member",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "min",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "min",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "move",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "move",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "moveablesprite",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "moveableSprite",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "movinbad",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "nothing",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "nothing",
+     "reads": 3,
+     "writes": 0
+    },
+    {
+     "name": "numberofchars",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "numberOfChars",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "numberofitems",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "numberOfItems",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "numberoflines",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "numberOfLines",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "numberofwords",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "numberOfWords",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "numtochar",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "numToChar",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "objectp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "objectp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "objecttalktime",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 8,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "offset",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "offset",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "open",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "open",
+     "reads": 27,
+     "writes": 0
+    },
+    {
+     "name": "openda",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "openDA",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "openresfile",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "openResFile",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "openxlib",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "openXlib",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "param",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "param",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pass",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "pass",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "pasteclipboardinto",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pasteClipBoardInto",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "pause",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "pause",
+     "reads": 5,
+     "writes": 0
+    },
+    {
+     "name": "peoplecont",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 8,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "peoplefunk",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 36,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "peopleinroom",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 4,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "pi",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pi",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "picturep",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "pictureP",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "planefunk",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "play",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "play",
+     "reads": 208,
+     "writes": 0
+    },
+    {
+     "name": "playaccel",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "playAccel",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "point",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "point",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "power",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "power",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preload",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preloadcast",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoadCast",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preloadmember",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoadMember",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "preloadmovie",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "preLoadMovie",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "printfrom",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "printFrom",
+     "reads": 4,
+     "writes": 0
+    },
+    {
+     "name": "puppetpalette",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "puppetPalette",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "puppetsound",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "puppetSound",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "puppetsprite",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "puppetSprite",
+     "reads": 288,
+     "writes": 0
+    },
+    {
+     "name": "puppettempo",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "puppetTempo",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "puppettransition",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "puppetTransition",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "put",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "put",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "quit",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "quit",
+     "reads": 9,
+     "writes": 0
+    },
+    {
+     "name": "quote",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "quote",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "ramneeded",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "ramNeeded",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "random",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "random",
+     "reads": 186,
+     "writes": 0
+    },
+    {
+     "name": "rect",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "rect",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "restart",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "restart",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "return",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "return",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "rollover",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "rollOver",
+     "reads": 94,
+     "writes": 0
+    },
+    {
+     "name": "save",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "save",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "savemovie",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "saveMovie",
+     "reads": 2,
+     "writes": 0
+    },
+    {
+     "name": "script",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "script",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scrollbyline",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scrollByLine",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scrollbypage",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scrollByPage",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scummvmassert",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scummvmAssert",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scummvmassertequal",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scummvmAssertEqual",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "scummvmnofatalerror",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "scummvmNoFatalError",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "searchfunk",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 69,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "send",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "send",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sendallsprites",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sendAllSprites",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sendancestor",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sendAncestor",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sendsprite",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sendSprite",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "setaprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setaProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "setat",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setAt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "setcallback",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setCallBack",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "setmoviepath",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0
+    },
+    {
+     "name": "setpref",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setPref",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "setprop",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "setProp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "showglobals",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "showGlobals",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "showlocals",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "showLocals",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "showresfile",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "showResFile",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "showxlib",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "showXlib",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "shutdown",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "shutDown",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sin",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sin",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sort",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sort",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sound",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "sound",
+     "reads": 2652,
+     "writes": 0
+    },
+    {
+     "name": "soundbusy",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "soundBusy",
+     "reads": 245,
+     "writes": 0
+    },
+    {
+     "name": "soundspath",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 68,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "sprite",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sprite",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "spritebox",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "spriteBox",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "sqrt",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "sqrt",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "starttimer",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "startTimer",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stonecold",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "stopevent",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "stopEvent",
+     "reads": 1,
+     "writes": 0
+    },
+    {
+     "name": "string",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "string",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "stringp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "stringp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "symbol",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "symbol",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "symbolp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "symbolp",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tab",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "tab",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "talkproc",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 20,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "tan",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "tan",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "then",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 4,
+     "writes": 0,
+     "artefact": true
+    },
+    {
+     "name": "tlkpath",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 19,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "to",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "artefact": true
+    },
+    {
+     "name": "trackcount",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackCount",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trackstarttime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackStartTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "trackstoptime",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackStopTime",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "tracktype",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "trackType",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "true",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "true",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "union",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "union",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "unload",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "unLoad",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "unloadcast",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "unLoadCast",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "unloadmember",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "unLoadMember",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "unloadmovie",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "unLoadMovie",
+     "reads": 1,
+     "writes": 0
+    },
+    {
+     "name": "updateframe",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "updateFrame",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "updatestage",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "updateStage",
+     "reads": 237,
+     "writes": 0
+    },
+    {
+     "name": "value",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "value",
+     "reads": 513,
+     "writes": 0
+    },
+    {
+     "name": "version",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "version",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "void",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "void",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "voidp",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "voidP",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "walkonby",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 205,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "walkonby2",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 13,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "walkonby3",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 7,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "whatodoeveryframe",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 23,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "whatodoeveryframe2",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "whatodoeveryframe3",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 2,
+     "writes": 0,
+     "handler_defined": true
+    },
+    {
+     "name": "when",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 4,
+     "writes": 0
+    },
+    {
+     "name": "window",
+     "sources": [
+      "reference",
+      "corpus"
+     ],
+     "spelling": "window",
+     "reads": 117,
+     "writes": 0
+    },
+    {
+     "name": "windowpresent",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "windowPresent",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "www",
+     "sources": [
+      "corpus"
+     ],
+     "reads": 1,
+     "writes": 0
+    },
+    {
+     "name": "xfactorylist",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "xFactoryList",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "xtra",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "xtra",
+     "reads": 0,
+     "writes": 0
+    },
+    {
+     "name": "zoombox",
+     "sources": [
+      "reference"
+     ],
+     "spelling": "zoomBox",
+     "reads": 0,
+     "writes": 0
+    }
+   ]
+  }
+ },
+ "other_entities": {
+  "castlib": [
+   "filename",
+   "name",
+   "number",
+   "preloadmode",
+   "selection"
+  ],
+  "castlibs": [
+   "number"
+  ],
+  "castmembers": [
+   "number"
+  ],
+  "chunk": [
+   "font",
+   "fontsize",
+   "fontstyle",
+   "forecolor",
+   "lineheight",
+   "textfont",
+   "textheight",
+   "textsize",
+   "textstyle"
+  ],
+  "date": [
+   "abbr",
+   "abbrev",
+   "abbreviated",
+   "long",
+   "short"
+  ],
+  "menu": [
+   "name"
+  ],
+  "menuitem": [
+   "checkmark",
+   "enabled",
+   "name",
+   "script"
+  ],
+  "menuitems": [
+   "number"
+  ],
+  "soundentity": [
+   "volume"
+  ],
+  "time": [
+   "abbr",
+   "abbrev",
+   "abbreviated",
+   "long",
+   "short"
+  ],
+  "window": [
+   "drawrect",
+   "filename",
+   "modal",
+   "rect",
+   "sourcerect",
+   "title",
+   "titlevisible",
+   "visible",
+   "windowtype"
+  ]
+ },
+ "ambiguous": [
+  {
+   "name": "volume",
+   "reads": 2,
+   "writes": 66
+  },
+  {
+   "name": "windowtype",
+   "reads": 0,
+   "writes": 20
+  }
+ ]
+}

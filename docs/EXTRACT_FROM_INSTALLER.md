@@ -8,6 +8,14 @@ the files out is to run the installer on Windows.
 
 > **This recovery is done. Nothing here is outstanding work.**
 >
+> **It is also now reproducible without Windows.** `tools/extract_piposh2_data/`
+> runs the installer under Wine in a container and copies the casts and movies
+> out, so the manual Windows steps below are history rather than instructions:
+>
+> ```
+> tools/extract_piposh2_data/run.sh ~/Downloads/piposh2.exe ~/Downloads/piposh2extracted/piposh2-data
+> ```
+>
 > - The Lingo is committed at `reference/lingo/` (3349 scripts, 73 casts), with
 >   the Director text members at `reference/chunks/`. See `reference/README.md`.
 > - The extracted movies and casts, and the ProjectorRays chunk dump they were
@@ -15,8 +23,19 @@ the files out is to run the installer on Windows.
 >   machine:
 >
 >   ```
->   piposh2extracted/piposh2-data/          83 .DXR/.CXT plus MASTER.CST, HEZSAVE.DIR, strtgame.dxr
+>   piposh2extracted/piposh2-data/          90 files, 180 MB — see below
 >   piposh2extracted/piposh2-projectorrays/ 420 MB chunk dump, layout <root>/<NAME>/<NAME>/chunks
+>   ```
+>
+>   `piposh2-data/` holds:
+>
+>   ```
+>   PIP2DATA/        83 — 59 .DXR, 23 .CXT, MASTER.CST
+>   PIPOSH2.EXE      the game projector, 5665996 bytes; ScummVM needs it to detect the game
+>   strtgame.dxr     the boot movie
+>   MASTER.CST       a *different* file from PIP2DATA/MASTER.CST — see below
+>   HEZSAVE.DIR
+>   old_exe/         three superseded projector builds, kept only so nothing is silently dropped
 >   ```
 >
 >   That dump is not in the repository, and is a generation-time input only. Pass
@@ -99,13 +118,62 @@ Note that the first run dumped `MASTER`'s chunks but not its scripts, so verify
 ## Step 4 — verification, on the Mac
 
 ```
-python3 tools/list_vise_archive.py ~/Downloads/piposh2.exe --verify <unzipped dir>
+python3 tools/list_vise_archive.py ~/Downloads/piposh2.exe \
+    --ext DXR CXT CST DIR --verify <unzipped dir>
 ```
 
 Compares every recovered file against the size recorded in the installer
 directory and exits non-zero if anything is missing or truncated, so a partial
 extraction is caught rather than assumed good. `data/installer_manifest.txt`
 holds the same expected list for reference.
+
+**Pass `--ext`.** Without it the check demands all 3141 `.AIF` files, which are
+deliberately not recovered per the table above, and reports ~3150 missing on a
+perfectly good extraction. The remaining non-audio entries are `PIPOSH2.EXE`,
+three superseded projector builds, an icon, a `.url` and a readme; only the
+projector matters, and only for ScummVM, which needs it to detect the game.
+
+### The two MASTER.CST files are genuinely different
+
+The installer ships `MASTER.CST` twice and they are not copies: `PIP2DATA/MASTER.CST`
+is 483,150 bytes and `MASTER.CST` at the root is 481,764. Reading their config
+chunks settles it beyond doubt — the `PIP2DATA` copy is **Director 7** (config
+`0x57E` at `DRCF` payload offset 36, big-endian RIFX container), the root copy is
+**Director 8.5** (`0x73A`, little-endian XFIR). Same for `HEZSAVE.DIR`. The root
+pair belongs with the D8.5 projector; the game's own cast is the one under
+`PIP2DATA/`.
+
+This mattered practically: `list_vise_archive.py --verify` used to resolve both
+manifest entries to whichever copy `rglob` returned first, so one of them was
+always checked against the wrong file. Fixed to accept any copy at the expected
+size.
+
+### Verifying against ScummVM's hashes
+
+ScummVM's detection entry keys on two files, and **neither hash is over the whole
+file**. Each is 5000 bytes, but *which* 5000 depends on the prefix in the table,
+which is easy to miss:
+
+| prefix | hashes | file here |
+|--------|--------|-----------|
+| `f:` | the **first** 5000 bytes | `PIP2DATA/AIR1.DXR` |
+| `t:` | the **last** 5000 bytes | `PIPOSH2.EXE` |
+
+```
+head -c 5000 PIP2DATA/AIR1.DXR | md5     # cc6c9bb1acf76a0697a30d626e89543c, size 2119111
+tail -c 5000 PIPOSH2.EXE       | md5     # 9d33c0d6a4cfb70c33f87f6e8a1f23fd, size 5665996
+```
+
+Get either one wrong and a correct extraction reports as a failure. For the
+record: `AIR1.DXR` full-file is `909a55d5…` and its *tail* is `5187c5fb…`;
+`PIPOSH2.EXE` full-file is `ccc1faae…` and its *head* is `c163f361…`. None of
+those four match anything and none of them mean anything.
+
+The projector's `t:` hash is shared with Piposh 1 (`detection_tables.h:10437`,
+same hash and same 5665996 bytes), so it is a common launcher stub and cannot
+identify the game on its own — disambiguation comes from the filename and from
+`PIP2DATA/AIR1.DXR`. Piposh 3D does **not** share it; it has its own
+`t:4dfd8c52…` at 5427592.
 
 Then regenerate the cast registry and confirm the gaps closed:
 
