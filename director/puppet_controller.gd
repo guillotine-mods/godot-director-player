@@ -127,7 +127,12 @@ func sync_from_frame(frame: Dictionary, scene_name: String, stage_size: Vector2i
 		cast_lib = 1
 		cast_id = id
 		if just_arrived:
-			just_arrived = false
+			# Held, not cleared: a room reached through a transition marker changes
+			# `scene_name` twice — arriving from the gate runs swingup, then swing,
+			# then swinggo — and clearing it on the first change let the second take
+			# the `elif` below and overwrite the arrival point with the score's own
+			# sprite-30 position. The arrival owns where Piposh stands until he walks
+			# again, so `start_walk` and `_walkonby` are what clear it (bugs.md 26).
 			scene = scene_name
 		elif scene != scene_name:
 			scene = scene_name
@@ -208,6 +213,9 @@ func start_walk(nav: Dictionary, stage_pt: Vector2, stage_size: Vector2i, scene_
 	egozv = walk_y
 	nextroom = dest
 	walk_tick = 0
+	# Moving under his own steam again, so the last arrival no longer owns where he
+	# stands and the score may reposition him on the next scene change.
+	just_arrived = false
 	apply_walk_frame()
 	return true
 

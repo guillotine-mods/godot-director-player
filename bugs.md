@@ -177,10 +177,10 @@ installed here.
 
 ---
 
-## 26. Entering `swing` puts Piposh on the wrong side, and the corrected doorway data is reaching the puppet
+## 26. No walk in the game applied an arrival point, because `walkonby` read one item of three
 
-**Status:** open · root cause **not** established · **Area:** walk arrival ·
-two prime suspects named below, both cheap to settle
+**Status:** FIXED · **Area:** interpreter host `_walkonby` + puppet ·
+**general: every room exit in the game** · the doorway table is now redundant here
 
 Reported from play: *"there's something weird with the animation entering the scene
 before the cliff — it moves to the left side while entering from the right side."*
@@ -224,28 +224,72 @@ is accidentally closer to it than 39 is: the change fixes a real defect and make
 the visible symptom worse. It is worth re-applying *after* the primary cause below,
 not before.
 
-**Two suspects, and 4 above is the thing to explain.** Facts 3 and 4 cannot both be
-true of the same nav, so something differs between the direct `start_walk` call and
-the click-driven walk:
+**Root cause: `walkonby` read `nextroomdata` item 1 of three.** Every room exit in
+the game is an **interpreted** `mouseUp` — verified `interpreted mouseUp=true` at
+`gate` ch10, `clif2` ch12 and `edge1` ch12 — and an interpreted exit routes through
+the native `walkonby` shim rather than the export's walk nav. `_walkonby` read
+`item 1 of nextroomdata`, the destination label, and discarded items **2 and 3**,
+which are the arrival point the original's own handlers author per hotspot:
 
-* **Two walk engines, and the interpreted one may be performing the handover.**
-  `whatodoeveryframe` is interpreted, and its stand branch does the room change
-  itself: `egozh = value(item 2 of nextroomdata)`, then `go(item 1 of
-  nextroomdata)`. If it reaches the `go` first, the native `nextroom` — the only
-  thing carrying `arrive_at` — is never consumed, and Piposh stops at `egozh`,
-  which is exactly the measured 39/140. `NATIVE_HANDLERS` covers `walkonby` only.
-  Settle it by logging which of the two performs the transition.
-* **The `clif2` edge's override is not applied while the `gate` edge's is.** From
-  the cliff the walk targets **140**, the *export's* `walk_to`, not the override's
-  44 — with `marker=clif2go`, channel 12 and target `swingup` all verified at click
-  time, so `clif2|12|swingup` should hit exactly as `gate|10|swingup` does. One of
-  two lookups with identical shape is missing. Settle it by logging
-  `walk_override`'s key and result inside `_apply_walk_override`.
+```
+the gate's exit sets   nextroomdata = "swing,344,375"
+MURDER1's return sets  nextroomdata = "clif2,91,336"
+```
 
-Reproduce: enter DAY1 **at frame 1** (never at a label, or `init all` has not run
-and the score owns channel 30 — bugs.md 25), `enter_frame` to `gatego`, click ch10,
-and watch `puppet.loc_h` against `egozh` frame by frame. Both scratch probes are
-deleted; the numbers above are the record.
+`whatodoeveryframe` reads all three — `egozh = value(item 2 of nextroomdata)`,
+`egozv = value(item 3)` — before its `go`. Reading only item 1 handed the puppet a
+`nextroom` of `{label, transition}` with no `x`/`y`, and `PuppetController.step()`
+falls back to wherever the walk stopped. So **`arrive_at` was unreachable on every
+walk in the game**, on the path the game actually runs, and the destination room's
+own score position then claimed him. Two doors into one room always landed on the
+same side. Measured, three unrelated edges:
+
+| edge | before | after | the script's own value |
+|---|---|---|---|
+| `gate` → swing | 231 | **344** (swing's right) | `"swing,344,375"` |
+| `clif2` → swing | 231 | **33** (swing's left) | `"swing,33,291"` |
+| `edge1` → edge2 | 289 | **300** | `"edge2,300,395"` |
+
+231 is the score's sprite-30 x in `swinggo` and 289 is `edge2go`'s — the giveaway
+that the score, not the walk, was placing him.
+
+**It took two changes, and the second alone is a trap.**
+
+1. `_walkonby` carries items 2 and 3 into `nextroom.x/y`. Two-item handovers exist
+   and keep the old behaviour: the walk ends where it ends.
+2. The arrival keeps ownership of the position until the next walk. A room reached
+   through a transition marker changes `scene_name` twice — `swingup` → `swing` →
+   `swinggo` — and `sync_from_frame`'s `just_arrived` one-shot was consumed by the
+   first change, leaving the second to take `elif scene != scene_name` and overwrite
+   the arrival with `score_h`. `start_walk` and `_walkonby` now clear the flag.
+
+Change 2 was tried **first**, on its own, and rejected: it moved the gate arrival
+from 231 to 39 when the right answer is 344, so it fixed a real defect and made the
+symptom worse. There was no arrival point to protect until change 1 existed. A fix
+that improves an invariant while degrading what the player sees is a sign the other
+half is missing, not that the fix is wrong.
+
+**`data/walk_doorways.json` is now redundant on this path**, and its premise was
+wrong in an instructive way. It reverse-engineered per-edge coordinates from the
+score by "reciprocity" because the export stores one pair per destination label —
+and it did well: for the `clif2` edge it recovered `(30,328)` against the script's
+`(33,291)`, and for `gate` `(326,371)` against `(344,375)`. But the scripts had the
+real numbers all along, authored per hotspot. Its own comment says "the durable fix
+is the export emitting nav per hotspot"; the durable fix was to read the Lingo. The
+table still feeds the export-driven path (`start_walk`), so it is not dead code, but
+no interpreted exit consults it any more. Retiring it is a separate change.
+
+**Verification.** Pass/fail set green: `smoke`, `puppet_visibility`, `room_names`,
+`collectables` 22, `cursors` 44, `sprite_channels`, `cliff_meeting` 11.
+`tools/lingo_walk_diff.gd` is unchanged at `identical outcome: 85/117` with the same
+32 differing rows — which says no walk changed *which room it reaches*, and is blind
+to what this fixed: the differ records `movie@marker walked/facing`, never a
+position. A harness that asserts the arrival position is the gap this entry leaves.
+
+Reproduce: enter DAY1 **at frame 1** (never at a label, or `init all` has not run and
+the score owns channel 30 — bugs.md 25), `enter_frame` to `gatego`, click ch10, and
+watch `puppet.loc_h` and `puppet.nextroom`. Scratch probes deleted; the numbers above
+are the record.
 
 ---
 

@@ -1011,15 +1011,33 @@ func _walkonby() -> Variant:
 		puppet.facing = "left"
 	elif target_h > float(puppet.loc_h) + 10.0:
 		puppet.facing = "right"
-	# `nextroomdata` is the original's room handover and item 1 is the destination
-	# label; "000" means stay in this room.
+	# `nextroomdata` is the original's room handover: item 1 is the destination label
+	# ("000" means stay in this room) and **items 2 and 3 are where in that room
+	# Piposh lands**. The gate's exit sets `"swing,344,375"`; MURDER1's return sets
+	# `"clif2,91,336"`. `whatodoeveryframe` reads all three —
+	# `egozh = value(item 2 of nextroomdata)`, `egozv = value(item 3)` — before its
+	# `go`, so the arrival point is authored per hotspot by the original itself.
+	#
+	# Reading only item 1 discarded it, and since every room exit in the game is an
+	# interpreted `mouseUp` that routes through here, no walk anywhere applied an
+	# arrival point: Piposh stopped wherever the walk ended and the destination's
+	# score position then claimed him. That is what put him on the wrong side of
+	# `swing` (bugs.md 26). `data/walk_doorways.json` reverse-engineered these same
+	# coordinates from the score; the scripts had them all along.
 	var destination := ""
 	var transition := false
+	var arrive: Dictionary = {}
 	if interpreter != null:
 		var raw := LingoValue.to_str((interpreter.globals as Dictionary).get("nextroomdata", ""))
 		var first := LingoValue.get_chunk(raw, "item", 1, 1)
 		if first != "" and first != "000":
 			destination = first
+			var ax := LingoValue.get_chunk(raw, "item", 2, 2).strip_edges()
+			var ay := LingoValue.get_chunk(raw, "item", 3, 3).strip_edges()
+			# Two items is a destination with no landing spot, which some handlers
+			# write; the walk then ends where it ends, as it did before.
+			if ax.is_valid_float() and ay.is_valid_float():
+				arrive = {"x": float(ax), "y": float(ay)}
 		# `ifmovie` outranks it. 130 scripts set this global, and it is the
 		# original's answer to "where does the walk actually land", which is not
 		# always the room named in `nextroomdata`. ISLAND2's `arcade1` handler
@@ -1037,11 +1055,20 @@ func _walkonby() -> Variant:
 			# global the way the original clears it, so there is nothing left to
 			# read by then.
 			transition = true
-	puppet.nextroom = (
-		{"label": destination, "transition": transition} if destination != "" else {}
-	)
+	var next: Dictionary = {}
+	if destination != "":
+		next = {"label": destination, "transition": transition}
+		# PuppetController.step() reads x/y off this when the walk ends, and falls
+		# back to wherever he stopped when they are absent.
+		if not arrive.is_empty():
+			next["x"] = arrive.x
+			next["y"] = arrive.y
+	puppet.nextroom = next
 	puppet.whatodo = "walktime"
 	puppet.walk_tick = 0
+	# Same as PuppetController.start_walk: a new walk ends the last arrival's claim
+	# on where he stands, so the score may reposition him on the next scene change.
+	puppet.just_arrived = false
 	puppet.apply_walk_frame()
 	stage_dirty = true
 	return 0
