@@ -9,7 +9,7 @@ and `README.md` for the verification tools. The skills in `.claude/skills/` carr
 what the port cost to learn; the one-line descriptions in `README.md` say when each
 applies.
 
-## Two standing rules
+## Three standing rules
 
 **Fix the engine, not the symptom.** The goal is an accurate Director engine, not a
 game that happens to behave. A fix that special-cases one room, one channel or one
@@ -26,6 +26,26 @@ hand-authored transition table it was being asked instead is now only a fallback
 `data/movie_context.json` and `data/walk_doorways.json` are scaffolding with a
 retirement plan, not data. Where a native reimplementation is unavoidable, drive it
 from the original's own globals rather than inventing parallel state.
+
+**The engine is agnostic to the game.** No room name, character, channel number or
+per-title mapping belongs in engine code. If a fix needs to know that `field` is
+slot 1 or that channels 18-21 hold guests, the fix is in the wrong place — that
+knowledge is in the movie's own scripts, and the engine's job is to run them.
+A native handler that reproduces half a Lingo handler is the shape to watch for:
+`GameState.people_funk` reimplemented `peoplefunk`'s meeting routing and silently
+dropped its character placement, which put every wandering guest on screen twice
+(bugs.md 21) and left nothing in the code to say a half was missing.
+
+**"Not a bug" needs more evidence than a bug does**, because it is the verdict
+that stops work. The export is the port's *input*, not the original: the renderer
+agreeing with `frames.json` or `cast_registry.json` proves the renderer, never
+fidelity, so "the data says X, therefore X is authentic" is circular. Before
+ruling anything authentic, get a source from outside the pipeline — start with
+`data/lingo/member_names.json`, which is nearly free and the most underused file
+here. The duplicated-guest report above was dismissed as authentic crowd art on
+three passing consistency checks; one name lookup (`atoflop1` / `btoflop1`) said
+the opposite and had been available from the first minute. Read
+`porting-fidelity-verification` for the full account.
 
 ## Environment
 
