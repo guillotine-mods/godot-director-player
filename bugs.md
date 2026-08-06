@@ -177,6 +177,78 @@ installed here.
 
 ---
 
+## 26. Entering `swing` puts Piposh on the wrong side, and the corrected doorway data is reaching the puppet
+
+**Status:** open · root cause **not** established · **Area:** walk arrival ·
+two prime suspects named below, both cheap to settle
+
+Reported from play: *"there's something weird with the animation entering the scene
+before the cliff — it moves to the left side while entering from the right side."*
+Reproduces. The room is `swing`, reachable from `gate` (ch10) and from `clif2`
+(ch12), both navs targeting label `swingup`.
+
+**What is established, all measured this session.**
+
+1. The export stores `walk_to`/`arrive_at` **once per destination label**, so both
+   edges into `swing` carry the same pair: `walk_to (140,334)`,
+   `arrive_at (33,291)`. This is the case `data/walk_doorways.json` exists for.
+2. That table already holds per-edge corrections and they look right:
+   `gate|10|swingup` → `walk_to (39,225)`, `arrive_at (326,371)` — arriving on
+   swing's **right**, next to swing's own gate door at x=405; `clif2|12|swingup` →
+   `walk_to (44,373)`, `arrive_at (30,328)` — arriving on the **left**, next to
+   swing's cliff door at x=-1.
+3. The lookup works and the override reaches the puppet. Measured at the click:
+   `marker=gatego`, `doorway lookup = {walk_to (39,225), arrive_at (326,371)}`,
+   `nav handed to puppet = walk_to (39,225) arrive_at (326,371)`. Calling
+   `start_walk` with that nav stores `nextroom = {label: swingup, x: 326, y: 371}`.
+   **So the data is not the bug and the lookup is not the bug.**
+4. A real click-driven walk nonetheless ends at `walk_to`, not `arrive_at`:
+   `loc_h = 39` from the gate, `140` from the cliff. Once the room settles it
+   becomes **231** from both doors, which is the score's own sprite-30 x in
+   `swinggo`.
+5. The harness is clicking the doorway, not the floor — this was checked because a
+   `walk_here` on channel 2 covers the room and would explain a missing
+   `arrive_at`: `click at (35.0,117.5) first hits ch10 kind=walk target=swingup`.
+6. The 231 is `sync_from_frame`'s `elif scene != scene_name: loc_h = score_h`. A
+   room reached through a transition marker changes `scene_name` **twice** —
+   `swingup` → `swing` → `swinggo` — and the `just_arrived` one-shot is consumed by
+   the first change, leaving the second to adopt the score.
+
+**A change that was tried, measured and rejected.** Letting the arrival own the
+position until the next walk (do not clear `just_arrived` in `sync_from_frame`;
+clear it in `start_walk` instead) removes the 231 clobber — `loc_h` 231 → 39 from
+the gate, 231 → 140 from the cliff — and the pass/fail set stays green
+(`puppet_visibility`, `smoke`, `room_names`, `collectables` 22, `cursors` 44,
+`sprite_channels`). It was **not** kept, because the correct arrival is 326 and 231
+is accidentally closer to it than 39 is: the change fixes a real defect and makes
+the visible symptom worse. It is worth re-applying *after* the primary cause below,
+not before.
+
+**Two suspects, and 4 above is the thing to explain.** Facts 3 and 4 cannot both be
+true of the same nav, so something differs between the direct `start_walk` call and
+the click-driven walk:
+
+* **Two walk engines, and the interpreted one may be performing the handover.**
+  `whatodoeveryframe` is interpreted, and its stand branch does the room change
+  itself: `egozh = value(item 2 of nextroomdata)`, then `go(item 1 of
+  nextroomdata)`. If it reaches the `go` first, the native `nextroom` — the only
+  thing carrying `arrive_at` — is never consumed, and Piposh stops at `egozh`,
+  which is exactly the measured 39/140. `NATIVE_HANDLERS` covers `walkonby` only.
+  Settle it by logging which of the two performs the transition.
+* **The `clif2` edge's override is not applied while the `gate` edge's is.** From
+  the cliff the walk targets **140**, the *export's* `walk_to`, not the override's
+  44 — with `marker=clif2go`, channel 12 and target `swingup` all verified at click
+  time, so `clif2|12|swingup` should hit exactly as `gate|10|swingup` does. One of
+  two lookups with identical shape is missing. Settle it by logging
+  `walk_override`'s key and result inside `_apply_walk_override`.
+
+Reproduce: enter DAY1 **at frame 1** (never at a label, or `init all` has not run
+and the score owns channel 30 — bugs.md 25), `enter_frame` to `gatego`, click ch10,
+and watch `puppet.loc_h` against `egozh` frame by frame. Both scratch probes are
+deleted; the numbers above are the record.
+
+---
+
 ## 25. Skipping the opening entered DAY1 past its init region, so Piposh had no walk cycle and no spawn point
 
 **Status:** FIXED for the three skip doors · **Area:** skip routing ·
