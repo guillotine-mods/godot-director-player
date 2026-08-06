@@ -278,13 +278,13 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["width"] = r - l
 			out["height"] = b - t
 			out["initial_rect"] = {"top": t, "left": l, "bottom": b, "right": r}
-			# The registration point stays at the rect's own origin. Centring it
-			# was a guess and it is wrong: `tools/score_diff.gd` measured the
-			# export's placement rule as `x = loc_h - reg_offset_x` taken from
-			# the member, and centring matches only 19-27% of records. MURDER1's
-			# member 2:1 is 115x251 with a registration point of (0,0), so
-			# centring displaced it 57px left and 125px up — character-sized, and
-			# the reason a mouth sat off its face.
+			# A film loop registers at the CENTRE of its rect. It carries no
+			# registration point of its own the way a bitmap does, and Director
+			# uses (width/2, height/2). That stays self-consistent when the loop
+			# is drawn at another size, because the scaled offset is then simply
+			# half the drawn size.
+			out["reg_offset_x"] = int((r - l) / 2.0)
+			out["reg_offset_y"] = int((b - t) / 2.0)
 			# Bit 0x20 CLEAR means looping.
 			out["looping"] = (_be_u32(spec, 8) & 32) == 0
 		8:

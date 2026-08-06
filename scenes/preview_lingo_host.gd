@@ -37,6 +37,7 @@ const IGNORED := [
 	"puppettransition", "updatestage", "beep", "delay", "preloadmember",
 	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
 	"dontpassevent", "puppetsprite", "halt", "quit", "starttimer",
+	# `cursor` is NOT here any more — see the match above.
 	# Bound deliberately inert rather than left unbound. An unbound name is
 	# reported as a gap every time it is reached, which buries the ones that
 	# matter; these are real Director builtins this preview has no state to
@@ -113,6 +114,16 @@ func call_builtin(name: String, args: Array) -> Variant:
 				preview.lingo_play_done()
 				return 0
 			preview.lingo_play_push(args)
+			return 0
+		"cursor":
+			# Was bound inert, which is why the cursor never changed: this game
+			# drives it from a `cursorfunk` handler that calls this every tick,
+			# and every call was being swallowed. `cursor 0` and `cursor -1` mean
+			# the arrow; a list is a custom pair of 1-bit cast members, data and
+			# mask; anything else is a built-in number.
+			if preview == null:
+				return 0
+			preview.lingo_global_cursor(args[0] if not args.is_empty() else 0)
 			return 0
 		"rollover":
 			# The whole of this game's menu is built on it: a frame script asks
