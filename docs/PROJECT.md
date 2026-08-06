@@ -75,8 +75,9 @@ scripts/           Install / utility scripts
 | Mouse | Hover + click |
 | Gamepad stick / D-pad | Virtual cursor |
 | Gamepad A / Enter | Click |
-| F1 | Debug HUD |
+| F1 | Debug HUD (hidden until pressed) |
 | F5 | Save editor |
+| F6 / Shift+F6 | Warp to bookmarked room / bookmark current room (dev mode) |
 | F10 | Display / QoL settings |
 | H | Hotspot hint |
 | Esc | Skip intro / minigame (when enabled) |

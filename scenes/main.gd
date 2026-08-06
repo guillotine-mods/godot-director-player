@@ -11,6 +11,7 @@ func _ready() -> void:
 	debug_hud.setup(movie_player)
 	save_editor.setup(movie_player)
 	settings_panel.setup(movie_player)
+	debug_hud.visible = false
 	save_editor.visible = false
 	settings_panel.visible = false
 	save_editor.close_requested.connect(func(): save_editor.visible = false)
@@ -66,3 +67,38 @@ func _unhandled_input(event: InputEvent) -> void:
 		if settings_panel.visible:
 			settings_panel.setup(movie_player)
 		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("dev_warp") and AppSettings.dev_mode:
+		# Shift+F6 also satisfies the plain action, so the modifier is read here
+		# rather than declared as a second binding.
+		if event is InputEventKey and (event as InputEventKey).shift_pressed:
+			_set_warp_target()
+		else:
+			_warp_to_target()
+		get_viewport().set_input_as_handled()
+
+
+func _set_warp_target() -> void:
+	if GameState.current_movie == "":
+		GameState.emit_log("Warp target unchanged: no movie loaded", "warn")
+		return
+	AppSettings.dev_warp_movie = GameState.current_movie
+	AppSettings.dev_warp_label = GameState.current_label
+	AppSettings.notify_changed()
+	GameState.emit_log("F6 warp target set: %s" % _warp_description(), "info")
+
+
+func _warp_to_target() -> void:
+	## Moves the playhead only. It does not replay the walk that would normally get
+	## you here, so `globalday`, inventory and the route stack are whatever they were
+	## — set those in the save editor (F5) if the room needs them.
+	if AppSettings.dev_warp_movie == "":
+		GameState.emit_log("No F6 warp target set — Shift+F6 sets it here", "warn")
+		return
+	GameState.emit_log("Warping to %s" % _warp_description(), "info")
+	movie_player.goto_movie(AppSettings.dev_warp_movie, AppSettings.dev_warp_label)
+
+
+func _warp_description() -> String:
+	if AppSettings.dev_warp_label == "":
+		return AppSettings.dev_warp_movie
+	return "%s @ %s" % [AppSettings.dev_warp_movie, AppSettings.dev_warp_label]

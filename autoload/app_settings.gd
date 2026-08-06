@@ -61,6 +61,12 @@ var controller_cursor_speed: float = 420.0
 var test_mode_enhanced_graphics: bool = false
 ## When true, edge-exit strips expand into widescreen gutters (web player parity).
 var expand_edge_hotspots: bool = true
+## Where F6 jumps to (dev only). A bookmark, not engine knowledge: Shift+F6 points
+## it at whatever room you are standing in, so investigating a different one costs
+## one keypress instead of an edit. The default is the room the last investigation
+## needed (bugs.md 22, the MURDER1 cliff loop) and is only a starting value.
+var dev_warp_movie: String = "MURDER1"
+var dev_warp_label: String = ""
 
 
 func _ready() -> void:
@@ -82,6 +88,8 @@ func load_settings() -> void:
 	controller_cursor_speed = float(cfg.get_value("input", "cursor_speed", controller_cursor_speed))
 	test_mode_enhanced_graphics = bool(cfg.get_value("display", "enhanced_graphics", test_mode_enhanced_graphics))
 	expand_edge_hotspots = bool(cfg.get_value("display", "expand_edge_hotspots", expand_edge_hotspots))
+	dev_warp_movie = str(cfg.get_value("debug", "warp_movie", dev_warp_movie))
+	dev_warp_label = str(cfg.get_value("debug", "warp_label", dev_warp_label))
 
 
 func save_settings() -> void:
@@ -94,6 +102,8 @@ func save_settings() -> void:
 	cfg.set_value("lingo", "clicks", use_lingo_clicks)
 	cfg.set_value("lingo", "frames", use_lingo_frames)
 	cfg.set_value("debug", "overlays", show_debug_overlays)
+	cfg.set_value("debug", "warp_movie", dev_warp_movie)
+	cfg.set_value("debug", "warp_label", dev_warp_label)
 	cfg.set_value("qol", "hotspot_hints", show_hotspot_hints)
 	cfg.set_value("qol", "minigame_skip", allow_minigame_skip)
 	cfg.set_value("input", "cursor_speed", controller_cursor_speed)

@@ -81,8 +81,9 @@ Boot: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVELOAD` 
 | Mouse | Hover + click hotspots |
 | Gamepad stick / D-pad | Move virtual cursor |
 | Gamepad A / Enter | Click at cursor |
-| **F1** | Debug HUD |
+| **F1** | Debug HUD (hidden until pressed) |
 | **F5** | Save editor |
+| **F6** / **Shift+F6** | Warp to the bookmarked room / bookmark the current one (dev mode) |
 | **F10** | Display / QoL settings |
 | **H** | Hotspot hint |
 | **Esc** | Skip intro / minigame (if enabled) |

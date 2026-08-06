@@ -172,7 +172,12 @@ Frame `sounds` and click `on_click.sounds` call `AudioDirector.play_file`. WAVs 
 
 ## Controls
 
-F1 debug · F5 save editor · F10 settings · H hint · Esc skip intro/minigame
+F1 debug · F5 save editor · F6 warp (⇧ set) · F10 settings · H hint · Esc skip intro/minigame
+
+The HUD starts hidden; F1 brings it up. F6 jumps straight to the room stored in
+`AppSettings.dev_warp_movie`/`dev_warp_label`, and Shift+F6 stores the room you are
+in. It is a dev aid gated on `dev_mode`, and it moves the playhead only: `globalday`,
+inventory and the route stack are unchanged, so use the save editor for state.
 
 ## Progression spine
 

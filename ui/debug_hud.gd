@@ -47,7 +47,8 @@ func _refresh(_a: Variant = null) -> void:
 		+ "label: %s   day: %d\n"
 		+ "aspect: %s   upscale: %s   enhanced: %s\n"
 		+ "inv: %s\n"
-		+ "[i]F1 debug · F5 save editor · F10 settings · H hint · Esc skip[/i]"
+		+ "warp: %s\n"
+		+ "[i]F1 debug · F5 save editor · F6 warp (⇧ set) · F10 settings · H hint · Esc skip[/i]"
 	) % [
 		_player.loader.movie_name,
 		_player.frame_index + 1,
@@ -58,4 +59,13 @@ func _refresh(_a: Variant = null) -> void:
 		AppSettings.upscale_mode_name(),
 		str(AppSettings.test_mode_enhanced_graphics),
 		inv,
+		_warp_target(),
 	]
+
+
+func _warp_target() -> String:
+	if AppSettings.dev_warp_movie == "":
+		return "unset"
+	if AppSettings.dev_warp_label == "":
+		return AppSettings.dev_warp_movie
+	return "%s @ %s" % [AppSettings.dev_warp_movie, AppSettings.dev_warp_label]
