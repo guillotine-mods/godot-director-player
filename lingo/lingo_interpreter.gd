@@ -30,6 +30,12 @@ var errors: PackedStringArray = PackedStringArray()
 ## Names the runtime could not bind, with where each was reached from. Host
 ## bindings report through here too, via `report()`.
 var diagnostics := LingoDiagnostics.new()
+## Director 3's primary event handlers, installed by `when <event> then <stmt>`
+## and keyed by event name. Tier 1 of the message hierarchy: a primary handler
+## fires before the sprite an event landed on, and only for the event it names.
+## The body is a statement list, stored rather than executed at the point the
+## `when` appears — see the "when" branch in `_exec`.
+var primary_handlers: Dictionary = {}
 
 ## Handlers reachable from anywhere: movie scripts.
 var _movie_handlers: Dictionary = {}
@@ -126,6 +132,27 @@ func find_script_by_member(cast: String, member: int) -> Dictionary:
 
 func has_handler(name: String) -> bool:
 	return _movie_handlers.has(name.to_lower())
+
+
+## Fire the primary handler installed by `when <event> then`, if there is one.
+##
+## Returns true when one ran. Tier 1: the caller should run this *before* the
+## ordinary hierarchy, because that is where Director puts it — ahead of the
+## sprite the event landed on.
+##
+## The body runs in a fresh frame rather than as a closure over wherever the
+## `when` was written. A real primary handler is compiled in its own scope, and
+## treating it as a closure would let it see locals of a handler that has long
+## since returned.
+func run_primary(event: String) -> bool:
+	var key := event.to_lower()
+	if not primary_handlers.has(key):
+		return false
+	var body: Array = primary_handlers[key]
+	if body.is_empty():
+		return false
+	_exec_block(body, {})
+	return true
 
 
 func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Variant:
@@ -330,6 +357,24 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 		"tell":
 			# One stage in this port, so the body simply runs.
 			return _exec_block(stmt.get("body", []), frame)
+		"when":
+			## `when keyDown then go to "mainmenub4"` — Director 3's primary event
+			## handler (§6.3, §11.2). **Installed here, not run here.**
+			##
+			## The distinction is the whole point. Executing the body where the
+			## `when` sits turns a conditional statement into an unconditional
+			## one, which is what the original misparse did: `then go to
+			## "mainmenub4"` became a statement of its own and `strtgame`'s
+			## `gomenu` navigated away the moment it was called rather than when a
+			## key was pressed. So this stores the body against its event and
+			## answers NORMAL, and something else fires it when that event
+			## actually happens — `primary(event)` below.
+			##
+			## This used to be a recorded gap, on the grounds that the port had no
+			## tier 1 to install into. It has one now for keys, so the honest
+			## answer is no longer a report.
+			primary_handlers[str(stmt.get("event", "")).to_lower()] = stmt.get("body", [])
+			return Flow.NORMAL
 		"exit_repeat":
 			return Flow.EXIT_REPEAT
 		"next_repeat":
@@ -378,6 +423,25 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				LingoValue.to_int(_eval(target.get("which", {}), frame)),
 				str(target.get("prop", "")), value,
 			])
+		"window_prop":
+			## `set the windowType of window "joke.dxr" to 2`. Routed to the
+			## system-property setter rather than to a `set_window_prop` of its own,
+			## because that is already where the host meets these names: the other
+			## spelling in this corpus is `tell window("map.dxr") / set the
+			## windowType to 2`, whose body runs on the one stage and so arrives as
+			## a plain movie property, and `lingo_host.gd`'s WINDOW_FIELDS table
+			## accepts and drops it there. Two entry points to one table would be
+			## two chances for them to disagree, which is the fault this node
+			## exists to close — before it, the `the … of window` spelling was
+			## dropped with an error and the dot spelling was not.
+			##
+			## The window the statement named is evaluated for its effects and then
+			## discarded: a single-stage port has nothing to place, title or resize
+			## (§7.4). The address stays in the AST for a port that grows real
+			## windows, which is the whole reason this is a designator node rather
+			## than `prop_of` over a call.
+			_eval(target.get("which", {}), frame)
+			_host_call("set_system_prop", [str(target.get("prop", "")).to_lower(), value])
 		"prop_of":
 			var owner: Dictionary = target.get("target", {})
 			if str(owner.get("node", "")) == "sprite_ref":
@@ -536,6 +600,14 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				LingoValue.to_int(_eval(expr.get("which", {}), frame)),
 				str(expr.get("prop", "")),
 			])
+		"window_prop":
+			## Read side of the designator above, through the same table. Nothing
+			## in this corpus reads a window property — all 2 sites are writes —
+			## but a read that fell through to `_fail("unknown expression")` would
+			## be a different answer from the write, which is what this node is
+			## here to stop.
+			_eval(expr.get("which", {}), frame)
+			return _host_call("get_system_prop", [str(expr.get("prop", "")).to_lower()])
 		"prop":
 			var prop := str(expr.get("prop", "")).to_lower()
 			if prop == "itemdelimiter":
@@ -586,18 +658,28 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 
 
 func _binary(op: String, expr: Dictionary, frame: Dictionary) -> Variant:
+	## Left, then right, then operate — for every operator including `and` and
+	## `or`. **They do not short-circuit** (`docs/LINGO_SURFACE.md` §13 and §14;
+	## §17 records this as a correction to §2.3, which said they did). Director
+	## compiles them to a single opcode that pops two operands, so the code
+	## generator emits no jump and the right side runs whatever the left answered.
+	##
+	## This port short-circuited until now, and the reason that is worse than a
+	## harmless optimisation is Lingo-specific: a bare identifier that is not a
+	## variable is a parameterless *handler call* (`_read_var`), so an operand
+	## that reads like a variable can be `cursorfunk` or `talkproc`. A
+	## short-circuiting interpreter silently stops calling handlers it cannot see
+	## it is skipping, and the symptom — a cursor that does not change, a line of
+	## speech that never starts — looks like a binding gap rather than a
+	## conditional. `tools/lingo_logic_check.gd` asserts both sides run.
+	##
+	## The result is the integer 0 or 1, not a boolean and not the operand:
+	## `5 and 7` is 1, so nothing downstream can read a truth value as data.
 	var left: Variant = _eval(expr.get("left", {}), frame)
-	# `and` / `or` short-circuit in Director.
-	if op == "and":
-		if not LingoValue.truthy(left):
-			return 0
-		return 1 if LingoValue.truthy(_eval(expr.get("right", {}), frame)) else 0
-	if op == "or":
-		if LingoValue.truthy(left):
-			return 1
-		return 1 if LingoValue.truthy(_eval(expr.get("right", {}), frame)) else 0
 	var right: Variant = _eval(expr.get("right", {}), frame)
 	match op:
+		"and": return 1 if LingoValue.truthy(left) and LingoValue.truthy(right) else 0
+		"or": return 1 if LingoValue.truthy(left) or LingoValue.truthy(right) else 0
 		"+": return LingoValue.add(left, right)
 		"-": return LingoValue.sub(left, right)
 		"*": return LingoValue.mul(left, right)
@@ -728,41 +810,40 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	for arg in expr.get("args", []):
 		args.append(_eval(arg, frame))
 
-	# Pure-value builtins the interpreter owns, because they have no engine side.
-	match name:
-		"value":
-			return LingoValue.to_num(args[0] if args.size() > 0 else 0)
-		"string":
-			return LingoValue.to_str(args[0] if args.size() > 0 else "")
-		"integer":
-			return LingoValue.to_int(args[0] if args.size() > 0 else 0)
-		"float":
-			return float(LingoValue.to_num(args[0] if args.size() > 0 else 0))
-		"abs":
-			return absf(float(LingoValue.to_num(args[0] if args.size() > 0 else 0)))
-		"length":
-			return LingoValue.to_str(args[0] if args.size() > 0 else "").length()
-		"chars":
-			if args.size() >= 3:
-				return LingoValue.get_chunk(LingoValue.to_str(args[0]), "char",
-					LingoValue.to_int(args[1]), LingoValue.to_int(args[2]))
-			return ""
-		"offset":
-			if args.size() >= 2:
-				var hay := LingoValue.to_str(args[1]).to_lower()
-				var needle := LingoValue.to_str(args[0]).to_lower()
-				return hay.find(needle) + 1
-			return 0
-		"count":
-			if args.size() >= 1 and typeof(args[0]) == TYPE_ARRAY:
-				return (args[0] as Array).size()
-			return 0
-		"getat":
-			if args.size() >= 2 and typeof(args[0]) == TYPE_ARRAY:
-				var list: Array = args[0]
-				var i := LingoValue.to_int(args[1])
-				return list[i - 1] if i >= 1 and i <= list.size() else 0
-			return 0
+	## There is no second builtin table here. This file used to answer `value`,
+	## `string`, `integer`, `float`, `abs`, `length`, `chars`, `offset`, `count`
+	## and `getAt` from an inline `match` placed *above* the dispatch below, so
+	## `lingo/lingo_builtins.gd` — the spec-driven module `tools/lingo_builtins_check.gd`
+	## checks — could never be reached for those ten names and the two disagreed
+	## in silence. The module is now the only answer. What the inline copies got
+	## wrong, name by name, because "we deleted the duplicate" is not a reason:
+	##
+	##   getAt   answered 0 past either end where the module answers VOID. §8.6 is
+	##           explicit that the two are not interchangeable, and 0 is the one
+	##           that cannot be told from a stored 0 — `if getAt(l, i) then` reads
+	##           the same either way. It also knew only Arrays, so `getAt` on a
+	##           property list, a point or a rect answered 0 rather than the
+	##           element (§1.3, §1.8).
+	##   abs     coerced to float always, so `abs(-7)/2` was 3.5 where Director
+	##           answers 3: §2.1's integer-division rule keys off the operand
+	##           types, and a builtin that widens its result moves every
+	##           expression downstream onto the other arithmetic.
+	##   value   coerced with `to_num`, so a string that is not a number answered
+	##           0. §1.2 says `value` *parses* — a number, a list or a property
+	##           list — and anything else is VOID (§8.6 again). The coercing
+	##           version also could not read `value("[1, 2]")` at all.
+	##   integer truncated. §1.1 says it rounds; `integer(3.7)` is 4.
+	##   offset  ignored the documented third argument (start position) and
+	##           answered 1 for an empty needle, so `if offset("", s) then` fired.
+	##   count   knew only Arrays, so a property list counted 0 (§1.3).
+	##   chars, length, string, float agreed with the module and were duplicated
+	##           for nothing — two copies of one rule is how the other six drifted.
+	##
+	## Deleting them also moves the ten names *below* user-handler resolution,
+	## which is where Director puts them: a script may shadow a builtin (§14, and
+	## the comment on the dispatch below). No handler in this corpus is named any
+	## of the ten, so the corpus behaves the same; the ordering is now a decision
+	## rather than an artefact of where the `match` happened to sit.
 
 	# Handlers the host implements natively win even over a user handler: the port
 	# reimplements the walk state machine in PuppetController, so running the
@@ -774,12 +855,28 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	var script: Dictionary = frame.get("script", {})
 	if _script_has_handler(script, name) or has_handler(name):
 		return call_handler(name, args, script)
+	# The engine-free builtins — math, strings, lists, geometry, predicates.
+	# Offered after a user handler, because Director lets a script shadow a
+	# builtin, and before the host, because the host is where a title's own
+	# bindings live and nothing engine-free belongs there. `handled` is what
+	# distinguishes "answered VOID" from "not mine".
+	var handled: Array = []
+	var pure: Variant = Builtins.call_builtin(name, args, handled)
+	if not handled.is_empty():
+		return pure
 	var result: Variant = _host_call("call_builtin", [name, args])
 	if result == null and name != "":
 		# The host binds no builtin by this name. Distinguishable from one that
 		# answers VOID, because every bound branch returns a value.
 		report(LingoDiagnostics.BUILTIN, name)
 	return result if result != null else 0
+
+
+## Preloaded rather than reached by its `class_name`: a headless `--script` run
+## resolves global classes out of the editor's script cache, so a class added
+## since the last editor session fails with "not declared in the current scope"
+## in a file nobody touched.
+const Builtins := preload("res://lingo/lingo_builtins.gd")
 
 
 func _host_call(method: String, args: Array) -> Variant:

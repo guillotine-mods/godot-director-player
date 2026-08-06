@@ -33,6 +33,7 @@ const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 
 const Ink := preload("res://director/director_ink.gd")
+const Keys := preload("res://director/director_keys.gd")
 
 const STAGE := Vector2i(640, 480)
 ## What Director falls back to when no frame has set a tempo.
@@ -321,6 +322,46 @@ func _dispatch(handler: String, script: Dictionary) -> void:
 	_interpreter.call_handler(handler, [], script)
 
 
+## Offer a keypress to the movie. True when a script claimed it.
+##
+## Director routes a keypress through `the keyDownScript` first — a movie-wide
+## handler name, set by the score, that runs ahead of everything else. 46 scripts
+## in this corpus set it to `fromnow`, which is four lines long and stops sound
+## channel 1 when the key code is 49, so pressing space cuts the line of speech
+## that is playing. Others set `gomenu`, which leaves the intro for the menu.
+##
+## `the keyCode` and `the key` are only meaningful during the dispatch, so they
+## are set around it and cleared after: a script reading `the keyCode` outside a
+## key event should see nothing, not the last key pressed.
+func _dispatch_key(event: InputEventKey) -> bool:
+	if not _lingo_on or _interpreter == null or _host == null:
+		return false
+	var script_name := str(_host.key_down_script).strip_edges()
+	_host.key_code = Keys.code_for(event)
+	_host.key_char = Keys.char_for(event)
+	# Tier 1 first: a primary handler installed by `when keyDown then` runs ahead
+	# of everything, which is where Director puts it. `strtgame`'s `gomenu` is
+	# nothing but one of these, so without it the intro has no way out.
+	# Typed explicitly: `_interpreter` is untyped, so `:=` has nothing to infer
+	# the return type from and the file will not compile.
+	var claimed: bool = _interpreter.run_primary("keydown")
+	if claimed:
+		_tally(_ran, "when keyDown")
+	if script_name != "" and _interpreter.has_handler(script_name.to_lower()):
+		_tally(_sent, "keyDownScript:%s" % script_name)
+		_tally(_ran, "keyDownScript:%s" % script_name)
+		_interpreter.call_handler(script_name)
+		claimed = true
+	else:
+		# No movie-wide script, so the message goes to the frame the way any
+		# other event does.
+		_dispatch("keyDown", _frame_script(_index))
+	_host.key_code = -1
+	_host.key_char = ""
+	queue_redraw()
+	return claimed
+
+
 func _tally(into: Dictionary, key: String) -> void:
 	into[key] = int(into.get(key, 0)) + 1
 
@@ -569,8 +610,18 @@ func _input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey and event.pressed):
 		return
+	# The game's keys are offered first, and the debug bindings below only see
+	# what the movie did not claim. Space is the case that matters: `fromnow`,
+	# which 46 scripts install, stops sound channel 1 when the key code is 49,
+	# and that is how every line of speech in this game is skipped.
+	if not (event as InputEventKey).echo and _dispatch_key(event as InputEventKey):
+		return
 	match (event as InputEventKey).keycode:
-		KEY_SPACE:
+		# F10, not space. Space is the game's own key -- Director titles use it to
+		# skip a line of speech or a cut scene -- and a debug binding that eats it
+		# makes the movie look unresponsive to the one key a player reaches for
+		# first.
+		KEY_F10:
 			_paused = not _paused
 		KEY_RIGHT:
 			_paused = true

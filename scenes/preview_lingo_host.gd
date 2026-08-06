@@ -23,6 +23,14 @@ var reached: Dictionary = {}
 var unbound: Dictionary = {}
 ## Set by the interpreter's caller before a mouse message.
 var click_sprite := 0
+## Director's movie-wide key handler: a handler *name*, run ahead of everything
+## else on a keypress. 46 scripts in this game set it, most to `fromnow`.
+var key_down_script := ""
+## Live only for the duration of a key dispatch. -1 rather than 0 because 0 is a
+## real Mac key code (the `A` key), so 0 would read as a keypress that never
+## happened.
+var key_code := -1
+var key_char := ""
 
 ## Bound to something real.
 const HANDLED := [
@@ -272,7 +280,21 @@ func get_system_prop(prop: String) -> Variant:
 			return Time.get_ticks_msec()
 		"machinetype":
 			return 256
+		"keycode":
+			# Compared as a string in the corpus (`the keyCode = "49"`) and as a
+			# number elsewhere, which Lingo's coercion handles either way.
+			return key_code
+		"key":
+			return key_char
+		"keydownscript":
+			return key_down_script
 	return null
+
+
+func set_system_prop(prop: String, value: Variant) -> void:
+	match prop.to_lower():
+		"keydownscript":
+			key_down_script = LingoValue.to_str(value).strip_edges()
 
 
 func get_sprite_prop(which: int, prop: String) -> Variant:
