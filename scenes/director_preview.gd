@@ -337,6 +337,14 @@ func _report() -> void:
 		print("builtins unbound : %s" % JSON.stringify(_host.unbound))
 	print("ccl cast list  : %s" % str(_ccl))
 	print("film loops     : %s" % JSON.stringify(_loop_stats))
+	# Whether a room set any cursor at all is a question that kept being answered
+	# by looking at the screen and seeing an arrow, which cannot distinguish "the
+	# cursor code is broken" from "this room asks for no cursor". Most of them ask
+	# for none: the game sets `the cursor of sprite` on inventory items and in a
+	# handful of rooms, so an arrow is usually correct.
+	print("cursors        : %d channel(s) %s, global %s" % [
+		_channel_cursors.size(), str(_channel_cursors.keys()), str(_global_cursor)
+	])
 	if not _traced.is_empty():
 		print("sound trace (last %d):" % _traced.size())
 		for line in _traced:
