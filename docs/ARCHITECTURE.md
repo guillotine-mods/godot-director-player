@@ -1,5 +1,10 @@
 # Architecture notes
 
+The pieces that have no home in `ENGINE.md`: the save file, the widescreen modes
+and the settings hooks. For the repository layout and which modules are reusable,
+see [`../README.md`](../README.md). For the runtime loop, see
+[`ENGINE.md`](ENGINE.md).
+
 ## Data pipeline (upstream)
 
 ```
@@ -10,15 +15,9 @@ PIP2DATA/*.DXR
   → reports/render_model/<movie>/
 ```
 
-Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
-
-## Runtime loop
-
-1. `RenderModelLoader` parses movie `frames.json` / `members.json`
-2. `MoviePlayer` advances the playhead at score FPS
-3. `StageCanvas._draw` composites sprites (matte ink flood-fill for transparent casts)
-4. Clicks resolve `sprite.on_click.nav` → label jump or `goto_movie`
-5. `GameState` owns adventure globals; Save Editor reads/writes the same dict
+That output is mirrored into `assets/render_model/` and loaded from the source
+files at runtime, with no Godot import step. Recovering `PIP2DATA` from the
+installer is [`EXTRACT_FROM_INSTALLER.md`](EXTRACT_FROM_INSTALLER.md).
 
 ## Save format (`user://saves/slot_XX.json`)
 
@@ -33,10 +32,15 @@ Godot loads that JSON/BMP set directly (same as `web-prototype/main.js`).
   "current_frame": 120,
   "whichsnd": "sea",
   "current_hub": "DAY1",
+  "story_flags": ["..."],
+  "route_stack": [],
   "note": "optional",
   "saved_at": "..."
 }
 ```
+
+`GameState.to_dict` writes everything but `note` and `saved_at`, which the slot
+writer stamps on.
 
 ## Widescreen test modes
 
