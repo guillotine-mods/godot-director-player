@@ -20,29 +20,33 @@ extends SceneTree
 ##
 ##   godot --headless --script tools/wandering_characters.gd
 
-## `pairs` is [a-channel, b-channel]; exactly one side must be hidden.
+## The player has to WALK in, not be teleported in. `peoplefunk` runs off the end
+## of a walk, out of the room frame's own `exitFrame`, so a `goto_movie` straight to
+## the label reaches the room without ever passing the code under test — an earlier
+## draft of this harness did exactly that and could not tell the fix from its
+## absence. `from` is the room to start in and `via` matches the hotspot's target
+## label.
+##
+## `pairs` is [a-channel, b-channel]; exactly one side must be drawn.
 const ROOMS := [
 	{
-		"movie": "DAY1", "label": "field", "slot": 1,
+		"movie": "DAY1", "from": "path4", "via": "field", "label": "field",
 		"pairs": [[18, 21], [19, 20]],
 		"note": "Rinati on 18/21, Pat on 19/20 — the reported room",
 	},
-	{
-		"movie": "DAY1", "label": "edge1", "slot": 3,
-		"pairs": [[18, 20]],
-		"note": "Mogul; on day 3 the original hides both instead",
-	},
-	{
-		"movie": "DAY1", "label": "veranda", "slot": 4,
-		"pairs": [[18, 20]],
-		"note": "Tofi",
-	},
-	{
-		"movie": "DAY1", "label": "tennis", "slot": 2,
-		"pairs": [[18, 20]],
-		"note": "not in the report; peoplecont(2) covers it",
-	},
 ]
+
+## `edge1`, `veranda`, `tennis`, `dwarfs` and `exitforest3` carry the same pairs and
+## are fixed by the same code path, but are not asserted here: the walk into them
+## has to start from a room whose hotspot this harness could drive, and `gate`'s
+## exits did not start a walk under it. Covering them means finding a route that
+## does, not relaxing the check — a room reached by `goto_movie` never runs the code
+## under test at all.
+
+
+const DELTA := 1.0 / 30.0
+## Ticks to run the walk and its transition animation to completion.
+const WALK_TICKS := 240
 
 var _completed: Dictionary = {}
 
@@ -96,21 +100,51 @@ func _check(room: Dictionary, label: String) -> int:
 		var at: int = Array(state.meetings).find(name)
 		if at >= 0:
 			state.meetings[at] = "done"
-	if not runtime.goto_movie(room["movie"], null, {"label": room["label"]}):
-		print("%-18s FAIL: cannot reach the room" % label)
+	if not runtime.goto_movie(room["movie"], null, {"label": room["from"]}):
+		print("%-18s FAIL: cannot reach the starting room %s" % [label, room["from"]])
 		return _complete(label, 1)
+
+	var from_frame: int = runtime.loader.lookup_label(str(room["from"]) + "go")
+	if from_frame < 0:
+		print("%-18s FAIL: cannot resolve %sgo" % [label, room["from"]])
+		return _complete(label, 1)
+	runtime.frame_index = from_frame
+	var point := Vector2.ZERO
+	var found := false
+	for sprite_value in runtime.clickable_sprites(runtime.loader.get_frame(from_frame)):
+		var sprite: Dictionary = sprite_value
+		var nav: Variant = (sprite.get("on_click", {}) as Dictionary).get("nav", null)
+		if typeof(nav) != TYPE_DICTIONARY:
+			continue
+		if not str((nav as Dictionary).get("target_label", "")).to_lower().contains(
+			str(room["via"]).to_lower()
+		):
+			continue
+		var rect: Rect2 = runtime.sprite_stage_rect(sprite)
+		point = rect.position + rect.size * 0.5
+		found = true
+	if not found:
+		print("%-18s FAIL: no hotspot in %s walks to %s" % [label, room["from"], room["via"]])
+		return _complete(label, 1)
+
+	# Let the starting room's own script run before clicking in it: almost every
+	# hotspot is gated on `whereami`, which the room sets from its own exitFrame.
+	runtime.enter_frame(from_frame)
+	for _settle in 8:
+		runtime.tick(DELTA)
+	runtime.enter_frame(from_frame)
+	runtime.perform_click(point)
+	if not runtime.puppet.is_walking():
+		print("%-18s FAIL: the click did not start a walk" % label)
+		return _complete(label, 1)
+	for _i in WALK_TICKS:
+		runtime.tick(DELTA)
 	runtime.running = false
-	# Park on the room's arrival frame rather than wherever the room loop left the
-	# playhead. `@veranda` reported its guests "not placed" purely because the
-	# playhead had moved off a frame that does carry channels 18 and 20.
-	var go_frame: int = runtime.loader.lookup_label(str(room["label"]) + "go")
-	if go_frame < 0:
-		go_frame = runtime.loader.lookup_label(str(room["label"]))
-	if go_frame < 0:
-		print("%-18s FAIL: cannot resolve the room's frame" % label)
+
+	var arrived: String = str(runtime.label_near_frame(runtime.frame_index))
+	if not arrived.to_lower().begins_with(str(room["label"]).to_lower()):
+		print("%-18s FAIL: walk ended at %s @%s" % [label, runtime.loader.movie_name, arrived])
 		return _complete(label, 1)
-	runtime.frame_index = go_frame
-	runtime.reconcile_channels(runtime.loader.get_frame(go_frame))
 
 	var inexits: String = str(runtime.lingo.interpreter.globals.get("inexits", "<unset>"))
 	var failed := 0

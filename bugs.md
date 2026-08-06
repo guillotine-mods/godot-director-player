@@ -621,7 +621,8 @@ compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
 
 ## 21. Every wandering character is on screen twice, because only half of `peoplefunk` is ported
 
-**Status:** open · **Area:** interpreter host / score runner
+**Status:** CLOSED — the arrival frame script, see the Closed section ·
+**Area:** interpreter host / score runner
 
 Reported from play as "bugs in the scenes of characters that appear multiple
 times", with screenshots of DAY1 `@field`, `@edge1` and `@veranda`. It was first
@@ -707,46 +708,14 @@ Not the same bug as 14's film-loop half, which was found in the same rooms in th
 same pass. That one drew these characters at the wrong size; this one draws twice
 as many of them as there should be.
 
-**Attempted and not finished — the handlers resolve but invoking them does
-nothing.** This is the next thing to chase, and it is narrower than where this
-entry started. Booting DAY1, seeding the globals `init all` would have left, and
-calling the handlers straight off the interpreter changes no observable state:
+**Found and fixed; the earlier reading of it was wrong twice over.** It is not
+that `peoplefunk` is unreachable, and it did not need entry 2 done first. See the
+Closed entry.
 
-| call | `inexits` after | channels 18-21 |
-|---|---|---|
-| `call_handler("peoplefunk")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-| `call_handler("peoplecont", [1])` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-| `call_handler("whatodoeveryframe")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-
-`peoplecont(1)` on `inexits = "0,0,…"` must leave `1,0,0,…` and hide 20 and 21.
-It leaves both untouched, so the body is not running — the handler is not merely
-taking a branch that skips the writes.
-
-Ruled out on the way, so they do not get re-checked:
-
-- **The handler is missing.** `has_handler` is true for `whatodoeveryframe`,
-  `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`.
-- **Chunk assignment is unimplemented.** `put x into item i of inexits` has a
-  path: `_assign_chunk` at `lingo_interpreter.gd:408`.
-- **The `global` declaration wipes the seeded value.** It is guarded by
-  `if not globals.has(key)` at `lingo_interpreter.gd:234`, and keys are
-  lowercased, which is what the probe wrote.
-- **Sprite writes cannot reach the stage.** Entry 1 is closed and
-  `tools/sprite_channels.gd` passes.
-
-Two candidates not yet separated: `call_handler` outside a frame dispatch may not
-establish whatever scope the body needs, or `sprite(N).visible` for a channel
-other than 30 may not land where `is_channel_hidden` reads. Test the second
-first — it is one assertion — because if it is true then the body may have been
-running all along and `inexits` is a separate defect.
-
-**The fix is entry 2, not a patch here.** The original calls `peoplefunk()` from
-`whatodoeveryframe` and nowhere else, so there is no engine-level place to put
-this that does not amount to teaching the engine that `field` is slot 1 and that
-channels 18-21 hold guests — which is the standing rule in `AGENTS.md` broken in
-the same shape that caused the bug. `whatodoeveryframe` is runnable now that
-entry 1 is closed; running it fixes this one for free and retires
-`GameState.people_funk` at the same time. Deliberately **not** patched natively.
+**Entry 2 is still worth doing** — `GameState.people_funk` still reproduces the
+routing half of a Lingo handler — but it was not the prerequisite this entry
+claimed. The fix needed one dispatch at the right moment, not the walk state
+machine replaced.
 
 ---
 
@@ -804,6 +773,39 @@ print(dfl.parse_ccl(root/'WONDER/WONDER/chunks'))    # ['']
 ---
 
 ## Closed
+
+- **Every wandering character was on screen twice** (was 21). A finished walk is
+  where the original's `whatodoeveryframe` takes over: `whatodo` back to "stand",
+  `nextroomdata` still naming the destination, so its transition branch runs
+  `peoplefunk()` and only then hands the playhead on. The port walked natively and
+  went straight to the handover, so that branch never ran. What finished the job
+  instead was `BehaviorScript 207`, the transition script — `go(item 1 of
+  nextroomdata)` and clear the global, which is everything the branch does *except*
+  the `peoplefunk()` call. So the guests were never positioned.
+
+  `DirectorRuntime._on_puppet_arrived` now dispatches the frame's own `exitFrame`
+  once, before it navigates. That is the score doing the work, not the engine
+  reimplementing it: the playhead is still on the room frame the walk started
+  from, that frame's script *is* `whatodoeveryframe` (frame_script 55 on DAY1's
+  room frames), and the globals it reads are the original's own. Nothing added
+  names a room, a channel or a handler. It runs under `record`, because the
+  branch ends in `go(item 1 of nextroomdata)` — the same handover the arrival is
+  already performing, and letting both fire moved the playhead twice.
+
+  Three readings of this bug were wrong before the right one, all recorded in the
+  entry: that the duplication was authentic crowd art; that the handlers could not
+  be invoked at all (a probe artifact — it had landed in HATDAY1 via the veranda
+  meeting); and that entry 2 had to be done first. `inexits` being unset turned out
+  not to block it either: the chunk write creates it, so `peoplecont` advances
+  `inexits` to `1` and hides the pair even with `init all` still not running. Doing
+  entry 13 would make the slot indices clean rather than make this work.
+
+  Covered by `tools/wandering_characters.gd`, which **walks** into the room rather
+  than jumping: `goto_movie` straight to a label reaches the room without passing
+  the code under test at all, and an earlier draft that did so could not tell the
+  fix from its absence. Reverting `director_runtime.gd` alone turns it red with all
+  four channels shown. `lingo_walk_diff` is unchanged at 85/117 identical with 19
+  `[wrong-room]`, and all ten pass/fail harnesses are green.
 
 - **A film loop's frames were looked for in the wrong cast library** (was 15).
   A loop's children are usually members of the cast the loop itself lives in, and

@@ -1210,6 +1210,24 @@ func _apply_inventory_ops(ops: Variant) -> void:
 
 
 func _on_puppet_arrived(next: Dictionary) -> void:
+	## A finished walk is where the original's `whatodoeveryframe` takes over: with
+	## `whatodo` back to "stand" and `nextroomdata` still naming the destination, its
+	## transition branch runs `peoplefunk()` and only then hands the playhead on.
+	##
+	## The port walked natively and went straight to the handover, so that branch
+	## never ran. What finished the job instead was `BehaviorScript 207`, the
+	## transition script, which does `go(item 1 of nextroomdata)` and clears the
+	## global — everything the branch does *except* the `peoplefunk()` call. So the
+	## characters that room places were never positioned: bugs.md 21, every guest on
+	## screen twice, and the talk behaviours reading `sprite(18).visible` off a state
+	## nothing had set.
+	##
+	## Dispatching the frame's own `exitFrame` here is the score doing it, not the
+	## engine reimplementing it: the playhead is still on the room frame the walk
+	## started from, that frame's script *is* `whatodoeveryframe`, and the globals it
+	## reads are the original's own. Nothing here names a room, a channel or a
+	## handler.
+	_run_arrival_frame_script()
 	var next_movie := _s(next.get("movie", ""))
 	if next_movie != "":
 		nav_event.emit('arrived → movie %s @ "%s"' % [next_movie, _s(next.get("label", ""))])
@@ -1231,6 +1249,23 @@ func _on_puppet_arrived(next: Dictionary) -> void:
 			nav_event.emit('arrived → missing label "%s"' % label)
 		_try_people_funk(label)
 	running = true
+
+
+func _run_arrival_frame_script() -> void:
+	## The score's own frame script, run once at the moment a walk completes.
+	##
+	## Recorded, so a `go` inside it cannot hijack an arrival the port is already
+	## performing: `whatodoeveryframe` finishes its branch with
+	## `go(item 1 of nextroomdata)`, which is the same handover `_on_puppet_arrived`
+	## is in the middle of, and letting both fire moved the playhead twice. The
+	## side effects on globals and sprite state are what is wanted here, and they
+	## are not recorded away.
+	if lingo == null or not AppSettings.use_lingo_frames:
+		return
+	var was_recording: bool = lingo.host.record
+	lingo.host.record = true
+	lingo.dispatch_frame_event("exitFrame", frame_index)
+	lingo.host.record = was_recording
 
 
 func _try_people_funk(room_label: String) -> void:
