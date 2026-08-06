@@ -11,7 +11,7 @@ mean either file: resolved entries keep their number and move to the second. The
 what the port cost to learn; the one-line descriptions in `README.md` say when each
 applies.
 
-## Three standing rules
+## Standing rules
 
 **Fix the engine, not the symptom.** The goal is an accurate Director engine, not a
 game that happens to behave. A fix that special-cases one room, one channel or one
@@ -48,6 +48,19 @@ here. The duplicated-guest report above was dismissed as authentic crowd art on
 three passing consistency checks; one name lookup (`atoflop1` / `btoflop1`) said
 the opposite and had been available from the first minute. Read
 `porting-fidelity-verification` for the full account.
+
+**Mobile is a shipping target, so rule on it before the refactor.** Android and iOS
+exports are goals (`docs/ANDROID.md`), and their limits are absolute rather than
+awkward: iOS forbids `fork`/`exec` and unreviewed native code outright, and
+Android's W^X enforcement has blocked executing a binary from the app's writable
+data dir since API 29. A design that shells out to an external tool, ships a native
+executable, or wants Python at run time is not "harder to port" — it is
+unshippable, and the discovery arrives after the work is done. ProjectorRays is the
+standing example: it is how `reference/lingo/` gets produced and it can never be a
+runtime dependency, so any runtime Lingo path has to read the `Lscr` bytecode
+itself rather than its decompiled source. Move the work to a build step or into
+GDScript/GDExtension, and say which platform breaks while the design is still a
+choice.
 
 ## Environment
 
