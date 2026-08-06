@@ -122,6 +122,13 @@ func get_member(cast_lib: int, cast_id: int) -> Dictionary:
 	return m
 
 
+## The parsed cast of a library, opened and cached on first ask. Callers that
+## want members should use `get_member`; this is for the ones that need the cast
+## itself, such as compiling every script it holds.
+func cast_for(cast_lib: int):
+	return _cast_for(cast_lib)
+
+
 ## The container a library lives in, so a caller can read its payload chunks.
 func file_for(cast_lib: int):
 	if cast_lib == 1:
@@ -154,11 +161,16 @@ func _cast_for(cast_lib: int):
 			return embedded
 		return null
 
-	var resolved: String = _paths.resolve(str(entry["path"]))
+	# Resolved from the movie's own directory first. This game ships two
+	# different files called MASTER.CST — one at the root, one beside the
+	# movies — so a bare-filename lookup picks whichever the scan met first,
+	# and a movie in PIP2DATA can end up reading the root's cast.
+	var beside: String = str(_movie.path).get_base_dir()
+	var resolved: String = _paths.resolve(str(entry["path"]), beside)
 	if resolved == "":
 		# Director paths are Mac colon form and name a volume that no longer
 		# exists, so the filename is what actually resolves.
-		resolved = _paths.resolve(str(entry["path"]).replace(":", "/").get_file())
+		resolved = _paths.resolve(str(entry["path"]).replace(":", "/").get_file(), beside)
 	if resolved == "":
 		return null
 	entry["resolved_path"] = resolved

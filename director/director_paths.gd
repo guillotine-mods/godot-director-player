@@ -78,9 +78,17 @@ func resolve(name: String, from_dir: String = "") -> String:
 	if _by_name.has(bare):
 		var hits: Array = _by_name[bare]
 		# Two containers can share a filename: this game ships MASTER.CST twice,
-		# at the root and under PIP2DATA, and they are not the same file. Picking
-		# the first silently loads whichever the scan met first, so the ambiguity
-		# is reported rather than resolved by luck.
+		# at the root and under PIP2DATA, and they are not the same file.
+		#
+		# The directory decides, and it is reached here rather than earlier
+		# because a linked cast names itself by its authoring path —
+		# `macintosh hd:pip2 full:master.cst` — which matches no directory that
+		# still exists. Only the filename survives, so the movie asking is the
+		# only thing left that can say which copy it meant.
+		if hits.size() > 1 and from_dir != "":
+			for hit in hits:
+				if str(hit).get_base_dir() == from_dir:
+					return hit
 		if hits.size() > 1:
 			push_warning("%s is ambiguous: %s" % [bare, ", ".join(hits)])
 		return hits[0]

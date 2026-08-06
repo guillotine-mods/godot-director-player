@@ -1,0 +1,217 @@
+extends RefCounted
+## The smallest host that lets `LingoInterpreter` drive the preview scene.
+##
+## `lingo/lingo_host.gd` is the real one — 1,200 lines bound to `DirectorRuntime`,
+## the puppet walker, the save system and the inventory HUD. This binds the few
+## things a room needs to *hold and speak*: the playhead, sprite member and
+## visibility, fields, and `sound playFile`. Everything else answers VOID and is
+## counted, so what a scene actually reaches is a number rather than a guess.
+##
+## The interpreter's host contract is duck-typed and small: `owns_global` /
+## `get_global` / `set_global`, `is_native_handler`, `call_builtin`, and a handful
+## of `get_*`/`set_*` property calls. Returning `null` from `call_builtin` means
+## "no such builtin" and raises a diagnostic; returning 0 means "bound, did
+## nothing". The difference is the whole point of `unbound` below.
+
+var preview: Node = null
+## Lingo globals. The real host aliases several of these onto engine state; here
+## they are just storage, which is correct until something needs to observe them.
+var globals: Dictionary = {}
+## builtin name -> times reached, including the ones deliberately ignored. What a
+## room needs is a fact to measure, not a list to guess at.
+var reached: Dictionary = {}
+var unbound: Dictionary = {}
+## Set by the interpreter's caller before a mouse message.
+var click_sprite := 0
+
+## Bound to something real.
+const HANDLED := [
+	"go", "sound", "puppetsound", "puppetsprite", "updatestage", "cursor",
+	"nothing", "dontpassevent", "beep", "delay", "preloadmember", "preload",
+	"unloadmember", "unload", "set", "alert", "halt", "quit",
+]
+## Answer VOID rather than nothing: these are real Director builtins this host
+## has no state to implement, and letting them report as unbound would drown the
+## ones that genuinely are.
+const IGNORED := [
+	"puppettransition", "updatestage", "beep", "delay", "preloadmember",
+	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
+	"dontpassevent", "puppetsprite", "halt", "quit", "startTimer",
+]
+
+
+func owns_global(name: String) -> bool:
+	return globals.has(name.to_lower())
+
+
+func get_global(name: String) -> Variant:
+	return globals.get(name.to_lower(), 0)
+
+
+func set_global(name: String, value: Variant) -> void:
+	globals[name.to_lower()] = value
+
+
+## Nothing here overrides a script; the real host does, for the walk machine.
+func is_native_handler(_name: String) -> bool:
+	return false
+
+
+func call_builtin(name: String, args: Array) -> Variant:
+	var low := name.to_lower()
+	reached[low] = int(reached.get(low, 0)) + 1
+	match low:
+		"go":
+			return _go(args)
+		"sound":
+			return _sound(args)
+		"puppetsound":
+			# `puppetSound <channel>, <file>` and the one-argument form.
+			if args.size() >= 2:
+				return _play(LingoValue.to_int(args[0]), str(args[1]))
+			if args.size() == 1:
+				return _play(1, str(args[0]))
+			return 0
+		"soundbusy":
+			# Scripts wait on this before speaking. Unbound it answers 0, which
+			# reads as "nothing is playing" and lets a room talk over itself.
+			if preview == null:
+				return 0
+			return 1 if preview.lingo_sound_busy(
+				LingoValue.to_int(args[0]) if not args.is_empty() else 1
+			) else 0
+		"label":
+			# `label("shore2")` is the frame a marker sits on; `label(0)` is the
+			# marker at or before the playhead. Both answer a frame number.
+			if preview == null or args.is_empty():
+				return 0
+			return preview.lingo_label(args[0])
+		"marker":
+			if preview == null or args.is_empty():
+				return 0
+			return preview.lingo_marker(LingoValue.to_int(args[0]))
+	if IGNORED.has(low):
+		return 0
+	unbound[low] = int(unbound.get(low, 0)) + 1
+	return null
+
+
+## `go to the frame`, `go to frame N`, `go(marker(0))`, `go "label"`.
+##
+## The first is why a Director room sits still at all: the frame script's
+## `exitFrame` sends the playhead back to where it already is, every tick. A
+## preview without it runs the score off the end of the room, which looks like a
+## rendering fault and is the absence of this one call.
+func _go(args: Array) -> Variant:
+	if preview == null:
+		return 0
+	var words: Array = []
+	for a in args:
+		words.append(str(a).to_lower() if typeof(a) == TYPE_STRING else a)
+	# `to` is a bare command word and carries no meaning here.
+	words = words.filter(func(w): return w != "to")
+	if words.is_empty():
+		return 0
+	var first: Variant = words[0]
+	if typeof(first) == TYPE_STRING:
+		match str(first):
+			"the frame", "frame":
+				# `go to frame N` names a number; `go to the frame` does not.
+				if words.size() >= 2 and typeof(words[1]) != TYPE_STRING:
+					preview.lingo_go_frame(LingoValue.to_int(words[1]))
+					return 0
+				preview.lingo_hold()
+				return 0
+			"loop":
+				preview.lingo_hold()
+				return 0
+			"next", "previous", "movie":
+				# Leaving the movie is out of this preview's scope; holding is
+				# closer to right than running on into unrelated frames.
+				preview.lingo_hold()
+				return 0
+		preview.lingo_go_label(str(first))
+		return 0
+	preview.lingo_go_frame(LingoValue.to_int(first))
+	return 0
+
+
+## `sound playFile <channel>, <file>` — how every sound in this game is played.
+## The score's own sound channels are empty in all 61 movies.
+func _sound(args: Array) -> Variant:
+	if args.is_empty():
+		return 0
+	var verb := str(args[0]).to_lower()
+	if verb == "playfile" and args.size() >= 3:
+		return _play(LingoValue.to_int(args[1]), str(args[2]))
+	if verb == "stop":
+		if preview != null:
+			preview.lingo_stop_sound(LingoValue.to_int(args[1]) if args.size() >= 2 else 0)
+		return 0
+	return 0
+
+
+func _play(channel: int, file: String) -> Variant:
+	if preview != null:
+		preview.lingo_play_sound(channel, file)
+	return 0
+
+
+# ------------------------------------------------------------------ properties
+
+func get_system_prop(prop: String) -> Variant:
+	if preview == null:
+		return 0
+	match prop.to_lower():
+		"frame":
+			return preview.current_frame()
+		"mouseh":
+			return int(preview.stage_mouse().x)
+		"mousev":
+			return int(preview.stage_mouse().y)
+		"clickon":
+			return click_sprite
+		"ticks":
+			return int(Time.get_ticks_msec() * 60.0 / 1000.0)
+		"milliseconds", "timer":
+			return Time.get_ticks_msec()
+		"machinetype":
+			return 256
+	return null
+
+
+func get_sprite_prop(which: int, prop: String) -> Variant:
+	if preview == null:
+		return 0
+	return preview.lingo_sprite_prop(which, prop.to_lower())
+
+
+func set_sprite_prop(which: int, prop: String, value: Variant) -> void:
+	if preview != null:
+		preview.lingo_set_sprite_prop(which, prop.to_lower(), value)
+
+
+func get_member_prop(which: Variant, cast: Variant, prop: String) -> Variant:
+	if preview == null:
+		return 0
+	return preview.lingo_member_prop(which, str(cast), prop.to_lower())
+
+
+func set_member_prop(_which: Variant, _cast: Variant, _prop: String, _value: Variant) -> void:
+	pass
+
+
+func get_field(name: String, cast: Variant) -> Variant:
+	if preview == null:
+		return ""
+	return preview.lingo_field(name, str(cast))
+
+
+func set_field(_name: String, _cast: Variant, _value: Variant) -> void:
+	pass
+
+
+func member_number(which: Variant, cast: Variant) -> Variant:
+	if preview == null:
+		return 0
+	return preview.lingo_member_number(which, str(cast))
