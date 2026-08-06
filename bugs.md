@@ -11,6 +11,74 @@ regression: see `.claude/skills/porting-fidelity-verification/SKILL.md`.
 
 ---
 
+## 22. MURDER1 never returns, so the cliff meeting is a progression blocker
+
+**Status:** open · **PROGRESSION BLOCKER — the game cannot be completed** ·
+**Area:** the port is missing a script the game requires · **NOT a regression**
+
+Listed first because this file is worst-first and nothing else here stops the
+game. `murder1` is one of the seven day-1 meetings the phase transition to NIGHT1
+requires, so a player who walks to the cliff is stuck for good and one who avoids
+it can never finish day 1 either.
+
+An earlier draft of this entry called it "a decompilation gap rather than an engine
+bug". That framing is wrong and worth not repeating: where the missing piece came
+from is a repair detail, and a script the game requires and the port does not have
+is a bug in the port whatever produced it.
+
+Reported from play as "I cannot come back from the cliff now". Walking into
+`clif2` with `murder1` pending fires the meeting, MURDER1 loads, and the player
+never comes back.
+
+**First filed here as a regression from `9cae9f59` and that was wrong.** Running
+the same walk with `director/director_runtime.gd` restored from `cdb0bdb9` — the
+commit before the fix — reproduces it identically, so the arrival-frame dispatch
+is exonerated. It reproduces on `main` too. The reason it *looked* like a
+regression is that it was reported minutes after that fix landed, which is not
+evidence. Attribute before believing a report is about the change in front of you.
+
+**What it does.** MURDER1 does not freeze, it loops. Sampled every 200 ticks the
+playhead reads 33, 38, 44, 25, 30, 36 — cycling the span between the markers at
+frames 24 and 49, forever, with `running = true`. Every frame in that span carries
+the same exported nav, `{kind: marker, rel: 1, offset: 0, guard_channel: 1,
+guard_when: idle}`, which is a loop, and one frame carries a `busy_nav` of
+`{rel: 0, offset: 1}`.
+
+**Why nothing breaks the loop.** Those frames carry `frame_script 119`, and the
+port does not have it. `data/lingo/MURDER1/` holds only `MASTER.json`,
+`attach.json` and `sprite_scripts.json`; `attach.json` never mentions 119, and
+`reference/lingo/MURDER1/` has only a `MASTER/` subdirectory. The chunk dump is no
+help either — `toolcache/chunks/MURDER1/MURDER1/casts/` contains `MASTER` alone.
+So MURDER1's own cast, and its linked `goldolin`, `hezi` and `tofi`, were never
+decompiled. The interpreter has no frame handler to run, `game_step` falls through
+to the exported nav, and the exported nav is the loop. In the original, script 119
+is what advances the scene when the line of speech finishes.
+
+**The scripts are in the binary; the decompiler is what is missing them.**
+`toolcache/chunks/MURDER1/MURDER1/chunks/` holds **33 `Lscr-*.bin` chunks**, so
+MURDER1's Lingo exists. But every decompilation pass on this machine produced
+`MASTER` and nothing else for it — `originals/recovery/godot-reference/lingo/MURDER1/`,
+`originals/recovery/web-alpha/decompiled_chunks/MURDER1/` and
+`originals/recovery/web-alpha/decompiled_true/PIP2DATA/MURDER1/casts/` all contain
+a lone `MASTER` directory. So it is not that nobody ran the decompiler: it ran and
+silently emitted one cast out of five.
+
+That makes this a decompilation gap rather than an engine bug, the same shape as
+entry 20. Fixing it means finding why the decompiler drops MURDER1's internal cast
+and its linked `goldolin` / `hezi` / `tofi`, not re-running it as-is. ProjectorRays
+is not installed here (`which projectorrays` finds nothing); the source is at
+`originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`.
+
+**Worth checking how wide it is** before fixing one movie: any movie whose
+cutscene frames carry a frame script the port does not have will loop the same
+way. `data/lingo/<MOVIE>/` versus the `frame_script` ids in
+`assets/render_model/<MOVIE>/frames.json` is the query.
+
+Reproduce: boot, leave `murder1` pending, walk `swing` -> `clif2`, tick. The
+playhead stays in MURDER1 cycling frames 25-44 indefinitely.
+
+---
+
 ## 1. Interpreted sprite property writes never reach the renderer
 
 **Status:** CLOSED — `SpriteChannel`, see the Closed section · **Area:** renderer / interpreter host
@@ -716,63 +784,6 @@ Closed entry.
 routing half of a Lingo handler — but it was not the prerequisite this entry
 claimed. The fix needed one dispatch at the right moment, not the walk state
 machine replaced.
-
----
-
-## 22. MURDER1 never returns, so the cliff meeting is a progression blocker
-
-**Status:** open · **Area:** assets / decompilation · **NOT a regression**
-
-Reported from play as "I cannot come back from the cliff now". Walking into
-`clif2` with `murder1` pending fires the meeting, MURDER1 loads, and the player
-never comes back.
-
-**First filed here as a regression from `9cae9f59` and that was wrong.** Running
-the same walk with `director/director_runtime.gd` restored from `cdb0bdb9` — the
-commit before the fix — reproduces it identically, so the arrival-frame dispatch
-is exonerated. It reproduces on `main` too. The reason it *looked* like a
-regression is that it was reported minutes after that fix landed, which is not
-evidence. Attribute before believing a report is about the change in front of you.
-
-**What it does.** MURDER1 does not freeze, it loops. Sampled every 200 ticks the
-playhead reads 33, 38, 44, 25, 30, 36 — cycling the span between the markers at
-frames 24 and 49, forever, with `running = true`. Every frame in that span carries
-the same exported nav, `{kind: marker, rel: 1, offset: 0, guard_channel: 1,
-guard_when: idle}`, which is a loop, and one frame carries a `busy_nav` of
-`{rel: 0, offset: 1}`.
-
-**Why nothing breaks the loop.** Those frames carry `frame_script 119`, and the
-port does not have it. `data/lingo/MURDER1/` holds only `MASTER.json`,
-`attach.json` and `sprite_scripts.json`; `attach.json` never mentions 119, and
-`reference/lingo/MURDER1/` has only a `MASTER/` subdirectory. The chunk dump is no
-help either — `toolcache/chunks/MURDER1/MURDER1/casts/` contains `MASTER` alone.
-So MURDER1's own cast, and its linked `goldolin`, `hezi` and `tofi`, were never
-decompiled. The interpreter has no frame handler to run, `game_step` falls through
-to the exported nav, and the exported nav is the loop. In the original, script 119
-is what advances the scene when the line of speech finishes.
-
-**The scripts are in the binary; the decompiler is what is missing them.**
-`toolcache/chunks/MURDER1/MURDER1/chunks/` holds **33 `Lscr-*.bin` chunks**, so
-MURDER1's Lingo exists. But every decompilation pass on this machine produced
-`MASTER` and nothing else for it — `originals/recovery/godot-reference/lingo/MURDER1/`,
-`originals/recovery/web-alpha/decompiled_chunks/MURDER1/` and
-`originals/recovery/web-alpha/decompiled_true/PIP2DATA/MURDER1/casts/` all contain
-a lone `MASTER` directory. So it is not that nobody ran the decompiler: it ran and
-silently emitted one cast out of five.
-
-That makes this a decompilation gap rather than an engine bug, the same shape as
-entry 20. Fixing it means finding why the decompiler drops MURDER1's internal cast
-and its linked `goldolin` / `hezi` / `tofi`, not re-running it as-is. ProjectorRays
-is not installed here (`which projectorrays` finds nothing); the source is at
-`originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`.
-
-**Worth checking how wide it is** before fixing one movie: any movie whose
-cutscene frames carry a frame script the port does not have will loop the same
-way. `data/lingo/<MOVIE>/` versus the `frame_script` ids in
-`assets/render_model/<MOVIE>/frames.json` is the query.
-
-Reproduce: boot, leave `murder1` pending, walk `swing` -> `clif2`, tick. The
-playhead stays in MURDER1 cycling frames 25-44 indefinitely.
 
 ---
 
