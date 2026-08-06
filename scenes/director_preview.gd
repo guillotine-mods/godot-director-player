@@ -781,18 +781,17 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 ## A member's registration point, scaled to the size it is actually drawn at.
 ## Falls back to the centre, which is what Director uses when a member carries no
 ## registration point of its own.
-func _scaled_reg(member: Dictionary, drawn: Vector2, stretched: bool) -> Vector2:
+func _scaled_reg(member: Dictionary, _drawn: Vector2, _stretched: bool) -> Vector2:
+	# Never scaled by the stretch factor. `render_model_loader._resolve_sprite_rects`
+	# skips stretched channels outright — "must not re-anchor a stretched sprite
+	# on a new member's registration point" — and anchors everything else at
+	# plain `loc - reg_offset`. Scaling the registration point was my invention,
+	# and it displaced exactly the sprites a walk cycle swaps most often.
 	var width := float(member.get("width", 0))
 	var height := float(member.get("height", 0))
-	var reg := Vector2(
+	return Vector2(
 		float(member.get("reg_offset_x", width * 0.5)),
 		float(member.get("reg_offset_y", height * 0.5))
-	)
-	if not stretched or width <= 0.0 or height <= 0.0:
-		return reg
-	return Vector2(
-		round(reg.x * drawn.x / width),
-		round(reg.y * drawn.y / height)
 	)
 
 
