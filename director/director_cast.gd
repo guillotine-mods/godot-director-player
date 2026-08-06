@@ -278,6 +278,13 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["width"] = r - l
 			out["height"] = b - t
 			out["initial_rect"] = {"top": t, "left": l, "bottom": b, "right": r}
+			# A film loop's specific block carries no registration point, and
+			# Director registers one at the centre of its rect. Leaving it at
+			# zero anchors the loop by its top-left instead, which offsets every
+			# child by half the loop's size — the animation draws, and draws in
+			# the wrong place.
+			out["reg_offset_x"] = int((r - l) / 2.0)
+			out["reg_offset_y"] = int((b - t) / 2.0)
 			# Bit 0x20 CLEAR means looping.
 			out["looping"] = (_be_u32(spec, 8) & 32) == 0
 		8:

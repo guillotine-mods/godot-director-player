@@ -30,6 +30,7 @@ const Cast := preload("res://director/director_cast.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
+const FilmLoop := preload("res://director/director_film_loop.gd")
 
 const STAGE := Vector2i(640, 480)
 ## Inks that key the paper colour. 8/9 are Matte and 1/36/39 Background
@@ -71,6 +72,18 @@ var _lingo_on := true
 var _sent: Dictionary = {}
 var _ran: Dictionary = {}
 var _traced: Array = []
+## The owning container's `ccl ` list, read once: film-loop children index into
+## it, not into the movie's cast libraries.
+var _ccl := PackedStringArray()
+## "<lib>:<member>" -> DirectorFilmLoop, parsed on first draw.
+var _loops: Dictionary = {}
+## Ticks since the movie started, which is what a loop's own frame counts from.
+var _ticks := 0
+## What the film-loop path actually managed, per outcome. Written because "it
+## compiles and raises no error" says nothing about whether a child reached the
+## screen, and a loop that silently draws nothing looks identical to one that
+## was never attempted.
+var _loop_stats: Dictionary = {}
 
 
 func _ready() -> void:
@@ -131,6 +144,9 @@ func _ready() -> void:
 	if _lingo_on:
 		_start_lingo(path)
 	_audio = root_node("AudioDirector")
+	var ccl_ids: Array = _movie.ids_of("ccl ")
+	if not ccl_ids.is_empty():
+		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
 	if _lingo_on and _interpreter != null:
 		# Director sends these once, before the first frame is drawn, and this is
 		# where a movie's opening sound and its global setup live.
@@ -278,6 +294,8 @@ func _report() -> void:
 	if _host != null:
 		print("builtins reached : %s" % JSON.stringify(_host.reached))
 		print("builtins unbound : %s" % JSON.stringify(_host.unbound))
+	print("ccl cast list  : %s" % str(_ccl))
+	print("film loops     : %s" % JSON.stringify(_loop_stats))
 	if not _traced.is_empty():
 		print("sound trace (last %d):" % _traced.size())
 		for line in _traced:
@@ -432,6 +450,10 @@ func _process(delta: float) -> void:
 	var step := 1.0 / fps
 	while _accumulated >= step:
 		_accumulated -= step
+		# Film loops advance on the movie's clock, not the playhead's: a loop
+		# keeps animating on a frame the score is holding still on, which is
+		# exactly what a talking character does while its line plays.
+		_ticks += 1
 		_advance()
 		queue_redraw()
 
@@ -521,17 +543,29 @@ func _draw() -> void:
 				sprite["loc_h"] = int(over["loch"])
 			if over.has("locv"):
 				sprite["loc_v"] = int(over["locv"])
+		# A film loop draws its own children rather than a bitmap of its own.
+		if _draw_film_loop(sprite):
+			continue
 		var texture: Texture2D = _texture_for(sprite)
 		if texture == null:
 			continue
 		var size := texture.get_size()
 		# `loc` is the registration point, not the corner.
 		var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		var reg := Vector2(int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0)))
-		if bool(sprite["stretch"]) and int(m.get("width", 0)) > 0:
-			reg.x = round(reg.x * size.x / float(m["width"]))
-			reg.y = round(reg.y * size.y / float(m["height"]))
-		draw_texture(texture, Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg)
+		var reg := _scaled_reg(m, size, bool(sprite["stretch"]))
+		var top_left := Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg
+		# Only the channels a script is driving. A member swap re-anchors on the
+		# new member's registration point, so a walk cycle whose frames register
+		# differently moves vertically on every frame unless that is honoured —
+		# and the symptom is indistinguishable from the loop riding on it being
+		# misplaced.
+		if not over.is_empty():
+			_trace("f%d ch%d m=%d %dx%d reg(%d,%d) -> (%d,%d)" % [
+				_index, int(sprite["channel"]), int(sprite["cast_id"]),
+				int(m.get("width", 0)), int(m.get("height", 0)),
+				int(reg.x), int(reg.y), int(top_left.x), int(top_left.y),
+			])
+		draw_texture(texture, top_left)
 
 	var marker: String = _labels.marker_at(_index) if _labels != null else ""
 	var hud := "frame %d/%d  %s  fps %.0f%s" % [
@@ -605,6 +639,141 @@ func _click(at: Vector2) -> void:
 		_dispatch("mouseUp", script)
 		queue_redraw()
 		return
+
+
+## Draw a film-loop sprite by drawing its children. False when the member is not
+## a film loop, so the caller falls through to the bitmap path.
+##
+## Children are positioned relative to the loop's own registration point, and
+## stack among themselves by their mini-score channel — the loop as a whole still
+## occupies one channel on the stage, so it layers where the score put it.
+func _draw_film_loop(sprite: Dictionary) -> bool:
+	var lib := int(sprite["cast_lib"])
+	var id := int(sprite["cast_id"])
+	var m: Dictionary = _table.get_member(lib, id)
+	if m.is_empty() or int(m.get("type", 0)) != 2:
+		return false
+
+	var key := "%d:%d" % [lib, id]
+	if not _loops.has(key):
+		_loops[key] = _open_loop(lib, m)
+	var loop = _loops[key]
+	if loop == null:
+		_tally(_loop_stats, "loop unparsed")
+		return true # a film loop that will not parse still draws no bitmap
+	_tally(_loop_stats, "loop drawn")
+
+	var origin := Vector2(
+		int(sprite["loc_h"]) - int(m.get("reg_offset_x", 0)),
+		int(sprite["loc_v"]) - int(m.get("reg_offset_y", 0))
+	)
+	# A child's loc is its registration point inside the loop's own coordinate
+	# space, which the loop's rect anchors — not a top-left on the stage. Adding
+	# it to the sprite's position, as the first version did, places every child
+	# by however far the loop's rect happens to sit from the origin, which is
+	# why the animations that had never drawn before appeared in the wrong place.
+	var rect: Dictionary = m.get("initial_rect", {})
+	var loop_origin := Vector2(int(rect.get("left", 0)), int(rect.get("top", 0)))
+
+	var kids: Array = loop.children(_ticks)
+	_tally(_loop_stats, "children offered")
+	if kids.is_empty():
+		_tally(_loop_stats, "loop has no children this tick")
+	for child in kids:
+		var child_lib := _child_lib(child)
+		if child_lib < 0:
+			_tally(_loop_stats, "child unresolved cast=%s" % str(child["cast_name"]))
+			continue
+		var cm: Dictionary = _table.get_member(child_lib, int(child["cast_id"]))
+		var texture: Texture2D = _texture_for({
+			"cast_lib": child_lib, "cast_id": int(child["cast_id"]),
+			"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
+			"width": int(child["width"]), "height": int(child["height"]),
+		})
+		if texture == null:
+			_tally(_loop_stats, "child has no art")
+			continue
+		_tally(_loop_stats, "child drawn")
+		# Deliberately NOT scaled by the stretch factor. Scaling it here — which
+		# is what the stage path does for a stretched sprite — measurably moved
+		# the animations further from where they belong, so a loop's children
+		# anchor in the loop's own coordinate space rather than in the drawn one.
+		# Reverted on evidence, not theory; the stage path keeps its scaling.
+		var child_reg := Vector2(
+			int(cm.get("reg_offset_x", 0)), int(cm.get("reg_offset_y", 0))
+		)
+		var at := Vector2(int(child["loc_h"]), int(child["loc_v"]))
+		draw_texture(texture, origin + (at - loop_origin) - child_reg)
+	return true
+
+
+## A member's registration point, scaled to the size it is actually drawn at.
+## Falls back to the centre, which is what Director uses when a member carries no
+## registration point of its own.
+func _scaled_reg(member: Dictionary, drawn: Vector2, stretched: bool) -> Vector2:
+	var width := float(member.get("width", 0))
+	var height := float(member.get("height", 0))
+	var reg := Vector2(
+		float(member.get("reg_offset_x", width * 0.5)),
+		float(member.get("reg_offset_y", height * 0.5))
+	)
+	if not stretched or width <= 0.0 or height <= 0.0:
+		return reg
+	return Vector2(
+		round(reg.x * drawn.x / width),
+		round(reg.y * drawn.y / height)
+	)
+
+
+## The movie's cast-library number for a child's named cast, or -1.
+func _child_lib(child: Dictionary) -> int:
+	var name := str(child["cast_name"])
+	if name == "":
+		return 1
+	# A `ccl ` entry is the cast's authoring path — Mac colon form, naming a
+	# volume that has not existed for twenty years. Only the filename survives,
+	# and the cast library table names casts without an extension.
+	var stem := name.replace(":", "/").get_file().get_basename().to_lower()
+	for number in _table.cast_libs:
+		if str(_table.cast_libs[number].get("name", "")).to_lower() == stem:
+			return int(number)
+	return -1
+
+
+func _open_loop(lib: int, member: Dictionary):
+	var chunk_id := int(member.get("data_chunk_id", -1))
+	if chunk_id < 0:
+		return null
+	var f = _table.file_for(lib)
+	if f == null:
+		return null
+	var loop = FilmLoop.new()
+	if not loop.parse(f.read_chunk(chunk_id), _ccl, bool(member.get("looping", true))):
+		return null
+	return loop
+
+
+## A child names its cast by name, not by this movie's library number.
+func _child_texture(child: Dictionary) -> Texture2D:
+	var name := str(child["cast_name"])
+	var lib := 1
+	if name != "":
+		# A `ccl ` entry is the cast's authoring path — Mac colon form, naming a
+		# volume that has not existed for twenty years. Only the filename
+		# survives, and the cast library table names casts without an extension.
+		var stem := name.replace(":", "/").get_file().get_basename().to_lower()
+		lib = -1
+		for number in _table.cast_libs:
+			if str(_table.cast_libs[number].get("name", "")).to_lower() == stem:
+				lib = int(number)
+				break
+		if lib < 0:
+			return null
+	return _texture_for({
+		"cast_lib": lib, "cast_id": int(child["cast_id"]),
+		"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
+		"width": int(child["width"]), "height": int(child["height"]),
+	})
 
 
 func _sprite_rect(sprite: Dictionary) -> Rect2:
