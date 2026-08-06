@@ -15,143 +15,6 @@ and 25 appear in both files: the fixed half is there, the remainder is here.
 
 ---
 
-## 21. Every wandering character is on screen twice, because only half of `peoplefunk` is ported
-
-**Status:** open · **Area:** interpreter host / score runner
-
-Reported from play as "bugs in the scenes of characters that appear multiple
-times", with screenshots of DAY1 `@field`, `@edge1` and `@veranda`. It was first
-mistaken for authentic crowd art — the two loops in `@veranda` really do name the
-same member — and that reading was wrong. The **member names** settle it:
-
-| room | channels | loops | names |
-|---|---|---|---|
-| `field` | 18 / 21 | wonder 98 / 94 | `arinlop1` / `brinlop1` |
-| `field` | 19 / 20 | wonder 22 / 47 | `apatlop1` / `bpatlop1` |
-| `edge1` | 18 / 20 | wonder 150 / 175 | `amoglop1` / `bmoglop1` |
-| `veranda` | 18 / 20 | wonder 196 / 201 | `atoflop1` / `btoflop1` |
-
-Each room carries an `a` and a `b` loop of **one** character — Rinati, Pat,
-Mogul, Tofi — at two positions. The original shows one of each pair; the port
-draws both, so every one of these characters appears twice.
-
-**The original picks with a counter.** `WONDER/MovieScript 246` is `peoplefunk`,
-and after its meeting-routing chain it does:
-
-```
-repeat with i = 18 to 21
-  puppetSprite(i, 0)
-end repeat
-if item 1 of nextroomdata = "field" then peoplecont(1)
-  else if ... "tennis" then peoplecont(2)
-  else if ... "edge1"  then peoplecont(3)   -- but on day 3, hide 18 and 20 outright
-  else if ... "veranda" then peoplecont(4)
-  else if ... "dwarfs" then dwarfscont(8) / dwarfscont(9)
-  else if ... "exitforest3" then dwarfscont2(10)
-```
-
-and `peoplecont(i)` advances `item i of inexits` 1..10, wrapping, then shows one
-pair and hides the other:
-
-```
-if x > 5 then  18,19 invisible; 20,21 visible
-else           18,19 visible;   20,21 invisible
-```
-
-So the guests move around the estate as you re-enter rooms. The talk behaviours
-read that state back — `BehaviorScript 290` and `291` both branch on
-`if sprite(18).visible = 1`, and `BehaviorScript 249` picks `xxx = "a"` or `"b"`
-with the channel numbers to match — so with nothing hidden they also take the
-wrong branch and drive the wrong sprite.
-
-**Two things are missing, and the second is an old friend.**
-
-1. `DirectorRuntime._try_people_funk` calls `GameState.people_funk`, which is a
-   `meeting_triggers` table lookup and nothing else. It reproduces only the
-   routing chain at the top of the original handler; the `puppetSprite` /
-   `peoplecont` half below it has no port at all.
-2. `inexits` is never set. `init all` seeds it as `"0,0,0,0,0,0,0,0,0,0"` and
-   `init all` never runs — that is entries 9 and 13, biting a third time. Even if
-   `peoplecont` were called, `value(item i of inexits)` has nothing to read.
-
-Not a rendering bug: the interpreter has both handlers loaded and sprite writes
-do reach the stage (`docs/bugs-closed.md` 1 is closed, `tools/sprite_channels.gd`
-covers it).
-
-Reproduce — all four channels present and none hidden, with both globals unset:
-
-```
-godot --headless --script - <<'EOF'
-extends SceneTree
-func _initialize(): call_deferred("_run")
-func _run():
-    var r: RefCounted = load("res://director/director_runtime.gd").new()
-    r.boot(); r.goto_movie("DAY1", null, {"label": "field"}); r.running = false
-    print("peoplefunk=%s peoplecont=%s inexits=%s" % [
-        r.lingo.interpreter.has_handler("peoplefunk"),
-        r.lingo.interpreter.has_handler("peoplecont"),
-        str(r.lingo.interpreter.globals.get("inexits", "<unset>"))])
-    for c in [18, 19, 20, 21]:
-        print("ch%d hidden=%s" % [c, r.is_channel_hidden(c)])
-    quit(0)
-EOF
-```
-
-Observed: `peoplefunk=true peoplecont=true inexits=<unset>`, and all four
-`hidden=false`.
-
-`tools/wandering_characters.gd` is the pass/fail form of the same question and
-asserts the player-visible invariant, how many of each pair are drawn, rather than
-that `inexits` and a getter agree. It is **uncommitted and unverified** at the time
-of writing: run it before trusting either its red or its green.
-
-Not the same bug as `docs/bugs-closed.md` 14's film-loop half, found in the same rooms in the
-same pass. That one drew these characters at the wrong size; this one draws twice
-as many of them as there should be.
-
-**Attempted and not finished — the handlers resolve but invoking them does
-nothing.** This is the next thing to chase, and it is narrower than where this
-entry started. Booting DAY1, seeding the globals `init all` would have left, and
-calling the handlers straight off the interpreter changes no observable state:
-
-| call | `inexits` after | channels 18-21 |
-|---|---|---|
-| `call_handler("peoplefunk")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-| `call_handler("peoplecont", [1])` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-| `call_handler("whatodoeveryframe")` | `0,0,0,0,0,0,0,0,0,0` | all shown |
-
-`peoplecont(1)` on `inexits = "0,0,…"` must leave `1,0,0,…` and hide 20 and 21.
-It leaves both untouched, so the body is not running — the handler is not merely
-taking a branch that skips the writes.
-
-Ruled out on the way, so they do not get re-checked:
-
-- **The handler is missing.** `has_handler` is true for `whatodoeveryframe`,
-  `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`.
-- **Chunk assignment is unimplemented.** `put x into item i of inexits` has a
-  path: `_assign_chunk` at `lingo_interpreter.gd:408`.
-- **The `global` declaration wipes the seeded value.** It is guarded by
-  `if not globals.has(key)` at `lingo_interpreter.gd:234`, and keys are
-  lowercased, which is what the probe wrote.
-- **Sprite writes cannot reach the stage.** Entry 1 is closed and
-  `tools/sprite_channels.gd` passes.
-
-Two candidates not yet separated: `call_handler` outside a frame dispatch may not
-establish whatever scope the body needs, or `sprite(N).visible` for a channel
-other than 30 may not land where `is_channel_hidden` reads. Test the second
-first — it is one assertion — because if it is true then the body may have been
-running all along and `inexits` is a separate defect.
-
-**The fix is entry 2, not a patch here.** The original calls `peoplefunk()` from
-`whatodoeveryframe` and nowhere else, so there is no engine-level place to put
-this that does not amount to teaching the engine that `field` is slot 1 and that
-channels 18-21 hold guests — which is the standing rule in `AGENTS.md` broken in
-the same shape that caused the bug. `whatodoeveryframe` is runnable now that
-`docs/bugs-closed.md` 1 is closed; running it fixes this one for free and retires
-`GameState.people_funk` at the same time. Deliberately **not** patched natively.
-
----
-
 ## 2. `whatodoeveryframe` is reimplemented natively, not run
 
 **Status:** open · **Area:** puppet
@@ -171,18 +34,22 @@ and writing `loc_h` / `loc_v` on channel 30 reads back through
 `effective_sprite(30)`, and `has_handler("whatodoeveryframe")` is true, as it is
 for `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`.
 
-**What it now also costs to leave open.** `whatodoeveryframe` is where the
-original calls `peoplefunk()` — three times, once per transition shape. The port
-never runs it, so it substitutes `GameState.people_funk`, which reproduces only
-the meeting-routing half of that handler. The dropped half places the wandering
-characters, and its absence is entry 21: every guest in `field`, `tennis`,
-`edge1`, `veranda`, `dwarfs` and `exitforest3` is on screen twice. Running this
-script fixes 21 as a side effect and retires `meeting_triggers` with it.
+**What it still costs to leave open.** `whatodoeveryframe` is where the original
+calls `peoplefunk()` — three times, once per transition shape. The port never runs
+it, so nothing here is driven from the original's own arrival logic. It no longer
+costs the wandering characters: `docs/bugs-closed.md` 21 was closed by running
+`peoplefunk` from the port's arrival path instead, under `record` so that the
+handler's `go` does not fire mid-handler. `GameState.people_funk` and its
+`meeting_triggers` table survive only as the fallback for a movie whose scripts are
+not loaded, and running this script is what would retire them.
 
-Doing it needs `init all`'s globals to exist first — `inexits` at minimum, see
-entries 9 and 13 — and needs the 117-hotspot walk diff measured before and after,
-because this replaces the walk state machine wholesale. Read
-`porting-fidelity-verification` before reading those numbers.
+Doing it needs the 117-hotspot walk diff measured before and after, because it
+replaces the walk state machine wholesale. Read `porting-fidelity-verification`
+before reading those numbers. It does **not** need `init all`'s globals first: that
+was recorded here as a prerequisite on the strength of `inexits` being unset, and
+closing 21 showed `peoplecont` reaches its writes on an unset `inexits` anyway
+(`value("")` is 0 and `set_chunk` pads). Entries 9 and 13 remain open on their own
+merits.
 
 **Baseline for that comparison, measured 2026-08-06 at `176f08ca`**, so the next
 attempt can attribute rather than re-derive: `tools/lingo_walk_diff.gd` reports
@@ -193,9 +60,11 @@ differences `[wrong-room]`. All nine pass/fail harnesses green at that commit:
 copy these numbers forward without re-running them — stale figures pasted into
 prose have already cost this project a session.
 
-An attempt was made and stopped short; what it established, and what it ruled
-out, is in entry 21 rather than here, because the block is in invoking the
-handlers at all.
+An attempt was made and stopped short, and it reported the block as being in
+invoking the handlers at all. That was wrong, and `docs/bugs-closed.md` 21 records
+how the measurement went wrong: the probe arrived through `goto_movie`, which
+routed it into a meeting movie before it asked its question. The handlers run.
+Nothing here is blocked on the interpreter.
 
 ---
 

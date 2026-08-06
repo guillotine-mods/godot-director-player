@@ -36,7 +36,9 @@ knowledge is in the movie's own scripts, and the engine's job is to run them.
 A native handler that reproduces half a Lingo handler is the shape to watch for:
 `GameState.people_funk` reimplemented `peoplefunk`'s meeting routing and silently
 dropped its character placement, which put every wandering guest on screen twice
-(bugs.md 21) and left nothing in the code to say a half was missing.
+and left nothing in the code to say a half was missing. Fixed by running the
+original handler instead, and `GameState.people_funk` is now only its fallback
+(bugs.md 21).
 
 **"Not a bug" needs more evidence than a bug does**, because it is the verdict
 that stops work. The export is the port's *input*, not the original: the renderer

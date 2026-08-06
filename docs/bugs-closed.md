@@ -15,6 +15,142 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 21. Every wandering character was on screen twice, because only half of `peoplefunk` was ported
+
+**Status:** FIXED · **Area:** score runner, `_try_people_funk` · the interpreter was
+never the problem
+
+Reported from play as "bugs in the scenes of characters that appear multiple
+times", with screenshots of DAY1 `@field`, `@edge1` and `@veranda`. It was first
+mistaken for authentic crowd art — the two loops in `@veranda` really do name the
+same member — and that reading was wrong. The **member names** settle it:
+
+| room | channels | loops | names |
+|---|---|---|---|
+| `field` | 18 / 21 | wonder 98 / 94 | `arinlop1` / `brinlop1` |
+| `field` | 19 / 20 | wonder 22 / 47 | `apatlop1` / `bpatlop1` |
+| `edge1` | 18 / 20 | wonder 150 / 175 | `amoglop1` / `bmoglop1` |
+| `veranda` | 18 / 20 | wonder 196 / 201 | `atoflop1` / `btoflop1` |
+
+Each room carries an `a` and a `b` loop of **one** character — Rinati, Pat,
+Mogul, Tofi — at two positions. The original shows one of each pair; the port
+drew both.
+
+**The original is two halves and the port had only the first.**
+`WONDER/MovieScript 246` is `peoplefunk`: a routing chain that `go`es to whichever
+meeting the room and the day have pending, and then
+
+```
+repeat with i = 18 to 21
+  puppetSprite(i, 0)
+end repeat
+if item 1 of nextroomdata = "field" then peoplecont(1)
+  else if ... "tennis" then peoplecont(2)
+  else if ... "edge1"  then peoplecont(3)   -- but on day 3, hide 18 and 20 outright
+  else if ... "veranda" then peoplecont(4)
+  else if ... "dwarfs" then dwarfscont(8) / dwarfscont(9)
+  else if ... "exitforest3" then dwarfscont2(10)
+```
+
+where `peoplecont(i)` advances `item i of inexits` 1..10, wrapping, and shows one
+pair while hiding the other (`if x > 5 then 18,19 invisible, 20,21 visible`). So the
+guests move around the estate as the player re-enters rooms, and the talk
+behaviours read that state back: `BehaviorScript 290` and `291` branch on
+`if sprite(18).visible = 1` and `249` picks `xxx = "a"` or `"b"` with the channel
+numbers to match, so with nothing hidden they also drove the wrong sprite.
+
+`DirectorRuntime._try_people_funk` called `GameState.people_funk`, a
+`meeting_triggers` table lookup reproducing the routing chain and nothing else.
+There was no port of the half below it at all — the shape `AGENTS.md` warns about,
+a native handler reproducing part of a Lingo handler with nothing in the code to
+say a half is missing.
+
+**The fix is to run the original handler, under `record`.** `_people_funk` calls
+`peoplefunk` in the interpreter and keeps the table only as a fallback for a movie
+whose scripts are not loaded. It has to run under `lingo.host.begin_record()`,
+which captures `go` instead of performing it: Director defers a handler's `go`
+until the handler returns, this port's `_go` calls `goto_movie` inline, so the
+meeting branch would leave the hub half way down the handler and `peoplecont`
+would then write its visibility into the *meeting movie's* channels 18-21. Under
+record the whole handler runs against the room the player is standing in and
+`_try_people_funk` navigates afterwards, which is Director's order.
+
+The handler's one input is `item 1 of nextroomdata`, and an arrival that did not
+walk (a meeting handing the player back, the map, a load) leaves the previous
+room's there. `_people_funk` writes the arrival label in and restores the previous
+value afterwards rather than overwriting it, because items 2 and 3 are the arrival
+point the destination's own script named and `whatodoeveryframe` still reads them
+(entry 26).
+
+**`tools/wandering_characters.gd`** is the pass/fail form, asserting how many of
+each pair are drawn:
+
+```
+godot --headless --script tools/wandering_characters.gd
+```
+
+Before: `4 of 4 rooms draw a character twice`, every one of the eight channels
+shown, `inexits=<unset>` in all four. After: `every wandering character is on
+screen once`, and `inexits` shows the counter landing in the slot the original's
+own chain chose — `1` at `@field`, `,1` at `@tennis`, `,,1` at `@edge1`, `,,,1` at
+`@veranda`. Nothing in the port picks those slots; `MovieScript 246` does.
+
+**A ruled-out that was wrong, and it is the reason this entry sat open.** This
+entry previously recorded, from a probe that called the handlers straight off the
+interpreter, that `peoplecont(1)` on `inexits = "0,0,…"` left both `inexits` and
+channels 18-21 untouched, and concluded "the body is not running — the handler is
+not merely taking a branch that skips the writes." That was measured wrongly and
+sent the next session at the interpreter, which was never at fault. The same probe
+run again reports `inexits` going `0,0,…` → `1,0,…`, channels 20 and 21 hidden,
+and `interpreter.errors` empty. `peoplecont` cycles 1→6 across six calls and flips
+the pair at 6, exactly as written.
+
+The earlier probe reached its rooms with
+`goto_movie("DAY1", null, {"label": "clif2"})`, and that call runs
+`_try_people_funk` itself: the table routed straight to MURDER1, so by the time
+the probe called `peoplefunk` the loaded movie was the meeting, whose globals and
+channels have nothing to do with the question. **A probe that arrives through the
+navigation path is standing somewhere the navigation path chose.** Enter the room
+with `enter_frame(loader.lookup_label(room + "go"))` instead, and read
+`loader.movie_name` back in every line of output — the corrected probe prints it
+on each row for this reason.
+
+Two smaller things, both confirmed rather than assumed:
+
+- `inexits` is never seeded, because `init all` never runs (entries 9 and 13).
+  It self-heals: `value("")` is 0, so the first `peoplecont(i)` writes 1 into item
+  `i` of an empty string and `LingoValue.set_chunk` pads the items before it. The
+  visible invariant holds without seeding, which is why this fix does not depend
+  on those two entries and does not put `"0,0,0,0,0,0,0,0,0,0"` into engine code.
+- The hide survives the score's per-frame reconcile. `SpriteChannel.replace_from_score`
+  overwrites `sprite` and not `visible`, so a room's remaining frames do not undo
+  it. Checked across two frames rather than reasoned about.
+
+Also ruled out earlier and still true, so they do not get re-checked:
+
+- **The handler is missing.** `has_handler` is true for `whatodoeveryframe`,
+  `peoplefunk`, `peoplecont`, `cursorfunk` and `displayobject`; `peoplefunk` and
+  `peoplecont` resolve at the `movie` tier, `cursorfunk` at `archive`.
+- **Chunk assignment is unimplemented.** `put x into item i of inexits` has a
+  path: `_assign_chunk` at `lingo_interpreter.gd:408`, and it evaluates its index
+  node, so a variable subscript works.
+- **The `global` declaration wipes the seeded value.** Guarded by
+  `if not globals.has(key)` at `lingo_interpreter.gd:234`.
+- **Sprite writes cannot reach the stage.** Entry 1 is closed and
+  `tools/sprite_channels.gd` passes.
+
+Not the same bug as entry 14's film-loop half, found in the same rooms in the same
+pass. That one drew these characters at the wrong size; this one drew twice as many
+of them as there should be.
+
+**Not closed by this.** Entry 2 — `whatodoeveryframe` is reimplemented natively
+rather than run — is still open, and the original calls `peoplefunk` from inside
+it. This fix runs the handler from the port's own arrival path instead, so it is a
+step toward entry 2 and not a substitute for it. The `dwarfs` and `exitforest3`
+branches now run for the first time as a side effect, and no harness covers them.
+
+---
+
 ## 22. Finishing the cliff meeting restarted the day, because `go(<marker>, <movie>)` dropped its marker
 
 **Status:** FIXED · **Area:** interpreter host, `_go` · **general, not one movie** ·

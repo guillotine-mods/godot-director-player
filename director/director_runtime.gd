@@ -1234,12 +1234,69 @@ func _on_puppet_arrived(next: Dictionary) -> void:
 
 
 func _try_people_funk(room_label: String) -> void:
-	var meet := GameState.people_funk(room_label)
+	var meet := _people_funk(room_label)
 	if meet != "":
 		nav_event.emit("peoplefunk → %s" % meet)
 		goto_movie(meet, 1, {"from_meeting": true})
 		return
 	_try_phase_transition()
+
+
+func _people_funk(room_label: String) -> String:
+	## `peoplefunk` is two halves. The first is a routing chain that `go`es to
+	## whichever meeting the room and the day have pending; the second un-puppets
+	## channels 18 to 21 and calls `peoplecont`, which advances a per-room counter in
+	## `inexits` and shows one of the room's two guest loops while hiding the other.
+	## Six rooms place an `a` and a `b` loop of the *same* character at two
+	## positions, so with the second half missing every wandering character was drawn
+	## twice and the talk behaviours — which branch on `sprite(18).visible` — took
+	## the wrong side of themselves (bugs.md 21).
+	##
+	## `GameState.people_funk` is a table reproducing the routing half and nothing
+	## else, which is why the port had no visibility half to run at all. Run the
+	## original instead, and keep the table only for a movie whose scripts are not
+	## loaded.
+	##
+	## Under `record`, which captures `go` instead of performing it. Director defers
+	## a handler's `go` until the handler returns; this port's `_go` navigates inline,
+	## so the meeting branch would leave the hub half way down the handler and
+	## `peoplecont` would then write its visibility into the meeting movie's
+	## channels. Recording gives Director's order back: the whole handler runs here
+	## against the room the player is standing in, and the caller navigates after.
+	if lingo == null or not AppSettings.use_lingo_frames \
+			or not lingo.interpreter.has_handler("peoplefunk"):
+		return GameState.people_funk(room_label)
+
+	# The handler's only input is `item 1 of nextroomdata`. A walk leaves all three
+	# items there, but an arrival that did not walk — a meeting handing the player
+	# back, the map, a load — leaves the previous room's, and a stale room name
+	# routes to the wrong meeting. Restored rather than overwritten: items 2 and 3
+	# are the arrival point the destination's own script named, and `whatodoeveryframe`
+	# still has to read them.
+	var globals: Dictionary = lingo.interpreter.globals
+	var had_room: bool = globals.has("nextroomdata")
+	var saved: Variant = globals.get("nextroomdata", null)
+	globals["nextroomdata"] = room_label.to_lower().trim_suffix("go")
+
+	var was_recording: bool = lingo.host.record
+	lingo.host.begin_record()
+	lingo.host.begin_dispatch()
+	lingo.interpreter.call_handler("peoplefunk")
+	var recorded := lingo.host.recorded_navs
+	lingo.host.record = was_recording
+
+	if had_room:
+		globals["nextroomdata"] = saved
+	else:
+		globals.erase("nextroomdata")
+
+	# `go(1, "murder1.dxr")` records both of its arguments, so the frame number comes
+	# through alongside the movie. The movie is the part that is not a number.
+	for i in range(recorded.size() - 1, -1, -1):
+		var name := str(recorded[i])
+		if name != "" and not name.is_valid_int():
+			return name
+	return ""
 
 
 func _try_phase_transition() -> void:
