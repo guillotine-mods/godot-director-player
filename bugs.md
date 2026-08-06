@@ -11,14 +11,106 @@ regression: see `.claude/skills/porting-fidelity-verification/SKILL.md`.
 
 ---
 
-## 22. The cliff meeting looks stuck at its dialogue prompt, and is not
+## 22. Finishing the cliff meeting restarted the day, because `go(<marker>, <movie>)` dropped its marker
 
-**Status:** NOT A BUG at the prompt · **not a progression blocker** ·
-**Area:** none — the score is faithful here
+**Status:** FIXED · **Area:** interpreter host, `_go` · **general, not one movie** ·
+the dialogue prompt was never the bug
 
-Reported twice from play, most recently as "when the scene ends it sends you to
-the beginning again in a loop". Both reports are the same thing and the scene
-completes.
+Kept here rather than moved to Closed, and kept at this number: `AGENTS.md`,
+`tools/lib/driver.gd`, `tools/probe.gd` and `tools/cliff_meeting.gd` all cite
+"bugs.md 22" for the real-time lesson in 2 below, and the MURDER1 decompilation
+gap at the end of the entry is still open.
+
+Reported three times from play. The third report — "when the scene ends it
+teleports you back to the beach entrance and you have to do the whole thing
+again, in an endless loop" — was accurate, and the two earlier verdicts on this
+entry were both wrong about *where* the loop was. It is not at the prompt. It is
+at the handover, one frame past where the harness stopped looking.
+
+**Root cause.** `MURDER1 BehaviorScript 45`'s `on exitFrame` marks the meeting
+done and hands the player back to the room they left:
+
+```lingo
+put "done" into item 1 of meetings
+newsyz = 9
+nextroomdata = "clif2,91,336"
+go("clif2", "day1.dir")
+```
+
+`_go` in `lingo/lingo_host.gd` read that first argument as a frame number:
+`goto_movie("day1", LingoValue.to_int("clif2"))`, which is `goto_movie("day1", 0)`
+— frame 1. DAY1 frame 1 carries `BehaviorScript 56 - init all`, whose `on
+exitFrame` resets `meetings` to `"murder1,hatday1,…"` when `globalday = 1`,
+empties `objectsfield` line by line, sets `nof = "shore2"` and ends on
+`go("shore2")`. So finishing the meeting reset the day's progress, took the
+player's inventory and put them at the beach entrance with the murder pending
+again — and walking back to the cliff fires `peoplefunk` → MURDER1 once more, for
+ever. Authentic behaviour for frame 1, which is where EXODUS starts a new day; the
+bug is arriving there.
+
+Measured with the same harness either side of the one-branch change:
+
+| | before | after |
+|---|---|---|
+| lands at | `DAY1:0` — frame 1, no label | `DAY1:1913`, `clif2go` |
+| 30 s later, untouched | `shore2go` | `clif2go` |
+| `meetings` | reset to `murder1,…` | `done,…` |
+| the item carried in | wiped | still there |
+| walking back to `clif2` | MURDER1 again | stays in DAY1 |
+
+**The fix is general, which is the point.** `go`'s first argument is a frame *or* a
+marker, and the corpus splits cleanly. Sweeping every `go`/`play` call's argument
+shapes in `data/lingo/*/*.json`:
+
+| shape | count | means |
+|---|---|---|
+| `go(<marker>, "<movie>.dxr")` | **58** | put the player back at that room |
+| `go(<frame>, "<movie>.dxr")` | 50 | start that movie from the top |
+| `go(<marker>, <expr>)` | 10 | same, with `the moviePath &` prefixed |
+| `go(<expr>, <expr>)` | 5 | both computed — `whatodoeveryframe`'s `go(item 2 of ifmovie, item 3 of ifmovie)`, the general walk-into-another-movie handover |
+
+The 58 cover 34 distinct `(marker, movie)` pairs, every one of which resolves in
+its destination's `labels`: `HATDAY1 → gate`, `ARCADE1 → arcade`,
+`TENNIS → exitforest2b4`, `SLEEP1 → newmorning`. All of them, plus the 10 and the
+marker cases among the 5, landed on frame 1 of the destination. Only MURDER1's has
+been driven end to end, so the rest are a prediction no harness covers yet — the
+`go(item 2 of ifmovie, item 3 of ifmovie)` one especially, since it is not one
+scene but the general form. The 50 keep the path they had, EXODUS's
+`go(1, "day1.dir")` among them, which is the legitimate day start.
+`LingoValue.to_str(first).is_valid_int()` is the discriminator, and the sweep is
+cheap to redo.
+
+**Why a passing harness did not see it.** `tools/cliff_meeting.gd` ran with
+`until_movie_change: true` and then asserted `movie == DAY1`. Which movie is
+loaded is not where the player is standing — DAY1 frame 1 *is* DAY1 — and the
+reset happened in the seconds after the assertion. It now asserts the landing
+label, that the label still holds 30 s later with nothing clicked, that `meetings`
+and the inventory survive, and that walking back into the room does not replay the
+meeting. That last check is the loop's closing edge, and nothing had ever driven
+it.
+
+**This is entry 23 in reverse, and the pairing is the useful part.** Frame 846's
+`frame_script` is that same `BehaviorScript 45`, and the exporter lifted its
+destination correctly: `{kind: movie, value: "day1", label: "clif2"}`. So the
+export held the right answer, the interpreter ran the script, navigated, and
+`game_step`'s `lingo.host.navigated` check handed it the win. Neither source
+is authoritative: 23 is the export overriding a script that decided not to move,
+this is a script overriding an export that knew where to go. When the two disagree,
+the disagreement itself is the bug report.
+
+Reproduce: `godot --headless --script tools/cliff_meeting.gd` (~3 min; real time
+is load-bearing, see 2 below).
+
+**Regression check.** `tools/lingo_walk_diff.gd` is byte-identical either side —
+`identical outcome: 85/117`, the same 32 differing rows in the same order — so the
+change moves nothing in the walk cases. Read that as a regression check and not as
+confirmation: the differ clicks a hotspot and runs 260 synthetic ticks, which never
+reaches a cross-movie handover, so it cannot see the path that changed. The
+pass/fail set also stays green: `smoke`, `puppet_visibility`, `room_names`,
+`collectables` (22), `cursors` (44), `sprite_channels`, `sprite_stretch`,
+`film_loop_stretch`.
+
+### The prompt itself is authentic — this part of the entry stands
 
 **MURDER1 stalls at frames 489-508, and that span is a dialogue prompt.** Frame
 508's exported nav is `{kind: marker, rel: 0, offset: 0}` — Director's
@@ -31,10 +123,10 @@ pick a line. Nothing advances on its own, by design.
 
 **Measured end to end.** Entering DAY1 at `clif2` with `murder1` pending fires
 the meeting; clicking one line at each of the two prompts leaves MURDER1 after
-141 s, reaching frame 846 (`go movie day1, label clif2`) and returning to the
-cliff with `meetings[0] == "done"`. So the meeting completes, marks itself done
-and does not retrigger — the phase transition to NIGHT1 is not blocked. The
-earlier **PROGRESSION BLOCKER** verdict on this entry was wrong.
+146 s and marks the meeting done. So the scene does complete and the prompt is not
+a stall: the earlier **PROGRESSION BLOCKER** verdict on the prompt was wrong. What
+that measurement then read as "and returns to the cliff" was the *movie* name, not
+the frame — see the root cause above.
 
 **The port renders the prompt and the hotspots sit on it.** The three lines draw
 in the subtitle panel, `clickable_sprites()` offers all three, and a screenshot
@@ -44,8 +136,12 @@ live path — `InputRouter` → `MoviePlayer._on_stage_click` → `runtime.perfo
 — is the same call. There is no cursor change over the lines, but that is faithful
 too: MURDER1's `MovieScript 47` is `on cursorfunk / end`, an empty stub.
 
-**Three claims in the previous version of this entry were wrong.** They are
-recorded because each one cost a session.
+**Four claims in earlier versions of this entry were wrong.** They are recorded
+because each one cost a session, and the fourth is the expensive one: *"the scene
+completes, therefore this is NOT A BUG."* The player's report was about what
+happens after the scene completes, and the entry answered a question they had not
+asked. "Not a bug" needs more evidence than a bug does, and the evidence offered
+here stopped at the movie change.
 
 1. *"The port is missing frame script 119 and that is why nothing breaks the
    loop."* Scripts 119 and 120 are the mouth-flap-while-speaking loops, and their
@@ -79,8 +175,47 @@ lossy copy of it can still win. Source for a re-run:
 `originals/recovery/web-alpha/PIP2DATA/MURDER1.DXR`; ProjectorRays is not
 installed here.
 
-Reproduce: `godot --headless --script tools/cliff_meeting.gd`. Do not drive it on
-a tight tick loop — see 2 above.
+---
+
+## 24. Every room entry skips the room's own entry frames
+
+**Status:** open, deliberately not fixed · **Area:** label resolution ·
+found while fixing 22, not caused by it
+
+`resolve_label(name, prefer_go)` swaps `<room>` for `<room>go` whenever the "go"
+variant exists, and both `goto_movie`'s `label` option and `_on_puppet_arrived`
+pass `true`. **The original does not do that.** `whatodoeveryframe` ends a walk
+with `go(item 1 of nextroomdata)` — the bare marker — and `go("clif2","day1.dir")`
+likewise names `clif2`. In DAY1, `clif2` is frame 1911 and `clif2go` is 1913, and
+the two frames between them are the room's own entry work:
+
+* `BehaviorScript 83 - b4 bk's` (`on enterFrame`) sets `nof` from channel 1's
+  member name, sets `whereami = label(0)`, and places sprite 30 at `egozh`/`egozv`
+* `BehaviorScript 359` (`on exitFrame`) starts the room's ambience —
+  `sound playFile 2, effectspath & "clif1.aif"`
+
+Entering at `<room>go` runs neither, in every room, on every arrival.
+
+**It appears to cost nothing, and the reason is the score's own repair.** The
+handover scripts also set `nextroomdata`, and the idle script the port *does* run —
+`BehaviorScript 55` → `whatodoeveryframe` — reacts to a `nextroomdata` other than
+`"000"` by doing `go(item 1 of nextroomdata)` itself, walking into the entry frames
+a step late. Measured: `tools/room_names.gd` enters every room through exactly this
+path and reports **0 rooms without a `nof` and 0 wrong** across DAY1 (32), NIGHT1
+(35) and HOTEL1 (10) — and `nof` is set in the skipped handler, so it is being set
+somewhere.
+
+What is not established is the case where `nextroomdata` is already `"000"` on
+arrival, when nothing re-enters the entry frames: `whereami` then stays whatever
+the last room set it to, and stale `whereami` is the failure 640285b9 describes,
+with 114 scripts gating a hotspot on it. Left open rather than fixed because a
+change to `prefer_go` touches every room entry in the game and needs the
+row-by-row read of `tools/lingo_walk_diff.gd` that entry 23 also asks for — not
+because the mismatch with the original is in doubt.
+
+**Unrelated trap found the same way:** `godot --headless --script` **exits 0 on a
+parse error**. A harness that fails to compile looks like a harness that passed if
+you read `$?` instead of the output.
 
 ---
 

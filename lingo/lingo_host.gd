@@ -1115,14 +1115,29 @@ func _go(args: Array) -> Variant:
 	# argument was dropped and the first read as a frame in the *current* movie,
 	# so New Game jumped strtgame to its own frame 0, replayed the title
 	# sequence and came back to the menu: the intro appeared to loop forever.
-	# Used 64 times across the corpus, including every `peoplefunk` meeting.
+	# Every `peoplefunk` meeting launch takes this form.
 	# The path is stripped because the originals prefix `the moviePath` or
 	# `cdsavepath`, neither of which means anything here.
 	if args.size() >= 2:
 		var target := LingoValue.to_str(args[1]).strip_edges()
 		var lowered := target.to_lower()
 		if lowered.ends_with(".dxr") or lowered.ends_with(".dir"):
-			runtime.goto_movie(target.get_file().get_basename(), LingoValue.to_int(first))
+			# The first argument is `go`'s frame *or* its marker. Of the 108
+			# two-argument calls naming a movie file outright, 58 pass a marker
+			# and 50 pass a frame; 10 more pair a marker with a computed path,
+			# and `whatodoeveryframe`'s `go(item 2 of ifmovie, item 3 of ifmovie)`
+			# computes both. The marker form is how every meeting, minigame and
+			# cutscene says where in the hub to put the player back —
+			# `MURDER1 BehaviorScript 45` is `go("clif2","day1.dir")`. Coercing it
+			# to an int threw the name away and asked for frame 1, which in DAY1 is
+			# `init all`: finishing the cliff meeting reset `meetings`, emptied the
+			# inventory and dropped the player on the beach with the murder pending
+			# again (bugs.md 22).
+			var where := LingoValue.to_str(first).strip_edges()
+			if where.is_valid_int():
+				runtime.goto_movie(target.get_file().get_basename(), int(where))
+			else:
+				runtime.goto_movie(target.get_file().get_basename(), null, {"label": where})
 			navigated = true
 			return 0
 	if typeof(first) == TYPE_STRING:

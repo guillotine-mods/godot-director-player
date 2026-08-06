@@ -11,6 +11,15 @@ extends SceneTree
 ## the loop, that the score reaches its `go movie day1, label clif2` exit, and
 ## that the meeting marks itself done so it cannot retrigger.
 ##
+## It also asserts what happens *after* the handover, because the reported loop
+## was real and lived there. The first version of this harness stopped at the
+## movie change, and stopping one frame early is what let it pass while the
+## return landed on DAY1 frame 1, ran `init all`, reset `meetings`, emptied the
+## inventory and put the player back on the beach — a genuine endless loop the
+## check "it returns to the DAY1 hub" could not see. Where a scene hands the
+## player back, the invariant is where they are standing and what they still
+## have, not which movie is loaded.
+##
 ## Two things this harness had to learn, both of which silently produce a false
 ## "the scene is stuck":
 ##
@@ -32,6 +41,8 @@ const BUDGET_MS := 420000
 const DWELL_FRAMES := 120
 ## After clicking, ignore the prompt long enough for the score to leave it.
 const AFTER_CLICK_FRAMES := 600
+## Left alone in the room afterwards, long enough for an entry script to fire.
+const SETTLE_MS := 30000
 
 var _h := Harness.new()
 
@@ -63,6 +74,19 @@ func _play() -> bool:
 			driver.movie().to_upper() == "MURDER1", driver.movie()):
 		return true
 
+	# Carry something in, or the inventory check below has nothing to lose and
+	# scores a pass either way. `init all` empties `objectsfield` line by line, so
+	# one item is enough to tell a return from a restart. Added after `open`,
+	# which starts a new game and would clear it.
+	var state: Node = hooks.game_state(self)
+	if not _h.check("the item carried in is a real one",
+			state.add_inventory_item("camera"), str(Array(state.objects_field).slice(0, 2))):
+		return true
+	# Snapshot before the meeting, not after it: the restart this asserts against
+	# happens *during* the return, so a snapshot taken on arrival is already the
+	# emptied one and the check compares nothing to nothing.
+	var carried := Array(state.objects_field)
+
 	var run: Dictionary = await driver.run_for(BUDGET_MS, {
 		"click_prompts": true,
 		"dwell": DWELL_FRAMES,
@@ -78,9 +102,34 @@ func _play() -> bool:
 		"" if run["movie_changed"] else "still in MURDER1:%d after %d s" % [
 			driver.frame(), seconds])
 	_h.check("it returns to the DAY1 hub", driver.movie().to_upper() == "DAY1", driver.movie())
-	var state: Node = hooks.game_state(self)
 	_h.check("the meeting marks itself done, so it cannot retrigger",
 		state.is_meeting_done("murder1"), str(Array(state.meetings)))
+
+	# `go("clif2", "day1.dir")` names the room it hands the player back to, and
+	# landing anywhere else means landing in DAY1's init region, which restarts
+	# the day. The frame is reported either way, because "which frame" is the
+	# whole difference between a return and a restart.
+	var landed: String = str(driver.runtime.label_near_frame(driver.frame()))
+	_h.check("it hands the player back to the cliff, not to the top of DAY1",
+		landed.begins_with("clif2"), "%s (frame %d, label %s)" % [
+			driver.state(), driver.frame() + 1, landed if landed != "" else "none"])
+
+	# Nothing is clicked from here. What the score does when left alone is the
+	# question: DAY1 frame 1 falls through `init all` into `go("shore2")`.
+	await driver.run_for(SETTLE_MS, {})
+	var settled: String = str(driver.runtime.label_near_frame(driver.frame()))
+	_h.check("the player is still at the cliff a while later",
+		settled.begins_with("clif2"), "%s (label %s)" % [
+			driver.state(), settled if settled != "" else "none"])
+	_h.check("the day's progress survives the return",
+		state.is_meeting_done("murder1"), str(Array(state.meetings)))
+	_h.check("the inventory survives the return",
+		Array(state.objects_field) == carried, str(Array(state.objects_field)))
+
+	# The loop's closing edge: walking back into the room must not replay it.
+	driver.go("DAY1", "clif2")
+	_h.check("walking back to the cliff does not replay the meeting",
+		driver.movie().to_upper() == "DAY1", driver.movie())
 
 	print("   %d s, %d clicks at frames %s" % [seconds, clicks, str(run["click_frames"])])
 	return true
