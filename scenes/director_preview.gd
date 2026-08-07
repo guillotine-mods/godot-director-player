@@ -33,6 +33,7 @@ const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 
 const Ink := preload("res://director/director_ink.gd")
+const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -2142,7 +2143,7 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 		# offset come off, by the same rule as any other sprite. Forgetting
 		# either subtraction gives a constant offset: the loop's rect origin, or
 		# half the loop's size.
-		var child_reg := _scaled_reg(cm, texture.get_size(), bool(child["stretch"]))
+		var child_reg := _scaled_reg(cm, texture.get_size())
 		var at := Vector2(float(child["loc_h"]), float(child["loc_v"]))
 		# A child carries its own ink and its own blend, and the loop's alpha
 		# multiplies through: a blended loop dims everything inside it.
@@ -2153,37 +2154,6 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
 		)
 	return true
-
-
-## A member's registration point, scaled to the size it is actually drawn at.
-## Falls back to the centre, which is what Director uses when a member carries no
-## registration point of its own.
-## A member's registration point, scaled to the size the sprite draws at.
-##
-## `movie_player._registry_score_stage_position:196-199` is the working version
-## and it scales: `loc_h - reg_x * sprite_width / member_width`. A registration
-## point is in the member's own pixels, so a sprite drawn at another size has to
-## carry it proportionally, and the fallback for a member without one is the
-## centre rather than the corner.
-## The registration offset, rescaled to the size the sprite is drawn at.
-##
-## Director keeps the offset proportional: `offset * currentSize / naturalSize`.
-## Applying it unscaled puts a scaled sprite off by `(1 - scale) * offset` â€”
-## negligible near natural size and growing with the scale, which is exactly how
-## a walk cycle drifts progressively rather than being uniformly wrong.
-##
-## `startPoint` â€” Lingo's `the locH/locV of sprite` â€” is where the registration
-## point sits, not the top-left, so the screen corner is `startPoint - offset`.
-func _scaled_reg(member: Dictionary, drawn: Vector2, _stretched: bool) -> Vector2:
-	var width := maxf(float(member.get("width", 1)), 1.0)
-	var height := maxf(float(member.get("height", 1)), 1.0)
-	var reg := Vector2(
-		float(member.get("reg_offset_x", 0)),
-		float(member.get("reg_offset_y", 0))
-	)
-	if drawn.x <= 0.0 or drawn.y <= 0.0:
-		return reg
-	return Vector2(reg.x * drawn.x / width, reg.y * drawn.y / height)
 
 
 ## The movie's cast-library number for a child's named cast, or -1.
@@ -2557,71 +2527,28 @@ func _draw_hotspots(frame: Dictionary) -> void:
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
 
 
-## The size a sprite is actually drawn at: its own width and height, always.
+## Placement, delegated to `preview/sprite_geometry.gd`.
 ##
-## This used to honour the score's rect only when the stretch flag was set, on
-## the reading that the stored rect is authoring residue otherwise —
-## `director_score.gd:243-245` says so, and `tools/film_loop_stretch.gd` proves
-## it for a film loop's *children*, where the flag separates the two populations
-## cleanly. Carrying that rule over to the main score was the mistake.
-##
-## `tools/drawn_size.gd` settles it against the export, which is the decode the
-## previously working renderer drew from. Taking the score's rect and scaling the
-## registration offset into it places 98% of STRTGAME's sprites, 99.8% of DAY1's
-## and 96% of EXODUS's exactly where the export puts them; taking the member's
-## natural size with a raw offset only ever lands when the two sizes happen to
-## agree anyway — 7,241 of 11,739 on STRTGAME against 11,483. `DIRECTOR_ENGINE.md`
-## §1.2 says the same independently: the sprite's own width and height always
-## win, and the member's size enters only as the denominator when scaling the
-## offset.
-##
-## The member's size is the fallback for a record with a degenerate rect, and
-## mirrors `_texture_for`'s refusal to resize to one, so the rect and the pixels
-## can never disagree about how big the sprite is.
-func _drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
-	var w := int(sprite.get("width", 0))
-	var h := int(sprite.get("height", 0))
-	if w > 0 and h > 0:
-		return Vector2(w, h)
-	return Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
-
-
-## The cache key for a sprite's decoded artwork.
-##
-## Everything that changes the pixels belongs in it. The drawn size does, because
-## one member legitimately appears at several sizes in the same movie and a key
-## that omits it hands the second appearance the first one's pixels. So does the
-## back colour, because it is what Background Transparent keys against — two
-## sprites sharing a member and naming different papers key differently.
-##
-## The blend amount deliberately does *not*: blending is applied as a draw-time
-## modulate rather than baked into the image, so one decode serves every alpha.
-## So does the fore colour, for two reasons that arrived together: it is what
-## colourisation repaints an image's black pixels (2.3), and it is the colour a
-## shape's primitives paint with (13). Without it the second sprite to share a
-## member gets the first one's colour — and this game recolours one 60x23 shape
-## through several colours across 48,570 sprite records, so the omission would be
-## visible everywhere the same hotspot is drawn twice.
-func _texture_key(sprite: Dictionary, drawn: Vector2) -> String:
-	return "%d:%d:%d:%dx%d:%d:%d" % [
-		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
-		int(drawn.x), int(drawn.y), int(sprite.get("back_color", 0)),
-		int(sprite.get("fore_color", Ink.INDEX_BLACK)),
-	]
-
-
-## Where a sprite is on the stage. The single placement rule, used by the
-## renderer, the hit test, `rollOver` and the debug boxes alike.
-##
-## There used to be two: the renderer scaled the registration offset by the drawn
-## size and the hit test took it raw. They agree at natural size and part company
-## as soon as a sprite is resized, so a stretched sprite was clickable somewhere
-## it was not drawn — and the further from natural size, the further off.
+## These stay on the node because `tools/` reaches them by name -- `hotspots`,
+## `sprite_flip`, `stage_clip`, `text_and_shapes`, `trails` call `_stage_rect`
+## and `cursor_preview` calls `_sprite_rect`. The rule itself lives in the
+## module; what is left here is the cast-table lookup, which is the only part
+## that needs the node at all.
 func _stage_rect(sprite: Dictionary) -> Rect2:
-	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-	var size := _drawn_size(sprite, m)
-	var reg := _scaled_reg(m, size, bool(sprite["stretch"]))
-	return Rect2(Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - reg, size)
+	return Geometry.stage_rect(sprite, _table.get_member(
+		int(sprite["cast_lib"]), int(sprite["cast_id"])))
+
+
+func _drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
+	return Geometry.drawn_size(sprite, member)
+
+
+func _scaled_reg(member: Dictionary, drawn: Vector2) -> Vector2:
+	return Geometry.scaled_reg(member, drawn)
+
+
+func _texture_key(sprite: Dictionary, drawn: Vector2) -> String:
+	return Geometry.texture_key(sprite, drawn)
 
 
 func _sprite_rect(sprite: Dictionary) -> Rect2:
@@ -4131,5 +4058,4 @@ func _resolve_member_ref(which: Variant, cast: String) -> Array:
 
 func _resolve_member(which: Variant, cast: String) -> int:
 	return int(_resolve_member_ref(which, cast)[1])
-
 
