@@ -39,10 +39,24 @@ import sys,re
 s=open('director_game.cfg').read()
 open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\"' % sys.argv[1], s, count=1, flags=re.M))" "$ROOT"
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text"
+ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait"
 for t in ${@:-$ALL}; do
-  out=$(timeout ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" 2>&1)
+  extra=""
+  case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
+  out=$(timeout ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- $extra 2>&1)
   r=$(printf '%s' "$out" | grep -E "^(PASS|FAIL)" | tail -1)
+  # A harness that asserted nothing is not passing, it is dark. Four harnesses
+  # today reported success over an empty set -- `cursors` printed "every pair
+  # resolves to an image" over zero pairs, `room_names` "every room has a nof"
+  # over zero rooms, and `editable_text` sat in this list passing with 0 checks
+  # because the boot movie has no editable field, so the entry asserted nothing
+  # for as long as it existed. That is the exact failure `preview_surface.gd`
+  # exists to catch, and it kept happening anyway.
+  checks=$(printf '%s' "$r" | grep -oE '\([0-9]+ checks' | grep -oE '[0-9]+')
+  if [ -n "$checks" ] && [ "$checks" -eq 0 ]; then
+    echo "$(printf %-26s "$t") EMPTY  (passed with 0 checks -- give it a subject)"
+    continue
+  fi
   if [ -z "$r" ]; then
     printf '%-26s ERROR\n' "$t"
     printf '%s\n' "$out" | grep -iE "parse error|script error|Invalid|Cannot|nonexistent" | head -3
