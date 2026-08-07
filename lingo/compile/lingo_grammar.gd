@@ -36,8 +36,17 @@ const NO_COMPARISON := 3
 
 ## Lowest to highest binding power. Lingo's precedence is shallow.
 const BINARY_LEVELS := [
-	{"or": true},
-	{"and": true},
+	# `and` and `or` share one left-associative level, as they do in Director.
+	# Ranking `or` below `and` -- the C habit -- reparses `a or b and c` as
+	# `a or (b and c)` where Director means `(a or b) and c`, and the two differ
+	# whenever `a` is true and `c` is false.
+	#
+	# No site in this game depends on it: of the fifteen lines that mix the two
+	# operators, every one is fully parenthesised. That is why it survived, and
+	# it is not a reason to leave it -- the next title will not be so careful,
+	# and a precedence bug does not announce itself. It changes which branch
+	# runs, silently, in a language where the branch is the whole behaviour.
+	{"or": true, "and": true},
 	{"=": true, "<>": true, "<": true, ">": true, "<=": true, ">=": true,
 		"contains": true, "starts": true},
 	{"&": true, "&&": true},

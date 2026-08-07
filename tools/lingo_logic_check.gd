@@ -159,6 +159,25 @@ func _init() -> void:
 	h.check("a non-numeric string is false (§2.8)", _is_int(j["value"], 0), _show(j["value"]))
 	h.complete(title)
 
+	# Precedence, which is a different question from short-circuiting and was
+	# wrong in the opposite direction. Director puts `and` and `or` on one
+	# left-associative level; ranking `or` lower -- the C habit -- reparses
+	# `a or b and c` as `a or (b and c)`. The two disagree exactly when the first
+	# operand is true and the last is false, which is the case below.
+	h.begin("`and` and `or` share one left-associative level")
+	# (1 or 0) and 0  ->  0        the correct, Director reading
+	#  1 or (0 and 0) ->  1        the C reading
+	h.check("`a or b and c` groups to the left",
+		_truth("1 or 0 and 0") == 0, "got %d" % _truth("1 or 0 and 0"))
+	# (0 and 1) or 1  ->  1  and  0 and (1 or 1) -> 0. Same shape, other order.
+	h.check("`a and b or c` groups to the left",
+		_truth("0 and 1 or 1") == 1, "got %d" % _truth("0 and 1 or 1"))
+	# Parentheses must still win over the flat level, or the fix has replaced one
+	# wrong grouping with another.
+	h.check("parentheses still override", _truth("1 or (0 and 0)") == 1)
+	h.check("a chain of one operator is unaffected", _truth("1 and 1 and 0") == 0)
+	h.complete("`and` and `or` share one left-associative level")
+
 	quit(h.finish("`and` and `or` evaluate both operands"))
 
 
@@ -189,3 +208,19 @@ func _show(value: Variant) -> String:
 		TYPE_FLOAT: return "float %s" % value
 		TYPE_STRING: return "String %s" % JSON.stringify(str(value))
 		_: return str(value)
+
+
+## Evaluate a boolean expression through the real compiler and interpreter, and
+## answer the integer Lingo answers. Written as a handler returning the
+## expression so the grouping under test is the parser's, not this file's.
+func _truth(expression: String) -> int:
+	var source := "on probe
+  return %s
+end
+" % expression
+	var ast: Dictionary = Compiler.new().compile_source(source, "MovieScript 1")
+	if ast.is_empty():
+		return -1
+	var interp := Interpreter.new()
+	interp.load_bundle({"cast": "probe", "scripts": {"MovieScript 1": ast}}, "PROBE")
+	return LingoValue.to_int(interp.call_handler("probe"))
