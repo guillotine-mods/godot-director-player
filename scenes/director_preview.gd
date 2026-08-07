@@ -48,6 +48,7 @@ const StagePaint := preload("res://scenes/preview/stage_paint.gd")
 const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Scripts := preload("res://scenes/preview/scripts.gd")
 const Members := preload("res://scenes/preview/members.gd")
+const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -389,12 +390,11 @@ func _ready() -> void:
 	queue_redraw()
 
 
-## Open a container and take everything that belongs to the movie inside it.
+## Open a container and make it the movie now playing.
 ##
-## `_paths` must already be set. Shared by the stage's boot and a window's,
-## because "what a loaded movie consists of" is one list and two copies of it
-## drift: the film-loop cast list was read in `_ready` and in `lingo_go_movie`
-## and not here, which is the shape of omission this collapses.
+## The per-container work is `preview/movie_session.gd`'s and shared with
+## `lingo_go_movie`; what is here is only what opening the *first* movie does
+## differently, which is to fail the whole load rather than decline a jump.
 func _load_container(path: String) -> bool:
 	_movie = ContainerFile.new()
 	if not _movie.open(path):
@@ -404,39 +404,78 @@ func _load_container(path: String) -> bool:
 	if vwsc.is_empty():
 		_fail("%s has no score" % path)
 		return false
-
 	_score = Score.new()
 	if not _score.parse(_movie.read_chunk(vwsc[0])):
 		_fail("%s: %s" % [path, _score.error])
 		return false
 	_preloader = Preloader.new(_score)
-
-	_labels = Labels.new()
-	var vwlb: Array = _movie.ids_of("VWLB")
-	if not vwlb.is_empty():
-		_labels.parse(_movie.read_chunk(vwlb[0]))
-
-	_table = CastTable.new()
-	_table.open(_movie, _paths)
-	# Palette ids are per movie, so the state resets with the movie rather than
-	# carrying the last one's cache and cycling offsets into this one.
-	_palette_state.table_for = _palette_table_for
-	_palette_state.reset(Palette.SYSTEM_MAC)
-	_palette = _palette_state.table
-	# The movie's own stage rect. Only a window uses it, but it is read for every
-	# movie because a window's placement is the *difference* between its rect and
-	# the stage movie's, and the stage is whichever movie happens to be playing.
-	var config = Config.new()
-	_config = config if config.read(_movie) else null
-	# The rate this movie starts at, before its score writes a tempo. Without it
-	# every movie that never writes one runs at the engine's guess.
-	var stated := int(_config.default_tempo) if _config != null else 0
-	_clock.movie_default_fps = float(stated) if stated > 0 else FrameClock.DEFAULT_FPS
-	_ccl = PackedStringArray()
-	var ccl_ids: Array = _movie.ids_of("ccl ")
-	if not ccl_ids.is_empty():
-		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
+	MovieSession.adopt(self)
 	return true
+
+
+## `go to movie "day1.dir"` -- open another container and start playing it.
+##
+## Resolved from the current movie's own directory first, because a linked name
+## means the file beside the one that named it; this game ships two containers
+## called MASTER.CST and the same hazard applies to movies.
+##
+## Nothing is torn down until the new container has been opened *and* its score
+## has parsed. A jump to a movie that will not load leaves the current one
+## playing rather than stranding the player on a dead stage.
+func lingo_go_movie(name: String, where: Variant) -> void:
+	if _paths == null:
+		return
+	var here := str(_movie.path).get_base_dir()
+	var target: String = _paths.resolve(name, here)
+	if target == "":
+		target = _paths.resolve(name.replace(":", "/").replace("\\", "/").get_file(), here)
+	if target == "":
+		_trace("go movie %s -> not found" % name)
+		return
+
+	var next := ContainerFile.new()
+	if not next.open(target):
+		_trace("go movie %s -> %s" % [name, next.error])
+		return
+	var vwsc: Array = next.ids_of("VWSC")
+	if vwsc.is_empty():
+		_trace("go movie %s -> no score" % name)
+		return
+	var score = Score.new()
+	if not score.parse(next.read_chunk(vwsc[0])):
+		_trace("go movie %s -> %s" % [name, score.error])
+		return
+
+	var previous_path := str(_movie.path) if _movie != null else ""
+	if _table != null:
+		_table.close()
+	if _movie != null:
+		_movie.close()
+	_movie = next
+	_score = score
+	MovieSession.adopt(self)
+	MovieSession.forget_previous(self, previous_path)
+	_preloader = Preloader.new(_score)
+
+	if _lingo_on:
+		_start_lingo(target)
+		_dispatch("prepareMovie", {})
+		_dispatch("startMovie", {})
+	# A destination is resolved after startMovie, since a label only exists once
+	# the new movie's own labels are loaded.
+	if typeof(where) == TYPE_STRING and str(where) != "":
+		_index = int(_labels.labels.get(str(where).to_lower(), 0))
+	elif where != null:
+		_index = clampi(int(where) - 1, 0, maxi(_score.frame_count - 1, 0))
+	# Entered like the first frame of any movie: the tempo is taken from the frame
+	# rather than inherited, so a room that runs at 30 fps does not open at the
+	# rate the movie before it was using.
+	_sync_frame_entry()
+	if _lingo_on:
+		_enter_frame_or_defer(_frame_script(_index))
+	get_window().title = "%s  -  %d frames" % [target.get_file(), _score.frame_count]
+	print("go movie -> %s frame %d" % [target.get_file(), _index])
+	queue_redraw()
 
 
 ## Stand up a movie that another movie asked for as a window (§14).
@@ -1518,138 +1557,6 @@ func movie_name() -> String:
 	if _movie == null:
 		return ""
 	return str(_movie.path).get_file()
-
-
-func lingo_go_movie(name: String, where: Variant) -> void:
-	if _paths == null:
-		return
-	var here := str(_movie.path).get_base_dir()
-	var target: String = _paths.resolve(name, here)
-	if target == "":
-		target = _paths.resolve(name.replace(":", "/").replace("\\", "/").get_file(), here)
-	if target == "":
-		_trace("go movie %s -> not found" % name)
-		return
-
-	var next := ContainerFile.new()
-	if not next.open(target):
-		_trace("go movie %s -> %s" % [name, next.error])
-		return
-	var vwsc: Array = next.ids_of("VWSC")
-	if vwsc.is_empty():
-		_trace("go movie %s -> no score" % name)
-		return
-	var score = Score.new()
-	if not score.parse(next.read_chunk(vwsc[0])):
-		_trace("go movie %s -> %s" % [name, score.error])
-		return
-
-	var previous_path := str(_movie.path) if _movie != null else ""
-	if _table != null:
-		_table.close()
-	if _movie != null:
-		_movie.close()
-	_movie = next
-	_score = score
-	_labels = Labels.new()
-	var vwlb: Array = next.ids_of("VWLB")
-	if not vwlb.is_empty():
-		_labels.parse(next.read_chunk(vwlb[0]))
-	_table = CastTable.new()
-	_table.open(_movie, _paths)
-	var config = Config.new()
-	_config = config if config.read(_movie) else null
-	# The rate this movie starts at, before its score writes a tempo. Without it
-	# every movie that never writes one runs at the engine's guess.
-	var stated := int(_config.default_tempo) if _config != null else 0
-	_clock.movie_default_fps = float(stated) if stated > 0 else FrameClock.DEFAULT_FPS
-	_ccl = PackedStringArray()
-	var ccl_ids: Array = _movie.ids_of("ccl ")
-	if not ccl_ids.is_empty():
-		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
-
-	_textures.clear()
-	_hit_images.clear()
-	_clear_trails()
-	# Palette ids, the score cache and the cycling offsets are all per movie, and
-	# the new movie's own default is what it opens on.
-	_palette_state.table_for = _palette_table_for
-	_palette_state.reset(Palette.SYSTEM_MAC)
-	_palette = _palette_state.table
-	# Field overrides used to be dropped wholesale here, because the key was
-	# `<library number>:<member>` and a library number is local to the movie that
-	# was open when a script wrote it — carried across, member 10 of the next
-	# movie's cast got the last movie's score written into it, which is not a
-	# stale value but text appearing on an unrelated field.
-	#
-	# `_field_key` now names the cast's *file*, so only the movie's own internal
-	# cast can collide, and that is exactly what is dropped here. What survives is
-	# the shared external cast, and that is a correction rather than a saving: the
-	# player's score and inventory live in `field "points"` and
-	# `field "objectsfield"` of the linked cast, and clearing them on every `go to
-	# movie` reset the HUD at every doorway. It is also what makes a save
-	# restorable at all — `SAVELOAD` writes seven of those fields and then sends
-	# the stage to another movie in the next statement.
-	_forget_field_text_of(str(previous_path))
-	_loops.clear()
-	_overrides.clear()
-	# Channel cursors survive frame changes and cast swaps (DIRECTOR_ENGINE.md 7.5)
-	# but not a new movie, which is one of the points Director forces a recompute
-	# at. The stored value is a pair of member *numbers*, and those are local to
-	# the cast that was open when the script wrote them: MAP leaves [14, 15] on
-	# channels 3-14 for `able1`/`able2`, and members 14 and 15 of the next movie's
-	# cast are whatever that movie happens to hold. Carried over, the pair does not
-	# keep a cursor, it installs a different one. `_cursor_applied` is cleared with
-	# them, or the new movie's first genuine assignment compares equal to the stale
-	# key and is never pushed to the OS at all.
-	_channel_cursors.clear()
-	_global_cursor = 0
-	_cursor_applied = "?none"
-	# Both are keyed by channel and measured against `_ticks`, which restarts
-	# below. Left behind, a channel's loop start would sit in the *previous*
-	# movie's clock and every film loop in the new room would be asked for a
-	# negative frame.
-	_last_member.clear()
-	_loop_start.clear()
-	_preloader = Preloader.new(_score)
-	_index = 0
-	_ticks = 0
-	_held = true
-	# The clock belongs to the movie that is being left: its tempo, any wait it
-	# had armed and any transition it was still playing all go with it. So does
-	# the deferred `enterFrame` a transition was holding — the frame it was owed
-	# to is in a container that is now closed.
-	_clock.reset()
-	_pending_enter = null
-	_puppet_transition = {}
-	_entered_index = -1
-	_jump_queued = false
-	# Restart-on-change compares this frame's sound channels against the frame
-	# before. Carried across a movie change, the new movie's first frame would be
-	# compared against the last frame of the old one — which in the case that
-	# matters, both naming member 3 of their own casts, reads as "no change" and
-	# opens the room silent.
-	_score_sound.reset()
-
-	if _lingo_on:
-		_start_lingo(target)
-		_dispatch("prepareMovie", {})
-		_dispatch("startMovie", {})
-	# A destination is resolved after startMovie, since a label only exists once
-	# the new movie's own labels are loaded.
-	if typeof(where) == TYPE_STRING and str(where) != "":
-		_index = int(_labels.labels.get(str(where).to_lower(), 0))
-	elif where != null:
-		_index = clampi(int(where) - 1, 0, maxi(_score.frame_count - 1, 0))
-	# Entered like the first frame of any movie: the tempo is taken from the frame
-	# rather than inherited, so a room that runs at 30 fps does not open at the
-	# rate the movie before it was using.
-	_sync_frame_entry()
-	if _lingo_on:
-		_enter_frame_or_defer(_frame_script(_index))
-	get_window().title = "%s  â€”  %d frames" % [target.get_file(), _score.frame_count]
-	print("go movie -> %s frame %d" % [target.get_file(), _index])
-	queue_redraw()
 
 
 # --------------------------------------------------------- windows (§14)
