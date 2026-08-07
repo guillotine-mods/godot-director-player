@@ -43,6 +43,8 @@ const Cursor := preload("res://scenes/preview/cursor.gd")
 const Windows := preload("res://scenes/preview/windows.gd")
 const Sound := preload("res://scenes/preview/sound.gd")
 const Trails := preload("res://scenes/preview/trails.gd")
+const PaletteView := preload("res://scenes/preview/palette_view.gd")
+const StagePaint := preload("res://scenes/preview/stage_paint.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -846,54 +848,6 @@ func _frame_script(index: int) -> Dictionary:
 	return best
 
 
-## Director clips every sprite to the stage; a Godot canvas item does not.
-##
-## A sprite is placed by its registration point, so art routinely hangs off the
-## edge: measured over the corpus, **131,337 of 816,318 drawing sprite records
-## (16.1%) reach past the 640x480 stage and 2,121 sit wholly outside it**, in 60
-## of the 61 movies. Unclipped, every one of those pixels was painted into the
-## letterbox — a walk cycle leaving a room dragged half a character across the
-## black bar instead of disappearing behind the edge.
-##
-## This is the same mechanism `Control.clip_contents` uses, reached through
-## `RenderingServer` because this node is a `Node2D` and has no such property.
-## Setting it on the node's own canvas item covers every path that paints —
-## bitmaps, film loop children, shape primitives and `draw_string` text — rather
-## than each of them having to remember to intersect its own rect. The working
-## renderer does the same thing one layer up (`director/movie_player.gd:43-44`).
-##
-## The rect is the stage, not the node's transform: `_fit_to_window` scales and
-## offsets this node, and the clip is applied in the node's own coordinates, so
-## it follows the stage through any window size without being recomputed.
-##
-## **Called from `_draw`, every paint, and that is not belt-and-braces.** Godot
-## clears a canvas item's command list before each `NOTIFICATION_DRAW`, and the
-## clear resets the clip flag along with the commands — the custom rect survives,
-## the flag does not. Setting it once at startup therefore holds only until the
-## first repaint, which is to say never: with the call in `_ready` alone the two
-## screenshots either side of it were byte-identical and the artwork went on
-## spilling into the letterbox. `tools/stage_clip.gd` is what caught that, by
-## reading back real pixels rather than trusting the call.
-func _clip_to_stage() -> void:
-	# A window clips to its own movie's rect, not to the host stage's: a window
-	# smaller than the stage must not paint outside itself, and one that is the
-	# same size (every movie in this corpus) gets the same rectangle either way.
-	#
-	# The chrome sits *outside* the movie's rect — the title bar is above local
-	# y=0 and the border to the left of x=0 — so the clip has to be widened by it
-	# or a titled window would draw its movie and none of its frame. Zero for
-	# `windowType` 2, which is what this corpus uses.
-	if _window_key == "":
-		_clip_rect = Rect2(Vector2.ZERO, Vector2(STAGE))
-	else:
-		var inset := chrome_inset()
-		var edge := float(_border_width())
-		_clip_rect = Rect2(-inset, window_size() + inset + Vector2(edge, edge))
-	var item := get_canvas_item()
-	RenderingServer.canvas_item_set_clip(item, true)
-	RenderingServer.canvas_item_set_custom_rect(item, true, _clip_rect)
-
-
 ## Everything trails sprites have painted, kept across repaints. `DIRECTOR_ENGINE.md`
 ## §13, and the one part of the renderer that is not rebuilt from the frame.
 ##
@@ -1141,43 +1095,12 @@ func _palette_applied() -> void:
 	queue_redraw()
 
 
-## An id to a colour table, for the state machine's resolution order. Empty means
-## "not loaded", which is what makes §11's re-check at every step meaningful.
-##
-## A negative id is a built-in and `director_palette.gd` answers for it; a
-## positive one is a palette cast member, whose `CLUT` chunk is its payload the
-## same way a bitmap's `BITD` is. Searched across every library this movie can
-## address rather than assuming library 1: a palette in a shared cast is exactly
-## the case that would resolve to the wrong member by number alone.
-##
-## Unexercised by this corpus, which ships no palette member and no `CLUT`
-## chunk at all (`tools/palette_survey.gd`).
 func _palette_table_for(id: int) -> PackedByteArray:
-	if id < 0:
-		return Palette.builtin(id) if Palette.can_build(id) else PackedByteArray()
-	if id == 0 or _table == null:
-		return PackedByteArray()
-	for lib in _palette_libs():
-		var m: Dictionary = _table.get_member(lib, id)
-		if m.is_empty() or int(m.get("type", 0)) != Palette.MEMBER_TYPE:
-			continue
-		var chunk_id := int(m.get("data_chunk_id", -1))
-		if chunk_id < 0:
-			continue
-		var f = _table.file_for(lib)
-		if f == null:
-			continue
-		return Palette.from_clut(f.read_chunk(chunk_id))
-	return PackedByteArray()
+	return PaletteView.table_for(id, _table)
 
 
-## Every cast library this movie can reach, its own first.
 func _palette_libs() -> Array:
-	var libs: Array = [1]
-	for lib in _table.cast_libs.keys():
-		if int(lib) != 1:
-			libs.append(int(lib))
-	return libs
+	return PaletteView.libs(_table)
 
 
 ## Resolve this frame's transition and hold the playhead for as long as it takes.
@@ -1418,132 +1341,41 @@ func _input(event: InputEvent) -> void:
 			get_tree().quit()
 
 
+## Arm the clip rectangle. Re-armed from `_draw` every paint rather than at
+## startup: the flag does not survive the command-list clear that precedes each
+## paint. See `preview/stage_paint.gd`.
+func _clip_to_stage() -> void:
+	_clip_rect = StagePaint.clip_to_stage(self, STAGE)
+
+
+## One paint of the stage, delegated to `preview/stage_paint.gd`.
 func _draw() -> void:
-	# Re-armed here rather than at startup: the clip flag does not survive the
-	# command-list clear that precedes every paint. See `_clip_to_stage`.
 	_clip_to_stage()
-	# The stage colour, which §14 says is what every non-trails repaint fills
-	# with. Over the movie's own rect only: the chrome around a window is painted
-	# by `_draw_window_chrome` and is not part of the movie.
+	# The stage colour, which is what every non-trails repaint fills with. Over
+	# the movie's own rect only: the chrome around a window is painted by
+	# `_draw_window_chrome` and is not part of the movie.
 	draw_rect(Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE)),
 		Color.BLACK, true)
 	if _window_key != "":
 		_draw_window_chrome()
 	if _status != "":
-		draw_string(ThemeDB.fallback_font, Vector2(16, 32), _status, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.RED)
+		draw_string(ThemeDB.fallback_font, Vector2(16, 32), _status,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.RED)
 		return
 	if _score == null:
 		return
 
 	# Rebuilt from scratch each paint rather than accumulated: it is a record of
-	# what is on the stage now, and a field that left the frame must stop being in
-	# it or a harness would assert against a channel that is no longer drawn.
+	# what is on the stage now, and a field that left the frame must stop being
+	# in it or a harness would assert against a channel that is no longer drawn.
 	_text_drawn.clear()
-	# Where each channel is this paint, and what it holds, so the trail layer can
-	# be told which regions the frame repainted. See `_settle_trails`.
-	#
-	# Only collected when something is actually using trails: it is a dictionary
-	# per drawn sprite per paint, on a path that runs for every sprite of every
-	# frame, and 0 of this corpus's 816,318 sprite records ask for it. Once a
-	# layer exists the tracking stays on, because the layer's contents then depend
-	# on knowing where everything was.
-	var placed_now: Dictionary = {}
-	var to_stamp: Array[Dictionary] = []
 	var frame: Dictionary = _score.frame(_index)
-	var track_trails := _trail_image != null or _wants_trails(frame)
-	for raw_sprite in frame.get("sprites", []):
-		# What a script puppeted wins over what the score recorded. Ignoring it
-		# leaves sprites the Lingo hid still on screen and members it swapped
-		# still showing the old art â€” which looks like a layering fault and is
-		# not one: the draw order here is already ascending channel, which is
-		# Director's stacking order.
-		var sprite: Dictionary = _effective(raw_sprite)
-		if sprite.is_empty():
-			continue
-		_note_member(int(sprite["channel"]), int(sprite["cast_id"]))
-		var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
-		# A film loop draws its own children rather than a bitmap of its own.
-		if _draw_film_loop(sprite):
-			continue
-		# A field draws glyphs, not pixels, so it takes the canvas directly rather
-		# than going through the texture cache: its text is the one thing in the
-		# frame a script rewrites constantly, and a cached texture would have to be
-		# thrown away and rebuilt every time it did.
-		if _draw_text(sprite):
-			continue
-		var texture: Texture2D = _texture_for(sprite)
-		if texture == null:
-			continue
-		# One rule for where a sprite is, shared with the hit test. `loc` is the
-		# registration point, not the corner.
-		var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		var placed := _stage_rect(sprite)
-		var top_left := placed.position
-		var reg := Vector2(int(sprite["loc_h"]), int(sprite["loc_v"])) - top_left
-		# Only the channels a script is driving. A member swap re-anchors on the
-		# new member's registration point, so a walk cycle whose frames register
-		# differently moves vertically on every frame unless that is honoured â€”
-		# and the symptom is indistinguishable from the loop riding on it being
-		# misplaced.
-		if not over.is_empty():
-			_trace("f%d ch%d m=%d %dx%d reg(%d,%d) -> (%d,%d)" % [
-				_index, int(sprite["channel"]), int(sprite["cast_id"]),
-				int(m.get("width", 0)), int(m.get("height", 0)),
-				int(reg.x), int(reg.y), int(top_left.x), int(top_left.y),
-			])
-		# Blend is a draw-time alpha, not something baked into the artwork. A
-		# blended sprite that ignored this drew fully opaque and unkeyed, which is
-		# how EXODUS's selection highlight -- a semi-transparent bar meant to sit
-		# over the option you are pointing at -- came out as a solid black
-		# rectangle covering the text.
-		_draw_sprite_texture(texture, top_left, sprite,
-			Color(1, 1, 1, Ink.blend_alpha(sprite)))
-		# A trails sprite is not erased between frames (§13), so what it painted
-		# joins the layer that survives the next clear. Collected rather than
-		# stamped here: the layer is first cleared where this frame repainted, and
-		# stamping before that would wipe what was just added.
-		var trails := bool(sprite.get("trails", false))
-		if track_trails:
-			placed_now[int(sprite["channel"])] = {
-				"rect": placed, "member": int(sprite["cast_id"]), "trails": trails,
-			}
-		if trails:
-			to_stamp.append({
-				"image": _hit_images.get(_texture_key(sprite, _drawn_size(sprite, m))),
-				"at": top_left,
-			})
-	_settle_trails(placed_now, to_stamp)
-
+	StagePaint.paint_frame(self, frame, _table, STAGE)
 	if _show_boxes:
 		_draw_hotspots(frame)
-
-	# The preview's own chrome belongs to the preview, not to every movie in it. A
-	# window draws its movie and stops; the SKIP button and the HUD are drawn once,
-	# by the stage, and the stage's children paint after it — so they would end up
-	# *under* an open window. That is a known cosmetic limit and not worth
-	# reordering the scene for: they are debug affordances, and §14's window has no
-	# chrome of its own to draw in their place (`the windowType` is 2 at all 21
-	# sites, Director's plain box with no title bar).
 	if _window_key != "":
 		return
-
-	# Drawn last so it sits above the stage, and in stage coordinates so it
-	# scales with everything else.
-	draw_rect(SKIP_RECT, Color(0, 0, 0, 0.55), true)
-	draw_rect(SKIP_RECT, Color(1, 1, 1, 0.65), false, 1.0)
-	draw_string(
-		ThemeDB.fallback_font, SKIP_RECT.position + Vector2(11, 16), "SKIP",
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.9)
-	)
-
-	var marker: String = _labels.marker_at(_index) if _labels != null else ""
-	var hud := "frame %d/%d  %s  fps %.0f  hit:%s  cur:%s%s" % [
-		_index, _score.frame_count - 1, marker, frame.get("fps", 0.0),
-		"art" if _hit_pixels else "rect", _cursor_now,
-		"  PAUSED" if _paused else "",
-	]
-	draw_string(ThemeDB.fallback_font, Vector2(8, STAGE.y - 8), hud,
-		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.75))
+	StagePaint.draw_overlays(self, frame, STAGE, SKIP_RECT)
 
 
 ## Artwork, delegated to `preview/sprite_art.gd`. The caches stay on the node --
