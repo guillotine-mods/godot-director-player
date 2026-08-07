@@ -40,6 +40,7 @@ const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
 const Cursor := preload("res://scenes/preview/cursor.gd")
+const Windows := preload("res://scenes/preview/windows.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -59,31 +60,11 @@ const STAGE := Vector2i(640, 480)
 ## Only 2 occurs in this corpus (21 times). The rest are here because a window
 ## type decides whether the window has a title bar and a border, and an engine
 ## that knows one value draws every other title's windows wrong.
-const WINDOW_NO_BORDER := -1
-const WINDOW_DOCUMENT := 0
-const WINDOW_ALERT := 1
-const WINDOW_PLAIN := 2
-const WINDOW_PLAIN_SHADOW := 3
-const WINDOW_DOCUMENT_NO_SIZE := 4
-const WINDOW_DOCUMENT_ZOOM := 8
-const WINDOW_ROUNDED := 12
-const WINDOW_ROUNDED_NO_TITLE := 16
-const WINDOW_PALETTE := 49
-## The types that carry a title bar. `titleVisible` can still take it away.
-const WINDOW_TITLED := [
-	WINDOW_DOCUMENT, WINDOW_DOCUMENT_NO_SIZE, WINDOW_DOCUMENT_ZOOM,
-	WINDOW_ROUNDED, WINDOW_PALETTE,
-]
-## The types that draw a frame around the movie at all.
-const WINDOW_BORDERED := [
-	WINDOW_DOCUMENT, WINDOW_ALERT, WINDOW_PLAIN, WINDOW_PLAIN_SHADOW,
-	WINDOW_DOCUMENT_NO_SIZE, WINDOW_DOCUMENT_ZOOM, WINDOW_ROUNDED,
-	WINDOW_ROUNDED_NO_TITLE, WINDOW_PALETTE,
-]
-## Height of the title bar this draws. Schematic rather than period-accurate: the
-## point is that a titled window is visibly titled and that the movie inside it
-## is offset by the bar, not that it looks like System 7.
-const WINDOW_TITLE_BAR := 18
+## The window-type numbers, re-exported from `preview/windows.gd` so the node
+## and the module cannot drift apart on what `windowType` 2 means.
+const WINDOW_PLAIN_SHADOW := Windows.PLAIN_SHADOW
+const WINDOW_DOCUMENT := Windows.DOCUMENT
+const WINDOW_TITLE_BAR := Windows.TITLE_BAR
 ## Floating skip control, in stage coordinates so it scales and letterboxes with
 ## everything else rather than drifting when the window is resized.
 const SKIP_RECT := Rect2(STAGE.x - 62, 8, 54, 22)
@@ -1773,41 +1754,6 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.75))
 
 
-## The frame around a window's movie: a border, a title bar and a drop shadow,
-## as `the windowType` and `the titleVisible` ask for them (§14).
-##
-## Schematic rather than period-accurate, and that is the honest trade: the point
-## is that a titled window is visibly titled and that its movie is inset by the
-## bar, not that it looks like System 7. **Unverified** — every window in this
-## corpus is `windowType` 2, which has a one-pixel border and nothing else, so
-## nothing here proves the titled types right.
-##
-## Drawn in the window's own local space, where the movie's top-left is the
-## origin and the chrome is at negative coordinates above and to the left.
-func _draw_window_chrome() -> void:
-	var size := window_size()
-	var edge := float(_border_width())
-	if _window_type == WINDOW_PLAIN_SHADOW:
-		# The shadow is under the window and offset, so it is drawn first and
-		# outside the frame on the far two sides.
-		draw_rect(Rect2(Vector2(4, 4), size + Vector2(edge, edge)), Color(0, 0, 0, 0.4), true)
-	if _has_title_bar():
-		var bar := Rect2(Vector2(-edge, -edge - WINDOW_TITLE_BAR),
-			Vector2(size.x + edge * 2.0, WINDOW_TITLE_BAR))
-		draw_rect(bar, Color(0.82, 0.82, 0.82), true)
-		draw_rect(bar, Color(0.25, 0.25, 0.25), false, 1.0)
-		var title := window_title()
-		if title != "":
-			draw_string(
-				ThemeDB.fallback_font, bar.position + Vector2(6, WINDOW_TITLE_BAR - 5),
-				title, HORIZONTAL_ALIGNMENT_LEFT, bar.size.x - 12, 12, Color(0.1, 0.1, 0.1)
-			)
-	if edge > 0.0:
-		var inset := chrome_inset()
-		draw_rect(Rect2(-inset, size + inset + Vector2(edge, edge)),
-			Color(0.25, 0.25, 0.25), false, edge)
-
-
 ## Artwork, delegated to `preview/sprite_art.gd`. The caches stay on the node --
 ## `tools/` reads `_textures` and `_hit_images` by name -- and are passed in.
 func _texture_for(sprite: Dictionary) -> Texture2D:
@@ -2511,21 +2457,6 @@ func own_window_prop(prop: String) -> Variant:
 	return 0
 
 
-## `[l, t, r, b]` as Lingo writes a rect, or null. Director also accepts a rect
-## value; both arrive here as a four-element list.
-static func _rect_of(value: Variant):
-	if typeof(value) != TYPE_ARRAY or (value as Array).size() < 4:
-		return null
-	var v: Array = value
-	var left := LingoValue.to_int(v[0])
-	var top := LingoValue.to_int(v[1])
-	var right := LingoValue.to_int(v[2])
-	var bottom := LingoValue.to_int(v[3])
-	if right <= left or bottom <= top:
-		return null
-	return Rect2(left, top, right - left, bottom - top)
-
-
 ## The window's size, before any `drawRect` scaling: `the rect of window` if a
 ## script set one, otherwise the movie's own `DRCF` rect.
 ##
@@ -2560,44 +2491,6 @@ func window_origin() -> Vector2:
 	if _config != null and host != null and host._config != null:
 		return Vector2(_config.rect.position - host._config.rect.position)
 	return Vector2.ZERO
-
-
-## How much the movie is stretched inside its window: `the drawRect of window`
-## against the movie's natural size. 1:1 unless a script set one. Unverified.
-func window_scale() -> Vector2:
-	if _draw_rect == null:
-		return Vector2.ONE
-	var natural := window_size()
-	if natural.x <= 0.0 or natural.y <= 0.0:
-		return Vector2.ONE
-	return (_draw_rect as Rect2).size / natural
-
-
-## The window's whole frame on the stage, chrome included. The movie sits inside
-## it, below the title bar when there is one.
-func window_frame() -> Rect2:
-	var at := window_origin()
-	var size := window_size() * window_scale()
-	var inset := chrome_inset()
-	return Rect2(at - inset, size + inset + Vector2(_border_width(), _border_width()))
-
-
-## How far the movie's own top-left is pushed in by the chrome: the title bar and
-## the border. Zero for `windowType` 2, which is what this corpus uses.
-func chrome_inset() -> Vector2:
-	var edge := float(_border_width())
-	var top := edge
-	if _has_title_bar():
-		top += WINDOW_TITLE_BAR
-	return Vector2(edge, top)
-
-
-func _border_width() -> int:
-	return 1 if WINDOW_BORDERED.has(_window_type) else 0
-
-
-func _has_title_bar() -> bool:
-	return _title_visible and WINDOW_TITLED.has(_window_type)
 
 
 ## Director defaults a window's title to its name, which is the file stem.
@@ -2657,62 +2550,53 @@ func window_hidden() -> void:
 	_pending_enter = null
 
 
-## `the windowList` — the open windows, back to front, as window keys.
-##
-## Director's list holds window references and a script may add to or remove from
-## it; here it is read-only, because a window in this port exists only as the
-## movie behind it and there is nothing to put in the list that `window(...)` has
-## not already created. Unverified: no site in this corpus reads it.
+## Window geometry and chrome, delegated to `preview/windows.gd`. The lifecycle
+## stays on the node, because a window here *is* another preview node and
+## creating one is node manipulation.
+static func _rect_of(value: Variant):
+	return Windows.rect_of(value)
+
+
+func _border_width() -> int:
+	return Windows.border_width(_window_type)
+
+
+func _has_title_bar() -> bool:
+	return Windows.has_title_bar(_window_type, _title_visible)
+
+
+func chrome_inset() -> Vector2:
+	return Windows.chrome_inset(_window_type, _title_visible)
+
+
+func window_scale() -> Vector2:
+	return Windows.scale_of(_draw_rect, window_size())
+
+
+func window_frame() -> Rect2:
+	return Windows.frame_of(window_origin(), window_size() * window_scale(),
+		chrome_inset(), _border_width())
+
+
+func _draw_window_chrome() -> void:
+	Windows.draw_chrome(self, window_size(), _window_type, _title_visible,
+		window_title())
+
+
 func window_keys() -> Array:
-	var owner := stage_preview()
-	var out: Array = []
-	for key in owner._window_order:
-		var node: Node = owner._windows.get(key)
-		if node != null and node._window_shown:
-			out.append(str(key))
-	return out
+	return Windows.keys(stage_preview())
 
 
-## The front-most open window, or null. Director's active window, which is where
-## a keypress goes when the pointer is not over anything.
 func _front_window() -> Node:
-	var owner := stage_preview()
-	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
-		if node != null and node._window_shown:
-			return node
-	return null
+	return Windows.front(stage_preview())
 
 
-## The front-most open *modal* window, or null.
-##
-## §14: a modal window blocks its parent. Input only — the movie underneath keeps
-## running, which is why this gates the click and key routing and not `_process`.
-## Unverified: nothing in this corpus sets `the modal of window`.
 func modal_window() -> Node:
-	var owner := stage_preview()
-	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
-		if node != null and node._window_shown and node._modal:
-			return node
-	return null
+	return Windows.modal(stage_preview())
 
 
-## The window a stage point lands in, front-most first, or null.
-##
-## §4.2's search order, one level up: Director hit-tests windows before sprites,
-## and the front window takes the click whether or not anything in it answers.
-## The whole frame counts, chrome included — a click on a title bar belongs to
-## the window it titles.
 func window_at(at: Vector2) -> Node:
-	var owner := stage_preview()
-	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
-		if node == null or not node._window_shown:
-			continue
-		if node.window_frame().has_point(at):
-			return node
-	return null
+	return Windows.at(stage_preview(), at)
 
 
 ## A stage point in one of this window's own coordinates. The inverse of the
