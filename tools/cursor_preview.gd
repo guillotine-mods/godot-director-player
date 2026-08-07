@@ -1,6 +1,7 @@
 extends SceneTree
 ## Does a custom cursor actually reach the screen in `scenes/director_preview.gd`?
 ##
+##   godot --headless --script tools/cursor_preview.gd
 ##   godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR
 ##
 ## `tools/cursors.gd` already covers the other renderer, the one that draws from
@@ -24,16 +25,39 @@ extends SceneTree
 ## that a function was reached: `[0, 0]` composes to null and installs the arrow
 ## without raising anything, which is precisely how this shipped broken.
 ##
-## Deliberately does not restate which members MAP uses. The movie's own script is
-## the only place that mapping exists; naming `able1` here would let the port and
-## the harness agree with each other while both disagreed with the original.
+## **The movie is found, not named.** It used to be that `--file` had to be given
+## or there was nothing to measure: the run booted whatever `director_game.cfg`
+## boots, and a title's boot movie is a splash screen that assigns no cursor at
+## all. Bare — which is how `gate.sh` runs every tool — this reported "0 channels,
+## 0 pairs, 0 cursor-bearing sprites" against a movie that was correct to have
+## none, and the engine had nothing to do with it. So when the movie in hand
+## assigns no cursor, this opens the containers under the game root until one
+## does, and asserts against that. No movie is named here, in either direction:
+## naming MAP would let the port and the harness agree with each other while both
+## disagreed with the original, and naming a boot movie known to be barren would
+## put one title's structure in a tool that has to run for any of them.
+##
+## Deliberately does not restate which members the chosen movie uses, for the same
+## reason. The movie's own script is the only place that mapping exists.
 
 const Harness := preload("res://tools/lib/harness.gd")
-const Args := preload("res://tools/lib/args.gd")
+const ContainerName := preload("res://director/director_container.gd")
+const Cursor := preload("res://scenes/preview/cursor.gd")
 
 ## The composed cursor is a fixed 16x16 (DIRECTOR_ENGINE.md 7.3), so anything else
 ## is a crop or a pad going wrong rather than a member being an odd size.
 const EXPECTED_SIZE := 16
+
+## Far enough for a room to have entered and run its exitFrame at least once.
+## Stepping the node rather than waiting on the clock keeps this deterministic;
+## MAP's assignment happens on the first exitFrame of the room it settles in.
+const SETTLE_STEPS := 250
+
+## How many containers the search will open before giving up. A whole corpus is
+## 60-odd movies and each one costs a compile plus a settle, which is minutes; a
+## title whose first dozen movies all decline to set a cursor is better reported
+## as "none found" than run into the gate's timeout.
+const SEARCH_LIMIT := 12
 
 
 func _opaque_pixels(image: Image) -> int:
@@ -43,6 +67,48 @@ func _opaque_pixels(image: Image) -> int:
 			if image.get_pixel(x, y).a > 0.5:
 				count += 1
 	return count
+
+
+func _settle(preview: Node) -> void:
+	for i in SETTLE_STEPS:
+		preview.call("_advance")
+
+
+## Has any channel been given a cursor that is a pair, rather than a built-in
+## number? A number is a cursor too, but it exercises none of the composition
+## this file exists to measure.
+func _has_pair(preview: Node) -> bool:
+	var cursors: Dictionary = preview.get("_channel_cursors")
+	for channel in cursors.keys():
+		var value: Variant = cursors[channel]
+		if typeof(value) == TYPE_ARRAY and not (value as Array).is_empty():
+			return true
+	return false
+
+
+func _loaded(preview: Node) -> String:
+	var movie = preview.get("_movie")
+	return "" if movie == null else str(movie.path).get_file()
+
+
+## Every movie container under the game root, root-relative, in a stable order.
+## Casts are excluded by `ContainerName.MOVIE` rather than by extension spelled here,
+## so `.dxr` and `.dcr` titles are covered without this file knowing about them.
+func _movies(dir_path: String, prefix: String = "") -> Array:
+	var out: Array = []
+	var dir := DirAccess.open(dir_path)
+	if dir == null:
+		return out
+	var files := dir.get_files()
+	files.sort()
+	for entry in files:
+		if ContainerName.MOVIE.has(entry.get_extension().to_lower()):
+			out.append(prefix + entry)
+	var subs := dir.get_directories()
+	subs.sort()
+	for sub in subs:
+		out.append_array(_movies(dir_path.path_join(sub), prefix + sub + "/"))
+	return out
 
 
 func _init() -> void:
@@ -56,13 +122,33 @@ func _init() -> void:
 	root.add_child(preview)
 	await process_frame
 
-	# Far enough for the room to have entered and run its exitFrame at least once.
-	# Stepping the node rather than waiting on the clock keeps this deterministic;
-	# MAP's assignment happens on the first exitFrame of the room it settles in.
-	for i in 250:
-		preview.call("_advance")
+	_settle(preview)
 
-	var movie := Args.text(Args.parse(), "file", "<default>")
+	# ------------------------------------------------------------------ the movie
+	# Only when the movie in hand has nothing to measure. A run given `--file` that
+	# points at a cursor-bearing movie never enters this loop, so the documented
+	# invocation still asserts against exactly the movie it names.
+	if not _has_pair(preview):
+		var booted := _loaded(preview)
+		print("%s assigns no cursor pair; searching for a movie that does" % booted)
+		var paths = preview.get("_paths")
+		var tried := 0
+		for candidate in _movies(str(paths.root)):
+			if tried >= SEARCH_LIMIT:
+				break
+			if str(candidate).get_file().to_lower() == booted.to_lower():
+				continue
+			tried += 1
+			preview.call("lingo_go_movie", candidate, null)
+			if _loaded(preview).to_lower() != str(candidate).get_file().to_lower():
+				continue
+			_settle(preview)
+			if _has_pair(preview):
+				break
+		print("searched %d container(s)" % tried)
+
+	var movie := _loaded(preview)
+	print("measuring %s" % movie)
 	var cursors: Dictionary = preview.get("_channel_cursors")
 	var table = preview.get("_table")
 
@@ -102,8 +188,12 @@ func _init() -> void:
 		var data_id := int(pair[0])
 		var mask_id: int = int(pair[1]) if pair.size() > 1 else 0
 		# A named member proves the number came from the script's name lookup and
-		# not from a stray integer that happened to land on a bitmap.
-		var member: Dictionary = table.get_member(1, data_id)
+		# not from a stray integer that happened to land on a bitmap. Read from the
+		# library the cursor path itself resolved the number in, or a member found
+		# in a linked cast would be reported by whatever shares its number in the
+		# movie's own.
+		var lib := Cursor.library_of(data_id, table)
+		var member: Dictionary = table.get_member(lib, data_id) if lib > 0 else {}
 		if str(member.get("name", "")) == "":
 			unnamed.append("%s -> member %d" % [key, data_id])
 		var composed = preview.call("_cursor_image", data_id, mask_id)
@@ -122,8 +212,8 @@ func _init() -> void:
 			blank.append(key)
 		elif opaque == image.get_width() * image.get_height():
 			solid.append(key)
-		print("   %s -> %s: %dx%d, %d/%d opaque, hotspot %s" % [
-			key, str(member.get("name", "<unnamed>")),
+		print("   %s -> %s of lib %d: %dx%d, %d/%d opaque, hotspot %s" % [
+			key, str(member.get("name", "<unnamed>")), lib,
 			image.get_width(), image.get_height(),
 			opaque, image.get_width() * image.get_height(),
 			str(composed["hotspot"])])
@@ -232,6 +322,13 @@ func _init() -> void:
 	# the playhead into another container. Reloading the same file is the
 	# title-agnostic way to ask: no second movie has to be named.
 	#
+	# The name comes from the container that is actually open, not from `--file`.
+	# It used to be the argument, whose default was the placeholder string
+	# `<default>`; `lingo_go_movie` resolved that to nothing and returned at
+	# `scenes/director_preview.gd:386` without changing movie at all, so the
+	# sentinel below survived a movie change that had never happened and this
+	# reported a tear-down bug in an engine that was tearing down correctly.
+	#
 	# Via a sentinel on a channel the movie does not use, not by looking for an
 	# empty dictionary. `lingo_go_movie` dispatches prepareMovie, startMovie and
 	# enterFrame before it returns, and some movies assign their cursors in those —
@@ -249,13 +346,14 @@ func _init() -> void:
 	h.check("the sentinel was planted",
 		str(planted.get(sentinel_channel, [])) == str(sentinel),
 		"ch%d = %s" % [sentinel_channel, str(planted.get(sentinel_channel, []))])
-	preview.call("lingo_go_movie", movie.get_file(), null)
+	preview.call("lingo_go_movie", movie, null)
+	h.check("the movie really was reloaded", _loaded(preview).to_lower() == movie.to_lower(),
+		"%s -> %s" % [movie, _loaded(preview)])
 	var after: Dictionary = preview.get("_channel_cursors")
 	h.check("the sentinel did not survive the movie change",
 		str(after.get(sentinel_channel, [])) != str(sentinel),
 		"ch%d = %s" % [sentinel_channel, str(after.get(sentinel_channel, []))])
-	for i in 250:
-		preview.call("_advance")
+	_settle(preview)
 	var again: Dictionary = preview.get("_channel_cursors")
 	h.check("the reloaded movie assigns its own again", not again.is_empty(),
 		"%d channel(s) %s" % [again.size(), str(again.keys())])

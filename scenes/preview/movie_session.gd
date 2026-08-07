@@ -124,3 +124,10 @@ static func forget_previous(host, previous_path: String) -> void:
 	# matters, both naming member 3 of their own casts, reads as "no change" and
 	# opens the room silent.
 	host._score_sound.reset()
+	# A new movie starting is one of the five moments Director *forces* a cursor
+	# recompute (DIRECTOR_ENGINE.md 7.5), and it is the only one of the five that
+	# no pointer event will stand in for. Clearing `_cursor_applied` above only
+	# arms the next recompute; without this line nothing asks for one, and the
+	# movie being left keeps its custom cursor on screen -- over a room that never
+	# assigned one -- until the player happens to move the mouse.
+	host._resolve_cursor()

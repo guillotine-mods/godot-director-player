@@ -113,16 +113,51 @@ static func for_stage(image: Image, hotspot: Vector2, stage_scale: float) -> Dic
 	return {"image": grown, "hotspot": hotspot * float(factor)}
 
 
-## One 1-bit member, decoded.
+## Which library holds cursor art at this member number, or -1.
 ##
-## Known limitation, preserved by this move rather than introduced by it: the
-## library is hard-coded to 1, the movie's own. A cursor member living in a
-## linked cast is not found.
+## A cursor pair carries member *numbers* and nothing else -- the library is not
+## part of the value and cannot be, because `member("able1").memberNum` has
+## already dropped the library the name was found in. So the number is resolved
+## the way Director resolves a bare `member(N)`: the movie's own cast first, then
+## the other libraries the movie can address, in library order. Library numbers
+## start at 1 and 1 is always the movie's own, so an ascending walk is that rule.
+##
+## This used to be hard-coded to 1, which meant a cursor member living in a
+## linked cast was never found -- it composed to nothing and read as the arrow,
+## the same silent shape as every other lookup that stopped at library 1
+## (docs/bugs-closed.md 29). The movie's own library still answers whenever it
+## holds art at that number, so this can only add answers where there were none.
+static func library_of(cast_id: int, table) -> int:
+	if table == null:
+		return -1
+	var libs: Array = table.cast_libs.keys()
+	libs.sort()
+	for lib in libs:
+		var m: Dictionary = table.get_member(int(lib), cast_id)
+		if m.is_empty() or int(m.get("data_chunk_id", -1)) < 0:
+			continue
+		if table.file_for(int(lib)) == null:
+			continue
+		return int(lib)
+	return -1
+
+
+## One 1-bit member, decoded, from whichever library `library_of` names.
 static func member_image(cast_id: int, table, palette: PackedByteArray) -> Image:
-	var m: Dictionary = table.get_member(1, cast_id)
+	return image_in(library_of(cast_id, table), cast_id, table, palette)
+
+
+## The same, when the caller has already resolved the library and must not let a
+## second lookup pick a different one -- the hotspot has to come from the member
+## the picture came from.
+static func image_in(cast_lib: int, cast_id: int, table,
+		palette: PackedByteArray) -> Image:
+	if cast_lib < 1 or table == null:
+		return null
+	var m: Dictionary = table.get_member(cast_lib, cast_id)
 	if m.is_empty() or int(m.get("data_chunk_id", -1)) < 0:
 		return null
-	var f = table.file_for(1)
+	var f = table.file_for(cast_lib)
 	if f == null:
 		return null
 	var error: Array = []
@@ -140,7 +175,12 @@ static func member_image(cast_id: int, table, palette: PackedByteArray) -> Image
 ## Null on a fully transparent result, so the caller can fall back to the arrow
 ## rather than installing a cursor the player cannot see.
 static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray):
-	var data := member_image(data_id, table, palette)
+	# Resolved once and remembered, so the hotspot read below comes from the same
+	# member as the picture. Resolving twice would let a data member found in a
+	# linked cast take its registration point from an unrelated member of the
+	# movie's own cast that happens to share the number.
+	var data_lib := library_of(data_id, table)
+	var data := image_in(data_lib, data_id, table, palette)
 	if data == null:
 		return null
 	if data.get_width() > MAX_CURSOR_SIZE or data.get_height() > MAX_CURSOR_SIZE:
@@ -169,7 +209,7 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 	# The hotspot is the data member's registration point, and it is recentred
 	# when it falls outside the 16x16 crop -- an out-of-range hotspot would put
 	# the click somewhere the cursor is not drawn.
-	var m: Dictionary = table.get_member(1, data_id)
+	var m: Dictionary = table.get_member(data_lib, data_id)
 	var hotspot := Vector2i(
 		int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))
 	)

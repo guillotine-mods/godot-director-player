@@ -15,6 +15,45 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 29. The preview resolved cursor member numbers in cast library 1 only
+
+**Status:** FIXED · **Area:** preview cursor ·
+`scenes/preview/cursor.gd` · found while fixing the preview's custom cursors
+
+`member_image` read `_table.get_member(1, ...)` and `_table.file_for(1)`, the
+movie's own cast and nowhere else, and `compose` took the hotspot from library 1
+as well. Cursor art living in a linked cast was therefore never found: the pair
+composed to null, `install` fell back to the arrow, and nothing was reported.
+
+**Fixed as the general rule, not for a case.** `Cursor.library_of` walks the
+libraries the movie can address in ascending number, and library 1 is always the
+movie's own, so the movie's own cast still answers outright whenever it holds art
+at that number — this can only add answers where there were none. `compose`
+resolves the library once and reads both the picture and the registration point
+from it, or a data member found in a linked cast would take its hotspot from
+whatever shares its number in the movie's own.
+
+The library cannot come from the value: a cursor pair carries member *numbers*,
+and `member("able1").memberNum` has already dropped the library the name was
+found in. Resolving the number the way Director resolves a bare `member(N)` is
+the only reading available.
+
+`tools/cursor_preview.gd` now prints the library each pair resolved in, so a
+future movie that reaches into a linked cast says so rather than being invisible:
+
+```
+$ godot --headless --script tools/cursor_preview.gd
+measuring AIR1.dir
+   [6, 7] -> wlkcur1 of lib 1: 16x16, 126/256 opaque, hotspot (7.0, 9.0)
+```
+
+Still library 1 everywhere in this corpus, which is why the entry was open with
+no failing case for so long. Measured across all 61 Piposh 2 movies: every movie
+that assigns a cursor resolves it inside its own cast, and every assigned pair
+composes. The rule is now right regardless.
+
+---
+
 ## 22. Finishing the cliff meeting restarted the day, because `go(<marker>, <movie>)` dropped its marker
 
 **Status:** FIXED · **Area:** interpreter host, `_go` · **general, not one movie** ·

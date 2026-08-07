@@ -792,39 +792,6 @@ it needs a source on what the original build did, not a preference.
 
 ---
 
-## 29. The preview resolves member names in cast library 1 only
-
-**Status:** open · **Area:** preview host ·
-found while fixing the preview's custom cursors
-
-`_resolve_member` looks a name up in the movie's internal cast and nowhere else,
-and `_member_image`, `_cursor_image` and `lingo_member_prop` all read back
-through `_table.get_member(1, ...)`. A script naming a member that lives in a
-linked cast therefore gets 0, which composes to nothing and reads as the arrow —
-the same silent shape as the `memberNum` hole that was just closed.
-
-Not observed as a failure. Both movies that were measured resolve inside library
-1: MAP's `able1`/`able2` are members 14 and 15 of its internal cast, and AIR1's
-`hand1`/`hand2` are 194 and 195 of its own. `render_model_loader`'s equivalent
-deliberately does the same thing and says why — `member("wlkcur1").memberNum`
-drops the library, and the number that survives means whatever the name lookup
-meant — so lib 1 may well be the correct reading rather than a shortcut. What is
-missing is a case that proves it either way.
-
-Reproduce the shape, not a failure:
-
-```
-$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR
-   [14, 15] -> able1: 16x16, 116/256 opaque, hotspot (10.0, 9.0)
-$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/AIR1.DIR
-   [194, 195] -> hand1: 16x16, 184/256 opaque, hotspot (7.0, 8.0)
-```
-
-A movie whose cursor members are only in a linked cast would print `[0, 0]` and
-fail `no pair resolved to member 0`. Finding one is the next step.
-
----
-
 ## 30. Sprite colours that D7 stores as true RGB are read as palette indices
 
 **Status:** open · **Area:** score decoder / renderer ·
@@ -932,4 +899,73 @@ Reproduce the data:
 ```
 $ godot --headless --script tools/sprite_size_survey.gd -- --all --worst 20
 $ godot --headless --script tools/tween_survey.gd -- --all
+```
+
+---
+
+## 32. Reported: after MURDER1 the cursor stops being customised. Not reproduced, and here is what that rules out
+
+**Status:** open · **Area:** preview cursor ·
+reported from play; every mechanism reachable headless was measured and cleared
+
+The report is that custom cursors work until the cliff meeting plays, and that
+afterwards the pointer is the plain arrow and never comes back. Nothing found so
+far reproduces it. This entry exists so the next session starts past the four
+hypotheses that have already been paid for.
+
+**Ruled out: channel cursors surviving the movie change.** They do not.
+`MovieSession.forget_previous` clears `_channel_cursors`, `_global_cursor` and
+`_cursor_applied`, and `tools/cursor_preview.gd` now proves it with a sentinel
+pair on an unused channel across a real reload. The reason that check used to
+fail is in the harness and not the engine — see the commit that closed it.
+
+**Ruled out: the pair not being reassigned on return.** MURDER1's frame script
+ends `go("clif2", "day1.dir")`, and DAY1 re-arms nine channels on arrival.
+Stepped headless from MURDER1 frame 875 until the movie changes and settled:
+
+```
+--- after MURDER1 -> DAY1, settled: DAY1.dir f1918
+    cursors={"2":[10,11],"7":[203,204],"8":[203,204],"9":[203,204],
+             "10":[24,25],"11":[22,23],"12":[20,21],"13":[14,15],"14":[16,17]}
+      ch2    (313.8, 197.5) -> [10, 11]   composes=yes
+      ch8    (241.5, 67.5)  -> [203, 204] composes=yes
+      ch12   (176.0, 380.0) -> [20, 21]   composes=yes
+```
+
+Assignment, arbitration and composition all answer correctly on the far side.
+
+**Ruled out: a pair that composes to nothing.** Every movie in the corpus was
+booted in turn and settled, and every distinct pair any of them assigned was
+composed. Six movies assign cursors — AIR1, DAY1, ENDMOVI4, HOTEL1, MAP, NIGHT1
+— and not one pair resolves to member 0 or fails to compose.
+
+**Ruled out: cursor art in a linked cast.** Entry 29, now fixed anyway. Measured
+before the fix: every cursor member in this corpus is in the movie's own cast.
+
+**What is left, and neither is confirmed.**
+
+1. **A real pointer.** Every measurement above asks `cursor_at` directly, because
+   headless has no mouse. `_resolve_cursor` is driven from `input_router.gd` on
+   motion and mouse-up, and `mouse_motion` hands the recompute to
+   `window_at(point)` when a Movie-In-A-Window covers the pointer — a window left
+   registered would freeze the stage's cursor exactly as reported. MURDER1 opens
+   no window, so this needs the room the player was actually in.
+2. **`[1, 1]` as "back to the arrow".** The corpus writes it 208 times.
+   `MAX_CURSOR_SIZE` rejects it in MAP, where member 1 is a 640x400 backdrop —
+   but in DAY1 member 1 is a 9x2 unnamed bitmap, so it composes and installs a
+   12-pixel speck instead of the arrow the author asked for. Whether Director
+   composed it too or treated a one-member "clear" specially is not settled here;
+   `docs/DIRECTOR_ENGINE.md` 7.2 says only that both elements must be bitmaps.
+
+Also noted while reading 7.4 against `Cursor.at`: the descent is a plain rect
+test, and Director's aborts on a **hole** — a transparent pixel of a matte
+sprite stops the descent instead of falling through to the channel below. That
+makes the port hand out *more* custom cursors than the original, so it is not
+this report, but it is a real gap.
+
+Reproduce what was measured:
+
+```
+$ godot --headless --script tools/cursor_preview.gd
+$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/DAY1.DIR
 ```
