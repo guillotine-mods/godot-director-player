@@ -20,6 +20,7 @@ extends RefCounted
 
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
+const ContainerName := preload("res://director/director_container.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
@@ -34,10 +35,48 @@ static func stage(host) -> void:
 		host._fail("no game configured: %s" % Paths.CONFIG_PATH)
 		return
 
+	# `--root <name>` beats the config, and is applied inside `load_config` so
+	# every reader sees the same root -- `AudioDirector` builds its sound index
+	# from its own `load_config()` call, so an override applied only here moved
+	# the movies and left the sounds indexed against the config. The game ran
+	# silent and nothing said why.
+	print("game root: %s" % paths.root)
+
 	var wanted := Args.text(args, "file", paths.boot_movie)
 	var path: String = paths.resolve(wanted)
 	if path == "":
-		host._fail("no such container: %s" % wanted)
+		# Name what is actually there. Not every title boots `strtgame.dir` --
+		# `rating` does not -- so `--root <game>` on its own dead-ends on the
+		# configured boot movie, and "no such container" alone leaves the reader
+		# guessing at a filename they cannot see.
+		# Movies only -- a cast has no score and cannot boot -- and a handful of
+		# them. `rating` has 113 containers at its root, and a list that long is
+		# not a hint, it is a wall. Names that look like an entry point come
+		# first, since that is what the reader is looking for.
+		var found := PackedStringArray()
+		var likely := PackedStringArray()
+		var dir := DirAccess.open(paths.root)
+		if dir != null:
+			for entry in dir.get_files():
+				if not ContainerName.MOVIE.has(entry.get_extension().to_lower()):
+					continue
+				var stem := entry.get_basename().to_lower()
+				if stem.contains("start") or stem.contains("strt") \
+						or stem.contains("main") or stem.contains("menu") \
+						or stem.contains("intro"):
+					likely.append(entry)
+				else:
+					found.append(entry)
+		likely.sort()
+		found.sort()
+		var show := likely + found
+		var hint := ""
+		if not show.is_empty():
+			hint = "  try --file with one of: %s%s" % [
+				", ".join(show.slice(0, 8)),
+				", ... (%d more)" % (show.size() - 8) if show.size() > 8 else "",
+			]
+		host._fail("no such container: %s in %s%s" % [wanted, paths.root, hint])
 		return
 
 	host._paths = paths

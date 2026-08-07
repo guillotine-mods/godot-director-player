@@ -46,7 +46,41 @@ func load_config(config_path: String = CONFIG_PATH) -> bool:
 		return false
 	root = str(cfg.get_value("game", "root", ""))
 	boot_movie = str(cfg.get_value("game", "boot_movie", ""))
+	root = _override_root(root)
 	return root != "" and boot_movie != ""
+
+
+## `--root <name>` on the command line beats the config, for every reader.
+##
+## This is applied *here*, in the one place the root is read, and not at the one
+## call site that happens to want it. `AudioDirector` is an autoload that builds
+## its own sound index by calling `load_config()` itself, so an override applied
+## only in `preview/boot.gd` moved the movies and left the sounds indexed against
+## whatever the config still said -- every lookup missed and the game ran silent.
+## The same would be true of any harness, and of anything added later that asks
+## the config where the game is. One root, one place, or the parts disagree.
+##
+## A bare name means a folder under `games/`; a full `res://` path is taken as
+## given, so a title stored elsewhere works too. A name that does not exist is
+## left to the caller to report -- `resolve` will find nothing and say so with
+## the path in hand, which is a better message than one from down here.
+static func _override_root(from_config: String) -> String:
+	var wanted := ""
+	var expecting := false
+	for arg in OS.get_cmdline_user_args():
+		if expecting:
+			wanted = arg
+			expecting = false
+		elif arg.begins_with("--root="):
+			wanted = arg.substr(7)
+		elif arg == "--root":
+			expecting = true
+	wanted = wanted.strip_edges()
+	if wanted == "":
+		return from_config
+	if wanted.begins_with("res://"):
+		return wanted
+	return "res://games/".path_join(wanted)
 
 
 ## Absolute path of the movie the game starts from, or "" if it is not there.
