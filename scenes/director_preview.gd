@@ -35,6 +35,7 @@ const FilmLoop := preload("res://director/director_film_loop.gd")
 const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
+const TextArt := preload("res://scenes/preview/text_art.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -1890,36 +1891,15 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 
 ## Draw a field member's text, and say whether this sprite was one.
 ##
-## Until now `_texture_for` answered null for every member that was not a bitmap,
-## so a field drew nothing: 11,525 sprite records across this corpus, and with
-## them the whole HUD — the score, the inventory, the process list — while the
-## Lingo that maintains them worked perfectly and had nowhere to show it.
-##
-## What is drawn is legible text in roughly the right place at roughly the right
-## size and in the member's own colour and alignment. It is not period-accurate
-## glyph rendering and does not pretend to be; `director/director_text.gd` says
-## exactly what is and is not reproduced.
+## True even when there was nothing to draw: the sprite *is* a field, and falling
+## through to the bitmap path would only ask the cast for artwork a field does
+## not have.
 func _draw_text(sprite: Dictionary) -> bool:
 	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
 	if m.is_empty() or int(m.get("type", 0)) != Ink.TYPE_FIELD:
 		return false
-	var rect := _stage_rect(sprite)
-	var text := _field_text_of(m)
-	var style: Dictionary = Text.style_of(m)
-	var lines: int = Text.draw(self, rect, text, style, Ink.blend_alpha(sprite))
-	# What the paint actually put on the canvas, kept per channel. Headless Godot
-	# builds the draw list and throws it away, so there is no painted surface to
-	# read back and a harness has no other way to tell "the text reached the
-	# screen" from "the sprite was skipped" — both look like a blank stage.
-	_text_drawn[int(sprite["channel"])] = {
-		"member": int(sprite["cast_id"]), "name": str(m.get("name", "")),
-		"text": text, "lines": lines, "rect": rect,
-		"font_size": int(style["font_size"]), "color": style["color"],
-		"align": int(style["align"]),
-	}
-	# True even when there was nothing to draw. The sprite *is* a field, and
-	# falling through to the bitmap path would only ask the cast for artwork that
-	# a field does not have.
+	_text_drawn[int(sprite["channel"])] = TextArt.paint(
+		self, sprite, m, _stage_rect(sprite), _field_text_of(m))
 	return true
 
 
@@ -3731,10 +3711,11 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 ## Two things had to change together here, and neither is worth much alone. The
 ## read used to look only in cast library 1, the movie's own; a `field` a script
 ## names by itself is resolved across every library the movie can address, and in
-## this game the shared HUD fields — the score, the inventory — live in a *linked*
-## cast, so `field "points"` answered "" from a movie that has one on screen. And
-## the write was a no-op, so nothing a script put into a field could ever be read
-## back or drawn: the score would have rendered its authored placeholder for ever.
+## this game the shared HUD fields -- the score, the inventory -- live in a
+## *linked* cast, so `field "points"` answered "" from a movie that has one on
+## screen. And the write was a no-op, so nothing a script put into a field could
+## ever be read back or drawn: the score would have rendered its authored
+## placeholder for ever.
 func lingo_field(name: String, _cast: String) -> Variant:
 	var where := _resolve_field(name)
 	if where.is_empty():
@@ -3747,85 +3728,28 @@ func lingo_set_field(name: String, _cast: String, text: String) -> void:
 	if where.is_empty():
 		return
 	_field_text[_field_key(int(where[0]), int(where[1]))] = text
-	# The text is drawn straight from here on the next paint, so a write has to ask
-	# for one. Without it a HUD updates only when something else happens to redraw.
+	# The text is drawn straight from here on the next paint, so a write has to
+	# ask for one. Without it a HUD updates only when something else happens to
+	# redraw.
 	queue_redraw()
 
 
-## `[cast library, member number]` for a field name, or `[]`.
-##
-## `_resolve_member_ref` already searches every library the movie can address, in
-## Director's own order, and it is asked first so that a `field` and a `member`
-## reference to the same name never disagree. What it cannot do is prefer a field:
-## a name is unique within a cast and not across casts, so a *bitmap* called
-## `points` in the movie's own library would win over the *field* called `points`
-## in the shared one, and the write would land on a member that has no text. So the
-## answer is accepted only when it really is a field, and otherwise the libraries
-## are walked again looking only at fields.
 func _resolve_field(name: String) -> Array:
 	if _table == null:
 		return []
-	var first := _resolve_member_ref(name, "")
-	if int(first[1]) > 0 \
-			and int(_table.get_member(int(first[0]), int(first[1])).get("type", 0)) \
-				== Ink.TYPE_FIELD:
-		return first
-	var libs: Array = _table.cast_libs.keys()
-	libs.sort()
-	for lib in libs:
-		var cast = _table.cast_for(int(lib))
-		if cast == null:
-			continue
-		var number: int = cast.number_of(name)
-		if number <= 0:
-			continue
-		if int(cast.member(number).get("type", 0)) == Ink.TYPE_FIELD:
-			return [int(lib), number]
-	return []
+	return TextArt.resolve(name, _resolve_member_ref(name, ""), _table)
 
 
-## What a field member currently holds: what a script last put there, or failing
-## that the text authored into its `STXT`.
 func _field_text_of(member: Dictionary) -> String:
-	if member.is_empty():
-		return ""
-	var key := _field_key(int(member.get("cast_lib", 1)), int(member.get("cast_id", 0)))
-	if _field_text.has(key):
-		return str(_field_text[key])
-	return str(member.get("text", ""))
+	return TextArt.text_of(member, _field_text, _table)
 
 
-## Where a field override lives: the cast's file, then the member number in it.
-##
-## Not the library number. A library number is local to a movie — `MASTER.CST` is
-## library 2 in `SAVELOAD.dir` and need not be 2 in the room the save returns to —
-## and `SAVELOAD` writes `field "points" of castLib "master"` for the stage to
-## read back out of the same file. Keyed by number, a window and the stage would
-## be writing and reading two different entries whenever the two movies happened
-## to number the shared cast differently, and agreeing whenever they happened to
-## match: a bug that is invisible until the one movie that numbers it otherwise.
 func _field_key(lib: int, number: int) -> String:
-	var path := ""
-	if _table != null and _table.cast_libs.has(lib):
-		path = str((_table.cast_libs[lib] as Dictionary).get("resolved_path", ""))
-	if path == "":
-		# No table, or a library it does not know: fall back to the number so the
-		# entry is still addressable, and keep it distinguishable from a real path.
-		path = "#%d" % lib
-	return "%s:%d" % [path.to_lower(), number]
+	return TextArt.key_for(lib, number, _table)
 
 
-## Drop the field overrides that belong to one container's own cast.
-##
-## Called on `go to movie`, with the movie being left. See the call site for why
-## the *linked* casts are deliberately not dropped.
 func _forget_field_text_of(container_path: String) -> void:
-	if container_path == "":
-		return
-	var prefix := container_path.to_lower() + ":"
-	for key in _field_text.keys():
-		if str(key).begins_with(prefix):
-			_field_text.erase(key)
+	TextArt.forget(container_path, _field_text)
 
 
 func lingo_member_number(which: Variant, cast: String) -> Variant:
