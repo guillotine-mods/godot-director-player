@@ -15,6 +15,104 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 34. Film-loop children drew out of the wrong cast file, so Goldolin was Tofi
+
+**Status:** FIXED · **Area:** container decode / film loops ·
+`director/director_film_loop.gd`, `director/director_score.gd`,
+`director/director_cast_table.gd`, `scenes/preview/film_loop_view.gd` ·
+reported from play as "on murder1 and some other places I see assets being
+replaced by the wrong asset — there are places where I suppose to see assets from
+GOLDOLIN.cst and I see from TOFI.cst"
+
+The fifth instance of the class this port keeps re-learning: **a member number is
+per cast, so resolving one in the wrong library returns a stranger rather than
+nothing.** Previously `searchfunk` reading names in library 1, the `island2`
+members, the film-loop `won`/`wonder` prefix match, and frame scripts found in
+whichever cast happened to share the number. None of them raised an error,
+because all of them found something.
+
+**The measurement.** MURDER1, the three loops its score actually plays that name
+another cast:
+
+| channel | frames | loop | drew from | should draw from |
+|---|---|---|---|---|
+| 3 | 107-281 | `Internal:10 goldolin left` | `tofi` (4) | `goldolin` (2) |
+| 17 | 378-384 | `Internal:9 goldolin right` | `tofi` (4) | `goldolin` (2) |
+| 14 | 471-480 | `Internal:15 hezi right + angry` | `goldolin` (2) | `hezi` (3) |
+
+MURDER1's libraries run internal, goldolin, hezi, tofi; its `ccl ` runs tofi,
+goldolin, hezi. A child of `goldolin left` carries `ccl ` index 1 — goldolin —
+and was read as index 0. Every child was one cast early, so Goldolin walked on
+screen wearing Tofi's frames.
+
+**Root cause, in three parts, each silent on its own.**
+
+1. `director_film_loop.gd:children` subtracted one from the index. The index is
+   zero-based and `tools/director_film_loops.py:_frame_sprites` — the reading
+   validated against 2,145 children — takes it as it stands. The subtraction was
+   there to work around (2).
+2. `director_score.gd:_snapshot` folds `0xFFFF` to 1, which is right for a
+   movie's score and lossy for a loop's, where 1 is a real `ccl ` entry. With
+   "my own cast" and "entry 1" arriving as the same value there was nothing left
+   to tell them apart. It now also carries `cast_lib_raw`, unfolded, and the
+   loop reader uses that.
+3. `scenes/preview/movie_session.gd` read one `ccl ` list, from the **movie**,
+   and every loop was parsed against it. A film loop is a cast member, so a loop
+   in a linked cast indexes *that file's* list — which for a `.cst` in this
+   corpus is usually absent, meaning its children name no cast but their own.
+   MURDER1's `MASTER:invright` (the inventory hand) and `HEZI:hezr` both drew out
+   of `tofi`, because tofi is what MURDER1's own first entry happens to be.
+   `DirectorCastTable.cast_list_for` now answers per library, out of the
+   container that library lives in.
+
+A fourth defect fell out of the same measurement. `read_cast_list` scanned the
+`ccl ` payload for length-prefixed printable strings instead of reading its
+offset table, because the table arithmetic had been got wrong once and a scan
+looks robust. It is not: the payload holds bytes that scan as entries and are
+not. ALLIN's chunk scanned to a spurious `"` ahead of its seven real paths — one
+more shift of every index — and lost the eighth; DAY1's scanned to
+`...\PIP2DATA\won` where the entry is `C:\...\PIP2DATA\wonder.cst`, which is
+what the `won`-as-a-prefix-of-`wonder` incident (entry 15) was actually made of.
+The table read (`count+1` big-endian u32 offsets from 6, base searched) recovers
+both and agrees with the scan on the other 26 `ccl ` chunks in the corpus.
+
+**Corpus impact.** Over the 12,103 distinct film-loop children reachable from all
+61 movies, measured against an oracle from outside the resolution rule — an
+unstretched child's recorded rect equals its member's natural size, so at most one
+library can hold that member at that size:
+
+| reading | children the oracle decides | agreeing |
+|---|---|---|
+| before | 9,824 | 6,006 |
+| owning container's list, index still decremented | 9,824 | 8,511 |
+| and the index taken as it stands | 9,824 | 9,628 |
+| and the `ccl ` offset table read properly (shipped) | 9,823 | 9,817 |
+
+The last denominator moves by one because the `ccl ` parse decides which children
+survive at all. So **3,818 of 9,824 decidable children were resolving into the
+wrong cast**, in 29 of the 61 movies. They were not blank: every one of them drew
+a real member of a real cast, which is why this read as an animation glitch
+rather than a fault.
+
+The six residual disagreements are all GARDUG's `Internal:57 L`, whose children
+are numbered for the `heznigt` library embedded beside the internal one in the
+same file while the record says `0xFFFF`, "my own cast". No reading of that
+container can reach `heznigt` — GARDUG's `ccl ` is a single zero-length entry —
+so this is the data, and GARDUG's score never puts loop 57 on a channel. Entry 20
+(WONDER's degenerate `ccl `) is a different case and is still open: there the
+children name a cast that is not in the corpus at all.
+
+**Covered by `tools/film_loop_cast.gd`**, which sweeps the whole corpus and is the
+gate this class has never had. Its oracle cannot agree with the code by
+construction, and reverting any one of the four parts turns it red: the index
+(497 of 998 indexed children wrong), the per-container list (147 libraries read
+against the wrong file, 1 child wrong), the offset-table read (189 wrong, 2 `ccl `
+entries naming no linked cast), and `cast_lib_raw` (the indexed population goes to
+zero — which the check asserts against, because "0 wrong" is also what a dead
+check prints).
+
+---
+
 ## 33. `go to frame X of movie Y` read its own command word as the destination, so the save screen looped for ever
 
 **Status:** FIXED · **Area:** Lingo host, `go` ·

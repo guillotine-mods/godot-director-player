@@ -172,8 +172,11 @@ var _lingo_on := true
 var _sent: Dictionary = {}
 var _ran: Dictionary = {}
 var _traced: Array = []
-## The owning container's `ccl ` list, read once: film-loop children index into
-## it, not into the movie's cast libraries.
+## The *movie's* `ccl ` list, for the `L` report. Resolution no longer reads it:
+## a film loop is a cast member, so its children index into the list of whichever
+## container the loop lives in, and `DirectorCastTable.cast_list_for` answers that
+## per library. Reading the movie's list for a loop in a linked cast is what drew
+## MURDER1's inventory hands out of `tofi`.
 var _ccl := PackedStringArray()
 ## "<lib>:<member>" -> DirectorFilmLoop, parsed on first draw.
 var _loops: Dictionary = {}
@@ -928,7 +931,7 @@ func _draw_text(sprite: Dictionary) -> bool:
 ## the node's and a loop's children must go through exactly the same path as any
 ## other sprite.
 func _draw_film_loop(sprite: Dictionary) -> bool:
-	return FilmLoopView.draw(self, sprite, _table, _loops, _ccl, _ticks, _loop_start)
+	return FilmLoopView.draw(self, sprite, _table, _loops, _ticks, _loop_start)
 
 
 func _child_lib(child: Dictionary, owner_lib: int) -> int:
@@ -936,7 +939,7 @@ func _child_lib(child: Dictionary, owner_lib: int) -> int:
 
 
 func _open_loop(lib: int, member: Dictionary):
-	return FilmLoopView.open_loop(lib, member, _table, _ccl)
+	return FilmLoopView.open_loop(lib, member, _table)
 
 
 func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:

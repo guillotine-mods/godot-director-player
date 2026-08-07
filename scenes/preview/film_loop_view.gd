@@ -49,7 +49,15 @@ static func child_lib(child: Dictionary, owner_lib: int, table) -> int:
 	return owner_lib
 
 
-static func open_loop(lib: int, member: Dictionary, table, ccl: PackedStringArray):
+## The loop's mini-score, read against **its own container's** `ccl ` list.
+##
+## Not the playing movie's. A film loop is a cast member, so a loop in a linked
+## cast indexes the list in that cast file — usually absent, which says its
+## children name no cast but its own. Handing it the movie's list instead
+## resolved MURDER1's `MASTER:invright` and `HEZI:hezr` children into `tofi`,
+## because tofi is MURDER1's own first entry. `DirectorCastTable.cast_list_for`
+## holds the rule and the evidence.
+static func open_loop(lib: int, member: Dictionary, table):
 	var chunk_id := int(member.get("data_chunk_id", -1))
 	if chunk_id < 0:
 		return null
@@ -57,6 +65,7 @@ static func open_loop(lib: int, member: Dictionary, table, ccl: PackedStringArra
 	if f == null:
 		return null
 	var loop = FilmLoop.new()
+	var ccl: PackedStringArray = table.cast_list_for(lib)
 	if not loop.parse(f.read_chunk(chunk_id), ccl, bool(member.get("looping", true))):
 		return null
 	return loop
@@ -149,7 +158,7 @@ static func place_child(origin: Vector2, space: Vector2, child: Dictionary,
 ## Draw a film-loop sprite by drawing its children. False when the member is not
 ## a film loop, so the caller falls through to the bitmap path.
 static func draw(host, sprite: Dictionary, table, loops: Dictionary,
-		ccl: PackedStringArray, ticks: int, loop_start: Dictionary) -> bool:
+		ticks: int, loop_start: Dictionary) -> bool:
 	var lib := int(sprite["cast_lib"])
 	var id := int(sprite["cast_id"])
 	var m: Dictionary = table.get_member(lib, id)
@@ -158,7 +167,7 @@ static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 
 	var key := "%d:%d" % [lib, id]
 	if not loops.has(key):
-		loops[key] = open_loop(lib, m, table, ccl)
+		loops[key] = open_loop(lib, m, table)
 	var loop = loops[key]
 	if loop == null:
 		host._tally_loop("loop unparsed")

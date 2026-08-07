@@ -347,6 +347,14 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		sprites.append({
 			"channel": channel,
 			"cast_lib": 1 if cast_lib == OWN_CAST_LIB else cast_lib,
+			# The same field before `0xFFFF` is folded away, because the fold is
+			# lossy and one caller cannot afford it. This decoder also reads a
+			# *film loop's* mini-score, and there the u16 is not a cast-library
+			# number at all -- it is a zero-based index into the owning
+			# container's `ccl ` list, in which 1 is a real entry. Folded, "the
+			# owning cast" and "`ccl ` entry 1" arrive as the same value with
+			# nothing left to tell them apart. See `director_film_loop.gd`.
+			"cast_lib_raw": cast_lib,
 			"cast_id": cast_id,
 			"loc_h": _i16(buffer, at + 14),
 			"loc_v": _i16(buffer, at + 12),

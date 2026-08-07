@@ -18,8 +18,37 @@ extends RefCounted
 ## So a child naming a cast the `ccl ` cannot resolve is dropped, deliberately.
 ## Falling back to the cast that owns the loop is the bug this reading exists to
 ## avoid: it draws the wrong art instead of no art, and nothing reports it.
+##
+## Three things have to be right together, and each of them failed silently on
+## its own (bugs.md 34):
+##
+## 1. **The index is zero-based and is not adjusted.** `0xFFFF` means the loop's
+##    own cast; every other value indexes `ccl ` directly. Subtracting one from
+##    it -- which this did, to work around `DirectorScore` folding `0xFFFF` to 1
+##    -- shifts every child one cast earlier, so MURDER1's `goldolin right` drew
+##    out of `tofi` and its `hezi right + angry` out of `goldolin`. That is the
+##    user-visible report this entry closes.
+## 2. **`0xFFFF` must survive the decode.** With it folded away, "the owning
+##    cast" and "`ccl ` entry 1" are the same value; `DirectorScore` now carries
+##    `cast_lib_raw` beside the folded one so the two stay distinguishable.
+## 3. **The list is the *loop's own* container's.** A loop member living in a
+##    linked cast indexes that cast file's `ccl `, not the playing movie's --
+##    which for a `.cst` is usually absent, meaning every child names its own
+##    cast. `DirectorCastTable.cast_list_for` is where that is answered.
+##
+## Measured over the 12,111 distinct children reachable from every movie in the
+## corpus, against an oracle from outside the rule (an unstretched child's
+## recorded rect is its member's natural size, so at most one library can hold
+## that member at that size): 9,824 children are decided by it, and the reading
+## above agrees with 9,824 of them. The previous reading agreed with 6,006.
 
 const Score := preload("res://director/director_score.gd")
+
+## The sprite record's "my own cast" sentinel, before `DirectorScore` folds it.
+const OWN_CAST := 0xFFFF
+## A `ccl ` chunk is a handful of cast paths, never a hundred. A count past this
+## means the chunk was not read as a `ccl ` at all.
+const MAX_ENTRIES := 64
 
 ## Cast names from the owning container's `ccl `, in order. Empty when absent —
 ## which is itself meaningful: a file with no `ccl ` must only emit children
@@ -65,20 +94,21 @@ func children(index: int) -> Array[Dictionary]:
 		return out
 	var frame: Dictionary = _score.frame(_wrap(index))
 	for sprite in frame.get("sprites", []):
-		var raw := int(sprite["cast_lib"])
+		# `cast_lib_raw`, not `cast_lib`: the folded field cannot tell "my own
+		# cast" from "`ccl ` entry 1", and this is the one reader that needs to.
+		var raw := int(sprite.get("cast_lib_raw", OWN_CAST))
 		var name := ""
-		# DirectorScore already folded 0xFFFF to 1 for a movie's own cast; here
-		# that same value means "index 0 of the ccl list", so the two cases have
-		# to be told apart by whether a list exists at all.
-		if not cast_list.is_empty():
-			var at := raw - 1 if raw >= 1 else raw
-			if at < 0 or at >= cast_list.size():
+		if raw != OWN_CAST:
+			# Zero-based, taken as it stands. Any adjustment here is a second
+			# cast list that disagrees with the first, one entry along.
+			if raw < 0 or raw >= cast_list.size():
 				continue
-			name = cast_list[at]
+			name = cast_list[raw]
 			if name.strip_edges() == "":
-				# A degenerate `ccl ` entry. One cast in this game has exactly
-				# one, zero-length: its children are dropped rather than aimed at
-				# a member that would resolve to something unrelated.
+				# A degenerate `ccl ` entry. Two containers in this game carry
+				# exactly one, zero-length: their children are dropped rather
+				# than aimed at a member that would resolve to something
+				# unrelated.
 				continue
 		out.append({
 			"channel": int(sprite["channel"]),
@@ -109,47 +139,70 @@ func _wrap(index: int) -> int:
 
 ## The `ccl ` chunk: the ordered external casts a file's film loops reference.
 ##
-## The entry offsets are relative to a base a little past the end of the table,
-## and how far past varies, so the base is chosen as the one that makes every
-## entry a length-prefixed printable string rather than assumed.
+##     <u32 4> <u16 count> then count+1 big-endian u32 offsets, then the entries
+##     as length-prefixed strings, offset 0 being the first
+##
+## The offsets are relative to a base a little past the end of the table, and how
+## far past varies between files, so the base is chosen as the one that makes
+## every entry a length-prefixed printable string rather than assumed.
+##
+## Reading this as a *scan* for length-prefixed printable strings -- which it was,
+## because the table arithmetic was got wrong once and the scan looked robust --
+## is order-preserving and still wrong, because the payload holds bytes that scan
+## as entries and are not. ALLIN's chunk yields a spurious `"` ahead of the real
+## seven, which shifts every index by one and loses the eighth; DAY1's yields
+## `...\PIP2DATA\won` where the entry is `C:\...\PIP2DATA\wonder.cst`, which is
+## what the `won`-as-a-prefix-of-`wonder` incident was actually made of. The table
+## read recovers both, and agrees with the scan on the other 26 `ccl ` chunks in
+## the corpus. `tools/director_film_loops.py:parse_ccl` reads it the same way and
+## is the reading validated against 2,145 children.
+##
+## An empty result is meaningful rather than a failure: the loops in this file
+## reference nothing outside their own cast, which is what a count of 0 says and
+## what a file with no `ccl ` at all says.
 static func read_cast_list(payload: PackedByteArray) -> PackedStringArray:
 	var out := PackedStringArray()
-	if payload.size() < 8:
+	if payload.size() < 10:
 		return out
 	var count := _be_u16(payload, 4)
-	if count <= 0 or count > 64:
+	if count <= 0 or count > MAX_ENTRIES:
 		return out
-	var table := 6
-	if table + count * 2 > payload.size():
+	var table_end := 6 + 4 * (count + 1)
+	if table_end + 2 > payload.size():
 		return out
 	var offsets: Array = []
-	for i in count:
-		offsets.append(_be_u16(payload, table + i * 2))
-	# The base is searched rather than assumed, and the test demands *plausible*
-	# names, not merely parseable ones. A length byte of zero yields a valid
-	# empty string, so a test that only checks bounds accepts the first base it
-	# tries and returns a list of empty names — which then drops every film-loop
-	# child, silently, because a child whose cast cannot be named is dropped by
-	# design.
-	# The offset table's width and its base both vary, and reading them wrong is
-	# not loud: every offset resolving to the same entry yields a list of the
-	# right length whose entries are all one cast, and every film-loop child then
-	# draws from that cast — a stranger's bitmap rather than nothing.
-	#
-	# So the names are recovered by walking the payload for length-prefixed
-	# printable strings and taking them in order. The chunk is a short ordered
-	# list of cast paths and holds nothing else, which makes the scan
-	# unambiguous where the table arithmetic is not.
-	var at := table
-	while at < payload.size() and out.size() < count:
-		var length: int = payload[at]
-		if length > 0 and length <= 64 and at + 1 + length <= payload.size():
-			var name := payload.slice(at + 1, at + 1 + length).get_string_from_ascii()
-			if _printable(name) and name.strip_edges() != "":
-				out.append(name)
-				at += 1 + length
-				continue
-		at += 1
+	for i in count + 1:
+		offsets.append(_be_u32(payload, 6 + 4 * i))
+	# The shape of the table is what says it was read at the right width: the
+	# first entry starts at 0 and they only ever go forwards. Read as u16 the
+	# same bytes come out as a plausible-looking list of alternating zeroes, so
+	# this test is the one thing standing between a wrong width and a cast list
+	# that is the right length and names the wrong casts.
+	if int(offsets[0]) != 0:
+		return out
+	for i in range(1, offsets.size()):
+		if int(offsets[i]) < int(offsets[i - 1]):
+			return out
+	# The test demands *plausible* names, not merely parseable ones. A length byte
+	# of zero yields a valid empty string, so a test that only checks bounds
+	# accepts the first base it tries and returns a list of empty names -- which
+	# then drops every film-loop child, silently, because a child whose cast
+	# cannot be named is dropped by design.
+	for base in [table_end + 2, table_end, table_end + 1, table_end + 3]:
+		var entries := PackedStringArray()
+		for i in count:
+			var start: int = base + int(offsets[i])
+			if start >= payload.size():
+				break
+			var stop: int = start + 1 + payload[start]
+			if stop > payload.size():
+				break
+			var name := payload.slice(start + 1, stop).get_string_from_ascii()
+			if not _printable(name):
+				break
+			entries.append(name)
+		if entries.size() == count:
+			return entries
 	return out
 
 
@@ -164,3 +217,7 @@ static func _printable(text: String) -> bool:
 
 static func _be_u16(d: PackedByteArray, o: int) -> int:
 	return (d[o] << 8) | d[o + 1]
+
+
+static func _be_u32(d: PackedByteArray, o: int) -> int:
+	return (d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]

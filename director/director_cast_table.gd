@@ -18,6 +18,7 @@ extends RefCounted
 
 const Cast := preload("res://director/director_cast.gd")
 const ContainerFile := preload("res://director/director_file.gd")
+const FilmLoop := preload("res://director/director_film_loop.gd")
 
 ## lib number -> {name, path, min, max, id, resolved_path, embedded}
 var cast_libs: Dictionary = {}
@@ -30,6 +31,8 @@ var _movie = null
 var _casts: Dictionary = {}
 ## resolved path -> {"file": DirectorFile, "cast": DirectorCast}
 var _by_path: Dictionary = {}
+## container path -> its `ccl ` list, read once.
+var _cast_lists: Dictionary = {}
 
 
 func open(movie, director_paths) -> bool:
@@ -143,6 +146,36 @@ func file_for(cast_lib: int):
 	return _movie if cast_lib == 1 else null
 
 
+## The `ccl ` list of the container library `cast_lib` lives in: the ordered
+## external casts *that file's* film loops index into.
+##
+## Which file it comes from is the whole point, and it is why this lives here
+## rather than being read once from the playing movie. A film loop is a cast
+## member, so a loop in a linked cast indexes the linked cast's own list — and a
+## `.cst` in this corpus usually has none, which says its loops reference nothing
+## outside themselves. Handing every loop the *movie's* list instead resolves
+## those children through a list they were never written against: MURDER1's
+## `MASTER:invright` and `HEZI:hezr` both drew out of `tofi`, because tofi is
+## what MURDER1's own first `ccl ` entry happens to be. Same class as reading a
+## member number in the wrong library, one level down.
+##
+## Cached by container path rather than by library number, for the reason the
+## casts themselves are: one movie can link the same file twice.
+func cast_list_for(cast_lib: int) -> PackedStringArray:
+	var f = file_for(cast_lib)
+	if f == null:
+		return PackedStringArray()
+	var key := str(f.path)
+	if _cast_lists.has(key):
+		return _cast_lists[key]
+	var out := PackedStringArray()
+	var ids: Array = f.ids_of("ccl ")
+	if not ids.is_empty():
+		out = FilmLoop.read_cast_list(f.read_chunk(ids[0]))
+	_cast_lists[key] = out
+	return out
+
+
 func _cast_for(cast_lib: int):
 	if _casts.has(cast_lib):
 		return _casts[cast_lib]
@@ -196,6 +229,7 @@ func close() -> void:
 		_by_path[resolved]["file"].close()
 	_by_path.clear()
 	_casts.clear()
+	_cast_lists.clear()
 
 
 static func _pascal(raw: PackedByteArray) -> String:

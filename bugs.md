@@ -15,6 +15,48 @@ and 25 appear in both files: the fixed half is there, the remainder is here.
 
 ---
 
+## 35. `field "x" of castLib Y` drops the library
+
+**Status:** open · **Area:** Lingo host, fields · `scenes/director_preview.gd:lingo_field`
+
+`lingo_field(name, _cast)` and `lingo_set_field(name, _cast, text)` take the cast
+the script named and ignore it — the parameter is spelled `_cast`. Both then go
+through `_resolve_field`, which asks `Members.resolve_ref(name, "")`: the
+unnamed-cast path, which searches every library in number order and takes the
+first field of that name. An explicit `of castLib` in the script is discarded, so
+a movie with the same field name in two libraries reads and writes the wrong one.
+Same class as `docs/bugs-closed.md` 34 and 29: the library is part of the answer.
+
+Not currently visible, and that is the whole reason it is filed rather than
+fixed on suspicion. Found while measuring `resolve_ref` for 34. Across all 61
+movies, 1,081 member names exist in more than one library, and **four** of them
+are named by a script:
+
+| movie | name | libraries |
+|---|---|---|
+| `air1` | `jokefield` | Internal(1):201, master(3):122 |
+| `chess` | `fuel` | Internal(1):135, master(3):27 |
+| `hotel1` | `mirror` | Internal(1):364, island2(5):240 |
+| `night1` | `jokefield` | Internal(1):225, master(2):122 |
+
+None of the four is reached through a qualified `field` reference: `fuel` and
+`mirror` are `member(...)` references, and `jokefield` goes through
+`TextArt.resolve`, which re-walks the libraries preferring an actual field. The
+one qualified field reference in the corpus is SAVELOAD's
+`field "plane" of castLib 2`, and `plane` is unique in SAVELOAD, so the dropped
+library and the right library are the same one.
+
+So the corpus does not exercise it. Build it anyway — the reference says a field
+reference carries a cast and this engine is meant to run other titles.
+
+Reproduce:
+
+```
+grep -rn 'field "[^"]*" of castLib' reference/lingo --include=*.ls
+```
+
+---
+
 ## 21. Every wandering character is on screen twice, because only half of `peoplefunk` is ported
 
 **Status:** open · **Area:** interpreter host / score runner

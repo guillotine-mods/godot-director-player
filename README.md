@@ -156,6 +156,7 @@ godot --headless --script tools/room_names.gd       # `nof` resolves to the room
 godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach the stage, pass/fail
 godot --headless --script tools/sprite_stretch.gd   # a sprite draws at its member's size, pass/fail
 godot --headless --script tools/film_loop_stretch.gd # a film-loop child draws at its member's size, pass/fail
+godot --headless --script tools/film_loop_cast.gd   # a film-loop child draws out of the cast its own container named, whole corpus, pass/fail
 godot --headless --script tools/drawn_size_stability.gd # no unstretched sprite resizes while its picture and its place hold still, whole corpus, pass/fail
 godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
 godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # the same cursors in the container-reading preview, pass/fail
