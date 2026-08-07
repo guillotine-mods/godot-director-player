@@ -45,6 +45,7 @@ const Sound := preload("res://scenes/preview/sound.gd")
 const Trails := preload("res://scenes/preview/trails.gd")
 const PaletteView := preload("res://scenes/preview/palette_view.gd")
 const StagePaint := preload("res://scenes/preview/stage_paint.gd")
+const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -989,76 +990,6 @@ func _preload_one(sprite: Dictionary) -> void:
 	_texture_for(sprite)
 
 
-func _process(delta: float) -> void:
-	if _score == null or _paused:
-		return
-	if _score.frame(_index).is_empty():
-		return
-	# A click or a key may have moved the playhead since the last step. Take the
-	# frame it landed on before deciding how much time that frame is owed, or the
-	# old frame's tempo paces the new one.
-	_sync_frame_entry()
-	# Cue points and the tempo channel's wait-for-sound, before the clock: both
-	# can release a hold this tick, and one evaluated after the clock has already
-	# decided the tick holds costs the frame it was waiting for. The fade ramp
-	# they interact with is stepped by `AudioDirector` itself, one process
-	# priority earlier — §12's "from the top of the update".
-	_pump_sound(delta)
-	# Before the clock, because a cycle or a fade is what the clock is *holding*
-	# the playhead for: stepping it after would advance the frame that the effect
-	# is the reason for, and the last step of a fade would land on the next one.
-	if _palette_state.effect_running() and _palette_state.step(delta * 1000.0):
-		_palette_applied()
-	# Pay for the artwork of frames not yet reached, before asking the clock for
-	# work. Time-boxed, so this cannot become the stall it exists to prevent --
-	# and measured *and discounted*, because a movie should not owe catch-up
-	# steps for time Director would have spent preloading.
-	if _preloader != null:
-		var loading := Time.get_ticks_usec()
-		_preloader.run(_index, _preload_one, _effective)
-		_clock.discount((Time.get_ticks_usec() - loading) / 1000000.0)
-	var due := _clock.tick(delta)
-	if due <= 0:
-		return
-	for _i in due:
-		# Film loops advance on the movie's clock, not the playhead's: a loop
-		# keeps animating on a frame the score is holding still on, which is
-		# exactly what a talking character does while its line plays. That is why
-		# the tick is counted before the wait is tested rather than after — a
-		# wait-for-click frame with a character talking on it must not freeze.
-		_ticks += 1
-		if _clock.playhead_held():
-			continue
-		if _pending_enter != null:
-			# The transition has finished arriving; the frame it revealed gets its
-			# `enterFrame` now (§6.2).
-			var resumed: Dictionary = _pending_enter
-			_pending_enter = null
-			_dispatch("enterFrame", resumed)
-			continue
-		_advance()
-	queue_redraw()
-
-
-## The playhead has landed somewhere this tick has not accounted for yet: take
-## the frame's tempo, arm whatever it waits for, and start any transition it
-## carries.
-func _sync_frame_entry() -> void:
-	if _index == _entered_index or _score == null:
-		return
-	_entered_index = _index
-	var frame: Dictionary = _score.frame(_index)
-	if frame.is_empty():
-		return
-	_clock.enter_frame(frame)
-	# Before the transition, deliberately: §12 starts a frame's sounds *in
-	# parallel* with its transition rather than after it, so a cut scene's line
-	# of speech begins as the wipe does and not a second later.
-	_begin_score_sound(frame)
-	_begin_palette(frame)
-	_begin_transition(frame)
-
-
 ## Resolve this frame's palette channel and arm whatever effect it asks for.
 ##
 ## §11, and `director/director_palette_state.gd` holds the rules. Two things
@@ -1103,110 +1034,27 @@ func _palette_libs() -> Array:
 	return PaletteView.libs(_table)
 
 
-## Resolve this frame's transition and hold the playhead for as long as it takes.
-##
-## §10's three sources in order: a puppet transition set from Lingo, which is
-## one-shot and consumed here; the frame's own, which in a D5 score is a
-## reference to a transition cast member; or nothing. Only the *time* is
-## reproduced — the new frame cuts in rather than wiping — because §10 is
-## explicit that a cut reads as a stylistic choice while a wrong wipe reads as a
-## bug, and that the duration is the part scripts are timed against.
-##
-## `tools/transition_survey.gd` says this corpus spends 4.0 s in transitions
-## across five frames of three movies, against 74.0 s in tempo delays across
-## thirty-six. Both were being skipped entirely.
+## The frame loop, delegated to `preview/frame_loop.gd`. The playhead, the clock
+## and the pending-enter debt stay on the node: `tools/` reads `_index`, `_clock`
+## and `_pending_enter` by name, and several harnesses write `_index` directly.
+func _process(delta: float) -> void:
+	if _score == null or _paused:
+		return
+	if _score.frame(_index).is_empty():
+		return
+	FrameLoop.tick(self, delta)
+
+
+func _sync_frame_entry() -> void:
+	FrameLoop.sync_frame_entry(self)
+
+
 func _begin_transition(frame: Dictionary) -> bool:
-	var puppet := _puppet_transition
-	_puppet_transition = {}
-	var from_frame: Dictionary = {}
-	var number := int(frame.get("transition_member", 0))
-	if number > 0 and _table != null:
-		var cast = _table.cast_for(int(frame.get("transition_lib", 1)))
-		if cast != null:
-			from_frame = cast.member(number)
-	var transition: Dictionary = Transition.resolve(puppet, from_frame)
-	if not Transition.is_transition(transition):
-		return false
-	_transitions_played += 1
-	_clock.hold(Transition.hold_ms(transition), FrameClock.REASON_TRANSITION)
-	_trace("f%d transition %s" % [_index, Transition.describe(transition)])
-	return true
+	return FrameLoop.begin_transition(self, frame, _table)
 
 
-## One step of the movie, in Director's order (DIRECTOR_ENGINE.md §6.1).
-##
-## The correction that matters is where `exitFrame` sits. It belongs to the frame
-## being *left*, and it runs at the **top of the step that leaves it** — with the
-## playhead advance and the redraw after it, and `enterFrame` after those. Firing
-## `prepareFrame`, `enterFrame` and `exitFrame` back to back on one frame, as this
-## did, runs both halves of the standard "set up in enterFrame, tear down in
-## exitFrame" idiom against the same rendered state, and puts `enterFrame` for a
-## frame *before* the `exitFrame` of the frame it followed.
-##
-## For this title `exitFrame` is where everything lives — 2,504 of the corpus's
-## handlers are `on exitFrame` against 33 `on enterFrame` and none at all for
-## `prepareFrame` — so the walk state machine in `MovieScript 28
-## whatodoeveryframe` is stepped from here, once per tick, and the frame it is
-## stepped *for* is the one the player is looking at rather than the one the
-## score is about to move to.
-##
-## The first step of a movie sends `exitFrame` for the frame it started on, and
-## that is load-bearing rather than tidy: DAY1's frame 0 script `init all` is an
-## `on exitFrame` handler that establishes the whole opening state of the room —
-## the puppeted channels, `egozh`/`egozv`/`syz`, the inventory slots — and ends
-## with `go("shore2")`. Skip it and the room draws with nothing initialised.
-##
-## Returns what the step did, so a harness can assert the ordering rather than
-## infer it: `exited` is the frame `exitFrame` was sent for, -1 when it was
-## skipped, and `frame` is the frame the rest of the step ran on.
 func _advance() -> Dictionary:
-	if not _lingo_on:
-		_index = (_index + 1) % maxi(_score.frame_count, 1)
-		_sync_frame_entry()
-		return {"exited": -1, "frame": _index}
-
-	# A step must never begin with an `enterFrame` still owed for the frame it is
-	# about to leave. `_process` normally pays it when the transition's hold runs
-	# out; a caller stepping this directly — a harness, the arrow keys — never
-	# consults the clock, so the debt is settled here instead of being carried
-	# into the next frame and dispatched against the wrong one.
-	if _pending_enter != null:
-		var owed: Dictionary = _pending_enter
-		_pending_enter = null
-		_dispatch("enterFrame", owed)
-	# A `go to` queued from outside the step loop has already moved the playhead,
-	# and Director sends no `exitFrame` for a frame it is leaving that way. The
-	# step still runs: it renders and enters the frame the jump landed on, and the
-	# *next* step is the one that leaves it.
-	var exited := -1
-	_held = _jump_queued
-	_jump_queued = false
-	if not _held:
-		exited = _index
-		_in_exit_frame = true
-		_dispatch("exitFrame", _frame_script(_index))
-		_in_exit_frame = false
-
-	# Step 10, `updateCurrentFrame`: the handler above decided where the playhead
-	# goes. `go to the frame` — how a room stands still at all — reaches this as a
-	# hold, and any other `go` has already written the destination.
-	if not _held:
-		_index += 1
-		if _index >= _score.frame_count:
-			_index = 0
-	_held = false
-	_sync_frame_entry()
-
-	var script := _frame_script(_index)
-	_dispatch("prepareFrame", script)
-	# Step 14, the draw. Godot paints at the end of the process frame rather than
-	# here, so this is a request and not a completed paint: what `enterFrame`
-	# writes below still lands in the same painted frame, where Director would
-	# have shown it on the next one. A real divergence, and the cheapest one on
-	# offer — the alternative is deferring every `enterFrame` by a whole frame.
-	queue_redraw()
-	_enter_frame_or_defer(script)
-	return {"exited": exited, "frame": _index}
+	return FrameLoop.advance(self)
 
 
 ## Send `enterFrame`, or owe it until the frame has finished arriving.
