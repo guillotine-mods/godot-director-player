@@ -33,6 +33,28 @@ which is a reason to build it last and not a reason to skip it.
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
 in this corpus carries it; it currently falls through to Matte.
 
+**`the clickOn` on mouse-up -- deliberately NOT implemented.** §15. Director
+updates `the clickOn` again on mouse-up when the release was over a sprite; this
+port latches it on the mouse-down and leaves it there. It was implemented once
+today and reverted the same day, because taking that rule without its other half
+is worse than taking neither.
+
+The two halves: ScummVM resets `_lastClickedSpriteId` from the sprite under the
+release **and** delivers the mouse-up to that sprite. This port delivers to the
+sprite that took the press (`mouseUp` / `mouseUpOutSide`). With only the first
+half, one dispatch gives two answers to "which sprite is this about" -- and the
+corpus's inventory drop reads `the clickOn` inside its `mouseUp`:
+
+    set the locH of sprite the clickOn to objectxx
+
+All eight inventory slots carry the same behaviour, so releasing one slot along
+the bar wrote the dragged item's home coordinates onto the *neighbouring* slot.
+The item stranded mid-bar and an empty marker teleported into its place. Eleven
+near-copies of that handler exist across the corpus.
+
+Closing this properly means changing mouse-up delivery too, and that is the
+thing that took longest to get right -- see the entry above.
+
 **Cast-script targeting on mouse-up.** §15. The member under the mouse at the
 *start of the mouse-down chain* holds the `mouseUp`, so a `mouseDown` handler
 that swaps the member still leaves the **old** member answering. The latching
@@ -64,6 +86,19 @@ reported by `Interaction.responds_to_mouse`, which searches for `mouseDown` /
 `mouseUp` only. D6+ adds "the sprite has behaviours" to eligibility, which would
 change the hit test, and the hit test is the thing that took longest to get
 right. Left alone deliberately.
+
+**`saveMovie` writes fields and nothing else.** `saveMovie` is implemented
+(`director/director_writer.gd`) and writes a real container this engine reopens,
+but the only chunks it re-emits are the `STXT` payloads of field members whose
+text a script changed. Director saved the whole movie. Three specific holes, in
+the order they will be missed: a member's cast entry is not updated when its
+text changes, so cached metrics go stale; a rewritten chunk that grew leaves its
+old bytes unreferenced rather than adding them to the container's `free` list,
+so a repeatedly-saved file grows; and `save castLib` is not bound at all, so a
+movie that keeps state in a *linked* cast cannot persist it. The corpus here
+needs none of the three — `HEZSAVE.DIR` stores everything in its own internal
+cast — which is a reason to have built the rest first and not a reason to close
+this.
 
 **Dirty rects.** §6.3. Acceptable to omit, but it forecloses
 destination-reading inks and leaves one known trails divergence: a sprite in
@@ -127,9 +162,17 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   `scenes/preview/text_focus.gd`: `sprite OR member` editability,
   first-editable-claims-focus and keeps it while the cast id holds, movie-level
   `selStart`/`selEnd`, caret, selection, insertion, deletion, arrows, Home/End,
-  Enter, auto-tab, click-to-caret, and the typed text pushed back to the member
-  through the same store `put x into field` writes. §8.3 routes `keyDown` to the
-  focused sprite, channel 0 to the frame otherwise.
+  Enter, auto-tab, click-to-caret, drag-to-select, and the typed text pushed back
+  to the member through the same store `put x into field` writes. §8.3 routes
+  `keyDown` to the focused sprite, channel 0 to the frame otherwise.
+
+  Drag-to-select landed after the rest and is worth its own sentence, because
+  its absence had the shape this file exists to prevent: the caret could be
+  *placed* with the mouse and nothing could be *selected* with it, which reads
+  as "the save screen is a bit awkward" rather than as a missing feature. The
+  press anchors `_sel_start`, motion drags `_sel_end` (`TextFocus.drag`, called
+  from `director_preview._input` ahead of the router), and the release ends it.
+  It does not consume the motion: §7.6's moveable sprite uses the same button.
 
   **The member half was the whole feature and had never been decoded.** 0 of
   3,550,111 sprite records across the three titles set the score's editable bit;
