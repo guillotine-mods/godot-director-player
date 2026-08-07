@@ -28,6 +28,65 @@ extends RefCounted
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
+const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
+
+
+## A keypress, in the order the three claimants get to see it.
+##
+## The container picker first, and only while it is open: it is then the thing in
+## front of the player and it takes every key, letters included. While it is
+## closed it is not consulted at all, which is the constraint it is designed
+## around -- a picker that filtered on letters whenever it felt like it would be
+## eating keys the game wants for a window that is not there.
+##
+## Then the movie, then the preview's own bindings. The movie is offered every
+## key first, as it always was; what changed is that the preview's own command
+## runs afterwards anyway, because a `keyDownScript` reports every key as claimed
+## including the ones it ignores. See the note in the body.
+##
+## One call rather than four lines in `_input`, because this is routing and
+## routing is what this file is for -- and because a decision made inside an
+## `InputEvent` handler cannot be asserted headlessly.
+static func key_event(host, event: InputEventKey) -> void:
+	if bool(host._picker.get("open", false)):
+		host._picker = ContainerPicker.key(host._picker, event)
+		var go := str(host._picker.get("go", ""))
+		if go != "":
+			# The engine's own `go to movie`, so a movie reached this way is
+			# entered exactly as the game would enter it.
+			host.lingo_go_movie(go, null)
+			# `lingo_go_movie` leaves the current movie playing when the target
+			# will not open, which is the right thing to do and indistinguishable
+			# on screen from a key that did nothing.
+			var landed: String = host.movie_name()
+			var said: Array = Toast.show(
+				"playing %s" % landed if landed.to_lower() == go.get_file()
+				else "%s would not open — see the log" % go)
+			host._toast = str(said[0])
+			host._toast_until = int(said[1])
+		host.queue_redraw()
+		return
+	# The movie sees the key first, and sees it whatever happens next: `the
+	# keyCode` and `the key` are live during the dispatch, and a preview that
+	# withheld a key from a `keyDownScript` would be a preview the game behaves
+	# differently under.
+	var focus := key_focus(host)
+	if not event.echo:
+		focus._dispatch_key(event)
+	# ...but "claimed" is not evidence the movie *wanted* this key. A
+	# `keyDownScript` is installed once and then receives everything, and it
+	# reports every key as claimed including the ones it ignores: `fromnow`, which
+	# 46 scripts install, acts on key code 49 and on nothing else, and answers
+	# claimed for all the rest. So while a `keyDownScript` was installed -- which
+	# is most of this game -- not one preview binding fired. F10 has been dead
+	# since it was moved off space, and nobody noticed, because a debug key that
+	# does nothing looks exactly like a debug key you misremembered.
+	#
+	# A command therefore runs on its own key regardless. That is safe only
+	# because the band is chosen not to collide: every binding is an F-key, no
+	# title in either corpus tests one, and a title that did has `[debug]` to move
+	# it out of the way.
+	debug_key(host, event.keycode)
 
 
 ## The movie a keypress belongs to.
@@ -49,6 +108,10 @@ static func key_focus(host) -> Node:
 ## A left mouse button event. True when it was fully handled.
 static func mouse_button(host, event: InputEventMouseButton, at: Vector2,
 		skip_rect: Rect2) -> void:
+	# The picker covers the stage while it is open, so a click has to stop at it
+	# rather than reach a sprite the player cannot see and did not aim at.
+	if bool(host._picker.get("open", false)):
+		return
 	if event.pressed:
 		# Recorded on every movie on the stage, windows included, so a window
 		# that opens during this click still has not seen its press.
@@ -145,6 +208,9 @@ static func debug_key(host, code: int) -> void:
 			Snapshot.take(host)
 			host._toast = str(said[0])
 			host._toast_until = int(said[1])
+			host.queue_redraw()
+		"containers":
+			host._picker = ContainerPicker.open(host)
 			host.queue_redraw()
 		"fullscreen":
 			var window: Window = host.get_window()

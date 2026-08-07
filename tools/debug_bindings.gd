@@ -21,6 +21,7 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 const Keys := preload("res://director/director_keys.gd")
+const InputRouter := preload("res://scenes/preview/input_router.gd")
 
 ## What `reference/lingo/` is measured to test, from the sweep recorded at the
 ## top of `director/director_keys.gd`: space, the four arrows, and three letters.
@@ -93,6 +94,42 @@ func _init() -> void:
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(written))
 	DebugKeys.load_config()
+
+	# The keys have to actually fire, and for most of this game they did not. A
+	# `keyDownScript` is installed once and then receives every key, and
+	# `_dispatch_key` reports every one of them as claimed -- including the ones
+	# the handler ignores. `fromnow` acts on key code 49 and on nothing else and
+	# still answers claimed for the rest. So while a movie had one installed,
+	# which is 46 scripts here, not a single preview binding ran: the pause had
+	# been dead since it moved to F10 and it looked like a key somebody
+	# misremembered. Asserted through the real preview against a real movie,
+	# because that is the only place the `keyDownScript` exists.
+	var scene: PackedScene = load("res://scenes/director_preview.tscn")
+	var preview: Node = scene.instantiate()
+	root.add_child(preview)
+	await process_frame
+	var installed := ""
+	for _i in 400:
+		preview.call("_advance")
+		var host = preview.get("_host")
+		if host != null and str(host.key_down_script) != "":
+			installed = str(host.key_down_script)
+			break
+
+	h.begin("a binding still fires under a movie-wide key handler")
+	h.check("the movie installed one", installed != "", installed)
+	var boxes: bool = preview.get("_show_boxes")
+	InputRouter.key_event(preview, _key(
+		OS.find_keycode_from_string(DebugKeys.key_name("boxes"))))
+	h.check("the binding ran anyway", bool(preview.get("_show_boxes")) != boxes,
+		"keyDownScript '%s' claims every key" % installed)
+	# And the movie was still offered it, because withholding a key from a
+	# `keyDownScript` would be a preview the game behaves differently under.
+	h.check("and the movie was still offered the key",
+		(preview.get("_sent") as Dictionary).has("keyDownScript:%s" % installed),
+		JSON.stringify(preview.get("_sent")))
+	h.complete("a binding still fires under a movie-wide key handler")
+
 	print("")
 	print("bindings: %s" % JSON.stringify(DebugKeys.bindings()))
 	quit(h.finish("the preview's keyboard bindings"))

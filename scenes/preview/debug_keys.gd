@@ -38,8 +38,8 @@ const SECTION := "debug"
 ## the list of commands the config may name: a `[debug]` entry whose key is not
 ## one of these is a typo, and reported rather than ignored.
 ##
-## F9 and F12 are deliberately free. Filling the band exactly would leave the
-## next command nowhere to go.
+## F9 is deliberately free. Filling the band exactly would leave the next command
+## nowhere to go.
 const DEFAULTS := {
 	"boxes": "F1",
 	"hit_test": "F2",
@@ -51,6 +51,7 @@ const DEFAULTS := {
 	"quit": "F8",
 	"pause": "F10",
 	"snapshot": "F11",
+	"containers": "F12",
 }
 
 ## Godot keycode -> command name. Built once; the config does not change while a

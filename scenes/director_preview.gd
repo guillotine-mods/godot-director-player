@@ -38,6 +38,7 @@ const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
+const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
@@ -206,6 +207,10 @@ var _last_click: Dictionary = {}
 ## harnesses can see it.
 var _toast := ""
 var _toast_until := 0
+## The container picker, as `preview/container_picker.gd` keeps it: whether it is
+## open, what has been typed, and which entry is selected. Closed by default and
+## consulted only while open -- see `input_router.gd:key_event`.
+var _picker: Dictionary = {"open": false}
 ## channel -> the cursor a script set on it. Kept apart from `_overrides` on
 ## purpose: `the cursor of sprite` lives on the channel, is not part of the frame
 ## delta, and survives frame changes and member swaps â€” where `_overrides` is
@@ -822,12 +827,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey and event.pressed):
 		return
-	# The game's keys are offered first, and the debug bindings only see what the
-	# movie did not claim.
-	var focus := InputRouter.key_focus(self)
-	if not (event as InputEventKey).echo and focus._dispatch_key(event as InputEventKey):
-		return
-	InputRouter.debug_key(self, (event as InputEventKey).keycode)
+	InputRouter.key_event(self, event as InputEventKey)
 
 
 ## Arm the clip rectangle. Re-armed from `_draw` every paint rather than at
@@ -869,6 +869,7 @@ func _draw() -> void:
 	# to disappear would stay up until something else asked for one.
 	if Toast.draw(self, _toast, _toast_until, STAGE):
 		queue_redraw()
+	ContainerPicker.draw(self, _picker)
 
 
 ## Artwork, delegated to `preview/sprite_art.gd`. The caches stay on the node --

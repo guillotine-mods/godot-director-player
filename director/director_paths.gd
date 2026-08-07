@@ -54,6 +54,28 @@ func boot_path() -> String:
 	return resolve(boot_movie, root)
 
 
+## Every container under the root, as the root-relative paths `resolve` accepts,
+## sorted. For anything that has to *offer* the movies rather than look one up --
+## the preview's container picker, a survey tool listing what a title ships.
+##
+## Out of the same index resolution uses, rather than a second walk. A second
+## walk is a second copy of the rule about which extensions name a container and
+## which directories are searched, and the two would disagree the first time
+## either changed -- which is the same reason `CONTAINER_EXTENSIONS` is one list
+## in `director_container.gd` and not one per caller.
+##
+## The keys are already lower-cased, and that is what `resolve` matches on, so a
+## name handed straight back to it resolves to the file it came from -- including
+## the subdirectory, which is what tells this game's two `MASTER.CST` apart.
+func containers() -> Array[String]:
+	_build_index()
+	var out: Array[String] = []
+	for relative in _index:
+		out.append(str(relative))
+	out.sort()
+	return out
+
+
 ## Resolve a Director file reference the way the original did: beside the movie
 ## that named it, then at the game root, then anywhere under it. Returns "" when
 ## nothing matches, which is a missing file rather than an error to raise.
