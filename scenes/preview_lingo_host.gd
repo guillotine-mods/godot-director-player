@@ -13,6 +13,8 @@ extends RefCounted
 ## "no such builtin" and raises a diagnostic; returning 0 means "bound, did
 ## nothing". The difference is the whole point of `unbound` below.
 
+const ContainerName := preload("res://director/director_container.gd")
+
 var preview: Node = null
 ## Lingo globals. The real host aliases several of these onto engine state; here
 ## they are just storage, which is correct until something needs to observe them.
@@ -207,7 +209,7 @@ func call_builtin(name: String, args: Array) -> Variant:
 			## with <application>` — is a desktop verb and appears nowhere here.
 			if preview == null or args.is_empty():
 				return 0
-			var to_open := window_key_of(args[0])
+			var to_open := _first_window_key(args)
 			if to_open != "":
 				preview.lingo_open_window(to_open)
 			return 0
@@ -218,7 +220,7 @@ func call_builtin(name: String, args: Array) -> Variant:
 			## JOKE's wait-for-click frame.
 			if preview == null or args.is_empty():
 				return 0
-			var to_shut := window_key_of(args[0])
+			var to_shut := _first_window_key(args)
 			if to_shut != "":
 				preview.lingo_forget_window(to_shut, low == "forget")
 			return 0
@@ -376,6 +378,41 @@ static func stage_handle() -> Dictionary:
 ## The window a Lingo value addresses: a handle, or a bare name for the spellings
 ## that skip `window(...)`. "" is the stage, which is why the caller has to test
 ## `is_window_ref` rather than treat "" as a failure.
+## The first argument that names a window, rather than whichever one happened to
+## be first.
+##
+## `open` and `forget` are command words as well as functions, so the argument
+## array can arrive carrying the command's own bare words alongside the evaluated
+## value -- the same hazard `_go` documents above, where a bare `to` sits in
+## front of the real argument. Reading `args[0]` then hands `window_key_of` a
+## word like `window`, which keys to nothing, and `open` returns having silently
+## done nothing at all.
+##
+## That is exactly how the joke popup failed: `open` was reached -- it shows in
+## `builtins reached` -- the window existed, and it was never shown. Scanning for
+## the first argument that yields a key makes the binding indifferent to how the
+## call was spelled.
+static func _first_window_key(args: Array) -> String:
+	# A handle is unambiguous, so it wins wherever it sits.
+	for value in args:
+		if is_window_ref(value):
+			return window_key_of(value)
+	# Otherwise the argument that looks like a container: `open` and `forget` are
+	# command words, so `open(window("joke.dxr"))` arrives as the bare word
+	# `window` followed by the filename -- measured, `["window", "joke.dxr"]`.
+	# Keying the first non-empty string returns "window", which names nothing,
+	# and the call silently does nothing at all.
+	for value in args:
+		if typeof(value) == TYPE_STRING and ContainerName.is_container(str(value)):
+			return window_key_of(value)
+	# Nothing recognisable: fall back to the last string, which is where a name
+	# sits when a command word precedes it, rather than the first.
+	for i in range(args.size() - 1, -1, -1):
+		if typeof(args[i]) == TYPE_STRING and str(args[i]).strip_edges() != "":
+			return window_key_of(args[i])
+	return ""
+
+
 static func window_key_of(value: Variant) -> String:
 	if typeof(value) == TYPE_DICTIONARY and (value as Dictionary).has(WINDOW_HANDLE):
 		return str((value as Dictionary)[WINDOW_HANDLE])
