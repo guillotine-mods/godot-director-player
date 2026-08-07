@@ -36,6 +36,8 @@ const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
+const Snapshot := preload("res://scenes/preview/snapshot.gd")
+const Toast := preload("res://scenes/preview/toast.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
@@ -194,6 +196,16 @@ var _hit_pixels := true
 ## What the Lingo last asked the cursor to be, shown in the HUD so a cursor that
 ## never changes can be told from one that changes to the wrong thing.
 var _cursor_now := "arrow"
+## The last click as `preview/snapshot.gd` records it: where, which channel,
+## which script answered and whether it declared a handler. Kept rather than
+## recomputed on demand, because the score keeps running and the frame that was
+## clicked is not the frame anybody asks about it on.
+var _last_click: Dictionary = {}
+## The self-dismissing message in the corner, and when it stops being due.
+## `preview/toast.gd` owns the rules; the state is here because that is where the
+## harnesses can see it.
+var _toast := ""
+var _toast_until := 0
 ## channel -> the cursor a script set on it. Kept apart from `_overrides` on
 ## purpose: `the cursor of sprite` lives on the channel, is not part of the frame
 ## delta, and survives frame changes and member swaps â€” where `_overrides` is
@@ -853,6 +865,10 @@ func _draw() -> void:
 	if _window_key != "":
 		return
 	StagePaint.draw_overlays(self, frame, STAGE, SKIP_RECT)
+	# A paused preview does not repaint on its own, so a toast that needs a paint
+	# to disappear would stay up until something else asked for one.
+	if Toast.draw(self, _toast, _toast_until, STAGE):
+		queue_redraw()
 
 
 ## Artwork, delegated to `preview/sprite_art.gd`. The caches stay on the node --
@@ -983,10 +999,11 @@ func _click(at: Vector2) -> void:
 	# a handler actually exists. "clicked nothing" and "clicked something with no
 	# mouseUp" look identical on screen and are entirely different faults.
 	var has_up: bool = _interpreter.call("_script_has_handler", script, "mouseup") 		or _interpreter.has_handler("mouseup")
-	print("clicked (%d,%d) frame %d  ch%d  %s script %s  mouseUp:%s" % [
-		int(at.x), int(at.y), _index, channel, str(chosen[1]),
-		str(script.get("script", "none")), "yes" if has_up else "NO HANDLER",
-	])
+	# Kept, not just printed: the snapshot key reports the click that went wrong,
+	# and by the time anyone presses it the score has moved on several frames.
+	_last_click = Snapshot.note_click(at, _index, channel, str(chosen[1]),
+		script, has_up)
+	print(Snapshot.click_line(_last_click))
 	# Director sends both, and a menu may answer either.
 	_dispatch("mouseDown", script)
 	_dispatch("mouseUp", script)

@@ -35,6 +35,10 @@ __pycache__/
 reference/scummvm/
 .traces/
 
+# Screenshots the snapshot key writes. Somebody's session, of a game that is not
+# ours to redistribute — the same reason `games/` is ignored below.
+.snapshots/
+
 # Agent worktrees: full checkouts, 2.5 GB and counting. Never committed.
 .claude/worktrees/
 

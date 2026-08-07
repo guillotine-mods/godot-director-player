@@ -26,6 +26,8 @@ extends RefCounted
 ## rest of that argument.
 
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const Snapshot := preload("res://scenes/preview/snapshot.gd")
+const Toast := preload("res://scenes/preview/toast.gd")
 
 
 ## The movie a keypress belongs to.
@@ -135,6 +137,15 @@ static func debug_key(host, code: int) -> void:
 			host.queue_redraw()
 		"report":
 			host._report()
+		"snapshot":
+			# The toast is the whole point of the confirmation: a clipboard write
+			# is invisible, so without it the key is indistinguishable from a key
+			# that is not bound.
+			var said: Array = Toast.show(Snapshot.toast_text(host))
+			Snapshot.take(host)
+			host._toast = str(said[0])
+			host._toast_until = int(said[1])
+			host.queue_redraw()
 		"fullscreen":
 			var window: Window = host.get_window()
 			window.mode = (
