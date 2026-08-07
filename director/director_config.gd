@@ -33,6 +33,24 @@ var cast_array_start := 0
 var cast_array_end := 0
 ## Director's own version word, `0x57E` for D7.
 var version := 0
+## The rate the movie plays at until its score says otherwise, in frames per
+## second. 0 when the movie states none.
+##
+## `DIRECTOR_ENGINE.md` §9.1 says "with no tempo, the previous rate carries
+## forward" and never says what the *first* rate is. This is it, and without it a
+## movie that never writes a tempo runs at whatever the engine assumed -- 15 fps
+## here, which is nearly twice the speed most of these movies want.
+##
+## Offset 54, settled by distribution rather than by a spec. Across the 124
+## containers of a second title it reads
+## `{0:25, 2:1, 3:2, 4:3, 5:2, 6:1, 8:84, 10:5, 12:1}` -- small, plausible frame
+## rates with a strong mode at 8 and a quarter of movies stating none. Nothing
+## else in the chunk is shaped like that: offset 62 is 60 in all 124, which is a
+## constant, and the fields either side are the stage rect and the cast range,
+## both independently confirmed. It is *not* proof, and a movie whose rate you
+## can judge by eye is what would make it proof -- `tools/movie_tempo.gd` prints
+## the field so that check is one command.
+var default_tempo := 0
 var error: String = ""
 
 
@@ -58,6 +76,7 @@ func parse(payload: PackedByteArray) -> bool:
 	cast_array_start = _u16(payload, 12)
 	cast_array_end = _u16(payload, 14)
 	version = _u16(payload, 36) if payload.size() >= 38 else 0
+	default_tempo = _u16(payload, 54) if payload.size() >= 56 else 0
 	return true
 
 

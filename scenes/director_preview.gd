@@ -433,6 +433,10 @@ func _load_container(path: String) -> bool:
 	# the stage movie's, and the stage is whichever movie happens to be playing.
 	var config = Config.new()
 	_config = config if config.read(_movie) else null
+	# The rate this movie starts at, before its score writes a tempo. Without it
+	# every movie that never writes one runs at the engine's guess.
+	var stated := int(_config.default_tempo) if _config != null else 0
+	_clock.movie_default_fps = float(stated) if stated > 0 else FrameClock.DEFAULT_FPS
 	_ccl = PackedStringArray()
 	var ccl_ids: Array = _movie.ids_of("ccl ")
 	if not ccl_ids.is_empty():
@@ -1712,7 +1716,8 @@ func _draw() -> void:
 		# how EXODUS's selection highlight -- a semi-transparent bar meant to sit
 		# over the option you are pointing at -- came out as a solid black
 		# rectangle covering the text.
-		draw_texture(texture, top_left, Color(1, 1, 1, Ink.blend_alpha(sprite)))
+		_draw_sprite_texture(texture, top_left, sprite,
+			Color(1, 1, 1, Ink.blend_alpha(sprite)))
 		# A trails sprite is not erased between frames (§13), so what it painted
 		# joins the layer that survives the next clear. Collected rather than
 		# stamped here: the layer is first cleared where this frame repainted, and
@@ -1916,6 +1921,47 @@ func _draw_text(sprite: Dictionary) -> bool:
 	return true
 
 
+## Draw a sprite's artwork at `at`, mirrored if the score asks for a flip.
+##
+## Flip is bits 0x20 and 0x40 of the thickness byte (§1.8). Director supports it.
+## The reference parses the bits, copies them between sprites and compares them
+## in its dirty test, and then **never applies them anywhere in its render
+## path** — searching it for the flip constants finds only their definition — so
+## it is no use as a specification for how flip meets registration or hit
+## testing. The reading implemented here is §1.8's: the image is mirrored
+## *within the sprite's rect*, and the rect itself is untouched. That is the only
+## interpretation consistent with flip living in a rendering attribute byte
+## rather than in the geometry fields, and it means the placement rule and the
+## hit rectangle need no change at all. The visible consequence is that an
+## off-centre character appears to shift when flipped, because the registration
+## point has effectively moved relative to the artwork.
+##
+## **Unverified against Director.** Neither corpus sets either bit: 0 of Piposh
+## 2's 816,318 sprite records and 0 of Piposh 1's 1,886,362, now that the bits
+## are read from the byte that holds them rather than from the cast lib's high
+## half (`tools/ink_survey.gd`). This is built because Director has it, not
+## because anything here asks for it, and `tools/sprite_flip.gd` drives it from a
+## synthetic record for that reason.
+func _draw_sprite_texture(texture: Texture2D, at: Vector2, sprite: Dictionary,
+		modulate: Color) -> void:
+	var flip_h := bool(sprite.get("flip_h", false))
+	var flip_v := bool(sprite.get("flip_v", false))
+	if not flip_h and not flip_v:
+		draw_texture(texture, at, modulate)
+		return
+	# A negative extent mirrors about the far edge, so the rect is moved to that
+	# edge and grown backwards. The pixels covered are exactly the same ones.
+	var size := texture.get_size()
+	var rect := Rect2(at, size)
+	if flip_h:
+		rect.position.x += size.x
+		rect.size.x = -size.x
+	if flip_v:
+		rect.position.y += size.y
+		rect.size.y = -size.y
+	draw_texture_rect(texture, rect, false, modulate)
+
+
 ## Does this sprite have a visible pixel at a stage point?
 ##
 ## Rect-only hit-testing hands every click to the topmost sprite whose *box*
@@ -1936,6 +1982,15 @@ func _opaque_at(sprite: Dictionary, at: Vector2) -> bool:
 	if local.x < 0 or local.y < 0 \
 			or local.x >= image.get_width() or local.y >= image.get_height():
 		return false
+	# The artwork is mirrored inside the rect when the score asks for a flip
+	# (`_draw_sprite_texture`), so the sample point has to be mirrored with it or
+	# the clickable pixels are the mirror image of the visible ones. The *rect* is
+	# deliberately not mirrored: flip lives in a rendering attribute byte and
+	# leaves the geometry alone (§1.8).
+	if bool(sprite.get("flip_h", false)):
+		local.x = image.get_width() - 1 - local.x
+	if bool(sprite.get("flip_v", false)):
+		local.y = image.get_height() - 1 - local.y
 	return image.get_pixel(int(local.x), int(local.y)).a > 0.1
 
 
@@ -2087,9 +2142,10 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 		var at := Vector2(float(child["loc_h"]), float(child["loc_v"]))
 		# A child carries its own ink and its own blend, and the loop's alpha
 		# multiplies through: a blended loop dims everything inside it.
-		draw_texture(
+		_draw_sprite_texture(
 			texture,
 			origin + (at - loop_origin) - child_reg,
+			child,
 			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
 		)
 	return true
@@ -2192,10 +2248,18 @@ func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionar
 	if bool(child["stretch"]) and int(child["width"]) > 0 and int(child["height"]) > 0:
 		w = int(child["width"])
 		h = int(child["height"])
+	# The rendering attributes come across too. `_texture_for` keys on the ink and
+	# the colours, `blend_alpha` reads the blend pair and `_draw_sprite_texture`
+	# the flip bits; a child stripped of them draws by the loop's rules instead of
+	# its own, and nothing says a half is missing.
 	return {
 		"cast_lib": lib, "cast_id": int(child["cast_id"]),
 		"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
 		"width": w, "height": h,
+		"flip_h": bool(child.get("flip_h", false)),
+		"flip_v": bool(child.get("flip_v", false)),
+		"has_blend": bool(child.get("has_blend", false)),
+		"blend_amount": int(child.get("blend_amount", 0)),
 	}
 
 
@@ -2767,6 +2831,10 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_table.open(_movie, _paths)
 	var config = Config.new()
 	_config = config if config.read(_movie) else null
+	# The rate this movie starts at, before its score writes a tempo. Without it
+	# every movie that never writes one runs at the engine's guess.
+	var stated := int(_config.default_tempo) if _config != null else 0
+	_clock.movie_default_fps = float(stated) if stated > 0 else FrameClock.DEFAULT_FPS
 	_ccl = PackedStringArray()
 	var ccl_ids: Array = _movie.ids_of("ccl ")
 	if not ccl_ids.is_empty():

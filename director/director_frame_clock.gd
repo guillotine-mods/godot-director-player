@@ -71,8 +71,16 @@ var _waiting_sound := 0
 var _waiting_cue := 0
 
 
-func reset(rate: float = DEFAULT_FPS) -> void:
-	fps = rate if rate > 0.0 else DEFAULT_FPS
+## The rate this movie plays at until its score writes a tempo, from the movie's
+## own config chunk. `DEFAULT_FPS` is only what to assume when a movie states
+## none -- it is not Director's answer, it is the engine's guess, and a movie
+## that never writes a tempo ran at that guess for its whole length. Set once
+## when a movie loads; see `DirectorConfig.default_tempo`.
+var movie_default_fps := DEFAULT_FPS
+
+
+func reset(rate: float = 0.0) -> void:
+	fps = rate if rate > 0.0 else movie_default_fps
 	_owed = 0.0
 	_hold_ms = 0.0
 	_hold_reason = ""
