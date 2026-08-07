@@ -55,7 +55,18 @@ const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
 ## One call rather than four lines in `_input`, because this is routing and
 ## routing is what this file is for -- and because a decision made inside an
 ## `InputEvent` handler cannot be asserted headlessly.
+## **The release takes the first branch and nothing else.** A `keyUp` is a real
+## Director event -- §8.1 lists it from D4 and 205 sites across the corpus set
+## `the keyUpScript` -- so it goes to the movie; it does *not* reach the picker,
+## which filters on characters typed, and it does *not* reach `debug_key`, which
+## would toggle a binding back off on the release of the very press that set it.
+## `director_preview.gd:_input` used to drop every non-pressed key event one call
+## short of here, so this branch had nothing to route.
 static func key_event(host, event: InputEventKey) -> void:
+	if not event.pressed:
+		if not event.echo:
+			key_focus(host)._dispatch_key_up(event)
+		return
 	if bool(host._picker.get("open", false)):
 		host._picker = ContainerPicker.key(host._picker, event)
 		var go := str(host._picker.get("go", ""))

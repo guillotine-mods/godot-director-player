@@ -49,17 +49,44 @@ var double_click := false
 ## Director's movie-wide key handler: a handler *name*, run ahead of everything
 ## else on a keypress. 46 scripts in this game set it, most to `fromnow`.
 var key_down_script := ""
+## The release half of the same mechanism (§8.2 tier 1). Measured rather than
+## assumed: `tools/key_script_survey.gd -- --all` finds `the keyUpScript` set at
+## **10 sites in Rating and 195 in Piposh Dream**, against 0 in Piposh 2 — so a
+## port that had only the down half was right about the title it was built on and
+## silently deaf in two of the other five. Rating's `ARCADE1.dir` member 20 does
+## `set the keyUpScript to "normalkeysx"`, and `normalkeysx` is the handler that
+## leaves a timed scene: with no key-up path at all, those rooms could not be left
+## by the key that leaves them however free F10 was made.
+var key_up_script := ""
 ## The mouse half of the same mechanism (§6.3 tier 1). Nothing in this corpus
 ## sets either, so both are bound for the engine's sake -- see the note on the
 ## write, which records that Director's own value is a source string and this is
 ## a handler name.
 var mouse_down_script := ""
 var mouse_up_script := ""
-## Live only for the duration of a key dispatch. -1 rather than 0 because 0 is a
-## real Mac key code (the `A` key), so 0 would read as a keypress that never
-## happened.
+## The last key pressed. -1 rather than 0 because 0 is a real Mac key code (the
+## `A` key), so 0 would read as a keypress that never happened.
+##
+## **Written on the key going down and never on it coming up.** That is the
+## reference's, not a shortcut: `events.cpp:337-338` sets `_keyCode` and `_key`
+## in the `EVENT_KEYDOWN` arm, and the `EVENT_KEYUP` arm two dozen lines below
+## sets only `_keyFlags` before dispatching. So a `keyUp` handler asking
+## `the keyCode` is reading the key that went down — which is what makes
+## Rating's `normalkeysx`, a `keyUpScript` that tests `the keyCode = 109`, work
+## at all.
 var key_code := -1
 var key_char := ""
+
+## "play", "go" or "" — set by a freezing command and taken by the interpreter
+## that ran it, one statement later.
+##
+## Director suspends the handler that called `play` or `go` (§6.1 step 18). The
+## binding cannot say so by returning a value and it cannot tell an interpreter
+## directly either: `go to movie` opens the next container inside the call, so by
+## the time `_go` returns, `preview._interpreter` is a *different object* from the
+## one whose blocks have to be unwound. Leaving the request here and letting the
+## running interpreter take it in `_host_call` is what makes the two agree.
+var _suspend_request := ""
 
 ## Bound to something real.
 const HANDLED := [
@@ -77,18 +104,6 @@ const IGNORED := [
 	"dontpassevent", "puppetsprite", "halt", "quit", "starttimer",
 	# `cursor` is NOT here any more — see the match above.
 	# Bound deliberately inert rather than left unbound. An unbound name is
-
-## "play", "go" or "" — set by a freezing command and taken by the interpreter
-## that ran it, one statement later.
-##
-## Director suspends the handler that called `play` or `go` (§6.1 step 18). The
-## binding cannot say so by returning a value and it cannot tell an interpreter
-## directly either: `go to movie` opens the next container inside the call, so by
-## the time `_go` returns, `preview._interpreter` is a *different object* from the
-## one whose blocks have to be unwound. Leaving the request here and letting the
-## running interpreter take it in `_host_call` is what makes the two agree.
-var _suspend_request := ""
-
 	# reported as a gap every time it is reached, which buries the ones that
 	# matter; these are real Director builtins this preview has no state to
 	# implement, and answering VOID is the honest response.
@@ -125,6 +140,32 @@ func set_global(name: String, value: Variant) -> void:
 ## Nothing here overrides a script; the real host does, for the walk machine.
 func is_native_handler(_name: String) -> bool:
 	return false
+
+
+## Ask for the running handler to be suspended here (§6.1 step 18, §9.4).
+##
+## Declined when the preview says it cannot hold another frozen handler, and a
+## declined request means the old behaviour — the rest of the handler runs at the
+## call. That is the safe direction: too little suspension is a wrong ordering,
+## while a chain nothing will ever thaw is a conversation that never returns.
+func request_suspend(kind: String) -> void:
+	if preview == null or not preview.call("lingo_accepts_freeze", kind):
+		return
+	_suspend_request = kind
+
+
+func take_suspend_request() -> String:
+	var kind := _suspend_request
+	_suspend_request = ""
+	return kind
+
+
+## Where a suspended handler goes. The preview holds it rather than the
+## interpreter, because `go to movie` replaces the interpreter and Director keeps
+## frozen state on the window across exactly that.
+func park_lingo_state(chain: Array, kind: String) -> void:
+	if preview != null:
+		preview.call("lingo_park_state", chain, kind)
 
 
 func call_builtin(name: String, args: Array) -> Variant:
@@ -166,32 +207,6 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# scripts keep running, which is what distinguishes it from `halt`.
 			if preview != null:
 				preview.lingo_hold()
-## Ask for the running handler to be suspended here (§6.1 step 18, §9.4).
-##
-## Declined when the preview says it cannot hold another frozen handler, and a
-## declined request means the old behaviour — the rest of the handler runs at the
-## call. That is the safe direction: too little suspension is a wrong ordering,
-## while a chain nothing will ever thaw is a conversation that never returns.
-func request_suspend(kind: String) -> void:
-	if preview == null or not preview.call("lingo_accepts_freeze", kind):
-		return
-	_suspend_request = kind
-
-
-func take_suspend_request() -> String:
-	var kind := _suspend_request
-	_suspend_request = ""
-	return kind
-
-
-## Where a suspended handler goes. The preview holds it rather than the
-## interpreter, because `go to movie` replaces the interpreter and Director keeps
-## frozen state on the window across exactly that.
-func park_lingo_state(chain: Array, kind: String) -> void:
-	if preview != null:
-		preview.call("lingo_park_state", chain, kind)
-
-
 			return 0
 		"play":
 			# `play frame X` pushes the playhead and `play done` pops it back.
@@ -202,9 +217,19 @@ func park_lingo_state(chain: Array, kind: String) -> void:
 				return 0
 			var verb := str(args[0]).to_lower() if not args.is_empty() else ""
 			if verb == "done":
+				# The *thaw*, not a freeze: `play done` is what makes the handler
+				# that called `play` runnable again, and Director suppresses the
+				# freeze its internal `go` would otherwise raise (`_playDone`
+				# guards `_freezeState`). So the handler that wrote `play done`
+				# keeps running, which is what lets a cut scene's last frame do
+				# `play done` and then tidy up after it.
 				preview.lingo_play_done()
 				return 0
 			preview.lingo_play_push(args)
+			# §9.4: the branch is taken, and then the handler stops. The statement
+			# after `play frame` is Rating's trailing `go`, and running it here is
+			# what overwrote the branch this line just set.
+			request_suspend("play")
 			return 0
 		"cursor":
 			# Was bound inert, which is why the cursor never changed: this game
@@ -256,19 +281,9 @@ func park_lingo_state(chain: Array, kind: String) -> void:
 				return preview.lingo_rollover_channel()
 			return 1 if preview.lingo_rollover(LingoValue.to_int(args[0])) else 0
 		"intersects", "within":
-				# The *thaw*, not a freeze: `play done` is what makes the handler
-				# that called `play` runnable again, and Director suppresses the
-				# freeze its internal `go` would otherwise raise (`_playDone`
-				# guards `_freezeState`). So the handler that wrote `play done`
-				# keeps running, which is what lets a cut scene's last frame do
-				# `play done` and then tidy up after it.
 			# `sprite A intersects B` -- do the two channels' rects overlap -- and
 			# `sprite A within B`, does B contain A. The interpreter routes both
 			# here as operators rather than as calls, so `left`/`right` arrive
-			# §9.4: the branch is taken, and then the handler stops. The statement
-			# after `play frame` is Rating's trailing `go`, and running it here is
-			# what overwrote the branch this line just set.
-			request_suspend("play")
 			# already evaluated to channel numbers.
 			#
 			# **This is how every drop in the corpus is decided.** Director's
@@ -427,18 +442,26 @@ func _go(args: Array) -> Variant:
 		where = null
 	if movie != "":
 		preview.lingo_go_movie(movie, where)
+		request_suspend("go")
 		return 0
 
 	if values.is_empty():
 		# `go loop`, `go next`, `go previous`. Relative score navigation is not
 		# modelled; holding is closer to right than running on into unrelated
 		# frames, and it is visible rather than silent.
+		#
+		# **These three do not suspend.** `func_gotoloop`, `func_gotonext` and
+		# `func_gotoprevious` set only `_skipFrameAdvance`; `_freezeState` belongs
+		# to `func_goto`, which is the destination-taking form below. It is a
+		# distinction the reference makes explicitly and one nothing else would
+		# ever recover, because the three are spelled like the form that does.
 		preview.lingo_hold()
 		return 0
 
 	var first: Variant = values[0]
 	if typeof(first) != TYPE_STRING:
 		preview.lingo_go_frame(LingoValue.to_int(first))
+		request_suspend("go")
 		return 0
 	match str(first):
 		"the frame":
@@ -460,6 +483,7 @@ func _go(args: Array) -> Variant:
 	# Reading the bare word `frame` as the destination made that statement hold
 	# instead of jump.
 	preview.lingo_go_label(str(first))
+	request_suspend("go")
 	return 0
 
 
@@ -491,26 +515,18 @@ func _sound(args: Array) -> Variant:
 		"stop":
 			# All 69 `sound stop` statements in this game name a channel — 57 on
 			# 2, 9 on 1, 3 on 3. The channel-less form stops everything rather
-		request_suspend("go")
 			# than defaulting to 1, which is what `lingo/lingo_host.gd` does and
 			# what a channel argument of 0 would otherwise silently become.
 			if args.size() >= 2:
 				preview.lingo_stop_sound(channel)
 			else:
 				preview.lingo_stop_all_sound()
-		#
-		# **These three do not suspend.** `func_gotoloop`, `func_gotonext` and
-		# `func_gotoprevious` set only `_skipFrameAdvance`; `_freezeState` belongs
-		# to `func_goto`, which is the destination-taking form below. It is a
-		# distinction the reference makes explicitly and one nothing else would
-		# ever recover, because the three are spelled like the form that does.
 			return 0
 		"close":
 			preview.lingo_close_sound(maxi(channel, 1))
 			return 0
 		"fadein", "fadeout":
 			# `sound fadeIn <channel>, <ticks>`; Director's default when the
-		request_suspend("go")
 			# duration is omitted is one second, which is 60 ticks.
 			var ticks := LingoValue.to_int(args[2]) if args.size() >= 3 else 60
 			preview.lingo_fade_sound(maxi(channel, 1), ticks, verb == "fadein")
@@ -522,7 +538,6 @@ func _play(channel: int, file: String) -> Variant:
 	if preview != null:
 		preview.lingo_play_sound(channel, file)
 	return 0
-	request_suspend("go")
 
 
 # --------------------------------------------------------------------- windows
@@ -745,6 +760,8 @@ func get_system_prop(prop: String) -> Variant:
 				else preview.lingo_sel_end()
 		"keydownscript":
 			return key_down_script
+		"keyupscript":
+			return key_up_script
 		"mousedownscript":
 			return mouse_down_script
 		"mouseupscript":
@@ -821,6 +838,12 @@ func set_system_prop(prop: String, value: Variant) -> void:
 				preview.lingo_set_sel(prop.to_lower(), LingoValue.to_int(value))
 		"keydownscript":
 			key_down_script = LingoValue.to_str(value).strip_edges()
+		"keyupscript":
+			# The same storage-as-a-name divergence the mouse pair below records:
+			# Director holds a string of Lingo source and compiles it on
+			# assignment, and every site in either corpus assigns a bare handler
+			# name (`normalkeysx`, `normalkeys2`, `normalkeys3`).
+			key_up_script = LingoValue.to_str(value).strip_edges()
 		"mousedownscript", "mouseupscript":
 			# §6.3 tier 1. Stored as a **handler name**, exactly as this port
 			# already stores `the keyDownScript`, and that is a divergence worth
