@@ -1,6 +1,8 @@
 extends RefCounted
 ## Where a click and a keypress go.
 ##
+## (For *which* key runs which preview command, see `preview/debug_keys.gd`.)
+##
 ## Two routings, and both are decided here rather than by Godot's own reverse-
 ## tree `_input` order. That is deliberate: the tree order is invisible to a
 ## headless harness, and "the click went to the wrong movie" is precisely the
@@ -17,9 +19,13 @@ extends RefCounted
 ## stage. The game's own keys are offered first and the debug bindings only see
 ## what the movie did not claim. Space is the case that matters -- `fromnow`,
 ## which 46 scripts install, stops sound channel 1 when the key code is 49, and
-## that is how every line of speech in this game is skipped. The debug pause is
-## on F10 for exactly that reason: a binding that ate space would make the movie
-## look unresponsive to the one key a player reaches for first.
+## that is how every line of speech in this game is skipped. Every preview
+## binding is an F-key for exactly that reason -- a binding that ate space would
+## make the movie look unresponsive to the one key a player reaches for first,
+## and the arrows and the plain letters are no different. `debug_keys.gd` has the
+## rest of that argument.
+
+const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 
 
 ## The movie a keypress belongs to.
@@ -93,42 +99,47 @@ static func mouse_motion(host) -> void:
 
 
 ## The preview's own bindings, reached only by a key no script claimed.
+##
+## The keys come from `preview/debug_keys.gd`, which reads them out of
+## `director_game.cfg`. They are matched on the *command* rather than on the
+## keycode so that moving one is a config edit and not a code edit -- and so that
+## the reason each command exists can be written next to the command instead of
+## next to whichever key it happens to be on this week.
 static func debug_key(host, code: int) -> void:
-	match code:
-		# F10, not space. See the note at the top of this file.
-		KEY_F10:
+	match DebugKeys.command_for(code):
+		"pause":
 			host._paused = not host._paused
-		KEY_RIGHT:
+		"step_forward":
 			host._paused = true
 			host._index = mini(host._index + 1, host._score.frame_count - 1)
 			host.queue_redraw()
-		KEY_LEFT:
+		"step_back":
 			host._paused = true
 			host._index = maxi(host._index - 1, 0)
 			host.queue_redraw()
-		KEY_R:
+		"restart":
 			host._index = 0
 			# Restarting from a frame that was holding -- a delay, a wait for a
 			# click -- must not carry that hold onto the frame it restarts at, or
-			# `R` looks like it did nothing.
+			# the restart looks like it did nothing.
 			host._clock.reset()
 			host._entered_index = -1
 			host._pending_enter = null
 			host.queue_redraw()
-		KEY_B:
+		"boxes":
 			host._show_boxes = not host._show_boxes
 			host.queue_redraw()
-		KEY_M:
+		"hit_test":
 			host._hit_pixels = not host._hit_pixels
 			print("hit test: %s" % ("artwork" if host._hit_pixels else "full rectangle"))
 			host.queue_redraw()
-		KEY_L:
+		"report":
 			host._report()
-		KEY_F:
+		"fullscreen":
 			var window: Window = host.get_window()
 			window.mode = (
 				Window.MODE_WINDOWED if window.mode == Window.MODE_FULLSCREEN
 				else Window.MODE_FULLSCREEN
 			)
-		KEY_ESCAPE:
+		"quit":
 			host.get_tree().quit()
