@@ -149,6 +149,29 @@ func tick(delta: float) -> int:
 	return due
 
 
+## Forget time the movie spent loading rather than playing.
+##
+## The catch-up in `tick` is right for the case it was written for: a step that
+## runs long because the machine was busy should not slow the movie down, so the
+## debt is replayed and wall-clock pacing holds. It is wrong for a step that ran
+## long because the engine was *decoding artwork*, because Director would not
+## have been decoding then at all -- it preloads -- and replaying four steps to
+## make the time back turns a one-frame stall into a visible jump.
+##
+## Measured, before `director_preloader.gd` existed: `strtgame` frame 38 spent
+## 145.7 ms decoding inside one step and DAY1 frame 39 spent 105.5 ms, against a
+## 66 ms step at 15 fps. Each of those bought a multi-step burst on the frame
+## after it, which is what a menu background loop "jumping at the end" was.
+##
+## The preloader is the fix; this is the guard for what it cannot cover -- a
+## marker jump straight onto cold art, or the first frame after a movie change.
+## Called with the seconds actually spent, and discounts them from the debt.
+func discount(seconds: float) -> void:
+	if seconds <= 0.0:
+		return
+	_owed = maxf(0.0, _owed - seconds)
+
+
 ## One line for a HUD: the rate, and what is stopping the playhead if anything.
 func status() -> String:
 	if not playhead_held():

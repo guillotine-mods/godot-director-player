@@ -35,8 +35,10 @@ const Ink := preload("res://director/director_ink.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
+const Preloader := preload("res://director/director_preloader.gd")
 const FrameClock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
+const Config := preload("res://director/director_config.gd")
 
 const STAGE := Vector2i(640, 480)
 ## Floating skip control, in stage coordinates so it scales and letterboxes with
@@ -83,6 +85,10 @@ var _paused := false
 var _status := ""
 ## `[display] aspect` from the game config. See `director_game.cfg`.
 var _aspect := "native_4_3"
+## What `_clip_to_stage` handed the RenderingServer. Held because the server has
+## no getter for it, and a harness that cannot see the clip cannot tell a stage
+## that clips from one that was never asked to.
+var _clip_rect := Rect2()
 ## "<lib>:<member>:<ink>" -> Texture2D, or null where the member draws nothing.
 var _textures: Dictionary = {}
 ## Same keys as `_textures`, holding the decoded Image so a click can be tested
@@ -153,6 +159,9 @@ var _last_member: Dictionary = {}
 ## instead makes a loop entered a second time resume wherever the first left off.
 var _loop_start: Dictionary = {}
 ## The channel being dragged, and the offset from the cursor to its position.
+## Decodes the artwork of frames the playhead has not reached yet, so a first
+## appearance does not cost its milliseconds inside the step that draws it.
+var _preloader = null
 var _drag_channel := 0
 var _drag_offset := Vector2.ZERO
 ## What the `cursor` builtin last set, used when no channel supplies one.
@@ -161,13 +170,76 @@ var _global_cursor: Variant = 0
 var _cursor_applied: String = "?none"
 ## Kept so a `go to movie` can resolve the next file the way the first was found.
 var _paths = null
+
+# ------------------------------------------------------ Movie-In-A-Window (§14)
+#
+# A window is another instance of this same scene, added as a child of the stage.
+# That is a design decision and not laziness, so here is the reasoning.
+#
+# A window in Director runs a whole movie: its own score, playhead, tempo, cast
+# table, puppet state, cursor, sounds and Lingo. `tools/window_survey.gd` says
+# this corpus's three real windows all use that — `SAVELOAD.dir` is 255 frames
+# with 35 scripts of its own (17 `exitFrame`, 17 `mouseUp`), `MAP.dir` 81 frames
+# with 12 `mouseUp`, `JOKE.dir` 96 frames with 3 `exitFrame` — so a "draw another
+# movie's frame over the stage" shortcut would have to grow every one of those
+# back. Everything a window needs is already in this file, and a second instance
+# of it is a second movie by construction rather than by remembering to duplicate
+# each piece. The alternative, threading a "which movie" argument through
+# `_advance`, `_draw`, `_click`, `_texture_for` and the forty `lingo_*` methods,
+# is the same work spread over the whole file with a chance to forget it in each.
+#
+# Being a *child* node is doing three jobs at once: the letterboxing transform is
+# inherited rather than recomputed, a CanvasItem's children paint after it so the
+# window is over the stage for free, and freeing the node tears the movie down.
+#
+# What is deliberately not built, on the survey's evidence: window titles, window
+# rects set from Lingo, `the modal of window`, `moveableSprite` window dragging
+# and window chrome. The corpus writes exactly two window-ish properties —
+# `the windowType` (21 times, always 2, which is Director's plain box with no
+# title bar) and `the centerStage` (21 times, always 1) — and reads none.
+
+## The preview running the stage. Null in the stage itself, set in every window.
+var _stage_preview: Node = null
+## Windows this preview owns: key -> the preview node running that movie. Only
+## the stage's copy is ever populated; a window delegates every lookup upward, so
+## `forget(window("saveload.dxr"))` called from *inside* SAVELOAD finds the same
+## window the stage opened.
+var _windows: Dictionary = {}
+## The same keys in the order they were opened. The last is the front-most, which
+## is the one a click is offered to first (§4.2).
+var _window_order: Array[String] = []
+## This preview's key as a window, "" for the stage.
+var _window_key := ""
+## The container this preview was created to run, when it is a window.
+var _window_path := ""
+## True between `open(window(...))` and `forget(window(...))`. A window that has
+## been referenced but not opened is loaded and addressable and does not draw or
+## advance — which is what lets `tell window("x") / set the centerStage to 1`
+## run before the `open` that follows it in all 21 sites.
+var _window_shown := false
+## The movie's own `DRCF` stage rect. Every movie in this corpus declares
+## 640x480, so a centred window covers the stage exactly; the rect is read rather
+## than assumed because it is what decides both, and a title whose window is
+## smaller would otherwise be drawn full-stage.
+var _config = null
+## `the centerStage` and `the windowType` as a script set them, per §14. Stored
+## and honoured at `open`: `centerStage` decides placement, and `windowType` is
+## recorded so the value is answerable rather than dropped.
+var _center_stage := false
+var _window_type := 0
 ## Where `play` came from, so `play done` can return there.
 var _play_stack: Array = []
-## channel -> Director's 0-255 volume, so a read gives back what was written.
-var _sound_volume: Dictionary = {}
 
 
 func _ready() -> void:
+	# A window is the same scene standing up a second movie, and it is configured
+	# before it enters the tree rather than from the command line. Split here so
+	# that the one path everything else in this file assumes — a loaded container
+	# with a score, a cast table and an interpreter — is reached the same way by
+	# both.
+	if _window_key != "":
+		_ready_as_window()
+		return
 	var args := Args.parse()
 	var paths := Paths.new()
 	if not paths.load_config():
@@ -180,29 +252,9 @@ func _ready() -> void:
 		_fail("no such container: %s" % wanted)
 		return
 
-	_movie = ContainerFile.new()
-	if not _movie.open(path):
-		_fail("%s: %s" % [path, _movie.error])
-		return
-	var vwsc: Array = _movie.ids_of("VWSC")
-	if vwsc.is_empty():
-		_fail("%s has no score" % path)
-		return
-
-	_score = Score.new()
-	if not _score.parse(_movie.read_chunk(vwsc[0])):
-		_fail("%s: %s" % [path, _score.error])
-		return
-
-	_labels = Labels.new()
-	var vwlb: Array = _movie.ids_of("VWLB")
-	if not vwlb.is_empty():
-		_labels.parse(_movie.read_chunk(vwlb[0]))
-
-	_table = CastTable.new()
-	_table.open(_movie, paths)
-	_palette = Palette.system_mac()
 	_paths = paths
+	if not _load_container(path):
+		return
 
 	var label := Args.text(args, "label")
 	if label != "":
@@ -226,9 +278,6 @@ func _ready() -> void:
 	if _lingo_on:
 		_start_lingo(path)
 	_audio = root_node("AudioDirector")
-	var ccl_ids: Array = _movie.ids_of("ccl ")
-	if not ccl_ids.is_empty():
-		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
 	# The frame the movie opens on is entered like any other: its tempo arms the
 	# clock and its transition, if it has one, is played before anything runs on
 	# it. Without this the first frame is paced by the 15 fps default whatever the
@@ -244,6 +293,111 @@ func _ready() -> void:
 	get_window().title = "%s  â€”  %d frames" % [path.get_file(), _score.frame_count]
 	print("playing %s from frame %d of %d" % [path.get_file(), _index, _score.frame_count])
 	queue_redraw()
+
+
+## Open a container and take everything that belongs to the movie inside it.
+##
+## `_paths` must already be set. Shared by the stage's boot and a window's,
+## because "what a loaded movie consists of" is one list and two copies of it
+## drift: the film-loop cast list was read in `_ready` and in `lingo_go_movie`
+## and not here, which is the shape of omission this collapses.
+func _load_container(path: String) -> bool:
+	_movie = ContainerFile.new()
+	if not _movie.open(path):
+		_fail("%s: %s" % [path, _movie.error])
+		return false
+	var vwsc: Array = _movie.ids_of("VWSC")
+	if vwsc.is_empty():
+		_fail("%s has no score" % path)
+		return false
+
+	_score = Score.new()
+	if not _score.parse(_movie.read_chunk(vwsc[0])):
+		_fail("%s: %s" % [path, _score.error])
+		return false
+	_preloader = Preloader.new(_score)
+
+	_labels = Labels.new()
+	var vwlb: Array = _movie.ids_of("VWLB")
+	if not vwlb.is_empty():
+		_labels.parse(_movie.read_chunk(vwlb[0]))
+
+	_table = CastTable.new()
+	_table.open(_movie, _paths)
+	_palette = Palette.system_mac()
+	# The movie's own stage rect. Only a window uses it, but it is read for every
+	# movie because a window's placement is the *difference* between its rect and
+	# the stage movie's, and the stage is whichever movie happens to be playing.
+	var config = Config.new()
+	_config = config if config.read(_movie) else null
+	_ccl = PackedStringArray()
+	var ccl_ids: Array = _movie.ids_of("ccl ")
+	if not ccl_ids.is_empty():
+		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
+	return true
+
+
+## Stand up a movie that another movie asked for as a window (§14).
+##
+## Loaded but not shown and not running: `_process` is off until `open`, so the
+## playhead does not move and `startMovie` has not been sent. That ordering is
+## the corpus's, not a convenience — every one of the 21 sites reads
+##
+##     window("x").windowType = 2
+##     tell window("x") / set the centerStage to 1 / end tell
+##     open(window("x"))
+##
+## and three of them also `go` to a label inside the `tell`, so the movie has to
+## be addressable before it is opened and must not have advanced past the frame
+## the `go` chose.
+##
+## Input is off as well. The stage routes clicks and keys to the front-most
+## window explicitly (`route_click`), rather than letting Godot's own reverse-tree
+## `_input` order decide, because that order is invisible in a headless harness
+## and a click has to be assertable.
+func _ready_as_window() -> void:
+	_paths = _stage_preview._paths
+	_aspect = _stage_preview._aspect
+	_lingo_on = _stage_preview._lingo_on
+	_audio = root_node("AudioDirector")
+	# The debug outlines belong to whoever is looking at the stage, and a window
+	# drawn over it should not add a second set.
+	_show_boxes = false
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	visible = false
+	set_process(false)
+	set_process_input(false)
+	if not _load_container(_window_path):
+		return
+	if _lingo_on:
+		_start_lingo(_window_path)
+		_share_movie_state_with(_stage_preview)
+	print("window %s: %d frames" % [_window_path.get_file(), _score.frame_count])
+
+
+## A window and the stage are two movies in one Director session, and some state
+## belongs to the session rather than to either movie.
+##
+## **Globals.** Director clears them on `clearGlobals` and on quitting, never on
+## opening a window, and this corpus is built on that: `SAVELOAD` sets `nof`,
+## `newsyz`, `egozh` and `nextroomdata` in its own handlers and then says `tell
+## the stage / go(nof, "day1.dxr")`, and the room that arrives on the stage reads
+## those globals to place the player. The dictionaries are *shared*, not copied,
+## so a write on either side is visible on the other — and they stay shared
+## across a later `go to movie`, because `_start_lingo` carries the same object
+## forward rather than a copy of it.
+##
+## **Field text.** `SAVELOAD` writes seven fields `of castLib "master"` — the
+## saved score, inventory and joke state — and the stage reads the same members
+## back out of the same shared external cast. So the override store is shared
+## too. See `_field_key`, which is why sharing it is safe: the key names the
+## cast's *file*, and library numbers are per movie.
+func _share_movie_state_with(other: Node) -> void:
+	if other == null or other._interpreter == null:
+		return
+	_interpreter.globals = other._interpreter.globals
+	_host.globals = other._host.globals
+	_field_text = other._field_text
 
 
 func root_node(name: String) -> Node:
@@ -442,6 +596,11 @@ func _tally(into: Dictionary, key: String) -> void:
 ## this tells them apart: no handler dispatched, none found, none reached a
 ## builtin, or a builtin reached and did nothing.
 func _report() -> void:
+	# A window's report is the same report for a different movie, and the two
+	# would otherwise be indistinguishable in a log where a window opened, ran and
+	# was forgotten in the middle of the stage's run.
+	if _window_key != "":
+		print("--- window %s (%s) ---" % [_window_key, movie_name()])
 	print("lingo dispatched : %s" % JSON.stringify(_sent))
 	print("lingo ran        : %s" % JSON.stringify(_ran))
 	if _host != null:
@@ -504,6 +663,18 @@ func _report() -> void:
 func _exit_tree() -> void:
 	if _lingo_on:
 		_report()
+	# A window's container and cast table are closed here rather than in
+	# `lingo_forget_window`, because every `forget` in this corpus is a window
+	# closing itself from a handler that is still running: closing the file under
+	# that handler would have it reading a closed `FileAccess` for the rest of the
+	# statement list.
+	if _window_key != "":
+		if _table != null:
+			_table.close()
+			_table = null
+		if _movie != null:
+			_movie.close()
+			_movie = null
 
 
 ## The frame script covering a frame, or `{}`.
@@ -553,6 +724,44 @@ func _frame_script(index: int) -> Dictionary:
 			best = script
 			narrowest = span
 	return best
+
+
+## Director clips every sprite to the stage; a Godot canvas item does not.
+##
+## A sprite is placed by its registration point, so art routinely hangs off the
+## edge: measured over the corpus, **131,337 of 816,318 drawing sprite records
+## (16.1%) reach past the 640x480 stage and 2,121 sit wholly outside it**, in 60
+## of the 61 movies. Unclipped, every one of those pixels was painted into the
+## letterbox — a walk cycle leaving a room dragged half a character across the
+## black bar instead of disappearing behind the edge.
+##
+## This is the same mechanism `Control.clip_contents` uses, reached through
+## `RenderingServer` because this node is a `Node2D` and has no such property.
+## Setting it on the node's own canvas item covers every path that paints —
+## bitmaps, film loop children, shape primitives and `draw_string` text — rather
+## than each of them having to remember to intersect its own rect. The working
+## renderer does the same thing one layer up (`director/movie_player.gd:43-44`).
+##
+## The rect is the stage, not the node's transform: `_fit_to_window` scales and
+## offsets this node, and the clip is applied in the node's own coordinates, so
+## it follows the stage through any window size without being recomputed.
+##
+## **Called from `_draw`, every paint, and that is not belt-and-braces.** Godot
+## clears a canvas item's command list before each `NOTIFICATION_DRAW`, and the
+## clear resets the clip flag along with the commands — the custom rect survives,
+## the flag does not. Setting it once at startup therefore holds only until the
+## first repaint, which is to say never: with the call in `_ready` alone the two
+## screenshots either side of it were byte-identical and the artwork went on
+## spilling into the letterbox. `tools/stage_clip.gd` is what caught that, by
+## reading back real pixels rather than trusting the call.
+func _clip_to_stage() -> void:
+	# A window clips to its own movie's rect, not to the host stage's: a window
+	# smaller than the stage must not paint outside itself, and one that is the
+	# same size (every movie in this corpus) gets the same rectangle either way.
+	_clip_rect = Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE))
+	var item := get_canvas_item()
+	RenderingServer.canvas_item_set_clip(item, true)
+	RenderingServer.canvas_item_set_custom_rect(item, true, _clip_rect)
 
 
 ## Fit the stage into the canvas the way `[display] aspect` asks.
@@ -608,6 +817,25 @@ func _fail(message: String) -> void:
 	queue_redraw()
 
 
+## Decode one sprite's artwork ahead of time. Film loops pay for their children
+## as well: a loop's members all appear on the same step, which is the worst
+## version of the stall this exists to remove.
+func _preload_one(sprite: Dictionary) -> void:
+	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	if m.is_empty():
+		return
+	if int(m.get("type", 0)) == 2:
+		var key := "%d:%d" % [int(sprite["cast_lib"]), int(sprite["cast_id"])]
+		if not _loops.has(key):
+			_loops[key] = _open_loop(int(sprite["cast_lib"]), m)
+		var loop = _loops[key]
+		if loop != null:
+			for child in loop.children(0):
+				_child_texture(child, int(sprite["cast_lib"]))
+		return
+	_texture_for(sprite)
+
+
 func _process(delta: float) -> void:
 	if _score == null or _paused:
 		return
@@ -617,6 +845,14 @@ func _process(delta: float) -> void:
 	# frame it landed on before deciding how much time that frame is owed, or the
 	# old frame's tempo paces the new one.
 	_sync_frame_entry()
+	# Pay for the artwork of frames not yet reached, before asking the clock for
+	# work. Time-boxed, so this cannot become the stall it exists to prevent --
+	# and measured *and discounted*, because a movie should not owe catch-up
+	# steps for time Director would have spent preloading.
+	if _preloader != null:
+		var loading := Time.get_ticks_usec()
+		_preloader.run(_index, _preload_one, _effective)
+		_clock.discount((Time.get_ticks_usec() - loading) / 1000000.0)
 	var due := _clock.tick(delta)
 	if due <= 0:
 		return
@@ -784,18 +1020,23 @@ func _input(event: InputEvent) -> void:
 			_drag_channel = 0
 			_resolve_cursor()
 			return
-		# A wait-for-click frame is released by the mouse-down handler and not by
-		# the score (DIRECTOR_ENGINE.md §9.2), so this runs before anything that
-		# might return early: a click that lands on nothing still ends the wait.
-		_clock.clicked()
 		# Tested before the sprite hit-test, or a hotspot underneath would eat it.
+		# Before the window routing too: it is the preview's own control and it is
+		# drawn over everything, including a window.
 		if SKIP_RECT.has_point(at):
 			skip_to_end()
 			return
-		_begin_drag(at)
-		_click(at)
+		# A window over this point takes the click, and takes it whole — including
+		# releasing *its* wait-for-click rather than the stage's (§9.2, §4.2).
+		route_click(at)
 		return
 	if event is InputEventMouseMotion:
+		var over := window_at(stage_mouse())
+		if over != null and over != self:
+			over._hover_channel = over._channel_at(stage_mouse() - over.position)
+			over._resolve_cursor()
+			queue_redraw()
+			return
 		var was := _hover_channel
 		_hover_channel = _channel_at(stage_mouse())
 		if _drag_channel > 0:
@@ -821,7 +1062,18 @@ func _input(event: InputEvent) -> void:
 	# what the movie did not claim. Space is the case that matters: `fromnow`,
 	# which 46 scripts install, stops sound channel 1 when the key code is 49,
 	# and that is how every line of speech in this game is skipped.
-	if not (event as InputEventKey).echo and _dispatch_key(event as InputEventKey):
+	#
+	# A key goes to the front window when there is one, which is Director's rule
+	# (§8.3: the keypress goes to the movie in the active window). Nothing in this
+	# corpus installs a `keyDownScript` in a window movie, so this is the engine's
+	# rule rather than this title's need — but sending it to the stage instead
+	# would have the covered movie skipping speech it is not playing.
+	var focus := window_at(stage_mouse())
+	if focus == null:
+		focus = _front_window()
+	if focus == null:
+		focus = self
+	if not (event as InputEventKey).echo and focus._dispatch_key(event as InputEventKey):
 		return
 	match (event as InputEventKey).keycode:
 		# F10, not space. Space is the game's own key -- Director titles use it to
@@ -867,7 +1119,10 @@ func _input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, STAGE), Color.BLACK, true)
+	# Re-armed here rather than at startup: the clip flag does not survive the
+	# command-list clear that precedes every paint. See `_clip_to_stage`.
+	_clip_to_stage()
+	draw_rect(Rect2(Vector2.ZERO, _clip_rect.size), Color.BLACK, true)
 	if _status != "":
 		draw_string(ThemeDB.fallback_font, Vector2(16, 32), _status, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.RED)
 		return
@@ -928,6 +1183,16 @@ func _draw() -> void:
 
 	if _show_boxes:
 		_draw_hotspots(frame)
+
+	# The preview's own chrome belongs to the preview, not to every movie in it. A
+	# window draws its movie and stops; the SKIP button and the HUD are drawn once,
+	# by the stage, and the stage's children paint after it — so they would end up
+	# *under* an open window. That is a known cosmetic limit and not worth
+	# reordering the scene for: they are debug affordances, and §14's window has no
+	# chrome of its own to draw in their place (`the windowType` is 2 at all 21
+	# sites, Director's plain box with no title bar).
+	if _window_key != "":
+		return
 
 	# Drawn last so it sits above the stage, and in stage coordinates so it
 	# scales with everything else.
@@ -1887,6 +2152,7 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 		_trace("go movie %s -> %s" % [name, score.error])
 		return
 
+	var previous_path := str(_movie.path) if _movie != null else ""
 	if _table != null:
 		_table.close()
 	if _movie != null:
@@ -1899,6 +2165,8 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 		_labels.parse(next.read_chunk(vwlb[0]))
 	_table = CastTable.new()
 	_table.open(_movie, _paths)
+	var config = Config.new()
+	_config = config if config.read(_movie) else null
 	_ccl = PackedStringArray()
 	var ccl_ids: Array = _movie.ids_of("ccl ")
 	if not ccl_ids.is_empty():
@@ -1906,11 +2174,21 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 
 	_textures.clear()
 	_hit_images.clear()
-	# Field overrides are keyed by cast library and member number, and both are
-	# local to the movie that was open when a script wrote them. Carried across,
-	# member 10 of the next movie's cast gets the last movie's score written into
-	# it — which is not a stale value, it is text appearing on an unrelated field.
-	_field_text.clear()
+	# Field overrides used to be dropped wholesale here, because the key was
+	# `<library number>:<member>` and a library number is local to the movie that
+	# was open when a script wrote it — carried across, member 10 of the next
+	# movie's cast got the last movie's score written into it, which is not a
+	# stale value but text appearing on an unrelated field.
+	#
+	# `_field_key` now names the cast's *file*, so only the movie's own internal
+	# cast can collide, and that is exactly what is dropped here. What survives is
+	# the shared external cast, and that is a correction rather than a saving: the
+	# player's score and inventory live in `field "points"` and
+	# `field "objectsfield"` of the linked cast, and clearing them on every `go to
+	# movie` reset the HUD at every doorway. It is also what makes a save
+	# restorable at all — `SAVELOAD` writes seven of those fields and then sends
+	# the stage to another movie in the next statement.
+	_forget_field_text_of(str(previous_path))
 	_loops.clear()
 	_overrides.clear()
 	# Channel cursors survive frame changes and cast swaps (DIRECTOR_ENGINE.md 7.5)
@@ -1931,6 +2209,7 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	# negative frame.
 	_last_member.clear()
 	_loop_start.clear()
+	_preloader = Preloader.new(_score)
 	_index = 0
 	_ticks = 0
 	_held = true
@@ -1963,6 +2242,298 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	get_window().title = "%s  â€”  %d frames" % [target.get_file(), _score.frame_count]
 	print("go movie -> %s frame %d" % [target.get_file(), _index])
 	queue_redraw()
+
+
+# --------------------------------------------------------- windows (§14)
+
+## The preview that owns the stage — this one, or the one that opened it.
+##
+## Every window operation funnels here first. `forget(window(cdsavepath &
+## "saveload.dxr"))` is written *inside* `SAVELOAD.dir` and runs on the window's
+## own interpreter, so a window that kept its own registry would look for a window
+## it does not have and the save screen would never close.
+func stage_preview() -> Node:
+	return _stage_preview if _stage_preview != null else self
+
+
+## One window per movie, addressed by its file stem.
+##
+## The corpus names the same window four ways — `window("saveload.dxr")` and
+## `window(cdsavepath & "saveload.dxr")` where `cdsavepath` is a global holding a
+## directory, plus the `.dxr` spelling of files that are `.dir` on this disc — and
+## all four have to be the same window or `forget` closes nothing.
+static func window_key(name: String) -> String:
+	return name.strip_edges().replace(":", "/").replace("\\", "/") \
+		.get_file().get_basename().to_lower()
+
+
+## `window("map.dxr")` — the handle, creating the window's movie on first
+## reference.
+##
+## Director makes the window object exist as soon as it is named, which is what
+## lets a script set properties on it and `tell` it before `open`. The handle is
+## a plain Dictionary rather than a new class so it can travel through the
+## interpreter as an ordinary Lingo value; `{"window": ""}` is the stage.
+func lingo_window(name: String) -> Dictionary:
+	var owner := stage_preview()
+	if owner != self:
+		return owner.lingo_window(name)
+	var key := window_key(name)
+	if key == "":
+		return {"window": ""}
+	if not _windows.has(key):
+		_create_window(key, name)
+	return {"window": key}
+
+
+func _create_window(key: String, name: String) -> Node:
+	if _paths == null or _movie == null:
+		return null
+	var here := str(_movie.path).get_base_dir()
+	var target: String = _paths.resolve(name.replace(":", "/").replace("\\", "/").get_file(), here)
+	if target == "":
+		# `runjokes` names `jokes.dxr` and this disc has no such file — the whole
+		# 36-site `jokes.dxr` branch of the corpus is dead, and nothing calls
+		# `runjokes` either. A window whose movie is missing stays unresolvable, so
+		# `tell` reports it rather than running the body on the asking movie.
+		_trace("window %s -> not found" % name)
+		return null
+	var scene: PackedScene = load("res://scenes/director_preview.tscn")
+	var node: Node = scene.instantiate()
+	node._stage_preview = self
+	node._window_key = key
+	node._window_path = target
+	_windows[key] = node
+	add_child(node)
+	return node
+
+
+## `open(window("joke.dxr"))` — show it, start it and send it its opening events.
+func lingo_open_window(name: String) -> void:
+	var owner := stage_preview()
+	if owner != self:
+		owner.lingo_open_window(name)
+		return
+	var key := window_key(name)
+	if not _windows.has(key):
+		_create_window(key, name)
+	var node: Node = _windows.get(key)
+	if node == null:
+		_trace("open window %s -> no such movie" % name)
+		return
+	# Re-opening an open window raises it rather than restarting it, which is what
+	# Director does and what the score of a window that opens itself twice needs.
+	_window_order.erase(key)
+	_window_order.append(key)
+	move_child(node, get_child_count() - 1)
+	node.window_shown()
+	queue_redraw()
+
+
+## `forget(window("map.dxr"))` and `close(window(...))`.
+##
+## `forget` destroys the window and its movie; `close` only hides it. This corpus
+## calls `forget` 22 times and `close` never, and every one of the 22 is the
+## window closing *itself* from its own `exitFrame` or `mouseUp` — MAP's twelve
+## destination buttons, SAVELOAD's slots, JOKE's wait-for-click frame. So the
+## teardown runs while the window's own script is on the stack: the node is
+## detached from the registry now and freed at the end of the frame, and its
+## container and cast table are closed in `_exit_tree` rather than here, or the
+## handler still running would be reading a closed file.
+func lingo_forget_window(name: String, destroy: bool = true) -> void:
+	var owner := stage_preview()
+	if owner != self:
+		owner.lingo_forget_window(name, destroy)
+		return
+	var key := window_key(name)
+	var node: Node = _windows.get(key)
+	if node == null:
+		return
+	node.window_hidden()
+	if not destroy:
+		return
+	_windows.erase(key)
+	_window_order.erase(key)
+	node.queue_free()
+	queue_redraw()
+
+
+## The interpreter a `tell` should be routed to, or null when there is no such
+## window. Null is not the same as "run it here" — see the `tell` arm in
+## `lingo/lingo_interpreter.gd`.
+func window_interpreter(key: String):
+	var owner := stage_preview()
+	if key == "":
+		return owner._interpreter
+	if owner != self:
+		return owner.window_interpreter(key)
+	var node: Node = _windows.get(key)
+	return node._interpreter if node != null else null
+
+
+## `the windowType` / `the centerStage` of a named window, and `the rect`.
+##
+## Everything is stored on the window it names rather than on whoever set it,
+## which is the correction this whole change is about: before it, `set the
+## windowType of window "joke.dxr" to 2` went to the *stage's* system properties.
+func lingo_set_window_prop(key: String, prop: String, value: Variant) -> void:
+	var owner := stage_preview()
+	var node: Node = owner if key == "" else owner._windows.get(key)
+	if node == null:
+		return
+	node.set_own_window_prop(prop, value)
+
+
+func lingo_window_prop(key: String, prop: String) -> Variant:
+	var owner := stage_preview()
+	var node: Node = owner if key == "" else owner._windows.get(key)
+	if node == null:
+		return 0
+	return node.own_window_prop(prop)
+
+
+func set_own_window_prop(prop: String, value: Variant) -> void:
+	match prop:
+		"windowtype":
+			_window_type = LingoValue.to_int(value)
+		"centerstage":
+			_center_stage = LingoValue.to_int(value) != 0
+			if _window_shown:
+				position = window_origin()
+				queue_redraw()
+		"visible":
+			if LingoValue.to_int(value) != 0:
+				window_shown()
+			else:
+				window_hidden()
+
+
+func own_window_prop(prop: String) -> Variant:
+	match prop:
+		"windowtype":
+			return _window_type
+		"centerstage":
+			return 1 if _center_stage else 0
+		"visible":
+			return 1 if _window_shown else 0
+		"rect":
+			var at := window_origin()
+			var size := window_size()
+			return [int(at.x), int(at.y), int(at.x + size.x), int(at.y + size.y)]
+		"moviename", "filename":
+			return movie_name()
+	return 0
+
+
+## The window's size on the host stage: its movie's own `DRCF` rect.
+##
+## Every movie in this corpus declares 640x480 (`tools/window_survey.gd` over all
+## 61 containers that have a config), so in practice a window covers the stage
+## exactly — which is why no window chrome is drawn and why a click anywhere goes
+## to the window. Read rather than assumed, so a title whose window movie is
+## genuinely smaller gets a smaller window and the clicks outside it still reach
+## the stage.
+func window_size() -> Vector2:
+	if _config != null:
+		return Vector2(_config.rect.size)
+	return Vector2(STAGE)
+
+
+## Where the window sits, in the stage's coordinates.
+##
+## `the centerStage` centres the movie's stage on the screen, and all 21 sites in
+## this corpus set it, so this is the path that runs. Without it Director puts the
+## window at the rect its movie was authored with, which is a screen coordinate —
+## so it is taken relative to the stage movie's own rect, the only thing here that
+## shares that coordinate space.
+func window_origin() -> Vector2:
+	var mine := window_size()
+	if _center_stage:
+		return ((Vector2(STAGE) - mine) * 0.5).floor()
+	var host = stage_preview()
+	if _config != null and host != null and host._config != null:
+		return Vector2(_config.rect.position - host._config.rect.position)
+	return Vector2.ZERO
+
+
+## Show the window and let it run. Idempotent: `open` on an open window raises it
+## and does not restart the movie.
+func window_shown() -> void:
+	if _window_shown:
+		visible = true
+		return
+	_window_shown = true
+	visible = true
+	position = window_origin()
+	set_process(true)
+	# Entered exactly as a movie's first frame is entered on the stage, and for
+	# the same reason: the frame's own tempo has to arm the clock before anything
+	# runs on it. The frame may not be 0 — `NIGHT1 BehaviorScript 415` says
+	# `tell window("map.dxr") / go("nightmap") / end tell` *before* `open`, so the
+	# playhead is wherever that put it.
+	_sync_frame_entry()
+	if _lingo_on and _interpreter != null:
+		_dispatch("prepareMovie", {})
+		_dispatch("startMovie", {})
+		_enter_frame_or_defer(_frame_script(_index))
+	queue_redraw()
+
+
+## Stop the window drawing and running, without destroying it.
+func window_hidden() -> void:
+	_window_shown = false
+	visible = false
+	set_process(false)
+	# The clock belongs to the movie that was showing: a wait-for-click or a
+	# tempo delay it was holding must not be waiting when it is opened again.
+	_clock.reset()
+	_pending_enter = null
+
+
+## The front-most open window, or null. Director's active window, which is where
+## a keypress goes when the pointer is not over anything.
+func _front_window() -> Node:
+	var owner := stage_preview()
+	for i in range(owner._window_order.size() - 1, -1, -1):
+		var node: Node = owner._windows.get(owner._window_order[i])
+		if node != null and node._window_shown:
+			return node
+	return null
+
+
+## The window a stage point lands in, front-most first, or null.
+##
+## §4.2's search order, one level up: Director hit-tests windows before sprites,
+## and the front window takes the click whether or not anything in it answers.
+func window_at(at: Vector2) -> Node:
+	var owner := stage_preview()
+	for i in range(owner._window_order.size() - 1, -1, -1):
+		var node: Node = owner._windows.get(owner._window_order[i])
+		if node == null or not node._window_shown:
+			continue
+		if Rect2(node.position, node.window_size()).has_point(at):
+			return node
+	return null
+
+
+## Deliver a click at a stage point to whichever movie owns that point.
+##
+## Called from `_input` and directly by the harnesses, which is the point of it
+## being a method: routing that only exists inside an `InputEvent` handler cannot
+## be asserted headlessly, and "the click went to the wrong movie" is precisely
+## the failure this change is about.
+func route_click(at: Vector2) -> Node:
+	var front := window_at(at)
+	if front != null and front != self:
+		front.route_click(at - front.position)
+		return front
+	# A wait-for-click frame is released by the mouse-down and not by the score
+	# (§9.2), and it is released in the movie that was clicked — JOKE's last frame
+	# is a wait-for-click that the player ends by clicking the window.
+	_clock.clicked()
+	_begin_drag(at)
+	_click(at)
+	return self
 
 
 ## `play frame X` / `play movie Y` â€” go there, remembering where to come back to.
@@ -2257,29 +2828,43 @@ func _member_image(cast_id: int) -> Image:
 	return Bitmap.decode(m, f.read_chunk(int(m["data_chunk_id"])), _palette, error)
 
 
-## A sound channel's properties. `volume` is the one this game sets, 52 times.
+## A sound channel's properties. `volume` is the one this game sets: 66 writes
+## and 2 reads across channels 1 to 4, measured over `reference/lingo/`.
+##
+## The state lives in `AudioDirector` rather than here. It used to be a dictionary
+## on this node, which meant the two hosts each had their own idea of a channel's
+## volume and neither survived a `go to movie` — and `set the volume of sound 3
+## to the volume of sound 3 - 20`, the corpus's one read-modify-write, steps a
+## loop down over several frames and needs its own previous write back.
 func lingo_sound_prop(channel: int, prop: String) -> Variant:
+	if _audio == null:
+		return 0
 	match prop:
 		"volume":
-			return int(_sound_volume.get(channel, 255))
+			return int(_audio.call("channel_volume", channel))
 		"loop", "looping":
 			return 0
 	return 0
 
 
-## Director's volume is 0-255. Godot wants decibels, and a linear-to-dB curve is
-## what makes 128 sound like half rather than nearly full.
 func lingo_set_sound_prop(channel: int, prop: String, value: Variant) -> void:
-	if prop != "volume":
+	if prop != "volume" or _audio == null:
 		return
-	var level := clampi(int(value), 0, 255)
-	_sound_volume[channel] = level
-	if _audio == null:
-		return
-	var player: Node = _audio.call("_ensure_player", channel)
-	if player != null:
-		player.set("volume_db", -80.0 if level <= 0 else linear_to_db(level / 255.0))
-	_trace("f%d volume ch%d = %d" % [_index, channel, level])
+	_audio.call("set_channel_volume", channel, int(value))
+	_trace("f%d volume ch%d = %d" % [_index, channel, int(value)])
+
+
+## `the soundLevel`, 0-7: the system volume, above the per-channel volumes rather
+## than one of them. 7 writes and 7 reads in this corpus, all in one movie's
+## options screen, where the read is what places the slider knob.
+func lingo_sound_level() -> int:
+	return int(_audio.get("sound_level")) if _audio != null else 7
+
+
+func lingo_set_sound_level(level: int) -> void:
+	if _audio != null:
+		_audio.call("set_sound_level", level)
+	_trace("f%d soundLevel = %d" % [_index, level])
 
 
 func lingo_play_sound(channel: int, file: String) -> void:
@@ -2301,7 +2886,19 @@ func lingo_sound_busy(channel: int) -> bool:
 ## room while a line plays is `soundBusy` answering true on the same channel the
 ## line was played on, and every way that fails looks identical from outside:
 ## the room simply moves on.
+##
+## An immediately repeated line is counted rather than appended. A hold loop that
+## calls `sound stop 2` on every tick otherwise writes forty identical lines and
+## the forty that mattered fall off the front — which is what a 40-line tail
+## looks like when the thing being traced is inside the loop it is diagnosing.
 func _trace(line: String) -> void:
+	if not _traced.is_empty():
+		var last := str(_traced[-1])
+		var head := last.split("  x")[0]
+		if head == line:
+			var seen := 1 if last == line else int(last.substr(head.length() + 3))
+			_traced[-1] = "%s  x%d" % [line, seen + 1]
+			return
 	_traced.append(line)
 	if _traced.size() > 40:
 		_traced.remove_at(0)
@@ -2335,6 +2932,13 @@ func lingo_marker(offset: int) -> int:
 func lingo_stop_sound(channel: int) -> void:
 	if _audio != null and _audio.has_method("stop_channel"):
 		_audio.call("stop_channel", channel)
+	_trace("f%d stop ch%d" % [_index, channel])
+
+
+func lingo_stop_all_sound() -> void:
+	if _audio != null and _audio.has_method("stop_all"):
+		_audio.call("stop_all")
+	_trace("f%d stop all" % _index)
 
 
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
@@ -2491,8 +3095,37 @@ func _field_text_of(member: Dictionary) -> String:
 	return str(member.get("text", ""))
 
 
+## Where a field override lives: the cast's file, then the member number in it.
+##
+## Not the library number. A library number is local to a movie — `MASTER.CST` is
+## library 2 in `SAVELOAD.dir` and need not be 2 in the room the save returns to —
+## and `SAVELOAD` writes `field "points" of castLib "master"` for the stage to
+## read back out of the same file. Keyed by number, a window and the stage would
+## be writing and reading two different entries whenever the two movies happened
+## to number the shared cast differently, and agreeing whenever they happened to
+## match: a bug that is invisible until the one movie that numbers it otherwise.
 func _field_key(lib: int, number: int) -> String:
-	return "%d:%d" % [lib, number]
+	var path := ""
+	if _table != null and _table.cast_libs.has(lib):
+		path = str((_table.cast_libs[lib] as Dictionary).get("resolved_path", ""))
+	if path == "":
+		# No table, or a library it does not know: fall back to the number so the
+		# entry is still addressable, and keep it distinguishable from a real path.
+		path = "#%d" % lib
+	return "%s:%d" % [path.to_lower(), number]
+
+
+## Drop the field overrides that belong to one container's own cast.
+##
+## Called on `go to movie`, with the movie being left. See the call site for why
+## the *linked* casts are deliberately not dropped.
+func _forget_field_text_of(container_path: String) -> void:
+	if container_path == "":
+		return
+	var prefix := container_path.to_lower() + ":"
+	for key in _field_text.keys():
+		if str(key).begins_with(prefix):
+			_field_text.erase(key)
 
 
 func lingo_member_number(which: Variant, cast: String) -> Variant:
