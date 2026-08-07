@@ -51,6 +51,7 @@ const Members := preload("res://scenes/preview/members.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
 const DebugReport := preload("res://scenes/preview/debug_report.gd")
+const Boot := preload("res://scenes/preview/boot.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -321,75 +322,24 @@ var _modal := false
 var _play_stack: Array = []
 
 
+## A window is the same scene standing up a second movie, configured before it
+## enters the tree rather than from the command line. Split in
+## `preview/boot.gd` so that the one state everything else in this file assumes
+## -- a loaded container with a score, a cast table and an interpreter -- is
+## reached the same way by both.
 func _ready() -> void:
-	# A window is the same scene standing up a second movie, and it is configured
-	# before it enters the tree rather than from the command line. Split here so
-	# that the one path everything else in this file assumes — a loaded container
-	# with a score, a cast table and an interpreter — is reached the same way by
-	# both.
 	if _window_key != "":
-		_ready_as_window()
-		return
-	var args := Args.parse()
-	var paths := Paths.new()
-	if not paths.load_config():
-		_fail("no game configured: %s" % Paths.CONFIG_PATH)
-		return
+		Boot.as_window(self)
+	else:
+		Boot.stage(self)
 
-	var wanted := Args.text(args, "file", paths.boot_movie)
-	var path: String = paths.resolve(wanted)
-	if path == "":
-		_fail("no such container: %s" % wanted)
-		return
 
-	_paths = paths
-	if not _load_container(path):
-		return
+func _ready_as_window() -> void:
+	Boot.as_window(self)
 
-	var label := Args.text(args, "label")
-	if label != "":
-		_index = int(_labels.labels.get(label.to_lower(), 0))
-	_index = clampi(Args.number(args, "frame", _index), 0, max(_score.frame_count - 1, 0))
 
-	# Pixel art: nearest filtering, and whole-number scaling so a source pixel is
-	# always a square block. A fractional factor makes some rows one pixel taller
-	# than their neighbours, which reads as the art being wrong rather than as
-	# the scaling being wrong.
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	RenderingServer.set_default_clear_color(Color.BLACK)
-	var cfg := ConfigFile.new()
-	if cfg.load(Paths.CONFIG_PATH) == OK:
-		_aspect = str(cfg.get_value("display", "aspect", _aspect)).to_lower()
-	_aspect = Args.text(args, "aspect", _aspect).to_lower()
-	# Only the stage fits itself to the OS window. A Movie-In-A-Window is a child
-	# of the stage and already inherits its scale, so running this on one scales
-	# it a second time -- at the default window that is 1.55 twice over, and the
-	# joke popup arrives at nearly two and a half times its size. Its geometry
-	# comes from `_apply_window_geometry` instead, which places it in *stage*
-	# coordinates where it belongs.
-	if _window_key == "":
-		get_window().size_changed.connect(_fit_to_window)
-		_fit_to_window()
-
-	_lingo_on = not Args.flag(args, "no-lingo")
-	if _lingo_on:
-		_start_lingo(path)
-	_audio = root_node("AudioDirector")
-	# The frame the movie opens on is entered like any other: its tempo arms the
-	# clock and its transition, if it has one, is played before anything runs on
-	# it. Without this the first frame is paced by the 15 fps default whatever the
-	# score says, and `_advance` would then re-enter it and re-arm the same delay.
-	_sync_frame_entry()
-	if _lingo_on and _interpreter != null:
-		# Director sends these once, before the first frame is drawn, and this is
-		# where a movie's opening sound and its global setup live.
-		_dispatch("prepareMovie", {})
-		_dispatch("startMovie", {})
-		_enter_frame_or_defer(_frame_script(_index))
-
-	get_window().title = "%s  â€”  %d frames" % [path.get_file(), _score.frame_count]
-	print("playing %s from frame %d of %d" % [path.get_file(), _index, _score.frame_count])
-	queue_redraw()
+func _start_lingo(path: String) -> void:
+	Boot.start_lingo(self, path)
 
 
 ## Open a container and make it the movie now playing.
@@ -480,44 +430,6 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	queue_redraw()
 
 
-## Stand up a movie that another movie asked for as a window (§14).
-##
-## Loaded but not shown and not running: `_process` is off until `open`, so the
-## playhead does not move and `startMovie` has not been sent. That ordering is
-## the corpus's, not a convenience — every one of the 21 sites reads
-##
-##     window("x").windowType = 2
-##     tell window("x") / set the centerStage to 1 / end tell
-##     open(window("x"))
-##
-## and three of them also `go` to a label inside the `tell`, so the movie has to
-## be addressable before it is opened and must not have advanced past the frame
-## the `go` chose.
-##
-## Input is off as well. The stage routes clicks and keys to the front-most
-## window explicitly (`route_click`), rather than letting Godot's own reverse-tree
-## `_input` order decide, because that order is invisible in a headless harness
-## and a click has to be assertable.
-func _ready_as_window() -> void:
-	_paths = _stage_preview._paths
-	_aspect = _stage_preview._aspect
-	_lingo_on = _stage_preview._lingo_on
-	_audio = root_node("AudioDirector")
-	# The debug outlines belong to whoever is looking at the stage, and a window
-	# drawn over it should not add a second set.
-	_show_boxes = false
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	visible = false
-	set_process(false)
-	set_process_input(false)
-	if not _load_container(_window_path):
-		return
-	if _lingo_on:
-		_start_lingo(_window_path)
-		_share_movie_state_with(_stage_preview)
-	print("window %s: %d frames" % [_window_path.get_file(), _score.frame_count])
-
-
 ## A window and the stage are two movies in one Director session, and some state
 ## belongs to the session rather than to either movie.
 ##
@@ -545,78 +457,6 @@ func _share_movie_state_with(other: Node) -> void:
 
 func root_node(name: String) -> Node:
 	return get_tree().root.get_node_or_null(name) if get_tree() != null else null
-
-
-## Compile every cast this movie can address, and stand up an interpreter.
-##
-## The movie's own cast is not enough. A room's `exitFrame` lives there, but the
-## handlers that play sound, move inventory and drive the HUD live in the shared
-## cast the movie links â€” `MASTER` here â€” and a preview that compiles only the
-## internal cast runs rooms that hold and say nothing.
-## Globals outlive the movie that set them. That is the entire point of a Lingo
-## global, and this game is built on it: `EXODUS` sets `syz` and `globalday` and
-## then goes to `DAY1`, and `DAY1` reads them. Director clears them only on
-## `clearGlobals` or on quitting -- never on `go to movie`.
-##
-## A movie change stands up a fresh interpreter here, because the scripts, the
-## casts and the handler tables all belong to the movie being left. The globals
-## do not, so they are carried across. Without this every room began with every
-## global VOID, which is not a subtle failure: rooms that decide what to show
-## from accumulated state show the wrong thing, and the wrongness looks like a
-## rendering fault rather than a lost variable.
-##
-## The interpreter's own dictionary is the one that matters. `owns_global` on the
-## host answers "do I already hold this name", and nothing ever seeds the host's
-## dictionary, so it is always false and every global lives here. Both are
-## carried anyway, so that stops being load-bearing if the host ever does claim
-## one.
-func _start_lingo(path: String) -> void:
-	var carried_globals: Dictionary = {}
-	var carried_host_globals: Dictionary = {}
-	if _interpreter != null:
-		carried_globals = _interpreter.globals
-	if _host != null:
-		carried_host_globals = _host.globals
-
-	var movie := path.get_file().get_basename().to_upper()
-	_interpreter = Interpreter.new()
-	_host = PreviewHost.new()
-	_host.preview = self
-	_interpreter.host = _host
-	_interpreter.globals = carried_globals
-	_host.globals = carried_host_globals
-
-	var compiler := Compiler.new()
-	var started := Time.get_ticks_usec()
-	var total := 0
-	_script_casts.clear()
-	for lib in _table.cast_libs:
-		var cast = _table.cast_for(int(lib))
-		if cast == null:
-			continue
-		var entry: Dictionary = _table.cast_libs[lib]
-		var cast_name := str(entry.get("name", "")).to_lower()
-		if cast_name == "" or int(lib) == 1:
-			cast_name = "internal"
-		var bundle: Dictionary = compiler.compile_cast(cast, movie, cast_name)
-		var count := (bundle.get("scripts", {}) as Dictionary).size()
-		if count == 0:
-			continue
-		_interpreter.load_bundle(bundle, movie)
-		# The movie's own cast is searched first, so it is listed first.
-		var key := "%s/%s" % [movie, cast_name]
-		_lib_keys[int(lib)] = key
-		if int(lib) == 1:
-			_script_casts.insert(0, key)
-		else:
-			_script_casts.append(key)
-		total += count
-		print("lingo: %-10s %3d script(s)" % [cast_name, count])
-	print("lingo: %d script(s) across %d cast(s) in %.0f ms" % [
-		total, _script_casts.size(), (Time.get_ticks_usec() - started) / 1000.0,
-	])
-	if _script_casts.is_empty():
-		print("lingo: nothing compiled; %s" % compiler.error)
 
 
 ## Script resolution and dispatch, delegated to `preview/scripts.gd`. The rule
@@ -701,6 +541,11 @@ func _dispatch_key(event: InputEventKey) -> bool:
 	return claimed
 
 
+## The frame script covering a frame, delegated to `preview/scripts.gd`.
+func _frame_script(index: int) -> Dictionary:
+	return Scripts.for_frame(self, _score, index)
+
+
 func _tally(into: Dictionary, key: String) -> void:
 	into[key] = int(into.get(key, 0)) + 1
 
@@ -725,55 +570,6 @@ func _exit_tree() -> void:
 		if _movie != null:
 			_movie.close()
 			_movie = null
-
-
-## The frame script covering a frame, or `{}`.
-##
-## The main channel's script slot is only one of the two places this lives, and
-## the smaller one. Most frame scripts are interval entries â€” a span of frames
-## with a script attached, the same mechanism that attaches behaviours to sprite
-## channels, distinguished by naming sprite 0. Reading only the main channel
-## found a script on almost no frame, so `exitFrame` dispatched every tick and
-## ran nothing: rooms did not hold and hotspots did not answer.
-func _frame_script(index: int) -> Dictionary:
-	var frame: Dictionary = _score.frame(index)
-	var member = frame.get("frame_script")
-	if member != null:
-		# Resolved in the library the score names, not by number alone: the
-		# talking loop's last-frame script lives in the shared cast, and a
-		# number-only search hands the frame to whichever cast answers first.
-		var direct := _script_in_lib(int(frame.get("frame_script_lib", 1)), int(member))
-		if direct.is_empty():
-			direct = _script_for_member(int(member))
-		if not direct.is_empty():
-			return direct
-	if _score == null:
-		return {}
-	# The narrowest interval covering this frame wins. A movie carries both
-	# room-specific frame scripts and one that spans everything â€” DAY1's
-	# `what to do everyframe` covers the whole movie â€” so taking the first match
-	# hands every frame to the movie-wide script and the room-specific one never
-	# runs. In DAY1 that is `go to mrkr 0`, the `go(marker(0))` that holds the
-	# room: the playhead simply ran on, with no error anywhere.
-	var best: Dictionary = {}
-	var narrowest := 0x7FFFFFFF
-	for interval in _score.intervals():
-		if str(interval["kind"]) != "frame":
-			continue
-		var from := int(interval["start"])
-		var to := int(interval["end"])
-		if index < from or index > to:
-			continue
-		var span := to - from
-		if span >= narrowest:
-			continue
-		var script := _script_in_lib(
-			int(interval["script_cast_lib"]), int(interval["script_member"])
-		)
-		if not script.is_empty():
-			best = script
-			narrowest = span
-	return best
 
 
 ## Everything trails sprites have painted, kept across repaints. `DIRECTOR_ENGINE.md`

@@ -1,0 +1,188 @@
+extends RefCounted
+## Standing a movie up: the stage from the command line, a window from the movie
+## that asked for it, and the Lingo behind either.
+##
+## Both paths converge on the same state -- a loaded container with a score, a
+## cast table and an interpreter -- and everything else in the preview assumes
+## it. Splitting them here rather than branching inside one long `_ready` is what
+## keeps that assumption true for both.
+##
+## The one thing worth reading twice is `start_lingo`'s handling of globals.
+## **They are carried across a movie change and shared between the stage and its
+## windows**, because they are session state rather than movie state. Director
+## clears them on `clearGlobals` and on quitting, never on opening a window or
+## changing movie, and this corpus is built on exactly that: `SAVELOAD` sets
+## `nof`, `newsyz`, `egozh` and `nextroomdata` in its own handlers and then says
+## `tell the stage / go(nof, "day1.dxr")`, and the room that arrives reads those
+## globals to place the player. Rebuilding them per movie loses the save; the
+## symptom is a room drawn from accumulated state showing the wrong thing, which
+## looks like a rendering fault rather than a lost variable.
+
+const Args := preload("res://tools/lib/args.gd")
+const Paths := preload("res://director/director_paths.gd")
+const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
+const Interpreter := preload("res://lingo/lingo_interpreter.gd")
+const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
+
+
+## The stage: resolve the boot movie from the config and the command line, load
+## it, and enter its first frame the way any other frame is entered.
+static func stage(host) -> void:
+	var args := Args.parse()
+	var paths := Paths.new()
+	if not paths.load_config():
+		host._fail("no game configured: %s" % Paths.CONFIG_PATH)
+		return
+
+	var wanted := Args.text(args, "file", paths.boot_movie)
+	var path: String = paths.resolve(wanted)
+	if path == "":
+		host._fail("no such container: %s" % wanted)
+		return
+
+	host._paths = paths
+	if not host._load_container(path):
+		return
+
+	var label := Args.text(args, "label")
+	if label != "":
+		host._index = int(host._labels.labels.get(label.to_lower(), 0))
+	host._index = clampi(Args.number(args, "frame", host._index), 0,
+		max(host._score.frame_count - 1, 0))
+
+	# Pixel art: nearest filtering. A fractional scale factor makes some rows one
+	# pixel taller than their neighbours, which reads as the art being wrong
+	# rather than as the scaling being wrong.
+	host.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	RenderingServer.set_default_clear_color(Color.BLACK)
+	var cfg := ConfigFile.new()
+	if cfg.load(Paths.CONFIG_PATH) == OK:
+		host._aspect = str(cfg.get_value("display", "aspect", host._aspect)).to_lower()
+	host._aspect = Args.text(args, "aspect", host._aspect).to_lower()
+	# Only the stage fits itself to the OS window. A Movie-In-A-Window is a child
+	# of the stage and already inherits its scale, so running this on one scales
+	# it a second time -- at the default window that is 1.55 twice over, and the
+	# joke popup arrives at nearly two and a half times its size. Its geometry
+	# comes from `_apply_window_geometry` instead, which places it in *stage*
+	# coordinates where it belongs.
+	host.get_window().size_changed.connect(host._fit_to_window)
+	host._fit_to_window()
+
+	host._lingo_on = not Args.flag(args, "no-lingo")
+	if host._lingo_on:
+		start_lingo(host, path)
+	host._audio = host.root_node("AudioDirector")
+	# The frame the movie opens on is entered like any other: its tempo arms the
+	# clock and its transition, if it has one, is played before anything runs on
+	# it. Without this the first frame is paced by the default rate whatever the
+	# score says, and the first step would re-enter it and re-arm the same delay.
+	host._sync_frame_entry()
+	if host._lingo_on and host._interpreter != null:
+		# Director sends these once, before the first frame is drawn, and this is
+		# where a movie's opening sound and its global setup live.
+		host._dispatch("prepareMovie", {})
+		host._dispatch("startMovie", {})
+		host._enter_frame_or_defer(host._frame_script(host._index))
+
+	host.get_window().title = "%s  -  %d frames" % [
+		path.get_file(), host._score.frame_count]
+	print("playing %s from frame %d of %d" % [
+		path.get_file(), host._index, host._score.frame_count])
+	host.queue_redraw()
+
+
+## A window: stand up a movie another movie asked for.
+##
+## Loaded but not shown and not running -- `_process` is off until `open`, so the
+## playhead does not move and `startMovie` has not been sent. That ordering is
+## the corpus's, not a convenience. Every one of the 21 sites reads
+##
+##     window("x").windowType = 2
+##     tell window("x") / set the centerStage to 1 / end tell
+##     open(window("x"))
+##
+## and three of them also `go` to a label inside the `tell`, so the movie has to
+## be addressable before it is opened and must not have advanced past the frame
+## the `go` chose.
+##
+## Input is off as well. The stage routes clicks and keys to the front-most
+## window explicitly, rather than letting Godot's own reverse-tree `_input` order
+## decide, because that order is invisible in a headless harness and a click has
+## to be assertable.
+static func as_window(host) -> void:
+	host._paths = host._stage_preview._paths
+	host._aspect = host._stage_preview._aspect
+	host._lingo_on = host._stage_preview._lingo_on
+	host._audio = host.root_node("AudioDirector")
+	# The debug outlines belong to whoever is looking at the stage, and a window
+	# drawn over it should not add a second set.
+	host._show_boxes = false
+	host.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	host.visible = false
+	host.set_process(false)
+	host.set_process_input(false)
+	if not host._load_container(host._window_path):
+		return
+	if host._lingo_on:
+		start_lingo(host, host._window_path)
+		host._share_movie_state_with(host._stage_preview)
+	print("window %s: %d frames" % [
+		host._window_path.get_file(), host._score.frame_count])
+
+
+## Compile every cast this movie can address and hand the scripts to a fresh
+## interpreter, carrying the globals across.
+##
+## The interpreter's own dictionary is the one that matters. `owns_global` on the
+## host answers "do I already hold this name", and nothing ever seeds the host's
+## dictionary, so it is always false and every global lives in the interpreter's.
+## Both are carried anyway, so that stops being load-bearing if the host ever
+## does claim one.
+static func start_lingo(host, path: String) -> void:
+	var carried_globals: Dictionary = {}
+	var carried_host_globals: Dictionary = {}
+	if host._interpreter != null:
+		carried_globals = host._interpreter.globals
+	if host._host != null:
+		carried_host_globals = host._host.globals
+
+	var movie := path.get_file().get_basename().to_upper()
+	host._interpreter = Interpreter.new()
+	host._host = PreviewHost.new()
+	host._host.preview = host
+	host._interpreter.host = host._host
+	host._interpreter.globals = carried_globals
+	host._host.globals = carried_host_globals
+
+	var compiler := Compiler.new()
+	var started := Time.get_ticks_usec()
+	var total := 0
+	host._script_casts.clear()
+	for lib in host._table.cast_libs:
+		var cast = host._table.cast_for(int(lib))
+		if cast == null:
+			continue
+		var entry: Dictionary = host._table.cast_libs[lib]
+		var cast_name := str(entry.get("name", "")).to_lower()
+		if cast_name == "" or int(lib) == 1:
+			cast_name = "internal"
+		var bundle: Dictionary = compiler.compile_cast(cast, movie, cast_name)
+		var count := (bundle.get("scripts", {}) as Dictionary).size()
+		if count == 0:
+			continue
+		host._interpreter.load_bundle(bundle, movie)
+		# The movie's own cast is searched first, so it is listed first.
+		var key := "%s/%s" % [movie, cast_name]
+		host._lib_keys[int(lib)] = key
+		if int(lib) == 1:
+			host._script_casts.insert(0, key)
+		else:
+			host._script_casts.append(key)
+		total += count
+		print("lingo: %-10s %3d script(s)" % [cast_name, count])
+	print("lingo: %d script(s) across %d cast(s) in %.0f ms" % [
+		total, host._script_casts.size(),
+		(Time.get_ticks_usec() - started) / 1000.0,
+	])
+	if host._script_casts.is_empty():
+		print("lingo: nothing compiled; %s" % compiler.error)

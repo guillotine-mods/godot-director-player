@@ -77,3 +77,55 @@ static func dispatch(host, interpreter, handler: String, script: Dictionary) -> 
 	if owns or interpreter.has_handler(key):
 		host._tally(host._ran, handler)
 	interpreter.call_handler(handler, [], script)
+
+
+
+## The frame script covering a frame, or `{}`.
+##
+## The main channel's script slot is only one of the two places this lives, and
+## the smaller one. Most frame scripts are interval entries -- a span of frames
+## with a script attached, the same mechanism that attaches behaviours to sprite
+## channels, distinguished by naming sprite 0. Reading only the main channel
+## found a script on almost no frame, so `exitFrame` dispatched every tick and
+## ran nothing: rooms did not hold and hotspots did not answer.
+##
+## **The narrowest interval covering the frame wins.** A movie carries both
+## room-specific frame scripts and one that spans everything -- DAY1's
+## `what to do everyframe` covers the whole movie -- so taking the first match
+## hands every frame to the movie-wide script and the room-specific one never
+## runs. In DAY1 that is `go to mrkr 0`, the `go(marker(0))` that holds the room:
+## the playhead simply ran on, with no error anywhere.
+static func for_frame(host, score, index: int) -> Dictionary:
+	if score == null:
+		return {}
+	var frame: Dictionary = score.frame(index)
+	var member = frame.get("frame_script")
+	if member != null:
+		# Resolved in the library the score names, not by number alone: the
+		# talking loop's last-frame script lives in the shared cast, and a
+		# number-only search hands the frame to whichever cast answers first.
+		var direct: Dictionary = host._script_in_lib(
+			int(frame.get("frame_script_lib", 1)), int(member))
+		if direct.is_empty():
+			direct = host._script_for_member(int(member))
+		if not direct.is_empty():
+			return direct
+	var best: Dictionary = {}
+	var narrowest := 0x7FFFFFFF
+	for interval in score.intervals():
+		if str(interval["kind"]) != "frame":
+			continue
+		var from := int(interval["start"])
+		var to := int(interval["end"])
+		if index < from or index > to:
+			continue
+		var span := to - from
+		if span >= narrowest:
+			continue
+		var script: Dictionary = host._script_in_lib(
+			int(interval["script_cast_lib"]), int(interval["script_member"])
+		)
+		if not script.is_empty():
+			best = script
+			narrowest = span
+	return best
