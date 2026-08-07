@@ -67,6 +67,7 @@ func _init() -> void:
 
 	var sprites: Array = score.frame(frame).get("sprites", [])
 	var eligible := 0
+	var classified := 0
 	for s_value in sprites:
 		var raw: Dictionary = s_value
 		var sprite: Dictionary = preview.call("_effective", raw)
@@ -75,11 +76,13 @@ func _init() -> void:
 				int(raw["channel"]), "%d:%d" % [int(raw["cast_lib"]), int(raw["cast_id"])],
 				"-", "-", "-", "no", "hidden by a script",
 			])
+			classified += 1
 			continue
 		var channel := int(sprite["channel"])
 		var ink := int(sprite["ink"])
 		var rect: Rect2 = preview.call("_stage_rect", sprite)
 		var responds: bool = preview.call("_responds_to_mouse", sprite)
+		classified += 1
 		if responds:
 			eligible += 1
 		var why := ""
@@ -104,8 +107,15 @@ func _init() -> void:
 	print("")
 	print("%d of %d sprites can answer a click" % [eligible, sprites.size()])
 
+	# Deliberately not "at least one sprite must be clickable". That is not a
+	# property of Director and it is not true of real frames: MAP's frame 0 holds
+	# a backdrop, a panel and one off-stage sprite, and none of them has a
+	# behaviour, because the map's regions arrive a few frames later. A tool that
+	# failed on that would be teaching the wrong lesson. What is worth asserting
+	# is that every sprite got a verdict rather than being skipped.
 	var h := Harness.new()
-	h.begin("the frame has at least one live hotspot")
-	h.check("something on this frame is clickable", eligible > 0, "%d eligible" % eligible)
-	h.complete("the frame has at least one live hotspot")
+	h.begin("every sprite on the frame was classified")
+	h.check("no sprite was skipped", classified == sprites.size(),
+		"%d of %d" % [classified, sprites.size()])
+	h.complete("every sprite on the frame was classified")
 	quit(h.finish("hotspot eligibility on one frame"))

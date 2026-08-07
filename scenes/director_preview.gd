@@ -1169,7 +1169,22 @@ func _channel_at(at: Vector2) -> int:
 	# cannot model yet, so both are available and `M` switches between them.
 	var sprites: Array = _score.frame(_index).get("sprites", [])
 	for i in range(sprites.size() - 1, -1, -1):
-		var sprite: Dictionary = sprites[i]
+		# Puppet state, not the raw score record. The descent used to read the
+		# score directly, which meant a sprite a script had hidden still absorbed
+		# every click inside its rect, and a sprite a script had moved absorbed
+		# them at the position the score last gave it rather than where it is.
+		#
+		# Both are invisible from the player's chair and read as "something I
+		# cannot see is covering what I am trying to click". DAY1's beach frame
+		# script alone hides sprites 15, 17 and 33, all of them on channels above
+		# the backdrop and two of them above the character.
+		#
+		# `visible` is the case the reference is most explicit about: false means
+		# not drawn *and* not hit-tested, and it is the first thing `isMouseIn`
+		# checks. `_effective` answers `{}` for it.
+		var sprite: Dictionary = _effective(sprites[i])
+		if sprite.is_empty():
+			continue
 		if not _sprite_rect(sprite).has_point(at):
 			continue
 		# Only Matte samples the artwork. Every other ink is a plain rectangle
