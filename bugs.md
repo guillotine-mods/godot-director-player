@@ -823,3 +823,113 @@ $ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/AIR1.DIR
 A movie whose cursor members are only in a linked cast would print `[0, 0]` and
 fail `no pair resolved to member 0`. Finding one is the next step.
 
+---
+
+## 30. Sprite colours that D7 stores as true RGB are read as palette indices
+
+**Status:** open · **Area:** score decoder / renderer ·
+found while measuring the sprite record byte by byte
+
+Bits 0x10 and 0x20 of the sprite record's colour-code byte (offset 20) say that
+the sprite's fore or back colour is a **true colour** carried in bytes 24-27 —
+byte 2 and byte 3 being the red components, 24/26 the green and blue of the fore
+colour, 25/27 of the back — rather than an index into the movie's palette. The
+port reads bytes 2 and 3 as indices unconditionally, so those sprites take
+whatever the palette happens to hold at that index.
+
+Measured, on the corpora as they stand:
+
+```
+$ godot --headless --script tools/sprite_record_bytes.gd -- --all   # Piposh 2
+  20         9    0x00:746048 0x01:7470 0x02:51929 0x03:2830 0x04:2149
+                  0x05:4753 0x10:15 0x20:635 0x30:489
+  24        20    0x00..0xff
+  25        35    0x00..0xff
+  26        16    0x00..0xff
+  27        24    0x00..0xff
+```
+
+So **1,124 of Piposh 2's 816,318 records** carry the back-colour bit and **504**
+the fore-colour bit, and bytes 24-27 genuinely vary. Piposh 1 sets neither bit
+and leaves 24-27 zero across all 1,886,362 of its records, so it cannot be used
+to check a fix.
+
+It matters more than a wrong tint would suggest: the back colour is what
+Background Transparent keys against (§2.1), so a record whose paper is an RGB
+that the port resolves as index 255 keys out the wrong pixels entirely.
+
+The reference is no help and no excuse. `frame.cpp:readSpriteDataD7` parses all
+four bytes and `sprite.cpp:replaceFrom` copies them, and **nothing in ScummVM
+ever reads them again** — the same shape as flip before §1.8 was implemented.
+
+Not fixed here because it needs the colour to stop being an index all the way
+through `director_ink.gd` and the texture cache key, and because the only corpus
+that exercises it is the one this port already renders acceptably — which makes
+it exactly the kind of change that wants its own before-and-after measurement.
+
+---
+
+## 31. Some sprites hold an oversized rect for the first frames of their span
+
+**Status:** open, cause not established · **Area:** score decoder / renderer ·
+reported from play on Piposh 1 as "some sprites stretch outward and back in
+again, only some elements, only sometimes"
+
+Not reproduced as a screenshot. What *is* established is a data signature that
+would produce exactly that description, and the two hypotheses it was filed with
+are both disproved, so the next session should start from here rather than from
+them.
+
+**The signature.** `PIPDATA/OPENING.dir` channel 3 holds member `b8`, a 540x175
+bitmap. The score writes the channel a full 48-byte record on frame 172 with a
+rect of **648x482**, writes nothing to it for eleven frames, and on frame 183
+writes four bytes at offset 16 putting the rect back to 540x175. It does the same
+again at 217/219, and from frame 281 it holds 648x482 for the last 53 frames of
+the movie. The sprite's stretch bit is clear throughout and its `locH`/`locV`
+never move, so the port draws a caption at 1.2x width and 2.75x height for
+0.7 s, snaps it to its natural size, and later back again.
+
+```
+$ godot --headless --script tools/sprite_size_survey.gd -- --file PIPDATA/OPENING.dir
+  stretch clear  natural    1894 ( 91.6%)   resized     173 (  8.4%)  of 2067
+  stretch set    natural     338 ( 43.9%)   resized     432 ( 56.1%)  of 770
+  runs of one member on one channel: 1137, of which 20 change size,
+    12 leave the natural size and return
+  OPENING.dir      ch3    1:32  natural 540x175  x2.75  sizes [(648, 482), (540, 175)]
+```
+
+Corpus-wide the shape is far commoner in Piposh 1 than in Piposh 2 — **11,056**
+size excursions against **441**, and 13.7% of unstretched records disagreeing
+with their member's natural size against 2.9% — which fits "it started when the
+older title was loaded".
+
+**Hypothesis 1, that the rect is authoring residue and an unstretched sprite
+should draw at its member's natural size: disproved.** ScummVM's score path
+(`sprite.cpp:replaceFrom`) copies the record's width and height with no
+natural-size reset; the reset lives only in `channel.cpp:setCast`, which is the
+Lingo path, and `director_preview.gd:_effective` already implements it there.
+§1.2 says the same. `_drawn_size` was left alone.
+
+**Hypothesis 2, that the unconsumed tweened flag is the missing interpolation:
+disproved, and the flag was being read from the wrong byte.** It is bit 0x80 of
+record offset 22, not offset 4, and once read from the right place 70% of Piposh
+1's records carry it. `tools/tween_survey.gd` then rules out interpolation:
+tweened spans exist that hold one value for **4,255 consecutive frames with zero
+changes**, and a span with nothing to interpolate cannot be an instruction to
+interpolate. The frame stream already carries the result.
+
+**What is left.** Either the file really does say 648x482 and Director really did
+draw the caption stretched for those eleven frames — possible, and it would make
+this authentic — or something the port does not read overrides the rect. The one
+candidate found and not chased is the **sprite-list index** at record offset 8,
+which names an entry of the same `VWSC`: entry 372 for this span, whose first
+three fields are 173, 218 and 8, exactly this span's frames and channel. The rest
+of that entry is unread. The reference reads the index and uses it for nothing,
+so the reference cannot answer this one either.
+
+Reproduce the data:
+
+```
+$ godot --headless --script tools/sprite_size_survey.gd -- --all --worst 20
+$ godot --headless --script tools/tween_survey.gd -- --all
+```

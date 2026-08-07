@@ -39,6 +39,11 @@ const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const ContainerFile := preload("res://director/director_file.gd")
 const Score := preload("res://director/director_score.gd")
+
+## Main-channel offsets the port resolves as a cast member number: the frame
+## script, the transition and the palette. The two sound channels are handled
+## separately because they are the subject of this survey rather than a control.
+const MEMBER_REFERENCE_SLOTS := [2, 98, 242]
 const CastTable := preload("res://director/director_cast_table.gd")
 const Cast := preload("res://director/director_cast.gd")
 const Paths := preload("res://director/director_paths.gd")
@@ -237,11 +242,23 @@ func _init() -> void:
 			print("  %3d  in %s" % [at, ", ".join(undecoded[at])])
 	print("")
 
-	var slots_naming_sound: Array[String] = []
+	# Split in two, because "some 16-bit slot resolves to a sound member" and
+	# "a score writes a sound channel" are different claims and only the second
+	# is about score sound. A slot at an odd alignment inside the tempo record
+	# resolves to *something* in any large enough cast, and Piposh 1 has one that
+	# lands on a sound member in two frames purely by arithmetic.
+	var sound_channel_slots: Array[String] = []
+	var other_slots_naming_sound: Array[String] = []
 	for at in slots:
 		var types: Dictionary = slot_types[at]
-		if types.has("sound"):
-			slots_naming_sound.append("offset %d in %d frame(s)" % [at, int(types["sound"])])
+		if not types.has("sound"):
+			continue
+		var line := "offset %d in %d frame(s)" % [at, int(types["sound"])]
+		# The member half of each sound record: `SOUND_CHANNEL_AT` plus two.
+		if Score.SOUND_CHANNEL_AT.has(at - 2):
+			sound_channel_slots.append(line)
+		else:
+			other_slots_naming_sound.append(line)
 
 	# The other way a frame can be about sound: a wait-for-sound tempo. D6
 	# numbers those 255 and 254 (with a cue-point index beside them) and D5 used
@@ -256,14 +273,40 @@ func _init() -> void:
 	var h := Harness.new()
 	h.begin("the score's own sound channels are measured, not assumed")
 	h.check("read at least one score", scored > 0, "%d of %d containers" % [scored, movies])
-	# Both checks assert the *absence* of score sound, which is the claim the
-	# preview host rests on. If either ever fails, the frame-driven half of §12
-	# has become real work and the host comment is wrong.
-	h.check("no container holds a sound cast member",
-		int(member_types.get("sound", 0)) == 0,
-		"%d sound member(s)" % int(member_types.get("sound", 0)))
-	h.check("no 16-bit slot of any frame's main channel block names a sound member",
-		slots_naming_sound.is_empty(), "; ".join(slots_naming_sound))
+	# This used to assert that no container held a sound cast member at all,
+	# which was true of the first title and is not a property of anything:
+	# Piposh 1 ships 17 of them, so the tool answered FAIL to the news that a
+	# second game had been loaded. Whether a corpus *has* sound members is a
+	# measurement and is printed above; what the port claims is narrower and is
+	# what is asserted here.
+	print("sound cast members in this corpus: %d" % int(member_types.get("sound", 0)))
+	print("frames whose score sound channels name a member: %s" % (
+		"none" if sound_channel_slots.is_empty() else "; ".join(sound_channel_slots)))
+	print("")
+	# The claim: the two offsets `_sound_channels` reads are the only places a
+	# score keeps sound. Both corpora leave them empty, which is why §12's
+	# frame-driven half is still labelled unverified rather than done -- and
+	# Piposh 1 makes that a real finding rather than a tautology, because it has
+	# 17 sound members to put there and puts none of them there.
+	h.check("the score's sound channels are unexercised by this corpus",
+		sound_channel_slots.is_empty(), "; ".join(sound_channel_slots))
+	# Any *other* slot that resolves to a sound member is only interesting if the
+	# port reads that slot as a member reference. It reads four besides the sound
+	# channels -- the frame script, the transition and the palette -- and a hit on
+	# one of those would mean an offset is wrong. A hit anywhere else is two bytes
+	# at an alignment nothing uses, resolving by arithmetic in a large enough
+	# cast, and Piposh 1 has one inside the tempo record.
+	var misread: Array[String] = []
+	for line in other_slots_naming_sound:
+		for claimed in MEMBER_REFERENCE_SLOTS:
+			if line.begins_with("offset %d " % claimed):
+				misread.append(line)
+	h.check("and no slot the port reads as a member reference names a sound",
+		misread.is_empty(), "; ".join(misread))
+	if not other_slots_naming_sound.is_empty():
+		print("")
+		print("slots that resolve to a sound member and are read by nothing: %s"
+			% "; ".join(other_slots_naming_sound))
 	# The same question asked through the decoder rather than through the bytes. It
 	# is not redundant: `_sound_channels` reads two specific offsets, and this is
 	# what catches those two offsets being read wrong in the direction that yields

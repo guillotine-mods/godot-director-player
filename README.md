@@ -173,6 +173,10 @@ godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # w
 godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
+godot --headless --script tools/sprite_record_bytes.gd -- --all  # what each of the 48 bytes of a sprite record holds, pass/fail
+godot --headless --script tools/sprite_size_survey.gd -- --all  # score rect versus the member's natural size, and rects that change mid-span
+godot --headless --script tools/tween_survey.gd -- --all  # whether a tweened span carries a value per frame or only keyframes
+godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped sprite is mirrored inside its own rect, pass/fail — NOT --headless
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
@@ -185,18 +189,25 @@ godot --script tools/stage_clip.gd -- --file strtgame.dir  # sprites are cut at 
 godot --script tools/trails.gd -- --file PIP2DATA/DAY1.dir  # a trails sprite is not erased between frames, pass/fail — NOT --headless
 ```
 
-`stage_clip.gd` and `trails.gd` are the two tools here that want to run
-**without** `--headless`. Their other cases work either way, but the ones that
+`sprite_record_bytes.gd` is the one to reach for when a sprite field looks
+wrong. It prints, for every byte of the record, how many distinct values it ever
+takes — which is how the flags byte and the blend amount were found to be read
+from offsets already occupied by the cast lib and the width, so flip, blend and
+tweened had all been counted as zero for reasons that had nothing to do with the
+data. It asserts, rather than assuming, that no two decoded fields share a byte.
+
+`stage_clip.gd`, `trails.gd` and `sprite_flip.gd` are the tools here that want to
+run **without** `--headless`. Their other cases work either way, but the ones that
 matter read the framebuffer back, and headless Godot paints nothing to read. Both
 caught a renderer change that every headless check passed over: the stage clip
 was armed once at startup and Godot reset it on the next repaint, and the trail
 layer was painted underneath the frame's sprites, where any backdrop hides it. If
 you write a renderer harness, assume the headless half is not enough.
 
-`palette_cycle.gd` and much of `trails.gd` are **synthetic on purpose**, and say
-so: this corpus switches colour cycling on 0 times in 61,371 frames and sets the
-trails bit 0 times in 816,318 sprite records, so there is no authored data to
-assert against. Both features are Director's, so both are built and driven from
+`palette_cycle.gd`, `sprite_flip.gd` and much of `trails.gd` are **synthetic on
+purpose**, and say so: Piposh 2 switches colour cycling on 0 times in 61,371
+frames, and neither title sets the trails bit or either flip bit in 2.7 million
+sprite records between them, so there is no authored data to assert against. Both features are Director's, so both are built and driven from
 hand-made records — see "Build Director, not this game" in `AGENTS.md`.
 
 The Lingo compiler and interpreter have their own set, all pass/fail, all
@@ -225,7 +236,8 @@ harness — that is what `tools/lib/` exists to make cheap.
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
 `cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `text_and_shapes.gd`,
-`stage_clip.gd`, `trails.gd`, `palette_cycle.gd`,
+`stage_clip.gd`, `trails.gd`, `palette_cycle.gd`, `sprite_flip.gd`,
+`sprite_record_bytes.gd`, `sprite_size_survey.gd`, `tween_survey.gd`,
 `aiff_check.gd`, `audio_index.gd`, `sound_state.gd`,
 `sound_survey.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the

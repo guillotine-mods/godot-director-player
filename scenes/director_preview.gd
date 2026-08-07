@@ -1949,15 +1949,16 @@ func _draw_sprite_texture(texture: Texture2D, at: Vector2, sprite: Dictionary,
 	if not flip_h and not flip_v:
 		draw_texture(texture, at, modulate)
 		return
-	# A negative extent mirrors about the far edge, so the rect is moved to that
-	# edge and grown backwards. The pixels covered are exactly the same ones.
+	# A negative extent asks Godot to mirror. It negates the size and keeps the
+	# position, so the rectangle covered is the same one the unflipped draw would
+	# have covered and the origin must NOT be moved to the far edge to compensate.
+	# Measured, not assumed: a four-pixel texture drawn with `Rect2(4, 0, -4, 1)`
+	# lands on x 4..7 reversed, not on x 0..3.
 	var size := texture.get_size()
 	var rect := Rect2(at, size)
 	if flip_h:
-		rect.position.x += size.x
 		rect.size.x = -size.x
 	if flip_v:
-		rect.position.y += size.y
 		rect.size.y = -size.y
 	draw_texture_rect(texture, rect, false, modulate)
 
@@ -2009,17 +2010,20 @@ func _begin_drag(at: Vector2) -> void:
 	var channel := _channel_at(at)
 	if channel <= 0:
 		return
-	if int((_overrides.get(channel, {}) as Dictionary).get("moveable", 0)) == 0:
-		return
 	for sprite in _score.frame(_index).get("sprites", []):
 		if int(sprite["channel"]) != channel:
 			continue
-		var here := Vector2(
-			float(_effective(sprite).get("loc_h", 0)),
-			float(_effective(sprite).get("loc_v", 0))
-		)
+		# Asked of the effective sprite, which is where the score's own moveable
+		# bit and any `the moveableSprite of sprite` write have already been
+		# merged into one answer. Reading `_overrides` directly, as this used to,
+		# saw only the Lingo half.
+		var live: Dictionary = _effective(sprite)
+		if live.is_empty() or not bool(live.get("moveable", false)):
+			return
 		_drag_channel = channel
-		_drag_offset = here - at
+		_drag_offset = Vector2(
+			float(live.get("loc_h", 0)), float(live.get("loc_v", 0))
+		) - at
 		return
 
 
@@ -2385,6 +2389,15 @@ func _effective(sprite: Dictionary) -> Dictionary:
 	# one field and `_draw` has a single thing to test.
 	if over.has("trails"):
 		out["trails"] = LingoValue.to_int(over["trails"]) != 0
+	# `the moveableSprite of sprite N` and the score's own moveable bit are the
+	# same property from two sources, exactly as trails is, and they are merged
+	# here for the same reason. Before this only the Lingo write existed, so a
+	# sprite the author ticked "Moveable" on in the Score window could not be
+	# dragged at all and was not even click-eligible — an authoring-time property
+	# that simply did nothing. 744 of Piposh 1's records set it; Piposh 2 sets it
+	# on none, which is why nothing missed it until a second title was loaded.
+	if over.has("moveable"):
+		out["moveable"] = LingoValue.to_int(over["moveable"]) != 0
 	return out
 
 
@@ -2480,9 +2493,10 @@ func _responds_to_mouse(sprite: Dictionary) -> bool:
 	)):
 		return true
 	# A moveable sprite is click-eligible on its own, with no script at all â€”
-	# it has to be, or nothing could start a drag.
-	var over: Dictionary = _overrides.get(channel, {})
-	if int(over.get("moveable", 0)) != 0:
+	# it has to be, or nothing could start a drag. The sprite handed in here has
+	# already been through `_effective`, so this is the score's bit and the Lingo
+	# write merged, not just the latter.
+	if bool(sprite.get("moveable", false)):
 		return true
 	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
 	return str(m.get("type_name", "")) == "button"

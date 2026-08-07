@@ -171,23 +171,34 @@ static func apply_colour(image: Image, fore: Color, back: Color) -> int:
 
 ## The alpha a sprite draws at, 0.0 to 1.0.
 ##
-## The stored amount is Director's `the blend of sprite`, a **percentage**, not a
-## 0-255 byte. `tools/ink_survey.gd` settles that: across the corpus the values
-## observed run 21 to 98 and never approach 255. 100 is fully opaque.
+## The stored amount is a **0-255 byte holding the inverse** of Director's
+## `the blend of sprite`, which is a 0-100 percentage. The setter writes
+## `(100 - blend) * 255 / 100` and the getter reads `(255 - stored) * 100 / 255`,
+## so **0 stored is fully opaque and 255 stored is invisible** — the opposite of
+## what the number looks like.
+##
+## That is not read off the reference alone. Piposh 2's records take exactly
+## eleven values in this byte — 0, 25, 51, 76, 102, 127, 153, 178, 204, 229,
+## 255 — which is `round(255 * n / 10)` for n = 0..10, the ten-percent steps the
+## authoring UI offers, on a 255 scale. A percentage stored directly could not
+## produce 229 or 255 (`tools/sprite_record_bytes.gd`).
+##
+## This used to read the byte at record offset 19, which is the low half of the
+## sprite's *width*, and divide it by 100. So every Blend-ink sprite drew at an
+## alpha of `(width % 256) / 100` — opaque whenever that landed above 99 and an
+## arbitrary translucency whenever it did not, changing whenever the sprite was
+## resized. 1,765 records in Piposh 2 reach this; Piposh 1 has no Blend ink at
+## all and no record with the has-blend flag, so it never showed there.
 ##
 ## A sprite is blended when its ink is Blend or when the has-blend flag in the
-## thickness byte is set. That flag is never set anywhere in this corpus, but it
-## is honoured because the two are alternative sources for the same field.
+## thickness byte is set; the reference tests exactly that pair before it uses
+## the amount at all (`channel.cpp:getPlotData`).
 static func blend_alpha(sprite: Dictionary) -> float:
 	var ink := int(sprite.get("ink", 0)) & INK_MASK
 	if ink != BLEND and not bool(sprite.get("has_blend", false)):
 		return 1.0
-	var amount := int(sprite.get("blend_amount", 0))
-	if amount <= 0:
-		# Blend with no factor degrades to plain Matte, which is already what
-		# `key_for` returns. Drawing it at zero alpha would make it vanish.
-		return 1.0
-	return clampf(float(amount) / 100.0, 0.0, 1.0)
+	var amount := clampi(int(sprite.get("blend_amount", 0)), 0, 255)
+	return float(255 - amount) / 255.0
 
 
 ## Key out every pixel exactly equal to the paper colour.

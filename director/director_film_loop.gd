@@ -50,7 +50,13 @@ func parse(payload: PackedByteArray, cast_names: PackedStringArray, is_looping: 
 ## *name* rather than a library number, because the number means something
 ## different here and resolving it is the caller's job through its own cast table.
 ##
-##   {channel, cast_name, cast_id, loc_h, loc_v, width, height, ink, stretch}
+##   {channel, cast_name, cast_id, loc_h, loc_v, width, height, ink, stretch,
+##    flip_h, flip_v, has_blend, blend_amount}
+##
+## The rendering attributes travel with the child because a loop's children are
+## sprites in their own score and carry their own ink, blend and flip; dropping
+## them here makes the loop's contents draw by rules its own author did not
+## write, and the omission is invisible until a title uses one.
 ##
 ## `cast_name` is "" for a child in the owning cast itself.
 func children(index: int) -> Array[Dictionary]:
@@ -84,6 +90,10 @@ func children(index: int) -> Array[Dictionary]:
 			"height": int(sprite["height"]),
 			"ink": int(sprite["ink"]),
 			"stretch": bool(sprite["stretch"]),
+			"flip_h": bool(sprite["flip_h"]),
+			"flip_v": bool(sprite["flip_v"]),
+			"has_blend": bool(sprite["has_blend"]),
+			"blend_amount": int(sprite["blend_amount"]),
 		})
 	return out
 

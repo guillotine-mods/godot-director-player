@@ -17,11 +17,21 @@ extends SceneTree
 ## between frames, so §13 says an immediate-mode renderer needs an accumulation
 ## buffer that survives the repaint, which is a rewrite of how the stage is
 ## painted rather than a flag to honour. Measured over the whole corpus, **0 of
-## 816,318 sprite records carry it** — while 86,845 carry stretch (0x80) out of
-## the same byte, so the byte is being read and the bit is genuinely never set.
-## Nothing was built for trails on that count, and `tools/stage_clip.gd` gates
-## the assumption: the preview clears the stage every frame, which is correct
-## only while nothing asks for trails.
+## Piposh 2's 816,318 sprite records carry it and 0 of Piposh 1's 1,886,362** —
+## while 86,845 and 106,604 respectively carry stretch (0x80) out of the same
+## byte, so the byte is being read and the bit is genuinely never set. Trails was
+## built anyway, and `tools/stage_clip.gd` gates the assumption underneath it:
+## the preview clears the stage every frame, which is correct only while nothing
+## asks for trails.
+##
+## **The thickness-byte counts this printed used to be meaningless.** Flip, blend
+## and tweened all read offset 4 of the sprite record, which is the high half of
+## the cast lib and constant zero, so all four columns printed 0 whatever the
+## data held. The byte is 22 (`director_score.gd`), and read from there the same
+## corpora say: flip still 0 on both, but **has-blend 1,818 and 11,512** and
+## **tweened 600,968 of 816,318 and 1,326,064 of 1,886,362**. A zero that came
+## from the wrong offset is not a measurement, and this one had been quoted in
+## three places as if it were.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")

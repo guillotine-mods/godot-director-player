@@ -21,11 +21,57 @@ const CHANNEL_BIAS := 5
 const STRETCH_FLAG := 0x80
 const TRAILS_FLAG := 0x40
 const INK_MASK := 0x3F
-## Bits of the thickness byte (byte 4), which is not only thickness.
+
+## Where the fields of a 48-byte sprite record are.
+##
+## The record this format writes is the **D7** one — 48 bytes, the size the frame
+## header declares and this reader insists on. Its layout, from the reference:
+##
+##   0 sprite type   1 ink byte      2 fore colour   3 back colour
+##   4 cast lib u16  6 member u16    8 sprite-list index u32
+##  12 loc v i16    14 loc h i16    16 height i16   18 width i16
+##  20 colour code  21 blend amount 22 thickness    23 flags
+##  24 fore G       25 back G       26 fore B       27 back B
+##  28 rotation u32 32 skew u32     36 twelve bytes of alignment
+##
+## The four flag bytes used to be read from the wrong places: the thickness byte
+## from offset 4 and the blend amount from offset 19. Both offsets are already
+## occupied by fields this same decoder reads — 4 is the high half of the cast
+## lib and 19 the low half of the width — so neither could ever have held what it
+## was being asked for, and the flag counts were the tell. Flip, blend and
+## tweened all came out **0** across Piposh 2's 816,318 records and **0** across
+## Piposh 1's 1,886,362, which is what reading a structurally-zero byte looks
+## like. `tools/sprite_record_bytes.gd` settled it from the data alone, without
+## assuming any layout: offset 4 is constant zero across 2.7 million records
+## while offset 5 ranges over 1-16, so the pair is a small cast lib; offset 21
+## takes exactly eleven values in Piposh 2 — 0, 25, 51, 76, 102, 127, 153, 178,
+## 204, 229, 255 — which is 0-100% in tenths scaled to a byte, and nothing but a
+## blend amount looks like that; and offset 22 carries the tweened bit on 70.3%
+## and 73.6% of the two corpora respectively.
+const SPRITE_LIST_IDX_AT := 8
+const COLOR_CODE_AT := 20
+const BLEND_AMOUNT_AT := 21
+const THICKNESS_AT := 22
+const SPRITE_FLAGS_AT := 23
+
+## Bits of the thickness byte, which is not only thickness.
 const BLEND_FLAG := 0x10
 const FLIP_H_FLAG := 0x20
 const FLIP_V_FLAG := 0x40
 const TWEENED_FLAG := 0x80
+const THICKNESS_MASK := 0x0F
+
+## Bits of the colour-code byte. The low nibble is the score colour — the tint
+## the authoring tool paints the channel with in the Score window, which is
+## editing furniture and not something the stage ever shows. The two RGB bits say
+## that the fore or back colour is a true colour in bytes 24-27 rather than a
+## palette index; the port reads the index and warns nowhere, because 1,124 of
+## Piposh 2's records set the back-colour bit and none of Piposh 1's set either.
+const SCORE_COLOR_MASK := 0x0F
+const FORE_COLOR_RGB_FLAG := 0x10
+const BACK_COLOR_RGB_FLAG := 0x20
+const EDITABLE_FLAG := 0x40
+const MOVEABLE_FLAG := 0x80
 ## A sprite record naming this library means "the movie's own cast".
 const OWN_CAST_LIB := 0xFFFF
 ## Tempo is a sentinel code and `tempo_cue` its operand.
@@ -259,6 +305,20 @@ func main_channel(index: int) -> PackedByteArray:
 	return _buffer_at(index).slice(0, MAIN_CHANNEL_SIZE)
 
 
+## The whole channel buffer on frame N, for the same reason `main_channel` exists
+## and the reason `_buffer_at` was split out: a survey has to be able to read
+## bytes this decoder does not claim to understand, and it cannot do that through
+## a view that only exposes the fields already decoded. Returned whole rather
+## than per channel because the buffer costs a replay to materialise and a survey
+## wants every channel of the frame it just paid for.
+## `tools/sprite_record_bytes.gd` is what settled where the flags byte lives, and
+## it could not have been written against the dictionary `frame()` returns.
+func channel_buffer(index: int) -> PackedByteArray:
+	if index < 0 or index >= _frame_at.size():
+		return PackedByteArray()
+	return _buffer_at(index)
+
+
 func _fresh_buffer() -> PackedByteArray:
 	var buffer := PackedByteArray()
 	buffer.resize(_buffer_size)
@@ -282,6 +342,8 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 			continue
 		var ink_byte := buffer[at + 1]
 		var cast_lib := _u16(buffer, at + 4)
+		var thickness_byte := buffer[at + THICKNESS_AT]
+		var color_code := buffer[at + COLOR_CODE_AT]
 		sprites.append({
 			"channel": channel,
 			"cast_lib": 1 if cast_lib == OWN_CAST_LIB else cast_lib,
@@ -291,24 +353,64 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 			"width": width,
 			"height": height,
 			"ink": ink_byte & INK_MASK,
-			# Masking the ink byte to six bits throws this away, and the stored
-			# rect is authoring residue whenever it is clear.
+			# Masking the ink byte to six bits throws this away. It does not mean
+			# "is resized": it means the author resized this sprite deliberately,
+			# and all it governs is whether a cast swap may reset the size back to
+			# the member's natural one (§1.3). The drawn size is the sprite's own
+			# width and height either way.
 			"stretch": (ink_byte & STRETCH_FLAG) != 0,
 			"trails": (ink_byte & TRAILS_FLAG) != 0,
 			"sprite_type": buffer[at],
 			"fore_color": buffer[at + 2],
 			"back_color": buffer[at + 3],
-			# Byte 4 is the thickness byte and carries four things nobody would
-			# guess from its name: the low nibble is the line thickness, 0x10
-			# says the sprite carries a blend, 0x20 and 0x40 are horizontal and
-			# vertical flip, and 0x80 marks the sprite as tweened. All of it was
-			# being dropped, flip included.
-			"thickness": buffer[at + 4] & 0x0F,
-			"has_blend": (buffer[at + 4] & BLEND_FLAG) != 0,
-			"flip_h": (buffer[at + 4] & FLIP_H_FLAG) != 0,
-			"flip_v": (buffer[at + 4] & FLIP_V_FLAG) != 0,
-			"tweened": (buffer[at + 4] & TWEENED_FLAG) != 0,
-			"blend_amount": buffer[at + 19],
+			# The thickness byte carries four things nobody would guess from its
+			# name: the low nibble is the line thickness, 0x10 says the sprite
+			# carries a blend, 0x20 and 0x40 are horizontal and vertical flip,
+			# and 0x80 marks the sprite as tweened.
+			"thickness": thickness_byte & THICKNESS_MASK,
+			"has_blend": (thickness_byte & BLEND_FLAG) != 0,
+			"flip_h": (thickness_byte & FLIP_H_FLAG) != 0,
+			"flip_v": (thickness_byte & FLIP_V_FLAG) != 0,
+			# **Decoded, and nothing consumes it, on measured grounds rather than
+			# on not having got to it.** 1,326,064 of Piposh 1's 1,886,362 records
+			# carry it and 600,968 of Piposh 2's 816,318, so it is not the rare
+			# flag it was previously measured to be — that count was zero only
+			# because the byte being read was the cast lib's high half.
+			#
+			# The question a decoded flag raises is whether the player has to
+			# interpolate anything, and `tools/tween_survey.gd` answers it: of
+			# Piposh 1's 88,197 tweened spans, 22,023 change value on every single
+			# frame — a tween already baked into the stream — while others hold
+			# one value for the whole span, up to **4,255 frames with zero
+			# changes**. A span marked tweened that never changes has nothing to
+			# interpolate, so the flag cannot be an instruction to the player; it
+			# records that the span was authored in tween mode in the Score
+			# window, and the frame stream already carries the result. The
+			# reference agrees by omission: it parses the bit, copies it between
+			# sprites, masks it *out* of the dirty test (`sprite.cpp:isDirty`
+			# compares `_thickness | kTTweened`) and interpolates nothing.
+			"tweened": (thickness_byte & TWEENED_FLAG) != 0,
+			# Director stores `the blend of sprite` **inverted**: the property is
+			# 0-100 and the byte is `(100 - blend) * 255 / 100`, so 0 is opaque
+			# and 255 is invisible. `director_ink.gd:blend_alpha` un-inverts it.
+			"blend_amount": buffer[at + BLEND_AMOUNT_AT],
+			# The colour code, whose two interesting bits are the score's own
+			# `moveable` and `editable`. They are the score-authored halves of two
+			# properties this port otherwise only ever sees from Lingo, which is
+			# why a sprite the author made draggable in the Score window could not
+			# be dragged: nothing was reading the flag.
+			"moveable": (color_code & MOVEABLE_FLAG) != 0,
+			"editable": (color_code & EDITABLE_FLAG) != 0,
+			"score_color": color_code & SCORE_COLOR_MASK,
+			# Which entry of this same `VWSC` describes the span this record
+			# belongs to. Not decoration: entry `sprite_list_idx` opens with the
+			# span's first and last frame and the sprite number, and those match
+			# the channel and the frames the record actually occupies — checked
+			# on four spans of one movie by hand and swept by
+			# `tools/tween_survey.gd`, which uses it to group records into spans
+			# instead of guessing at boundaries from where the member changes.
+			# The reference reads the field and then uses it for nothing.
+			"sprite_list_idx": _u32(buffer, at + SPRITE_LIST_IDX_AT),
 		})
 
 	var tempo := buffer[54]
@@ -500,6 +602,10 @@ func max_channel() -> int:
 
 static func _u16(d: PackedByteArray, o: int) -> int:
 	return (d[o] << 8) | d[o + 1]
+
+
+static func _u32(d: PackedByteArray, o: int) -> int:
+	return (d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]
 
 
 static func _i16(d: PackedByteArray, o: int) -> int:

@@ -270,6 +270,16 @@ Horizontal and vertical flip live in the **thickness byte** of the sprite
 record: `0x0F` is the line thickness, `0x10` means "has blend", **`0x20` is flip
 horizontal, `0x40` is flip vertical**, `0x80` marks the sprite as tweened.
 
+The thickness byte is at **offset 22** of the 48-byte D7 record, and the blend
+amount at 21 -- not at 4 and 19, where this port read them until
+`tools/sprite_record_bytes.gd` measured the record byte by byte. Offsets 4 and 19
+are the high half of the cast lib and the low half of the width, both of which
+the same decoder already reads, so every flag taken from them was structurally
+zero. Every "0 of 816,318" quoted for flip, blend and tweened below was that
+artefact. Re-measured from byte 22: flip really is 0 in both corpora, has-blend
+is 1,818 in Piposh 2 and 11,512 in Piposh 1, and **tweened is 600,968 and
+1,326,064** -- 74% and 70% of all records.
+
 ScummVM parses that byte, copies it between sprites, compares it in the dirty
 test — and **never applies the flip anywhere in the render path**. Searching the
 whole engine for the flip constants finds only their definition. So:
@@ -288,14 +298,17 @@ attribute byte rather than in the geometry fields. It means the registration
 *point* effectively moves relative to the artwork, which is the visible
 consequence: an off-centre character flipped horizontally appears to shift.
 
-*This port:* the thickness byte is not decoded at all in
-`director/director_score.gd` — there is no flip, no blend flag, no thickness.
-*Change:* decode byte 4 of the sprite record in
-`director/director_score.gd:_snapshot` alongside the ink byte, and expose
-`flip_h`/`flip_v`. Rendering is then a negative scale on the destination rect
-about its own centre. **Worth checking early:** if the original flips walk-cycle
-art rather than shipping mirrored art, ignoring the flag makes characters face
-the wrong way, and that would present exactly as "walk cycles are wrong".
+*This port:* **done.** `director/director_score.gd:_snapshot` decodes byte 22
+and `scenes/director_preview.gd:_draw_sprite_texture` mirrors the artwork inside
+the sprite's rect, leaving the rect -- and therefore the placement and the hit
+rectangle -- alone; `_opaque_at` mirrors its sample point to match, so the
+clickable pixels travel with the artwork. `tools/sprite_flip.gd` asserts both,
+and its pixel case reads the framebuffer: a first attempt moved the rect's origin
+to the far edge as well as negating its width, which is a double flip, and every
+headless check passed while the sprite drew one width to the right. Godot's
+`draw_texture_rect` negates the size and keeps the position.
+
+Still unverified against Director, because nothing authored sets the bits.
 
 ### 1.9 Rotation and skew: D7 only, and unimplemented
 
@@ -1628,10 +1641,12 @@ misclassified. *Change:* mask with `& 0x3f` before the lookup.
 §2.5. Also: **neither side implements "no white on the border → no matte"**, and
 both use a 14/255 tolerance where Director matches exactly.
 
-**16.12 No flip. (Neither side.)** §1.8. The thickness byte is not decoded at
-all. *Change:* decode byte 4 in `director/director_score.gd:_snapshot`. **Check
-early** — if the original mirrors walk-cycle art, this presents as "walk cycles
-are wrong".
+**16.12 No flip. (Neither side.)** §1.8. **Done** in the preview --
+`director_score.gd` reads byte 22 and `director_preview.gd:_draw_sprite_texture`
+mirrors within the rect, asserted at pixel level by `tools/sprite_flip.gd`. Both
+corpora set the bits 0 times, so it is built from the reference and labelled
+unverified. The byte it is read from was wrong until now, and that mattered far
+beyond flip: see §1.8.
 
 **16.13 Palette hardcoded to system Mac. (Both.)** §11. **Done**, and it was
 nearly closed the wrong way: the corpus names no palette but system Mac and
@@ -1651,12 +1666,29 @@ records set the flag, and the feature is Director's rather than this game's. The
 first attempt drew the accumulation layer under the frame, which is invisible
 behind any backdrop and passed every headless check anyway.
 
-**16.15 No blend/alpha. (Neither.)** §2.7. Bytes 4 and 19 undecoded.
+**16.15 No blend/alpha. (Neither.)** §2.7. **Done, and it was actively wrong
+in between.** `director_ink.gd:blend_alpha` read record offset 19 -- the low half
+of the *width* -- and divided it by 100 as if it were a percentage, so a
+Blend-ink sprite drew at `(width % 256) / 100` alpha: opaque whenever that landed
+above 99, an arbitrary translucency whenever it did not, and changing whenever
+the sprite was resized. The amount is byte 21 and it is **inverted**:
+`the blend of sprite` is 0-100 and the stored byte is `(100 - blend) * 255 / 100`,
+so 0 is opaque and 255 invisible. Piposh 2's records take exactly the eleven
+values `round(255 * n / 10)`, which is what settled it from the data as well as
+from the reference. 1,765 Piposh 2 records reach this; Piposh 1 has no Blend ink
+at all.
 
 ### Tier 3 — completeness
 
-**16.16 No `moveable` drag or `the constraint of sprite`.** §7.6. Flag stored at
-`director/sprite_channel.gd:40`, unused.
+**16.16 The score's own `moveable` bit was unreadable; `the constraint of
+sprite` is still missing.** §7.6. The drag existed but was reachable only through
+`the moveableSprite of sprite`, because the score's flag lives in the colour-code
+byte at record offset 20 and nothing decoded it. It is decoded now and merged
+into the sprite the renderer and the hit test see, the same way trails is, so a
+sprite the author ticked "Moveable" on in the Score window is draggable and
+click-eligible. 744 of Piposh 1's records set it and none of Piposh 2's, which is
+why nothing missed it until a second title was loaded. `the constraint of sprite`
+remains unimplemented.
 **16.17 No editable text, focus, caret or selection.** §8.4.
 **16.18 No hilite-on-click.** §4.6.
 **16.19 `set_size` does not re-derive the anchor.** §1.5,
@@ -1689,7 +1721,9 @@ destination-reading inks.
 | --- | --- | --- |
 | Sprite placement / registration / scaling | **done** in the working renderer; **wrong hit rect** in the preview | `movie_player.gd:187-199`; `director_preview.gd:1007-1013` |
 | Stretch semantics | **done** | `sprite_channel.gd:110-126` |
-| Flip | **decoded, never applied**: thickness byte read, and 0 of 816,318 records set either bit — so nothing to apply it to here | `director_score.gd:_snapshot`; `tools/ink_survey.gd` |
+| Flip | **done, unverified**: mirrored within the rect, hit test mirrored to match; 0 of 816,318 and 0 of 1,886,362 records set either bit | `director_score.gd:_snapshot`; `director_preview.gd:_draw_sprite_texture`; `tools/sprite_flip.gd` |
+| Sprite record layout | **done**: all 48 bytes of the D7 record accounted for, and no two decoded fields share one | `director_score.gd`; `tools/sprite_record_bytes.gd` |
+| Tweening | **decoded, deliberately not consumed**: 88,197 tweened spans in Piposh 1, some changing every frame and some holding one value for 4,255 frames, so the flag is a Score-window attribute and the frame stream already carries the result | `director_score.gd:_snapshot`; `tools/tween_survey.gd` |
 | Rotation / skew | n/a below D7; ScummVM does not implement it either | — |
 | Film loop compositing | **done, two dialects** | `movie_player.gd:247-349`; `director_preview.gd:784-826` |
 | Mouse hit test | **done** in the preview: eligibility inside the descent *and* per-pixel for Matte only; **partial** in the runtime (no per-pixel stage) | `director_preview.gd:_channel_at`; `director_runtime.gd:1426-1447` |
@@ -1706,8 +1740,8 @@ destination-reading inks.
 | Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
 | Palette resolution / cycling / fades | **done, unverified**: resolution order, cycling, fades and a CLUT reader, on a corpus that cycles 0 times; five built-in tables are authored data this port does not have | `director_palette_state.gd`; `director_palette.gd` |
 | Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
-| Blend / alpha | **done**: ink 32 and the has-blend flag, amount is a 0-100 percentage | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
-| Moveable / drag / constraint | **partial**: drag done, `the constraint of sprite` not | `director_preview.gd:_begin_drag` |
+| Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
+| Moveable / drag / constraint | **partial**: drag done and now reachable from the score's own flag as well as from Lingo, `the constraint of sprite` not | `director_preview.gd:_begin_drag`; `director_score.gd:_snapshot` |
 | Editable text / focus / selection | **nothing** | — |
 | Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map; modifiers not carried | `director_keys.gd`; `director_preview.gd:_dispatch_key` |
 | Primary handlers, pass/dontPassEvent | **partial**: `when <event> then` installs and fires at tier 1 for keys; mouse tiers and `pass` propagation not | `lingo_interpreter.gd:run_primary` |
@@ -1743,7 +1777,21 @@ destination-reading inks.
 - **How flip interacts with registration and hit testing.** ScummVM never applies
   flip, so §1.8's "mirrors within the rect, rect unchanged" is **reasoned, not
   verified**. It is the only reading consistent with flip living in a rendering
-  attribute byte, but it needs testing against the original.
+  attribute byte, but it needs testing against the original. It is now
+  *implemented* on that reading and asserted at pixel level, which makes it a
+  testable divergence rather than an absence.
+- **What the tweened flag is for, beyond the Score window.** Measured: it cannot
+  be an instruction to interpolate, because tweened spans exist that hold one
+  value for thousands of frames (`tools/tween_survey.gd`). What is *not* settled
+  is whether Director uses it for anything else -- the reference only masks it out
+  of the dirty test. Nothing here consumes it.
+- **The sprite-list index at record offset 8.** It names an entry of the same
+  `VWSC`, whose first three fields are the span's first frame, last frame and
+  sprite number; that much was confirmed against four spans of one movie and is
+  what `tools/tween_survey.gd` groups on. The rest of those entries -- a constant
+  `0x00010000`, a constant `0x618d`, and a tail counting 1 to 10 followed by the
+  span's length -- is unread and nothing depends on it. The reference reads the
+  index and uses it for nothing.
 - **Whether the Windows pre-D5 "ignore cursor hotspots" rule is authentic
   Director or a ScummVM workaround.** The ScummVM comment is itself a question.
 - **Whether this port's film loop centring is right** — §16.9 is a genuine

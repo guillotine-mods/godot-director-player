@@ -27,12 +27,17 @@ const CHUNKS := {"line": true, "item": true, "word": true, "char": true}
 
 ## Index into BINARY_LEVELS. Chunk indices bind loosely enough to include
 ## arithmetic (`line i - 102 of field "x"`) but stop before `of`, a keyword.
-const ADDITIVE := 4
-const TIGHT := 5
+## Indices into `BINARY_LEVELS`. They shift whenever a level is added or removed,
+## and nothing checks them: merging `and` and `or` onto one level moved every one
+## of these down by one, so the parser silently parsed at the wrong precedence
+## everywhere they are used and DAY1's `init all` stopped running. Renumber these
+## with the table or not at all.
+const ADDITIVE := 3
+const TIGHT := 4
 ## Above the comparison level, so parsing a statement's left-hand side does not
 ## swallow `=`. Lingo spells assignment and equality alike and resolves it by
 ## position: a statement whose target is followed by `=` is an assignment.
-const NO_COMPARISON := 3
+const NO_COMPARISON := 2
 
 ## Lowest to highest binding power. Lingo's precedence is shallow.
 const BINARY_LEVELS := [
