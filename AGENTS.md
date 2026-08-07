@@ -11,7 +11,7 @@ mean either file: resolved entries keep their number and move to the second. The
 what the port cost to learn; the one-line descriptions in `README.md` say when each
 applies.
 
-## Three standing rules
+## Standing rules
 
 **Fix the engine, not the symptom.** The goal is an accurate Director engine, not a
 game that happens to behave. A fix that special-cases one room, one channel or one
@@ -37,6 +37,26 @@ A native handler that reproduces half a Lingo handler is the shape to watch for:
 `GameState.people_funk` reimplemented `peoplefunk`'s meeting routing and silently
 dropped its character placement, which put every wandering guest on screen twice
 (bugs.md 21) and left nothing in the code to say a half was missing.
+
+**Build Director, not this game.** The target is a general Director engine --
+Piposh 1 and *Rating* are meant to run on it -- so a feature is implemented
+because Director has it, not because this corpus exercises it. "0 uses in
+`reference/lingo/`, so I did not build it" is not diligence, it is a hole that
+surfaces the first time another title is loaded, by which point nobody remembers
+the decision was made.
+
+Measurement is for **prioritisation and verification, never for scope.** Survey
+the corpus to decide what to build *first*, and to prove an implementation right
+against real data -- both are worth doing and this port has been repeatedly saved
+by them. Then build the rest anyway. Where the corpus cannot exercise something,
+implement it from the reference and say in the comment that it is unverified;
+that is an honest state, and it is not the same as absent. The calls already made
+the wrong way, and worth revisiting: score sound channels, the transition wipe
+algorithms, `beginSprite`/`endSprite`/`stepFrame`/`timeout`, sprite trails.
+
+This is the counterweight to the rule above it, not a contradiction of it. The
+engine stays ignorant of *this game's* rooms and channels; it does not stay
+ignorant of Director's features.
 
 **"Not a bug" needs more evidence than a bug does**, because it is the verdict
 that stops work. The export is the port's *input*, not the original: the renderer
