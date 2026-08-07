@@ -44,6 +44,25 @@ Not committed, but present after a real run: `.godot/` (editor cache, see below)
 `reference/scummvm/` (fetched GPL sources, read for the model and never vendored),
 and `.claude/worktrees/` (agent checkouts).
 
+## Clone the repository
+
+The game repositories are Git submodules and are required. Clone this repository
+with all nested submodules:
+
+```bash
+git clone --recurse-submodules <repository-url>
+```
+
+For an existing checkout, initialize every nested submodule and make subsequent
+Git operations recurse into them automatically:
+
+```bash
+git submodule update --init --recursive
+git config submodule.recurse true
+```
+
+Do not run the project from a checkout with uninitialized submodules.
+
 ## Engine and game
 
 `AGENTS.md` states the rule that the engine must be agnostic to the game. This is
