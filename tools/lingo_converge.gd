@@ -21,7 +21,7 @@ extends SceneTree
 ## score. Anything added to the host that changes movie must respect `record`.
 
 ## Channels the port drives natively rather than through the interpreter: the
-## eight inventory slots (InventoryDrag plus data/inventory_drops.json) and the
+## eight inventory slots (InventoryDrag) and the
 ## two save buttons the SAVELOAD intercept owns. A script producing no nav for
 ## these is correct, not a divergence.
 const NATIVE_CHANNELS := [96, 97, 103, 104, 105, 106, 107, 108, 109, 110]

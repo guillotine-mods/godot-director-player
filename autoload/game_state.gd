@@ -6,9 +6,13 @@ signal state_changed
 signal movie_requested(movie: String, frame_or_label: Variant)
 signal log_message(message: String, level: String)
 
-const INVENTORY_PATH := "res://assets/inventory_items.json"
 const SAVE_DIR := "user://saves"
 const FIELD_LINES := 30
+
+## Which score channels hold the eight carried-item slots. Lingo addresses them
+## as `line i - 102 of field "objectsfield"` for sprite i, so the channel numbers
+## and the field lines are the same fact stated twice.
+const SLOT_CHANNELS: Array = [103, 104, 105, 106, 107, 108, 109, 110]
 
 const DAY1_MEETINGS_INIT: PackedStringArray = [
 	"murder1",
@@ -29,7 +33,7 @@ const DAY1_MEETINGS_INIT: PackedStringArray = [
 var meeting_triggers: Array = []
 
 ## Movie stem → index into `meetings`. Several stems map to one slot because the
-## original data and the render_model export disagree on spelling.
+## original data spells the same meeting more than one way.
 const MEETING_INDEX := {
 	"murder1": 0, "hatday1": 1, "mrfday1": 2, "ishday1": 3,
 	"patpip1": 4, "patday1": 4, "tofircpt": 5, "allin": 6,
@@ -46,8 +50,6 @@ const MINIGAME_MOVIES: PackedStringArray = [
 	"CHESS", "TENNIS", "SHUFFLE", "ARCADE1", "ARCADE2", "PPTSHOW", "SEA1", "AIR1",
 ]
 
-var inventory_catalog: Dictionary = {}
-var _slot_channels: Array[int] = []
 var objects_field: PackedStringArray = PackedStringArray()
 var globalday: int = 1
 var meetings: PackedStringArray = PackedStringArray()
@@ -66,20 +68,8 @@ var story_flags: Dictionary = {}
 
 
 func _ready() -> void:
-	_load_inventory_catalog()
 	new_game()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SAVE_DIR))
-
-
-func _load_inventory_catalog() -> void:
-	if not FileAccess.file_exists(INVENTORY_PATH):
-		push_warning("Missing inventory catalog: %s" % INVENTORY_PATH)
-		return
-	var text := FileAccess.get_file_as_string(INVENTORY_PATH)
-	var parsed: Variant = JSON.parse_string(text)
-	if typeof(parsed) == TYPE_DICTIONARY:
-		inventory_catalog = parsed
-		_slot_channels.clear()
 
 
 func new_game() -> void:
@@ -98,10 +88,9 @@ func new_game() -> void:
 
 
 func _init_objects_field() -> void:
-	var lines: int = int(inventory_catalog.get("field_lines", FIELD_LINES))
 	objects_field = PackedStringArray()
-	objects_field.resize(lines)
-	for i in lines:
+	objects_field.resize(FIELD_LINES)
+	for i in FIELD_LINES:
 		objects_field[i] = "empty"
 
 
@@ -227,15 +216,7 @@ func remove_inventory_item(item_name: String) -> bool:
 
 
 func slot_channels() -> Array:
-	## JSON numbers parse as floats, and Array.find() will not match the int 103
-	## against 103.0, so coerce once. Without this the slot lookup returned -1
-	## for every channel and no item icon was ever drawn.
-	if not _slot_channels.is_empty():
-		return _slot_channels
-	var raw: Array = inventory_catalog.get("slot_channels", [103, 104, 105, 106, 107, 108, 109, 110])
-	for channel in raw:
-		_slot_channels.append(int(channel))
-	return _slot_channels
+	return SLOT_CHANNELS
 
 
 func item_in_slot(slot_index: int) -> String:
@@ -245,28 +226,6 @@ func item_in_slot(slot_index: int) -> String:
 		return ""
 	var item := str(objects_field[slot_index]).to_lower()
 	return "" if item == "" or item == "empty" else item
-
-
-func inventory_member_for_item(item_name: String, cast_lib: int = -1) -> Dictionary:
-	## cast_lib is the index of the `master` library in the movie being drawn,
-	## which differs per movie. -1 keeps the catalog default for callers with no
-	## loader to ask (Save Editor, tests).
-	var name := item_name.to_lower()
-	var lib := cast_lib if cast_lib > 0 else int(inventory_catalog.get("cast_lib", 2))
-	if name.is_empty() or name == "empty":
-		return {"cast_lib": lib, "cast_id": int(inventory_catalog.get("empty_member", 9))}
-	var items: Dictionary = inventory_catalog.get("items", {})
-	if not items.has(name):
-		return {}
-	return {"cast_lib": lib, "cast_id": int(items[name])}
-
-
-func inventory_override_for_channel(channel: int, cast_lib: int = -1) -> Dictionary:
-	var slots: Array = slot_channels()
-	var slot_idx := slots.find(channel)
-	if slot_idx < 0 or slot_idx >= objects_field.size():
-		return {}
-	return inventory_member_for_item(objects_field[slot_idx], cast_lib)
 
 
 func is_minigame_movie(movie: String) -> bool:

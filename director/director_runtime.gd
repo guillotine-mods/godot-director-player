@@ -59,7 +59,6 @@ var loader: RenderModelLoader = RenderModelLoader.new()
 var puppet: PuppetController = PuppetController.new()
 var context: MovieContext = MovieContext.new()
 var drag: InventoryDrag = InventoryDrag.new()
-var drops: InventoryDrops = InventoryDrops.new()
 ## Built on demand: loading every cast's scripts costs time a normal run should
 ## not pay when the interpreter is off.
 var lingo: LingoEngine = null
@@ -115,7 +114,6 @@ func _init() -> void:
 
 func boot() -> Error:
 	context.load_context()
-	drops.load_table()
 	if AppSettings.use_lingo_clicks or AppSettings.use_lingo_frames:
 		lingo = LingoEngine.new(self)
 	_install_trace()
@@ -441,21 +439,9 @@ func begin_inventory_drag(stage_pt: Vector2) -> bool:
 		# moveableSprite, so there is nothing to pick up.
 		return false
 	var rect: Rect2 = sprite_stage_rect(sprite)
-	drag.begin(channel, item, rect.position + rect.size * 0.5, _item_icon_size(item, rect.size))
+	drag.begin(channel, item, rect.position + rect.size * 0.5, rect.size)
 	redraw_requested.emit()
 	return true
-
-
-func _item_icon_size(item: String, fallback: Vector2) -> Vector2:
-	## displayobject() sets the slot's memberNum to the item, so `intersects`
-	## measures the item's own bitmap. The score rect is the stale object0 box.
-	var member: Dictionary = GameState.inventory_member_for_item(item, master_cast_lib())
-	if member.is_empty():
-		return fallback
-	var bitmap: Dictionary = loader.get_member(int(member.cast_lib), int(member.cast_id))
-	var w := float(bitmap.get("width", 0))
-	var h := float(bitmap.get("height", 0))
-	return Vector2(w, h) if w > 0.0 and h > 0.0 else fallback
 
 
 func update_inventory_drag(stage_pt: Vector2) -> void:
@@ -469,15 +455,8 @@ func end_inventory_drag(stage_pt: Vector2) -> void:
 	if not drag.active:
 		return
 	drag.move_to(stage_pt)
-	var item := drag.item
 	if _drag_intersects(EXAMINE_CHANNEL):
-		_examine_item(item)
-	else:
-		for rule_value in drops.rules_for(loader.movie_name):
-			var channel := int((rule_value as Dictionary).get("target_channel", -1))
-			if channel >= 0 and _drag_intersects(channel):
-				if apply_inventory_drop(item, channel):
-					break
+		_examine_item(drag.item)
 	# The icon springs home whatever happened, so a wrong target needs no
 	# failure branch: nothing intersects, and nothing plays.
 	drag.clear()
@@ -506,78 +485,6 @@ func _examine_item(item: String) -> void:
 	_head_look_until_ms = _time_ms + 1000.0 / maxf(current_fps, 1.0)
 	AudioDirector.play_file(1, "pi%s.aif" % item)
 	nav_event.emit("examine: %s" % item)
-
-
-func apply_inventory_drop(item: String, target_channel: int) -> bool:
-	## Returns false when nothing in the table matched, which is the silent
-	## case: the icon springs home and no sound plays.
-	var room := marker_name_for_frame(frame_index)
-	for rule_value in drops.rules_for(loader.movie_name):
-		var rule: Dictionary = rule_value
-		if int(rule.get("target_channel", -1)) != target_channel:
-			continue
-		if not drops.matches(rule, item, room):
-			continue
-		if not _drop_requirements_met(rule):
-			continue
-		_run_drop_rule(rule, item)
-		return true
-	return false
-
-
-func _drop_requirements_met(rule: Dictionary) -> bool:
-	var required: Variant = rule.get("requires_visible", [])
-	if typeof(required) != TYPE_ARRAY:
-		return true
-	for channel in required as Array:
-		var rect := _channel_rect(int(channel))
-		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-			return false
-	return true
-
-
-func _run_drop_rule(rule: Dictionary, item: String) -> void:
-	for channel in rule.get("stop_channels", []):
-		AudioDirector.stop_channel(int(channel))
-
-	for sound_value in rule.get("sounds", []):
-		if typeof(sound_value) != TYPE_DICTIONARY:
-			continue
-		var sound: Dictionary = sound_value
-		var channel := int(sound.get("channel", 1))
-		var file := _s(sound.get("file", ""))
-		if file != "":
-			AudioDirector.play_file(channel, file)
-			continue
-		var family := _s(sound.get("family", ""))
-		if family == "":
-			continue
-		var from := int(sound.get("from", 1))
-		var to := maxi(from, int(sound.get("to", from)))
-		AudioDirector.play_file(channel, "%s%d.aif" % [family, randi_range(from, to)])
-
-	var flag := _s(rule.get("sets_flag", ""))
-	if flag != "":
-		GameState.set_story_flag(flag)
-		refresh_sprite_gates()
-
-	if bool(rule.get("consume", false)):
-		GameState.remove_inventory_item(item)
-
-	match _s(rule.get("action", "none")):
-		"goto_label":
-			var label := _s(rule.get("label", ""))
-			var idx := loader.resolve_label(label, false)
-			if idx >= 0:
-				enter_frame(idx)
-				running = true
-				nav_event.emit("drop %s → %s" % [item, label])
-			else:
-				nav_event.emit('drop %s → missing label "%s"' % [item, label])
-		"reveal":
-			nav_event.emit("drop %s → revealed %s" % [item, _s(rule.get("sets_flag", ""))])
-		_:
-			pass
 
 
 func refresh_sprite_gates() -> void:
@@ -690,11 +597,10 @@ func _run_cursor_funk() -> void:
 		lingo.interpreter.call_handler("cursorfunk")
 	# The hand over a held item is the one cursor `cursorfunk` does not assign:
 	# `displayobject` sets it on slots 103-110, and the port reimplements that
-	# handler natively for drawing and dragging without ever running it. Run it for
-	# the cursor. Its other writes agree with the native path rather than fighting
-	# it: it sets each slot's memberNum from `objectsfield`, which is the same
-	# source `GameState.inventory_override_for_channel` draws from, and puppets
-	# 103-110, which is puppeting bugs.md 9 records as lost.
+	# handler natively for dragging without ever running it. Run it for the cursor.
+	# Its other writes agree with the native path rather than fighting it: it sets
+	# each slot's memberNum from `objectsfield`, the same source the drag reads, and
+	# puppets 103-110, which is puppeting bugs.md 9 records as lost.
 	#
 	# Only in a hub, which is where the original calls it from and where the HUD
 	# actually is. Its empty-slot branch is `the number of member "object0" of

@@ -505,15 +505,8 @@ func draw_current_frame(canvas: Control) -> void:
 		if runtime.drag.active and channel == runtime.drag.slot_channel:
 			continue
 
-		var cast_lib: int = int(sprite.get("cast_lib", 1))
+		var draw_lib: int = int(sprite.get("cast_lib", 1))
 		var cast_id: int = int(sprite.get("cast_id", 0))
-		var inv: Dictionary = GameState.inventory_override_for_channel(
-			channel, runtime.master_cast_lib()
-		)
-		var draw_lib: int = cast_lib
-		if not inv.is_empty():
-			draw_lib = int(inv.cast_lib)
-			cast_id = int(inv.cast_id)
 
 		if (
 			runtime.loader.movie_name.to_lower() == "strtgame"
@@ -526,28 +519,22 @@ func draw_current_frame(canvas: Control) -> void:
 		if channel == DirectorRuntime.EXAMINE_CHANNEL and runtime.head_member_override() >= 0:
 			cast_id = runtime.head_member_override()
 
-		if inv.is_empty():
-			var film_loop: Dictionary = runtime.loader.get_film_loop(draw_lib, cast_id)
-			if not film_loop.is_empty():
-				_draw_film_loop(canvas, sprite, film_loop, channel, sx, sy)
-				continue
+		var film_loop: Dictionary = runtime.loader.get_film_loop(draw_lib, cast_id)
+		if not film_loop.is_empty():
+			_draw_film_loop(canvas, sprite, film_loop, channel, sx, sy)
+			continue
 
 		var member: Dictionary = {}
 		var has_image: bool = bool(sprite.get("has_image", false))
-		if not has_image and inv.is_empty():
+		if not has_image:
 			member = runtime.loader.get_linked_member(draw_lib, cast_id)
 			if member.is_empty():
 				continue
 
 		var ink: int = int(sprite.get("ink", 0))
-		# Inventory icons are drawn on paper and always key out, whatever the
-		# score ink on the slot channel happens to be.
-		var mode: RenderModelLoader.Transparency = (
-			RenderModelLoader.Transparency.BACKGROUND
-			if not inv.is_empty()
-			else RenderModelLoader.transparency_for_ink(ink)
+		var tex: Texture2D = runtime.loader.get_texture(
+			draw_lib, cast_id, RenderModelLoader.transparency_for_ink(ink)
 		)
-		var tex: Texture2D = runtime.loader.get_texture(draw_lib, cast_id, mode)
 		if tex == null:
 			continue
 
@@ -556,27 +543,16 @@ func draw_current_frame(canvas: Control) -> void:
 		var w: float = float(sprite.get("width", 1)) * sx
 		var h: float = float(sprite.get("height", 1)) * sy
 
-		if not inv.is_empty():
-			# Inventory icons: natural size, reg-point on slot center (web parity).
+		# The sprite's rect, which `RenderModelLoader._resolve_sprite_rects` has
+		# already put back to the member's own size unless the score marks this
+		# sprite as stretched. Drawing into it covers both cases.
+		if member.is_empty():
 			member = runtime.loader.get_member(draw_lib, cast_id)
-			var nw: float = float(tex.get_width()) * sx
-			var nh: float = float(tex.get_height()) * sy
-			var reg_x: float = float(member.get("reg_offset_x", tex.get_width() * 0.5)) * sx
-			var reg_y: float = float(member.get("reg_offset_y", tex.get_height() * 0.5)) * sy
-			var cx: float = x + w * 0.5
-			var cy: float = y + h * 0.5
-			canvas.draw_texture_rect(tex, Rect2(cx - reg_x, cy - reg_y, nw, nh), false)
-		else:
-			# The sprite's rect, which `RenderModelLoader._resolve_sprite_rects` has
-			# already put back to the member's own size unless the score marks this
-			# sprite as stretched. Drawing into it covers both cases.
-			if member.is_empty():
-				member = runtime.loader.get_member(draw_lib, cast_id)
-			if member.has("_registry_directory"):
-				var stage_position := _registry_score_stage_position(sprite, member)
-				x = stage_position.x * sx
-				y = stage_position.y * sy
-			canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
+		if member.has("_registry_directory"):
+			var stage_position := _registry_score_stage_position(sprite, member)
+			x = stage_position.x * sx
+			y = stage_position.y * sy
+		canvas.draw_texture_rect(tex, Rect2(x, y, w, h), false)
 
 	# Piposh is channel 30 of the movie he is in, and only of that movie. The joke is a
 	# Movie In A Window with its own channels and never uses 30, so nothing of his may
@@ -608,34 +584,6 @@ func draw_current_frame(canvas: Control) -> void:
 			var pmember: Dictionary = runtime.loader.get_member(puppet.cast_lib, puppet.cast_id)
 			var prect: Rect2 = puppet.draw_rect(pmember, ptex, sx, sy)
 			canvas.draw_texture_rect(ptex, prect, false)
-
-	if runtime.drag.active:
-		var drag_member: Dictionary = GameState.inventory_member_for_item(
-			runtime.drag.item, runtime.master_cast_lib()
-		)
-		if not drag_member.is_empty():
-			var dtex: Texture2D = runtime.loader.get_texture(
-				int(drag_member.cast_lib),
-				int(drag_member.cast_id),
-				RenderModelLoader.Transparency.BACKGROUND
-			)
-			if dtex:
-				var dmember: Dictionary = runtime.loader.get_member(
-					int(drag_member.cast_lib), int(drag_member.cast_id)
-				)
-				var dreg_x: float = float(dmember.get("reg_offset_x", dtex.get_width() * 0.5))
-				var dreg_y: float = float(dmember.get("reg_offset_y", dtex.get_height() * 0.5))
-				var dpos: Vector2 = runtime.drag.position
-				canvas.draw_texture_rect(
-					dtex,
-					Rect2(
-						(dpos.x - dreg_x) * sx,
-						(dpos.y - dreg_y) * sy,
-						float(dtex.get_width()) * sx,
-						float(dtex.get_height()) * sy,
-					),
-					false
-				)
 
 	# The gamepad's pointer is on the stage, not where the OS pointer is, so the
 	# hardware cursor cannot show it and it is drawn here instead. Same composed
