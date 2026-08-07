@@ -1,0 +1,18 @@
+[submodule "games/piposh"]
+	path = games/piposh
+	url = https://github.com/guillotine-mods/piposh.git
+[submodule "games/piposh2"]
+	path = games/piposh2
+	url = https://github.com/guillotine-mods/piposh2.git
+[submodule "games/piposh-en"]
+	path = games/piposh-en
+	url = https://github.com/guillotine-mods/piposh-en.git
+[submodule "games/piposh-ru"]
+	path = games/piposh-ru
+	url = https://github.com/guillotine-mods/piposh-ru.git
+[submodule "games/rating"]
+	path = games/rating
+	url = https://github.com/guillotine-mods/rating.git
+[submodule "games/piposh-dream"]
+	path = games/piposh-dream
+	url = https://github.com/guillotine-mods/piposh-dream.git
