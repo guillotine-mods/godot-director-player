@@ -382,6 +382,57 @@ func _init() -> void:
 		"selStart %s" % str(host.call("get_system_prop", "selstart")))
 	h.complete("a click inside an editable field puts the caret where it landed")
 
+	# ------------------------------------------------------ dragging a selection
+	# The other half of pointing at text, and the half that was missing: the
+	# caret could be *placed* with the mouse and nothing could be *selected* with
+	# it. Asserted against laid-out boundaries for the same reason the click is
+	# -- the question is whether the pixels the player swept map to the right
+	# range of characters.
+	h.begin("dragging across an editable field selects a range")
+	preview.call("lingo_set_field", str(typed_member.get("name", "")), "", "abcdefgh")
+	preview.call("queue_redraw")
+	await process_frame
+	var from := 2
+	var to := 6
+	var y: float = rect.get_center().y
+	var from_x: float = Text.caret_rect(rect, "abcdefgh", style, from).position.x
+	var to_x: float = Text.caret_rect(rect, "abcdefgh", style, to).position.x
+	preview.call("route_press", Vector2(from_x, y))
+	h.check("the press collapsed the selection at the character it landed on",
+		int(host.call("get_system_prop", "selstart")) == from
+		and int(host.call("get_system_prop", "selend")) == from,
+		"%s..%s, wanted %d" % [str(host.call("get_system_prop", "selstart")),
+			str(host.call("get_system_prop", "selend")), from])
+	# Halfway first: a drag reports continuously, and a selection that only
+	# appeared on the release would be a click that guessed.
+	TextFocus.drag(preview, Vector2((from_x + to_x) * 0.5, y))
+	var midway := int(host.call("get_system_prop", "selend"))
+	h.check("the selection follows the pointer while the button is down",
+		midway > from and midway < to, "selEnd %d, between %d and %d" % [midway, from, to])
+	TextFocus.drag(preview, Vector2(to_x, y))
+	h.check("and lands on the boundary the drag ended at",
+		int(host.call("get_system_prop", "selstart")) == from
+		and int(host.call("get_system_prop", "selend")) == to,
+		"%s..%s, wanted %d..%d" % [str(host.call("get_system_prop", "selstart")),
+			str(host.call("get_system_prop", "selend")), from, to])
+	# The anchor stays put, so the range is what a subsequent shift-arrow extends
+	# and what a backspace deletes.
+	TextFocus.key(preview, _made_key(KEY_BACKSPACE))
+	h.check("backspace deletes exactly the dragged range",
+		str(preview.call("lingo_field", str(typed_member.get("name", "")), "")) == "abgh",
+		str(preview.call("lingo_field", str(typed_member.get("name", "")), "")))
+	# The button comes up and the selection stops following. Without this the
+	# next mouse movement anywhere on the stage would keep re-selecting.
+	preview.call("route_release", Vector2(to_x, y))
+	preview.call("lingo_set_field", str(typed_member.get("name", "")), "", "abcdefgh")
+	preview.call("lingo_set_sel", "selstart", 1)
+	preview.call("lingo_set_sel", "selend", 1)
+	TextFocus.drag(preview, Vector2(to_x, y))
+	h.check("after the release the pointer no longer moves the selection",
+		int(host.call("get_system_prop", "selend")) == 1,
+		"selEnd %s" % str(host.call("get_system_prop", "selend")))
+	h.complete("dragging across an editable field selects a range")
+
 	# --------------------------------------------------- what the paint records
 	# Headless Godot builds the draw list and discards it, so `_text_drawn` is
 	# the only place a caret can be observed without a framebuffer -- and a caret
@@ -451,6 +502,45 @@ func _init() -> void:
 		str(preview.call("lingo_field", str(typed_member.get("name", "")), "")))
 	h.complete("a real keypress reaches the widget through `_input`")
 
+	# ------------------------------------------------- a real drag, through `_input`
+	# The rules half above proves `TextFocus.drag` selects the right range. This
+	# proves anything ever calls it: the motion has to survive `_input`,
+	# `make_input_local` and the router, and it must not be eaten by §7.6's
+	# sprite drag on the way. Same trap as the keyboard half -- a rule can be
+	# right while nothing reaches it.
+	h.begin("a real mouse drag reaches the widget through `_input`")
+	preview.call("lingo_set_field", str(typed_member.get("name", "")), "", "abcdefgh")
+	preview.call("lingo_set_sel", "selstart", 0)
+	preview.call("lingo_set_sel", "selend", 0)
+	preview.call("queue_redraw")
+	await process_frame
+	var real_from: Vector2 = _to_window(preview,
+		Vector2(Text.caret_rect(rect, "abcdefgh", style, 2).position.x, rect.get_center().y))
+	var real_to: Vector2 = _to_window(preview,
+		Vector2(Text.caret_rect(rect, "abcdefgh", style, 6).position.x, rect.get_center().y))
+	Input.warp_mouse(real_from)
+	for i in 2:
+		await process_frame
+	_mouse_button(real_from, true)
+	for i in 2:
+		await process_frame
+	Input.warp_mouse(real_to)
+	_mouse_motion(real_to)
+	for i in 2:
+		await process_frame
+	var dragged_start := int(host.call("get_system_prop", "selstart"))
+	var dragged_end := int(host.call("get_system_prop", "selend"))
+	_mouse_button(real_to, false)
+	for i in 2:
+		await process_frame
+	h.check("a real drag selected a range rather than only moving the caret",
+		dragged_end != dragged_start,
+		"%d..%d" % [dragged_start, dragged_end])
+	h.check("and the range is the one the pointer swept",
+		dragged_start == 2 and dragged_end == 6,
+		"%d..%d, wanted 2..6" % [dragged_start, dragged_end])
+	h.complete("a real mouse drag reaches the widget through `_input`")
+
 	# ------------------------------------------------------------- real pixels
 	# The other half of the same trap. Everything above can pass while nothing is
 	# on screen: the text is drawn straight into the canvas, so there is no
@@ -482,6 +572,28 @@ func _init() -> void:
 
 	print("")
 	quit(h.finish("editable text, focus, caret and selection in %s" % movie))
+
+
+## A real mouse button, queued the way the OS queues one. Window coordinates,
+## because that is what an OS event carries and what `make_input_local` expects.
+func _mouse_button(at: Vector2, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = at
+	event.global_position = at
+	Input.parse_input_event(event)
+
+
+## A real pointer movement with the left button held, which is what a drag is.
+## The button mask matters: without it this is a hover, and a hover must not
+## extend a selection.
+func _mouse_motion(at: Vector2) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = at
+	event.global_position = at
+	event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	Input.parse_input_event(event)
 
 
 ## A key event for the direct-drive half. Not fed through `Input`: those checks

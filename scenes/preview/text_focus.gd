@@ -258,8 +258,54 @@ static func press(host, at: Vector2) -> bool:
 		var index: int = Text.index_at(
 			rect, str(host._field_text_of(member)), Text.style_of(member), at)
 		set_selection(host, index, index)
+		# The press is the anchor of a drag until the button comes up. Every text
+		# widget since the Mac selects this way, and without it the only way to
+		# select anything in this port was shift-arrow -- which is why a player
+		# could type into a save slot and could not select what was in it.
+		host._text_drag = true
 		return true
+	# A press that missed every editable field ends any drag that was running,
+	# rather than leaving one armed for the next time the pointer moves.
+	host._text_drag = false
 	return false
+
+
+## The pointer moving with the button down: drag the moving end of the selection
+## to wherever it now is.
+##
+## `_sel_start` stays where the press put it and `_sel_end` follows, which is the
+## same anchor/moving-end split shift-arrow uses -- so a drag and a shift-arrow
+## that end in the same place leave the same selection, and a shift-arrow after
+## a drag continues it instead of starting over.
+##
+## Answers whether it consumed anything, and consumes nothing when no drag is
+## running: §7.6's moveable sprite is dragged with the same button and is by far
+## the commoner drag, so this must not stand in front of it.
+static func drag(host, at: Vector2) -> bool:
+	if not bool(host._text_drag) or host._focus_channel <= 0:
+		return false
+	var sprite: Dictionary = focused_sprite(host)
+	var member: Dictionary = focused_member(host)
+	if sprite.is_empty() or member.is_empty():
+		host._text_drag = false
+		return false
+	# Deliberately **not** clamped to the field's rect. Dragging below the box
+	# selects to the end of the visible text and dragging above it selects back
+	# to the start, because `Text.index_at` answers the nearest drawn line either
+	# way -- which is what a text widget does, and what makes selecting the whole
+	# of a one-line box by dragging off its edge work.
+	var rect: Rect2 = host._stage_rect(sprite)
+	var index: int = Text.index_at(
+		rect, str(host._field_text_of(member)), Text.style_of(member), at)
+	if index != int(host._sel_end):
+		set_selection(host, int(host._sel_start), index)
+	return true
+
+
+## The button coming up: the selection stops following the pointer. Called for
+## whichever movie took the press, like every other release.
+static func release(host) -> void:
+	host._text_drag = false
 
 
 ## A key aimed at the focused widget. True when the widget took it.

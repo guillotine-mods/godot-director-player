@@ -34,6 +34,14 @@ var path: String = ""
 var big_endian: bool = true
 ## Container format, `MV93` for the Director 6/7 movies this game ships.
 var codec: String = ""
+## Where the memory map itself lives, and its shape. Read during `open` and kept
+## because a *writer* needs them: `director/director_writer.gd` patches entries
+## in place, and re-deriving the map's position from the `imap` would be a second
+## copy of the rule above about where it is and how wide an entry is. Zero until
+## a container has been opened.
+var mmap_offset: int = 0
+var mmap_header_len: int = 0
+var mmap_entry_len: int = 0
 ## Every memory-map entry in id order: `{id, tag, offset, size}`. The id is the
 ## entry's index in the map, which is what `CAS*`, `KEY*` and ProjectorRays'
 ## filenames all refer to, so it is the join key for everything downstream.
@@ -82,26 +90,26 @@ func open(container_path: String) -> bool:
 		return false
 	# imap body: u32 entry count, then the offset of the mmap chunk itself.
 	_file.seek(24)
-	var mmap_offset := _file.get_32()
-	if mmap_offset <= 0 or mmap_offset + CHUNK_HEADER >= _length:
-		error = "imap points outside the file (mmap at %d of %d)" % [mmap_offset, _length]
+	var map_at := _file.get_32()
+	if map_at <= 0 or map_at + CHUNK_HEADER >= _length:
+		error = "imap points outside the file (mmap at %d of %d)" % [map_at, _length]
 		return false
 
-	return _read_memory_map(mmap_offset)
+	return _read_memory_map(map_at)
 
 
-func _read_memory_map(mmap_offset: int) -> bool:
-	_file.seek(mmap_offset)
+func _read_memory_map(at: int) -> bool:
+	_file.seek(at)
 	var mmap_tag := _read_tag()
 	if mmap_tag != "mmap":
-		error = "expected mmap at %d, found %s" % [mmap_offset, JSON.stringify(mmap_tag)]
+		error = "expected mmap at %d, found %s" % [at, JSON.stringify(mmap_tag)]
 		return false
 	_file.get_32() # chunk size, already bounded by the file length
 
 	# The header length is read rather than assumed: it is what says where the
 	# entries start, and trusting a constant here would silently misalign every
 	# entry in a container written by a different Director build.
-	var body := mmap_offset + CHUNK_HEADER
+	var body := at + CHUNK_HEADER
 	var header_len := _file.get_16()
 	var entry_len := _file.get_16()
 	_file.get_32() # capacity
@@ -109,6 +117,9 @@ func _read_memory_map(mmap_offset: int) -> bool:
 	if header_len <= 0 or entry_len <= 0:
 		error = "unusable mmap shape (header %d, entry %d)" % [header_len, entry_len]
 		return false
+	mmap_offset = at
+	mmap_header_len = header_len
+	mmap_entry_len = entry_len
 
 	var entries_at := body + header_len
 	if entries_at + used * entry_len > _length:

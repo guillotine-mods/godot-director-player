@@ -203,12 +203,14 @@ godot --headless --script tools/sprite_size_survey.gd -- --all  # score rect ver
 godot --headless --script tools/tween_survey.gd -- --all  # whether a tweened span carries a value per frame or only keyframes
 godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped sprite is mirrored inside its own rect, pass/fail — NOT --headless
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
-godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, real keys, real pixels, pass/fail — NOT --headless
+godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
+godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
 godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail
 godot --headless --script tools/score_sound_check.gd # score sound channels, cue points, fades and sound members, on synthesised fixtures, pass/fail
+godot --headless --script tools/sound_wait.gd       # every way a `playFile` fails still leaves `soundBusy` answerable, and the folder in a request decides the take, pass/fail
 godot --headless --script tools/palette_cycle.gd -- --file strtgame.dir  # palette tables, CLUT, cycling, fades, resolution order, pass/fail
 godot --script tools/stage_clip.gd -- --file strtgame.dir  # sprites are cut at the stage edge, pass/fail — NOT --headless
 godot --script tools/trails.gd -- --file PIP2DATA/DAY1.dir  # a trails sprite is not erased between frames, pass/fail — NOT --headless
@@ -256,12 +258,12 @@ against the container's own scripts. It is still the right *idea* for a parser
 regression gate, which is why it is still here.
 
 `cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `movie_churn.gd`,
-`text_and_shapes.gd`, `editable_text.gd`,
+`text_and_shapes.gd`, `editable_text.gd`, `save_movie.gd`,
 `stage_clip.gd`, `trails.gd`, `palette_cycle.gd`, `sprite_flip.gd`,
 `sprite_record_bytes.gd`, `sprite_size_survey.gd`, `tween_survey.gd`,
 `drawn_size_stability.gd`,
 `aiff_check.gd`, `audio_index.gd`,
-`sound_survey.gd`,
+`sound_survey.gd`, `sound_wait.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
 pass/fail ones, alongside the whole Lingo block above. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the

@@ -103,9 +103,33 @@ func _read_mcsl(data: PackedByteArray) -> bool:
 			lo = _be_u16(range_item, 0)
 			hi = _be_u16(range_item, 2)
 			cast_id = _be_u32(range_item, 4)
+		# **A library with no file path lives in this container**, which is what
+		# the header says and what `_cast_for` acts on -- so its resolved path is
+		# the movie's own file, and it is recorded here rather than only when the
+		# library is first opened.
+		#
+		# Recording it late was a real bug and not a tidy-up. `open` sets library
+		# 1 to the movie's path before this runs, and this loop overwrote it with
+		# `""` for every movie that carries an `MCsL`; `_cast_for(1)` then found
+		# the cast already cached and returned without ever filling it in. So the
+		# *internal* cast of every such movie had no path, and
+		# `text_art.gd:key_for` -- which keys every field override by the cast's
+		# file precisely so that two movies cannot collide -- fell back to its
+		# `#1` placeholder. One namespace, shared by every movie in the game.
+		#
+		# Two consequences, both of them the reason this was found. A movie's own
+		# field writes were never dropped on `go to movie`, because
+		# `TextArt.forget` matches on the container path and nothing was keyed by
+		# one. And SAVELOAD's `field "save1"` and HEZSAVE's `field "gamename1"`
+		# are member 1 of their own internal casts, so the two movies that hand
+		# the save screen back and forth were reading and writing *the same
+		# entry*.
+		var resolved := str(cast_libs.get(lib, {}).get("resolved_path", ""))
+		if resolved == "" and path == "":
+			resolved = str(_movie.path)
 		cast_libs[lib] = {
 			"name": name, "path": path, "min": lo, "max": hi, "id": cast_id,
-			"resolved_path": "", "embedded": false,
+			"resolved_path": resolved, "embedded": path == "",
 		}
 	return true
 

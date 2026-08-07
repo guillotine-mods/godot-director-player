@@ -66,7 +66,7 @@ const HANDLED := [
 	"go", "sound", "puppetsound", "puppetsprite", "updatestage", "cursor",
 	"nothing", "dontpassevent", "beep", "delay", "preloadmember", "preload",
 	"unloadmember", "unload", "set", "alert", "halt", "quit",
-	"window", "open", "close", "forget",
+	"window", "open", "close", "forget", "savemovie",
 ]
 ## Answer VOID rather than nothing: these are real Director builtins this host
 ## has no state to implement, and letting them report as unbound would drown the
@@ -86,7 +86,12 @@ const IGNORED := [
 	# that answers, so there is nothing further along to suppress. If the
 	# hierarchy ever queues the whole chain the way Director does, these stop
 	# being no-ops and become the mechanism.
-	"pass", "stopevent", "printfrom", "savemovie", "unloadmovie",
+	# `saveMovie` was here, and being here is what made this game unsaveable.
+	# Every `put x into field "y"` before it landed in the preview's override
+	# table and nothing ever reached the disk, so the save survived exactly as
+	# long as the process did -- which looks like a working save right up until
+	# the player restarts. It is bound for real now, at `_save_movie` below.
+	"pass", "stopevent", "printfrom", "unloadmovie",
 	"clearglobals", "showglobals", "showlocals",
 	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
 	"shutdown", "abort", "continue", "installmenu", "setcallback",
@@ -116,6 +121,8 @@ func call_builtin(name: String, args: Array) -> Variant:
 	match low:
 		"go":
 			return _go(args)
+		"savemovie":
+			return _save_movie(args)
 		"sound":
 			return _sound(args)
 		"puppetsound":
@@ -311,6 +318,24 @@ func call_builtin(name: String, args: Array) -> Variant:
 ## painting it black in between. Every spelled-out `go to frame ... of movie ...`
 ## in this corpus is a save/load hop, so the whole save screen was unreachable.
 ##
+## `saveMovie <path>` — write the movie now playing to a file.
+##
+## The path is optional in Director (no argument means "over itself"), so an
+## empty argument list saves in place rather than doing nothing. What is written
+## and where is `scenes/preview/movie_save.gd`'s decision; this only carries the
+## argument across.
+##
+## Answers 0 either way, because Lingo's `saveMovie` is a command and not a
+## function: a movie that could test its return value would be a movie this port
+## could not have run before. The reason a refusal is not silent is the trace
+## line in `lingo_save_movie`.
+func _save_movie(args: Array) -> Variant:
+	if preview == null:
+		return 0
+	preview.lingo_save_movie(str(args[0]) if not args.is_empty() else "")
+	return 0
+
+
 ## The word set is `go`'s own grammar entry — what the parser emitted the words
 ## from — so the two cannot drift apart. Only *leading* words are taken, which
 ## leaves a marker genuinely named `frame` reachable as the first argument.
@@ -618,6 +643,14 @@ func get_system_prop(prop: String) -> Variant:
 			# against: `LingoValue.same_container` makes the comparison succeed
 			# either way, so this can stay honest about what is loaded.
 			return preview.movie_name()
+		"moviepath":
+			# The folder the movie was opened from, with its trailing separator.
+			# `strtgame`'s `stonecold()` is the only place this game ever sets
+			# `savepath`, and it sets it to exactly this; unbound, every
+			# `saveMovie(savepath & "hezsave.dir")` and every
+			# `go("doload", savepath & "hezsave.dir")` asked for a filename with
+			# a VOID in front of it.
+			return preview.movie_path()
 		"keycode":
 			# Compared as a string in the corpus (`the keyCode = "49"`) and as a
 			# number elsewhere, which Lingo's coercion handles either way.

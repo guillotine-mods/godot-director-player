@@ -100,6 +100,19 @@ needs none of the three — `HEZSAVE.DIR` stores everything in its own internal
 cast — which is a reason to have built the rest first and not a reason to close
 this.
 
+**`saveMovie` writes fields and nothing else.** `saveMovie` is implemented
+(`director/director_writer.gd`) and writes a real container this engine reopens,
+but the only chunks it re-emits are the `STXT` payloads of field members whose
+text a script changed. Director saved the whole movie. Three specific holes, in
+the order they will be missed: a member's cast entry is not updated when its
+text changes, so cached metrics go stale; a rewritten chunk that grew leaves its
+old bytes unreferenced rather than adding them to the container's `free` list,
+so a repeatedly-saved file grows; and `save castLib` is not bound at all, so a
+movie that keeps state in a *linked* cast cannot persist it. The corpus here
+needs none of the three — `HEZSAVE.DIR` stores everything in its own internal
+cast — which is a reason to have built the rest first and not a reason to close
+this.
+
 **Dirty rects.** §6.3. Acceptable to omit, but it forecloses
 destination-reading inks and leaves one known trails divergence: a sprite in
 front of an old mark that has not moved should occlude it and does not.

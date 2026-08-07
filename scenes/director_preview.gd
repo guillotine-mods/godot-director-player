@@ -41,6 +41,7 @@ const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const TextFocus := preload("res://scenes/preview/text_focus.gd")
+const MovieSave := preload("res://scenes/preview/movie_save.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
@@ -179,6 +180,11 @@ var _sel_end := 0
 ## When the caret last moved, so the blink restarts on a keystroke instead of
 ## possibly blinking out on the character just typed.
 var _caret_since := 0
+## True between a press that landed inside an editable field and the button
+## coming up: the selection's moving end follows the pointer while it is set.
+## §8.4. Without it the caret could be *placed* with the mouse and nothing could
+## be *selected* with it, which is exactly what a save slot needs.
+var _text_drag := false
 ## Same keys as `_field_text`: `member("x").editable = <n>` from Lingo, overriding
 ## the member's own authored flag.
 var _member_editable: Dictionary = {}
@@ -962,6 +968,13 @@ func _input(event: InputEvent) -> void:
 			elif button.button_index == MOUSE_BUTTON_RIGHT:
 				InputRouter.right_mouse_button(self, button, at)
 			return
+		# §8.4: the widget sees the motion before the movie does, for the same
+		# reason it sees the press first — a field with no script is not a hit
+		# target and the descent below would never reach it. It does not consume
+		# the event either: a moveable sprite (§7.6) is dragged with the same
+		# button, and `TextFocus.drag` declines every motion that is not
+		# extending a selection it started.
+		TextFocus.drag(self, at)
 		InputRouter.mouse_motion(self, at)
 		return
 	if not (event is InputEventKey and event.pressed):
@@ -1493,6 +1506,38 @@ func movie_name() -> String:
 	return str(_movie.path).get_file()
 
 
+## `the moviePath` — the folder the current movie was opened from, with the
+## trailing separator Director put on it so that `the moviePath & "x.dir"` is a
+## path and not two names run together.
+##
+## Unbound, this answered VOID, and `savepath = the moviePath` in `strtgame`'s
+## `stonecold()` is the only place this game ever sets `savepath`. Every save and
+## every load then asked for `"hezsave.dir"` with a VOID in front of it.
+## Resolution recovers from that by bare filename, so it looked harmless; it is
+## not the same file when a title ships two of a name, which this one does.
+func movie_path() -> String:
+	if _movie == null:
+		return ""
+	return str(_movie.path).get_base_dir() + "/"
+
+
+## `saveMovie <path>` — write the movie now playing, with everything its scripts
+## have put into its fields, to `path`.
+##
+## §12.4. The decisions are `preview/movie_save.gd`'s and the bytes are
+## `director/director_writer.gd`'s; what is here is the reflective name the Lingo
+## host calls and the trace line, because a save that refused has to say so
+## somewhere the next session can find it.
+func lingo_save_movie(where: String) -> Dictionary:
+	var report: Dictionary = MovieSave.save(self, where)
+	if str(report["error"]) != "":
+		_trace("saveMovie %s -> %s" % [where, report["error"]])
+	else:
+		_trace("saveMovie %s -> %s (%d fields)" % [
+			where, report["path"], int(report["written"])])
+	return report
+
+
 # --------------------------------------------------------- windows (§14)
 
 ## The preview that owns the stage — this one, or the one that opened it.
@@ -1850,6 +1895,10 @@ func route_press(at: Vector2) -> Node:
 func route_release(at: Vector2) -> Node:
 	var target: Node = _press_target
 	_press_target = null
+	# §8.4: a text selection follows the pointer only while the button is down,
+	# and it is released here rather than in the input router so that a release
+	# delivered to a window ends *that* movie's drag.
+	TextFocus.release(self)
 	if target == null or not is_instance_valid(target):
 		return null
 	if target != self:

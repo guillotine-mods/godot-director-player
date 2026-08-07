@@ -972,7 +972,7 @@ of them used by this game, all 29 bound.
 | `printFrom` | 4 | `printFrom(the frame, the frame, 50)` | Printing. Correctly a no-op, but should be *bound* and inert rather than unbound, so it stops reporting. |
 | `dontPassEvent` | 2 | `dontPassEvent()` | Propagation control. This port dispatches tiers eagerly and stops at the first handler that answers, so the flag has nothing to change — but that equivalence is an accident of the dispatcher, not a decision, and it will stop holding the moment sprite behaviours are allowed to fall through. |
 | `pass` | 2 | `pass()` | The complement of the above. |
-| `saveMovie` | 2 | `saveMovie(savepath & "hezsave.dir")` | The original's save mechanism — it wrote game state by saving a modified movie. This port has its own save system, so binding it inert is probably right, but it should be a decision. |
+| `saveMovie` | 2 | `saveMovie(savepath & "hezsave.dir")` | **Implemented** (`scenes/preview/movie_save.gd`, `director/director_writer.gd`). It rewrites the container on disk. The cell above used to read "this port has its own save system, so binding it inert is probably right" — there is no other save system, and inert meant every save in this game survived exactly as long as the process did. See the section below for what it writes and what it refuses. |
 | `stopEvent` | 1 | `stopEvent()` | As `dontPassEvent`. |
 | `unLoadMovie` | 1 | `unloadMovie(the moviePath & "day1.dxr")` | Memory hint. Bind inert. |
 
@@ -989,7 +989,9 @@ all. It needs parser support, not a binding.
 `printFrom` (4), `dontPassEvent` (2), `pass` (2), `saveMovie` (2),
 `stopEvent` (1), `unLoadMovie` (1).** Twenty-six call sites in total across
 3,349 scripts. Four of the eight want to be bound-and-inert rather than
-implemented.
+implemented — and `saveMovie` is not one of the four, which this list said it
+was. Two call sites made it look negligible; they are the only two the game
+needs, and with them inert the title could not save at all.
 
 The remaining large numbers in the "unbound builtin" report are **not builtins
 at all**: `displayobject` (128), `searchfunk` (69), `cursorfunk` (68),
@@ -1063,6 +1065,50 @@ drop in the corpus answer "nothing" — the operators are how Director's invento
 idiom asks what an item was let go over, so the answer was hardcoded to no. When
 adding a builtin, check `scenes/preview_lingo_host.gd:call_builtin`, and read
 its `unbound` tally rather than this section.
+
+**`saveMovie` — what it does, stated at the width it actually works.** Bound in
+the live host, and it writes a real Director container to disk. The path is
+resolved exactly as `go to movie` resolves one, so `saveMovie(savepath &
+"hezsave.dir")` and the `go("doload", savepath & "hezsave.dir")` two statements
+later name the same file; where that file is a game's own container, the game's
+own container is what gets rewritten, which is what makes the original's
+save mechanism work unmodified.
+
+What is written: **the field members whose text this movie's scripts have
+changed**, and nothing else. A `put x into field "y"` lands in the preview's
+override table (`preview/text_art.gd`), and a save is exactly the set of
+overrides keyed to the container being written, re-emitted as `STXT` chunks. The
+rest of the file is copied byte for byte — including everything this port does
+not decode — so a chunk is either replaced in place (new payload no larger) or
+appended and repointed in the `mmap` (larger). No chunk is added, no chunk id
+changes, and the memory map is never grown.
+
+What it refuses: the whole write, if the result does not reopen. The container is
+built in memory, written beside the target, **reopened with this engine's own
+reader and read back**, and only then moved over the target. A movie that does
+not round-trip never replaces anything.
+
+What it does **not** do, and no part of this claims otherwise:
+
+- **Only `STXT` payloads are rewritten.** A script that changed a bitmap, a
+  palette, a score or a member's *properties* rather than a field's text saves
+  none of it. Director's `saveMovie` saved the whole movie; this saves the half
+  the language can change through `field`.
+- **A member's cast entry is untouched.** Its cached text metrics are whatever
+  they were, which Director would have recomputed.
+- **Vacated space is not returned to the `free` list.** A save that grows a field
+  leaks the old chunk's bytes, so a repeatedly-saved container grows slowly.
+- **`save castLib` is not bound.** Only the movie is saveable, which is also all
+  the corpus asks for.
+
+`tools/save_movie.gd` is the harness, and its decisive case runs a **second
+Godot** that saves and exits before this one reopens the file. A single-process
+test cannot tell "persisted" from "still in the override table", and that
+distinction is the whole of what was wrong.
+
+**`the moviePath`** is bound with it (`director_preview.gd:movie_path`), because
+`strtgame`'s `stonecold()` is the only place this game ever sets `savepath` and
+it sets it to exactly that.
 
 **Builtins with no engine side** are answered by `lingo/lingo_builtins.gd`, the
 title-agnostic module `tools/lingo_builtins_check.gd` checks against §1. It is

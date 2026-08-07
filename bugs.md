@@ -1107,3 +1107,89 @@ engine gap. Two candidate shapes, and the obvious one is wrong:
 
 Both live in `skip_to_end` (`scenes/director_preview.gd:1035`), and the SKIP
 hit-test is in `input_router.gd:mouse_button`. Neither is in this change.
+---
+
+## 33. `gate.sh`'s `editable_text` entry asserts nothing, and reports PASS
+
+`tools/editable_text.gd` finds its own subject: the first frame carrying a field
+sprite. Run with no arguments it opens the configured boot movie, and this
+title's boot movie is `strtgame.dir`, which has no field sprite anywhere. The
+harness says so and exits **passing with zero checks**:
+
+```
+$ godot --headless --path . --script tools/editable_text.gd
+strtgame.dir has no field sprite anywhere; nothing to type into
+
+PASS  editable text in strtgame.dir (0 checks, 0 failed)
+```
+
+`gate.sh` runs every harness with no arguments, so the gate entry that covers
+§8.4 has never asserted anything on this corpus. Pointed at the movie the feature
+is *for* it asserts 43:
+
+```
+$ godot --path . --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir
+PASS  editable text, focus, caret and selection in SAVELOAD.dir (43 checks, 0 failed)
+```
+
+This is the exact failure mode `scenes/preview/README.md` warns about in another
+context — a harness that reads nothing reports zero rather than failing, and the
+safety net goes dark without going red. It is filed rather than fixed because the
+fix is a choice: either the harness scans for a container with an editable field
+the way `tools/save_movie.gd` does, or `gate.sh` grows per-harness arguments, and
+`gate.sh` is not this change's to edit.
+
+---
+
+## 34. `the visible of sprite N` answers FALSE for an empty channel, and that is why the main menu's Load button does nothing
+
+**Symptom, from the player's chair:** on the main menu, clicking Load does
+nothing at all — no window, no sound, no cursor change. It looks like "there is
+no save to load". It is not: the button never runs.
+
+`ROOT/strtgame/BehaviorScript 369.ls` is the menu's Load button, and its entire
+body is inside one guard:
+
+```lingo
+on mouseUp
+  global soundspath, effectspath, movienamekeeper, stopornot, cdsavepath
+  if sprite(30).visible = 1 then
+    ...
+    open(window(cdsavepath & "saveload.dxr"))
+    ...
+  end if
+end
+```
+
+The guard is a copy of the in-game menu handlers (`DAY1/wonder/BehaviorScript
+312.ls` and its siblings), where channel 30 is the walking player character and
+the test means "not mid-cutscene". On the *main menu* there is no player:
+
+```
+strtgame.dir: channel 30 occupied in 0 of 1375 frames
+engine answers sprite(30).visible = 0 on frame 0
+```
+
+**In Director a sprite channel's `visible` is a channel property that defaults to
+TRUE**, whether or not the channel holds a member — an empty channel is a visible
+channel with nothing in it. The guard therefore passed in 1997 and the button
+worked. This port answers 0 for a channel with no sprite record, so the guard
+fails and the handler returns having done nothing.
+
+Reproduce:
+
+```gdscript
+# any harness, after booting strtgame
+preview.call("lingo_sprite_prop", 30, "visible")   # -> 0, wants 1
+```
+
+**Where the fix goes:** `scenes/preview/sprite_props.gd`, the `visible` read. It
+has to distinguish "the channel is empty" from "a script set `visible` to 0", and
+answer TRUE for the first. Worth checking the same question for the other channel
+properties that have a meaningful default on an empty channel (`locH`/`locV`,
+`ink`, `blend`) rather than fixing one and leaving the class.
+
+Not fixed here because `sprite_props.gd` was being edited by another change at the
+time. The three observations it explains — Load doing nothing on the menu, and
+the two save-related ones — are otherwise unrelated: the save half was
+`saveMovie` bound inert and is fixed.
