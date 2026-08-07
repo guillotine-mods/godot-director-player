@@ -174,3 +174,117 @@ static func at(owner, point: Vector2) -> Node:
 		if frame.has_point(point):
 			return node
 	return null
+
+# ------------------------------------------------------- the vocabulary
+
+## The window property vocabulary, write side.
+##
+## Everything is stored on the window it names rather than on whoever set it,
+## which is the correction the whole Movie-In-A-Window change was about: before
+## it, `set the windowType of window "joke.dxr" to 2` went to the *stage's*
+## system properties.
+
+static func write_prop(host, prop: String, value: Variant) -> void:
+	match prop:
+		"windowtype":
+			host._window_type = LingoValue.to_int(value)
+		"centerstage":
+			host._center_stage = LingoValue.to_int(value) != 0
+		"visible":
+			if LingoValue.to_int(value) != 0:
+				host.window_shown()
+			else:
+				host.window_hidden()
+			return
+		"modal":
+			host._modal = LingoValue.to_int(value) != 0
+		"title", "name":
+			host._window_title = LingoValue.to_str(value)
+		"titlevisible":
+			host._title_visible = LingoValue.to_int(value) != 0
+		"rect":
+			host._window_rect = rect_of(value)
+		"drawrect":
+			host._draw_rect = rect_of(value)
+		"filename":
+			## Director lets one window play a succession of movies. Reached as a
+			## `go to movie` inside the window rather than as a reload, so the
+			## window keeps its identity, its rect and its place in the stacking
+			## order — which is what the property means.
+			host.lingo_go_movie(LingoValue.to_str(value), null)
+		_:
+			return
+	host._apply_window_geometry()
+	host.queue_redraw()
+
+
+## The window property vocabulary, read side.
+static func read_prop(host, prop: String) -> Variant:
+	match prop:
+		"windowtype":
+			return host._window_type
+		"centerstage":
+			return 1 if host._center_stage else 0
+		"visible":
+			return 1 if host._window_shown else 0
+		"modal":
+			return 1 if host._modal else 0
+		"title":
+			return title_of(host)
+		"name":
+			return host._window_key
+		"titlevisible":
+			return 1 if host._title_visible else 0
+		"rect":
+			var frame: Rect2 = host.window_frame()
+			return [int(frame.position.x), int(frame.position.y),
+				int(frame.end.x), int(frame.end.y)]
+		"drawrect":
+			var drawn := Rect2(origin_of(host), size_of(host) * host.window_scale())
+			return [int(drawn.position.x), int(drawn.position.y),
+				int(drawn.end.x), int(drawn.end.y)]
+		"sourcerect":
+			## The movie's own authored rect, read-only. The one window property
+			## that is not a placement decision but a fact about the file.
+			# Typed explicitly: `:=` cannot infer through a ternary, and this file
+			# does not compile at all without it.
+			var source: Rect2i = host._config.rect if host._config != null else Rect2i(Vector2i.ZERO, host.STAGE)
+			return [int(source.position.x), int(source.position.y),
+				int(source.end.x), int(source.end.y)]
+		"moviename", "filename":
+			return host.movie_name()
+		"picture":
+			## Deliberately unimplemented: it is the window's composited pixels,
+			## and this renderer never holds a surface to read back (§6.3, gap
+			## 16.25). Answering VOID rather than a wrong image.
+			return null
+	return 0
+
+
+static func size_of(host) -> Vector2:
+	if host._window_rect != null:
+		return (host._window_rect as Rect2).size
+	if host._config != null:
+		return Vector2(host._config.rect.size)
+	return Vector2(host.STAGE)
+
+
+static func origin_of(host) -> Vector2:
+	if host._window_rect != null:
+		return (host._window_rect as Rect2).position
+	var mine: Vector2 = size_of(host)
+	if host._center_stage:
+		return ((Vector2(host.STAGE) - mine) * 0.5).floor()
+	# The *stage's* rect, not this window's. Director puts a window at the rect
+	# its movie was authored with -- a screen coordinate -- so it is taken
+	# relative to the stage movie's own rect, the only other thing here in that
+	# space. The two configs must stay distinct: reading one for both places
+	# every window at the origin.
+	var stage = host.stage_preview()
+	if host._config != null and stage != null and stage._config != null:
+		return Vector2(host._config.rect.position - stage._config.rect.position)
+	return Vector2.ZERO
+
+
+static func title_of(host) -> String:
+	return host._window_title if host._window_title != "" else host._window_key

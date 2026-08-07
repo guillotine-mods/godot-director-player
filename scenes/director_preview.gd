@@ -1346,124 +1346,27 @@ func lingo_window_prop(key: String, prop: String) -> Variant:
 	return node.own_window_prop(prop)
 
 
-## §14's window vocabulary, write side. Everything but `windowType` and
-## `centerStage` is unverified — see the block comment at the top of this file.
+## The window property vocabulary, delegated to `preview/windows.gd`. These stay
+## on the node under their Director names because `preview_lingo_host.gd` and the
+## window harnesses reach them by those names.
 func set_own_window_prop(prop: String, value: Variant) -> void:
-	match prop:
-		"windowtype":
-			_window_type = LingoValue.to_int(value)
-		"centerstage":
-			_center_stage = LingoValue.to_int(value) != 0
-		"visible":
-			if LingoValue.to_int(value) != 0:
-				window_shown()
-			else:
-				window_hidden()
-			return
-		"modal":
-			_modal = LingoValue.to_int(value) != 0
-		"title", "name":
-			_window_title = LingoValue.to_str(value)
-		"titlevisible":
-			_title_visible = LingoValue.to_int(value) != 0
-		"rect":
-			_window_rect = _rect_of(value)
-		"drawrect":
-			_draw_rect = _rect_of(value)
-		"filename":
-			## Director lets one window play a succession of movies. Reached as a
-			## `go to movie` inside the window rather than as a reload, so the
-			## window keeps its identity, its rect and its place in the stacking
-			## order — which is what the property means.
-			lingo_go_movie(LingoValue.to_str(value), null)
-		_:
-			return
-	_apply_window_geometry()
-	queue_redraw()
+	Windows.write_prop(self, prop, value)
 
 
-## §14's window vocabulary, read side.
 func own_window_prop(prop: String) -> Variant:
-	match prop:
-		"windowtype":
-			return _window_type
-		"centerstage":
-			return 1 if _center_stage else 0
-		"visible":
-			return 1 if _window_shown else 0
-		"modal":
-			return 1 if _modal else 0
-		"title":
-			return window_title()
-		"name":
-			return _window_key
-		"titlevisible":
-			return 1 if _title_visible else 0
-		"rect":
-			var frame := window_frame()
-			return [int(frame.position.x), int(frame.position.y),
-				int(frame.end.x), int(frame.end.y)]
-		"drawrect":
-			var drawn := Rect2(window_origin(), window_size() * window_scale())
-			return [int(drawn.position.x), int(drawn.position.y),
-				int(drawn.end.x), int(drawn.end.y)]
-		"sourcerect":
-			## The movie's own authored rect, read-only. The one window property
-			## that is not a placement decision but a fact about the file.
-			# Typed explicitly: `:=` cannot infer through a ternary, and this file
-			# does not compile at all without it.
-			var source: Rect2i = _config.rect if _config != null else Rect2i(Vector2i.ZERO, STAGE)
-			return [int(source.position.x), int(source.position.y),
-				int(source.end.x), int(source.end.y)]
-		"moviename", "filename":
-			return movie_name()
-		"picture":
-			## Deliberately unimplemented: it is the window's composited pixels,
-			## and this renderer never holds a surface to read back (§6.3, gap
-			## 16.25). Answering VOID rather than a wrong image.
-			return null
-	return 0
+	return Windows.read_prop(self, prop)
 
 
-## The window's size, before any `drawRect` scaling: `the rect of window` if a
-## script set one, otherwise the movie's own `DRCF` rect.
-##
-## Every movie in this corpus declares 640x480 (`tools/window_survey.gd` over all
-## 61 containers that have a config), so in practice a window covers the stage
-## exactly — which is why a click anywhere in it goes to it. Read rather than
-## assumed, so a title whose window movie is genuinely smaller gets a smaller
-## window and the clicks outside it still reach the stage.
 func window_size() -> Vector2:
-	if _window_rect != null:
-		return (_window_rect as Rect2).size
-	if _config != null:
-		return Vector2(_config.rect.size)
-	return Vector2(STAGE)
+	return Windows.size_of(self)
 
 
-## Where the window sits, in the stage's coordinates.
-##
-## `the rect of window` wins if a script set one. Otherwise `the centerStage`
-## centres the movie's stage on the screen, and all 21 sites in this corpus set
-## it, so that is the path that runs. Failing both, Director puts the window at
-## the rect its movie was authored with — a screen coordinate — so it is taken
-## relative to the stage movie's own rect, the only other thing here in that
-## space.
 func window_origin() -> Vector2:
-	if _window_rect != null:
-		return (_window_rect as Rect2).position
-	var mine := window_size()
-	if _center_stage:
-		return ((Vector2(STAGE) - mine) * 0.5).floor()
-	var host = stage_preview()
-	if _config != null and host != null and host._config != null:
-		return Vector2(_config.rect.position - host._config.rect.position)
-	return Vector2.ZERO
+	return Windows.origin_of(self)
 
 
-## Director defaults a window's title to its name, which is the file stem.
 func window_title() -> String:
-	return _window_title if _window_title != "" else _window_key
+	return Windows.title_of(self)
 
 
 ## Push the node where the geometry says, and stretch it if `drawRect` asks.
