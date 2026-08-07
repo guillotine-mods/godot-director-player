@@ -78,6 +78,16 @@ static func begin_transition(host, frame: Dictionary, table) -> bool:
 ## One tick of the movie: release what can be released, then take whatever steps
 ## the clock says are due.
 static func tick(host, delta: float) -> void:
+	# The player's button, sampled at the *engine's* rate rather than the score's.
+	# A click is 40-100 ms and a score step here is 125-250 ms, so a movie that
+	# only looked at the button from inside `exitFrame` misses most of them --
+	# which is every `if the mouseDown then go ...`, Director's click-to-skip
+	# idiom, in both titles. `director_preview.gd:_mouse_down_seen` carries the
+	# measurements and the argument that this is Director's model and not a
+	# workaround: the press is an event, and a movie stepping eight times a
+	# second still receives every event that happened in between.
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		host._mouse_down_seen = true
 	# A click or a key may have moved the playhead since the last step. Take the
 	# frame it landed on before deciding how much time that frame is owed, or the
 	# old frame's tempo paces the new one.
@@ -116,6 +126,15 @@ static func tick(host, delta: float) -> void:
 			host._dispatch("enterFrame", resumed)
 			continue
 		host._advance()
+		# The press has now been offered to a step, so it stops being owed. What
+		# the button is *still* doing it says for itself, which is why this is the
+		# live state and not `false`: a held button keeps reading down, and
+		# `if the mouseDown then go(marker(1)) else go(marker(0))` -- the
+		# charge-and-fire idiom -- needs both halves to be honest. Cleared here
+		# rather than at the top of the tick because the steps of one tick run
+		# back to back with no sample between them, so only the first of a
+		# catch-up burst may see a press that is already over.
+		host._mouse_down_seen = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	host.queue_redraw()
 
 

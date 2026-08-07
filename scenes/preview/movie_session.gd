@@ -48,6 +48,13 @@ static func adopt(host) -> void:
 	# only symptom is that it feels wrong.
 	var stated := int(host._config.default_tempo) if host._config != null else 0
 	host._clock.movie_default_fps = float(stated) if stated > 0 else FrameClock.DEFAULT_FPS
+	# Which tempo convention this movie's score cell is written in is a property
+	# of the movie, and its config chunk is the only thing that says. A no-op
+	# today -- the clock reads 0 as D6-or-later and `director_score.gd` decodes
+	# nothing older -- and wired here rather than when a pre-D6 reader lands, so
+	# that reader arrives to a clock that already knows rather than to a silent
+	# wrong answer on every frame.
+	host._clock.movie_file_version = int(host._config.version) if host._config != null else 0
 
 	# Palette ids are per movie, so the state resets with the movie rather than
 	# carrying the last one's cache and cycling offsets into this one.

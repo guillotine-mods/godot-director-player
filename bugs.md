@@ -1278,3 +1278,90 @@ Not fixed here because `sprite_props.gd` was being edited by another change at t
 time. The three observations it explains — Load doing nothing on the menu, and
 the two save-related ones — are otherwise unrelated: the save half was
 `saveMovie` bound inert and is fixed.
+
+---
+
+## 37. SKIP walks off the end of `rating`'s main menu into a subroutine region, and the movie restarts its own opening
+
+**Status:** open · **Area:** preview, `skip_to_end` · a second failure mode of
+the same affordance as entry 32, through the marker walk rather than the
+last-frame fallback · reported from play as "when the game starts, if I press
+different places it jumps back and forth — just on this game"
+
+`skip_to_end` walks to the **next marker** and falls back to the last frame only
+when there is none. Entry 32 is about that fallback. This is about the walk
+itself: **a marker is not a scene.** A Director movie routinely parks
+subroutine segments after its playable strip, entered by name with `go("x")` and
+left with a jump back to the top, and the marker list cannot tell those apart
+from the next scene.
+
+`rating`'s boot movie is `MAINMENU.dir`, not `strtgame.dir`. Its markers are
+
+```
+    3 hedartzi   14 guilotine   46 oliver   504 mainscreen
+  587 option1   594 option2   601 option3   609 option4   614 option5   621 option6
+```
+
+The playable strip is 0-521: a 449-frame opening (`53..501`, frame script member
+7, `on exitFrame / if the mouseDown then go("mainscreen")`) and then the menu,
+which idles on 504-521 because frame 521 runs `go(marker(0))`. `option1`..
+`option6` are **not scenes**. They are the CD drive-letter probe — six frames
+that each set `the searchPath` to one drive, `playFile` a known clip, and either
+record the letter or `go` to the next option — and every one of them ends on a
+frame whose script (member 88) is `on exitFrame / go(2)`. Nothing in the movie
+ever enters them; they are reachable only by jumping into them.
+
+So SKIP pressed on the menu lands on `option1`, the probe runs, `go(2)` fires,
+and the playhead is back at **frame 2 — the start of the opening the player was
+trying to skip.** Pressing SKIP again walks 14 → 46 → 504 → 587 → 2 again. That
+is the reported "jumps back and forth", and it is a closed cycle:
+
+```
+$ godot --path . --script <a harness that presses SKIP and traces>
+SKIP 0: MAINMENU.dir f10  -> landed f14  -> f25   trail [14 … 25]
+SKIP 1: MAINMENU.dir f25  -> landed f46  -> f47   trail [46, 47]
+SKIP 2: MAINMENU.dir f47  -> landed f504 -> f511  trail [504 … 511]
+SKIP 3: MAINMENU.dir f511 -> landed f587 -> f3    trail [587, 588, 589, 590, 2, 3]
+SKIP 4: MAINMENU.dir f3   -> landed f14  -> f26   ... and round again
+```
+
+Reproduce the shape without a harness — this is the score, and it is enough:
+
+```
+$ godot --headless --path . --script tools/director_frames.gd -- \
+      --root rating --file MAINMENU.dir
+markers    : 10, labels 10
+     504  mainscreen
+     587  option1        <- SKIP's next marker from the menu
+```
+
+`tools/skip_state.gd` passes on this movie and is not wrong to: it skips from
+f250, which is inside the opening, so the next marker is `mainscreen` and that is
+a real destination. The trap is only reachable from the *last* playable segment,
+which is exactly where a player who wants to skip is standing. Extending
+`skip_state` to press SKIP repeatedly until the marker list is exhausted would
+catch it, and would also catch entry 32's cases; that is the check this entry
+wants and does not have.
+
+**Why it is filed and not fixed.** Entry 32 already argues the shape of the
+answer — SKIP should stop teleporting the playhead and instead release what the
+current frame is holding on and let the movie's own scripts drive — and this
+movie is the strongest case for it yet, because *the movie has its own skip*:
+`if the mouseDown then go("mainscreen")` covers all 449 frames of the opening.
+That one works now (see the commit that added `tools/mouse_poll.gd`), so a player
+on this title no longer needs the button. There is no title-agnostic rule that
+can tell `option1` from `mainscreen` by looking at the marker list, which is the
+whole reason the marker walk cannot be patched into correctness.
+
+Two things found alongside, both only reachable through this trap and both real:
+
+- The probe concludes the CD is on **D:**. `sound playFile 1, "d:\sounds\start\egozcold.aif"`
+  resolves — the last-resort bare-filename lookup finds
+  `games/rating/sounds/start/EGOZCOLD.AIF` — so `soundBusy(1)` is true and the
+  movie sets `gWinDriveLetter` to `d` and `soundspathstart` to `d:\sounds\`. An
+  absolute path naming a drive that does not exist should not resolve to a file
+  beside the movie.
+- `soundspathstart` reads empty in `ARRIVEL` after the menu's Play button, so its
+  sounds are requested as `start\story.aif` rather than under the game root,
+  while the same global was correct in `MAINMENU` a moment earlier. Not
+  investigated; `tools/globals_survive.gd` is the tool for it.

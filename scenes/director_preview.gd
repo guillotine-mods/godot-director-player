@@ -286,6 +286,43 @@ var _click_script: Dictionary = {}
 ## not carry: `mouseUp` goes out only when the button came up inside this sprite,
 ## and `mouseUpOutSide` when it came up anywhere else (§8.1).
 var _press_channel := 0
+## Was the mouse button down at any point since the last score step?
+##
+## **`the mouseDown` cannot be answered from the live button alone**, and this is
+## the field that says why. A movie's handlers run at the *score's* rate -- 4 to
+## 8 steps a second across these two titles, so 125 to 250 ms between one
+## `exitFrame` dispatch and the next -- while a click lasts 40 to 100 ms. Read
+## `Input.is_mouse_button_pressed` from inside the handler and every click that
+## begins and ends between two steps is invisible, so
+##
+##     on exitFrame
+##       if the mouseDown then go("mainscreen")
+##     end
+##
+## -- Director's standard click-to-skip idiom, and the only way out of the
+## 449-frame opening of `rating`'s MAINMENU -- answers false for most of the
+## clicks a player makes. Measured at that movie's 8 fps, driving real button
+## events through `Input.parse_input_event`: a 35 ms click skipped 2 times in 8,
+## a 90 ms one 7 times in 8, a 185 ms one 8 times in 8. The player's report is
+## "clicking does not skip the opening", and the port looked correct in every
+## harness because every harness holds the button for far longer than a hand
+## does. It is not a Rating idiom either: `blaegoz` polls it on 12 frames,
+## `manaegoz` and `arrivel` on one each, and piposh2's CHESS on four.
+##
+## So the button is sampled once per process frame -- the engine's own event
+## loop, which runs an order of magnitude faster than the score -- and a press
+## stays visible to the movie until a step has had the chance to see it. That is
+## Director's model rather than a workaround: the press is an *event*, and a
+## movie stepping eight times a second still receives every event that happened
+## in between.
+##
+## Reset to the live button after each step (`preview/frame_loop.gd`), so one
+## press is offered to exactly one step unless the button is genuinely still
+## held. Both halves matter: `if the mouseDown then go(marker(1)) else
+## go(marker(0))` -- the charge-and-fire idiom in `blaegoz` and `CHESS` -- fires
+## once per click and keeps firing while the button is down, and a latch that
+## outlived the press would make it fire twice for one.
+var _mouse_down_seen := false
 ## Where the last input event happened, in this movie's coordinates, and whether
 ## one has arrived yet. `stage_mouse` has why this is kept rather than asked of
 ## the DisplayServer -- it is what makes the engine work on a touchscreen.
@@ -1403,6 +1440,17 @@ func stage_mouse() -> Vector2:
 func note_pointer(at: Vector2) -> void:
 	_pointer = at
 	_pointer_seen = true
+
+
+## `the mouseDown` and `the stillDown`, and `the mouseUp` as their exact
+## negation. The live button *or* a press this movie has not been stepped since;
+## `_mouse_down_seen` is the whole argument for the second half.
+##
+## A method rather than the field read directly, because the live half has to be
+## in it: a button held down while the movie is paused, or during a step that
+## never ran, is still down, and a movie asking mid-handler must be told so.
+func mouse_button_down() -> bool:
+	return _mouse_down_seen or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 
 
 func lingo_hold() -> void:

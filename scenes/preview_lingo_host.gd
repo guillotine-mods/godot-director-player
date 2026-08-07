@@ -584,10 +584,20 @@ func get_system_prop(prop: String) -> Variant:
 		# `the mouseUp` is not the complement of `the mouseDown` by accident:
 		# Director defines it as "the button is not down", so the two are exact
 		# negations and a title can poll either.
+		#
+		# The left button is the one exception to "a read of hardware with no
+		# engine state behind it", and it has to be: these three are polled from
+		# `exitFrame`, which runs at the score's rate, and a click is shorter than
+		# one score step. Asking the live button alone made the click-to-skip
+		# idiom answer false for most real clicks --
+		# `director_preview.gd:_mouse_down_seen` has the measurements. Nothing in
+		# either corpus spins on `the stillDown` or `the mouseUp` inside a repeat
+		# loop, which is what would make holding a press for one step visible as a
+		# hang rather than as the fix.
 		"mousedown", "stilldown":
-			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0
+			return 1 if preview.mouse_button_down() else 0
 		"mouseup":
-			return 0 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 1
+			return 0 if preview.mouse_button_down() else 1
 		"rightmousedown":
 			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0
 		"rightmouseup":
