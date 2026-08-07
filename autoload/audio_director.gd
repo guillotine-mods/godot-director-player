@@ -27,14 +27,17 @@ const VOLUME_MAX := 255
 ## channels are doing. 7 is the level a movie starts at.
 const SOUND_LEVEL_MAX := 7
 
-var _stem_index: Dictionary = {} ## lower stem -> res path
+## Every path-tail of every file -> the file, so a request that carries part of a
+## path is answered by that part rather than by the filename alone. `d1prom1`,
+## `days/d1prom1` and `sounds/days/d1prom1` are three tails of one file and all
+## three are keys; the bare filename is simply the shortest of them.
+var _tail_index: Dictionary = {}
 ## Relative path (no extension) -> file on disc. The precise index.
 
 var _path_index: Dictionary = {}
 
-## Stems that exist in more than one folder, so a filename-only request can
-
-## say so rather than silently picking one.
+## Tails that more than one file ends with, so a request that resolves only by
+## guessing can say so rather than silently picking one.
 
 var _ambiguous: Dictionary = {}
 
@@ -104,7 +107,9 @@ const AiffLoader := preload("res://autoload/aiff_loader.gd")
 
 
 func _build_index() -> void:
-	_stem_index.clear()
+	_tail_index.clear()
+	_path_index.clear()
+	_ambiguous.clear()
 	# The game's own tree first. `_index_dir_recursive` is first-writer-wins, and
 	# the game's files are the source of truth: everything under `assets/audio`
 	# was produced from them by the Python pipeline and is scheduled for
@@ -114,7 +119,7 @@ func _build_index() -> void:
 	var paths := Paths.new()
 	if paths.load_config():
 		_index_dir_recursive(paths.root)
-	GameState.emit_log("Audio index: %d files, %d ambiguous stem(s)" % [
+	GameState.emit_log("Audio index: %d files, %d ambiguous tail(s)" % [
 		_path_index.size(), _ambiguous.size()
 	], "info")
 
@@ -135,21 +140,27 @@ func _index_dir_recursive(path: String) -> void:
 		else:
 			var ext := name.get_extension().to_lower()
 			if ext in ["wav", "ogg", "mp3", "aif"]:
-				var stem := name.get_basename().to_lower()
-				# The stem index is the last resort, and it is where the folder
-				# used to be thrown away: the first file with a given name won
-				# and every later one was unreachable. This game keeps the same
-				# actor's lines under several folders, so that is not a corner
-				# case -- it plays the wrong take.
-				if _stem_index.has(stem):
-					_ambiguous[stem] = true
-				else:
-					_stem_index[stem] = full
 				# What the scripts actually name: a path. Keyed relative to the
 				# game root, lowercased, separators normalised and the extension
 				# dropped, so `songs\strtgame\krupsong.aif` can find
 				# `SONGS/strtgame/KRUPSONG.WAV`.
-				_path_index[_relative_key(full)] = full
+				var key := _relative_key(full)
+				_path_index[key] = full
+				# And every tail of it, because a script may name any suffix of
+				# the path. This is where the folder used to be thrown away: only
+				# the bare filename was indexed beside the whole path, so a
+				# request for `days\d1prom1.aif` -- a real one, and what every
+				# entry that skips the CD-drive probe builds -- fell through to
+				# the filename and picked whichever of `SOUNDS/DAYS` and
+				# `SOUNDS/S_DAY1` the directory walk reached first. That is a
+				# wrong take of a line of speech, and it is silent.
+				var parts := key.split("/", false)
+				for start in range(parts.size()):
+					var tail := "/".join(Array(parts).slice(start))
+					if _tail_index.has(tail):
+						_ambiguous[tail] = true
+					else:
+						_tail_index[tail] = full
 		name = dir.get_next()
 	dir.list_dir_end()
 
@@ -167,16 +178,27 @@ func resolve_path(file_name: String) -> String:
 ## A request is a path, and the folder in it is meaning, not decoration.
 ##
 ## Scripts build these by concatenation from a global -- `playfromdisk` is
-## `"songs\strtgame\\"`, `soundspath` is `"sounds\days\\"` -- so the same
-## filename appears under several folders and only the whole path picks the right
-## one. Matching on the filename alone is how the wrong take of a line gets
-## played, and it is silent: a sound plays, so nothing looks broken.
+## `"songs\strtgame\\"`, `soundspath` is `soundspathstart & "days" & "\"` -- so
+## the same filename appears under several folders and only the folder picks the
+## right one. Matching on the filename alone is how the wrong take of a line gets
+## played, and it is silent: a sound plays, so nothing looks broken. 315 of this
+## corpus's 3,142 sounds share a filename with another; 0 share a folder and a
+## filename.
 ##
-## Matched by suffix rather than equality, because the request usually carries a
-## prefix this engine cannot see: `the moviePath` on the authoring machine, or a
-## CD drive letter. Longest match wins, so a more specific request beats a less
-## specific one. The bare stem is still tried last, because a script that names
-## only a filename is legal and common.
+## Matched by suffix at **both** ends, because a request is a path fragment and
+## may be missing segments from either side. It carries a prefix this engine
+## cannot see -- `the moviePath` on the authoring machine, or a CD drive letter --
+## so leading segments are dropped until something matches; and it may be missing
+## a leading segment the disc has, because the global that supplies it was set by
+## a movie this entry never passed through. `soundspath` is
+## `soundspathstart & "days" & "\"`, and `soundspathstart` is written only by
+## `strtgame`'s drive probe: reach the room any other way and every request is
+## `days\<name>.aif` against a disc whose files are under `SOUNDS/DAYS/`.
+##
+## The longest match wins in both directions, so a more specific request beats a
+## less specific one, and the whole path beats a tail of it. A bare filename is
+## the shortest tail, still legal and still common, and it is the only one this
+## corpus can leave ambiguous.
 func _resolve_normalised(raw: String) -> String:
 	var key := _normalise(raw)
 	if key == "":
@@ -190,14 +212,17 @@ func _resolve_normalised(raw: String) -> String:
 		var tail := "/".join(Array(parts).slice(start))
 		if _path_index.has(tail):
 			return str(_path_index[tail])
-	var stem := key.get_file()
-	if _stem_index.has(stem):
-		if _ambiguous.has(stem):
+	# Then the other direction: the request may be a tail of a path on disc.
+	for start in range(parts.size()):
+		var tail := "/".join(Array(parts).slice(start))
+		if not _tail_index.has(tail):
+			continue
+		if _ambiguous.has(tail):
 			push_warning(
-				"sound '%s' names only a filename and %s exists in more than one folder"
-				% [raw, stem]
+				"sound '%s' resolves only by '%s', which more than one file ends with"
+				% [raw, tail]
 			)
-		return str(_stem_index[stem])
+		return str(_tail_index[tail])
 	return ""
 
 
@@ -230,6 +255,12 @@ func play_file(channel: int, file_name: String) -> void:
 	var ch := maxi(1, channel)
 	var raw := file_name.to_lower().strip_edges()
 	if raw.is_empty():
+		# A request for nothing is still a request, and it still takes the
+		# channel. Returning here left the previous sound playing *and* left
+		# `soundBusy` answering for it, so a `soundBusy` guard placed after the
+		# `playFile` waited out a sound the script had already replaced -- and if
+		# nothing ever replaced it, waited for ever. See `_fail` below.
+		_fail(ch, "", "sound playFile named nothing")
 		return
 	if raw == "$whichsnd":
 		raw = "%s.aif" % str(GameState.whichsnd).to_lower()
@@ -267,14 +298,12 @@ func play_file(channel: int, file_name: String) -> void:
 	# the folder the script had gone to the trouble of building.
 	var path := resolve_path(raw)
 	if path.is_empty():
-		_channel_failed[ch] = true
-		GameState.emit_log("Audio miss: %s" % raw, "warn")
+		_fail(ch, raw, "Audio miss: %s" % raw)
 		return
 
 	var stream := _load_stream(path)
 	if stream == null:
-		_channel_failed[ch] = true
-		GameState.emit_log("Audio load fail: %s" % path, "warn")
+		_fail(ch, raw, "Audio load fail: %s" % path)
 		return
 	_start(ch, stream, _cue_points_of(path))
 
@@ -505,6 +534,40 @@ func _cue_points_of(path: String) -> Array:
 	return cues
 
 
+## A `playFile` that could not start: the channel is taken, and it is silent.
+##
+## Director's `sound playFile` claims the channel before it opens the file, so a
+## request it cannot satisfy leaves the channel *empty* -- not still playing what
+## was there a moment ago. The distinction is the whole of `soundBusy`'s
+## usefulness. `BehaviorScript 250` in this corpus is the shape that depends on
+## it:
+##
+##     on exitFrame
+##       if not soundBusy(1) then go(marker(0))
+##     end
+##
+## and its counterpart is a frame that plays a line and then polls. Answering
+## "busy" for a sound the script has already replaced makes that poll wait out the
+## *old* sound; answering it for a sound that never started at all makes the poll
+## wait for something that can never end. Both are the same mistake, and neither
+## is recoverable from inside the movie -- the script has no way to ask whether
+## its `playFile` worked.
+##
+## Stopping the player is the second half and it is not cosmetic: without it the
+## previous sound stays audible while `soundBusy` says the channel is free, so
+## the next line of speech is spoken over the last one.
+func _fail(channel: int, request: String, why: String) -> void:
+	var player: AudioStreamPlayer = _channels.get(channel)
+	if player and player.playing:
+		player.stop()
+	_fades.erase(channel)
+	_channel_cues[channel] = []
+	_channel_cues_passed[channel] = 0
+	_channel_file[channel] = request
+	_channel_failed[channel] = true
+	GameState.emit_log(why, "warn")
+
+
 func sound_busy(channel: int) -> bool:
 	var ch := maxi(1, channel)
 	if bool(_channel_failed.get(ch, false)):
@@ -550,18 +613,29 @@ func close_channel(channel: int) -> void:
 		player.volume_db = _volume_db(VOLUME_MAX)
 
 
+## A record with no file name in it is a record that names no sound, and it is
+## not the same thing as `sound playFile <ch>, ""` — that is a script asking for
+## nothing, which takes the channel. A score record that simply carries no name
+## must leave the channel alone, or every frame entry would stop whatever a
+## script had put there.
 func play_frame_sounds(frame: Dictionary) -> void:
 	for snd in frame.get("sounds", []):
 		if typeof(snd) != TYPE_DICTIONARY:
 			continue
-		play_file(int(snd.get("channel", 1)), str(snd.get("file", "")))
+		var file := str((snd as Dictionary).get("file", ""))
+		if file.strip_edges().is_empty():
+			continue
+		play_file(int((snd as Dictionary).get("channel", 1)), file)
 
 
 func play_click_sounds(on_click: Dictionary) -> void:
 	for snd in on_click.get("sounds", []):
 		if typeof(snd) != TYPE_DICTIONARY:
 			continue
-		play_file(int(snd.get("channel", 1)), str(snd.get("file", "")))
+		var file := str((snd as Dictionary).get("file", ""))
+		if file.strip_edges().is_empty():
+			continue
+		play_file(int((snd as Dictionary).get("channel", 1)), file)
 
 
 func _ensure_player(channel: int) -> AudioStreamPlayer:

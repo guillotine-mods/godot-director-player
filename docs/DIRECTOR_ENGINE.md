@@ -1431,6 +1431,31 @@ the same frame every tick. It costs nothing here -- of the 2,515 `playFile`
 statements, 11 sit in a handler that also holds the playhead, 9 of those behind a
 `soundBusy` guard, and the other 2 are gated on `the mouseDown` and jump away.
 
+**A `playFile` that cannot start still takes the channel**, which is the half of
+`soundBusy` a movie depends on and cannot check for itself. Director claims the
+channel before it opens the file, so a name the disc does not hold leaves the
+channel *empty* rather than still playing what was there: the player is stopped,
+the channel reads not busy, and a `soundBusy` poll placed after the `playFile`
+releases. Leaving the previous sound in place instead is the difference between a
+scene that is silent and a scene that never ends, because the poll would be
+waiting on a sound the script had already replaced. Same treatment for a request
+that names an empty string, and for a file that resolves but will not decode.
+`tools/sound_wait.gd` asserts all three, plus the floor they rest on -- a channel
+nothing has played is not busy, and one a sound was started on is.
+
+**The file name is a path and the folder in it is meaning**, matched as a suffix
+at both ends. A script builds the request by concatenating globals, so it can
+carry segments the engine cannot see -- `the moviePath` of the authoring machine,
+a CD drive letter -- and it can equally be *missing* one the disc has, because
+the global that supplied it was set by a movie this entry never passed through.
+This corpus does both: `soundspath` is `soundspathstart & "days" & "\"` and
+`soundspathstart` is written only by `strtgame`'s drive probe. Matching the whole
+path, then progressively shorter heads of it, then progressively shorter tails,
+is what makes `days\d1prom1.aif` find `SOUNDS/DAYS/D1PROM1.AIF` rather than the
+same filename under `SOUNDS/S_DAY1/`. Falling straight from the whole path to the
+bare filename is what it used to do, and 315 of this corpus's 3,142 sounds share
+a filename with another -- 0 once one folder is kept.
+
 ---
 
 ## 13. Trails, blend, video, text, shapes

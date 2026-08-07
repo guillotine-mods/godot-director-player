@@ -154,6 +154,90 @@ decision is the one entry 25 leaves open, now with a second, worse consequence
 attached: a debug entry point that drops the player into a hub mid-game either
 routes through the chain that establishes the day, or says that it has not.
 
+### Correction: everything above was measured on a cold entry, and only there
+
+The heading and the `--cold` reproduction stand. The sentence **"every character
+in the game is a trap"** does not, and neither does any reading of this entry
+that expects the trap in normal play. Driven through the real chain — the same
+click, the same clip, `EXODUS -> DAY1` and `EXODUS -> MURDER1 -> DAY1` — every
+one of them *works*, and here is a clip finishing:
+
+```
+== click 1 at f965                          usfultalking=null usfulline=null
+   -> f2685                                 (tofclicktalk)
+  t85   f2685  busy=false                   usfultalking=1
+  t87   f2686  busy=true  days\d1prom1.aif  usfultalking=2 usfulline=17
+  t138  f2685  busy=false days\d1prom1.aif  usfultalking=2
+  t139  f2686  busy=true  days\d1prom2.aif  usfultalking=3
+  t173  f2685  busy=false days\d1prom2.aif  usfultalking=3
+  t174  LEFT the clip at f942               (veranda)
+```
+
+`globalday` is 1 the whole way, the key is `tofday1`, and line 17 of
+`clickoncharacter` is `tofday1,0,pip,tofspk1`. Measured the same way at `field`
+(rin, `a1prom1`), `edge1` (mog, `mogday12`) and `exitforest3` (dnz, `j1prom1`
+through `j1prom6`, seven passes): all four exit to their `lastmark`.
+
+**Two things this entry made it easy to believe, and both are wrong.**
+
+**`tofspk1` is not a sound file, and no engine ever asks for one.** The third
+item of a talk-order line is a *cast member name*: `BehaviorScript 291` line 74
+is `set the memberNum of sprite rin to the number of member (xxx & who) of
+castLib "wonder"`, with `xxx` "a" or "b" — so `tofspk1` becomes `atofspk1` /
+`btofspk1`, the talking loop, which entry 21 above names from the other side. The
+sound is a separate concatenation two branches earlier,
+`soundspath & "d" & globalday & "prom" & usfultalking & ".aif"` and
+`soundspath & "tofsay" & random(3) + vcv & ".aif"`. `find games/piposh2 -iname
+"*tofspk*"` returning nothing is therefore not evidence of anything. The talk
+order says *who animates*, not *what plays*.
+
+**The loop is not open-ended.** Every branch of the preamble that plays a sound
+also does `usfultalking = usfultalking + 1`, and the `else` arm exits as soon as
+`the number of items in line usfulline - 2` is below it. So the clip terminates
+after one pass per talk-order item *whatever the sounds do* — a `playFile` that
+finds nothing simply makes it silent and quick. **The only way in is
+`r = "not"`**: the day key absent from the table. Nothing else traps.
+
+**Which leaves exactly two ways to get `r = "not"`, and the second is new.**
+
+1. `globalday` VOID — the cold entry above, unchanged and still open.
+2. **`hatday<n>` is not in the table for any day.** `clickoncharacter` holds 21
+   lines, `bon`/`lil`/`dnz`/`mog`/`rin`/`tof`/`ish` × days 1–3, and no `hatday`
+   line at all — while `BehaviorScript 289` (`lastmark = "tennis"`, clip
+   `hatclicktalk` at 2649) keys on `"hatday" & globalday`. That trap needs no
+   cold entry and no missing global; it is in the shipped data. **Not proved
+   reachable**: at `tennis` the sprite is on channels 18 and 20 (both
+   `ahatlop1` — entry 21 again) and the click was not answered on the frame the
+   harness clicks, so Hat's talk may simply be cut content that no behaviour
+   dispatches to. Worth ten minutes with `tools/playhead_escape.gd --label
+   tennis` before anyone chases the tof/dnz clips again.
+
+**And there is a second family with the identical shape**, which this entry never
+mentioned and which any detector has to cover too. Alongside the nine
+`<char>clicktalk` clips there are six `<room>talk` clips — `fieldtalk` 2067,
+`tennistalk` 2085, `edge1talk` 2103, `verandatalk` 2121, `exitforest3talk` 2139,
+`dwarfs1talk`/`dwarfs2talk` — reached from `objecttalktime` (showing an object to
+a character) rather than from a click, and driven by `talkproc init, fieldname,
+lastmark` in `DAY1/wonder/MovieScript 248`. It is the same handler written once:
+look `usfulobject` up in a `master` field, play, increment, and `go(lastmark)`
+when the items run out. It reads a *different* field per character (`tof-ans`,
+`hat-ans`, `pat-rin-ans`) and a different sound global (`objtlkpath`, the same
+one segment short), and it has the same single trap condition — the key absent
+from the table. Whatever answers this entry must answer both.
+
+**Ruled out with measurement, so it does not get re-derived.** The sound path was
+never the fault. `days\d1prom1.aif` resolves, plays, and holds `soundBusy(1)` for
+about fifty score ticks. `soundspath` *is* one segment short —
+`MASTER/External/MovieScript 130` builds it as `soundspathstart & "days" & "\"`
+and `soundspathstart` is written only by `strtgame`'s CD-drive probe
+(`ROOT/strtgame/BehaviorScript 110`), which no entry short of a full boot passes
+through — but that is a **wrong-take** bug, not a hang, and it is fixed:
+`autoload/audio_director.gd` now matches a request as a *tail* of a path on disc,
+which takes this corpus from 315 ambiguous filenames to 0. `tools/sound_wait.gd`
+covers it, together with the rule underneath this whole entry: a `playFile` that
+cannot start must leave the channel **not busy**, or a `soundBusy` poll is a wait
+for something that can never happen.
+
 ---
 
 ## 35. `field "x" of castLib Y` drops the library
@@ -1107,6 +1191,7 @@ engine gap. Two candidate shapes, and the obvious one is wrong:
 
 Both live in `skip_to_end` (`scenes/director_preview.gd:1035`), and the SKIP
 hit-test is in `input_router.gd:mouse_button`. Neither is in this change.
+
 ---
 
 ## 33. `gate.sh`'s `editable_text` entry asserts nothing, and reports PASS
