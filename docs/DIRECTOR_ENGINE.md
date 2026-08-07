@@ -1750,8 +1750,13 @@ byte at record offset 20 and nothing decoded it. It is decoded now and merged
 into the sprite the renderer and the hit test see, the same way trails is, so a
 sprite the author ticked "Moveable" on in the Score window is draggable and
 click-eligible. 744 of Piposh 1's records set it and none of Piposh 2's, which is
-why nothing missed it until a second title was loaded. `the constraint of sprite`
-remains unimplemented.
+why nothing missed it until a second title was loaded.
+
+`the constraint of sprite` is **done** -- `Interaction.constrain`, applied from
+`director_preview._write_position`, so it clamps a script's own `locH`/`locV`
+write as well as a drag. It clamps the position *point*, not the rect. Stored as
+channel state rather than as a puppet override, because all 10 corpus sites set
+it immediately before a `go`, and an override would be discarded on arrival.
 **16.17 No editable text, focus, caret or selection.** §8.4. **Done** --
 `scenes/preview/text_focus.gd`, asserted windowed by `tools/editable_text.gd`
 (real `InputEventKey`s through `Input.parse_input_event`, and the framebuffer
@@ -1823,7 +1828,7 @@ destination-reading inks.
 | Palette resolution / cycling / fades | **done, unverified**: resolution order, cycling, fades and a CLUT reader, on a corpus that cycles 0 times; five built-in tables are authored data this port does not have | `director_palette_state.gd`; `director_palette.gd` |
 | Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
 | Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
-| Moveable / drag / constraint | **partial**: drag done and now reachable from the score's own flag as well as from Lingo, `the constraint of sprite` not | `director_preview.gd:_begin_drag`; `director_score.gd:_snapshot` |
+| Moveable / drag / constraint | **done**: drag reachable from the score's own flag as well as from Lingo; `the constraint of sprite` clamps the position point on every position write, not only on a drag | `preview/interaction.gd:constrain`; `director_preview.gd:_write_position`; `tools/sprite_drag.gd` |
 | Editable text / focus / selection | **done** bar auto-expanding size push-back: `sprite OR member` editability, first-editable-claims-focus, movie-level `selStart`/`selEnd`, caret, selection, click-to-caret, auto-tab | `preview/text_focus.gd`; `director_text.gd:layout`; `tools/editable_text.gd` |
 | Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map, and §8.3 focus routing (the focused sprite, else the frame at channel 0); modifiers not carried, and `the key` is empty for the arrows where Director reports 28-31 | `director_keys.gd`; `director_preview.gd:_dispatch_key`; `preview/text_focus.gd` |
 | Primary handlers, pass/dontPassEvent | **partial**: `when <event> then` installs and fires at tier 1 for keys; mouse tiers and `pass` propagation not | `lingo_interpreter.gd:run_primary` |

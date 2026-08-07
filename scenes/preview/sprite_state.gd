@@ -138,6 +138,20 @@ static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dicti
 	# on none, which is why nothing missed it until a second title was loaded.
 	if over.has("moveable"):
 		out["moveable"] = LingoValue.to_int(over["moveable"]) != 0
+	# `the editableText of sprite N`, by the same rule and for the same reason.
+	# It arrives normalised to `editable` by `sprite_props.gd` -- the seam exists
+	# because Director's spelling and the record's key differ, and three separate
+	# bugs this session were one half of a property reaching nothing: dragging
+	# was dead because `moveablesprite` never became `moveable`, and this one was
+	# stored, read back correctly, and consumed by nobody.
+	#
+	# Editability is `sprite OR member` (§8.4), and this is the sprite half. The
+	# member half is `director_cast.gd`'s byte 25 bit 0, which is where every
+	# editable field in all three titles actually comes from -- 0 of 3,550,111
+	# sprite records set the score's own bit, so nothing in this corpus reaches
+	# the line below. It is here because Director has it.
+	if over.has("editable"):
+		out["editable"] = LingoValue.to_int(over["editable"]) != 0
 	return out
 
 

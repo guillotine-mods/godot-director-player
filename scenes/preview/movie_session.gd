@@ -100,6 +100,11 @@ static func forget_previous(host, previous_path: String) -> void:
 	host._channel_cursors.clear()
 	host._global_cursor = 0
 	host._cursor_applied = "?none"
+	# `the constraint of sprite` is channel state by the same rule, and dies at
+	# the same point. A constraint names a *channel number*, which is meaningless
+	# in the next movie, and an invented one is silent: all it does is stop a
+	# position write landing where the script asked.
+	host._channel_constraints.clear()
 	# Both are keyed by channel and measured against `_ticks`, which restarts
 	# below. Left behind, a channel's loop start would sit in the *previous*
 	# movie's clock and every film loop in the new room would be asked for a

@@ -30,11 +30,6 @@ the short list of what has no implementation at all.
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
 which is a reason to build it last and not a reason to skip it.
 
-**`the constraint of sprite`.** §7.6. A dragged position is clamped into the
-constraint channel's bounding box before being stored -- it clamps the position
-*point*, not the rect, so a sprite may legitimately hang outside the box by its
-registration offset. Drag itself is done.
-
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
 in this corpus carries it; it currently falls through to Matte.
 
@@ -148,6 +143,33 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   suppress-on-`keyDown` rule (no script in either corpus declares one). **One
   clause of §7.7 left open**: auto-expanding boxes do not push their laid-out
   size back onto the sprite.
+
+- **`the constraint of sprite`.** §7.6, in `Interaction.constrain` /
+  `constraint_box`, applied from `director_preview._write_position`. It clamps
+  the position **point**, not the rect, so a sprite legitimately hangs outside
+  the box by its registration offset -- measured at 320px of overhang on Piposh
+  2 and 22px on SHUFFLE, which is what the harness discriminates on. Constraint
+  0 is unconstrained and is the fast path.
+
+  **Not a drag feature**, which is the thing to know before touching it. The
+  clamp is on the position write, so a script's own `locH`/`locV` is clamped
+  too. SHUFFLE proves it is not merely defensive: sprite 7 is constrained and
+  nothing ever makes it moveable.
+
+  Stored as **channel state**, like `the cursor of sprite`, not as a puppet
+  override -- and that is settled by the corpus rather than by taste. All 10
+  writes are `set the constraint of sprite N to 2` followed immediately by
+  `go(marker(1))`, and `sprite_state.effective` discards a channel's overrides
+  when the score moves it to another member, so an override-backed constraint
+  would have been thrown away on arrival every time.
+
+  The score record has no constraint field: bytes 36-47 hold one distinct value,
+  `0x00`, across all 816,318 occupied records in Piposh 2 and all 1,886,362 in
+  Piposh 1 (`tools/sprite_record_bytes.gd --all`). The 10 Lingo sites are all in
+  SHUFFLE -- the shuffleboard puck fenced to the board. One stated divergence: a
+  constraint naming an empty or hidden channel is treated as unconstrained,
+  where the literal reference would ask an empty channel for a bounding box and
+  teleport the sprite to (0,0).
 
 - **Trails**, on a corpus where 0 of 816,318 records set the flag.
 - **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in

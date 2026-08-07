@@ -495,15 +495,6 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_score = score
 	MovieSession.adopt(self)
 	MovieSession.forget_previous(self, previous_path)
-	# Belongs inside `forget_previous`, on the line after `_channel_cursors.clear()`
-	# and for the same reason it gives: `the constraint of sprite` stores a
-	# *channel number*, and channel 2 of the next movie is a different sprite in a
-	# different place. Carried over it does not keep a constraint, it invents one --
-	# and an invented constraint is silent, because all it does is stop a position
-	# write landing where the script asked. It is here rather than there only
-	# because `preview/movie_session.gd` is being edited elsewhere this session;
-	# move it in and delete these lines.
-	_channel_constraints.clear()
 	_preloader = Preloader.new(_score)
 
 	if _lingo_on:
