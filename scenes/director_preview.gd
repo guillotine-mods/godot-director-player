@@ -41,6 +41,7 @@ const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
 const Cursor := preload("res://scenes/preview/cursor.gd")
 const Windows := preload("res://scenes/preview/windows.gd")
+const Sound := preload("res://scenes/preview/sound.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -642,46 +643,6 @@ func _dispatch(handler: String, script: Dictionary) -> void:
 	_interpreter.call_handler(handler, [], script)
 
 
-## Everything sound-driven that happens once a tick: cue points passed, and the
-## tempo channel's wait-for-sound.
-##
-## One pass, because both consume the same thing. `take_cues_passed` is
-## destructive — it reports each cue once and then forgets it — so a wait poll
-## and an event dispatch that each called it would race, and whichever ran first
-## would eat the cue the other was looking for. That is a bug with no symptom
-## except a wait that never releases.
-func _pump_sound(_delta: float) -> void:
-	if _audio == null:
-		return
-	var wait: Dictionary = _clock.waiting_sound()
-	var wait_channel := int(wait["channel"])
-	var wait_cue := int(wait["cue"])
-
-	for channel_value in _audio.call("cue_channels"):
-		var channel := int(channel_value)
-		for cue_value in _audio.call("take_cues_passed", channel):
-			var cue: Dictionary = cue_value
-			_dispatch_cue_passed(channel, cue)
-			if channel != wait_channel:
-				continue
-			# −1 is "the next cue, whichever it is"; a positive index is that cue
-			# or any after it, since a tick can cross more than one. −2 is "the
-			# end", which is not a cue at all and is handled below.
-			if wait_cue == Score.CUE_NEXT or (wait_cue > 0 and int(cue["index"]) >= wait_cue):
-				_clock.sound_arrived()
-				wait_channel = 0
-
-	if wait_channel <= 0:
-		return
-	# "The end" is the *sound* ending, not the last cue passing: a sound with no
-	# cue points at all still ends, and reading it as "all cues passed" would
-	# release the wait instantly on every unmarked sound -- which is every sound in
-	# this corpus. A cue wait releases on the sound ending too, or a frame waiting
-	# on a cue that never comes would hold for ever.
-	if not bool(_audio.call("sound_busy", wait_channel)):
-		_clock.sound_arrived()
-
-
 ## `cuePassed me, <channel>, <cueNumber>, <cueName>`.
 ##
 ## A second, independent source of events alongside the frame's (§12). A sound
@@ -1248,69 +1209,6 @@ func _sync_frame_entry() -> void:
 	_begin_score_sound(frame)
 	_begin_palette(frame)
 	_begin_transition(frame)
-
-
-## Play whatever this frame's two score sound channels ask for.
-##
-## §12, and `director/score_sound.gd` holds the rule — a channel restarts only
-## when the member it names *changes*, and a channel a script has puppeted is not
-## the score's to touch. This node owns only the wiring: turning a cast member
-## into a stream and handing it to the mixer.
-##
-## **Unexercised by this corpus, and it is worth knowing why rather than only
-## that.** The game this port was built on has no `sound` cast member in any of
-## its 86 containers and writes neither sound channel in any of its 61,371
-## frames, so `changes()` returns nothing on every frame of every room here
-## (`tools/sound_survey.gd`). Every sound it plays comes from Lingo instead. The
-## path below is therefore reference-shaped rather than observed, and the harness
-## that proves the rule is `tools/score_sound_check.gd`, which drives the state
-## machine directly.
-func _begin_score_sound(frame: Dictionary) -> void:
-	var changes: Dictionary = _score_sound.changes(frame.get("sound_channels", []))
-	for channel in changes["stop"]:
-		lingo_stop_sound(int(channel))
-	for entry_value in changes["start"]:
-		var entry: Dictionary = entry_value
-		play_sound_member(int(entry["channel"]), int(entry["cast_lib"]), int(entry["cast_id"]))
-
-
-## A sound cast member onto a channel: what the score's channels and
-## `puppetSound` both need, and the one path that turns a member into audio.
-##
-## Returns false when the member does not resolve or does not decode, which is a
-## fact about the movie rather than an error to raise — the same contract the
-## bitmap path has. It is traced rather than silent, because a sound that does
-## not play and says nothing is indistinguishable from a score that asked for
-## none, and that ambiguity is what §12 costs most sessions.
-func play_sound_member(channel: int, cast_lib: int, cast_id: int) -> bool:
-	if _audio == null or _table == null:
-		return false
-	var member: Dictionary = _table.get_member(cast_lib, cast_id)
-	if member.is_empty() or int(member.get("data_chunk_id", -1)) < 0:
-		_trace("f%d sound ch%d member %d:%d -> not found" % [_index, channel, cast_lib, cast_id])
-		return false
-	var file = _table.file_for(cast_lib)
-	if file == null:
-		return false
-	var payload: PackedByteArray = file.read_chunk(int(member["data_chunk_id"]))
-	var header := PackedByteArray()
-	var header_id := int(member.get("sound_header_chunk_id", -1))
-	# `sndH` is the header of the `sndH`/`sndS` pair and never the payload: when
-	# the member's own data chunk *is* the header, there are no separate samples
-	# to point it at and passing it as both would decode the header twice.
-	if header_id >= 0 and header_id != int(member["data_chunk_id"]):
-		header = file.read_chunk(header_id)
-	var error: Array = []
-	var stream := SoundMember.decode(payload, header, error)
-	if stream == null:
-		_trace("f%d sound ch%d member %d:%d -> %s" % [
-			_index, channel, cast_lib, cast_id, "; ".join(error),
-		])
-		return false
-	_audio.call("play_stream", channel, "%d:%d" % [cast_lib, cast_id], stream,
-		SoundMember.cue_points(payload))
-	_trace("f%d sound ch%d member %d:%d" % [_index, channel, cast_lib, cast_id])
-	return true
 
 
 ## Resolve this frame's palette channel and arm whatever effect it asks for.
@@ -2754,25 +2652,23 @@ func _cursor_for_stage(image: Image, hotspot: Vector2) -> Dictionary:
 	return Cursor.for_stage(image, hotspot, scale.x)
 
 
-## A sound channel's properties. `volume` is the one this game sets: 66 writes
-## and 2 reads across channels 1 to 4, measured over `reference/lingo/`.
-##
-## The state lives in `AudioDirector` rather than here. It used to be a dictionary
-## on this node, which meant the two hosts each had their own idea of a channel's
-## volume and neither survived a `go to movie` — and `set the volume of sound 3
-## to the volume of sound 3 - 20`, the corpus's one read-modify-write, steps a
-## loop down over several frames and needs its own previous write back.
+## Sound routing, delegated to `preview/sound.gd`. The state is `AudioDirector`'s
+## rather than either module's, because the stage and any open window must agree
+## about a channel and neither survives a `go to movie`.
+func _pump_sound(_delta: float) -> void:
+	Sound.pump(self, _audio, _clock)
+
+
+func play_sound_member(channel: int, cast_lib: int, cast_id: int) -> bool:
+	return Sound.play_member(self, _audio, _table, channel, cast_lib, cast_id)
+
+
+func _begin_score_sound(frame: Dictionary) -> void:
+	Sound.begin_score_sound(self, _score_sound, frame)
+
+
 func lingo_sound_prop(channel: int, prop: String) -> Variant:
-	if _audio == null:
-		return 0
-	match prop:
-		"volume":
-			return int(_audio.call("channel_volume", channel))
-		"cuepointnames":
-			return _audio.call("cue_point_names", channel)
-		"loop", "looping":
-			return 0
-	return 0
+	return Sound.read_prop(_audio, channel, prop)
 
 
 func lingo_set_sound_prop(channel: int, prop: String, value: Variant) -> void:
