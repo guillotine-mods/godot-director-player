@@ -399,14 +399,19 @@ func _dialogue_check(h: Harness, args: Dictionary) -> void:
 			break
 
 	h.begin("the dialogue plays its line and then leaves")
+	# The details say what happened rather than what should have: `Harness.check`
+	# prints them either way, and "never reached X" beside an `ok` reads as a
+	# contradiction.
 	h.check("the click enters the talking loop rather than skipping it",
-		reached_speak, "never reached %s (frame %d)" % [speak, speak_frame])
+		reached_speak, "%s at frame %d %s" % [
+			speak, speak_frame, "entered" if reached_speak else "NEVER ENTERED"])
 	# 40 samples is several seconds of speech at any tempo in either corpus; the
 	# bug produced one or two, which is the "very quick" in the report.
 	h.check("and holds there for the length of the line",
 		inside > 40, "%d samples inside %s" % [inside, speak])
 	h.check("the handler's trailing `go` is what leaves it",
-		reached_destination, "never reached %s" % destination)
+		reached_destination, "%s %s" % [
+			destination, "reached" if reached_destination else "NEVER REACHED"])
 	h.check("and nothing is left parked afterwards",
 		(preview.get("_frozen_play") as Array).is_empty()
 			and (preview.get("_play_stack") as Array).is_empty(),
