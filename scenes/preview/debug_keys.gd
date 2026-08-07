@@ -17,9 +17,18 @@ extends RefCounted
 ## has a code for it (53), so a title that reads Escape could not.
 ##
 ## The F-keys are not sacred either -- `director_keys.gd` maps all twelve, so a
-## script *can* claim one -- but the movie is offered every key first and the
-## debug map only sees what it did not take (`director_preview.gd:_input`). An
-## F-key is simply the band no game in either corpus reaches for.
+## script *can* claim one -- and **one of them was claimed**. The move to this
+## band was justified by "no game in either corpus reaches for an F-key", swept
+## by hand from `reference/lingo/`, which holds Piposh 2 alone. The engine runs
+## six titles. `tools/key_script_survey.gd -- --all` reads all six and finds
+## Rating testing `the keyCode = 109` at **48 sites** -- 109 is F10, which is
+## where the pause sat. It is `normalkeysx` / `normalkeys2` / `normalkeys3` in
+## `ARCADE1.dir`, the handler that leaves a timed scene, so in Rating the one key
+## that gets a player out of a room also paused the preview.
+##
+## The pause is on F9 now and F10 is the spare. That is a measurement rather than
+## a fresh guess: `tools/debug_bindings.gd` runs the same survey over every root
+## under `games/` and fails if any binding lands on a key any title tests.
 ##
 ## F10 was already here for this exact reason: the pause used to be on space,
 ## which is the key `fromnow` turns into "skip this line of speech" in 46
@@ -38,8 +47,10 @@ const SECTION := "debug"
 ## the list of commands the config may name: a `[debug]` entry whose key is not
 ## one of these is a typo, and reported rather than ignored.
 ##
-## F9 is deliberately free. Filling the band exactly would leave the next command
-## nowhere to go.
+## **F10 is not free by taste, it is Rating's** -- 48 `the keyCode = 109` sites.
+## The one spare F-key is a deliberate margin: filling the band exactly would
+## leave the next command nowhere to go, and it now has to be a key no title
+## tests, which is a shorter list than it looks.
 const DEFAULTS := {
 	"boxes": "F1",
 	"hit_test": "F2",
@@ -49,7 +60,7 @@ const DEFAULTS := {
 	"step_forward": "F6",
 	"fullscreen": "F7",
 	"quit": "F8",
-	"pause": "F10",
+	"pause": "F9",
 	"snapshot": "F11",
 	"containers": "F12",
 }

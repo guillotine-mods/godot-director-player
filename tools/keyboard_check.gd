@@ -24,6 +24,10 @@ extends SceneTree
 ## This drives the real preview node rather than a restatement of it: it boots
 ## the scene, runs the score far enough for the movie to install its key script,
 ## then hands it a synthetic key event and asks what happened.
+##
+## The other half of the keyboard -- a script that *polls* `the key` and
+## `the keyCode` from `exitFrame` or `idle` instead of installing a handler,
+## which §8.6 lists as the first thing games do -- is `tools/key_polling.gd`.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
@@ -83,15 +87,22 @@ func _init() -> void:
 		return
 
 	var host = preview.get("_host")
-	# `the keyCode` must be live only during the dispatch, or a script reading it
-	# outside a key event sees the last key pressed rather than nothing.
-	h.check("keyCode is not live outside a key event", int(host.key_code) == -1,
+	# Before any key: `-1`, the *never pressed* value. Not 0 -- 0 is the Mac code
+	# for `A`, which ScummVM initialises to and Rating tests at 17 sites.
+	h.check("keyCode is -1 until something is pressed", int(host.key_code) == -1,
 		str(host.key_code))
 
 	var claimed: bool = preview.call("_dispatch_key", _key(KEY_SPACE))
 	h.check("space was claimed by the movie", claimed)
-	h.check("keyCode was cleared afterwards", int(host.key_code) == -1,
-		str(host.key_code))
+	# **And it stays.** `the key` and `the keyCode` are the last key pressed and
+	# they persist until the next one -- ScummVM sets `_vm->_key` / `_vm->_keyCode`
+	# in `events.cpp:337-338` and never clears them. This used to assert the
+	# opposite, "cleared afterwards", and that assertion was the bug: a frame
+	# script polling `the keyCode` from `exitFrame` -- which is how Rating's
+	# `BATZEGOZ.dir` reads H, J and Q -- could never once see a key.
+	# `tools/key_polling.gd` is the harness for the whole of that.
+	h.check("and the keyCode survives the dispatch, because it is the last key",
+		int(host.key_code) == Keys.SPACE, str(host.key_code))
 
 	var sent: Dictionary = preview.get("_sent")
 	var ran: Dictionary = preview.get("_ran")

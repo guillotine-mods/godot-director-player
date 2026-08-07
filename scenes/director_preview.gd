@@ -609,9 +609,35 @@ func _dispatch_cue_passed(channel: int, cue: Dictionary) -> void:
 ## channel 1 when the key code is 49, so pressing space cuts the line of speech
 ## that is playing. Others set `gomenu`, which leaves the intro for the menu.
 ##
-## `the keyCode` and `the key` are only meaningful during the dispatch, so they
-## are set around it and cleared after: a script reading `the keyCode` outside a
-## key event should see nothing, not the last key pressed.
+## **`the keyCode` and `the key` are the *last key pressed*, and they persist.**
+## They are engine state, not dispatch state: ScummVM sets `_vm->_key` and
+## `_vm->_keyCode` in `events.cpp:337-338` when the key goes down and never
+## clears them, and `lingo-the.cpp:680-689` reads that same pair whenever a
+## script asks. Nothing scopes them to the handler.
+##
+## This port used to clear both to `-1` / `""` the moment the dispatch returned,
+## on the reasoning that a script reading them outside a key event "should see
+## nothing". That reasoning is wrong and it is the whole of a reported bug:
+## Rating's `BATZEGOZ.dir` -- the *Aderet* frames -- does
+##
+##     on exitFrame
+##       if (the key = "h") or (the keyCode = 4) then
+##         sound playFile 1, soundspath & "h.aif"
+##         go("f1")
+##       end if
+##     end
+##
+## in three frame scripts (members 6, 7, 8 and 81, for H, J and Q). Polling the
+## keyboard from `exitFrame` or `idle` is a documented Director idiom -- §8.6
+## says so in as many words -- and against a value cleared on the way out of
+## `_dispatch_key` it can never once be true. The keys reached the engine, the
+## engine forgot them before the frame that asks ran, and the room did nothing.
+##
+## `-1` and `""` survive as the *never pressed yet* value (`preview_lingo_host.gd`
+## initialises them), which is a deliberate divergence from ScummVM's `0`: 0 is
+## the Mac code for `A`, and Rating tests `the keyCode = 0` at 17 sites, so a
+## port that starts at 0 has the `A` key held down before the player touches the
+## keyboard.
 ##
 ## **§8.3: with a focused editable field the message starts at that sprite, not
 ## at the frame** — "dispatched with the channel id of the sprite owning the
@@ -673,8 +699,9 @@ func _dispatch_key(event: InputEventKey) -> bool:
 	# the key being delivered rather than for the frame before it.
 	if not typed_away and TextFocus.key(self, event):
 		claimed = true
-	_host.key_code = -1
-	_host.key_char = ""
+	# Nothing is cleared here. See the note above: `the key` and `the keyCode`
+	# hold the last key pressed until the next one, which is what every script
+	# that polls them from `exitFrame` or `idle` is reading.
 	queue_redraw()
 	return claimed
 

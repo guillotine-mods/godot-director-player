@@ -11,15 +11,22 @@ extends RefCounted
 ## — it is the *character* produced, which is what a script compares against a
 ## letter.
 ##
-## What this corpus actually tests, from a sweep of `reference/lingo/`:
+## What the games actually test is **measured, not remembered**:
+## `tools/key_script_survey.gd -- --all` reads every script out of every title
+## under `games/` and prints the literals. Across the six, the union is
 ##
-##   49            space, 20+ sites   — stops sound channel 1, cutting speech
-##   123 124 125 126  arrows, 30+ sites — menu and map navigation
-##   2 13 14       three letter keys, paired with an arrow in the same condition
+##   0 1 2 4 7 11 12 13 14 15 18-28 32 36 37 38 45 46 49 51 53 109 123-126
 ##
-## The map is complete rather than trimmed to those, because a keyboard map that
-## covers only the keys someone noticed is the kind of thing that silently breaks
-## the next room.
+## — most of the alphabet, most of the digits, Enter, Backspace, Escape, space,
+## the four arrows, and **F10**, which Rating tests at 48 sites. The list this
+## comment used to carry was three lines long and swept by hand out of
+## `reference/lingo/`, which holds Piposh 2 alone; every consumer of it was
+## therefore right about one title out of six. `tools/debug_bindings.gd` runs the
+## survey over every root rather than quoting a number from here.
+##
+## The map is complete rather than trimmed to what is tested, because a keyboard
+## map that covers only the keys someone noticed is the kind of thing that
+## silently breaks the next room.
 
 ## Space. Named because it is the one code worth recognising on sight: it is how
 ## every line of speech in this game is skipped.
@@ -70,11 +77,32 @@ static func code_for(event: InputEventKey) -> int:
 ## The character `the key` reports: what the keystroke typed, not where it sits.
 ##
 ## Director answers an empty string for keys that produce no character, which is
-## what a script comparing `the key` to a letter expects — an arrow press must
-## not compare equal to anything.
+## what a script comparing `the key` to a letter expects.
+##
+## **The arrows are the documented exception** (§8.3): Director substitutes
+## characters 28, 29, 30 and 31 for left, right, up and down, which is a real
+## quirk — most non-character keys leave `the key` alone and these four do not.
+## ScummVM does the same, in `events.cpp:341-354`, with the same four values in
+## the same order. Nothing in the six titles under `games/` compares `the key`
+## against them (every one of the 60-odd arrow sites tests `the keyCode`), so
+## this is here because Director has it and not because a room needs it —
+## leaving it out is how the port ends up right for the corpus and wrong for the
+## engine.
 static func char_for(event: InputEventKey) -> String:
 	if event == null:
 		return ""
+	# Before the unicode test, not after: an arrow carries no unicode here, but
+	# ordering the substitution first is what keeps it true on a platform where
+	# one arrives with one.
+	match event.keycode:
+		KEY_LEFT:
+			return char(28)
+		KEY_RIGHT:
+			return char(29)
+		KEY_UP:
+			return char(30)
+		KEY_DOWN:
+			return char(31)
 	var unicode := event.unicode
 	if unicode >= 32 and unicode != 127:
 		return char(unicode)

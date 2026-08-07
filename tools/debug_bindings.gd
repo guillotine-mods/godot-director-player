@@ -15,26 +15,41 @@ extends SceneTree
 ## meant fighting the debugger. `R`, `B`, `M`, `L` and `F` were plain letters and
 ## `ESCAPE` quit the process, which Director also has a key code for.
 ##
-## So: every binding is an F-key, none of them is a key `director_keys.gd` says
-## the corpus tests, and all of them come from `director_game.cfg`.
+## **And then it happened again, inside the fix.** The move to F-keys was
+## justified by a list of "the keys the corpus tests" that had been swept by hand
+## out of `reference/lingo/` -- which holds Piposh 2 and nothing else, while the
+## engine runs six titles under `games/`. Rating tests `the keyCode = 109` at 48
+## sites and 109 is **F10**, where the pause landed. A hand-written constant is
+## exactly as good as the corpus whoever wrote it happened to have open, and this
+## file carried one.
+##
+## So the corpus half is measured now, by `tools/lib/key_sites.gd`, over **every**
+## root under `games/` rather than the one the config is pointed at -- a binding
+## is safe or unsafe for the engine, not for whichever title is loaded. That
+## sweep is the slow part of this harness and it is the point of it.
+##
+## So: every binding is an F-key, none of them is a key any title is measured to
+## test, and all of them come from `director_game.cfg`.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 const Keys := preload("res://director/director_keys.gd")
+const KeySites := preload("res://tools/lib/key_sites.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
 
-## What `reference/lingo/` is measured to test, from the sweep recorded at the
-## top of `director/director_keys.gd`: space, the four arrows, and three letters.
-## A preview binding on any of these is a binding on a key the game is using.
-const CLAIMED_BY_SCRIPTS := [
-	Keys.SPACE, Keys.LEFT, Keys.RIGHT, Keys.UP, Keys.DOWN, 2, 13, 14,
-]
 
-
+## A keypress as the OS would deliver it -- **including the character**, which is
+## the half a synthetic event usually forgets. `director_keys.gd:char_for` reads
+## `unicode` first, so an event with only a keycode set answers `""` for every
+## letter on the keyboard, and a check asking "does this binding type a character
+## the game tests" would pass for `L` by measuring nothing. Godot's letter
+## keycodes are their uppercase ASCII; unshifted, a key types the lowercase.
 func _key(code: Key) -> InputEventKey:
 	var event := InputEventKey.new()
 	event.keycode = code
 	event.pressed = true
+	if code >= 32 and code <= 126:
+		event.unicode = String.chr(code).to_lower().unicode_at(0)
 	return event
 
 
@@ -49,21 +64,54 @@ func _init() -> void:
 			str(bound.get(command, "unbound")))
 	h.complete("every preview command has a key")
 
-	h.begin("no preview key is one a game can reach for")
+	h.begin("every preview key is in the F-key band")
 	for command in bound:
 		var name := str(bound[command])
 		var code := OS.find_keycode_from_string(name)
 		h.check("%s is on an F-key (%s)" % [command, name],
 			code >= KEY_F1 and code <= KEY_F12)
-		# The stronger statement, and the one that is measured rather than
-		# assumed: not a key any script in the corpus is known to test.
-		h.check("%s is not a key the corpus tests" % command,
-			not CLAIMED_BY_SCRIPTS.has(Keys.code_for(_key(code))),
-			"mac code %d" % Keys.code_for(_key(code)))
-	h.complete("no preview key is one a game can reach for")
+	h.complete("every preview key is in the F-key band")
 
+	# The band is a convention. This is the statement that actually protects the
+	# player, and it is read out of the games rather than out of a constant: for
+	# every title the engine can load, no binding sits on a key that title's own
+	# scripts test -- by `the keyCode`, which is the physical key, or by
+	# `the key`, which is the character.
+	#
+	# Both halves matter and they fail differently. A `the keyCode` collision is
+	# what F10 was: the band looked empty because only one corpus had been read.
+	# A `the key` collision cannot happen while every binding is an F-key -- an
+	# F-key types no character -- so that arm is a guard on the day one is moved.
+	h.begin("no preview key is one any title is measured to reach for")
+	for root in KeySites.roots():
+		var sites := KeySites.for_root(str(root))
+		var title := str(root).get_file()
+		h.check("%s: %d container(s) read, so this is a measurement"
+			% [title, int(sites["containers"])], int(sites["containers"]) > 0)
+		var codes: Dictionary = sites["codes"]
+		var chars: Dictionary = sites["chars"]
+		for command in bound:
+			var name := str(bound[command])
+			var keycode := OS.find_keycode_from_string(name)
+			var mac := Keys.code_for(_key(keycode))
+			h.check("%s: %s (%s) is not a keyCode %s tests" % [title, command, name, title],
+				not codes.has(mac),
+				"mac code %d, %d site(s), e.g. %s" % [
+					mac, (codes.get(mac, []) as Array).size(),
+					(codes.get(mac, ["-"]) as Array)[0],
+				])
+			var typed := Keys.char_for(_key(keycode)).to_lower()
+			h.check("%s: %s (%s) types no character %s tests" % [title, command, name, title],
+				typed == "" or not chars.has(typed),
+				"'%s', %d site(s)" % [typed, (chars.get(typed, []) as Array).size()])
+	h.complete("no preview key is one any title is measured to reach for")
+
+	# Named one by one rather than derived, because each of these is a key some
+	# title was measured to be using while the preview held it. A regression here
+	# is a specific key going dark again, and it should say which.
 	h.begin("the keys the game lost are the game's again")
-	for code in [KEY_LEFT, KEY_RIGHT, KEY_R, KEY_B, KEY_M, KEY_L, KEY_F, KEY_ESCAPE]:
+	for code in [KEY_LEFT, KEY_RIGHT, KEY_R, KEY_B, KEY_M, KEY_L, KEY_F,
+			KEY_ESCAPE, KEY_F10, KEY_SPACE]:
 		h.check("%s runs no preview command" % OS.get_keycode_string(code),
 			DebugKeys.command_for(code) == "",
 			DebugKeys.command_for(code))
