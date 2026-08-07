@@ -13,9 +13,14 @@ not "harder to port", it is unshippable, and the discovery arrives after the
 work is done. ProjectorRays is the standing example: it produces
 `reference/lingo/` as a developer tool and can never be a runtime dependency.
 
-Everything below was measured on this game's own tree or reproduced on a
-throwaway Godot 4.7.1 project. The section at the end lists what was *not*
+Everything below was measured on this game's own tree, reproduced on a throwaway
+Godot 4.7.1 project, or — for the input section — driven through the engine's own
+code path by `tools/touch_input.gd`. The section at the end lists what was *not*
 verified, because some of the load-bearing claims are inferences.
+
+Two questions, and they fail differently. **Packaging** decides whether a build
+ships at all; **input** decides whether the thing that ships can be played. The
+second is the one with a decision in it that nobody can make from the code.
 
 ## The blocker: the game data does not ship
 
@@ -158,8 +163,158 @@ raw WAV bytes without the unsigned→signed conversion 8-bit WAV needs. Latent �
 nothing currently ships an 8-bit WAV — and exactly the conversion AIFF does not
 require.
 
+## Input: what a finger can and cannot do
+
+Packaging decides whether a build *ships*. This decides whether it is *playable*,
+and the two failure modes look nothing alike: a packaging mistake is a game that
+will not start, an input mistake is a game that starts, draws correctly, and does
+not respond where you touch it.
+
+**How any of this could be checked without a phone.** Touch-to-mouse emulation is
+not Android code. `input_devices/pointing/emulate_mouse_from_touch` is honoured
+inside `Input` itself, on every platform, so an `InputEventScreenTouch` fed
+through `Input.parse_input_event()` on Windows takes the same path it would take
+on a device — synthesised into an `InputEventMouseButton`, queued, routed through
+the viewport, delivered to `_input`. `tools/touch_input.gd` does exactly that,
+windowed, and asserts what comes out the far end. That makes the section below
+measurement rather than reasoning, with one named exception marked at the end.
+
+The setting is **not** in `project.godot`. It is on by default in Godot 4, which
+is why touch reaches the engine at all — and why the harness asserts it rather
+than assuming it, since an unrelated edit to that file could switch it off with
+nobody connecting the two.
+
+### What works
+
+- **Coordinate mapping.** The stage is a fixed 640x480 letterboxed into the
+  window by `_fit_to_window`, and a touch arrives in window pixels. Verified: a
+  touch at a known stage point comes out of `the mouseH`/`the mouseV` at that
+  point, within a pixel, and `the clickOn` names the sprite that was touched.
+- **Tap = click.** Touch-down sends `mouseDown`, lift sends `mouseUp`, and the
+  lift alone sends `mouseUp` — the press/release split holds for a finger.
+- **Drag.** A finger drag is press, `InputEventScreenDrag` → motion, release. The
+  moveable sprite follows the finger and the drop still delivers the `mouseUp` it
+  is decided in. This is the corpus's whole inventory idiom, working on touch.
+- **Multi-touch is safely ignored.** Exactly one finger is emulated — whichever
+  went down while none was tracked. A second finger sends nothing, and lifting
+  the first still completes its own click. No stray press without a release.
+- **The SKIP control** is a drawn rectangle tested before the hit test, so it is
+  reachable by tap like anything else.
+
+### What had to change to get there
+
+Three faults, all found by the touch harness and all of which were also wrong on
+desktop:
+
+1. **`stage_mouse()` read the OS cursor.** `get_local_mouse_position()` ends in
+   `Viewport.get_mouse_position()`, which on the *root* viewport does not answer
+   from input at all — it falls through to `DisplayServer.mouse_get_position()`.
+   Touch emulation synthesises the events and leaves that pointer alone. So every
+   Director coordinate — `the mouseH`, `the mouseV`, the hit test, `rollOver`,
+   the drag — read a cursor that does not exist. The message fired and every
+   number in it was wrong, which on a phone reads as a broken hit test rather
+   than a missing pointer. `_input` now routes the event's own position, and
+   `stage_mouse` falls back to the last event where the platform reports no
+   `FEATURE_MOUSE`.
+2. **`InputRouter.mouse_button` called `route_click` on the press** — press *and*
+   release back to back — so the split that made drag-and-drop work never applied
+   to a real mouse at all. Every harness drove `route_press`/`route_release`
+   directly, which is right for asserting the routing and is why nothing caught
+   it; the touch harness goes in through `_input` and found it immediately. This
+   was a live bug on desktop too: it is the inventory drop, still broken.
+3. **The rollover was recomputed only on pointer motion.** §6.3 step 10 puts it
+   in the frame update. On touch there is no motion between taps, so `the
+   rollOver` would have named whatever was under the previous gesture for ever.
+
+### Hover has no touch equivalent — and this game's menu is built on it
+
+There is no hover state on a touchscreen. Nothing generates pointer motion unless
+a finger is already down, so `rollOver`, `mouseEnter`, `mouseLeave`,
+`mouseWithin` and the whole cursor-arbitration path have no input to run on
+between taps.
+
+The engine now recomputes the rollover every tick from the last known pointer,
+which is the best that can be done and is what Director does anyway — so the
+result is not that rollover is *absent* but that it is **sticky**. It names the
+last place a finger touched, indefinitely. Verified: ten ticks with the glass
+untouched move neither the pointer nor the rollover channel, and only another
+touch moves either.
+
+For a `rollOver` menu that means **every highlight is preceded by the click it
+was meant to preview.** 94 sites across the corpus call `rollOver(n)`, in 28
+scripts, and this title's menu is one of them: a frame script asks `rollOver(4)`
+every tick and swaps the button art. On a phone the art swaps *after* you have
+already committed to the button.
+
+Whether that is fatal depends on what each menu does on `mouseUp`, and it is not
+a question the engine can answer — it is a design decision about the port. Three
+options, none of them free:
+
+- **Do nothing.** Buttons still work; they just do not light up first. Playable
+  wherever `rollOver` is decoration. Wrong wherever a script uses `rollOver` as
+  the *only* way to reveal what a hotspot is.
+- **Tap-to-focus.** First tap moves the pointer and runs the rollover; a second
+  tap on the same target sends the click. Costs every menu a second tap and needs
+  a rule for when focus is dropped. This is the conventional answer and it is a
+  change to the engine's click model, which is exactly the thing that has been
+  hard to get right twice already.
+- **Hover-on-hold.** Touch-and-hold moves the pointer without clicking; the click
+  goes out on lift only if the finger has not moved. Preserves single-tap
+  actions, discoverable by nobody.
+
+**This needs a decision before it is built.** Recorded here rather than chosen.
+
+### Custom cursors cannot appear
+
+`Input.set_custom_mouse_cursor` is a no-op on Android and iOS — there is no
+cursor for it to set. `scenes/preview/cursor.gd` is a large and recently repaired
+subsystem, and none of it will be visible on a phone: not the hand over a
+hotspot, not the wait cursor, not the hidden-cursor case, not `the cursor` set
+from Lingo.
+
+Two consequences worth separating. The **visible** one is that a title using
+cursor shape as its only affordance — this one uses the hand cursor to say "this
+is clickable" — loses that affordance entirely, and a player has to guess or
+tap around. The **invisible** one is cost: `_resolve_cursor` still runs on every
+motion, every button-up and every frame, still builds and scales cursor images,
+and throws all of it away. That is wasted work on the platform least able to
+afford it, and short-circuiting the whole path where the DisplayServer has no
+cursor is a small, safe change — but `cursor.gd` is not this session's file, so
+it is recorded rather than done.
+
+### The keyboard is unreachable
+
+Every preview binding is an F-key (`[debug]` in `director_game.cfg`: boxes, hit
+test, report, restart, step, fullscreen, quit, pause, snapshot, containers).
+None of them can be pressed on a phone, and the F12 container picker also filters
+by typed letters, so it is doubly unreachable.
+
+Not a blocker — they are debug affordances, not gameplay. But note that the
+*game* wants the keyboard too: 46 scripts install `fromnow`, which skips a line
+of speech on key code 49 (space). On touch there is no way to skip speech at all.
+If any of this is wanted on a device it needs an on-screen control or a gesture,
+and `Input.show_virtual_keyboard()` is not the answer for a single key.
+
+### The rest of the mouse, on touch
+
+- **Right button.** `rightMouseDown`/`rightMouseUp` are dispatched now, and no
+  touch gesture produces them. No script in either corpus declares one, so
+  nothing is lost; a long-press mapping would be invention, not porting.
+- **`the doubleClick`** is computed from the interval between presses rather than
+  taken from `InputEventMouseButton.double_click`, which means it works for a
+  double *tap* without special-casing touch.
+- **`mouseUpOutSide`** works the same way for a finger: press, slide off, lift,
+  and no `mouseUp` goes out. That is the standard way to cancel a mis-aimed
+  press, and it matters more on a touchscreen than on a mouse.
+- **Touch cancellation** (a system gesture stealing the finger — back swipe,
+  notification shade) arrives as a release. The engine treats it as a normal
+  lift, so a drag interrupted by the notification shade drops the item wherever
+  it was. Not verified on a device, and worth checking on one.
+
 ## Before shipping
 
+- [ ] **A decision on `rollOver` menus.** See "Hover has no touch equivalent" —
+      this is the one item on this list that is not an engineering task.
 - [ ] `include_filter="games/*"` in `export_presets.cfg`
 - [ ] `export_format` switched to AAB for Play
 - [ ] Audio transcoded, or the AIFF loader landed
@@ -188,3 +343,19 @@ Stated as inference, and worth a device test before anything depends on it:
   device before relying on it.
 - The 78.4 ms seek benchmark is desktop with the OS page cache, not Android
   storage.
+- **Everything in "Input" was measured through the real code path, on a desktop.**
+  `tools/touch_input.gd` injects genuine `InputEventScreenTouch` events and the
+  emulation, routing, transforms and dispatch below them are the same objects a
+  device would run — but the touch *driver* is not, and neither is the screen.
+  The one value the harness has to fake is `_pointer_from_events`, which a device
+  sets from `DisplayServer.has_feature(FEATURE_MOUSE)` and Windows answers the
+  other way; that is why it is a variable and not an inline platform test.
+- `Input.set_custom_mouse_cursor` being a no-op on Android and iOS is read from
+  Godot's own documentation, not from the platform source and not from a device.
+  It is very unlikely to be wrong and it has not been proved here.
+- Whether a touch cancelled by a system gesture arrives as a plain release, or as
+  something the engine should distinguish. Reasoned from `InputEventScreenTouch`
+  carrying a `canceled` flag that mouse emulation does not forward.
+- Nothing here says anything about how big a target feels under a fingertip. The
+  stage is 640x480 and this game's hotspots were drawn for a 1997 mouse; several
+  are a few pixels across. That needs hardware and a hand.

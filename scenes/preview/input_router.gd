@@ -154,20 +154,77 @@ static func mouse_button(host, event: InputEventMouseButton, at: Vector2,
 	if skip_rect.has_point(at):
 		host.skip_to_end()
 		return
-	host.route_click(at)
+	# **`route_press`, not `route_click`.** `route_click` is press *and* release
+	# back to back, and calling it from the button-down branch meant the entire
+	# press/release split never applied to a real mouse at all: `mouseUp` went
+	# out on the press exactly as before, `_press_target` was cleared by the
+	# synthetic release, and the genuine button-up above then found nothing
+	# latched and dispatched nothing.
+	#
+	# So the fix that split the two halves reached `route_press`/`route_release`
+	# and stopped one line short of the only caller a player can reach. It was
+	# invisible to the harnesses because every one of them drives `route_press`
+	# and `route_release` directly -- which is the right thing for asserting the
+	# routing, and is why `tools/touch_input.gd`, which goes in through
+	# `Input.parse_input_event` and therefore through `_input`, is the check that
+	# found it. `route_click` stays: it is one *whole* click, which is what a
+	# harness with no button to hold down actually wants.
+	host.route_press(at)
 
 
-## Pointer movement: hover tracking, drag, and the cursor recompute.
-static func mouse_motion(host) -> void:
-	var point: Vector2 = host.stage_mouse()
+## The right button (§8.1, D5). Not a click in any of the senses the left button
+## is: no drag, no `the clickOn`, no wait-for-click release -- see
+## `interaction.gd:right_button` for why each of those is deliberate.
+##
+## Routed to the same movie a left press would reach, because "which movie owns
+## this point" is a property of the point and not of the button.
+static func right_mouse_button(host, event: InputEventMouseButton, at: Vector2) -> void:
+	if bool(host._picker.get("open", false)):
+		return
+	var blocking: Node = host.modal_window()
+	if blocking != null and not blocking.window_frame().has_point(at):
+		return
+	var front: Node = host.window_at(at)
+	if front != null and front != host:
+		front.call("route_right_button", front.stage_to_local(at), event.pressed)
+		return
+	host.call("route_right_button", at, event.pressed)
+
+
+## Pointer movement: rollover tracking, hover tracking, drag, and the cursor
+## recompute.
+##
+## **Two channels are tracked, not one, and they answer different questions.**
+## `_hover_channel` is what a *click* would reach -- eligibility filtered, matte
+## sampled -- and it drives the hotspot overlay. `_rollover_channel` is what the
+## pointer is simply *over*, a pure rect test with no filter (§4.5), and it is
+## what `the rollOver`, `mouseEnter` and `mouseLeave` are defined against.
+## Collapsing them was a divergence with a visible shape: a backdrop with no
+## handler is rolled over and is not clickable, so a menu that highlights on
+## rollover and acts on click needs both answers and would otherwise get the
+## click one twice.
+## `at` is the point the event carried, in stage coordinates. It is optional so
+## that a harness which warps a real pointer and then calls this directly still
+## works -- `tools/sprite_drag.gd` does exactly that, and for it the OS cursor is
+## the truth. `Vector2.INF` rather than a null default because the parameter is
+## typed, and an untyped one would lose the compile-time check on every caller.
+static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
+	var point: Vector2 = host.stage_mouse() if at == Vector2.INF else at
 	var over: Node = host.window_at(point)
 	if over != null and over != host:
-		over._hover_channel = over._channel_at(over.stage_to_local(point))
+		var local: Vector2 = over.stage_to_local(point)
+		# The window cannot see the event itself -- its input processing is off --
+		# so this is the only thing that keeps `the mouseH` and `rollOver` inside
+		# a Movie-In-A-Window current.
+		over.call("note_pointer", local)
+		over._hover_channel = over._channel_at(local)
+		over.call("track_rollover", local)
 		over._resolve_cursor()
 		host.queue_redraw()
 		return
 	var was: int = host._hover_channel
 	host._hover_channel = host._channel_at(point)
+	host.call("track_rollover", point)
 	if host._drag_channel > 0:
 		# The dragged sprite follows the cursor by the offset recorded when the
 		# drag began, so it does not snap its registration point to the pointer on

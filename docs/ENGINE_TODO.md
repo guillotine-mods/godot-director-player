@@ -41,34 +41,59 @@ registration offset. Drag itself is done.
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
 in this corpus carries it; it currently falls through to Matte.
 
-**`mouseUpOutSide` and the D6 mouse events.** §8.1. `mouseEnter`, `mouseLeave`,
-`mouseWithin` and `mouseUpOutSide` do not exist here. The consequence that is
-already load-bearing is the last one: Director sends a sprite `mouseUp` only if
-the button came up over the sprite that took the `mouseDown`, and
-`mouseUpOutSide` otherwise, whereas `preview/interaction.gd:release` sends
-`mouseUp` to the press's recipient unconditionally. A drag is unaffected — a
-moveable sprite is under the cursor by construction, so the two rules agree —
-but a press-here-release-there click over-delivers.
+**Cast-script targeting on mouse-up.** §15. The member under the mouse at the
+*start of the mouse-down chain* holds the `mouseUp`, so a `mouseDown` handler
+that swaps the member still leaves the **old** member answering. The latching
+half is done — `director_preview.gd:_click_script` holds the script the press
+resolved, and `_press_channel` the channel — but it keys on the script, not on
+the member, so a swap that changes which member a channel displays is not
+modelled.
 
-Two neighbouring rules from §15 are unimplemented for the same reason and are
-worth reading together with it: **`the clickOn` updates on mouse-up too**, when
-the release was over a sprite (this port latches it on the mouse-down only), and
-**cast-script targeting on mouse-up** uses the member under the mouse at the
-start of the mouse-down chain, so a `mouseDown` handler that swaps the member
-still leaves the *old* member holding the `mouseUp`. The latching half of the
-second one is now done — `director_preview.gd:_click_script` holds the script the
-press resolved — but it keys on the script, not on the member.
+**`pass` / `dontPassEvent` propagation.** §6.3, §6.4. The five tiers exist and
+run in order, but the chain is resolved lazily and stops at the first handler
+that answers. Director queues the *whole* chain up front, which is why a `go`
+inside a `mouseUp` handler does not cancel the handlers below it — they are
+already queued and run against a score the `go` has changed. `dontPassEvent` is
+accepted and ignored, so a primary handler cannot currently stop the message.
+Getting the default inverted is the classic Director bug and this port has it in
+the safe direction: everything runs.
 
-**Mouse primary handlers and `pass` propagation.** §6.3. `when <event> then`
-installs and fires at tier 1 for keys; the mouse tiers and real `pass` /
-`dontPassEvent` propagation need the hierarchy to queue the whole chain rather
-than stopping at the first handler that answers.
+**`the mouseDownScript` / `the mouseUpScript` hold a handler name, not source.**
+§6.3 tier 1. Director's value is a *string of Lingo* compiled on assignment;
+this port has no runtime compile-a-string path, so it stores a name — the same
+shortcut `the keyDownScript` has always taken, and the reason it has held is that
+every site in this corpus sets that one to a name (`fromnow`, `gomenu`). Nothing
+sets either mouse property, so the divergence is unexercised as well as unfixed.
+
+**`mouseEnter` / `mouseLeave` fire off the rollover channel, which is right, and
+the eligibility trap in §4.3 is not modelled for them.** A sprite whose script
+declares *only* `mouseEnter` is correctly not a click target; it is also not
+reported by `Interaction.responds_to_mouse`, which searches for `mouseDown` /
+`mouseUp` only. D6+ adds "the sprite has behaviours" to eligibility, which would
+change the hit test, and the hit test is the thing that took longest to get
+right. Left alone deliberately.
 
 **Dirty rects.** §6.3. Acceptable to omit, but it forecloses
 destination-reading inks and leaves one known trails divergence: a sprite in
 front of an old mark that has not moved should occlude it and does not.
 
 **Score recording.** Rarely needed.
+
+## Mobile
+
+[`MOBILE.md`](MOBILE.md) is the standing document. Its input section is now
+measured rather than reasoned — `tools/touch_input.gd` drives real
+`InputEventScreenTouch` events through `_input` — and it carries **one open
+decision that is not an engineering task**: `rollOver` menus have no touch
+equivalent, this title's menu is built on one, and the three options each cost
+something. Nothing should be built for it until that is chosen.
+
+Two engine consequences recorded there rather than here, because they are
+platform facts and not gaps: `Input.set_custom_mouse_cursor` cannot show anything
+on Android or iOS, so the whole of `preview/cursor.gd` is invisible on a phone
+(and still runs, which is worth short-circuiting); and every `[debug]` binding is
+an F-key, so none of them is reachable without a keyboard.
+
 
 ## Built but never compared against Director running
 

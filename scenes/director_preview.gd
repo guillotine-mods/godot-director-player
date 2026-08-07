@@ -240,6 +240,28 @@ var _drag_offset := Vector2.ZERO
 ## `preview/interaction.gd:press` has the rest of that argument.
 var _press_target: Node = null
 var _click_script: Dictionary = {}
+## The channel the press landed on, which the release needs and the script does
+## not carry: `mouseUp` goes out only when the button came up inside this sprite,
+## and `mouseUpOutSide` when it came up anywhere else (§8.1).
+var _press_channel := 0
+## Where the last input event happened, in this movie's coordinates, and whether
+## one has arrived yet. `stage_mouse` has why this is kept rather than asked of
+## the DisplayServer -- it is what makes the engine work on a touchscreen.
+var _pointer := Vector2.ZERO
+var _pointer_seen := false
+## Does the pointer come from input events, or from the OS cursor?
+##
+## `FEATURE_MOUSE` rather than a platform name, because the question is precisely
+## "is there a cursor to ask about". A phone answers no. Headless answers no too,
+## and that is the right answer for it: a headless harness's pointer is whatever
+## it injected, and reading the developer's desktop cursor instead is how a check
+## comes to pass or fail depending on where somebody left their mouse.
+var _pointer_from_events := not DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE)
+## What the pointer is simply *over*, as against `_hover_channel`, which is what
+## a click would reach. §4.5: `the rollOver` applies no eligibility filter and no
+## matte, so the two answer different channels over the same pixel and both
+## answers are needed. Drives `mouseEnter`/`mouseLeave`/`mouseWithin`.
+var _rollover_channel := 0
 ## What the `cursor` builtin last set, used when no channel supplies one.
 var _global_cursor: Variant = 0
 ## What is actually on screen, so the cursor is only pushed when it changes.
@@ -795,6 +817,19 @@ func _process(delta: float) -> void:
 		return
 	if _score.frame(_index).is_empty():
 		return
+	# §6.3 step 10 caches the rollover as part of resolving the frame, so it is
+	# recomputed per tick and not per pointer movement. Two things depend on that
+	# and both are invisible until they are not: a sprite that moves under a
+	# stationary cursor changes what is rolled over without the mouse doing
+	# anything, and a **touchscreen never sends motion at all** unless a finger is
+	# already down -- so a tap would otherwise leave `the rollOver` naming
+	# whatever was under the previous gesture.
+	track_rollover(stage_mouse())
+	# §6.3 step 3: `mouseWithin` is part of the frame update, not of pointer
+	# motion -- it fires every tick the cursor is inside the sprite, a stationary
+	# cursor included. Ahead of the tick because the reference puts it there,
+	# before the playhead can move out from under it.
+	Interaction.within(self)
 	FrameLoop.tick(self, delta)
 
 
@@ -830,12 +865,23 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 ## headless harness, and "the click went to the wrong movie" has to be
 ## assertable.
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		InputRouter.mouse_button(
-			self, event as InputEventMouseButton, stage_mouse(), SKIP_RECT)
-		return
-	if event is InputEventMouseMotion:
-		InputRouter.mouse_motion(self)
+	# **Where the event happened, not where the cursor is now.** The two agree on
+	# a desktop and do not on a touchscreen: Godot synthesises the button and
+	# motion events from a finger but leaves `DisplayServer.mouse_get_position()`
+	# alone, so a click routed by the cursor lands wherever the absent mouse was
+	# last -- which is (0,0) on a phone. Measured in `tools/touch_input.gd`.
+	# `note_pointer` records it for everything that asks *between* events.
+	if event is InputEventMouse:
+		var at := (make_input_local(event) as InputEventMouse).position
+		note_pointer(at)
+		if event is InputEventMouseButton:
+			var button := event as InputEventMouseButton
+			if button.button_index == MOUSE_BUTTON_LEFT:
+				InputRouter.mouse_button(self, button, at, SKIP_RECT)
+			elif button.button_index == MOUSE_BUTTON_RIGHT:
+				InputRouter.right_mouse_button(self, button, at)
+			return
+		InputRouter.mouse_motion(self, at)
 		return
 	if not (event is InputEventKey and event.pressed):
 		return
@@ -1000,8 +1046,41 @@ func _press_click(at: Vector2) -> void:
 	Interaction.press(self, at)
 
 
-func _release_click() -> void:
-	Interaction.release(self)
+func _release_click(at: Vector2) -> void:
+	Interaction.release(self, at)
+
+
+## Where the pointer is, for `the rollOver` and the D5/D6 hover messages.
+##
+## A crossing is decided here rather than inside `Interaction` so that the two
+## sends are driven by the *change*, not by the position: `mouseEnter` is one
+## message per entry, and a version that fired on every motion event inside the
+## sprite would be `mouseWithin` under another name.
+func track_rollover(at: Vector2) -> void:
+	if _score == null:
+		return
+	if _host != null:
+		# `the lastRoll` is "how long since the pointer moved", so the stamp
+		# belongs on every motion event and not only on the ones that cross a
+		# sprite boundary.
+		_host.last_roll_ms = Time.get_ticks_msec()
+	var was := _rollover_channel
+	_rollover_channel = Interaction.rollover_channel(
+		self, at, _score.frame(_index).get("sprites", []))
+	Interaction.hover_changed(self, was, _rollover_channel)
+
+
+## `rightMouseDown` / `rightMouseUp`, delegated to `preview/interaction.gd`.
+func route_right_button(at: Vector2, pressed: bool) -> void:
+	Interaction.right_button(self, at, pressed)
+
+
+## `the rollOver` with no argument: the channel the pointer is over, not a
+## boolean. §5's own warning — one implementation defaulting the argument to 1
+## answers "is the mouse over channel 1" where the script asked "which channel is
+## the mouse over", and both are plausible-looking integers.
+func lingo_rollover_channel() -> int:
+	return _rollover_channel
 
 
 ## Placement, delegated to `preview/sprite_geometry.gd`.
@@ -1122,8 +1201,53 @@ func current_frame() -> int:
 	return _index
 
 
+## Where the pointer is, in this movie's own coordinates.
+##
+## **Not `get_local_mouse_position()` any more, and the reason is the whole of
+## the touch story.** That helper ends in `Viewport.get_mouse_position()`, and on
+## the *root* viewport that function does not answer from input at all: it falls
+## through to `DisplayServer.mouse_get_position()`, the real OS cursor. A
+## touchscreen has no OS cursor, and Godot's touch-to-mouse emulation does not
+## invent one -- it synthesises the button and motion *events* and leaves the
+## DisplayServer's pointer where it was.
+##
+## Measured, not reasoned: `tools/touch_input.gd` feeds an `InputEventScreenTouch`
+## through `Input.parse_input_event()` and, before this change, `mouseDown` went
+## out correctly and `the mouseH`/`the mouseV`/`the clickOn` all reported the
+## desktop cursor's position instead of the finger's -- so the message fired and
+## every coordinate in it was wrong. On a phone that is every hotspot in every
+## title answering for a point the player never touched, which looks like a
+## broken hit test rather than a missing pointer.
+##
+## So where the platform **has** a cursor, that cursor stays authoritative --
+## nothing about the desktop path changes, and a harness that warps the real
+## pointer and then calls a router directly still reads what it warped to.
+## `tools/sprite_drag.gd` does exactly that, and it is the check that showed an
+## unconditional switch to the cached value was the wrong shape of fix.
+##
+## Where the platform has none, the position an input event carried is the
+## pointer, because nothing else is.
+##
+## Which of the two is in force is `_pointer_from_events`, and it is a variable
+## rather than an inline platform test for one reason: the device branch is the
+## one piece of the input path that no run on a development machine can reach,
+## and that makes it the piece most likely to be quietly wrong. With a seam,
+## `tools/touch_input.gd` drives it on a desktop and asserts the coordinates come
+## out right; without one, "touch works on Android" would be a claim in a
+## document with nothing behind it.
 func stage_mouse() -> Vector2:
+	if _pointer_from_events and _pointer_seen:
+		return _pointer
 	return get_local_mouse_position()
+
+
+## Record where an input event happened. Called with this movie's own
+## coordinates: the stage passes the event through `make_input_local`, and a
+## window is told by whoever routed the event into it, because a window node has
+## its input processing switched off (`preview/boot.gd`) and never sees one.
+func note_pointer(at: Vector2) -> void:
+	_pointer = at
+	_pointer_seen = true
 
 
 func lingo_hold() -> void:
@@ -1608,7 +1732,7 @@ func route_release(at: Vector2) -> Node:
 	if target != self:
 		target.route_release(target.stage_to_local(at))
 		return target
-	_release_click()
+	_release_click(at)
 	return self
 
 

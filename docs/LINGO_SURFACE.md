@@ -1111,23 +1111,38 @@ any frame script. `director/director_runtime.gd` drives `enterFrame`,
 `exitFrame`, `startMovie`, and dispatches `mouseDown` followed by `mouseUp` on
 a click.
 
-**Not implemented in the event model**: primary event handlers (tier 1) —
-`the keyDownScript` is stored and run as a *handler name* rather than as Lingo
-source, and the other three `*Script` properties are unbound; `prepareFrame`,
-`beginSprite`, `endSprite`, `stepFrame`, `stepMovie`, `idle`, `timeout`,
-`mouseEnter`/`mouseLeave`/`mouseWithin`/`mouseUpOutSide`, `cuePassed`, and the
-window events; the queue-the-whole-chain-then-run model (tiers are resolved
-lazily and stop at the first that answers); and the D3-versus-D4 `mouseUp`
-sprite asymmetry.
+**Not implemented in the event model**: `prepareFrame`, `beginSprite`,
+`endSprite`, `stepFrame`, `stepMovie`, `idle`, `timeout`, and the window events;
+the queue-the-whole-chain-then-run model (tiers are resolved lazily and stop at
+the first that answers, and `dontPassEvent` is accepted and ignored); and the
+D3-versus-D4 `mouseUp` sprite asymmetry, which this game being D7 makes moot.
+
+Primary event handlers (tier 1) **are** implemented, with one divergence: all
+four `*Script` properties hold a *handler name* rather than Lingo source, because
+this port has no runtime compile-a-string path. Every site in this corpus sets
+one to a name, which is why the shortcut holds. `when <event> then` installs a
+real tier-1 handler for `mouseDown`, `mouseUp`, `rightMouseDown`, `rightMouseUp`
+and `keyDown`, and it passes by default as Director's does.
 
 **The preview host** (`scenes/preview_lingo_host.gd`) is a deliberately smaller
 surface for the room preview: `go`, `sound`, `puppetSound`, `soundBusy`,
-`label`, `marker`, and an ignore-list of `puppetTransition`, `updateStage`,
-`beep`, `delay`, `preLoadMember`, `preLoad`, `unLoadMember`, `unLoad`, `alert`,
-`cursor`, `nothing`, `dontPassEvent`, `puppetSprite`, `halt`, `quit`,
-`startTimer`. System props: `frame`, `mouseH`, `mouseV`, `clickOn`, `ticks`,
-`milliseconds`/`timer`, `machineType`. It counts what it reaches and what it
-does not, which is the same discipline as the real host at a tenth the size.
+`label`, `marker`, `rollOver`, `intersects`/`within`, and an ignore-list of
+`puppetTransition`, `updateStage`, `beep`, `delay`, `preLoadMember`, `preLoad`,
+`unLoadMember`, `unLoad`, `alert`, `cursor`, `nothing`, `dontPassEvent`,
+`puppetSprite`, `halt`, `quit`, `startTimer`. It counts what it reaches and what
+it does not, which is the same discipline as the real host at a tenth the size.
+
+Its system props are the whole of §6's mouse list — `mouseH`, `mouseV`,
+`clickOn`, `clickLoc`, `mouseDown`, `mouseUp`, `stillDown`, `doubleClick`,
+`rightMouseDown`, `rightMouseUp`, `lastClick`, `lastRoll`, `lastEvent`,
+`mouseCast`, `mouseMember`, `shiftDown`, `optionDown`, `commandDown`,
+`controlDown`, `mouseDownScript`, `mouseUpScript` — plus `frame`, `ticks`,
+`milliseconds`/`timer`, `machineType`, `keyCode`, `key`, `keyDownScript`,
+`soundLevel`, `freeBlock`, and the window set. Bound together rather than one at
+a time because they were *missing* together: an unbound read answers VOID, VOID
+is falsy, and `if the mouseDown then` — four sites in this corpus, polling for a
+held button — took its other branch for ever. `tools/mouse_events.gd` asserts
+that none of them reads back VOID.
 
 ---
 

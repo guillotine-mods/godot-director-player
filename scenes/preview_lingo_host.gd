@@ -34,9 +34,27 @@ var reached: Dictionary = {}
 var unbound: Dictionary = {}
 ## Set by the interpreter's caller before a mouse message.
 var click_sprite := 0
+## `the clickLoc` — the stage point of the last mouse-down.
+var click_loc := Vector2.ZERO
+## When the last press and the last pointer move happened, in engine
+## milliseconds. `the lastClick` and `the lastRoll` are Director's "how long ago"
+## forms of the same two facts, reported in ticks, and `the doubleClick` is the
+## first of them compared against the system interval.
+##
+## -1 rather than 0 for the click, because 0 is a real timestamp at boot and
+## would make the very first press of a session read as a double-click.
+var last_click_ms := -1
+var last_roll_ms := 0
+var double_click := false
 ## Director's movie-wide key handler: a handler *name*, run ahead of everything
 ## else on a keypress. 46 scripts in this game set it, most to `fromnow`.
 var key_down_script := ""
+## The mouse half of the same mechanism (§6.3 tier 1). Nothing in this corpus
+## sets either, so both are bound for the engine's sake -- see the note on the
+## write, which records that Director's own value is a source string and this is
+## a handler name.
+var mouse_down_script := ""
+var mouse_up_script := ""
 ## Live only for the duration of a key dispatch. -1 rather than 0 because 0 is a
 ## real Mac key code (the `A` key), so 0 would read as a keypress that never
 ## happened.
@@ -183,8 +201,15 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# which is indistinguishable from the score being wrong.
 			if preview == null:
 				return 0
-			var which := LingoValue.to_int(args[0]) if not args.is_empty() else 0
-			return 1 if preview.lingo_rollover(which) else 0
+			# Two functions sharing one name, and §5 of `LINGO_SURFACE.md` warns
+			# about exactly this: with no argument `rollOver` answers the *channel*
+			# the pointer is over, with one it answers a boolean about that
+			# channel. Defaulting the argument to 1 -- the obvious implementation --
+			# silently answers "is the mouse over channel 1" to a script asking
+			# "which channel is the mouse over", and both are plausible integers.
+			if args.is_empty():
+				return preview.lingo_rollover_channel()
+			return 1 if preview.lingo_rollover(LingoValue.to_int(args[0])) else 0
 		"intersects", "within":
 			# `sprite A intersects B` -- do the two channels' rects overlap -- and
 			# `sprite A within B`, does B contain A. The interpreter routes both
@@ -522,6 +547,65 @@ func get_system_prop(prop: String) -> Variant:
 			return int(preview.stage_mouse().y)
 		"clickon":
 			return click_sprite
+		# ------------------------------------------------------- the mouse, live
+		#
+		# Every one of these is a *read* of hardware or of a timestamp, with no
+		# engine state behind it and nothing to get out of step. They are grouped
+		# because they were missing together: the live host bound `mouseH`,
+		# `mouseV` and `clickOn` and answered VOID for the rest of §6's mouse
+		# list, so `if the mouseDown then` -- four sites in this corpus, polling
+		# for a button that is still held -- took the false branch for ever.
+		#
+		# `the mouseUp` is not the complement of `the mouseDown` by accident:
+		# Director defines it as "the button is not down", so the two are exact
+		# negations and a title can poll either.
+		"mousedown", "stilldown":
+			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0
+		"mouseup":
+			return 0 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 1
+		"rightmousedown":
+			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0
+		"rightmouseup":
+			return 0 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 1
+		"doubleclick":
+			return 1 if double_click else 0
+		"clickloc":
+			# A point, which the interpreter's `point()` values are two-element
+			# lists of -- so `the locH of the clickLoc` reads the way a script
+			# expects rather than needing a Vector2 the language has no notion of.
+			return [int(click_loc.x), int(click_loc.y)]
+		"lastclick":
+			# Ticks since, not the timestamp itself: Director's `the lastClick` is
+			# an elapsed time, and a script comparing it against a constant is
+			# asking "how long has it been". -1 for "no click yet" would compare
+			# as recent, so an unclicked session reports a very long time.
+			return 0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms)
+		"lastroll":
+			return _ticks_since(last_roll_ms)
+		"lastevent":
+			return mini(
+				0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms),
+				_ticks_since(last_roll_ms))
+		"shiftdown":
+			return 1 if Input.is_key_pressed(KEY_SHIFT) else 0
+		"optiondown":
+			# Option on the Mac the game was authored for; Alt is the key that
+			# carries it on the platform this runs on.
+			return 1 if Input.is_key_pressed(KEY_ALT) else 0
+		"commanddown":
+			return 1 if Input.is_key_pressed(KEY_META) or Input.is_key_pressed(KEY_CTRL) else 0
+		"controldown":
+			return 1 if Input.is_key_pressed(KEY_CTRL) else 0
+		"mousecast", "mousemember":
+			# The member displayed by the sprite the pointer is over, or -1 for
+			# "over nothing" -- which is Director's answer and not 0, because 0 is
+			# a real member slot.
+			if preview == null:
+				return -1
+			var rolled: int = preview.lingo_rollover_channel()
+			if rolled <= 0:
+				return -1
+			return preview.lingo_sprite_prop(rolled, "membernum")
 		"ticks":
 			return int(Time.get_ticks_msec() * 60.0 / 1000.0)
 		"milliseconds", "timer":
@@ -542,6 +626,10 @@ func get_system_prop(prop: String) -> Variant:
 			return key_char
 		"keydownscript":
 			return key_down_script
+		"mousedownscript":
+			return mouse_down_script
+		"mouseupscript":
+			return mouse_up_script
 		"soundlevel":
 			# The system volume, 0-7, not a channel property. Seven scripts write
 			# it and one reads it back on every frame to place a slider knob: an
@@ -597,10 +685,31 @@ func get_system_prop(prop: String) -> Variant:
 	return null
 
 
+## Milliseconds ago, in Director's ticks — 60ths of a second, the unit every
+## elapsed-time property in the language reports in.
+func _ticks_since(when_ms: int) -> int:
+	return int((Time.get_ticks_msec() - when_ms) * 60.0 / 1000.0)
+
+
 func set_system_prop(prop: String, value: Variant) -> void:
 	match prop.to_lower():
 		"keydownscript":
 			key_down_script = LingoValue.to_str(value).strip_edges()
+		"mousedownscript", "mouseupscript":
+			# §6.3 tier 1. Stored as a **handler name**, exactly as this port
+			# already stores `the keyDownScript`, and that is a divergence worth
+			# stating rather than hiding: Director's primary-handler properties
+			# hold a *string of Lingo source*, compiled on assignment into a
+			# synthetic script. This port has no runtime compile-a-string path, so
+			# a name is what it can honour, and every site in this corpus that
+			# sets `the keyDownScript` sets it to a name -- `fromnow`, `gomenu` --
+			# which is why the shortcut has held so far. Nothing sets either mouse
+			# one, so the divergence is unexercised as well as unfixed.
+			var name := LingoValue.to_str(value).strip_edges()
+			if prop.to_lower() == "mousedownscript":
+				mouse_down_script = name
+			else:
+				mouse_up_script = name
 		"soundlevel":
 			if preview != null:
 				preview.lingo_set_sound_level(LingoValue.to_int(value))

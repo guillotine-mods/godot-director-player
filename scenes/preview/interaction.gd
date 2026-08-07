@@ -20,6 +20,14 @@ extends RefCounted
 const Ink := preload("res://director/director_ink.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 
+## How close two presses have to be to make `the doubleClick` true.
+##
+## Director asks the OS for the system double-click time; there is no such
+## setting to ask for here, so this is the Mac default the game was authored
+## against. It is a threshold rather than a decoded value, which is why it is
+## named once instead of written into the comparison.
+const DOUBLE_CLICK_MS := 500
+
 
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
 ## which is Director's stacking order and therefore its hit order.
@@ -128,6 +136,81 @@ static func declares_mouse_handler(script: Dictionary, interpreter) -> bool:
 	return false
 
 
+## The channel `the rollOver` is over, or 0. A **pure rect test**, and that is the
+## whole difference between this and `channel_at`.
+##
+## §4.5: `checkSpriteRollOver` applies no matte and no eligibility filter, so a
+## backdrop with no handler rolls over and a Matte sprite rolls over its whole
+## box. `channel_at` is the opposite on both counts because a *click* has to
+## reach the button behind the backdrop. Answering the mouse and being under the
+## mouse are two questions, and one function answering both is how the menu
+## highlight and the menu click end up disagreeing about which button is live.
+##
+## Measured against the **score's** geometry, for the reason `lingo_rollover`
+## states at length: a menu script swaps a button's art *because* the rollover is
+## true, so asking about the swapped member feeds the answer back into the
+## question and the highlight oscillates instead of settling. The two functions
+## have to read the same rect or `rollOver()` and `rollOver(n)` disagree, which
+## is worse than either being wrong.
+static func rollover_channel(host, at: Vector2, sprites: Array) -> int:
+	for i in range(sprites.size() - 1, -1, -1):
+		var sprite: Dictionary = sprites[i]
+		if host._sprite_rect(sprite).has_point(at):
+			return int(sprite["channel"])
+	return 0
+
+
+## Send a message that exists only on a sprite behaviour, and nowhere else.
+##
+## §6.5: `mouseEnter`, `mouseLeave`, `mouseWithin` and `mouseUpOutSide` go to
+## **sprite behaviours only** -- not to the cast member's script, not to the
+## frame, and above all not to a movie script. `preview/scripts.gd:dispatch` is
+## the wrong tool for them precisely because it is right for everything else: it
+## falls through to `call_handler`'s movie-script search, so one `on mouseWithin`
+## in a movie script would receive the message for every sprite on the stage,
+## every tick, for the whole title.
+##
+## Declared-or-nothing for the same reason. `mouseWithin` fires on every tick the
+## cursor is inside the sprite, so a dispatch that ran unconditionally would
+## tally tens of thousands of sends per room into `_sent` and drown the counters
+## the harnesses read. Returns whether a handler actually ran.
+static func dispatch_sprite_only(host, handler: String, channel: int) -> bool:
+	if channel <= 0 or not host._lingo_on or host._interpreter == null:
+		return false
+	var script: Dictionary = host._sprite_script(channel, host._index)
+	if script.is_empty():
+		return false
+	if not host._interpreter.call("_script_has_handler", script, handler.to_lower()):
+		return false
+	host._tally(host._sent, handler)
+	host._tally(host._ran, handler)
+	host._interpreter.call_handler(handler, [], script)
+	return true
+
+
+## The cursor crossed a sprite boundary: `mouseLeave` to what it left,
+## `mouseEnter` to what it entered (§8.1, D5/D6).
+##
+## Leave before enter, which is the order the two names imply and the only order
+## that lets a pair of handlers hand a highlight between them without both
+## thinking they own it for an instant.
+static func hover_changed(host, was: int, now: int) -> void:
+	if was == now:
+		return
+	dispatch_sprite_only(host, "mouseLeave", was)
+	dispatch_sprite_only(host, "mouseEnter", now)
+
+
+## `mouseWithin`, once per tick while the cursor is inside a sprite (§6.5).
+##
+## Driven from the frame loop rather than from pointer motion, because "every
+## tick the cursor is over the sprite" is true of a *stationary* cursor too --
+## firing it on movement would make a script that animates a hover run only
+## while the player keeps wiggling the mouse.
+static func within(host) -> void:
+	dispatch_sprite_only(host, "mouseWithin", int(host._rollover_channel))
+
+
 ## The channel and grab offset for a drag starting at `at`, or `[]`.
 ##
 ## Director records the offset from the click to the sprite's position and
@@ -190,11 +273,35 @@ static func begin_drag(host, at: Vector2, channel: int, sprites: Array) -> Array
 ## flag, though, not the click model -- applied to every sprite it makes the
 ## whole engine immediate, and nothing can be dragged anywhere.
 static func press(host, at: Vector2) -> void:
+	# A window movie has its input processing switched off (`preview/boot.gd`), so
+	# the only way it ever learns where the pointer is, is from whoever routed an
+	# event into it. Without this, `the mouseH` inside a Movie-In-A-Window answers
+	# the stage's coordinates on a touchscreen and nothing at all before the first
+	# real mouse move. Harmless and correct on the stage, which has already set
+	# the same value from `_input`.
+	host.note_pointer(at)
 	# Cleared first, so a press the interpreter is not up for cannot leave the
 	# *previous* click's script latched for the release to send a message to.
 	host._click_script = {}
+	host._press_channel = 0
 	if not host._lingo_on or host._interpreter == null:
 		return
+	# `the clickLoc`, `the lastClick` and `the doubleClick`, which are three views
+	# of the same two facts: where the last press was and when. Recorded before
+	# anything is dispatched, so a `mouseDown` handler asking any of them gets
+	# *this* click and not the one before it.
+	#
+	# The interval is measured here rather than taken from Godot's own
+	# `InputEventMouseButton.double_click`, because a press can reach this
+	# function without an OS event behind it -- `route_click`, every harness, and
+	# the container picker all synthesise one -- and a property that answers
+	# correctly only when a human is holding the mouse is a property no test can
+	# assert.
+	var now := Time.get_ticks_msec()
+	var since := now - int(host._host.last_click_ms)
+	host._host.double_click = int(host._host.last_click_ms) >= 0 and since < DOUBLE_CLICK_MS
+	host._host.last_click_ms = now
+	host._host.click_loc = at
 	# A click always produces a message. What is under the cursor decides which
 	# script sees it first; it does not decide whether one is sent.
 	#
@@ -230,6 +337,18 @@ static func press(host, at: Vector2) -> void:
 	# and resolving it again at release would ask a different question of a score
 	# that may have advanced frames in between.
 	host._click_script = script
+	# The channel as well as the script, because the release has to answer a
+	# question the script cannot: was the button let go *inside the sprite that
+	# was pressed*. `release` below is where that is decided.
+	host._press_channel = channel
+	# §6.3 tier 1. A primary handler runs ahead of every other tier and, unlike
+	# every other tier, **passes by default** -- so the sprite/frame/movie
+	# dispatch below happens anyway unless the handler called `dontPassEvent`.
+	# Inverting that default is the classic Director bug, so the ordering here is
+	# "run it, then carry on" rather than "run it and stop if it claimed".
+	if host._interpreter.run_primary("mousedown"):
+		host._tally(host._ran, "when mouseDown")
+	_run_primary_script(host, str(host._host.mouse_down_script), "mouseDownScript")
 	host._dispatch("mouseDown", script)
 	host.queue_redraw()
 
@@ -241,26 +360,116 @@ static func press(host, at: Vector2) -> void:
 ## resolved to the movie tier", which is a real answer, and not "there was no
 ## press". That distinction is why the guard lives in the routing and not here.
 ##
-## **Known divergence, and it is the honest half of this fix.** Director tests
-## whether the button came up over the *same* sprite that took the `mouseDown`:
-## if it did not, the sprite gets `mouseUpOutSide` (D6) and no `mouseUp`. This
-## port has none of the D6 mouse events -- `mouseEnter`, `mouseLeave`,
-## `mouseWithin`, `mouseUpOutSide` are all absent, and `ENGINE_TODO.md` carries
-## the entry -- so `mouseUp` goes to the press's recipient unconditionally. For a
-## drag that is exactly right and is the case that matters: a moveable sprite
-## follows the cursor, so the button always comes up over it. For a press-here-
-## release-there click it over-delivers, where the old code over-delivered *and*
-## sent it at the wrong moment.
-static func release(host) -> void:
+## **Which of the two messages goes out is decided here.** Director (D6, and this
+## game is D7) sends the pressed sprite a `mouseUp` only when the button came up
+## *inside it*, and `mouseUpOutSide` when it came up anywhere else. Until now
+## this port had neither test nor second message and sent `mouseUp`
+## unconditionally, so a press-here-release-there click ran the handler for a
+## click the player deliberately cancelled -- which is the standard way to back
+## out of a mis-aimed press and the reason the message pair exists at all.
+##
+## **The test is the pressed sprite's own rect, not the topmost sprite under the
+## pointer**, and the difference is exactly the case the last fix repaired. A
+## drop lands the dragged item on a target: ask "is the pressed channel still the
+## topmost hit here" and any target drawn above the item answers no, so the drop
+## would get `mouseUpOutSide` and `BehaviorScript 52`'s `on mouseUp` -- the whole
+## of the corpus's inventory idiom -- would never run. Ask "is the pointer inside
+## the sprite that was pressed" and the dragged item, which follows the cursor by
+## construction (§7.6), answers yes however many targets are stacked over it.
+##
+## A sprite that has left the frame between press and release gets `mouseUp`
+## rather than `mouseUpOutSide`. There is no rect to be outside of, the score
+## moved rather than the player, and the conservative answer is the one that
+## still runs the handler the click was aimed at.
+static func release(host, at: Vector2) -> void:
+	# As in `press`: a window movie is told, because it cannot see the event.
+	host.note_pointer(at)
 	# §7.6: the drag ends on mouse-up. §7.5: the cursor is recomputed there too --
 	# one of the four moments Director recomputes it at all.
 	host._drag_channel = 0
 	host._resolve_cursor()
 	var script: Dictionary = host._click_script
+	var pressed := int(host._press_channel)
 	host._click_script = {}
+	host._press_channel = 0
 	if not host._lingo_on or host._interpreter == null:
 		return
+	# §15: `the clickOn` updates on mouse-down always, and on mouse-up **only when
+	# the release was over a sprite**. Updated before the dispatch, so a handler
+	# reading it sees the click it is answering -- and left alone on a release
+	# over bare stage, which is what keeps `sprite the clickOn` naming something
+	# real after a drag that ended off every hotspot.
+	var under: int = host._channel_at(at)
+	if under > 0:
+		host._host.click_sprite = under
+	if pressed > 0 and not _release_inside(host, at, pressed):
+		# §6.5: sprite behaviours only. There is deliberately no frame or movie
+		# fallback -- a cancelled click is the sprite's business and nobody
+		# else's, and routing it onward would give every frame script a second
+		# copy of every abandoned press.
+		dispatch_sprite_only(host, "mouseUpOutSide", pressed)
+		host.queue_redraw()
+		return
+	# §6.3 tier 1, and it passes by default. See the note in `press`.
+	if host._interpreter.run_primary("mouseup"):
+		host._tally(host._ran, "when mouseUp")
+	_run_primary_script(host, str(host._host.mouse_up_script), "mouseUpScript")
 	host._dispatch("mouseUp", script)
+	host.queue_redraw()
+
+
+## `the mouseDownScript` / `the mouseUpScript`, the other half of §6.3 tier 1.
+##
+## Run alongside the `when <event> then` handler rather than instead of it: both
+## are tier 1, and both pass by default, so the sprite/frame/movie tiers run
+## afterwards either way. Same shape as `_dispatch_key`'s `keyDownScript` arm,
+## and the same divergence -- the value is treated as a handler name, because
+## this port cannot compile a source string at run time.
+static func _run_primary_script(host, name: String, tally: String) -> void:
+	var handler := name.strip_edges().to_lower()
+	if handler == "" or not host._interpreter.has_handler(handler):
+		return
+	host._tally(host._sent, tally)
+	host._tally(host._ran, tally)
+	host._interpreter.call_handler(handler)
+
+
+## Did the button come up inside the sprite that took the press?
+##
+## True when the channel is no longer on the frame at all, which is the "the
+## score moved, not the player" case `release` documents: `lingo_sprite_rect`
+## cannot tell an absent channel from a hidden one, so the frame is searched
+## directly rather than inferred from an empty rect.
+static func _release_inside(host, at: Vector2, channel: int) -> bool:
+	for sprite in host._score.frame(host._index).get("sprites", []):
+		if int(sprite["channel"]) != channel:
+			continue
+		var live: Dictionary = host._effective(sprite)
+		# Hidden by a `mouseDown` handler: not drawn, not hit-tested, and so not
+		# something the pointer can be inside of.
+		if live.is_empty():
+			return false
+		return host._sprite_rect(live).has_point(at)
+	return true
+
+
+## The right button, which this port ignored entirely until now (§8.1, D5).
+##
+## Routed through the same tier resolution as the left, because `rightMouseDown`
+## and `rightMouseUp` sit in the same list in §6.3 and reach the same five tiers.
+## What it deliberately does *not* do is touch the drag, `the clickOn` or a
+## wait-for-click: §7.6's drag and §9.2's wait are both the left button's, and a
+## right-click that cancelled a drag or advanced a held frame would be this port
+## inventing behaviour rather than porting it.
+static func right_button(host, at: Vector2, pressed: bool) -> void:
+	if not host._lingo_on or host._interpreter == null:
+		return
+	var event := "rightMouseDown" if pressed else "rightMouseUp"
+	if host._interpreter.run_primary(event.to_lower()):
+		host._tally(host._ran, "when %s" % event)
+	var chosen: Array = script_for_click(
+		host, host._channel_at(at), host._score.frame(host._index).get("sprites", []))
+	host._dispatch(event, chosen[0])
 	host.queue_redraw()
 
 
