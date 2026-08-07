@@ -42,6 +42,11 @@ const MAX_CATCHUP_STEPS := 4
 ## literal would silently mean "no transition is playing" rather than fail.
 const REASON_DELAY := "delay"
 const REASON_TRANSITION := "transition"
+## A colour cycle or a palette fade without *over time*, which §11 runs to
+## completion inside one frame transition. Director spends that time in a loop
+## that steps the palette and sleeps; expressing it as a hold keeps the process
+## live and the frame the same length. See `director_palette_state.gd`.
+const REASON_PALETTE := "palette"
 
 ## The rate the score last asked for. Carried forward across frames, as Director
 ## does: a frame with no tempo keeps the rate the last one set.
@@ -54,6 +59,16 @@ var _hold_ms := 0.0
 var _hold_reason := ""
 ## The tempo channel's wait-for-click, released only by a click or a jump.
 var _waiting_click := false
+## The tempo channel's wait-for-sound: the channel it waits on, 0 for none, and
+## which cue point in that sound releases it (`DirectorScore.CUE_NEXT`,
+## `CUE_END`, or a 1-based index).
+##
+## Held rather than resolved, because whether a sound has finished is the mixer's
+## question and this file may not know a mixer exists — the same split the
+## palette and transition holds use. The caller polls `waiting_sound()` once a
+## tick and calls `sound_arrived()` when the condition it names is met.
+var _waiting_sound := 0
+var _waiting_cue := 0
 
 
 func reset(rate: float = DEFAULT_FPS) -> void:
@@ -62,6 +77,8 @@ func reset(rate: float = DEFAULT_FPS) -> void:
 	_hold_ms = 0.0
 	_hold_reason = ""
 	_waiting_click = false
+	_waiting_sound = 0
+	_waiting_cue = 0
 
 
 ## The playhead has moved onto `frame`: take its tempo and arm whatever it waits
@@ -80,6 +97,8 @@ func enter_frame(frame: Dictionary) -> void:
 	if delay > 0.0:
 		hold(delay, REASON_DELAY)
 	_waiting_click = bool(frame.get("wait_click", false))
+	_waiting_sound = int(frame.get("wait_sound_channel", 0))
+	_waiting_cue = int(frame.get("wait_cue", 0))
 
 
 ## Hold the playhead for `ms`, whatever the reason. The longer of the two wins
@@ -100,16 +119,32 @@ func clicked() -> void:
 	_waiting_click = false
 
 
-## A queued `go to` cancels every wait (§9.2).
+## A queued `go to` cancels every wait (§9.2) — sound waits included, which is
+## how a script escapes a frame whose sound was never going to arrive.
 func release() -> void:
 	_hold_ms = 0.0
 	_hold_reason = ""
 	_waiting_click = false
+	_waiting_sound = 0
+	_waiting_cue = 0
+
+
+## The sound channel this frame is waiting on, and which cue point releases it.
+## `{channel, cue}`, channel 0 when nothing is waiting. See `_waiting_sound` for
+## why the condition is evaluated by the caller and not here.
+func waiting_sound() -> Dictionary:
+	return {"channel": _waiting_sound, "cue": _waiting_cue}
+
+
+## The sound the frame was waiting for has finished, or its cue has passed.
+func sound_arrived() -> void:
+	_waiting_sound = 0
+	_waiting_cue = 0
 
 
 ## Is something stopping the playhead from stepping?
 func playhead_held() -> bool:
-	return _hold_ms > 0.0 or _waiting_click
+	return _hold_ms > 0.0 or _waiting_click or _waiting_sound > 0
 
 
 ## Is a transition still playing? Asked separately from `hold_reason` because a
@@ -125,6 +160,8 @@ func holding_transition() -> bool:
 func hold_reason() -> String:
 	if _waiting_click:
 		return "wait for click"
+	if _waiting_sound > 0:
+		return "wait for sound %d" % _waiting_sound
 	return _hold_reason
 
 
@@ -178,4 +215,6 @@ func status() -> String:
 		return "%.0f fps" % fps
 	if _waiting_click:
 		return "%.0f fps, waiting for a click" % fps
+	if _waiting_sound > 0:
+		return "%.0f fps, waiting for sound %d" % [fps, _waiting_sound]
 	return "%.0f fps, holding %d ms (%s)" % [fps, int(ceilf(_hold_ms)), _hold_reason]

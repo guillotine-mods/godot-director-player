@@ -229,9 +229,6 @@ var key_down_script: String = ""
 ## `the searchPath`, a list. One empty element rather than none, because every
 ## read is `getAt(the searchPath, 1)` and an empty list would answer 0.
 var search_path: Array = [""]
-## `the soundLevel`, 0-7. 7 is Director's default and the level the game starts
-## every movie at.
-var sound_level: int = 7
 ## `the exitLock` and `the centerStage`: written by the scripts, kept only so a
 ## read agrees with the write.
 var exit_lock: int = 0
@@ -662,6 +659,54 @@ func set_member_prop(which: Variant, cast: String, prop: String, value: Variant)
 	## than reported — the scripts are not asking for anything the port owes.
 
 
+# ---------------------------------------------------------------- sound
+
+
+## `the volume of sound N` and the rest of a sound channel's properties.
+##
+## These two methods were the whole of bugs.md 27: the parser builds a
+## `sound_prop` designator and the interpreter routes it here, but this host —
+## the one the game actually runs on — implemented neither, so `_host_call`
+## returned null and all 66 volume writes in the corpus were discarded in
+## silence. Only the room preview's host had them.
+##
+## `AudioDirector` owns the state rather than this host, because the other host
+## sets the same property and a channel's volume outlives the movie that set it.
+func get_sound_prop(channel: int, prop: String) -> Variant:
+	var key := prop.to_lower()
+	if trace != null:
+		trace.property("sound", str(channel), key, "read", AudioDirector.channel_volume(channel),
+			interpreter)
+	match key:
+		"volume":
+			return AudioDirector.channel_volume(channel)
+		"cuepointnames":
+			## The markers of whatever is on the channel. Empty for every sound
+			## this game ships: 168 of its 3,141 files carry a `MARK` chunk and
+			## not one of the 336 markers in them is inside its own audio
+			## (`tools/aiff_check.gd`), so nothing here can answer non-empty.
+			return AudioDirector.cue_point_names(channel)
+		"loop", "looping":
+			## Read nowhere in this corpus. Answering 0 rather than reporting a
+			## gap: a channel that is not looping is the truthful answer for a
+			## player that has no loop flag to set.
+			return 0
+	unhandled["the %s of sound (read)" % key] = true
+	_report(LingoDiagnostics.MOVIE_PROP, "the %s of sound" % key)
+	return 0
+
+
+func set_sound_prop(channel: int, prop: String, value: Variant) -> void:
+	var key := prop.to_lower()
+	if trace != null:
+		trace.property("sound", str(channel), key, "write", value, interpreter)
+	if key == "volume":
+		AudioDirector.set_channel_volume(channel, LingoValue.to_int(value))
+		return
+	unhandled["the %s of sound (write)" % key] = true
+	_report(LingoDiagnostics.MOVIE_PROP, "the %s of sound" % key)
+
+
 # ---------------------------------------------------------------- system
 
 
@@ -729,7 +774,7 @@ func _system_prop_value(prop: String) -> Variant:
 			## prefix before it looks one up.
 			return ""
 		"soundlevel":
-			return sound_level
+			return AudioDirector.sound_level
 		"mousedown":
 			## `if the mouseDown then`, in four handlers polling for a click that
 			## is still held.
@@ -779,11 +824,10 @@ func set_system_prop(prop: String, value: Variant) -> void:
 				LingoValue.to_str(value)]
 		"soundlevel":
 			## SAVELOAD BehaviorScript 69-75 are the volume slider: each button
-			## sets a level and plays a sample voice. Nothing else in the port
-			## owns bus volume, so this drives the master bus directly.
-			sound_level = clampi(LingoValue.to_int(value), 0, 7)
-			AudioServer.set_bus_volume_db(0,
-				-80.0 if sound_level == 0 else linear_to_db(float(sound_level) / 7.0))
+			## sets a level and plays a sample voice, and BehaviorScript 65 reads
+			## it back every frame to place the knob. `AudioDirector` holds it so
+			## the other host's read and this host's write are the same number.
+			AudioDirector.set_sound_level(LingoValue.to_int(value))
 		"exitlock":
 			## `set the exitLock to 1`, twice, to stop Director quitting on a
 			## keystroke. Nothing to lock here; stored so a read agrees.
@@ -843,6 +887,25 @@ func call_builtin(name: String, args: Array) -> Variant:
 			return 0
 		"sound":
 			return _sound(args)
+		"puppetsound":
+			## `puppetSound <channel>, 0` and the bare `puppetSound 0` release a
+			## channel and silence it, which is the idiom for "stop talking".
+			##
+			## The *member* form is not bound on this host and is reported. This
+			## is the exported-nav renderer's host: it plays sounds by file name
+			## and has no path from a cast member to audio, which the
+			## container-reading preview does have
+			## (`director_preview.gd:play_sound_member`). Reporting rather than
+			## quietly playing nothing, because a `puppetSound` that resolves to
+			## silence looks exactly like a room with no sound in it.
+			var puppet_channel := LingoValue.to_int(args[0]) if not args.is_empty() else 0
+			var member: Variant = args[1] if args.size() >= 2 else null
+			if args.size() < 2 or LingoValue.to_str(member).strip_edges() in ["", "0"]:
+				AudioDirector.stop_channel(maxi(puppet_channel, 1))
+				return 0
+			unhandled["puppetSound <member>"] = true
+			_report(LingoDiagnostics.BUILTIN, "puppetSound <member>")
+			return 0
 		"soundbusy":
 			return 1 if AudioDirector.sound_busy(LingoValue.to_int(args[0] if args.size() > 0 else 1)) else 0
 		"random":
@@ -1228,8 +1291,29 @@ func _sound(args: Array) -> Variant:
 				AudioDirector.stop_all()
 			return 0
 		"fadeout", "fadein":
-			## Bound and inert: AudioDirector has no fade, so the sound simply
-			## keeps playing or stays stopped.
+			## Director ramps the channel between silence and its own volume
+			## over a number of ticks, defaulting to one second, and a fade-out
+			## *stops* the channel at the bottom — which is what releases a
+			## `soundBusy` wait sitting behind it. `AudioDirector.step_fades`
+			## does the ramp, once per tick from the top of the update (§12).
+			##
+			## No script in this game writes either verb
+			## (`tools/sound_survey.gd`), so this is implemented from the
+			## reference and is unverified against the corpus — which is not the
+			## same as absent, and is why it is here rather than reported.
+			var fade_channel := LingoValue.to_int(args[1]) if args.size() >= 2 else 1
+			var ticks := LingoValue.to_int(args[2]) if args.size() >= 3 \
+				else AudioDirector.DEFAULT_FADE_TICKS
+			if verb == "fadein":
+				AudioDirector.fade_in(fade_channel, ticks)
+			else:
+				AudioDirector.fade_out(fade_channel, ticks)
+			return 0
+		"close":
+			## Stop *and* release, as against `sound stop`, which leaves the
+			## channel allocated. Also written nowhere in this corpus.
+			AudioDirector.close_channel(
+				LingoValue.to_int(args[1]) if args.size() >= 2 else 1)
 			return 0
 		_:
 			unhandled["sound %s" % verb] = true

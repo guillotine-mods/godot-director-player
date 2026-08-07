@@ -1244,9 +1244,56 @@ whole mechanism is a no-op. That is an acceptable trade but it must be a
 one that animates water or fire by cycling will be static. The cheap partial is
 a per-frame recolour of the affected members for the index range concerned.
 
-*This port:* `director/director_palette.gd:30-33` warns and falls back for any
-non-zero clut id; there is no `CLUT` reader. `scenes/director_preview.gd:162`
-uses one global palette. Inert for a corpus where every member carries clut 0.
+*This port:* **built** — the resolution order, the puppet override, the `CLUT`
+reader, colour cycling in both forms and the fades.
+`director/director_palette.gd` holds the tables and the pure transforms,
+`director/director_palette_state.gd` the state, and
+`scenes/director_preview.gd:_begin_palette` the wiring.
+
+What the corpus can prove about it is almost nothing, and that is worth stating
+before the design. `tools/palette_survey.gd` counts all four places a palette can
+be named, over 86 containers, 61,371 frames and 11,520 bitmap members:
+
+| where a palette is named | count |
+| --- | --- |
+| `CLUT` chunks | **0** |
+| palette cast members (type 4) | **0** |
+| bitmap members whose clut id is not system Mac | **0** of 11,520 |
+| score frames naming a palette other than system Mac | **0** of 61,371 |
+| frames with colour cycling switched on | **0** of 61,371 |
+| `palette` in `reference/lingo/` (so `puppetPalette` too) | **0** |
+
+So this is built from the reference and **unverified against this corpus**, which
+is an honest state and not the same as absent — the engine has to run other
+titles. `tools/palette_cycle.gd` asserts it against hand-built records, labelled
+as synthetic, and against the one real frame that carries anything.
+
+Two corrections fell out of the survey. `director_palette.gd`'s header said every
+bitmap carries **clut id 0**; the id is **-1**, Director's number for the system
+Mac built-in, in all 11,520 — and `builtin()` only warned above zero, so it could
+never have fired on either value.
+
+The score's palette channel *is* written, on 267 frames, and is decoded in
+`director/director_score.gd:_palette_record`, where the 48-byte record's layout
+is written down against the six distinct records that exist. 262 of the 267 name
+system Mac with every effect byte zero. Five carry effect bytes and exactly one
+carries non-zero flags: `strtgame` f38, flags 0x60, a one-step fade to black,
+which the running preview now honours as a 50 ms hold on that frame.
+
+**The one thing still missing is data, not engine.** Rainbow, Pastels, Vivid,
+NTSC and Metallic are hand-authored 768-byte tables with no generating rule to
+recover; System Mac and Grayscale are generated because their structure *is* the
+definition. `builtin()` dispatches on the id, loads the rest from
+`data/director_palettes.json` if a title supplies it, and otherwise warns by name
+and substitutes system Mac rather than inventing a table — `can_build()` is how a
+caller tells "resolved" from "substituted" without reading a log. Filling that
+file is a lift from a Director installation, not a reconstruction by eye.
+
+**The cost an RGB renderer pays**, which Director does not: an indexed member is
+decoded *through* the table, so a palette switch invalidates every cached
+texture. Director swaps a CLUT and the same pixels mean new colours. It costs
+nothing until something switches, and a cycle that steps 30 times a second will
+re-decode the stage 30 times a second.
 
 ---
 
@@ -1267,6 +1314,59 @@ uses one global palette. Inert for a corpus where every member carries clut 0.
   the host channel — a second, independent source of sound events.
 - `soundBusy` is what wait-for-sound polls.
 
+*This port:* all of §12 is built. Almost none of it is verified against this
+corpus, and the two halves of that sentence are separate facts.
+
+**Built.** `director/director_score.gd:_sound_channels` decodes the two score
+sound channels (main-channel records 3 and 4, `castLib` at +0 and member at +2 --
+the same pairing the frame script, transition and palette records use);
+`director/score_sound.gd` holds restart-on-change and `puppetSound` ownership;
+`director/director_sound.gd` turns a sound cast member into a stream from a Mac
+`snd ` resource, an embedded AIFF or an embedded WAV; `autoload/audio_director.gd`
+carries per-channel volume, `the soundLevel`, fades and cue points; and
+`director_frame_clock.gd` holds the playhead for a wait-for-sound or wait-for-cue
+tempo. Sounds start before the frame's transition rather than after it.
+
+**Unverified, and here is what the corpus can and cannot say.** This game's 86
+containers hold 15,297 cast members and **none is of type `sound`**, so no frame
+can name one; neither sound channel is written in any of its 61,371 frames; and
+its tempo cell holds only 246, 247 and 248 across all 61 scores, never D6's
+255/254 or D5's 135/134. So the score-sound path, the member decoder and the
+wait-for-sound tempo never execute here. `tools/sound_survey.gd` measures all
+three; `tools/score_sound_check.gd` drives them against synthesised fixtures,
+which proves the implementation and says nothing about the game. The one thing
+no harness can settle until a title ships score sound is **which of records 3
+and 4 is channel 1** -- they are taken in address order.
+
+**Cue points do not exist in the audio either**, and the obvious check gets the
+right answer for the wrong reason: 168 of the 3,141 `.aif` files carry a `MARK`
+chunk and every one declares two markers. None of the 336 sits at a position
+inside its own audio -- they are eleven repeated byte patterns with empty names,
+at 0x53540000 and 0x007f007f, file after file. Authoring residue.
+`tools/aiff_check.gd` asserts on the positions for that reason.
+
+**What the scripts do reach**, counted over `reference/lingo/`: **2,515
+`sound playFile`** over channels 1 (2,196), 2 (201), 3 (100) and 4 (18);
+**69 `sound stop`**; **245 `soundBusy`**; **67 lines naming
+`the volume of sound N`**, 66 writes and 2 reads; **14 `the soundLevel`**, 7 each
+way, all in one options screen. `puppetSound`, `sound close`, `sound fadeIn`,
+`sound fadeOut`, `cuePoint` and `soundEnabled` are written **nowhere**.
+
+**Headless playback is faithful**, which is not obvious and was measured before
+being relied on: Godot's `Dummy` audio driver still mixes on a real clock, so a
+sound started headless advances and clears `playing` at the end of the stream --
+3,340 ms of wall clock for a 3,376 ms sound. `soundBusy` therefore answers
+truthfully in a harness. The catch is `tools/lib/driver.gd`'s: real frames must
+be *awaited*, because a synthetic tick loop advances the runtime's clock and not
+the audio server's, and then every wait holds for ever (bugs.md 22).
+
+One knowing deviation: `sound playFile` of the file already playing on a channel
+does **not** restart it. Director restarts unconditionally, but the older
+renderer replays a frame's sounds on every frame entry and a hold loop re-enters
+the same frame every tick. It costs nothing here -- of the 2,515 `playFile`
+statements, 11 sit in a handler that also holds the playhead, 9 of those behind a
+`soundBusy` guard, and the other 2 are gated on `the mouseDown` and jump away.
+
 ---
 
 ## 13. Trails, blend, video, text, shapes
@@ -1275,7 +1375,33 @@ uses one global palette. Inert for a corpus where every member carries clut 0.
 channel rather than clearing to the stage colour. In an immediate-mode Godot
 renderer the equivalent is an accumulation buffer that is not cleared, with
 non-trail sprites drawn over a cleared copy; it does not fall out for free.
-`director/director_score.gd:246` decodes the flag and nothing consumes it.
+
+*This port:* **built**, in `scenes/director_preview.gd:_settle_trails`, and
+unexercised by this corpus — `tools/ink_survey.gd` counts **0 of 816,318 sprite
+records** setting trails (0x40), against 86,845 setting stretch (0x80) out of the
+same byte. Reachable from Lingo through `the trails of sprite`, which is how
+`tools/trails.gd` drives it and how a movie would.
+
+The accumulation layer is §13's own suggestion, and **the layering is the whole
+problem**. Painting it *under* the frame's sprites is the obvious reading of
+"the repaint starts at the trails channel", and it makes trails invisible in any
+movie with a backdrop: the backdrop is a sprite, it is drawn after the layer, and
+it covers every mark. That version passed every headless check while nothing
+reached the screen; reading the framebuffer back is what caught it.
+
+What Director does is repaint **dirty rectangles only**, so the port reproduces
+the dirtiness rather than the ordering: a channel that moved or swapped member
+clears the layer at both the rectangle it left and the one it arrived at — which
+is how a non-trails sprite wipes a trail it crosses — a **trails** channel does
+not clear the one it left, and a channel that did not change clears nothing,
+which is why a static backdrop does not wipe the stage every frame. The layer is
+then drawn over the frame. Which flag decides is the current one, not the one the
+channel carried when it painted: switching trails off makes a sprite erase behind
+itself again immediately, including the mark from its previous move.
+
+The divergence that leaves: a sprite genuinely in front of an old mark that did
+*not* move should occlude it and does not. Closing that means real dirty rects
+and a persistent composite surface (§16.25), not a patch here.
 
 **Blend** — §2.7.
 
@@ -1507,11 +1633,23 @@ all. *Change:* decode byte 4 in `director/director_score.gd:_snapshot`. **Check
 early** — if the original mirrors walk-cycle art, this presents as "walk cycles
 are wrong".
 
-**16.13 Palette hardcoded to system Mac. (Both.)** §11.
-`director/director_palette.gd:30-33`.
+**16.13 Palette hardcoded to system Mac. (Both.)** §11. **Done**, and it was
+nearly closed the wrong way: the corpus names no palette but system Mac and
+switches cycling on zero times, which is a reason to build this second rather
+than a reason not to build it. Resolution order, `puppetPalette`, the `CLUT`
+reader, cycling in both forms and the fades are in
+`director/director_palette_state.gd`; the tables and transforms in
+`director/director_palette.gd`; `tools/palette_cycle.gd` asserts them, synthetic
+cases labelled as such. What remains is **data**: five built-in tables that have
+no generating rule, loaded from `data/director_palettes.json` when a title
+supplies one and warned about by name when it does not.
 
-**16.14 No sprite trails. (Neither.)** §13. Flag decoded at
-`director/director_score.gd:246`, unused.
+**16.14 No sprite trails. (Neither.)** §13. **Done** —
+`scenes/director_preview.gd:_settle_trails`, driven from `the trails of sprite`
+and asserted by `tools/trails.gd` at pixel level. Same story: 0 of 816,318
+records set the flag, and the feature is Director's rather than this game's. The
+first attempt drew the accumulation layer under the frame, which is invisible
+behind any backdrop and passed every headless check anyway.
 
 **16.15 No blend/alpha. (Neither.)** §2.7. Bytes 4 and 19 undecoded.
 
@@ -1563,10 +1701,11 @@ destination-reading inks.
 | Visibility | **partial** | `sprite_channel.gd:37`; `director_runtime.gd:1426-1427` |
 | Frame ordering | **done** in the preview (§16.6); **partial** in the runtime | `director_preview.gd:_advance` |
 | Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** by both renderers | `director_score.gd`; `director_frame_clock.gd`; `director_runtime.gd:276-281` |
-| Tempo: wait-for-sound, wait-for-video | **nothing** — and no frame in the corpus writes one | — |
+| Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
+| Tempo: wait-for-video | **nothing** | — |
 | Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
-| Palette resolution / cycling / fades | **nothing** | `director_palette.gd:30-33` |
-| Trails | **nothing** (flag decoded) | `director_score.gd:246` |
+| Palette resolution / cycling / fades | **done**, unverified against this corpus (0 frames cycle, 0 name anything but system Mac). 5 built-in tables are data, not code | `director_palette.gd`; `director_palette_state.gd`; `tools/palette_cycle.gd` |
+| Trails | **done**, unverified against this corpus (0 of 816,318 records set the flag); reachable via `the trails of sprite` | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
 | Blend / alpha | **nothing** | — |
 | Moveable / drag / constraint | **nothing** (flag stored) | `sprite_channel.gd:40` |
 | Editable text / focus / selection | **nothing** | — |
@@ -1574,15 +1713,18 @@ destination-reading inks.
 | Primary handlers, pass/dontPassEvent | **nothing** | — |
 | Event hierarchy | **partial**: sprite → cast → frame → movie | `director_preview.gd:728-740` |
 | Hilite on click | **nothing** | — |
-| Sound channels, restart-on-change | **partial** | `director_runtime.gd` |
-| Sound cue points, fades | **nothing** | — |
+| Score sound channels, restart-on-change | **done, unverified**: decoded and driven, but no cast in this game holds a `sound` member and no frame writes either channel, so the path never executes here | `director_score.gd:_sound_channels`; `score_sound.gd`; `tools/score_sound_check.gd` |
+| Lingo sound: playFile, stop, close, fadeIn/Out, soundBusy, volume, soundLevel | **done on both hosts**; the first two are 2,515 + 69 sites, the rest 245 + 67 + 14, and the fades 0. `soundBusy` is faithful headless | `autoload/audio_director.gd`; `tools/sound_state.gd` |
+| Sound cue points, `cuePassed`, wait-for-cue | **done, unverified**: 0 of 336 markers in this game's 3,141 files lie inside their own audio and no script or tempo cell reads one, so nothing here fires | `aiff_loader.gd:cue_points`; `director_frame_clock.gd`; `tools/aiff_check.gd` |
+| Sound cast members (`snd `, embedded AIFF/WAV) | **done, unverified**: no container in this game holds one | `director/director_sound.gd`; `tools/score_sound_check.gd` |
+| Sound fades, `puppetSound`, `sound close` | **done, unverified**: written nowhere in this corpus. `puppetSound` on the preview host only — the exported-nav host has no member-to-audio path and reports it | `audio_director.gd:step_fades`; `director_preview.gd:lingo_puppet_sound` |
 | Digital video | **nothing** | — |
 | Text / field rendering | **partial**: legible, not period-accurate; preview only | `director_text.gd`; `director_preview.gd:_draw_text` |
 | Shapes | **partial**: rect and rounded rect measured, oval and line unverified; preview only | `director_shape.gd` |
 | Windows / MIAW / embedded movies | **nothing** | — |
 | Movie stack | **partial** | `director_preview.gd:1143` |
 | Labels | **done** | `director_labels.gd` |
-| Stage clipping | **done** on the working side, **absent in the preview** | `movie_player.gd:43-44` |
+| Stage clipping | **done** on both sides. 16.1% of the corpus's drawing sprite records reach past the stage | `movie_player.gd:43-44`; `director_preview.gd:_clip_to_stage`; `tools/stage_clip.gd` |
 | Dirty rects | **nothing** — acceptable | — |
 | Score recording | **nothing** — rarely needed | — |
 
@@ -1610,6 +1752,22 @@ destination-reading inks.
   selection round-trip were read.
 - **Transition behaviour during input** — whether events are pumped mid-transition
   the way they are mid-palette-cycle was not read.
+- **The palette record's first/last colour transform.** The bytes are stored
+  offset — 0x7f reads as index 255 — but all five records in the corpus that
+  carry them have first equal to last, so nothing here distinguishes that
+  transform from any other. `director_score.gd:_palette_record` stores them raw
+  and says so rather than un-applying a guess.
+- **The whole of §11 and §13, against the original.** Both are built and both are
+  driven entirely by synthetic cases, because the corpus switches cycling on 0
+  times, names no palette but system Mac, and sets the trails bit 0 times. The
+  rules come from the reference; nothing has been compared to Director running.
+  `strtgame` f38's one-step fade to black is the single piece of real authored
+  data either subsystem has, and whether it is even visible in the original —
+  frame count 1, and the next frame zeroes the channel — was not checked.
+- **The five built-in palette tables.** Rainbow, Pastels, Vivid, NTSC and
+  Metallic have no table here and no way to derive one; `builtin()` warns and
+  substitutes system Mac. Grayscale *is* generated, as a linear ramp, and whether
+  Director's own is exactly `255 - i` on every entry is unchecked.
 - **Two bytes of the D5 frame's transition record.** The record at main-channel
   offset 96 decodes as `[96-97] cast lib, [98-99] member`, and 100-101 is zero on
   every one of the five frames that use it — but **102-103 is not**, and holds

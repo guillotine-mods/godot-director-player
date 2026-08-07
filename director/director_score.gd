@@ -32,8 +32,39 @@ const OWN_CAST_LIB := 0xFFFF
 const TEMPO_SET_FPS := 246
 const TEMPO_DELAY := 247
 const TEMPO_WAIT_CLICK := 248
+## Wait for a sound to finish, or for a cue point in it. D6 renumbered the tempo
+## codes wholesale and put the cue index in the operand beside them (§9.1); D5
+## and below used a different pair with no cue index at all. Both are decoded,
+## because the code is a property of the movie's authoring version and this
+## decoder reads containers from several.
+##
+## Unexercised by the corpus this port was built on: across all 61 scores and
+## 61,371 frames the tempo cell holds only 246, 247 and 248, never any of these
+## four (`tools/sound_survey.gd`). So the numbering is the reference's.
+const TEMPO_WAIT_SOUND_1 := 255
+const TEMPO_WAIT_SOUND_2 := 254
+const TEMPO_WAIT_SOUND_1_D5 := 135
+const TEMPO_WAIT_SOUND_2_D5 := 134
+## Cue indices with a meaning other than "the Nth cue point": Director writes -1
+## for "the next one" and -2 for "the end of the sound".
+const CUE_NEXT := -1
+const CUE_END := -2
 ## The score-list marker the D5+ format writes at offset 4.
 const SCORE_LIST_MARKER := -3
+## The palette channel is the last of the six main-channel records, at 48 * 5.
+## Its contents are decoded in `_palette_record`, where the evidence is written
+## down; cycling and the fades are flags in it rather than separate records.
+const PALETTE_AT := 240
+const PALETTE_CYCLING_FLAG := 0x80
+const PALETTE_FADE_MASK := 0x60
+const PALETTE_FADE_BLACK := 0x60
+const PALETTE_FADE_WHITE := 0x40
+const PALETTE_AUTO_REVERSE_FLAG := 0x10
+const PALETTE_OVER_TIME_FLAG := 0x04
+## Director's two score sound channels are main-channel records 3 and 4, at
+## 48 * 3 and 48 * 4. See `_sound_channels` for how that is arrived at and for
+## what this corpus can and cannot confirm about it.
+const SOUND_CHANNEL_AT := [144, 192]
 ## Frames between buffer snapshots. Seeking replays at most this many deltas, so
 ## it trades a little memory for random access: 44 snapshots of 48 KB on the
 ## longest movie here, against decoding all 2784 frames up front.
@@ -198,6 +229,16 @@ func frame(index: int) -> Dictionary:
 		return _cached
 	if index < 0 or index >= _frame_at.size():
 		return {}
+	_cached_index = index
+	_cached = _snapshot(_buffer_at(index), index)
+	return _cached
+
+
+## The channel buffer as of frame N, undecoded. Split out of `frame` so a survey
+## can read bytes this decoder does not claim to understand yet: "offset 60 is
+## always zero across the corpus" is a measurement, and it cannot be taken
+## through a view that only exposes the fields already decoded.
+func _buffer_at(index: int) -> PackedByteArray:
 	var base: int = (index / KEYFRAME_INTERVAL) * KEYFRAME_INTERVAL
 	while base > 0 and not _keyframes.has(base):
 		base -= KEYFRAME_INTERVAL
@@ -208,9 +249,14 @@ func frame(index: int) -> Dictionary:
 	var from: int = base + 1 if _keyframes.has(base) else 0
 	for i in range(from, index + 1):
 		_apply(_stream, _frame_at[i], buffer)
-	_cached_index = index
-	_cached = _snapshot(buffer, index)
-	return _cached
+	return buffer
+
+
+## The 288-byte main channel block of frame N, for tools that survey raw bytes.
+func main_channel(index: int) -> PackedByteArray:
+	if index < 0 or index >= _frame_at.size():
+		return PackedByteArray()
+	return _buffer_at(index).slice(0, MAIN_CHANNEL_SIZE)
 
 
 func _fresh_buffer() -> PackedByteArray:
@@ -283,6 +329,13 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		"tempo_cue": tempo_cue,
 		"delay_ms": tempo_cue * 1000 if tempo == TEMPO_DELAY else 0,
 		"wait_click": tempo == TEMPO_WAIT_CLICK,
+		# 0 when the frame waits for no sound, otherwise the channel it waits on.
+		"wait_sound_channel": _wait_sound_channel(tempo),
+		# Which cue point in that sound releases the wait: a 1-based index, or
+		# CUE_NEXT / CUE_END. Signed, because those two are negative and reading
+		# the operand unsigned turns "wait for the end" into cue point 254.
+		"wait_cue": (tempo_cue - 256 if tempo_cue >= 128 else tempo_cue) \
+			if _wait_sound_channel(tempo) > 0 else 0,
 		"transition_member": _u16(buffer, 98),
 		# The library the transition member lives in, two bytes ahead of it, the
 		# same pairing the frame script uses. Every one of the five frames in
@@ -292,8 +345,123 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		# transition in a linked cast would hit it in exactly the same way.
 		"transition_lib": 1 if _u16(buffer, 96) == OWN_CAST_LIB else _u16(buffer, 96),
 		"palette_member": _u16(buffer, 242),
+		"palette": _palette_record(buffer),
+		"sound_channels": _sound_channels(buffer),
 	}
 	out["fps"] = _fps[index] if index < _fps.size() else 0.0
+	return out
+
+
+## The palette channel, whose layout was settled by dumping the whole 48-byte
+## record for every frame in the corpus that writes a non-zero byte into it.
+## Only six distinct records exist, and they separate the two things it does:
+##
+##   0000 ffff 00 00 0000 0000 ...   x262   ARCADE1, ARCADE2, DAY1
+##   ffff ffff 1e 00 7f7f 0001 0001  x4     HATDAY3 f0, ISHDAY1 f0, MORN2 f0,
+##                                          PATDAY1 f0 (MORN2 has 0000 for 7f7f)
+##   ffff ffff 14 60 7f7f 0001 0001  x1     strtgame f38
+##
+## So: cast lib, member, speed, flags, first and last colour, frame count, cycle
+## count — with the lib/member pairing the frame script and the transition also
+## use. The member is 0xffff on all 267 frames: as an i16 that is -1, Director's
+## number for the built-in system Mac palette, and negative ids are how it names
+## built-ins. **No frame in this corpus names a custom palette, and 262 of the
+## 267 set every effect byte to zero** — a plain "the palette is system Mac",
+## which it already was.
+##
+## The five that do carry effects carry no cycling: bit 0x80 of the flags is set
+## on none of them, and speed 30 with first == last is a one-entry range. The
+## single frame with non-zero flags is strtgame f38 at 0x60, the fade family
+## rather than cycling, over one frame. That is the whole of the palette
+## subsystem's exercise in this game — see `tools/palette_survey.gd`, and
+## `DIRECTOR_ENGINE.md` §11 for what is deliberately not built on the strength
+## of it.
+##
+## The colour bytes are stored raw. Director writes them offset by 0x80 (0x7f is
+## index 255, 0x00 is 128), but every record here has first == last, so nothing
+## in this corpus distinguishes that transform from any other and un-applying it
+## would be a guess dressed as a decode.
+func _palette_record(buffer: PackedByteArray) -> Dictionary:
+	if PALETTE_AT + 12 > buffer.size():
+		return {}
+	var flags := buffer[PALETTE_AT + 5]
+	return {
+		"cast_lib": 1 if _u16(buffer, PALETTE_AT) == OWN_CAST_LIB else _u16(buffer, PALETTE_AT),
+		# Signed: a built-in palette is a negative id, a custom one a member number.
+		"member": _i16(buffer, PALETTE_AT + 2),
+		"speed": buffer[PALETTE_AT + 4],
+		"flags": flags,
+		"cycling": (flags & PALETTE_CYCLING_FLAG) != 0,
+		# The fade family is a two-bit field, not a flag: 0x00 is a plain palette
+		# switch, 0x60 fades to black and 0x40 to white. Reading it as "any bit in
+		# the mask" would call 0x20 a fade, and 0x20 is not one — it is a value the
+		# reference does not name and this corpus never writes, so it decodes as
+		# neither rather than as whichever fade is nearest.
+		"fade_to_black": (flags & PALETTE_FADE_MASK) == PALETTE_FADE_BLACK,
+		"fade_to_white": (flags & PALETTE_FADE_MASK) == PALETTE_FADE_WHITE,
+		"fade": (flags & PALETTE_FADE_MASK) == PALETTE_FADE_BLACK
+			or (flags & PALETTE_FADE_MASK) == PALETTE_FADE_WHITE,
+		"auto_reverse": (flags & PALETTE_AUTO_REVERSE_FLAG) != 0,
+		"over_time": (flags & PALETTE_OVER_TIME_FLAG) != 0,
+		"first_color_raw": buffer[PALETTE_AT + 6],
+		"last_color_raw": buffer[PALETTE_AT + 7],
+		"frame_count": _u16(buffer, PALETTE_AT + 8),
+		"cycle_count": _u16(buffer, PALETTE_AT + 10),
+	}
+
+
+## Which sound channel a wait-for-sound tempo names, or 0 for any other tempo.
+## Both numberings answer here rather than the caller having to know which
+## authoring version wrote the movie.
+static func _wait_sound_channel(tempo: int) -> int:
+	match tempo:
+		TEMPO_WAIT_SOUND_1, TEMPO_WAIT_SOUND_1_D5:
+			return 1
+		TEMPO_WAIT_SOUND_2, TEMPO_WAIT_SOUND_2_D5:
+			return 2
+	return 0
+
+
+## The two score sound channels, as `{channel, cast_lib, cast_id}` for whichever
+## of them names a member. A channel that names nothing is left out, so "the
+## frame is silent" and "the frame names member 0" are the same empty answer they
+## are in Director.
+##
+## **Where they are.** The main channel block is six 48-byte records and every
+## one of them opens with the same pair — `castLib` at +0, member at +2. That is
+## confirmed three times over on this corpus: the frame script at 0/2 resolves to
+## a `script` member on 14,886 frames, the transition at 96/98 resolves to a
+## `transition` member on all five frames that carry one, and the palette record
+## at 240/242 was settled independently. Record 0 is the script, 1 the tempo,
+## 2 the transition and 5 the palette, which leaves records **3 and 4** for
+## Director's two sound channels — the six special channels are exactly tempo,
+## palette, transition, sound 1, sound 2 and script.
+##
+## **Unverified against this corpus, and it cannot be verified against it.** All
+## 96 bytes of records 3 and 4 are zero in every one of the 61,371 frames here,
+## because this game has no score sound at all to put in them: its 86 containers
+## hold 15,297 cast members and not one is of type `sound` — every sound it plays
+## is an external file played by `sound playFile` (`tools/sound_survey.gd`). So
+## the offsets are deduced from the record layout rather than read off real data,
+## and the one thing genuinely undetermined is which of the two records is
+## channel 1: they are taken in address order, which is the convention every
+## other channel set here follows, but nothing in this corpus can confirm it.
+## The first title that ships score sound will.
+func _sound_channels(buffer: PackedByteArray) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for i in SOUND_CHANNEL_AT.size():
+		var at: int = SOUND_CHANNEL_AT[i]
+		if at + 4 > buffer.size():
+			break
+		var member := _u16(buffer, at + 2)
+		if member <= 0:
+			continue
+		var lib := _u16(buffer, at)
+		out.append({
+			"channel": i + 1,
+			"cast_lib": 1 if lib == OWN_CAST_LIB or lib == 0 else lib,
+			"cast_id": member,
+		})
 	return out
 
 

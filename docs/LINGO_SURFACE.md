@@ -717,7 +717,8 @@ they need their own dispatch path.
 - **`the X of menu M` / `of menuItem I`** — `name`; and `checkMark`, `enabled`,
   `name`, `script` respectively. `the number of menuItems` and
   `the number of castMembers` / `of castLibs` are counting forms.
-- **`the volume of sound N`** — sound channel volume.
+- **`the volume of sound N`** — sound channel volume; also `the cuePointNames of
+  sound N`.
 - **`the short/long/abbreviated date`** and the same for `time`.
 
 ---
@@ -1516,8 +1517,8 @@ grammar productions, not ordinary expressions**:
 there is no `sound(2)` object to evaluate. `the volume of sound 2` is a
 two-part designator, and a port that lowers it to "property of the result of
 calling `sound(2)`" has built a value where Director has an address. This game
-writes `set the volume of sound 2 to …` 65 times and this port drops every one
-(§16.3).
+names `the volume of sound N` on 67 lines, 66 of them writes; both the parse and
+the host binding are now closed (§16.3, `docs/bugs-closed.md` 27).
 
 The **writable** variants (the left-hand side of `set`) use the `=`-free
 expression copy for the object, so `set the X of sprite N to …` cannot mis-read
@@ -1890,9 +1891,15 @@ Two divergences are about *shape agreement* rather than support:
 
 ## 16.3 Grammar gaps this game's scripts actually contain
 
-### `the <prop> of sound N` — 65 statements, 52 scripts
+### `the <prop> of sound N` — 67 lines, 52 scripts — CLOSED, see `docs/bugs-closed.md` 27
 
-Every one is `set the volume of sound N to …`. ScummVM's grammar makes `sound N`
+66 of the 67 are `set the volume of sound N to …` and 2 are reads, one line being
+both (`set the volume of sound 3 to the volume of sound 3 - 20`); the earlier
+count of 65 was of statements and missed the reads. Channels 1 to 4. What follows
+is how it failed, kept because it is the clearest worked example of §11.9's
+address-versus-value distinction.
+
+ScummVM's grammar makes `sound N`
 a qualified entity (§11.9). This parser has no case for it, so `_parse_the` falls
 through to its generic branch and produces `prop_of(prop: "volume", target: call
 sound(N))` — a property of the *result of calling* a function named `sound`.
@@ -1902,9 +1909,11 @@ before continuing. **The volume is never set.** Because `_fail` only appends to 
 error list, nothing stops and nothing is visibly wrong except that speech and
 effects play at whatever volume the last successful write left behind.
 
-This is the largest real gap in the parser by script count, and the clearest
+This was the largest real gap in the parser by script count, and the clearest
 example of why §11.9 draws the distinction it does: Director has an *address*
-here and the port built a *value*.
+here and the port built a *value*. The parse was fixed first and the host binding
+second, and between those two fixes the symptom was identical while the cause was
+not — which is the whole of `docs/bugs-closed.md` 27.
 
 ### `play done` — 48 statements, 48 scripts
 
@@ -2036,13 +2045,14 @@ tails, not four patches. All four are now designator nodes —
 `tools/lingo_designator_check.gd` holds the last three against the real spellings
 extracted from the containers.
 
-**Item 1 is closed in the parser and not in the host.** `sound_prop` reaches
-`set_sound_prop` / `get_sound_prop`, and `lingo/lingo_host.gd` implements
-neither — only `scenes/preview_lingo_host.gd` does. `_host_call` answers null
-for a method the host lacks, so all 65 `set the volume of sound N` sites are
-still dropped in the real runtime, now silently rather than with an error. That
-is a smaller gap than the parse was and a different one; it is a host binding,
-not grammar.
+**Item 1 is closed in the parser and, since `docs/bugs-closed.md` 27, in the host
+too.** `sound_prop` reaches `set_sound_prop` / `get_sound_prop`, and both hosts
+now implement the pair over `AudioDirector`'s per-channel volume. The second half
+of that entry is why the gap survived so long: `_host_call` answered null for a
+method the host lacked, which is indistinguishable from a host that handled the
+call, so 66 writes went nowhere with nothing recorded. A missing host method is
+now reported as `host.<method>` under `unbound_name`, and
+`tools/sound_state.gd` case 5 reproduces the old failure on demand.
 
 Item 2 is not a parser change at all, and is the only one that needs a decision
 rather than a fix.
@@ -2119,9 +2129,12 @@ that contains it.
   `case`, but a decompiler normalises syntax, so a shape present in one and absent
   from the other proves nothing about the other. Every statement count in §16 is
   from the extracted authored text.
-- **§16.3's claim that `set the volume of sound N` is dropped** was read out of
-  `lingo_interpreter.gd`'s assignment path, not observed at runtime. The path is
-  short and unambiguous, but no harness was run.
+- ~~**§16.3's claim that `set the volume of sound N` is dropped** was read out of
+  `lingo_interpreter.gd`'s assignment path, not observed at runtime.~~ Now
+  observed: `tools/sound_state.gd` runs the corpus's own two shapes through the
+  real compiler, interpreter and game host and asserts the volume that lands on
+  the channel, and its last case reproduces the dropped write against a host with
+  the binding deliberately absent.
 - **The parse survey used the Python compiler with the GDScript fixes patched
   in**, not `lingo_parser.gd` itself, because there is no tool that compiles a
   directory of `.ls` files through the GDScript path. The two are meant to agree

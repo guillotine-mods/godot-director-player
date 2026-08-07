@@ -37,6 +37,7 @@ const HANDLED := [
 	"go", "sound", "puppetsound", "puppetsprite", "updatestage", "cursor",
 	"nothing", "dontpassevent", "beep", "delay", "preloadmember", "preload",
 	"unloadmember", "unload", "set", "alert", "halt", "quit",
+	"window", "open", "close", "forget",
 ]
 ## Answer VOID rather than nothing: these are real Director builtins this host
 ## has no state to implement, and letting them report as unbound would drown the
@@ -57,7 +58,7 @@ const IGNORED := [
 	# hierarchy ever queues the whole chain the way Director does, these stop
 	# being no-ops and become the mechanism.
 	"pass", "stopevent", "printfrom", "savemovie", "unloadmovie",
-	"clearglobals", "showglobals", "showlocals", "puppetpalette",
+	"clearglobals", "showglobals", "showlocals",
 	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
 	"shutdown", "abort", "continue", "installmenu", "setcallback",
 ]
@@ -89,11 +90,19 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"sound":
 			return _sound(args)
 		"puppetsound":
-			# `puppetSound <channel>, <file>` and the one-argument form.
+			# `puppetSound <channel>, <member>`, and the one-argument form,
+			# which is channel 1. The argument is a **cast member**, not a
+			# file — this used to route to `sound playFile`, which would have
+			# looked for a file named after a member and, worse, claimed
+			# nothing: `puppetSound` takes the channel off the score until
+			# `puppetSound <channel>, 0` gives it back.
+			if preview == null:
+				return 0
 			if args.size() >= 2:
-				return _play(LingoValue.to_int(args[0]), str(args[1]))
+				preview.lingo_puppet_sound(LingoValue.to_int(args[0]), args[1])
+				return 0
 			if args.size() == 1:
-				return _play(1, str(args[0]))
+				preview.lingo_puppet_sound(1, args[0])
 			return 0
 		"puppetsprite":
 			# `puppetSprite N, TRUE` hands a channel to the scripts; FALSE gives
@@ -133,6 +142,20 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			preview.lingo_global_cursor(args[0] if not args.is_empty() else 0)
 			return 0
+		"puppetpalette":
+			# `puppetPalette <id>` pins the palette against the score, and 0 hands
+			# it back — which is not the same as `puppetPalette -1`, because -1 is
+			# system Mac and 0 is "stop overriding". A built-in is named by its
+			# negative number and a custom palette by its member, exactly as the
+			# score's own palette channel names them (§11).
+			#
+			# The corpus calls this zero times — `reference/lingo/` does not
+			# contain the string "palette" at all — so it is bound for the
+			# engine's sake rather than this title's, the same way
+			# `puppetTransition` is.
+			if preview != null:
+				preview.lingo_puppet_palette(args[0] if not args.is_empty() else 0)
+			return 0
 		"puppettransition":
 			# A scripted transition: one-shot, applied at the next frame change.
 			# Nothing in this game calls it, so it is bound for the engine's sake
@@ -169,6 +192,36 @@ func call_builtin(name: String, args: Array) -> Variant:
 			if preview == null or args.is_empty():
 				return 0
 			return preview.lingo_marker(LingoValue.to_int(args[0]))
+		"window":
+			## `window("joke.dxr")` — Movie-In-A-Window (§14). Naming a window is
+			## what brings it into existence in Director, so this loads the movie if
+			## it is not loaded already; `open` is a separate verb that shows it and
+			## starts it running. Every one of the 21 opening sites in this corpus
+			## depends on the split, because all of them set `the windowType` and
+			## `tell` the window before the `open` that follows.
+			if preview == null or args.is_empty():
+				return stage_handle()
+			return preview.lingo_window(LingoValue.to_str(args[0]))
+		"open":
+			## `open(window("joke.dxr"))`. Director's other `open` — `open <file>
+			## with <application>` — is a desktop verb and appears nowhere here.
+			if preview == null or args.is_empty():
+				return 0
+			var to_open := window_key_of(args[0])
+			if to_open != "":
+				preview.lingo_open_window(to_open)
+			return 0
+		"forget", "close":
+			## `forget` destroys the window and its movie; `close` only hides it.
+			## Twenty-two sites, all `forget`, and every one of them is a window
+			## closing itself — MAP's twelve destination buttons, SAVELOAD's slots,
+			## JOKE's wait-for-click frame.
+			if preview == null or args.is_empty():
+				return 0
+			var to_shut := window_key_of(args[0])
+			if to_shut != "":
+				preview.lingo_forget_window(to_shut, low == "forget")
+			return 0
 	if IGNORED.has(low):
 		return 0
 	unbound[low] = int(unbound.get(low, 0)) + 1
@@ -248,18 +301,50 @@ func _go(args: Array) -> Variant:
 	return 0
 
 
-## `sound playFile <channel>, <file>` — how every sound in this game is played.
-## The score's own sound channels are empty in all 61 movies.
+## The `sound` command, all five verbs.
+##
+## What this corpus reaches, counted over `reference/lingo/`: **2,515
+## `sound playFile`** over channels 1 (2,196), 2 (201), 3 (100) and 4 (18), and
+## **69 `sound stop`**. `close`, `fadeIn` and `fadeOut` are written nowhere here
+## and are bound anyway — they are Director's, and a title that uses them should
+## not find a hole where the verb was.
+##
+## The score's own sound channels are a separate source and are driven elsewhere
+## (`director/score_sound.gd`). In *this* game they are silent, for a reason
+## worth recording: its 86 containers hold 15,297 cast members and not one is of
+## type `sound`, so no frame here can name one (`tools/sound_survey.gd`). That is
+## the argument, and not "those bytes are zero" — several bytes of the main
+## channel block are non-zero across the corpus and this port does not yet know
+## what all of them mean (bugs.md 31).
 func _sound(args: Array) -> Variant:
-	if args.is_empty():
+	if args.is_empty() or preview == null:
 		return 0
 	var verb := str(args[0]).to_lower()
-	if verb == "playfile" and args.size() >= 3:
-		return _play(LingoValue.to_int(args[1]), str(args[2]))
-	if verb == "stop":
-		if preview != null:
-			preview.lingo_stop_sound(LingoValue.to_int(args[1]) if args.size() >= 2 else 0)
-		return 0
+	var channel := LingoValue.to_int(args[1]) if args.size() >= 2 else 0
+	match verb:
+		"playfile":
+			if args.size() >= 3:
+				return _play(channel, str(args[2]))
+			return 0
+		"stop":
+			# All 69 `sound stop` statements in this game name a channel — 57 on
+			# 2, 9 on 1, 3 on 3. The channel-less form stops everything rather
+			# than defaulting to 1, which is what `lingo/lingo_host.gd` does and
+			# what a channel argument of 0 would otherwise silently become.
+			if args.size() >= 2:
+				preview.lingo_stop_sound(channel)
+			else:
+				preview.lingo_stop_all_sound()
+			return 0
+		"close":
+			preview.lingo_close_sound(maxi(channel, 1))
+			return 0
+		"fadein", "fadeout":
+			# `sound fadeIn <channel>, <ticks>`; Director's default when the
+			# duration is omitted is one second, which is 60 ticks.
+			var ticks := LingoValue.to_int(args[2]) if args.size() >= 3 else 60
+			preview.lingo_fade_sound(maxi(channel, 1), ticks, verb == "fadein")
+			return 0
 	return 0
 
 
@@ -267,6 +352,71 @@ func _play(channel: int, file: String) -> Variant:
 	if preview != null:
 		preview.lingo_play_sound(channel, file)
 	return 0
+
+
+# --------------------------------------------------------------------- windows
+#
+# A window reference is a Lingo *value* — it is passed to `open`, stored, and
+# named as a `tell` target — so it has to survive a trip through the interpreter
+# as a Variant. It is a one-entry Dictionary rather than a new class because that
+# needs nothing of `LingoValue` and cannot be confused with a String the way a
+# bare movie name could: `tell "map.dxr"` is not a thing, and a handle that was
+# just a String would make it look like one.
+#
+# `{"window": ""}` is the stage. `the stage` and `window("")` therefore agree,
+# which they should.
+
+const WINDOW_HANDLE := "window"
+
+
+static func stage_handle() -> Dictionary:
+	return {WINDOW_HANDLE: ""}
+
+
+## The window a Lingo value addresses: a handle, or a bare name for the spellings
+## that skip `window(...)`. "" is the stage, which is why the caller has to test
+## `is_window_ref` rather than treat "" as a failure.
+static func window_key_of(value: Variant) -> String:
+	if typeof(value) == TYPE_DICTIONARY and (value as Dictionary).has(WINDOW_HANDLE):
+		return str((value as Dictionary)[WINDOW_HANDLE])
+	if typeof(value) == TYPE_STRING:
+		return str(value).strip_edges().replace(":", "/").replace("\\", "/") \
+			.get_file().get_basename().to_lower()
+	return ""
+
+
+static func is_window_ref(value: Variant) -> bool:
+	return typeof(value) == TYPE_DICTIONARY and (value as Dictionary).has(WINDOW_HANDLE)
+
+
+## Which interpreter a `tell` body should run against.
+##
+## The interpreter calls this and drops the body when it answers null, so "no
+## such window" has to be distinguishable from "the stage": a `tell
+## window("jokes.dxr")` naming a file this disc does not have must not run on
+## whoever asked. That was the old behaviour and it is what puppeted DAY1's
+## channel 3 when the player clicked a joke bottle.
+func tell_target(value: Variant) -> Object:
+	if preview == null:
+		return null
+	if not is_window_ref(value):
+		# A `tell` at anything that is not a window reference. Director also
+		# accepts a script instance here; nothing in this corpus does, and running
+		# the body on the current movie is what this change exists to stop.
+		return null
+	return preview.window_interpreter(window_key_of(value))
+
+
+func get_window_prop(which: Variant, prop: String) -> Variant:
+	if preview == null or not is_window_ref(which):
+		return 0
+	return preview.lingo_window_prop(window_key_of(which), prop)
+
+
+func set_window_prop(which: Variant, prop: String, value: Variant) -> void:
+	if preview == null or not is_window_ref(which):
+		return
+	preview.lingo_set_window_prop(window_key_of(which), prop, value)
 
 
 # ------------------------------------------------------------------ properties
@@ -303,6 +453,58 @@ func get_system_prop(prop: String) -> Variant:
 			return key_char
 		"keydownscript":
 			return key_down_script
+		"soundlevel":
+			# The system volume, 0-7, not a channel property. Seven scripts write
+			# it and one reads it back on every frame to place a slider knob: an
+			# unbound read answers 0, the knob's `if the soundLevel = N` chain
+			# takes no branch, and the control the player just clicked does not
+			# move.
+			#
+			# Reached through `preview` rather than by naming the `AudioDirector`
+			# autoload, and that is not a style choice: a tool that builds the
+			# preview scene from `_init` compiles this file before the autoloads
+			# are registered, and a global singleton named here is a compile
+			# error in a file nobody touched. Every other binding in this host
+			# goes through `preview` for the same reason.
+			return preview.lingo_sound_level()
+		"stage":
+			# `tell the stage` — the reverse direction of Movie-In-A-Window, and by
+			# far the commoner one: 135 of the corpus's 194 `tell` statements say
+			# this, all of them written *inside* MAP or SAVELOAD to drive the movie
+			# underneath. The stage is a window like any other (§14), so it answers
+			# a window reference and `tell` needs no special case for it.
+			return stage_handle()
+		"centerstage", "windowtype", "modal", "title", "titlevisible", \
+		"rect", "drawrect", "sourcerect", "picture":
+			# Read on whichever movie is asking. Inside `tell window("x")` that is
+			# the window, which is where the 21 `set the centerStage to 1` sites
+			# put it and where they mean it. Everything but `centerStage` and
+			# `windowType` is unverified — no site in this corpus reads any of them.
+			return preview.own_window_prop(prop.to_lower())
+		"windowlist":
+			# §14. The open windows as window references, back to front, so
+			# `repeat with w in the windowList / tell w / … ` works. Unverified.
+			var handles: Array = []
+			for key in preview.window_keys():
+				handles.append({WINDOW_HANDLE: str(key)})
+			return handles
+		"frontwindow", "activewindow":
+			# Director distinguishes them — the front window is the top of the
+			# stacking order, the active one is the window with focus — and this
+			# port has no separate focus: opening a window raises it and gives it
+			# the keys, so the two are the same node. Answers the stage when no
+			# window is open, which is what Director does. Unverified.
+			var front: Node = preview.call("_front_window")
+			return {WINDOW_HANDLE: str(front._window_key)} if front != null else stage_handle()
+		"freeblock":
+			# Largest free memory block, in bytes. `DAY1 wonder/BehaviorScript 310`
+			# refuses to open the map below 12K and `GOLDDEAD BehaviorScript 23`
+			# unloads DAY1 below 100K; both guard a 1997 Mac's heap. Unbound this
+			# answered VOID, `the freeBlock > 12 * 1024` was false, and the map
+			# button played the "no" sound instead of opening the map — which is
+			# indistinguishable from the window code not working. Same value the
+			# other renderer's host has answered all along (`lingo_host.gd`).
+			return 16 * 1024 * 1024
 	return null
 
 
@@ -310,6 +512,17 @@ func set_system_prop(prop: String, value: Variant) -> void:
 	match prop.to_lower():
 		"keydownscript":
 			key_down_script = LingoValue.to_str(value).strip_edges()
+		"soundlevel":
+			if preview != null:
+				preview.lingo_set_sound_level(LingoValue.to_int(value))
+		"centerstage", "windowtype", "modal", "title", "titlevisible", \
+		"rect", "drawrect", "filename":
+			# `tell window("map.dxr") / set the centerStage to 1 / end tell` — the
+			# statement is a bare movie property and it lands on whichever movie the
+			# `tell` routed it to, which is the window. That is why this needs no
+			# window argument: being *in* the right movie is the routing.
+			if preview != null:
+				preview.set_own_window_prop(prop.to_lower(), value)
 
 
 func get_sprite_prop(which: int, prop: String) -> Variant:

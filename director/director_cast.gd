@@ -199,6 +199,29 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 		1: want = "BITD"
 		2: want = "SCVW"
 		3: want = "STXT"
+		# A palette member owns its colour table the same way. Unexercised here —
+		# this corpus has no palette member and no `CLUT` chunk at all
+		# (`tools/palette_survey.gd`) — and present because `director_palette.gd`
+		# can read one and had no way to be handed it.
+		4: want = "CLUT"
+	# A sound member owns its audio under one of three tags depending on how the
+	# movie was authored: `snd ` is the Mac resource Director 3 and 4 wrote,
+	# `sndS` the samples of the D4+ header/samples pair, and `sndH` that pair's
+	# header. Taken in that order and reported as `sound_header_chunk_id`
+	# alongside, so `director/director_sound.gd` can tell which shape it has.
+	#
+	# **Unexercised by this corpus and therefore unverified**: this game has no
+	# sound cast member at all, in any of its 86 containers — every sound it
+	# plays is an external file (`tools/sound_survey.gd`). Present because the
+	# score's sound channels name members and had no way to be handed one.
+	if type_code == 6:
+		var sound_owned: Dictionary = _owned.get(chunk_id, {})
+		for tag in ["snd ", "sndS", "sndH"]:
+			if sound_owned.has(tag):
+				out["data_chunk_id"] = int(sound_owned[tag])
+				out["sound_tag"] = tag
+				break
+		out["sound_header_chunk_id"] = int(sound_owned.get("sndH", -1))
 	if want != "":
 		var owned: Dictionary = _owned.get(chunk_id, {})
 		out["data_chunk_id"] = int(owned.get(want, -1))

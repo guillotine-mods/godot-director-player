@@ -62,7 +62,8 @@ transfer to another Director port unchanged:
 | `director/sprite_channel.gd` | One live channel: score sprite versus puppet state |
 | `director/stage_canvas.gd` | Stage compositing surface |
 | `director/nav_actions.gd` | Resolve `label` / `movie` / `walk` / `marker` / `hold` / `quit` |
-| `autoload/audio_director.gd` | Multi-channel `playFile` / `soundBusy` |
+| `autoload/audio_director.gd` | Director's sound channels: `playFile`, `soundBusy`, volume, `soundLevel`, fades, cue points |
+| `director/score_sound.gd`, `director/director_sound.gd` | The score's own sound channels, and a sound cast member decoded to a stream |
 | `autoload/input_router.gd` | Mouse and gamepad virtual cursor |
 | `tools/lib/harness.gd`, `driver.gd`, `args.gd` | Headless boot, step, click, assert |
 
@@ -173,7 +174,30 @@ godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # e
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
+godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
+godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
+godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
+godot --headless --script tools/sound_state.gd      # soundBusy, volume and soundLevel as a script sees them, pass/fail
+godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail
+godot --headless --script tools/score_sound_check.gd # score sound channels, cue points, fades and sound members, on synthesised fixtures, pass/fail
+godot --headless --script tools/palette_cycle.gd -- --file strtgame.dir  # palette tables, CLUT, cycling, fades, resolution order, pass/fail
+godot --script tools/stage_clip.gd -- --file strtgame.dir  # sprites are cut at the stage edge, pass/fail — NOT --headless
+godot --script tools/trails.gd -- --file PIP2DATA/DAY1.dir  # a trails sprite is not erased between frames, pass/fail — NOT --headless
 ```
+
+`stage_clip.gd` and `trails.gd` are the two tools here that want to run
+**without** `--headless`. Their other cases work either way, but the ones that
+matter read the framebuffer back, and headless Godot paints nothing to read. Both
+caught a renderer change that every headless check passed over: the stage clip
+was armed once at startup and Godot reset it on the next repaint, and the trail
+layer was painted underneath the frame's sprites, where any backdrop hides it. If
+you write a renderer harness, assume the headless half is not enough.
+
+`palette_cycle.gd` and much of `trails.gd` are **synthetic on purpose**, and say
+so: this corpus switches colour cycling on 0 times in 61,371 frames and sets the
+trails bit 0 times in 816,318 sprite records, so there is no authored data to
+assert against. Both features are Director's, so both are built and driven from
+hand-made records — see "Build Director, not this game" in `AGENTS.md`.
 
 The Lingo compiler and interpreter have their own set, all pass/fail, all
 checked against `docs/LINGO_SURFACE.md`:
@@ -201,6 +225,9 @@ harness — that is what `tools/lib/` exists to make cheap.
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
 `cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `text_and_shapes.gd`,
+`stage_clip.gd`, `trails.gd`, `palette_cycle.gd`,
+`aiff_check.gd`, `audio_index.gd`, `sound_state.gd`,
+`sound_survey.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
 pass/fail ones, alongside the whole Lingo block above. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the

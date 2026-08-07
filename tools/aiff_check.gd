@@ -48,6 +48,16 @@ func _init() -> void:
 	var empty := 0
 	var rates := {}
 	var formats := {}
+	## IFF chunk tag -> files carrying it. `MARK` is where an AIFF keeps its cue
+	## points, so this is the measurement §12's cue-point row rests on.
+	var chunks := {}
+	## Carrying the chunk, declaring a marker and carrying a marker that is
+	## actually inside the audio are three different facts, and only the last
+	## would owe the port anything.
+	var cue_files := 0
+	var cue_markers := 0
+	var cue_usable := 0
+	var cue_examples: Array[String] = []
 	var failures: Array[String] = []
 	var started := Time.get_ticks_usec()
 	var bytes := 0
@@ -71,6 +81,26 @@ func _init() -> void:
 		decoded += 1
 		rates[stream.mix_rate] = int(rates.get(stream.mix_rate, 0)) + 1
 		formats[stream.format] = int(formats.get(stream.format, 0)) + 1
+		for tag in Aiff.chunk_sizes(raw):
+			chunks[tag] = int(chunks.get(tag, 0)) + 1
+		var cues: Array = Aiff.cue_points(raw)
+		if cues.is_empty():
+			continue
+		cue_files += 1
+		# The file's own length in sample frames, from what actually decoded. A
+		# marker past the end cannot be reached, so it is not a cue point however
+		# the chunk is spelt.
+		var frame_bytes := (2 if stream.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (
+			2 if stream.stereo else 1)
+		var sample_frames := stream.data.size() / maxi(frame_bytes, 1)
+		for cue in cues:
+			cue_markers += 1
+			if int((cue as Dictionary)["frame"]) < sample_frames:
+				cue_usable += 1
+				if cue_examples.size() < 8:
+					cue_examples.append("%s: %s of %d frames" % [
+						path.get_file(), JSON.stringify(cue), sample_frames,
+					])
 	var elapsed := (Time.get_ticks_usec() - started) / 1000.0
 
 	h.check("%d of %d sound(s) decoded" % [decoded, files.size() - empty],
@@ -85,6 +115,21 @@ func _init() -> void:
 		if not KNOWN_RATES.has(int(rate)):
 			unknown.append(rate)
 	h.check("every sample rate is one the survey saw", unknown.is_empty(), str(unknown))
+	# Cue points are a whole subsystem — `cuePassed`, the wait-for-cue tempo
+	# values, `the cuePointNames of member` — and this is what decides whether
+	# any of it is owed here. 168 of these files *do* carry a `MARK` chunk and
+	# every one declares two markers, so "no MARK chunk" would have been the
+	# wrong thing to assert and the right-looking answer for the wrong reason.
+	# What is true is that none of the 336 markers sits inside its own audio:
+	# they are eleven repeated byte patterns with empty names at positions
+	# 0x53540000 and 0x007f007f, the same in file after file, which is authoring
+	# residue and not something a movie can wait on. Asserted rather than printed
+	# because it is the premise the cue-point row of §12 rests on — the day a
+	# title ships genuinely marked audio, this says so.
+	h.check("no sound carries a cue point inside its own audio", cue_usable == 0,
+		"%d marker(s) in %d file(s), %d reachable" % [cue_markers, cue_files, cue_usable])
+	for line in cue_examples:
+		print("     %s" % line)
 	h.complete("every sound decodes to a playable stream")
 
 	print("")
@@ -99,6 +144,11 @@ func _init() -> void:
 	print("formats    :")
 	for f in formats:
 		print("  %8d  %s" % [int(formats[f]), "8-bit" if int(f) == 0 else "16-bit"])
+	print("chunks     :  (files carrying each)")
+	var chunk_keys := chunks.keys()
+	chunk_keys.sort()
+	for tag in chunk_keys:
+		print("  %8d  %s" % [int(chunks[tag]), str(tag)])
 
 	quit(h.finish("the game's own sounds are loadable"))
 

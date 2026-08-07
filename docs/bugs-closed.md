@@ -181,6 +181,52 @@ installed here.
 
 ---
 
+## 27. `set the volume of sound N` parsed correctly and reached nothing, silently
+
+**Status:** FIXED · **Area:** interpreter host + interpreter ·
+**general: every sound property on the game's own host** ·
+filed while closing `docs/LINGO_SURFACE.md` §16.4 rows 3–6
+
+The parser built a `sound_prop` designator and `lingo_interpreter.gd` routed it to
+`set_sound_prop`. **`lingo/lingo_host.gd` implemented neither that nor
+`get_sound_prop`**, so every one of the corpus's volume writes was discarded by
+`_host_call`, which returns null when the host has no such method — and null is
+what a host that *handled* the call and had nothing to say also returns. Only
+`scenes/preview_lingo_host.gd`, the room preview's host, had the pair.
+
+Measured over `reference/lingo/`, so the size of the hole is a number: **67 lines
+name `the volume of sound N`, 66 of them writes and 2 reads** (one line is both),
+over channels 1 to 4. The earlier figure of 65 counted statements rather than
+occurrences and predates the read-modify-write being noticed.
+
+Both halves of the entry are closed together, because either alone leaves the
+same class of defect possible.
+
+**1. The binding.** `AudioDirector` now owns per-channel volume
+(`channel_volume` / `set_channel_volume`, 0-255 linear, converted to decibels on
+the channel's own player) and `the soundLevel` (0-7, driving the master bus).
+Both hosts route to it rather than each keeping a copy. That is not tidiness: a
+channel's volume outlives the movie that set it, `the soundLevel` is written in
+one movie's option screen and read back in another, and the preview host had *no*
+`soundLevel` binding at all — the slider handler's `if the soundLevel = N` chain
+read 0, took no branch, and left the knob where it was.
+
+**2. The silence.** `_host_call` now reports a missing method as
+`host.<method>` under `unbound_name`. Deliberately not for `call_builtin`:
+`_read_var` probes that for every bare identifier, so reporting there would
+refile every unset variable as a missing binding, and `call_builtin`'s own miss
+is already reported by its caller with the real name.
+
+`tools/sound_state.gd` covers both. Case 2 asserts the volume that ends up on
+`AudioDirector` and on the channel's player after the real compiler and the real
+game host have run the corpus's own two shapes — the literal write and
+`set the volume of sound 3 to the volume of sound 3 - 20`, which needs its own
+previous write back. Case 5 runs the same statement against a host with the
+methods deliberately absent and asserts both that nothing moved *and* that the
+interpreter said so, which is the failure this entry was, reproduced on demand.
+
+---
+
 ## 26. No walk in the game applied an arrival point, because `walkonby` read one item of three
 
 **Status:** FIXED · **Area:** interpreter host `_walkonby` + puppet ·

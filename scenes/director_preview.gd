@@ -25,6 +25,7 @@ const Score := preload("res://director/director_score.gd")
 const Labels := preload("res://director/director_labels.gd")
 const Paths := preload("res://director/director_paths.gd")
 const Palette := preload("res://director/director_palette.gd")
+const PaletteState := preload("res://director/director_palette_state.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
@@ -39,8 +40,43 @@ const Preloader := preload("res://director/director_preloader.gd")
 const FrameClock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
 const Config := preload("res://director/director_config.gd")
+const ScoreSound := preload("res://director/score_sound.gd")
+const SoundMember := preload("res://director/director_sound.gd")
 
 const STAGE := Vector2i(640, 480)
+
+## Director's `the windowType` values, from the reference. Plain `const` ints
+## rather than an enum: an enum does not survive `preload`, and every consumer of
+## this file reaches it that way.
+##
+## Only 2 occurs in this corpus (21 times). The rest are here because a window
+## type decides whether the window has a title bar and a border, and an engine
+## that knows one value draws every other title's windows wrong.
+const WINDOW_NO_BORDER := -1
+const WINDOW_DOCUMENT := 0
+const WINDOW_ALERT := 1
+const WINDOW_PLAIN := 2
+const WINDOW_PLAIN_SHADOW := 3
+const WINDOW_DOCUMENT_NO_SIZE := 4
+const WINDOW_DOCUMENT_ZOOM := 8
+const WINDOW_ROUNDED := 12
+const WINDOW_ROUNDED_NO_TITLE := 16
+const WINDOW_PALETTE := 49
+## The types that carry a title bar. `titleVisible` can still take it away.
+const WINDOW_TITLED := [
+	WINDOW_DOCUMENT, WINDOW_DOCUMENT_NO_SIZE, WINDOW_DOCUMENT_ZOOM,
+	WINDOW_ROUNDED, WINDOW_PALETTE,
+]
+## The types that draw a frame around the movie at all.
+const WINDOW_BORDERED := [
+	WINDOW_DOCUMENT, WINDOW_ALERT, WINDOW_PLAIN, WINDOW_PLAIN_SHADOW,
+	WINDOW_DOCUMENT_NO_SIZE, WINDOW_DOCUMENT_ZOOM, WINDOW_ROUNDED,
+	WINDOW_ROUNDED_NO_TITLE, WINDOW_PALETTE,
+]
+## Height of the title bar this draws. Schematic rather than period-accurate: the
+## point is that a titled window is visibly titled and that the movie inside it
+## is offset by the bar, not that it looks like System 7.
+const WINDOW_TITLE_BAR := 18
 ## Floating skip control, in stage coordinates so it scales and letterboxes with
 ## everything else rather than drifting when the window is resized.
 const SKIP_RECT := Rect2(STAGE.x - 62, 8, 54, 22)
@@ -49,7 +85,18 @@ var _movie = null
 var _score = null
 var _labels = null
 var _table = null
+## The table every indexed bitmap is decoded against. Held beside the state
+## rather than read through it on each decode because it is touched per pixel.
 var _palette: PackedByteArray
+## Which palette is current, and what it is doing to itself. See
+## `director/director_palette_state.gd`; this node owns only the wiring —
+## resolving each frame's channel, holding the playhead for a blocking cycle,
+## and throwing away artwork baked against a table that has changed.
+var _palette_state = PaletteState.new()
+## The score's own two sound channels and their restart-on-change rule. See
+## `director/score_sound.gd`; this node owns only the wiring — resolving a member
+## to a stream and handing it to the mixer.
+var _score_sound = ScoreSound.new()
 var _index := 0
 ## Tempo, delays, wait-for-click and the time a transition takes. See
 ## `director/director_frame_clock.gd`; this node owns only the phase order.
@@ -192,11 +239,22 @@ var _paths = null
 # inherited rather than recomputed, a CanvasItem's children paint after it so the
 # window is over the stage for free, and freeing the node tears the movie down.
 #
-# What is deliberately not built, on the survey's evidence: window titles, window
-# rects set from Lingo, `the modal of window`, `moveableSprite` window dragging
-# and window chrome. The corpus writes exactly two window-ish properties —
-# `the windowType` (21 times, always 2, which is Director's plain box with no
-# title bar) and `the centerStage` (21 times, always 1) — and reads none.
+# The corpus writes exactly two window properties — `the windowType`, 21 times,
+# always 2, and `the centerStage`, 21 times, always 1 — and reads none. The rest
+# of §14's surface is built anyway and is marked **unverified** where it is: this
+# is a Director engine, not a Piposh player, and a property that is absent
+# because one title did not use it is a hole the next title falls into. What is
+# unverified here: `the rect`/`drawRect`/`title`/`titleVisible`/`modal`/
+# `fileName` of a window, the window chrome for every `windowType` other than 2,
+# `the windowList`, `the frontWindow` and `the activeWindow`. They are written
+# from the reference and nothing in this corpus proves them right.
+#
+# Genuinely not built, and why: `the picture of window` needs the window's
+# composited pixels read back, which this immediate-mode renderer never holds
+# (§6.3, gap 16.25 — no dirty rects, nothing retains a surface). §14's movie
+# *stack* — push the current movie, return to it, and wrap to frame 1 at the end
+# of a movie rather than stopping — is a separate mechanism from windows and is
+# not part of this change.
 
 ## The preview running the stage. Null in the stage itself, set in every window.
 var _stage_preview: Node = null
@@ -216,17 +274,51 @@ var _window_path := ""
 ## been referenced but not opened is loaded and addressable and does not draw or
 ## advance — which is what lets `tell window("x") / set the centerStage to 1`
 ## run before the `open` that follows it in all 21 sites.
+## A window must not answer the click that opened it.
+##
+## `open` is called from inside a `mouseUp` handler, and the window it opens
+## may land straight onto a wait-for-click frame -- JOKE does exactly that at
+## frame 4, whose script is `forget(window("joke.dxr"))`. Without this the
+## mouse-up that opened the joke also satisfies its wait and closes it again,
+## so the popup appears for a single frame or never visibly at all, depending
+## on where in the tick the click landed. That intermittency is what made it
+## look like a rendering fault.
+##
+## The rule is simply that a movie answers a click whose *press* it saw. A
+## window that appeared mid-click has not seen one, so the release passes it
+## by and the next real click works normally.
+var _saw_press := false
 var _window_shown := false
 ## The movie's own `DRCF` stage rect. Every movie in this corpus declares
 ## 640x480, so a centred window covers the stage exactly; the rect is read rather
 ## than assumed because it is what decides both, and a title whose window is
 ## smaller would otherwise be drawn full-stage.
 var _config = null
-## `the centerStage` and `the windowType` as a script set them, per §14. Stored
-## and honoured at `open`: `centerStage` decides placement, and `windowType` is
-## recorded so the value is answerable rather than dropped.
+## `the centerStage` and `the windowType` as a script set them, per §14.
+## `centerStage` decides placement at `open`; `windowType` decides the chrome.
 var _center_stage := false
-var _window_type := 0
+## Director's window types. 2 is the plain box with no title bar, which is the
+## only value this corpus writes; the rest come from the reference and decide
+## whether `_draw_window_chrome` puts a title bar and a border on.
+var _window_type := WINDOW_DOCUMENT
+## `the rect of window` — where the window sits and how big it is, once a script
+## has said. Null means "wherever `centerStage` and the movie's own rect put it",
+## which is every window in this corpus. Unverified.
+var _window_rect = null
+## `the drawRect of window` — the rectangle the movie's stage is *drawn* into, as
+## opposed to the window frame. Director scales the movie when the two differ,
+## which is the only way a MIAW shows a movie at other than its authored size.
+## Null means natural size. Unverified.
+var _draw_rect = null
+## `the title of window` and `the titleVisible of window`. Director defaults the
+## title to the window's name, which is the file stem. Unverified.
+var _window_title := ""
+var _title_visible := true
+## `the modal of window`. A modal window blocks input to every other window in
+## the session while it is open — the playhead of the movie underneath keeps
+## running, which is why this gates `route_click` and the key dispatch and not
+## `_process`. Unverified: nothing in this corpus sets it.
+var _modal := false
 ## Where `play` came from, so `play done` can return there.
 var _play_stack: Array = []
 
@@ -271,8 +363,15 @@ func _ready() -> void:
 	if cfg.load(Paths.CONFIG_PATH) == OK:
 		_aspect = str(cfg.get_value("display", "aspect", _aspect)).to_lower()
 	_aspect = Args.text(args, "aspect", _aspect).to_lower()
-	get_window().size_changed.connect(_fit_to_window)
-	_fit_to_window()
+	# Only the stage fits itself to the OS window. A Movie-In-A-Window is a child
+	# of the stage and already inherits its scale, so running this on one scales
+	# it a second time -- at the default window that is 1.55 twice over, and the
+	# joke popup arrives at nearly two and a half times its size. Its geometry
+	# comes from `_apply_window_geometry` instead, which places it in *stage*
+	# coordinates where it belongs.
+	if _window_key == "":
+		get_window().size_changed.connect(_fit_to_window)
+		_fit_to_window()
 
 	_lingo_on = not Args.flag(args, "no-lingo")
 	if _lingo_on:
@@ -324,7 +423,11 @@ func _load_container(path: String) -> bool:
 
 	_table = CastTable.new()
 	_table.open(_movie, _paths)
-	_palette = Palette.system_mac()
+	# Palette ids are per movie, so the state resets with the movie rather than
+	# carrying the last one's cache and cycling offsets into this one.
+	_palette_state.table_for = _palette_table_for
+	_palette_state.reset(Palette.SYSTEM_MAC)
+	_palette = _palette_state.table
 	# The movie's own stage rect. Only a window uses it, but it is read for every
 	# movie because a window's placement is the *difference* between its rect and
 	# the stage movie's, and the stage is whichever movie happens to be playing.
@@ -547,6 +650,69 @@ func _dispatch(handler: String, script: Dictionary) -> void:
 	_interpreter.call_handler(handler, [], script)
 
 
+## Everything sound-driven that happens once a tick: cue points passed, and the
+## tempo channel's wait-for-sound.
+##
+## One pass, because both consume the same thing. `take_cues_passed` is
+## destructive — it reports each cue once and then forgets it — so a wait poll
+## and an event dispatch that each called it would race, and whichever ran first
+## would eat the cue the other was looking for. That is a bug with no symptom
+## except a wait that never releases.
+func _pump_sound(_delta: float) -> void:
+	if _audio == null:
+		return
+	var wait: Dictionary = _clock.waiting_sound()
+	var wait_channel := int(wait["channel"])
+	var wait_cue := int(wait["cue"])
+
+	for channel_value in _audio.call("cue_channels"):
+		var channel := int(channel_value)
+		for cue_value in _audio.call("take_cues_passed", channel):
+			var cue: Dictionary = cue_value
+			_dispatch_cue_passed(channel, cue)
+			if channel != wait_channel:
+				continue
+			# −1 is "the next cue, whichever it is"; a positive index is that cue
+			# or any after it, since a tick can cross more than one. −2 is "the
+			# end", which is not a cue at all and is handled below.
+			if wait_cue == Score.CUE_NEXT or (wait_cue > 0 and int(cue["index"]) >= wait_cue):
+				_clock.sound_arrived()
+				wait_channel = 0
+
+	if wait_channel <= 0:
+		return
+	# "The end" is the *sound* ending, not the last cue passing: a sound with no
+	# cue points at all still ends, and reading it as "all cues passed" would
+	# release the wait instantly on every unmarked sound -- which is every sound in
+	# this corpus. A cue wait releases on the sound ending too, or a frame waiting
+	# on a cue that never comes would hold for ever.
+	if not bool(_audio.call("sound_busy", wait_channel)):
+		_clock.sound_arrived()
+
+
+## `cuePassed me, <channel>, <cueNumber>, <cueName>`.
+##
+## A second, independent source of events alongside the frame's (§12). A sound
+## carries markers, the audio playhead crosses one, and the movie is told -- which
+## is how a Director title syncs animation to speech without counting frames.
+## Polled once a tick because there is no callback at a sample position, which is
+## the resolution every other Director event gets anyway.
+##
+## Sent to the frame script and then to the movie, which is where a `cuePassed`
+## handler is authored: the event belongs to the *channel*, and a channel has no
+## sprite to route it to.
+##
+## **Unexercised by this corpus.** No script in it names `cuePassed`, and none of
+## its 3,141 sounds carries a marker inside its own audio (`tools/aiff_check.gd`),
+## so this never fires on this game. The argument order is the reference's.
+func _dispatch_cue_passed(channel: int, cue: Dictionary) -> void:
+	if _interpreter == null:
+		return
+	_tally(_sent, "cuePassed")
+	_interpreter.call_handler(
+		"cuePassed", [channel, int(cue["index"]), str(cue["name"])], _frame_script(_index))
+
+
 ## Offer a keypress to the movie. True when a script claimed it.
 ##
 ## Director routes a keypress through `the keyDownScript` first — a movie-wide
@@ -758,10 +924,196 @@ func _clip_to_stage() -> void:
 	# A window clips to its own movie's rect, not to the host stage's: a window
 	# smaller than the stage must not paint outside itself, and one that is the
 	# same size (every movie in this corpus) gets the same rectangle either way.
-	_clip_rect = Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE))
+	#
+	# The chrome sits *outside* the movie's rect — the title bar is above local
+	# y=0 and the border to the left of x=0 — so the clip has to be widened by it
+	# or a titled window would draw its movie and none of its frame. Zero for
+	# `windowType` 2, which is what this corpus uses.
+	if _window_key == "":
+		_clip_rect = Rect2(Vector2.ZERO, Vector2(STAGE))
+	else:
+		var inset := chrome_inset()
+		var edge := float(_border_width())
+		_clip_rect = Rect2(-inset, window_size() + inset + Vector2(edge, edge))
 	var item := get_canvas_item()
 	RenderingServer.canvas_item_set_clip(item, true)
 	RenderingServer.canvas_item_set_custom_rect(item, true, _clip_rect)
+
+
+## Everything trails sprites have painted, kept across repaints. `DIRECTOR_ENGINE.md`
+## §13, and the one part of the renderer that is not rebuilt from the frame.
+##
+## **What a trails sprite is.** Its old position is never erased: the stage keeps
+## the pixels, so a sprite dragged across the stage leaves a stroke behind it.
+## §13 puts it as "no erase of the old bbox, and the repaint starts *at* the
+## trails channel rather than clearing to the stage colour", which is a property
+## of how the stage is painted rather than a flag a sprite can be drawn with.
+##
+## **How Director gets it and how this does.** Director keeps a persistent
+## composite surface and repaints only dirty rectangles; a trails sprite simply
+## does not dirty the rectangle it vacated, so those pixels are never repainted.
+## This renderer has no dirty rects (§16.25) and repaints everything every frame,
+## so the equivalent is §13's own suggestion: an accumulation buffer that is not
+## cleared, painted directly after the stage colour and under the current frame.
+##
+## **The divergence that leaves, stated exactly.** Under dirty rects, a *later*
+## sprite moving over an old trail mark dirties that rectangle, so the repaint
+## fills it with the stage colour and the mark is erased. Here the mark is in the
+## layer underneath and survives, showing through wherever that sprite is keyed
+## transparent. Opaque artwork hides it either way, so the two agree except under
+## a keyed ink drawn over an old trail. Closing it means implementing §16.25, not
+## patching this.
+##
+## Costs nothing until something sets the flag: the layer is not allocated until
+## the first trails sprite is drawn, and this corpus never draws one — 0 of
+## 816,318 sprite records (`tools/ink_survey.gd`). It is reachable from Lingo
+## through `the trails of sprite`, which is how `tools/trails.gd` exercises it and
+## how any movie would.
+var _trail_image: Image = null
+var _trail_layer: ImageTexture = null
+## channel -> {rect, member, trails} as of the last paint. What makes a sprite
+## "dirty" is the difference between this and the paint in hand, and dirtiness is
+## the whole of the rule in `_settle_trails`.
+var _trail_placed: Dictionary = {}
+## Whether the layer's pixels changed this paint, so the texture is uploaded once
+## per paint rather than once per stamp.
+var _trail_dirty := false
+
+
+## Does anything in this frame ask for trails, from the score or from a script?
+## Cheap enough to ask once a paint; the alternative is paying for the tracking
+## in every movie that never uses the feature.
+func _wants_trails(frame: Dictionary) -> bool:
+	for over_value in _overrides.values():
+		var over: Dictionary = over_value
+		if over.has("trails") and LingoValue.to_int(over["trails"]) != 0:
+			return true
+	for sprite_value in frame.get("sprites", []):
+		var sprite: Dictionary = sprite_value
+		if bool(sprite.get("trails", false)):
+			return true
+	return false
+
+
+## Update the trail layer for this paint, and put it on the stage.
+##
+## **This is where §13 stops being a flag and becomes the dirty-rect rule**, and
+## the first attempt got it exactly backwards. Painting the layer under the
+## frame's sprites is the obvious reading of "the repaint starts at the trails
+## channel", and it makes trails invisible in any movie with a backdrop: the
+## backdrop is a sprite, it is drawn after the layer, and it covers everything a
+## trails sprite ever left. `tools/trails.gd` caught that by reading the
+## framebuffer — every headless check passed while nothing was visible on screen.
+##
+## What Director actually does is repaint **dirty rectangles only**: fill with
+## the stage colour, composite every intersecting channel in order. A region no
+## changed sprite touches is not repainted at all, so a mark left there stays on
+## screen *over* the backdrop that was under it. So:
+##
+##   a channel that moved or swapped member dirties both the rectangle it left
+##   and the one it arrived at, and the layer is cleared there — which is how a
+##   non-trails sprite wipes a trail it passes over, and how a sprite whose
+##   trails were switched off stops leaving marks behind it;
+##
+##   a **trails** channel does not dirty the rectangle it left (that is the whole
+##   feature), so only its new rectangle is cleared before it stamps itself;
+##
+##   a channel that did not change dirties nothing, which is why a static
+##   backdrop does not wipe the stage every frame.
+##
+## The layer is then drawn *over* the frame. That is right for everything a
+## changed sprite has not repainted, and wrong for a sprite that is genuinely in
+## front of an old mark and did not move — it should occlude the mark and does
+## not. Closing that means real dirty rects and a persistent composite surface
+## (§16.25); this reproduces the visible behaviour of trails without them.
+func _settle_trails(placed_now: Dictionary, to_stamp: Array[Dictionary]) -> void:
+	if _trail_image != null:
+		for channel in _trail_placed:
+			var was: Dictionary = _trail_placed[channel]
+			var now: Dictionary = placed_now.get(channel, {})
+			var gone := now.is_empty()
+			var moved: bool = gone \
+				or Rect2(now["rect"]) != Rect2(was["rect"]) \
+				or int(now["member"]) != int(was["member"])
+			if not moved:
+				continue
+			# The one exception in the whole mechanism: a trails channel leaves
+			# its old rectangle alone.
+			#
+			# Decided by the flag the channel carries **now**, not the one it
+			# carried when it painted there. Director asks "do I erase where I
+			# was?" as part of the update it is doing, so a sprite whose trails
+			# were switched off goes back to erasing behind itself immediately,
+			# including the mark it left on the move before. A channel that has
+			# left the frame has no current flag to ask, and its last one stands.
+			if not bool(now.get("trails", was.get("trails", false))):
+				_trail_erase(Rect2(was["rect"]))
+			if not gone:
+				_trail_erase(Rect2(now["rect"]))
+		# A channel that appeared this paint repaints where it landed.
+		for channel in placed_now:
+			if not _trail_placed.has(channel):
+				_trail_erase(Rect2(placed_now[channel]["rect"]))
+	for entry in to_stamp:
+		_trail_stamp(entry["image"], entry["at"])
+	_trail_placed = placed_now
+	if _trail_layer == null:
+		return
+	# One upload per paint rather than one per stamp: a movie with several trails
+	# sprites would otherwise push the whole 640x480 layer to the GPU once each.
+	if _trail_dirty:
+		_trail_dirty = false
+		_trail_layer.update(_trail_image)
+	draw_texture(_trail_layer, Vector2.ZERO)
+
+
+## Clear a rectangle of the trail layer: the region was repainted, so whatever a
+## trails sprite had left there is gone.
+func _trail_erase(rect: Rect2) -> void:
+	if _trail_image == null:
+		return
+	var area := Rect2(Vector2.ZERO, Vector2(STAGE)).intersection(rect)
+	if area.size.x < 1.0 or area.size.y < 1.0:
+		return
+	_trail_image.fill_rect(Rect2i(area), Color(0, 0, 0, 0))
+	_trail_dirty = true
+
+
+## Add what a sprite just painted to the trail layer.
+##
+## `blend_rect` rather than `blit_rect`: the artwork arrives already keyed by its
+## ink, so it carries transparency, and a blit would stamp the transparent parts
+## as holes punched through everything the sprite passed over. It also clips to
+## the layer, which is the stage, so a trails sprite hanging off the edge
+## accumulates only the part that was on screen — the same rule `_clip_to_stage`
+## applies to the live paint.
+func _trail_stamp(image: Image, at: Vector2) -> void:
+	if image == null:
+		return
+	if _trail_image == null:
+		_trail_image = Image.create_empty(STAGE.x, STAGE.y, false, Image.FORMAT_RGBA8)
+		_trail_image.fill(Color(0, 0, 0, 0))
+		_trail_layer = ImageTexture.create_from_image(_trail_image)
+	var source := image
+	# `blend_rect` needs both sides in the same format, and a member decoded from
+	# an indexed bitmap is not guaranteed to arrive as RGBA8.
+	if source.get_format() != Image.FORMAT_RGBA8:
+		source = source.duplicate()
+		source.convert(Image.FORMAT_RGBA8)
+	_trail_image.blend_rect(
+		source, Rect2i(Vector2i.ZERO, source.get_size()), Vector2i(at.floor())
+	)
+	_trail_dirty = true
+
+
+## Throw the trail layer away. A movie change repaints the stage, so the marks a
+## previous movie left do not belong to the new one; within a movie the layer
+## outlives frame jumps, which is the whole point of it.
+func _clear_trails() -> void:
+	_trail_image = null
+	_trail_layer = null
+	_trail_placed.clear()
+	_trail_dirty = false
 
 
 ## Fit the stage into the canvas the way `[display] aspect` asks.
@@ -845,6 +1197,17 @@ func _process(delta: float) -> void:
 	# frame it landed on before deciding how much time that frame is owed, or the
 	# old frame's tempo paces the new one.
 	_sync_frame_entry()
+	# Cue points and the tempo channel's wait-for-sound, before the clock: both
+	# can release a hold this tick, and one evaluated after the clock has already
+	# decided the tick holds costs the frame it was waiting for. The fade ramp
+	# they interact with is stepped by `AudioDirector` itself, one process
+	# priority earlier — §12's "from the top of the update".
+	_pump_sound(delta)
+	# Before the clock, because a cycle or a fade is what the clock is *holding*
+	# the playhead for: stepping it after would advance the frame that the effect
+	# is the reason for, and the last step of a fade would land on the next one.
+	if _palette_state.effect_running() and _palette_state.step(delta * 1000.0):
+		_palette_applied()
 	# Pay for the artwork of frames not yet reached, before asking the clock for
 	# work. Time-boxed, so this cannot become the stall it exists to prevent --
 	# and measured *and discounted*, because a movie should not owe catch-up
@@ -887,7 +1250,150 @@ func _sync_frame_entry() -> void:
 	if frame.is_empty():
 		return
 	_clock.enter_frame(frame)
+	# Before the transition, deliberately: §12 starts a frame's sounds *in
+	# parallel* with its transition rather than after it, so a cut scene's line
+	# of speech begins as the wipe does and not a second later.
+	_begin_score_sound(frame)
+	_begin_palette(frame)
 	_begin_transition(frame)
+
+
+## Play whatever this frame's two score sound channels ask for.
+##
+## §12, and `director/score_sound.gd` holds the rule — a channel restarts only
+## when the member it names *changes*, and a channel a script has puppeted is not
+## the score's to touch. This node owns only the wiring: turning a cast member
+## into a stream and handing it to the mixer.
+##
+## **Unexercised by this corpus, and it is worth knowing why rather than only
+## that.** The game this port was built on has no `sound` cast member in any of
+## its 86 containers and writes neither sound channel in any of its 61,371
+## frames, so `changes()` returns nothing on every frame of every room here
+## (`tools/sound_survey.gd`). Every sound it plays comes from Lingo instead. The
+## path below is therefore reference-shaped rather than observed, and the harness
+## that proves the rule is `tools/score_sound_check.gd`, which drives the state
+## machine directly.
+func _begin_score_sound(frame: Dictionary) -> void:
+	var changes: Dictionary = _score_sound.changes(frame.get("sound_channels", []))
+	for channel in changes["stop"]:
+		lingo_stop_sound(int(channel))
+	for entry_value in changes["start"]:
+		var entry: Dictionary = entry_value
+		play_sound_member(int(entry["channel"]), int(entry["cast_lib"]), int(entry["cast_id"]))
+
+
+## A sound cast member onto a channel: what the score's channels and
+## `puppetSound` both need, and the one path that turns a member into audio.
+##
+## Returns false when the member does not resolve or does not decode, which is a
+## fact about the movie rather than an error to raise — the same contract the
+## bitmap path has. It is traced rather than silent, because a sound that does
+## not play and says nothing is indistinguishable from a score that asked for
+## none, and that ambiguity is what §12 costs most sessions.
+func play_sound_member(channel: int, cast_lib: int, cast_id: int) -> bool:
+	if _audio == null or _table == null:
+		return false
+	var member: Dictionary = _table.get_member(cast_lib, cast_id)
+	if member.is_empty() or int(member.get("data_chunk_id", -1)) < 0:
+		_trace("f%d sound ch%d member %d:%d -> not found" % [_index, channel, cast_lib, cast_id])
+		return false
+	var file = _table.file_for(cast_lib)
+	if file == null:
+		return false
+	var payload: PackedByteArray = file.read_chunk(int(member["data_chunk_id"]))
+	var header := PackedByteArray()
+	var header_id := int(member.get("sound_header_chunk_id", -1))
+	# `sndH` is the header of the `sndH`/`sndS` pair and never the payload: when
+	# the member's own data chunk *is* the header, there are no separate samples
+	# to point it at and passing it as both would decode the header twice.
+	if header_id >= 0 and header_id != int(member["data_chunk_id"]):
+		header = file.read_chunk(header_id)
+	var error: Array = []
+	var stream := SoundMember.decode(payload, header, error)
+	if stream == null:
+		_trace("f%d sound ch%d member %d:%d -> %s" % [
+			_index, channel, cast_lib, cast_id, "; ".join(error),
+		])
+		return false
+	_audio.call("play_stream", channel, "%d:%d" % [cast_lib, cast_id], stream,
+		SoundMember.cue_points(payload))
+	_trace("f%d sound ch%d member %d:%d" % [_index, channel, cast_lib, cast_id])
+	return true
+
+
+## Resolve this frame's palette channel and arm whatever effect it asks for.
+##
+## §11, and `director/director_palette_state.gd` holds the rules. Two things
+## happen here that cannot live in the state machine because they are the
+## renderer's:
+##
+## **A palette change invalidates every decoded bitmap.** An indexed member is
+## decoded *through* the table, so the texture cache is artwork baked against a
+## palette; keeping it across a switch draws the new frame in the old colours,
+## which reads as an ink fault rather than a palette one. That makes a palette
+## switch expensive here in a way it is not in Director — Director swaps a CLUT
+## and the same pixels mean new colours — and it is the price of an RGB
+## renderer. It costs nothing until something actually switches.
+##
+## **A cycle without *over time* holds the playhead.** §11 runs that form to
+## completion inside the frame transition, as a loop that sleeps; the clock
+## already expresses "this frame takes this long" for transitions and tempo
+## delays, so the cycle uses the same mechanism and the process stays live.
+func _begin_palette(frame: Dictionary) -> void:
+	if _palette_state.enter_frame(frame.get("palette", {})):
+		_palette_applied()
+	var hold := _palette_state.hold_ms()
+	if hold > 0.0:
+		_clock.hold(hold, FrameClock.REASON_PALETTE)
+		_trace("f%d palette effect for %.0f ms" % [_index, hold])
+
+
+## The current table changed: publish it and throw away what was baked against
+## the old one.
+func _palette_applied() -> void:
+	_palette = _palette_state.table
+	_textures.clear()
+	_hit_images.clear()
+	queue_redraw()
+
+
+## An id to a colour table, for the state machine's resolution order. Empty means
+## "not loaded", which is what makes §11's re-check at every step meaningful.
+##
+## A negative id is a built-in and `director_palette.gd` answers for it; a
+## positive one is a palette cast member, whose `CLUT` chunk is its payload the
+## same way a bitmap's `BITD` is. Searched across every library this movie can
+## address rather than assuming library 1: a palette in a shared cast is exactly
+## the case that would resolve to the wrong member by number alone.
+##
+## Unexercised by this corpus, which ships no palette member and no `CLUT`
+## chunk at all (`tools/palette_survey.gd`).
+func _palette_table_for(id: int) -> PackedByteArray:
+	if id < 0:
+		return Palette.builtin(id) if Palette.can_build(id) else PackedByteArray()
+	if id == 0 or _table == null:
+		return PackedByteArray()
+	for lib in _palette_libs():
+		var m: Dictionary = _table.get_member(lib, id)
+		if m.is_empty() or int(m.get("type", 0)) != Palette.MEMBER_TYPE:
+			continue
+		var chunk_id := int(m.get("data_chunk_id", -1))
+		if chunk_id < 0:
+			continue
+		var f = _table.file_for(lib)
+		if f == null:
+			continue
+		return Palette.from_clut(f.read_chunk(chunk_id))
+	return PackedByteArray()
+
+
+## Every cast library this movie can reach, its own first.
+func _palette_libs() -> Array:
+	var libs: Array = [1]
+	for lib in _table.cast_libs.keys():
+		if int(lib) != 1:
+			libs.append(int(lib))
+	return libs
 
 
 ## Resolve this frame's transition and hold the playhead for as long as it takes.
@@ -1015,6 +1521,14 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton \
 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		var at := stage_mouse()
+		if (event as InputEventMouseButton).pressed:
+			# Recorded on every movie on the stage, windows included, so a window
+			# that opens during this click still has not seen its press.
+			_saw_press = true
+			for key in _windows:
+				var w: Node = _windows[key]
+				if w != null:
+					w._saw_press = true
 		if not (event as InputEventMouseButton).pressed:
 			# A drag ends on mouse-up, and the cursor is re-resolved then.
 			_drag_channel = 0
@@ -1033,7 +1547,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var over := window_at(stage_mouse())
 		if over != null and over != self:
-			over._hover_channel = over._channel_at(stage_mouse() - over.position)
+			over._hover_channel = over._channel_at(over.stage_to_local(stage_mouse()))
 			over._resolve_cursor()
 			queue_redraw()
 			return
@@ -1068,7 +1582,9 @@ func _input(event: InputEvent) -> void:
 	# corpus installs a `keyDownScript` in a window movie, so this is the engine's
 	# rule rather than this title's need — but sending it to the stage instead
 	# would have the covered movie skipping speech it is not playing.
-	var focus := window_at(stage_mouse())
+	var focus := modal_window()
+	if focus == null:
+		focus = window_at(stage_mouse())
 	if focus == null:
 		focus = _front_window()
 	if focus == null:
@@ -1122,7 +1638,13 @@ func _draw() -> void:
 	# Re-armed here rather than at startup: the clip flag does not survive the
 	# command-list clear that precedes every paint. See `_clip_to_stage`.
 	_clip_to_stage()
-	draw_rect(Rect2(Vector2.ZERO, _clip_rect.size), Color.BLACK, true)
+	# The stage colour, which §14 says is what every non-trails repaint fills
+	# with. Over the movie's own rect only: the chrome around a window is painted
+	# by `_draw_window_chrome` and is not part of the movie.
+	draw_rect(Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE)),
+		Color.BLACK, true)
+	if _window_key != "":
+		_draw_window_chrome()
 	if _status != "":
 		draw_string(ThemeDB.fallback_font, Vector2(16, 32), _status, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.RED)
 		return
@@ -1133,7 +1655,18 @@ func _draw() -> void:
 	# what is on the stage now, and a field that left the frame must stop being in
 	# it or a harness would assert against a channel that is no longer drawn.
 	_text_drawn.clear()
+	# Where each channel is this paint, and what it holds, so the trail layer can
+	# be told which regions the frame repainted. See `_settle_trails`.
+	#
+	# Only collected when something is actually using trails: it is a dictionary
+	# per drawn sprite per paint, on a path that runs for every sprite of every
+	# frame, and 0 of this corpus's 816,318 sprite records ask for it. Once a
+	# layer exists the tracking stays on, because the layer's contents then depend
+	# on knowing where everything was.
+	var placed_now: Dictionary = {}
+	var to_stamp: Array[Dictionary] = []
 	var frame: Dictionary = _score.frame(_index)
+	var track_trails := _trail_image != null or _wants_trails(frame)
 	for raw_sprite in frame.get("sprites", []):
 		# What a script puppeted wins over what the score recorded. Ignoring it
 		# leaves sprites the Lingo hid still on screen and members it swapped
@@ -1180,6 +1713,21 @@ func _draw() -> void:
 		# over the option you are pointing at -- came out as a solid black
 		# rectangle covering the text.
 		draw_texture(texture, top_left, Color(1, 1, 1, Ink.blend_alpha(sprite)))
+		# A trails sprite is not erased between frames (§13), so what it painted
+		# joins the layer that survives the next clear. Collected rather than
+		# stamped here: the layer is first cleared where this frame repainted, and
+		# stamping before that would wipe what was just added.
+		var trails := bool(sprite.get("trails", false))
+		if track_trails:
+			placed_now[int(sprite["channel"])] = {
+				"rect": placed, "member": int(sprite["cast_id"]), "trails": trails,
+			}
+		if trails:
+			to_stamp.append({
+				"image": _hit_images.get(_texture_key(sprite, _drawn_size(sprite, m))),
+				"at": top_left,
+			})
+	_settle_trails(placed_now, to_stamp)
 
 	if _show_boxes:
 		_draw_hotspots(frame)
@@ -1211,6 +1759,41 @@ func _draw() -> void:
 	]
 	draw_string(ThemeDB.fallback_font, Vector2(8, STAGE.y - 8), hud,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.75))
+
+
+## The frame around a window's movie: a border, a title bar and a drop shadow,
+## as `the windowType` and `the titleVisible` ask for them (§14).
+##
+## Schematic rather than period-accurate, and that is the honest trade: the point
+## is that a titled window is visibly titled and that its movie is inset by the
+## bar, not that it looks like System 7. **Unverified** — every window in this
+## corpus is `windowType` 2, which has a one-pixel border and nothing else, so
+## nothing here proves the titled types right.
+##
+## Drawn in the window's own local space, where the movie's top-left is the
+## origin and the chrome is at negative coordinates above and to the left.
+func _draw_window_chrome() -> void:
+	var size := window_size()
+	var edge := float(_border_width())
+	if _window_type == WINDOW_PLAIN_SHADOW:
+		# The shadow is under the window and offset, so it is drawn first and
+		# outside the frame on the far two sides.
+		draw_rect(Rect2(Vector2(4, 4), size + Vector2(edge, edge)), Color(0, 0, 0, 0.4), true)
+	if _has_title_bar():
+		var bar := Rect2(Vector2(-edge, -edge - WINDOW_TITLE_BAR),
+			Vector2(size.x + edge * 2.0, WINDOW_TITLE_BAR))
+		draw_rect(bar, Color(0.82, 0.82, 0.82), true)
+		draw_rect(bar, Color(0.25, 0.25, 0.25), false, 1.0)
+		var title := window_title()
+		if title != "":
+			draw_string(
+				ThemeDB.fallback_font, bar.position + Vector2(6, WINDOW_TITLE_BAR - 5),
+				title, HORIZONTAL_ALIGNMENT_LEFT, bar.size.x - 12, 12, Color(0.1, 0.1, 0.1)
+			)
+	if edge > 0.0:
+		var inset := chrome_inset()
+		draw_rect(Rect2(-inset, size + inset + Vector2(edge, edge)),
+			Color(0.25, 0.25, 0.25), false, edge)
 
 
 ## Decoded once per (member, ink, size, colours) and kept. A member costs
@@ -1732,6 +2315,12 @@ func _effective(sprite: Dictionary) -> Dictionary:
 		out["loc_h"] = LingoValue.to_int(over["loch"])
 	if over.has("locv"):
 		out["loc_v"] = LingoValue.to_int(over["locv"])
+	# `the trails of sprite N` is a real Director property and the only way a
+	# movie can ask for §13's accumulation buffer at runtime; the score's own
+	# trails bit is the other. Merged here so the two arrive at the renderer as
+	# one field and `_draw` has a single thing to test.
+	if over.has("trails"):
+		out["trails"] = LingoValue.to_int(over["trails"]) != 0
 	return out
 
 
@@ -2031,6 +2620,17 @@ func lingo_hold() -> void:
 ## grep of `reference/lingo/` both say zero — so this exists for the engine's
 ## sake rather than this title's, and `tools/frame_events.gd` is what exercises
 ## it.
+## `puppetPalette <id>`: pin the palette against the score, or 0 to stop.
+##
+## §11 gives a puppet palette priority over everything else in the resolution
+## order, so this is the one place a script can override what the score's palette
+## channel says. Zero is "hand it back", not "system Mac" — a movie that meant
+## system Mac would say `puppetPalette -1`.
+func lingo_puppet_palette(value: Variant) -> void:
+	if _palette_state.set_puppet(LingoValue.to_int(value)):
+		_palette_applied()
+
+
 func lingo_puppet_transition(args: Array) -> void:
 	if args.is_empty():
 		_puppet_transition = {}
@@ -2174,6 +2774,12 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 
 	_textures.clear()
 	_hit_images.clear()
+	_clear_trails()
+	# Palette ids, the score cache and the cycling offsets are all per movie, and
+	# the new movie's own default is what it opens on.
+	_palette_state.table_for = _palette_table_for
+	_palette_state.reset(Palette.SYSTEM_MAC)
+	_palette = _palette_state.table
 	# Field overrides used to be dropped wholesale here, because the key was
 	# `<library number>:<member>` and a library number is local to the movie that
 	# was open when a script wrote it — carried across, member 10 of the next
@@ -2222,6 +2828,12 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_puppet_transition = {}
 	_entered_index = -1
 	_jump_queued = false
+	# Restart-on-change compares this frame's sound channels against the frame
+	# before. Carried across a movie change, the new movie's first frame would be
+	# compared against the last frame of the old one — which in the case that
+	# matters, both naming member 3 of their own casts, reads as "no change" and
+	# opens the room silent.
+	_score_sound.reset()
 
 	if _lingo_on:
 		_start_lingo(target)
@@ -2392,22 +3004,43 @@ func lingo_window_prop(key: String, prop: String) -> Variant:
 	return node.own_window_prop(prop)
 
 
+## §14's window vocabulary, write side. Everything but `windowType` and
+## `centerStage` is unverified — see the block comment at the top of this file.
 func set_own_window_prop(prop: String, value: Variant) -> void:
 	match prop:
 		"windowtype":
 			_window_type = LingoValue.to_int(value)
 		"centerstage":
 			_center_stage = LingoValue.to_int(value) != 0
-			if _window_shown:
-				position = window_origin()
-				queue_redraw()
 		"visible":
 			if LingoValue.to_int(value) != 0:
 				window_shown()
 			else:
 				window_hidden()
+			return
+		"modal":
+			_modal = LingoValue.to_int(value) != 0
+		"title", "name":
+			_window_title = LingoValue.to_str(value)
+		"titlevisible":
+			_title_visible = LingoValue.to_int(value) != 0
+		"rect":
+			_window_rect = _rect_of(value)
+		"drawrect":
+			_draw_rect = _rect_of(value)
+		"filename":
+			## Director lets one window play a succession of movies. Reached as a
+			## `go to movie` inside the window rather than as a reload, so the
+			## window keeps its identity, its rect and its place in the stacking
+			## order — which is what the property means.
+			lingo_go_movie(LingoValue.to_str(value), null)
+		_:
+			return
+	_apply_window_geometry()
+	queue_redraw()
 
 
+## §14's window vocabulary, read side.
 func own_window_prop(prop: String) -> Variant:
 	match prop:
 		"windowtype":
@@ -2416,24 +3049,66 @@ func own_window_prop(prop: String) -> Variant:
 			return 1 if _center_stage else 0
 		"visible":
 			return 1 if _window_shown else 0
+		"modal":
+			return 1 if _modal else 0
+		"title":
+			return window_title()
+		"name":
+			return _window_key
+		"titlevisible":
+			return 1 if _title_visible else 0
 		"rect":
-			var at := window_origin()
-			var size := window_size()
-			return [int(at.x), int(at.y), int(at.x + size.x), int(at.y + size.y)]
+			var frame := window_frame()
+			return [int(frame.position.x), int(frame.position.y),
+				int(frame.end.x), int(frame.end.y)]
+		"drawrect":
+			var drawn := Rect2(window_origin(), window_size() * window_scale())
+			return [int(drawn.position.x), int(drawn.position.y),
+				int(drawn.end.x), int(drawn.end.y)]
+		"sourcerect":
+			## The movie's own authored rect, read-only. The one window property
+			## that is not a placement decision but a fact about the file.
+			# Typed explicitly: `:=` cannot infer through a ternary, and this file
+			# does not compile at all without it.
+			var source: Rect2i = _config.rect if _config != null else Rect2i(Vector2i.ZERO, STAGE)
+			return [int(source.position.x), int(source.position.y),
+				int(source.end.x), int(source.end.y)]
 		"moviename", "filename":
 			return movie_name()
+		"picture":
+			## Deliberately unimplemented: it is the window's composited pixels,
+			## and this renderer never holds a surface to read back (§6.3, gap
+			## 16.25). Answering VOID rather than a wrong image.
+			return null
 	return 0
 
 
-## The window's size on the host stage: its movie's own `DRCF` rect.
+## `[l, t, r, b]` as Lingo writes a rect, or null. Director also accepts a rect
+## value; both arrive here as a four-element list.
+static func _rect_of(value: Variant):
+	if typeof(value) != TYPE_ARRAY or (value as Array).size() < 4:
+		return null
+	var v: Array = value
+	var left := LingoValue.to_int(v[0])
+	var top := LingoValue.to_int(v[1])
+	var right := LingoValue.to_int(v[2])
+	var bottom := LingoValue.to_int(v[3])
+	if right <= left or bottom <= top:
+		return null
+	return Rect2(left, top, right - left, bottom - top)
+
+
+## The window's size, before any `drawRect` scaling: `the rect of window` if a
+## script set one, otherwise the movie's own `DRCF` rect.
 ##
 ## Every movie in this corpus declares 640x480 (`tools/window_survey.gd` over all
 ## 61 containers that have a config), so in practice a window covers the stage
-## exactly — which is why no window chrome is drawn and why a click anywhere goes
-## to the window. Read rather than assumed, so a title whose window movie is
-## genuinely smaller gets a smaller window and the clicks outside it still reach
-## the stage.
+## exactly — which is why a click anywhere in it goes to it. Read rather than
+## assumed, so a title whose window movie is genuinely smaller gets a smaller
+## window and the clicks outside it still reach the stage.
 func window_size() -> Vector2:
+	if _window_rect != null:
+		return (_window_rect as Rect2).size
 	if _config != null:
 		return Vector2(_config.rect.size)
 	return Vector2(STAGE)
@@ -2441,12 +3116,15 @@ func window_size() -> Vector2:
 
 ## Where the window sits, in the stage's coordinates.
 ##
-## `the centerStage` centres the movie's stage on the screen, and all 21 sites in
-## this corpus set it, so this is the path that runs. Without it Director puts the
-## window at the rect its movie was authored with, which is a screen coordinate —
-## so it is taken relative to the stage movie's own rect, the only thing here that
-## shares that coordinate space.
+## `the rect of window` wins if a script set one. Otherwise `the centerStage`
+## centres the movie's stage on the screen, and all 21 sites in this corpus set
+## it, so that is the path that runs. Failing both, Director puts the window at
+## the rect its movie was authored with — a screen coordinate — so it is taken
+## relative to the stage movie's own rect, the only other thing here in that
+## space.
 func window_origin() -> Vector2:
+	if _window_rect != null:
+		return (_window_rect as Rect2).position
 	var mine := window_size()
 	if _center_stage:
 		return ((Vector2(STAGE) - mine) * 0.5).floor()
@@ -2454,6 +3132,57 @@ func window_origin() -> Vector2:
 	if _config != null and host != null and host._config != null:
 		return Vector2(_config.rect.position - host._config.rect.position)
 	return Vector2.ZERO
+
+
+## How much the movie is stretched inside its window: `the drawRect of window`
+## against the movie's natural size. 1:1 unless a script set one. Unverified.
+func window_scale() -> Vector2:
+	if _draw_rect == null:
+		return Vector2.ONE
+	var natural := window_size()
+	if natural.x <= 0.0 or natural.y <= 0.0:
+		return Vector2.ONE
+	return (_draw_rect as Rect2).size / natural
+
+
+## The window's whole frame on the stage, chrome included. The movie sits inside
+## it, below the title bar when there is one.
+func window_frame() -> Rect2:
+	var at := window_origin()
+	var size := window_size() * window_scale()
+	var inset := chrome_inset()
+	return Rect2(at - inset, size + inset + Vector2(_border_width(), _border_width()))
+
+
+## How far the movie's own top-left is pushed in by the chrome: the title bar and
+## the border. Zero for `windowType` 2, which is what this corpus uses.
+func chrome_inset() -> Vector2:
+	var edge := float(_border_width())
+	var top := edge
+	if _has_title_bar():
+		top += WINDOW_TITLE_BAR
+	return Vector2(edge, top)
+
+
+func _border_width() -> int:
+	return 1 if WINDOW_BORDERED.has(_window_type) else 0
+
+
+func _has_title_bar() -> bool:
+	return _title_visible and WINDOW_TITLED.has(_window_type)
+
+
+## Director defaults a window's title to its name, which is the file stem.
+func window_title() -> String:
+	return _window_title if _window_title != "" else _window_key
+
+
+## Push the node where the geometry says, and stretch it if `drawRect` asks.
+func _apply_window_geometry() -> void:
+	if _window_key == "":
+		return
+	position = window_origin()
+	scale = window_scale()
 
 
 ## Show the window and let it run. Idempotent: `open` on an open window raises it
@@ -2464,8 +3193,18 @@ func window_shown() -> void:
 		return
 	_window_shown = true
 	visible = true
-	position = window_origin()
+	_apply_window_geometry()
 	set_process(true)
+	# Paint now, rather than waiting for the first process tick to ask for it.
+	# `visible = true` on a canvas item that has never drawn shows nothing --
+	# there is no command list to reveal -- and everything that queues a redraw on
+	# a window is downstream of `_process`. A window opened by a script that then
+	# returns to a host movie doing very little can therefore sit there, correct
+	# in every observable way (visible, processing, its score stepping, its
+	# `startMovie` run) and blank on screen. That is exactly how the joke window
+	# presented: `open` reached, `tell` routed into it, 96 frames loaded, nothing
+	# drawn. Headless cannot see it, because headless never paints at all.
+	queue_redraw()
 	# Entered exactly as a movie's first frame is entered on the stage, and for
 	# the same reason: the frame's own tempo has to arm the clock before anything
 	# runs on it. The frame may not be 0 — `NIGHT1 BehaviorScript 415` says
@@ -2490,6 +3229,22 @@ func window_hidden() -> void:
 	_pending_enter = null
 
 
+## `the windowList` — the open windows, back to front, as window keys.
+##
+## Director's list holds window references and a script may add to or remove from
+## it; here it is read-only, because a window in this port exists only as the
+## movie behind it and there is nothing to put in the list that `window(...)` has
+## not already created. Unverified: no site in this corpus reads it.
+func window_keys() -> Array:
+	var owner := stage_preview()
+	var out: Array = []
+	for key in owner._window_order:
+		var node: Node = owner._windows.get(key)
+		if node != null and node._window_shown:
+			out.append(str(key))
+	return out
+
+
 ## The front-most open window, or null. Director's active window, which is where
 ## a keypress goes when the pointer is not over anything.
 func _front_window() -> Node:
@@ -2501,19 +3256,46 @@ func _front_window() -> Node:
 	return null
 
 
+## The front-most open *modal* window, or null.
+##
+## §14: a modal window blocks its parent. Input only — the movie underneath keeps
+## running, which is why this gates the click and key routing and not `_process`.
+## Unverified: nothing in this corpus sets `the modal of window`.
+func modal_window() -> Node:
+	var owner := stage_preview()
+	for i in range(owner._window_order.size() - 1, -1, -1):
+		var node: Node = owner._windows.get(owner._window_order[i])
+		if node != null and node._window_shown and node._modal:
+			return node
+	return null
+
+
 ## The window a stage point lands in, front-most first, or null.
 ##
 ## §4.2's search order, one level up: Director hit-tests windows before sprites,
 ## and the front window takes the click whether or not anything in it answers.
+## The whole frame counts, chrome included — a click on a title bar belongs to
+## the window it titles.
 func window_at(at: Vector2) -> Node:
 	var owner := stage_preview()
 	for i in range(owner._window_order.size() - 1, -1, -1):
 		var node: Node = owner._windows.get(owner._window_order[i])
 		if node == null or not node._window_shown:
 			continue
-		if Rect2(node.position, node.window_size()).has_point(at):
+		if node.window_frame().has_point(at):
 			return node
 	return null
+
+
+## A stage point in one of this window's own coordinates. The inverse of the
+## node's transform, written out because `drawRect` scaling makes it more than a
+## subtraction.
+func stage_to_local(at: Vector2) -> Vector2:
+	var factor := window_scale()
+	var local := at - position
+	if factor.x != 0.0 and factor.y != 0.0:
+		local /= factor
+	return local
 
 
 ## Deliver a click at a stage point to whichever movie owns that point.
@@ -2522,15 +3304,35 @@ func window_at(at: Vector2) -> Node:
 ## being a method: routing that only exists inside an `InputEvent` handler cannot
 ## be asserted headlessly, and "the click went to the wrong movie" is precisely
 ## the failure this change is about.
+##
+## Returns the movie that took the click, or null when a modal window swallowed
+## one aimed elsewhere.
 func route_click(at: Vector2) -> Node:
+	var blocking := modal_window()
+	if blocking != null and not blocking.window_frame().has_point(at):
+		# §14: a modal window blocks its parent, so a click outside it is
+		# discarded rather than delivered to whatever is under it. Unverified.
+		return null
 	var front := window_at(at)
 	if front != null and front != self:
-		front.route_click(at - front.position)
+		front.route_click(front.stage_to_local(at))
 		return front
 	# A wait-for-click frame is released by the mouse-down and not by the score
 	# (§9.2), and it is released in the movie that was clicked — JOKE's last frame
 	# is a wait-for-click that the player ends by clicking the window.
-	_clock.clicked()
+	if _saw_press:
+		_clock.clicked()
+	# §11: a click aborts a running colour cycle and restores the palette it was
+	# rotating. It is the same mouse-down that releases a wait, and for the same
+	# reason -- both are things Director lets the player cut short.
+	if _palette_state.effect_running():
+		if _palette_state.abort():
+			_palette_applied()
+		# Only the hold the cycle itself asked for. A transition running on the
+		# same frame is not the player's to cut short, and releasing by reason
+		# rather than unconditionally is what keeps the two apart.
+		if _clock.hold_reason() == FrameClock.REASON_PALETTE:
+			_clock.release()
 	_begin_drag(at)
 	_click(at)
 	return self
@@ -2842,6 +3644,8 @@ func lingo_sound_prop(channel: int, prop: String) -> Variant:
 	match prop:
 		"volume":
 			return int(_audio.call("channel_volume", channel))
+		"cuepointnames":
+			return _audio.call("cue_point_names", channel)
 		"loop", "looping":
 			return 0
 	return 0
@@ -2941,6 +3745,50 @@ func lingo_stop_all_sound() -> void:
 	_trace("f%d stop all" % _index)
 
 
+## `sound close <channel>` — stop and release, as against `sound stop`, which
+## leaves the channel allocated. Written nowhere in this corpus; see
+## `AudioDirector.close_channel` for what the difference amounts to here.
+func lingo_close_sound(channel: int) -> void:
+	if _audio != null:
+		_audio.call("close_channel", channel)
+	_score_sound.set_puppet(channel, false)
+	_trace("f%d close ch%d" % [_index, channel])
+
+
+func lingo_fade_sound(channel: int, ticks: int, fade_in: bool) -> void:
+	if _audio != null:
+		_audio.call("fade_in" if fade_in else "fade_out", channel, ticks)
+	_trace("f%d fade%s ch%d %d ticks" % [_index, "In" if fade_in else "Out", channel, ticks])
+
+
+## `puppetSound <channel>, <member>` — a script taking a sound channel off the
+## score, exactly as `puppetSprite` takes a sprite channel.
+##
+## Two things at once, and conflating them is the mistake to avoid: it *claims*
+## the channel, so the score stops driving it until the claim is released, and it
+## plays a **cast member** — not a file. `puppetSound <channel>, 0` and the
+## bare `puppetSound 0` release it, and Director's release also silences the
+## channel, which is what makes `puppetSound 0` the idiom for "shut up".
+##
+## Written nowhere in the corpus this port was built on (`tools/sound_survey.gd`),
+## so the member-versus-file reading is the reference's. It is also the reason
+## this is not simply `sound playFile` with a different name: the preview host
+## used to route it there, which would have played a *file* named after a member
+## and claimed nothing.
+func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void:
+	var ch := maxi(1, channel)
+	var releasing := which == null or (
+		(typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT) and int(which) == 0
+	) or (typeof(which) == TYPE_STRING and str(which).strip_edges() == "")
+	if releasing:
+		_score_sound.set_puppet(ch, false)
+		lingo_stop_sound(ch)
+		return
+	_score_sound.set_puppet(ch, true)
+	var ref: Array = _resolve_member_ref(which, cast)
+	play_sound_member(ch, int(ref[0]), int(ref[1]))
+
+
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 	var over: Dictionary = _overrides.get(channel, {})
 	if over.has(prop):
@@ -2963,6 +3811,11 @@ func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 				return 1
 			"ink":
 				return int(sprite["ink"])
+			"trails":
+				# From the score's own ink byte when no script has written it, so
+				# a movie that reads the property back before setting it gets what
+				# the author put there rather than a default.
+				return 1 if bool(sprite.get("trails", false)) else 0
 	return 0
 
 

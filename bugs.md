@@ -757,61 +757,6 @@ auto-start a game, not how to seed.
 
 ---
 
-## 27. `set the volume of sound N` parses correctly and still reaches nothing
-
-**Status:** open · **Area:** interpreter host ·
-found while closing `docs/LINGO_SURFACE.md` §16.4 rows 3–6
-
-`docs/LINGO_SURFACE.md` §16.3 records that `set the volume of sound 2 to 100` —
-65 statements across 52 scripts, every speech and effect volume the game sets —
-was parsed as a property of the *result of calling* a function named `sound`, and
-that the interpreter's assignment path rejected it with `cannot assign to prop_of
-call`. The parser half is fixed: `_parse_the` builds a `sound_prop` designator and
-`lingo_interpreter.gd` routes it to `set_sound_prop` / `get_sound_prop`.
-
-**`lingo/lingo_host.gd` implements neither method.** Only
-`scenes/preview_lingo_host.gd` does, and that host is the room preview, not the
-game.
-
-Reproduce it statically — the whole of the evidence is which files name it:
-
-```
-$ grep -rn "sound_prop" --include=*.gd .
-lingo/compile/lingo_parser.gd:969        builds  "sound_prop"
-lingo/lingo_interpreter.gd:398           calls   set_sound_prop
-lingo/lingo_interpreter.gd:575           calls   get_sound_prop
-scenes/director_preview.gd:1539,1550     implements the preview's pair
-scenes/preview_lingo_host.gd:300,306     implements  get_/set_sound_prop
-
-$ grep -c "func set_sound_prop\|func get_sound_prop" lingo/lingo_host.gd
-0
-```
-
-`LingoInterpreter._host_call` returns null when the host has no such method, so
-the write is discarded. The volume is still never set, and the failure is now
-*quieter* than before: the old path at least appended to `interpreter.errors`,
-and this one returns null, which is indistinguishable from a host that handled it.
-
-Two things to decide together, which is why this is one entry and not two:
-
-1. **The binding.** A `set_sound_prop(channel, prop, value)` on `lingo_host.gd`
-   that drives the channel's bus, the way `set_system_prop`'s `soundlevel` arm
-   already drives bus 0. `AudioDirector` owns the channels.
-2. **The silence.** A `_host_call` that finds no method should be reportable.
-   Every other unbound name in this port is reported with its location — that is
-   the discipline `docs/LINGO_SURFACE.md` §9.3 calls "the most valuable thing in
-   the host" — and a missing *method* is the one hole in it. Note the constraint:
-   `_read_var` probes `call_builtin` for every bare identifier, so a blanket
-   report would misfile every unset variable. The check belongs on the
-   property/designator calls, not on `call_builtin`.
-
-Not measured at runtime: the two greps above and the one-line
-`_host_call` body settle it without a play session, and a harness that asserts a
-volume the port has no way to set would only be asserting the gap. Write the
-harness with the binding.
-
----
-
 ## 28. The preview's cursor never scales with the stage, and its hotspot rule is unverified
 
 **Status:** open, cosmetic · **Area:** preview renderer ·
@@ -877,3 +822,4 @@ $ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/AIR1.DIR
 
 A movie whose cursor members are only in a linked cast would print `[0, 0]` and
 fail `no pair resolved to member 0`. Finding one is the next step.
+

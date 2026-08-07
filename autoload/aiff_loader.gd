@@ -108,6 +108,79 @@ static func load_from_buffer(data: PackedByteArray, error: Array = []) -> AudioS
 	return stream
 
 
+## Every chunk in the container, tag -> byte size, without decoding anything.
+##
+## The question this exists for is cue points. Director's `cuePassed` and the
+## wait-for-cue tempo values (§12) read a sound's cue points, and in an AIFF
+## those are `MARK` chunks — so whether cue points are a subsystem this port owes
+## anything is a fact about the *files*, answerable without a running movie.
+## `tools/aiff_check.gd` asks it of all 3,142.
+static func chunk_sizes(data: PackedByteArray) -> Dictionary:
+	var out: Dictionary = {}
+	if data.size() < 12 or data.slice(0, 4).get_string_from_ascii() != "FORM":
+		return out
+	var at := 12
+	while at + 8 <= data.size():
+		var tag := data.slice(at, at + 4).get_string_from_ascii()
+		var size := _be_u32(data, at + 4)
+		if size < 0 or at + 8 + size > data.size():
+			break
+		out[tag] = int(out.get(tag, 0)) + size
+		at += 8 + size + (size & 1)
+	return out
+
+
+## The file's cue points, as `{id, frame, name}` in sample frames.
+##
+## A `MARK` chunk is a count followed by that many records of `id` (int16),
+## `position` (uint32) and a Pascal-string name padded to an even length. The
+## padding is on the *record*, not the string, which is why the name's own length
+## byte counts towards it — get that wrong and the second marker of every file
+## reads garbage.
+##
+## Carrying the chunk, declaring markers and carrying a *usable* cue point are
+## three different questions, and in this game they have three different answers.
+## 168 of the 3,141 files carry an 18-byte `MARK`; all 168 declare two markers;
+## and not one of the 336 sits at a position inside its own audio — they are the
+## same eleven byte patterns repeated file after file, positions 0x53540000 and
+## 0x007f007f with empty names, which is authoring-tool boilerplate rather than
+## anything a movie could wait on. `tools/aiff_check.gd` is what says so, and it
+## checks the positions rather than the chunk for exactly that reason.
+static func cue_points(data: PackedByteArray) -> Array:
+	var out: Array = []
+	if data.size() < 12 or data.slice(0, 4).get_string_from_ascii() != "FORM":
+		return out
+	var at := 12
+	while at + 8 <= data.size():
+		var tag := data.slice(at, at + 4).get_string_from_ascii()
+		var size := _be_u32(data, at + 4)
+		var body := at + 8
+		if size < 0 or body + size > data.size():
+			break
+		if tag == "MARK" and size >= 2:
+			var count := _be_u16(data, body)
+			var cursor := body + 2
+			for i in count:
+				if cursor + 7 > body + size:
+					break
+				var id := _be_u16(data, cursor)
+				var frame := _be_u32(data, cursor + 2)
+				var name_length := data[cursor + 6]
+				var name_at := cursor + 7
+				if name_at + name_length > data.size():
+					break
+				out.append({
+					"id": id - 65536 if id >= 32768 else id,
+					"frame": frame,
+					"name": data.slice(name_at, name_at + name_length).get_string_from_ascii(),
+				})
+				cursor = name_at + name_length
+				if (name_length + 1) % 2 == 1:
+					cursor += 1
+		at = body + size + (size & 1)
+	return out
+
+
 static func load_from_file(path: String, error: Array = []) -> AudioStreamWAV:
 	var data := FileAccess.get_file_as_bytes(path)
 	if data.is_empty():

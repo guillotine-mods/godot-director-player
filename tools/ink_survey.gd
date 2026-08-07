@@ -11,6 +11,17 @@ extends SceneTree
 ## What it is for: deciding which inks are worth implementing properly and which
 ## can honestly fall through to Copy, and — for blend — what the stored amount
 ## actually ranges over, which decides how it maps to an alpha.
+##
+## The ink byte's top two bits are counted here for the same reason. Trails
+## (0x40) is the expensive one to be wrong about: a trails sprite is not erased
+## between frames, so §13 says an immediate-mode renderer needs an accumulation
+## buffer that survives the repaint, which is a rewrite of how the stage is
+## painted rather than a flag to honour. Measured over the whole corpus, **0 of
+## 816,318 sprite records carry it** — while 86,845 carry stretch (0x80) out of
+## the same byte, so the byte is being read and the bit is genuinely never set.
+## Nothing was built for trails on that count, and `tools/stage_clip.gd` gates
+## the assumption: the preview clears the stage every frame, which is correct
+## only while nothing asks for trails.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
@@ -63,6 +74,8 @@ func _init() -> void:
 	var flip_v := 0
 	var has_blend := 0
 	var tweened := 0
+	var trails := 0
+	var stretch := 0
 	var thickness: Dictionary = {}
 	var total := 0
 	var movies := 0
@@ -86,6 +99,10 @@ func _init() -> void:
 				total += 1
 				var ink := int(sprite["ink"])
 				inks[ink] = int(inks.get(ink, 0)) + 1
+				if bool(sprite.get("trails", false)):
+					trails += 1
+				if bool(sprite.get("stretch", false)):
+					stretch += 1
 				if bool(sprite.get("flip_h", false)):
 					flip_h += 1
 				if bool(sprite.get("flip_v", false)):
@@ -110,6 +127,10 @@ func _init() -> void:
 		print("  %3d  %-14s %8d  %5.2f%%" % [
 			k, INK_NAMES.get(k, "?"), int(inks[k]), 100.0 * float(inks[k]) / maxf(total, 1)
 		])
+	print("")
+	print("ink byte, above the six ink bits:")
+	print("  stretch (0x80)  : %d" % stretch)
+	print("  trails  (0x40)  : %d" % trails)
 	print("")
 	print("thickness byte:")
 	print("  flip horizontal : %d" % flip_h)

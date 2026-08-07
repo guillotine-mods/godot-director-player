@@ -15,7 +15,15 @@ extends RefCounted
 ##   member_number(which, cast) -> int
 ##   get_system_prop(prop) -> Variant
 ##   set_system_prop(prop, value) -> void
+##   get_sound_prop(channel, prop) -> Variant
+##   set_sound_prop(channel, prop, value) -> void
 ##   call_builtin(name, args) -> Array  # [handled: bool, value: Variant]
+##
+## The list is the contract, not a comment: a host missing one of these used to
+## fail silently, because `_host_call` returns null both for "no such method" and
+## for "handled, nothing to say". Two of them were absent from `lingo_host.gd`
+## for that reason (`docs/bugs-closed.md` 27), and a missing method is now
+## reported rather than discarded.
 
 enum Flow { NORMAL, EXIT_REPEAT, NEXT_REPEAT, RETURN, ABORT }
 
@@ -204,6 +212,66 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 	return null
 
 
+## Run a `tell` body against *this* movie, on behalf of an interpreter driving
+## another one. The `tell` arm of `_exec` is the only caller.
+##
+## Three things move and three do not, and each split is a decision:
+##
+##   - **Handler resolution and the host move.** That is the whole point: `self`
+##     is the told movie, so `peoplefunk()` finds the told movie's movie script
+##     and `sprite(30).visible = 0` reaches the told movie's channels.
+##   - **`frame["script"]` is dropped.** A message sent to another movie enters
+##     its hierarchy at the movie level; there is no sprite or frame script in
+##     the target that the `tell` was "in".
+##   - **Locals do not move** — the same Dictionary object is handed on, so
+##     `tell the stage / rir = the movieName / end tell` writes `rir` into the
+##     *caller's* handler where the next line reads it. Fifteen sites in this
+##     corpus do exactly that and all of them are how a MAP button decides which
+##     movie the stage is showing.
+##   - **Declared globals do not move** either, for the same reason: `global
+##     nextroomdata` was declared by the calling handler. Globals themselves are
+##     application-wide in Director, so the two interpreters are expected to be
+##     sharing one dictionary; if they are not, this still reads and writes the
+##     told movie's, which is the closer of the two wrong answers.
+##   - **The step budget does not move.** A told body is part of the caller's
+##     dispatch, so it is charged there and the runaway guard still covers the
+##     whole of it. Charging it here instead would let a `tell` inside an
+##     every-frame handler accumulate against an interpreter nothing ever
+##     resets, and the movie would stop executing after some thousands of
+##     frames with no error anyone could attribute.
+##   - **The diagnostic location does not move.** The statements are lexically
+##     the caller's, so an unbound name inside a `tell` should report the file
+##     and line it was written on.
+func run_told(body: Array, frame: Dictionary, caller = null) -> int:
+	var told: Dictionary = {
+		"locals": frame.get("locals", {}),
+		"globals": frame.get("globals", {}),
+		"script": {},
+	}
+	var outer_script := _script_name
+	var outer_handler := _handler_name
+	var outer_line := _line
+	var outer_steps := _steps
+	if caller != null:
+		_script_name = caller._script_name
+		_handler_name = caller._handler_name
+		_line = caller._line
+		_steps = caller._steps
+	var flow := _exec_block(body, told)
+	if caller != null:
+		caller._steps = _steps
+		# `return` inside a `tell` unwinds the caller's handler, so the value has
+		# to travel with the flow. Nothing in this corpus does it; carried anyway,
+		# because the alternative is a silently empty result.
+		if flow == Flow.RETURN:
+			caller._return_value = _return_value
+	_script_name = outer_script
+	_handler_name = outer_handler
+	_line = outer_line
+	_steps = outer_steps
+	return flow
+
+
 func run_handler_in_script(script: Dictionary, name: String, args: Array = []) -> bool:
 	## Returns false when the script has no such handler, so callers can fall
 	## through the message hierarchy.
@@ -355,8 +423,47 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 						return _exec_block((branch as Dictionary).get("body", []), frame)
 			return _exec_block(stmt.get("default", []), frame)
 		"tell":
-			# One stage in this port, so the body simply runs.
-			return _exec_block(stmt.get("body", []), frame)
+			## `tell window("map.dxr") / … / end tell` and `tell the stage / … /
+			## end tell` — Director sends the body's *messages* to another movie
+			## (DIRECTOR_ENGINE.md §14). This used to run the body here with a
+			## comment saying there was only one stage, and that is worse than
+			## unimplemented: `tell window("joke.dxr") / puppetSprite(3, 1)` then
+			## puppets channel 3 of the *host* room and swaps its member, so
+			## clicking the joke bottle in DAY1 corrupted DAY1.
+			##
+			## What crosses and what does not, measured over the corpus
+			## (`tools/window_survey.gd`): 194 `tell` statements, and the bodies
+			## contain sprite writes, `the centerStage`, `go`, `play`, handler
+			## calls into the target movie (`peoplefunk`, `displayobject`,
+			## `cursorfunk`), and — 15 times — a *local* variable assignment,
+			## `tell the stage / rir = the movieName / end tell`, whose value is
+			## read after `end tell`. So locals stay in the caller's frame and
+			## only the messages move. That is Director's rule and it is the one
+			## the corpus depends on: MAP's every button reads `the movieName` of
+			## the stage this way to decide where to send it.
+			##
+			## The target's own script hierarchy answers the messages, so
+			## `frame["script"]` is dropped for the body: a `tell the stage /
+			## peoplefunk()` must reach the *stage's* movie handler and not a
+			## same-named handler in the script the `tell` was written in.
+			##
+			## A host with no `tell_target` is the single-stage case this file
+			## started in — `lingo/lingo_host.gd` binds `open`/`forget` as a
+			## navigation on one stage — and there the body still simply runs,
+			## unchanged. A host that *has* the method and cannot resolve the
+			## target is different: the window is not there, and running the body
+			## on whoever is asking is the corruption above. So the body is
+			## dropped and the miss reported.
+			var body: Array = stmt.get("body", [])
+			if host == null or not host.has_method("tell_target"):
+				return _exec_block(body, frame)
+			var target: Variant = _eval(stmt.get("target", {}), frame)
+			var other: Variant = _host_call("tell_target", [target])
+			if other == null or not (other is Object) \
+					or not (other as Object).has_method("run_told"):
+				report(LingoDiagnostics.BUILTIN, "tell target")
+				return Flow.NORMAL
+			return (other as Object).run_told(body, frame, self)
 		"when":
 			## `when keyDown then go to "mainmenub4"` — Director 3's primary event
 			## handler (§6.3, §11.2). **Installed here, not run here.**
@@ -424,24 +531,22 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				str(target.get("prop", "")), value,
 			])
 		"window_prop":
-			## `set the windowType of window "joke.dxr" to 2`. Routed to the
-			## system-property setter rather than to a `set_window_prop` of its own,
-			## because that is already where the host meets these names: the other
-			## spelling in this corpus is `tell window("map.dxr") / set the
-			## windowType to 2`, whose body runs on the one stage and so arrives as
-			## a plain movie property, and `lingo_host.gd`'s WINDOW_FIELDS table
-			## accepts and drops it there. Two entry points to one table would be
-			## two chances for them to disagree, which is the fault this node
-			## exists to close — before it, the `the … of window` spelling was
-			## dropped with an error and the dot spelling was not.
+			## `set the windowType of window "joke.dxr" to 2`, the designator
+			## spelling. The dot spelling `window("joke.dxr").windowType = 2` is
+			## the same statement and is handled in the `dot` arm below; both now
+			## reach the host through `set_window_prop`, so the window the
+			## statement addresses is carried rather than discarded.
 			##
-			## The window the statement named is evaluated for its effects and then
-			## discarded: a single-stage port has nothing to place, title or resize
-			## (§7.4). The address stays in the AST for a port that grows real
-			## windows, which is the whole reason this is a designator node rather
-			## than `prop_of` over a call.
-			_eval(target.get("which", {}), frame)
-			_host_call("set_system_prop", [str(target.get("prop", "")).to_lower(), value])
+			## The fallback is the single-stage host this file started against,
+			## which has no `set_window_prop`: there the property went to
+			## `set_system_prop`, where `lingo_host.gd`'s WINDOW_FIELDS table
+			## accepts and drops it, and it still does.
+			var which_window: Variant = _eval(target.get("which", {}), frame)
+			var window_prop := str(target.get("prop", "")).to_lower()
+			if host != null and host.has_method("set_window_prop"):
+				_host_call("set_window_prop", [which_window, window_prop, value])
+			else:
+				_host_call("set_system_prop", [window_prop, value])
 		"prop_of":
 			var owner: Dictionary = target.get("target", {})
 			if str(owner.get("node", "")) == "sprite_ref":
@@ -463,9 +568,19 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				])
 				return
 			## `window("joke.dxr").windowType = 2` and friends. The owner is a call
-			## returning a window handle, and every window property is about where
-			## a floating window sits, which means nothing on a single stage.
-			if typeof(_eval(owner_node, frame)) == TYPE_STRING:
+			## returning a window handle, and the property belongs to that window
+			## — so it goes to the host with the handle, the same as the
+			## `the … of window` designator spelling above.
+			##
+			## The String test below is the single-stage host: `lingo_host.gd`'s
+			## `window` builtin answers the movie's stem, there is no window to
+			## place, and a `_fail` here would report a gap on every one of the 21
+			## sites that set `windowType`.
+			var window_owner: Variant = _eval(owner_node, frame)
+			if host != null and host.has_method("set_window_prop"):
+				_host_call("set_window_prop", [window_owner, prop_name.to_lower(), value])
+				return
+			if typeof(window_owner) == TYPE_STRING:
 				return
 			_fail("cannot assign to %s.%s" % [str(owner_node.get("node", "?")), prop_name])
 		"chunk":
@@ -601,13 +716,16 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				str(expr.get("prop", "")),
 			])
 		"window_prop":
-			## Read side of the designator above, through the same table. Nothing
-			## in this corpus reads a window property — all 2 sites are writes —
-			## but a read that fell through to `_fail("unknown expression")` would
-			## be a different answer from the write, which is what this node is
-			## here to stop.
-			_eval(expr.get("which", {}), frame)
-			return _host_call("get_system_prop", [str(expr.get("prop", "")).to_lower()])
+			## Read side of the designator above, and it has to reach the same
+			## place the write did or the two disagree — which is the fault this
+			## node exists to close. `tools/window_survey.gd` counts 21 writes of
+			## `the windowType` and no read of any window property in the corpus,
+			## so this arm is here for the engine rather than for this title.
+			var which_window: Variant = _eval(expr.get("which", {}), frame)
+			var window_prop := str(expr.get("prop", "")).to_lower()
+			if host != null and host.has_method("get_window_prop"):
+				return _host_call("get_window_prop", [which_window, window_prop])
+			return _host_call("get_system_prop", [window_prop])
 		"prop":
 			var prop := str(expr.get("prop", "")).to_lower()
 			if prop == "itemdelimiter":
@@ -879,8 +997,23 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 const Builtins := preload("res://lingo/lingo_builtins.gd")
 
 
+## A host that does not implement a method answers null, which is
+## indistinguishable at the call site from a host that handled the call and had
+## nothing to say. That silence hid all 66 `set the volume of sound N` writes in
+## this corpus for as long as `lingo/lingo_host.gd` had no `set_sound_prop`
+## (bugs.md 27): the parser was right, the interpreter routed correctly, and the
+## value went nowhere with nothing recorded.
+##
+## Reported here rather than at each call site, and deliberately *not* for
+## `call_builtin`: `_read_var` probes that for every bare identifier, so a
+## blanket report there would refile every unset variable as a missing binding.
+## `call_builtin`'s own miss is already reported by its caller, with the name.
 func _host_call(method: String, args: Array) -> Variant:
-	if host == null or not host.has_method(method):
+	if host == null:
+		return null
+	if not host.has_method(method):
+		if method != "call_builtin":
+			report(LingoDiagnostics.UNBOUND_NAME, "host.%s" % method)
 		return null
 	return host.callv(method, args)
 
