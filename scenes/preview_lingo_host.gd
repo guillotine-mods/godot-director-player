@@ -77,6 +77,27 @@ var mouse_up_script := ""
 var key_code := -1
 var key_char := ""
 
+## §8.2's one propagation flag, as Director has it: `pass` sets it true,
+## `dontPassEvent` sets it false, and the dispatcher sets it to the *default for
+## the tier about to run* before running it — true for a primary handler, false
+## for everything else.
+##
+## It lives on the host because the builtins that write it are answered here,
+## and because a flag on the interpreter would belong to whichever agent owns
+## `lingo/`. The dispatcher that reads it is
+## `director_preview.gd:_dispatch_key` / `_dispatch_key_up`; the mouse tiers do
+## not consult it yet, so writing it from a mouse handler is inert rather than
+## wrong.
+##
+## `dontPassEvent` was bound inert until now, alongside `pass`, on the reasoning
+## that "this dispatcher stops at the first handler that answers, so there is
+## nothing further along to suppress". That reasoning held only because the
+## dispatcher had the default inverted: it stopped at the primary handler, which
+## is the one tier Director passes *out of* by default. Rating calls
+## `dontPassEvent` 9 times and Piposh 1 44 times, and a `dontPassEvent` is a
+## statement about a chain that continues.
+var pass_event := true
+
 ## "play", "go" or "" — set by a freezing command and taken by the interpreter
 ## that ran it, one statement later.
 ##
@@ -91,9 +112,10 @@ var _suspend_request := ""
 ## Bound to something real.
 const HANDLED := [
 	"go", "sound", "puppetsound", "puppetsprite", "updatestage", "cursor",
-	"nothing", "dontpassevent", "beep", "delay", "preloadmember", "preload",
+	"nothing", "beep", "delay", "preloadmember", "preload",
 	"unloadmember", "unload", "set", "alert", "halt", "quit",
 	"window", "open", "close", "forget", "savemovie",
+	"pass", "dontpassevent", "stopevent",
 ]
 ## Answer VOID rather than nothing: these are real Director builtins this host
 ## has no state to implement, and letting them report as unbound would drown the
@@ -101,24 +123,26 @@ const HANDLED := [
 const IGNORED := [
 	"updatestage", "beep", "delay", "preloadmember",
 	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
-	"dontpassevent", "puppetsprite", "halt", "quit", "starttimer",
+	"puppetsprite", "halt", "quit", "starttimer",
 	# `cursor` is NOT here any more — see the match above.
 	# Bound deliberately inert rather than left unbound. An unbound name is
 	# reported as a gap every time it is reached, which buries the ones that
 	# matter; these are real Director builtins this preview has no state to
 	# implement, and answering VOID is the honest response.
 	#
-	# `pass` and `stopEvent` control message propagation, which is only
-	# equivalent here by accident: this dispatcher stops at the first handler
-	# that answers, so there is nothing further along to suppress. If the
-	# hierarchy ever queues the whole chain the way Director does, these stop
-	# being no-ops and become the mechanism.
+	# `pass`, `dontPassEvent` and `stopEvent` were here, on the reasoning that
+	# this dispatcher stops at the first handler that answers so there is
+	# nothing further along to suppress. That was true only because the key
+	# dispatcher had §8.2's default inverted -- it stopped at the *primary*
+	# handler, the one tier Director passes out of by default. They are bound
+	# for real now, at `pass_event` above and the match below, and the key
+	# chain reads them.
 	# `saveMovie` was here, and being here is what made this game unsaveable.
 	# Every `put x into field "y"` before it landed in the preview's override
 	# table and nothing ever reached the disk, so the save survived exactly as
 	# long as the process did -- which looks like a working save right up until
 	# the player restarts. It is bound for real now, at `_save_movie` below.
-	"pass", "stopevent", "printfrom", "unloadmovie",
+	"printfrom", "unloadmovie",
 	"clearglobals", "showglobals", "showlocals",
 	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
 	"shutdown", "abort", "continue", "installmenu", "setcallback",
@@ -174,6 +198,21 @@ func call_builtin(name: String, args: Array) -> Variant:
 	match low:
 		"go":
 			return _go(args)
+		"pass", "dontpassevent", "stopevent":
+			# §8.2's one flag, written by the two statements that exist to write
+			# it. `stopEvent` is Director's older spelling of `dontPassEvent` and
+			# means the same thing.
+			#
+			# Not a no-op any more. The dispatcher sets the flag to the running
+			# tier's default before that tier runs, so a handler that says
+			# nothing keeps the default: a primary handler passes, everything
+			# else consumes. Only the key chain reads it so far -- the mouse
+			# tiers still stop at the first handler that answers -- so a write
+			# from a mouse handler is inert rather than wrong, and that is worth
+			# saying out loud because the flag being *set* is not evidence
+			# anything acted on it.
+			pass_event = low == "pass"
+			return 0
 		"savemovie":
 			return _save_movie(args)
 		"sound":
