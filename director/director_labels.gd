@@ -46,10 +46,19 @@ func parse(payload: PackedByteArray) -> bool:
 			# of range and equally not a marker.
 			continue
 		var name := payload.slice(start, stop).get_string_from_ascii().strip_edges()
+		var zero_based := frame - 1
+		# An unnamed marker is kept, and that is not tidiness -- `marker(n)` counts
+		# *entries*, not names, so dropping one shifts every marker after it. The
+		# reference inserts one label per entry and walks all of them.
+		#
+		# Rating's `BATZEGOZ.dir` is the case: its `play done` sits on frame 215, an
+		# unnamed marker between `egozspeak1` and `Batz2A`. Dropped, `marker(1)`
+		# counted past it, `play done` never ran anywhere in the movie, and all three
+		# dialogue options landed on the same destination -- the speech starting and
+		# being cut off a moment later.
+		markers.append({"frame": zero_based, "name": name})
 		if name == "":
 			continue
-		var zero_based := frame - 1
-		markers.append({"frame": zero_based, "name": name})
 		var key := name.to_lower()
 		if not labels.has(key):
 			labels[key] = zero_based
@@ -61,7 +70,10 @@ func marker_at(frame: int) -> String:
 	var found := ""
 	for marker in markers:
 		if int(marker["frame"]) <= frame:
-			found = str(marker["name"])
+			# Carried for `marker(n)`'s counting, but an unnamed marker is not an
+			# answer to "what room is this" -- the last *named* one stands.
+			if str(marker["name"]) != "":
+				found = str(marker["name"])
 		else:
 			break
 	return found
