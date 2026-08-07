@@ -25,6 +25,64 @@ sound and preload work landed, and re-checked on 2026-08-07 after the player was
 split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
 the short list of what has no implementation at all.
 
+**`play` does not suspend the handler that called it — the widest divergence in
+this engine, and it is measured.** §8.2. `Lingo::func_play` sets `_freezePlay`
+after branching, and `Window::freezeLingoPlayState` stashes the *running* handler
+in a buffer of its own, separate from the ordinary frozen states. The rest of
+that handler does not run. It is requeued as the first frozen state when `play
+done` executes or the playhead reaches the end of the movie, and only then do its
+remaining statements run. ScummVM's own comment above `freezeLingoPlayState` says
+exactly this.
+
+This port runs the handler straight through, so the statement after `play frame`
+executes immediately — and when that statement is a `go`, it overwrites the
+branch `play` just set. The played segment never runs and the play stack is left
+holding an entry nobody will pop.
+
+Measured, in the title that reports the symptom. `BATZEGOZ.dir`'s dialogue
+options are `BehaviorScript 39`-`40` and eleven near-copies:
+
+    on mouseUp
+      sound playFile 1, soundspath & "egoz1.aif"
+      play frame "egozspeak1"      -- Director suspends the handler HERE
+      go("batz2a")                 -- ...and runs this at `play done`
+
+`egozspeak1` is the talking animation, and its own `on exitFrame` is `if not
+soundBusy(1) then go(marker(1))` — it holds until the line has finished. Reproduce:
+
+    godot --headless --script tools/click_trace.gd -- \
+        --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+
+    f196 play ch1 egoz1.aif      the mouseUp starts the line
+    f216 play ch1 batz3.aif      Batz2A is entered next tick and replaces it
+    play stack : 1 entry(s)      the `play` branch that was thrown away
+
+The playhead goes `Egoz1+2` → `Batz2A` in one step, skipping frame 206
+(`egozspeak1`) entirely, and the next room's own line takes channel 1 about one
+frame later. That is the reported "the character starts speaking and then stops
+after something very very quick", and it is not a mouse fault: the click routes
+correctly and the right handler runs.
+
+**922 of Rating's 1,075 `play frame` sites carry Lingo after them** — 516 of
+those a `go`, 272 a `sound` — across EGOZEND, EGOZROO1/2, EGOZROOM, PHONE,
+MOVIEND, Panel, BLABOMB, NIGHT1 and 20 more. Piposh 2 has 121 of 160, 10 of them
+a `go`. The 153 sites where `play frame` is the last statement in its block are
+the ones that behave identically either way, and they are why some dialogs look
+fine.
+
+*What has to change with it.* This is **not** a `play` fix. Director suspends
+*any* handler at a `go` too — `Lingo::func_goto` sets `_freezeState` — and
+resumes it after the next frame is entered; `play` differs only in using a
+separate buffer with a different resume trigger. So the two are one mechanism and
+have to land together, or `play` grows a bespoke path that `go` contradicts.
+Doing only the first half — abandoning the handler at `play` — is worse than the
+current behaviour: the trailing `go` never runs at all, `play done` returns to
+the dialog frame, and the conversation loops. What it needs is the interpreter
+able to suspend a handler mid-block and resume it, which
+`lingo/lingo_interpreter.gd:_exec_block` cannot currently do, plus a resume point
+in `director_preview.gd:lingo_play_done` and one at frame entry. Nothing in
+`preview/interaction.gd` is involved.
+
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
@@ -55,6 +113,30 @@ near-copies of that handler exist across the corpus.
 Closing this properly means changing mouse-up delivery too, and that is the
 thing that took longest to get right -- see the entry above.
 
+**A right click latches nothing.** §15. The reference's mouse-down block runs at
+the primary tier for `rightMouseDown` exactly as for `mouseDown`, and it latches
+five things together: the empty-stage beep, the hilite channel, "the press was in
+*a* button", the drag channel and grab offset for a moveable sprite, and the cast
+id / script id / immediate flag the mouse-up resolves against. `the clickOn` is
+written by `rightMouseDown` and `rightMouseUp` too. `Interaction.right_button`
+does none of it and says so deliberately.
+
+*What has to change with it.* All five, or none. Taking `the clickOn` alone gives
+a right click the power to rename the sprite a left drag is in the middle of,
+with no drag of its own to justify it — the same shape of half-a-rule that the
+`the clickOn`-on-mouse-up entry above records. 0 `rightMouseDown` or
+`rightMouseUp` handlers exist in either corpus, so this is unexercised as well as
+unfixed, and it should be built as one block when it is built.
+
+**The hit test has no Hole.** §4.2. `isMouseIn` returns three values and
+`Interaction.channel_at` models two: a miss and an ineligible sprite both
+continue the descent, and there is no result that *aborts* it. The only producer
+of a Hole is a text member whose point is over its scrollbar arrows — a scrollbar
+swallows the click without being a target. This port draws no scrollbars, so
+nothing can produce one today; §4.2 still says to write the loop with three
+results, because adding scrolling fields later silently changes click routing
+everywhere rather than in the fields.
+
 **Cast-script targeting on mouse-up.** §15. The member under the mouse at the
 *start of the mouse-down chain* holds the `mouseUp`, so a `mouseDown` handler
 that swaps the member still leaves the **old** member answering. The latching
@@ -63,14 +145,38 @@ resolved, and `_press_channel` the channel — but it keys on the script, not on
 the member, so a swap that changes which member a channel displays is not
 modelled.
 
-**`pass` / `dontPassEvent` propagation.** §6.3, §6.4. The five tiers exist and
-run in order, but the chain is resolved lazily and stops at the first handler
-that answers. Director queues the *whole* chain up front, which is why a `go`
-inside a `mouseUp` handler does not cancel the handlers below it — they are
-already queued and run against a score the `go` has changed. `dontPassEvent` is
-accepted and ignored, so a primary handler cannot currently stop the message.
-Getting the default inverted is the classic Director bug and this port has it in
-the safe direction: everything runs.
+**`pass` / `dontPassEvent` propagation, and the tiers below the first.** §8.2.
+The five tiers exist and run in order, but the chain is resolved lazily and stops
+at the first handler that answers. Director queues the *whole* chain up front and
+re-resolves each element's target at execution time, which is why a `go` inside a
+`mouseUp` handler does not cancel the handlers below it — they are already queued
+and run against a score the `go` has changed.
+
+Two concrete costs, and neither is hypothetical:
+
+- **A sprite behaviour and its member's cast script are alternatives here and
+  cumulative in Director.** `interaction.gd:script_for_click` takes the sprite's
+  behaviour *or*, only if there is none, the member's cast script — so a
+  behaviour that exists but declares no `mouseUp` shadows a cast script that does.
+- **`pass` is dropped.** It is bound inert in `preview_lingo_host.gd`'s `IGNORED`
+  list, which was equivalent only while nothing ran after the first handler.
+  6 sites in the Piposh 2 corpus, and the decompile hides them: ProjectorRays
+  renders bare `pass` as `pass()` and `dontPassEvent` as `dont(pass)`, so a
+  token search for either finds 0. The two real `pass` sites are
+  `ISLAND2/External/BehaviorScript 325` — `on mouseUp / pass() / end`, a sprite
+  whose entire purpose is to hand the click to the tier below, and which in this
+  port is therefore a dead zone — and `SAVELOAD/Internal/BehaviorScript 20`, the
+  save-slot selector, which does real work and then falls through. The four
+  dont-pass sites (`FIGTBRJ 153`, `HEZSAVE MovieScript 209`, `AIR1 430`,
+  `FIGTAIR 60`) are accidentally correct, because this port already stops.
+
+*What has to change with it.* Queueing the chain means `pass`/`dontPassEvent`
+must set a flag the dispatcher reads, and those two builtins live in
+`preview_lingo_host.gd`; the queue itself replaces `Interaction.script_for_click`
+and `Scripts.dispatch`; and the tier defaults must be primary=pass, everything
+else=consume, which is the classic Director bug to get inverted. Landing the
+queue without the flag makes every sprite behaviour leak its event to the frame
+and movie scripts — the opposite failure, and a louder one.
 
 **`the mouseDownScript` / `the mouseUpScript` hold a handler name, not source.**
 §6.3 tier 1. Director's value is a *string of Lingo* compiled on assignment;
@@ -79,13 +185,121 @@ shortcut `the keyDownScript` has always taken, and the reason it has held is tha
 every site in this corpus sets that one to a name (`fromnow`, `gomenu`). Nothing
 sets either mouse property, so the divergence is unexercised as well as unfixed.
 
-**`mouseEnter` / `mouseLeave` fire off the rollover channel, which is right, and
-the eligibility trap in §4.3 is not modelled for them.** A sprite whose script
-declares *only* `mouseEnter` is correctly not a click target; it is also not
-reported by `Interaction.responds_to_mouse`, which searches for `mouseDown` /
-`mouseUp` only. D6+ adds "the sprite has behaviours" to eligibility, which would
-change the hit test, and the hit test is the thing that took longest to get
-right. Left alone deliberately.
+**Seven mouse properties read something other than what the reference reads.**
+§4.5, §15. All seven are one-line changes in `scenes/preview_lingo_host.gd`'s
+`get_system_prop`, all are independent of each other and of the hit test, and all
+are measured at 0 corpus sites — so they are a batch to be done together and last,
+not a risk to be weighed one at a time. `tools/mouse_events.gd` already walks the
+property list and would gain a check per row.
+
+| Property | Reference | This port |
+| --- | --- | --- |
+| `the doubleClick` | the last two press times within **25 ticks** (~417 ms), evaluated on read | a boolean latched at the press, 500 ms |
+| `the mouseDown` / `the mouseUp` | **left or right** button | left only |
+| `the stillDown` | the window manager's tracked down-state, which a `repeat while` inside a handler is written against | the same read as `the mouseDown` |
+| `the lastEvent` | ticks since the last mouse move, click **or key** | the smaller of click and roll; keys are not stamped |
+| `the lastKey` | ticks since the last key | unbound, reads VOID |
+| `the mouseCast` / `the mouseMember` | `getSpriteIDFromPos` — the ink-aware hit test; `0` and VOID respectively for "over nothing"; `mouseMember` is a member *reference*, not a number | the rollover channel, `-1` for both, a number for both |
+| `the mouseChar` / `mouseWord` / `mouseLine` / `mouseItem` (D3) | the character, word, line or item of the text member under the pointer | unbound, read VOID |
+
+Two engine behaviours in the same class, neither of them a property: **`the
+beepOn`** makes a mouse-down on empty stage beep, and is not implemented; and
+§15's **button hilite flip** — on mouse-up, if the last mouse-*down* was inside
+*any* button, the button under the mouse-up inverts its hilite — is not either.
+`preview/hilite.gd` implements the press-and-hold inversion and not this.
+
+**Eligibility is the D4/D5 rule and every movie in both titles is D7.** §4.3.
+`respondsToMouse` tests its clauses in order and the **D6+ clause comes before
+the handler search**: from D6 on, a sprite with any behaviour attached is a click
+target whatever that behaviour declares. `Interaction.responds_to_mouse`
+implements moveable, button, and a search for `mouseDown`/`mouseUp` in the
+behaviour and in the member's cast script, so on this corpus it is *narrower*
+than the reference by exactly "every sprite whose behaviour declares no mouse
+handler". Two further clauses are missing as well: a **movie** cast member with
+scripts enabled, and the D3-style **generic** (scopeless) score script.
+
+Visible in Rating, and it is the dialogue itself:
+
+    godot --headless --script tools/hotspots.gd -- \
+        --root rating --file BATZEGOZ.dir --marker Egoz1
+
+    11  1:20  (194,388) 250x28   no   behaviour declares no mouse handler
+    12  1:21  (235,423) 211x30   no   behaviour declares no mouse handler
+    13  1:22  (221,463) 225x12   no   behaviour declares no mouse handler
+    2 of 16 sprites can answer a click
+
+Those three are the three dialogue options. In D7 all three answer the mouse;
+here none of them does, and the click reaches them only because
+`script_for_click` falls back to the frame script. The version is settled
+evidence, not a guess — `openspec/changes/director-playback-machine/
+director-version.md` measures config version `0x57E` on every movie played.
+
+*What has to change with it.* **This is a hit-test change and is the highest-risk
+item in this file.** Widening eligibility makes previously transparent sprites
+absorb clicks, and §4.2 is explicit that an ineligible sprite does not block what
+is under it — so a room backdrop that happens to carry an `exitFrame` behaviour
+would start eating every click on the stage. Three things move together: the
+eligibility predicate, a **corpus measurement taken before and after** with
+`tools/hotspots.gd` over every frame of both titles compared row by row (not by
+total — see `porting-fidelity-verification`), and the D6+ multi-behaviour entry
+below, because "has behaviours" and "has *a* behaviour" are the same question
+asked of two different data structures.
+
+**D6+ sprites carry a list of behaviours; this port resolves one.** §8.2. From D6
+a channel holds `_scriptInstanceList`, and `queueEvent` pushes one sprite-tier
+element **per behaviour**, passing through for all but the last so every one gets
+a chance at the event. `Scripts.for_sprite` answers a single script per channel,
+chosen by the narrowest covering interval. A sprite carrying a rollover behaviour
+and a click behaviour therefore loses one of them, which is the likeliest reason
+Rating's option sprites above report a behaviour that declares no mouse handler.
+Pairs with the eligibility entry: the D6+ arm of `respondsToMouse` is a test on
+this same list, so implementing either alone leaves the two disagreeing about
+what a sprite's behaviours are.
+
+**`mouseEnter` / `mouseLeave` / `mouseWithin` are driven off the wrong channel
+and stop one tier too early.** §4.5, §8.2. The reference raises all three from
+`getMouseSpriteIDFromPos` — the *eligibility-filtered*, ink-aware hit test, which
+is this port's `_hover_channel` — and this port raises them from
+`_rollover_channel`, the pure rect test. It also confines them to sprite
+behaviours; the reference lets them fall through to the cast script, the frame
+script and the movie scripts, in every version. Only `mouseUpOutSide`,
+`beginSprite`, `endSprite` and `prepareFrame` stop at the sprite tier, and only
+from D6. Two smaller clauses are absent as well: in D5 these three fire **only
+while a mouse button is held**, and `mouseEnter`/`mouseLeave` are additionally
+raised around a D5 press and release.
+
+*What has to change with it.* Switching to `_hover_channel` needs it recomputed
+**per tick** as well as per motion — `track_rollover` already is, `_hover_channel`
+is only updated from `mouse_motion`, so a sprite moving under a stationary cursor
+or a touchscreen tap would stop generating crossings. And it costs something: an
+eligibility-filtered channel means a sprite whose behaviour declares *only*
+`mouseEnter` never receives it, because `responds_to_mouse` does not look for
+that handler. That is authentic — the reference has the same trap — but it is a
+regression in the direction of doing less, so it should land together with the
+D6+ eligibility clause above, which is what makes such a sprite eligible again.
+Propagating past the sprite tier is separate again and needs the queued chain.
+**0 sites in either corpus declare any of the three**, so nothing here is
+verifiable against this data; `rollOver(n)` polled from `exitFrame` is the only
+hover mechanism either title uses (94 sites, 28 files, 14 titles).
+
+**The three rollover queries are two.** §4.5. `rollOver(n)` and `rollOver()` are
+both answered by `Interaction.rollover_channel`, which is right for the builtin
+in both forms; `the rollOver` as a **property** is a different query in Director —
+the ink-aware hit test with no eligibility filter — and is unbound here, so it
+reads VOID. 0 sites, in a corpus that writes every one of its 94 rollovers as the
+function. Two further clauses: `rollOver(n)` is measured against the **score's**
+geometry rather than the live channel's, deliberately (a menu that swaps art
+because the rollover is true feeds its own answer back into the question), so a
+sprite a script has *moved* rolls over at its old rectangle; and the D4-and-below
+`getRollOverBbox` cache — a blanked channel keeps rolling over its last non-empty
+box — is absent, which no D5+ title can reach and a D4 one would.
+
+*What has to change with it.* Binding `the rollOver` means binding it to
+`_hover_channel`-without-the-filter, which is a **third** channel this port does
+not maintain; and moving `rollOver(n)` to live geometry means moving
+`rollover_channel` with it, or `rollOver()` and `rollOver(n)` answer about
+different rectangles — which the module's own comment argues is worse than either
+being wrong on its own.
 
 **`saveMovie` writes fields and nothing else.** `saveMovie` is implemented
 (`director/director_writer.gd`) and writes a real container this engine reopens,

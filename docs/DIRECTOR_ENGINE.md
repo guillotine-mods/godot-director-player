@@ -682,15 +682,32 @@ has no visibility concept in `_channel_at` at all (`:966-976`).
 
 ### 4.1 Three different queries
 
-| Query | Extra filter | Used for |
-| --- | --- | --- |
-| `getSpriteIDFromPos` | none | raw "what is under the pointer" |
-| `getMouseSpriteIDFromPos` | `respondsToMouse()` | click and hover routing, **D4+** |
-| `getActiveSpriteIDFromPos` | `isActive()` | click and hover routing, D3 and below |
-| `getRollOverSpriteIDFromPos` | rollOver bbox (§4.5) | `the rollOver` |
+Four, not three, and the fourth is the one that gets collapsed into another by
+mistake. All of them descend the channels the same way (§4.2); they differ only
+in the filter and in whether the geometry is the live bbox or the rollOver bbox.
 
-The version split happens once, at the event entry point. Piposh 2 is D4-era, so
-`respondsToMouse` is the rule.
+| Query | Geometry | Extra filter | Reached by |
+| --- | --- | --- | --- |
+| `getSpriteIDFromPos` | `isMouseIn`, ink-aware | none | `the rollOver`, `the mouseCast`, `the mouseMember`, `the mouseChar`/`Word`/`Line`/`Item` |
+| `getMouseSpriteIDFromPos` | `isMouseIn`, ink-aware | `respondsToMouse()` | click routing **D4+**; `mouseEnter` / `mouseLeave` / `mouseWithin` |
+| `getActiveSpriteIDFromPos` | `isMouseIn`, ink-aware | `isActive()` | click routing, D3 and below |
+| `getRollOverSpriteIDFromPos` | rollOver bbox, plain rect (§4.5) | none | the `rollOver()` **builtin** with no argument or 0, D5+ |
+
+The version split happens once, at the event entry point.
+
+**Piposh 2 is D7, not D4.** Every movie and cast it plays carries config version
+`0x57E`, which is `humanVersion()` 700, a `VERS` chunk of 7.0, `frames_version`
+13 and 48-byte sprite records; `openspec/changes/director-playback-machine/
+director-version.md` has the measurement. `respondsToMouse` is still the rule —
+it is the D4-and-later one — but the **D6+ clause inside it applies as well**,
+and that clause is much wider than the handler search (§4.3). The 8.5 ScummVM
+reports for this title is the *projector's* version and describes no movie.
+
+Two rows of that table are collapsed into one in this port and it is worth
+naming which. `the rollOver` and the `rollOver()` builtin are **different
+queries** — the property samples the artwork and aborts on a Hole, the builtin is
+a plain rect over the rollOver bbox — and `mouseEnter`/`mouseLeave`/`mouseWithin`
+are driven by the *eligibility-filtered* query rather than by either. See §4.5.
 
 ### 4.2 The search, exactly
 
@@ -722,9 +739,30 @@ the sprite has behaviours; a **score script** on the sprite's script id
 *contains* a `mouseDown`, `mouseUp` or generic handler; a **cast script** for the
 cast id *contains* `mouseDown` or `mouseUp`.
 
-Two traps. It is **not enough that the script id is non-zero** — the handler must
-exist in the compiled script, so a sprite whose script only defines `mouseEnter`
-is not a click target. And **moveable alone qualifies**, with no script at all.
+They are tested in that order, and the order matters because **the D6+ clause
+short-circuits the handler search entirely.** From D6 on, a sprite with any
+behaviour attached is a click target whatever that behaviour declares — an
+`exitFrame`-only behaviour absorbs clicks. The handler search below it is the
+D4/D5 rule and is dead code on a D6+ movie.
+
+Two traps in the D4/D5 arm. It is **not enough that the script id is non-zero** —
+the handler must exist in the compiled script, so a sprite whose script only
+defines `mouseEnter` is not a click target. And **moveable alone qualifies**,
+with no script at all.
+
+The **generic handler** clause is the D3-style scopeless sprite script: a score
+script whose Lingo is bare statements rather than an `on <event>` block. It
+counts as a mouse handler for eligibility, and §8.2 says when it actually runs
+(mouse-down if the sprite is immediate, mouse-up otherwise).
+
+*This port:* `preview/interaction.gd:responds_to_mouse` implements moveable,
+button, and the handler search over the sprite's behaviour and the member's cast
+script. It does **not** implement the D6+ behaviours clause, the movie-member
+clause, or the generic-handler clause — so on this D7 corpus it is *narrower*
+than the reference by exactly "every sprite whose behaviour declares no mouse
+handler". Widening it changes the hit test, which is the thing that took longest
+to get right; `ENGINE_TODO.md` carries the entry and what has to be measured
+before and after.
 
 `isActive()` is the looser D3 rule: moveable, or a button, or a score script
 *exists*, or a cast script *exists* — presence only, no handler inspection.
@@ -737,14 +775,42 @@ is not a click target. And **moveable alone qualifies**, with no script at all.
 Per type: bitmap does rect-then-matte-if-ink-is-Matte; text does rect plus the
 scrollbar Hole; everything else is a rect. See §2.1 for the full table.
 
-### 4.5 rollOver is looser
+### 4.5 rollOver is looser — and is three different things
 
-`the rollOver` uses `getRollOverBbox()`, which in **D4 and below** returns the
-*last non-empty* bbox when the channel's cast id is currently 0 — a sprite the
-score has blanked still rolls over its old rectangle. That cache is refreshed
-every frame change for every channel with a non-zero cast id, pre-D5 only. D5+
-uses the live bbox. `checkSpriteRollOver` is a pure rect test — no matte, no
-eligibility.
+"Rollover" names three queries in Director and they do not agree. Getting them
+into one function is the single easiest mistake in this area, and it shows up as
+a menu whose highlight and whose click disagree about which button is live.
+
+- **`rollOver(n)`, the builtin with an argument** → `checkSpriteRollOver`: does
+  channel `n`'s **rollOver bbox** contain the pointer. A pure rect test — no
+  matte, no eligibility, no visibility check.
+- **`rollOver()` / `rollOver(0)`, the builtin with none** →
+  `getRollOverSpriteIDFromPos`: the same rect test descended over every channel,
+  answering a channel number. **D5+ only** — in D4 and below `rollOver(0)` is a
+  Lingo error, not 0.
+- **`the rollOver`, the property** → `getSpriteIDFromPos`: the *ink-aware* hit
+  test of §4.4, matte and Hole included, with **no** eligibility filter. It is
+  not the same answer as the builtin with no argument, and neither is a typo for
+  the other. `the mouseCast`, `the mouseMember` and the D3 `the mouseChar` /
+  `mouseWord` / `mouseLine` / `mouseItem` all read this same query.
+
+`getRollOverBbox()` is the live bbox from D5 on. In **D4 and below** it returns
+the *last non-empty* bbox when the channel's cast id is currently 0 — a sprite
+the score has blanked still rolls over its old rectangle — and that cache is
+refreshed at every frame change for every channel with a non-zero cast id.
+
+**`mouseEnter`, `mouseLeave` and `mouseWithin` are not rollover queries at all.**
+They are driven by `getMouseSpriteIDFromPos`, the *eligibility-filtered* hit
+test, so a backdrop with no mouse handler is rolled over and never entered. §8.1
+has when they fire.
+
+*This port:* `preview/interaction.gd:rollover_channel` is one pure-rect descent
+answering the builtin in both its forms, measured against the **score's**
+geometry rather than the live channel's — see the function's own comment for why
+the live rect feeds a menu's highlight back into its own rollover test. `the
+rollOver` as a property is unbound and reads VOID. The hover messages are driven
+off the rollover channel rather than the filtered one. All three are recorded in
+`ENGINE_TODO.md` with what has to change alongside each.
 
 ### 4.6 Hilite
 
@@ -755,11 +821,14 @@ shapes hilite when ink is Matte. The inversion is a masked XOR of the
 destination through the sprite's matte, so an irregular sprite inverts its
 silhouette, not its box.
 
-*This port:* `director/director_runtime.gd:1426-1447` implements eligibility and
-`:1080-1083` a first-hit rect test with no per-pixel stage.
-`scenes/director_preview.gd:966-976` is the inverse: per-pixel, no eligibility,
-and its comment at `:959-964` already names the gap. Neither has hilite or the
-rollOver cache. See §17.1.
+*This port:* hilite is implemented clause for clause in `scenes/preview/hilite.gd`
+— see `ENGINE_TODO.md`'s "Built but never compared against Director running" for
+what it does and its two stated divergences. The **button** flip in §15 is a
+different rule and is not implemented. The eligibility and the descent are
+`preview/interaction.gd:responds_to_mouse` / `channel_at`; the rollOver bbox cache
+is absent. The three paragraphs that stood here cited
+`director/director_runtime.gd` and line numbers in the retired renderer, both
+deleted.
 
 ---
 
@@ -1063,6 +1132,35 @@ Movie: `prepareMovie` (D6), `startMovie`, `stepMovie`, `stopMovie` (D3),
 `mouseEnter` / `mouseLeave` (D5/D6), `mouseUpOutSide` (D6), `mouseWithin`
 (D5/D6). Other: `timeout`, `cuePassed` (D6).
 
+**Where each mouse message comes from**, which the names do not say and which is
+where a port invents behaviour without noticing:
+
+| Message | Raised by | Target |
+| --- | --- | --- |
+| `mouseDown` / `rightMouseDown` | the button going down | `getMouseSpriteIDFromPos` at the press |
+| `mouseUp` / `rightMouseUp` | the button coming up | **D4+**: `getMouseSpriteIDFromPos` at the *release*. Before D4: the sprite that took the press |
+| `mouseEnter` / `mouseLeave` | pointer **motion**, when the filtered channel changes | the channel entered / the one left |
+| `mouseWithin` | the **frame tick**, once per tick | the channel currently under the pointer |
+| `mouseUpOutSide` | the **next mouse-down**, when the sprite under it differs from `the clickOn` | the previously clicked sprite |
+
+Three consequences worth stating on their own. `mouseEnter`/`mouseLeave` and
+`mouseWithin` are **D5-gated on the button being held** — in D5 they are raised
+only while a mouse button is down, and only from D6 do they fire with the button
+up. `mouseUpOutSide` is **not raised by the release**: nothing happens when the
+player slides off a control and lets go, and the message arrives on the *next*
+press, by which time the `mouseUp` for that release has already gone to whatever
+was under it. And a right click in D5+ raises **only** the right-hand pair — not
+`mouseDown`/`mouseUp` as well — but it does everything else the left button's
+press does, including latching `the clickOn`, starting a drag on a moveable
+sprite, and setting the hilite.
+
+*This port:* `preview/interaction.gd` deliberately implements a **different but
+self-consistent triple** — `mouseUp` goes to the sprite that took the press,
+`mouseUpOutSide` is raised by the release when it lands outside that sprite, and
+`the clickOn` is latched by the press and never rewritten. §15 has why, and the
+corpus evidence that a shipped game cannot have run on the literal reading.
+Changing any one of the three requires changing all three.
+
 ### 8.2 The hierarchy
 
 In **D4+** an event is queued as a *sequence* of candidates in precedence order
@@ -1080,6 +1178,25 @@ scripts.**
   `dontPassEvent` to stop it, while every other level consumes by default and
   must call `pass` to continue. Getting this inverted is the classic bug.
 - **Sprite script** runs only when the event resolved to a sprite.
+- **The whole chain is queued before any of it runs**, and each element then
+  re-resolves its own target at execution time against the score *as it is when
+  that element runs*. That is why a `go` inside a `mouseUp` handler does not
+  cancel the handlers below it — they were queued before the `go` and run
+  against the score the `go` has already changed. It is also why a `mouseDown`
+  handler that swaps a sprite's member changes which cast script the *next*
+  element of the same chain resolves to.
+- **`pass` and `dontPassEvent` are one flag, not two mechanisms.** Before each
+  element runs, the flag is set to that element's default — true for a primary
+  handler, false for everything else. `pass` sets it true, `dontPassEvent` sets
+  it false. The next element of the same event id is skipped if the flag is
+  false *and* the previous element actually found a script; an element that
+  resolved to no script does not count as having consumed anything.
+- **Which events stop at the sprite tier.** Only `mouseUpOutSide`,
+  `beginSprite`, `endSprite` and `prepareFrame`, and only from D6. Everything
+  else — `mouseEnter`, `mouseLeave`, `mouseWithin` included — falls through to
+  the cast script, then the frame script, then the movie scripts, in every
+  version. A `mouseWithin` reaching a movie script once per tick is Director
+  working correctly.
 - **Frame script** — per the D4 docs, `enterFrame`, `exitFrame`, `idle` and
   `timeout` go to the frame script then a movie script; with no frame script the
   message goes straight to movie scripts.
@@ -1623,6 +1740,19 @@ non-empty, and otherwise **wraps to frame 1** — it does not stop.
 - **Immediate sprites** invert the ordering: the script runs on mouse-down and a
   paired mouse-up is synthesised immediately after. Before D4, mouse-up goes to
   the sprite that was *pressed*; from D4, to the sprite under the *release*.
+  `the immediate of sprite` is **not a score field** — nothing in the sprite
+  record carries it and it survives a frame change untouched, so the only thing
+  that ever sets it is the `immediateSprite` builtin. 0 sites in this corpus.
+- **The mouse-down block runs once per click, at the primary tier, and it is
+  where five separate things are latched**: the beep on an empty-stage click,
+  the hilite channel, "the press was in *a* button", the drag channel and grab
+  offset for a moveable sprite, and the cast id / script id / immediate flag the
+  mouse-up will resolve against. It runs for `rightMouseDown` as well as
+  `mouseDown`. Reproducing any one of them without the others is what makes a
+  right click and a left click disagree about what a click *is*.
+- **`the doubleClick` is derived, not latched**: the engine keeps the last two
+  press timestamps and answers "were they within 25 ticks" — about 417 ms — each
+  time the property is read. A third press retires the first.
 - **Cast script targeting on mouse-up** uses the member under the mouse at the
   *beginning of the mouse-down chain*, not the current one — so a mouseDown
   handler can swap the member and the *old* member still gets the mouseUp.

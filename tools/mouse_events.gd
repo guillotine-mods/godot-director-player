@@ -43,6 +43,7 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
+const InputRouter := preload("res://scenes/preview/input_router.gd")
 
 ## §8.1's input events, and §6's mouse properties. Listed rather than tested one
 ## by one so that adding a name to the engine without adding it here is visible
@@ -470,6 +471,50 @@ func _init() -> void:
 		_sent(preview, "mouseUp") == ups + 1,
 		"mouseUp %d, wanted %d" % [_sent(preview, "mouseUp"), ups + 1])
 	h.complete("a sprite that followed the cursor is still 'inside' at the drop")
+
+	# ------------------------------------------------------------------ §7.6
+	# The drag's *other* ending. §7.6 gives two -- mouse-up, or the sprite ceasing
+	# to be moveable -- and the port had only the first, so a script that cleared
+	# `the moveableSprite` mid-gesture left the sprite following the cursor until
+	# the button came up. Asserted on the position as well as on the channel,
+	# because clearing `_drag_channel` and still writing this frame's position
+	# would pass a channel-only check and look identical on screen.
+	#
+	# **Unexercised by the corpus**: all 15 `moveableSprite` writes across 7
+	# titles set the flag to 1 and none clears it, so this is the reference's rule
+	# rather than this title's need.
+	h.begin("§7.6: the drag also ends when the sprite stops being moveable")
+	preview.call("lingo_set_sprite_prop", channel, "moveablesprite", 1)
+	preview.call("route_press", inside)
+	if not h.check("the press started a drag",
+			int(preview.get("_drag_channel")) == channel,
+			"drag %d, wanted %d" % [int(preview.get("_drag_channel")), channel]):
+		preview.call("route_release", inside)
+	else:
+		var held_h := int(preview.call("lingo_sprite_prop", channel, "loch"))
+		var held_v := int(preview.call("lingo_sprite_prop", channel, "locv"))
+		preview.call("lingo_set_sprite_prop", channel, "moveablesprite", 0)
+		InputRouter.mouse_motion(preview, inside + Vector2(40, 40))
+		h.check("the motion after it dropped the channel",
+			int(preview.get("_drag_channel")) == 0,
+			"drag %d, wanted 0" % int(preview.get("_drag_channel")))
+		h.check("and did not carry the sprite with it",
+			int(preview.call("lingo_sprite_prop", channel, "loch")) == held_h
+			and int(preview.call("lingo_sprite_prop", channel, "locv")) == held_v,
+			"loc (%d,%d), was (%d,%d)" % [
+				int(preview.call("lingo_sprite_prop", channel, "loch")),
+				int(preview.call("lingo_sprite_prop", channel, "locv")),
+				held_h, held_v])
+		# Setting the flag again must not resume it: the reference drops the
+		# dragged channel outright rather than skipping one frame's write, so the
+		# gesture is over and only a new press can start another.
+		preview.call("lingo_set_sprite_prop", channel, "moveablesprite", 1)
+		InputRouter.mouse_motion(preview, inside + Vector2(80, 80))
+		h.check("restoring the flag does not resume the same gesture",
+			int(preview.get("_drag_channel")) == 0,
+			"drag %d, wanted 0" % int(preview.get("_drag_channel")))
+		preview.call("route_release", inside)
+	h.complete("§7.6: the drag also ends when the sprite stops being moveable")
 
 	# ------------------------------------------------------------------ §15
 	h.begin("§15: `the clickOn` updates on mouse-down, and on mouse-up over a sprite")

@@ -8,11 +8,12 @@ extends RefCounted
 ## Filtering afterwards instead is what let a room backdrop swallow every click
 ## on the stage.
 ##
-## `channel_at` and `draw_hotspots` currently disagree on one detail and the
-## disagreement is preserved here rather than quietly fixed: the descent asks
-## `hits_per_pixel(ink, member_type)` and the overlay asks `hits_per_pixel(ink)`.
-## The overlay therefore paints a matte-inked *shape* as artwork-only when the
-## hit test treats it as a whole rect. See `draw_hotspots`.
+## `channel_at` and `draw_hotspots` used to disagree on one detail: the descent
+## asked `hits_per_pixel(ink, member_type)` and the overlay asked
+## `hits_per_pixel(ink)`, so the overlay painted a matte-inked *shape* as
+## artwork-only where the hit test correctly treated it as a whole rect. Both now
+## pass the member type. They are the same question and answering it twice is how
+## a debugging tool comes to lie about the thing it exists to show.
 ##
 ## Everything takes the preview node as `host`: the hit test needs puppet state,
 ## the artwork cache and the script table, all of which are the node's.
@@ -231,6 +232,41 @@ static func begin_drag(host, at: Vector2, channel: int, sprites: Array) -> Array
 			float(live.get("loc_h", 0)), float(live.get("loc_v", 0))
 		) - at]
 	return []
+
+
+## Is a drag in progress still entitled to move `channel`?
+##
+## §7.6 gives the drag **two** ends -- "on mouse-up **or when the sprite stops
+## being moveable**" -- and the port had only the first, so a script clearing
+## `the moveableSprite` mid-gesture left the sprite glued to the cursor until the
+## button came up. The reference's motion arm does not merely skip that frame's
+## position write: it drops the dragged channel outright the first time the flag
+## reads false, so the sprite is handed back to the score there and then and does
+## not resume following the pointer if the flag is set again before the release.
+##
+## A channel that has left the frame ends the drag too. The reference keeps one
+## `Channel` per score channel for the life of the movie and an emptied one is
+## not moveable, so "the score moved on" and "the script cleared the flag" are
+## the same answer; here they are the same answer for the extra reason that there
+## is nothing left to write a position onto.
+##
+## Asked of the *effective* sprite for the reason `begin_drag` gives: the score's
+## own moveable bit and any `the moveableSprite of sprite` write are one property
+## from two sources, and reading either alone answers half of it.
+##
+## **Unverified against Director running.** No script in the corpus clears the
+## flag -- all 15 `moveableSprite` writes across 7 titles set it to 1, ten of them
+## as `set the moveableSprite of sprite i to 1` inside an inventory `init all`
+## loop -- so this is built from the reference and this game cannot exercise it.
+static func still_moveable(host, channel: int, sprites: Array) -> bool:
+	if channel <= 0:
+		return false
+	for sprite in sprites:
+		if int(sprite["channel"]) != channel:
+			continue
+		var live: Dictionary = host._effective(sprite)
+		return not live.is_empty() and bool(live.get("moveable", false))
+	return false
 
 
 ## Where a position write on `channel` is allowed to land: `the constraint of
@@ -600,12 +636,13 @@ static func script_for_click(host, channel: int, sprites: Array) -> Array:
 ## which is how this game's menu works -- so both are drawn, distinguished
 ## rather than filtered.
 ##
-## **Known divergence from `channel_at`, preserved by this move rather than
-## introduced by it.** The per-pixel test here passes only the ink; the hit test
-## passes the ink *and* the member type. A matte-inked shape therefore paints
-## amber, "artwork only", while the hit test correctly treats it as a whole
-## rect -- so the overlay understates exactly the invisible shape hotspots this
-## game is full of. Fixing it means passing the member type here too.
+## **The per-pixel test asks `channel_at`'s question, with `channel_at`'s
+## arguments.** It used to pass only the ink where the hit test passes the ink
+## *and* the member type, so a matte-inked shape painted amber, "artwork only",
+## while the hit test correctly treated it as a whole rect. That understated
+## exactly the invisible shape hotspots this game is full of -- an overlay that
+## says a target is smaller than it is sends the reader looking for a hit-test
+## bug that is not there.
 static func draw_hotspots(host, frame: Dictionary, hover_channel: int,
 		hit_pixels: bool, table) -> void:
 	var font := ThemeDB.fallback_font
@@ -634,7 +671,10 @@ static func draw_hotspots(host, frame: Dictionary, hover_channel: int,
 		# does. That distinction is the one that costs people time: a Matte
 		# sprite is clickable on its pixels and transparent to the mouse
 		# everywhere else, so an outline that implies a solid target is a lie.
-		var per_pixel := hit_pixels and Ink.hits_per_pixel(int(sprite["ink"]))
+		var member: Dictionary = table.get_member(
+			int(sprite["cast_lib"]), int(sprite["cast_id"]))
+		var per_pixel := hit_pixels and Ink.hits_per_pixel(
+			int(sprite["ink"]), int(member.get("type", 0)))
 		var hovered := channel == hover_channel
 		var tint := Color(1.0, 0.75, 0.2) if per_pixel else Color(0.2, 1.0, 0.4)
 		if hovered:

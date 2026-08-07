@@ -195,6 +195,7 @@ python3 tools/generate_sprite_stretch.py --check    # sprite_stretch.json still 
 python3 tools/dump_movie_chunks.py --verify         # container reader vs the ProjectorRays dumps, pass/fail
 python3 tools/dump_movie_chunks.py --out <dir>      # dump chunks straight from the .DXR originals
 godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
+godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11  # one click: where the playhead went, what it played, what ran — reports, never asserts
 godot --headless --script tools/movie_churn.gd     # the stage and a window each settle on a movie rather than cycling, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise

@@ -33,6 +33,7 @@ extends RefCounted
 ## rest of that argument.
 
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const Interaction := preload("res://scenes/preview/interaction.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
@@ -226,6 +227,23 @@ static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
 	host._hover_channel = host._channel_at(point)
 	host.call("track_rollover", point)
 	if host._drag_channel > 0:
+		# §7.6 ends the drag on mouse-up **or when the sprite stops being
+		# moveable**, and only the first half was here. A script that cleared
+		# `the moveableSprite` mid-gesture -- or a score that moved the channel to
+		# a frame the sprite is not on -- left the sprite following the cursor
+		# anyway until the button came up, which reads as "the game will not let
+		# go of this thing" rather than as a missing clause.
+		# `Interaction.still_moveable` has why it is a real exit rather than a
+		# skipped frame, and why the answer has to come from the effective sprite.
+		if not Interaction.still_moveable(
+				host, host._drag_channel,
+				host._score.frame(host._index).get("sprites", [])):
+			host._drag_channel = 0
+			# §7.5: the cursor is recomputed when the drag ends, exactly as it is
+			# on the mouse-up that usually ends it.
+			host._resolve_cursor()
+			host.queue_redraw()
+			return
 		# The dragged sprite follows the cursor by the offset recorded when the
 		# drag began, so it does not snap its registration point to the pointer on
 		# the first movement.
