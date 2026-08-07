@@ -44,3 +44,7 @@ reference/scummvm/
 
 # Original Director game data lives in private Git submodules under `games/`.
 # The public parent repository tracks only their gitlinks, not their contents.
+
+# Serialises concurrent `gate.sh` runs. Two at once swap each other's corpus
+# mid-run and report another title's movies as this one's regressions.
+.gate.lock/

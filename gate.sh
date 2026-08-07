@@ -10,8 +10,21 @@ G="/c/Program Files/Godot_v4.7.1/Godot_v4.7.1-stable_mono_win64_console.exe"
 # title is being looked at -- a run against another game reads as five
 # regressions that are really five different movies. Restored on exit.
 ROOT="${GATE_ROOT:-piposh2}"
+
+# Serialise concurrent runs. Pinning the corpus means writing a file the whole
+# repo shares, so two gates running at once -- which happens the moment more
+# than one agent is working -- have each other's corpus swapped out from under
+# them mid-run. That does not fail loudly: it reports the other title's movies
+# as this title's regressions. One run measured six that way and none was real.
+LOCK=".gate.lock"
+for _ in $(seq 1 600); do
+  if mkdir "$LOCK" 2>/dev/null; then break; fi
+  sleep 1
+done
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
 BEFORE=$(grep '^root' director_game.cfg)
-trap 'python -c "
+trap 'rmdir "$LOCK" 2>/dev/null; python -c "
 import sys,re
 s=open(\"director_game.cfg\").read()
 open(\"director_game.cfg\",\"w\").write(re.sub(r\"^root.*\", sys.argv[1], s, count=1, flags=re.M))" "$BEFORE"' EXIT
