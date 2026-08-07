@@ -45,6 +45,16 @@ extends SceneTree
 const VOCAB_PATH := "res://data/lingo_vocabulary.json"
 const HOST_PATH := "res://lingo/lingo_host.gd"
 const INTERPRETER_PATH := "res://lingo/lingo_interpreter.gd"
+## The third dispatch site. `lingo/lingo_builtins.gd` is the title-agnostic half
+## of the surface — everything that is a function of its arguments alone — and it
+## is dispatched by group rather than by one match, so each group is scraped
+## separately. The interpreter used to answer ten of these names from an inline
+## `match` in `_call`; that copy is gone (`docs/LINGO_SURFACE.md` §16.4 item 2),
+## which is why the canary below no longer finds them at the interpreter.
+const BUILTINS_PATH := "res://lingo/lingo_builtins.gd"
+const BUILTIN_GROUPS := [
+	"_constants", "_math", "_strings", "_lists", "_predicates", "_geometry", "_time",
+]
 const RENDERER_PATHS := [
 	"res://director/movie_player.gd",
 	"res://director/stage_canvas.gd",
@@ -52,9 +62,12 @@ const RENDERER_PATHS := [
 ]
 
 ## Names the builtin scrape must find, or the regex has drifted and every
-## unfound name would be reported as a missing binding. Twenty-nine names from
-## both dispatch sites; a scrape that misses one is not trustworthy about the
-## other two hundred.
+## unfound name would be reported as a missing binding. Thirty-one names from
+## all three dispatch sites; a scrape that misses one is not trustworthy about
+## the other two hundred. The last ten moved from the interpreter to
+## `lingo/lingo_builtins.gd` and are kept here deliberately: they are the ones
+## that were answered in two places at once, so a canary that lost sight of them
+## is exactly the state this list exists to catch.
 const SCRAPE_CANARY := [
 	"go", "puppetsprite", "updatestage", "sound", "random", "marker", "label",
 	"rollover", "intersects", "within", "window", "open", "forget", "close",
@@ -365,9 +378,21 @@ func _scrape_case_labels(path: String, function: String) -> Dictionary:
 	var quoted := RegEx.new()
 	quoted.compile("\"([a-z0-9_]+)\"")
 	for line in source.split("\n"):
-		var text := str(line)
-		if text.begins_with("func "):
-			inside = text.begins_with("func %s(" % function)
+		# The `\r` of a CRLF file, dropped before anything looks at the line. The
+		# label pattern is anchored with `$`, which does not match before a bare
+		# carriage return, so on a checkout where git has written CRLF this
+		# scrape found *nothing* in `lingo_host.gd` and the canary reported all
+		# of `go`, `sound`, `marker` and the rest as unbound — a whole-file miss
+		# that looks exactly like a real gap list. Which files carry which ending
+		# is a property of the checkout, not of the code, so it must not decide
+		# what this tool reports.
+		var text := str(line).trim_suffix("\r")
+		# `static func` as well as `func`: the engine-free module is all static,
+		# and a scraper that only knew the instance spelling would walk straight
+		# past every group in it and report a clean miss.
+		var declaration := text.trim_prefix("static ")
+		if declaration.begins_with("func "):
+			inside = declaration.begins_with("func %s(" % function)
 			continue
 		if not inside:
 			continue
@@ -385,7 +410,14 @@ func _report_builtins(host: Dictionary) -> void:
 	var bound := _scrape_case_labels(HOST_PATH, "call_builtin")
 	var interpreter_side := _scrape_case_labels(INTERPRETER_PATH, "_call")
 	var constants := _scrape_case_labels(INTERPRETER_PATH, "_read_var")
-	for key in _union([interpreter_side, constants]).keys():
+	var sites: Array = [interpreter_side, constants]
+	# One scrape per group in the engine-free module. It has no single dispatch
+	# match to read — `call_builtin` there is a chain of `or`ed group functions —
+	# so reading only the entry point would find nothing and the canary would
+	# report the whole module as unbound.
+	for group in BUILTIN_GROUPS:
+		sites.append(_scrape_case_labels(BUILTINS_PATH, str(group)))
+	for key in _union(sites).keys():
 		bound[str(key)] = true
 	for native in host["NATIVE_HANDLERS"]:
 		bound[str(native).to_lower()] = true

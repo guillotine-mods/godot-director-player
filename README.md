@@ -156,6 +156,7 @@ godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach 
 godot --headless --script tools/sprite_stretch.gd   # a sprite draws at its member's size, pass/fail
 godot --headless --script tools/film_loop_stretch.gd # a film-loop child draws at its member's size, pass/fail
 godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
+godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # the same cursors in the container-reading preview, pass/fail
 godot --headless --script tools/cliff_meeting.gd    # MURDER1 through both dialogue prompts, pass/fail (minutes, real time)
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
 python3 tools/repair_1bit_members.py                # re-decode 1-bit members from the raw chunks
@@ -170,6 +171,24 @@ godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs t
 godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # where the playhead goes
 ```
 
+The Lingo compiler and interpreter have their own set, all pass/fail, all
+checked against `docs/LINGO_SURFACE.md`:
+
+```
+godot --headless --script tools/lingo_parse.gd -- --file PIP2DATA/DAY1.DIR   # every script in a container compiles
+godot --headless --script tools/lingo_compile_check.gd -- --file PIP2DATA/DAY1.DIR  # ASTs against the committed ones
+godot --headless --script tools/lingo_builtins_check.gd     # the engine-free builtins, §1
+godot --headless --script tools/lingo_logic_check.gd        # `and`/`or` evaluate both operands, §13/§17
+godot --headless --script tools/lingo_designator_check.gd   # designator suffixes survive the parser, §16.4
+```
+
+`lingo_compile_check.gd` is the regression gate for any parser change. It fails
+today on an int-versus-float difference in every numeric literal — `JSON.parse_string`
+widens the committed ASTs — so read the `by reason` tally rather than the verdict:
+`type` differences are the baseline and anything under `value`, `missing` or
+`extra` is structural. A parser change that is meant to be behaviour-neutral
+must leave that structural count where it found it.
+
 `probe.gd` is the general one: point it at any room and it reports where the score
 went, what it repeated and where it stopped. `--click-prompts` plays a dialogue
 prompt the way a player would. Reach for it before writing another one-off
@@ -177,8 +196,9 @@ harness — that is what `tools/lib/` exists to make cheap.
 
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
+`cursor_preview.gd`, `keyboard_check.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
-pass/fail ones. Read
+pass/fail ones, alongside the whole Lingo block above. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the
 others: agreement with the lifted export falls as the port becomes more faithful,
 so those numbers are not higher-is-better.

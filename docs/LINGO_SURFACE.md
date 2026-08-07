@@ -422,8 +422,13 @@ reach it directly.
 
 ## 2.3 Logic
 
-`and`, `or`, `not`. VOID and 0 are false, everything else true. `and` and `or`
-short-circuit. `not` of VOID is true.
+`and`, `or`, `not`. VOID and 0 are false, everything else true. `not` of VOID is
+true.
+
+**`and` and `or` do not short-circuit** — both operands are always evaluated and
+the result is the integer 0 or 1 rather than either operand. This paragraph said
+the opposite until §13 and §14 were read; the correction and what it cost are in
+§17, and `tools/lingo_logic_check.gd` is the harness that holds it.
 
 ## 2.4 String tests
 
@@ -1029,14 +1034,23 @@ Plus `walkonby`, which is not a Director builtin at all but the game's own
 handler that this port implements natively and lets win over the original
 definition (`NATIVE_HANDLERS`).
 
-**Builtins the interpreter answers itself**, because they have no engine side
-(`lingo/lingo_interpreter.gd`): `value`, `string`, `integer`, `float`, `abs`,
-`length`, `chars`, `offset`, `count`, `getAt`.
+**Builtins with no engine side** are answered by `lingo/lingo_builtins.gd`, the
+title-agnostic module `tools/lingo_builtins_check.gd` checks against §1. It is
+the *only* answer for each of them. `lingo_interpreter.gd` used to carry a
+second, inline table for `value`, `string`, `integer`, `float`, `abs`, `length`,
+`chars`, `offset`, `count` and `getAt`, placed ahead of the dispatch that reaches
+the module, so the module could never be consulted for those ten names and the
+two disagreed on six of them — `getAt` past the end answered 0 rather than VOID,
+`abs` widened to float and took `abs(-7)/2` off the integer-division path,
+`value` coerced where §1.2 says it parses, `integer` truncated where §1.1 says it
+rounds, `offset` ignored its start argument, and `count` knew only linear lists.
+The inline table is gone; the comment at `lingo_interpreter.gd:_call` records the
+verdict per name.
 
 **Operators and value semantics** (`lingo/lingo_value.gd`,
 `lingo/lingo_interpreter.gd`): `+ - * /` with the integer-division rule, `mod`,
 `&`, `&&`, `= <> < > <= >=` with case-insensitive string comparison, `and` /
-`or` with short-circuit, `not`, `contains`, `starts`; chunk expressions for
+`or` **evaluating both operands** (§17), `not`, `contains`, `starts`; chunk expressions for
 char/word/item/line with ranges, nesting, chunk assignment and a mutable
 `the itemDelimiter`; list literals, property-list literals and one-based
 indexing; the constants `EMPTY`, `TRUE`, `FALSE`, `RETURN`, `CR`, `QUOTE`,
@@ -1045,10 +1059,13 @@ indexing; the constants `EMPTY`, `TRUE`, `FALSE`, `RETURN`, `CR`, `QUOTE`,
 **Statements consumed by the interpreter**: `global`, `property`, assignment,
 `put … into/before/after`, call statements, `if`/`else`, `repeat while`,
 `repeat with` (up and down), `repeat in`, bare `repeat`, `case`, `tell`,
-`exit repeat`, `next repeat`, `exit`, `return`. Expression node kinds: `num`,
+`exit repeat`, `next repeat`, `exit`, `return`, and `when` — the last recorded
+and not run, because it installs a tier-1 handler the port does not have (§16.3).
+Expression node kinds: `num`,
 `str`, `var`, `list`, `proplist`, `unary`, `binary`, `chunk`, `count`, `field`,
 `field_prop`, `sprite_ref`, `member_ref`, `member_number`, `sprite_number`,
-`sprite_prop`, `member_prop`, `prop`, `prop_of`, `dot`, `index`, `call`.
+`sprite_prop`, `member_prop`, `sound_prop`, `window_prop`, `prop`, `prop_of`,
+`dot`, `index`, `call`.
 
 **Properties.** Sprite reads: `bottom`, `castLibNum`, `castNum`, `constraint`,
 `cursor`, `height`, `ink`, `left`, `locH`, `locV`, `member`, `memberNum`,
@@ -1924,6 +1941,11 @@ understands the two-argument `(frame_or_marker, movie)` shape — `_go` in
 `lingo/lingo_host.gd` handles it for the `go(1, "exodus.dir")` spelling — so this
 is a parser fix that needs no host work.
 
+**Closed.** `lingo_parser.gd:_parse_optional_of_movie` appends the movie as a
+plain trailing argument, gated on the command's own keyword set so only `go` and
+`play` can pick it up. Deliberately *without* a `"movie"` marker word between the
+two: that spelling exists in `_go` for `go to movie "x"` and discards the frame.
+
 ### `field (E) of castLib N` — 4 statements, 4 scripts
 
 `SAVELOAD.dir` scripts 20, 24, 38 and 39:
@@ -1940,6 +1962,10 @@ hits in 154 scripts) does call `_parse_optional_castlib`, and so does the
 `cast = args[1] if args.size() > 1 else _parse_optional_castlib()`, a line that
 already exists three functions away. `member(…)` has the same omission but no site
 in this game.
+
+**Closed**, by exactly that line, on both `field(…)` and `member(…)`. Each of the
+four sites shed two junk statements, which is visible as the port's AST moving
+*toward* the committed one: `SAVELOAD.dir` fell from 1,792 differences to 1,772.
 
 ### `when <event> then <stmt>` — 2 statements, 1 script
 
@@ -1958,6 +1984,17 @@ Director 3's primary-handler installation (§6.3), and the port implements no
 tier-1 handlers at all, so parsing it would only convert a silent misparse into a
 recorded unimplemented feature — which is still the better of the two.
 
+**Closed on that reasoning, and it was worse than "junk" makes it sound.** The
+second statement was `go to "mainmenub4"` — a *navigation*, run unconditionally
+every time `gomenu` was called instead of when a key was pressed. The parser now
+claims the whole three-token shape (`when`, one of the five events, `then`) and
+hangs the tail off a `when` node; `lingo_interpreter.gd` reports it under the
+`event` category and executes nothing. Only the full shape is claimed, because
+`when` is a legal variable name (§11.3) and `tools/lingo_designator_check.gd`
+asserts one still works. The handler beside it, `gulu`, installs the same
+behaviour through `the keyDownScript`, which the host does bind, so the menu is
+not left without a way out.
+
 ### `the <prop> of window "x"` — 2 statements, 2 scripts
 
 `MASTER.CST` scripts 12 and 69, both `set the windowType of window "…" to 2`.
@@ -1968,30 +2005,52 @@ case for an owner that evaluates to a string. So two spellings of the same thing
 behave differently, which is exactly the kind of divergence that looks like a data
 problem later.
 
+**Closed** with a `window_prop` designator node, read and write, routed to the
+host's *system*-property pair rather than to a `set_window_prop` of its own —
+because that is already where these names arrive from the other spelling in this
+corpus, `tell window("map.dxr") / set the windowType to 2`, and
+`lingo_host.gd`'s `WINDOW_FIELDS` accepts and drops them there. A second entry
+point to one table would be a second chance for the two spellings to disagree,
+which is the fault being closed. The named window is evaluated and discarded —
+nothing to place, title or resize on one stage (§7.4) — but it stays on the node,
+which is the whole reason this is a designator and not `prop_of` over a call.
+
 ## 16.4 The work queue
 
 Ordered by how many of this game's scripts hit each gap.
 
-| # | Gap | Scripts | Statements | Where |
-|---|---|---|---|---|
-| 1 | `the <prop> of sound N` is not a designator | **52** | 65 | `lingo_parser.gd:_parse_the`, plus an assignment case in `lingo_interpreter.gd` |
-| 2 | `play done` is a no-op; there is no play stack | **48** | 48 | `lingo_host.gd:_go` and the navigation model |
-| 3 | `go to frame E of movie F` drops the movie | **6** | 6 | `lingo_parser.gd:_parse_primary`, command-word argument loop |
-| 4 | `field (E) of castLib N` drops the library | **4** | 4 | `lingo_parser.gd:_parse_primary`, `field` parenthesised branch |
-| 5 | `the <prop> of window "x"` cannot be assigned | **2** | 2 | same fix as #1 |
-| 6 | `when <event> then <stmt>` misparses into two junk statements | **1** | 2 | `lingo_parser.gd`, and tier-1 dispatch in `lingo_engine.gd` |
+| # | Gap | Scripts | Statements | Where | State |
+|---|---|---|---|---|---|
+| 1 | `the <prop> of sound N` is not a designator | **52** | 65 | `lingo_parser.gd:_parse_the`, plus an assignment case in `lingo_interpreter.gd` | parser closed; see below |
+| 2 | `play done` is a no-op; there is no play stack | **48** | 48 | `lingo_host.gd:_go` and the navigation model | open — needs a decision, not a fix |
+| 3 | `go to frame E of movie F` drops the movie | **6** | 6 | `lingo_parser.gd:_parse_primary`, command-word argument loop | closed |
+| 4 | `field (E) of castLib N` drops the library | **4** | 4 | `lingo_parser.gd:_parse_primary`, `field` parenthesised branch | closed |
+| 5 | `the <prop> of window "x"` cannot be assigned | **2** | 2 | same fix as #1 | closed |
+| 6 | `when <event> then <stmt>` misparses into two junk statements | **1** | 2 | `lingo_parser.gd`, and tier-1 dispatch in `lingo_engine.gd` | parsed and reported; tier 1 still absent |
 
 Items 1, 3, 4 and 5 share a shape: **a suffix that is part of a designator,
 parsed as though it were a trailing modifier that could be ignored.** Fixing them
 together is one change to how `_parse_the` and the reference forms handle their
-tails, not four patches.
+tails, not four patches. All four are now designator nodes —
+`sound_prop`, the movie argument, the `of castLib` tail and `window_prop` — and
+`tools/lingo_designator_check.gd` holds the last three against the real spellings
+extracted from the containers.
+
+**Item 1 is closed in the parser and not in the host.** `sound_prop` reaches
+`set_sound_prop` / `get_sound_prop`, and `lingo/lingo_host.gd` implements
+neither — only `scenes/preview_lingo_host.gd` does. `_host_call` answers null
+for a method the host lacks, so all 65 `set the volume of sound N` sites are
+still dropped in the real runtime, now silently rather than with an error. That
+is a smaller gap than the parse was and a different one; it is a host binding,
+not grammar.
 
 Item 2 is not a parser change at all, and is the only one that needs a decision
 rather than a fix.
 
 Below that line, the highest-value non-gap work is the `and`/`or` precedence
 ranking (§16.2) — zero sites here, but it is wrong, it is one table, and it will
-not announce itself in the next movie.
+not announce itself in the next movie. Note this is the *precedence* ranking and
+not the short-circuit question, which §17 records as settled and removed.
 
 One near-miss is worth recording because it looks like a gap and is not. A bare
 command word on a line of its own — `updateStage`, `cursorfunk`, `nothing`,
@@ -2008,13 +2067,23 @@ which is an accident of this game rather than a property of the design.
 
 Two claims in §1–§10 are contradicted by what §11–§16 read.
 
-- **§2.3 says `and` and `or` short-circuit. They do not.** They are single
+- **§2.3 said `and` and `or` short-circuit. They do not.** They are single
   opcodes that pop both operands, coerce each to an integer and push `0` or `1`
   (§13). The code generator emits no jump for them (§14). Both sides of a logical
   operator are always evaluated, so a side-effecting or expensive operand runs
-  regardless of the other. This port's interpreter short-circuits (§9.3 records it
-  as implemented behaviour); that is a divergence from Director, not a fidelity
-  win, and it should be recorded as a deliberate one or removed.
+  regardless of the other.
+
+  **Removed** from the interpreter rather than recorded as a deliberate
+  divergence, and §2.3 above is now corrected in place. The argument for removing
+  it is stronger in Lingo than the general "an operand might have a side effect":
+  a bare identifier that is not a variable is a **parameterless handler call**
+  (`lingo_interpreter.gd:_read_var`), so `if x and cursorfunk then` is a call the
+  AST does not spell like one. A short-circuiting interpreter stops making those
+  calls with nothing in the tree to say which ones, and the symptom — a cursor
+  that does not change, speech that never starts — reads as a missing binding
+  rather than as a conditional. `tools/lingo_logic_check.gd` asserts the right
+  operand runs by giving it an observable effect; checking the *value* of
+  `0 and x` proves nothing, since both implementations answer 0.
 - **§1.4 says this game does not use `play done`. It does** — 48 statements in 48
   authored scripts, and 96 files in the decompiled tree. The reasoning that
   followed it ("a port that inherits that shortcut into a title which *does* use

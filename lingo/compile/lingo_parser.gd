@@ -289,6 +289,9 @@ func _parse_statement_inner() -> Dictionary:
 				_skip_newlines()
 				return {"node": "next_repeat", "line": line}
 
+	if _at_when_event():
+		return _parse_when()
+
 	# Assignment to a place, or a command call. The left-hand side is parsed
 	# above the comparison level so `=` is not swallowed: Lingo spells
 	# assignment and equality alike and resolves it by position.
@@ -502,6 +505,55 @@ func _line_is_case_label() -> bool:
 	return false
 
 
+## Director 3's primary-handler installation: `when keyDown then <text>` (§11.2).
+##
+## Five events only — `keyDown`, `keyUp`, `mouseDown`, `mouseUp`, `timeOut` — and
+## the shape has to be all three tokens before it is claimed, because `when` is
+## an ordinary identifier here (§11.3: nothing in Lingo is reserved) and a
+## variable of that name is legal. Requiring `when <one of five> then` means the
+## only thing that can be captured is the construct itself.
+func _at_when_event() -> bool:
+	return (
+		_at_word("when")
+		and _at_word_any(["keydown", "keyup", "mousedown", "mouseup", "timeout"], 1)
+		and _at_word("then", 2)
+	)
+
+
+## In ScummVM's lexer this is *one token* whose tail is taken raw to end of line
+## and compiled separately as a primary event handler (§11.2, §11.13.7). By the
+## time this parser runs the text is already tokens, so the tail is parsed here
+## instead and hung off the node rather than emitted into the enclosing block.
+## The distinction that matters is not where it is parsed but that it does not
+## *run* here: a primary handler runs at tier 1 of the mouse/key hierarchy
+## (§6.3), before the sprite the click landed on, and this port implements no
+## tier 1 at all.
+##
+## So this is deliberately a recorded gap and not an implementation.
+## `lingo_interpreter.gd` reports the node and executes nothing, which §16.3 asks
+## for in as many words: parsing it "would only convert a silent misparse into a
+## recorded unimplemented feature — which is still the better of the two". What
+## it replaces is genuinely junk — `when` became a call to a handler of that name
+## taking `keyDown` as an argument, and `then go to "mainmenub4"` became a second
+## statement, so the *navigation ran unconditionally* on every entry to
+## `strtgame`'s `gomenu`.
+##
+## Storing the parsed tail rather than the source text costs one thing, recorded:
+## a real primary handler is compiled in its own scope, so if tier 1 is ever
+## implemented the body here must be treated as a separate handler and not as a
+## closure over the enclosing frame.
+func _parse_when() -> Dictionary:
+	var line := _ln()
+	_advance() # when
+	var event := _advance().to_lower()
+	_advance() # then
+	var body: Array = []
+	if _k() != "nl" and _k() != "eof":
+		body.append(_parse_statement())
+	_skip_newlines()
+	return {"node": "when", "event": event, "body": body, "line": line}
+
+
 func _parse_put() -> Dictionary:
 	var line := _ln()
 	_advance() # put
@@ -673,7 +725,14 @@ func _parse_primary() -> Dictionary:
 		if _at_op("("):
 			var args := _parse_call_args()
 			name = args[0] if args.size() > 0 else {"node": "str", "value": ""}
-			cast = args[1] if args.size() > 1 else null
+			# `of castLib` is part of the *reference*, not a trailing modifier
+			# that may be dropped (§11.8, §11.13.15). The bare-string path below
+			# has always looked for it; the parenthesised one did not, so
+			# `field ("save" & i) of castLib 1` lost its library and left
+			# `of castLib 1` behind as a statement calling a handler named `of`.
+			# SAVELOAD scripts 20, 24, 38 and 39 write the save-slot names that
+			# way, which is why the four save slots showed the wrong cast's text.
+			cast = args[1] if args.size() > 1 else _parse_optional_castlib()
 		else:
 			name = _parse_expr(Grammar.TIGHT)
 			cast = _parse_optional_castlib()
@@ -694,7 +753,11 @@ func _parse_primary() -> Dictionary:
 		if _at_op("("):
 			var args := _parse_call_args()
 			which = args[0] if args.size() > 0 else {"node": "num", "value": 0}
-			mcast = args[1] if args.size() > 1 else null
+			# The same omission as `field(…)` above. No site in this game reaches
+			# it — `member(…) of castLib …` only appears under `the number of`,
+			# which `_parse_the` already handles — so this changes no AST here and
+			# closes the shape for the next title rather than for this one.
+			mcast = args[1] if args.size() > 1 else _parse_optional_castlib()
 		else:
 			which = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 			mcast = _parse_optional_castlib()
@@ -733,6 +796,9 @@ func _parse_primary() -> Dictionary:
 					args.append(_parse_expr())
 				while _eat_op(",") and not _failed():
 					args.append(_parse_expr())
+			var movie = _parse_optional_of_movie(keywords)
+			if movie != null:
+				args.append(movie)
 			# The callee carries no `line`, unlike every other `var` node.
 			return {
 				"node": "call", "callee": {"node": "var", "name": name_text},
@@ -765,6 +831,40 @@ func _parse_optional_castlib():
 		_advance()
 		return _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 	return null
+
+
+## The movie half of `go to frame E of movie F`, or null when there is none.
+##
+## `of movie` is part of `go`'s and `play`'s frame-argument grammar (§11.5), not
+## a modifier hanging off the label — the same distinction `_parse_optional_castlib`
+## draws for a cast reference. Without it the argument loop stopped at the label,
+## because the token after it is not a comma, and the leftover `of movie …`
+## became a statement of its own calling a handler named `of`. The jump then
+## landed on a marker of that name *in the current movie*: four of the six sites
+## are the save/load round trip in `HEZSAVE.DIR` and two are the return into
+## `day1` after a cutscene, so the destination was silently the room the player
+## was already in.
+##
+## Gated on the command's own keyword set rather than on the spelling `go`, so
+## `play` gets it for free and nothing else can pick it up: only `go` and `play`
+## list `movie` in `Grammar.COMMAND_WORDS`.
+##
+## The movie is appended as a plain second argument, with no `"movie"` marker
+## word between it and the frame. That is the `(frame_or_marker, movie)` shape
+## `lingo_host.gd:_go` already reads for the `go(1, "exodus.dir")` spelling — it
+## keys off the *second* argument ending in `.dxr`/`.dir` — so this needs no host
+## change. Inserting the word `"movie"` would instead push the pair into `_go`'s
+## `go to movie "x"` branch, which discards the frame.
+func _parse_optional_of_movie(keywords):
+	if keywords == null or not (keywords as Dictionary).has("movie"):
+		return null
+	if not (_at_kw("of") and _at_word("movie", 1)):
+		return null
+	_advance() # of
+	_advance() # movie
+	# A full expression, because the path is built: `of movie cdsavepath &
+	# "saveload.dxr"` in all four HEZSAVE sites.
+	return _parse_expr()
 
 
 func _parse_chunk() -> Dictionary:
@@ -867,6 +967,25 @@ func _parse_the() -> Dictionary:
 			else:
 				which_sound = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 			return {"node": "sound_prop", "prop": prop, "which": which_sound, "line": line}
+		# `set the windowType of window "joke.dxr" to 2`. Same shape as `sound`
+		# above and the same failure: `window` is not a keyword, so the generic
+		# branch below made it a command-form call and the property became
+		# `prop_of` over a *call*, which `_assign` has no case for. It recorded
+		# `cannot assign to prop_of call` and carried on. The tell is that the dot
+		# spelling `window("x").windowType = 2` already worked, because the `dot`
+		# assignment path accepts an owner that evaluates to a string — so two
+		# spellings of one statement behaved differently, which is the kind of
+		# divergence that gets diagnosed as a data problem months later.
+		# MASTER.CST scripts 12 and 69.
+		if _at_word("window"):
+			_advance()
+			var which_window: Dictionary
+			if _at_op("("):
+				var wargs := _parse_call_args()
+				which_window = wargs[0] if wargs.size() > 0 else {"node": "str", "value": ""}
+			else:
+				which_window = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+			return {"node": "window_prop", "prop": prop, "which": which_window, "line": line}
 		if _at_kw("field"):
 			_advance()
 			var fname := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
