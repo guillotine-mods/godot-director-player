@@ -1,8 +1,10 @@
 extends SceneTree
-## Can a `moveableSprite` actually be picked up and dragged?
+## Can a `moveableSprite` actually be picked up, dragged, and held inside `the
+## constraint of sprite`?
 ##
 ##   godot --headless --script tools/sprite_drag.gd
 ##   godot --script tools/sprite_drag.gd -- --movie DAY1.dir --channel 103
+##   godot --script tools/sprite_drag.gd -- --movie SHUFFLE.dir --channel 6
 ##
 ## Director's own drag: a mouse-down over a sprite whose `moveable` is set
 ## records the channel and the offset from the click to the sprite's position,
@@ -42,6 +44,14 @@ extends SceneTree
 ## `moveableSprite` is a Director property rather than one game's, and a check
 ## that only runs against one title goes dark the moment the config is pointed
 ## somewhere else -- which is exactly what happened while this was being written.
+##
+## The constraint sections work the same way: no movie in either corpus can be
+## relied on to have one authored, so the harness sets one itself, against
+## whichever other channel the frame happens to carry. `the constraint of sprite`
+## only ever asks another channel for its box. The corpus's own five sites are
+## SHUFFLE's -- `set the constraint of sprite 6 to 2` under the puck it makes
+## moveable in the line before -- and `--movie SHUFFLE.dir --channel 6` runs this
+## against them.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
@@ -109,6 +119,84 @@ func _grab_point(preview: Node, rect: Rect2, channel: int) -> Vector2:
 			if int(preview.call("_channel_at", at)) == channel:
 				return at
 	return Vector2(-1, -1)
+
+
+## A channel to constrain the dragged sprite *to*: the largest sprite on the
+## frame that is not the subject and is **below** it, so it cannot cover the
+## subject and steal the press that starts the drag. What it depicts does not
+## matter -- `the constraint of sprite` only ever asks another channel for its
+## box, and the box is the whole of what it uses.
+func _fence(preview: Node, on_frame: int, not_channel: int) -> int:
+	var score = preview.get("_score")
+	var best := 0
+	var best_area := 16.0
+	for raw in score.frame(on_frame).get("sprites", []):
+		var sprite: Dictionary = raw
+		var channel := int(sprite["channel"])
+		if channel == not_channel or channel > not_channel:
+			continue
+		var area := float(sprite.get("width", 0)) * float(sprite.get("height", 0))
+		if area > best_area:
+			best_area = area
+			best = channel
+	return best
+
+
+## A channel number no sprite occupies on this frame, for the "constrained to an
+## empty channel" case.
+func _empty_channel(preview: Node, on_frame: int) -> int:
+	var score = preview.get("_score")
+	var taken: Dictionary = {}
+	for raw in score.frame(on_frame).get("sprites", []):
+		taken[int((raw as Dictionary)["channel"])] = true
+	for channel in range(1, 1000):
+		if not taken.has(channel):
+			return channel
+	return 0
+
+
+## Stage point -> window pixel. Three transforms, not one: the node's own
+## letterbox placement, the canvas, and the project's `canvas_items` stretch.
+func _to_window(preview: Node, stage: Vector2) -> Vector2:
+	var to_screen: Transform2D = (
+		preview.get_viewport().get_screen_transform()
+		* preview.get_global_transform_with_canvas()
+	)
+	return to_screen * stage
+
+
+## A real mouse event, delivered the way a mouse delivers one: queued through
+## `Input.parse_input_event`, routed by the viewport, and handed to `_input`.
+##
+## **Not `InputRouter.mouse_motion(preview)`.** That is the handler, and calling
+## the handler is what let the press/release split be declared done twice while
+## `_input`'s only caller was still wrong: every harness drove the routing
+## directly, so the one line between a real button and the routing was the one
+## line nothing covered (`preview/input_router.gd:mouse_button`). A constraint
+## that works when a harness writes `locH` and not when a player drags is the
+## same failure in a new place, so this half goes in through the front door.
+func _send(preview: Node, stage: Vector2, event: InputEventMouse) -> void:
+	event.position = _to_window(preview, stage)
+	Input.parse_input_event(event)
+
+
+## A stage point outside the constraint box and still on the stage, so a drag
+## towards it is a drag the constraint has to stop. Prefers the far corner and
+## falls back to the near one for a box already against the edge of the stage.
+func _outside(box: Rect2, stage: Vector2) -> Vector2:
+	var out := box.end + Vector2(40.0, 40.0)
+	if out.x > stage.x - 2.0:
+		out.x = box.position.x - 40.0
+	if out.y > stage.y - 2.0:
+		out.y = box.position.y - 40.0
+	return out.clamp(Vector2(2.0, 2.0), stage - Vector2(2.0, 2.0))
+
+
+## Where a position write asks to land, and where the constraint lets it.
+func _clamped(box: Rect2, to: Vector2) -> Vector2:
+	return Vector2(
+		clampf(to.x, box.position.x, box.end.x),
+		clampf(to.y, box.position.y, box.end.y))
 
 
 ## Somewhere to drag to: 60px towards the middle of the stage, so the
@@ -272,7 +360,119 @@ func _init() -> void:
 		"mouseUp %d, wanted %d" % [int(sent.get("mouseUp", 0)), after_up])
 	h.complete("mouse-up ends the drag and delivers the message a drop is decided in")
 
-	# 5. The same thing with a real pointer and real pixels. Headless Godot has
+	# 5. `the constraint of sprite` (§7.6). Position writes only -- no drag is in
+	# progress for any of this, and that is one of the things being asserted:
+	# Director applies the constraint in `Channel::setPosition`, which is where a
+	# script's own `set the locH of sprite` arrives as well as the drag, so a
+	# constrained sprite is constrained whether or not anything is dragging it.
+	# SHUFFLE, the only movie in the corpus that uses the property, depends on
+	# that directly -- it constrains sprite 7 as well as sprite 6, and only sprite
+	# 6 is ever made moveable.
+	var fence := _fence(preview, at_frame, slot)
+	h.begin("`the constraint of sprite` is channel state, not a puppeted field")
+	h.check("a sprite starts unconstrained",
+		int(preview.call("lingo_sprite_prop", slot, "constraint")) == 0)
+	preview.call("lingo_set_sprite_prop", slot, "constraint", fence)
+	h.check("`the constraint of sprite` reads back what was written",
+		int(preview.call("lingo_sprite_prop", slot, "constraint")) == fence,
+		"read %d, wrote %d" % [
+			int(preview.call("lingo_sprite_prop", slot, "constraint")), fence])
+	# The storage class, asserted rather than assumed, because it is invisible
+	# until the score moves the channel on and then the constraint is simply gone.
+	# The record has no constraint field -- bytes 36-47 hold one distinct value,
+	# 0x00, across all 2,702,680 occupied records in both corpora -- so there is
+	# nothing for the per-field merge to merge with, and `effective` would discard
+	# an override on the next member change. All five corpus sites set the
+	# constraint and then immediately `go` to another marker.
+	h.check("it did not land in the per-field override table",
+		not (preview.get("_overrides") as Dictionary).get(slot, {}).has("constraint"),
+		"override keys: %s" % str(
+			(preview.get("_overrides") as Dictionary).get(slot, {}).keys()))
+	h.complete("`the constraint of sprite` is channel state, not a puppeted field")
+
+	if fence > 0:
+		var box: Rect2 = preview.call("lingo_sprite_rect", fence)
+		h.begin("a constrained position write is clamped into the constraint's box")
+		# Far outside on both axes, so both edges are exercised and the answer
+		# cannot be the position happening to be legal already.
+		var far := box.end + Vector2(500.0, 500.0)
+		preview.call("lingo_set_sprite_prop", slot, "loch", int(far.x))
+		preview.call("lingo_set_sprite_prop", slot, "locv", int(far.y))
+		var landed := Vector2(
+			float(preview.call("lingo_sprite_prop", slot, "loch")),
+			float(preview.call("lingo_sprite_prop", slot, "locv")))
+		h.check("a write past the far edge lands on it",
+			landed == Vector2(int(box.end.x), int(box.end.y)),
+			"landed %s, box %s" % [str(landed), str(box)])
+		# **The point, not the rect**, which is the one thing about this that is
+		# easy to get wrong in a way that looks more correct. A sprite is placed
+		# from its registration point, so a sprite pinned to the far edge hangs
+		# outside the box by whatever artwork sits to the right of that point.
+		# A version that clamped the *rect* would report a position short of the
+		# edge -- the check above is what catches it -- and would stop a slider
+		# knob reaching the end of its own track.
+		var pinned: Rect2 = preview.call("_sprite_rect",
+			preview.call("_effective", _sprite_on(preview, slot)))
+		var reach := pinned.end.x - landed.x
+		if reach > 0.0:
+			h.check("the sprite is allowed to overhang the box by its registration offset",
+				pinned.end.x > box.end.x,
+				"rect ends %.0f, box ends %.0f, %.0f of artwork right of the position" % [
+					pinned.end.x, box.end.x, reach])
+		var near := box.position - Vector2(500.0, 500.0)
+		preview.call("lingo_set_sprite_prop", slot, "loch", int(near.x))
+		preview.call("lingo_set_sprite_prop", slot, "locv", int(near.y))
+		h.check("a write past the near edge lands on it",
+			Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+				float(preview.call("lingo_sprite_prop", slot, "locv")))
+				== Vector2(int(box.position.x), int(box.position.y)),
+			"landed %s,%s box %s" % [
+				str(preview.call("lingo_sprite_prop", slot, "loch")),
+				str(preview.call("lingo_sprite_prop", slot, "locv")), str(box)])
+		var inside := box.get_center().floor()
+		preview.call("lingo_set_sprite_prop", slot, "loch", int(inside.x))
+		preview.call("lingo_set_sprite_prop", slot, "locv", int(inside.y))
+		h.check("a write inside the box is stored untouched",
+			Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+				float(preview.call("lingo_sprite_prop", slot, "locv"))) == inside,
+			"landed %s, wanted %s" % [
+				str(Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+					float(preview.call("lingo_sprite_prop", slot, "locv")))), str(inside)])
+		# Nothing was being dragged for any of the above.
+		h.check("no drag was in progress for any of it",
+			int(preview.get("_drag_channel")) == 0)
+		h.complete("a constrained position write is clamped into the constraint's box")
+
+	# The two answers that are not "clamp it": a constraint of 0 is Director's
+	# default and means unconstrained, and a constraint naming a channel with no
+	# sprite on it has no box to clamp into. The literal reading of the reference
+	# would ask the empty channel anyway, get an empty rect at the origin and
+	# teleport the sprite to (0, 0) the instant a script or a player moved it;
+	# `interaction.gd:constraint_box` says why this port refuses to.
+	h.begin("a constraint with no box does not move the sprite")
+	var away := Vector2(600.0, 400.0)
+	preview.call("lingo_set_sprite_prop", slot, "constraint", _empty_channel(preview, at_frame))
+	preview.call("lingo_set_sprite_prop", slot, "loch", int(away.x))
+	preview.call("lingo_set_sprite_prop", slot, "locv", int(away.y))
+	h.check("a constraint on an empty channel leaves the write alone",
+		Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+			float(preview.call("lingo_sprite_prop", slot, "locv"))) == away,
+		"landed %s, wanted %s" % [
+			str(Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+				float(preview.call("lingo_sprite_prop", slot, "locv")))), str(away)])
+	preview.call("lingo_set_sprite_prop", slot, "constraint", 0)
+	var free := Vector2(11.0, 13.0)
+	preview.call("lingo_set_sprite_prop", slot, "loch", int(free.x))
+	preview.call("lingo_set_sprite_prop", slot, "locv", int(free.y))
+	h.check("a constraint of 0 means unconstrained",
+		Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+			float(preview.call("lingo_sprite_prop", slot, "locv"))) == free,
+		"landed %s, wanted %s" % [
+			str(Vector2(float(preview.call("lingo_sprite_prop", slot, "loch")),
+				float(preview.call("lingo_sprite_prop", slot, "locv")))), str(free)])
+	h.complete("a constraint with no box does not move the sprite")
+
+	# 6. The same thing with a real pointer and real pixels. Headless Godot has
 	# neither -- it never paints, and its mouse never moves -- so every check
 	# above can pass while nothing happens on screen. That is the trap
 	# `tools/window_renders.gd` documents, and it applies here for the same
@@ -327,7 +527,7 @@ func _init() -> void:
 		"%d bytes sampled" % after_pixels.size())
 	h.complete("a real pointer move drags the sprite on screen")
 
-	# 6. Letting go, through `InputRouter.mouse_button` itself rather than through
+	# 7. Letting go, through `InputRouter.mouse_button` itself rather than through
 	# `route_release`. That is the whole point of doing it here: the bug was not in
 	# the routing but in the *router*, which took a non-pressed event, cleared the
 	# drag and returned before anything was dispatched. A check that calls
@@ -361,5 +561,93 @@ func _init() -> void:
 		still.position.is_equal_approx(dropped.position),
 		"was %s, now %s" % [str(dropped.position), str(still.position)])
 	h.complete("a real button-up delivers the drop")
+
+	# 8. The constraint under a real pointer, and the whole way in through
+	# `_input` -- press, move and release are all `Input.parse_input_event`, so
+	# what is being checked is the path a player has, not the path a harness has.
+	# Section 5 proved the rule against position writes; this proves the rule is
+	# reachable, and that the sprite is *drawn* where the constraint left it.
+	#
+	# The playhead is stopped for it. The score keeps running across every
+	# `await` above, and a `mouseUp` handler that runs a `go` moves the frame out
+	# from under the subject -- which reads as the constraint failing when it is
+	# the harness measuring a different movie.
+	if fence > 0:
+		preview.set("_paused", true)
+		var box: Rect2 = preview.call("lingo_sprite_rect", fence)
+		preview.call("lingo_set_sprite_prop", slot, "constraint", 0)
+		var home := box.get_center().floor()
+		preview.call("lingo_set_sprite_prop", slot, "loch", int(home.x))
+		preview.call("lingo_set_sprite_prop", slot, "locv", int(home.y))
+		await process_frame
+		var home_rect: Rect2 = preview.call("_sprite_rect",
+			preview.call("_effective", _sprite_on(preview, slot)))
+		var grab := _grab_point(preview, home_rect, slot)
+		var out := _outside(box, Vector2(preview.get("STAGE")))
+
+		h.begin("a real drag stops at the edge of the constraint")
+		h.check("the sprite can be picked up inside the box", grab.x >= 0.0,
+			"rect %s, box %s" % [str(home_rect), str(box)])
+		h.check("the drag is aimed outside the box", not box.has_point(out),
+			"pointer %s, box %s" % [str(out), str(box)])
+		if grab.x >= 0.0 and not box.has_point(out):
+			preview.call("lingo_set_sprite_prop", slot, "constraint", fence)
+			# No `Input.warp_mouse` anywhere in this section, deliberately. The
+			# events carry their own position and `_input` routes by *that* -- the
+			# whole point of `note_pointer`, and what makes the engine work on a
+			# touchscreen. Warping as well puts a second, OS-generated motion into
+			# the queue behind the synthetic one, and the drag then ends wherever
+			# the operating system decided to leave the cursor.
+			var down := InputEventMouseButton.new()
+			down.button_index = MOUSE_BUTTON_LEFT
+			down.pressed = true
+			_send(preview, grab, down)
+			await process_frame
+			h.check("a real press inside the box started the drag",
+				int(preview.get("_drag_channel")) == slot,
+				"channel %d, wanted %d" % [int(preview.get("_drag_channel")), slot])
+			await RenderingServer.frame_post_draw
+			var edge_before := _sample(preview, home_rect)
+			# Where the drag asks the sprite to go, and where §7.6 lets it. Derived
+			# from the engine's own grab offset rather than assumed, so the check
+			# holds for whichever member this title put on the channel.
+			var wanted: Vector2 = out + (preview.get("_drag_offset") as Vector2)
+			var expect := _clamped(box, wanted)
+			h.check("the drag would leave the box if nothing stopped it",
+				wanted != expect, "wanted %s, allowed %s" % [str(wanted), str(expect)])
+			var move := InputEventMouseMotion.new()
+			move.relative = _to_window(preview, out) - _to_window(preview, grab)
+			_send(preview, out, move)
+			await process_frame
+			await process_frame
+			await RenderingServer.frame_post_draw
+			var stopped := Vector2(
+				float(preview.call("lingo_sprite_prop", slot, "loch")),
+				float(preview.call("lingo_sprite_prop", slot, "locv")))
+			h.check("the dragged sprite stopped on the box's edge",
+				stopped == Vector2(int(expect.x), int(expect.y)),
+				"stopped %s, edge %s, pointer asked for %s" % [
+					str(stopped), str(expect), str(wanted)])
+			# The player-visible half: it is drawn there, and the place it left has
+			# repainted. A run that renders nothing passes every model check above.
+			var landed_rect: Rect2 = preview.call("_sprite_rect",
+				preview.call("_effective", _sprite_on(preview, slot)))
+			h.check("it is drawn where the constraint left it",
+				landed_rect.get_center().distance_to(
+					stopped + (home_rect.get_center() - home)) < 3.0,
+				"rect %s, position %s" % [str(landed_rect), str(stopped)])
+			h.check("the pixels where it started have changed",
+				edge_before.size() > 0 and _sample(preview, home_rect) != edge_before,
+				"%d bytes sampled" % edge_before.size())
+			var up_again := InputEventMouseButton.new()
+			up_again.button_index = MOUSE_BUTTON_LEFT
+			up_again.pressed = false
+			_send(preview, out, up_again)
+			await process_frame
+			h.check("the real button-up ended the constrained drag",
+				int(preview.get("_drag_channel")) == 0,
+				"channel %d" % int(preview.get("_drag_channel")))
+		h.complete("a real drag stops at the edge of the constraint")
+		preview.set("_paused", false)
 
 	quit(h.finish("Director's moveableSprite drag"))

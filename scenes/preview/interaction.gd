@@ -233,6 +233,65 @@ static func begin_drag(host, at: Vector2, channel: int, sprites: Array) -> Array
 	return []
 
 
+## Where a position write on `channel` is allowed to land: `the constraint of
+## sprite` (§7.6).
+##
+## **It clamps the position POINT, not the rect**, and that is the whole of what
+## is easy to get wrong here. A sprite is placed from its registration point, so
+## a sprite pinned to the right edge of its constraint hangs outside it by
+## whatever the registration offset is -- half the artwork's width for a centred
+## member. Clamping the rect instead looks more correct on screen and is a
+## different behaviour: it stops the registration point short of the edge, so a
+## slider knob can never reach the end of its own track and a dragged item can
+## never touch the side of the tray it is being dropped into. §7.6 states the
+## point rule explicitly and the reference does the same thing --
+## `Channel::setPosition` clamps `newPos.x` and `newPos.y` between the constraint
+## channel's bbox edges and never looks at the dragged sprite's size at all.
+##
+## Per axis, and independently, which is what makes it a clamp rather than a
+## containment test: a point above and to the left of the box arrives at the
+## box's top-left corner rather than being refused.
+static func constrain(host, channel: int, to: Vector2) -> Vector2:
+	var box: Rect2 = constraint_box(host, channel)
+	if box == Rect2():
+		return to
+	return Vector2(
+		clampf(to.x, box.position.x, box.end.x),
+		clampf(to.y, box.position.y, box.end.y))
+
+
+## The box `the constraint of sprite <channel>` names, or an empty rect for "not
+## constrained".
+##
+## **0 means unconstrained** -- Director numbers channels from 1, the property
+## defaults to 0, and `Channel::setPosition` tests `_constraint > 0` before it
+## reads any bbox. So the overwhelmingly common case costs one dictionary lookup
+## and the position write that follows is byte-for-byte what it was before this
+## existed.
+##
+## **A constraint naming a channel with no sprite on it is also unconstrained,
+## and that is a deliberate divergence.** Read literally the reference would ask
+## an empty channel for its bbox, get an empty rect at the origin, and clamp the
+## dragged sprite onto (0, 0) -- a sprite that teleports into the top-left corner
+## the instant the player touches it. No author can have meant that, nothing in
+## the corpus would exercise it, and the failure it produces looks like a
+## rendering fault rather than a constraint. The same answer covers a hidden
+## constraint channel, since `lingo_sprite_rect` treats `visible` as "not drawn
+## and not measured" throughout the port.
+##
+## Measured through `lingo_sprite_rect`, so the constraint follows a constraint
+## channel a script has moved or swapped. Deliberately *not* `rollover_channel`'s
+## rect, which is the score's: §4.5 reads the score there to stop a menu
+## highlight feeding back into its own rollover test, and nothing feeds back
+## here. In the reference both are the live channel's box; the rollover path's
+## use of the score record is a documented divergence and not a rule to copy.
+static func constraint_box(host, channel: int) -> Rect2:
+	var onto: int = int(host.lingo_sprite_constraint(channel))
+	if onto <= 0:
+		return Rect2()
+	return host.lingo_sprite_rect(onto)
+
+
 ## The mouse-DOWN half of a click: what was hit, which script answers for it,
 ## and the `mouseDown` message.
 ##

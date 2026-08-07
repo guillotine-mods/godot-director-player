@@ -226,6 +226,14 @@ var _picker: Dictionary = {"open": false}
 ## delta, and survives frame changes and member swaps â€” where `_overrides` is
 ## per-field puppet state that is dropped when the score moves a channel on.
 var _channel_cursors: Dictionary = {}
+## channel -> `the constraint of sprite N`, 0 for unconstrained. Kept beside the
+## cursors and apart from `_overrides` for exactly the same reason, which
+## `preview/sprite_props.gd:write` gives at length: the sprite record has no
+## constraint field, so the score never writes one, so there is nothing for a
+## per-field merge to merge with -- and an override would be discarded by the
+## score's next member change, which is the frame the corpus's own constraint
+## sites hand over to.
+var _channel_constraints: Dictionary = {}
 ## channel -> the member it last showed, so a genuine swap can be detected.
 var _last_member: Dictionary = {}
 ## channel -> the tick its current film loop began on. A loop restarts from its
@@ -466,6 +474,15 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_score = score
 	MovieSession.adopt(self)
 	MovieSession.forget_previous(self, previous_path)
+	# Belongs inside `forget_previous`, on the line after `_channel_cursors.clear()`
+	# and for the same reason it gives: `the constraint of sprite` stores a
+	# *channel number*, and channel 2 of the next movie is a different sprite in a
+	# different place. Carried over it does not keep a constraint, it invents one --
+	# and an invented constraint is silent, because all it does is stop a position
+	# write landing where the script asked. It is here rather than there only
+	# because `preview/movie_session.gd` is being edited elsewhere this session;
+	# move it in and delete these lines.
+	_channel_constraints.clear()
 	_preloader = Preloader.new(_score)
 
 	if _lingo_on:
@@ -2021,7 +2038,16 @@ func _note_member(channel: int, cast_id: int) -> void:
 ## them -- see that file for what that cost.
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 	return SpriteProps.read(channel, prop, _overrides,
-		_score.frame(_index).get("sprites", []))
+		_score.frame(_index).get("sprites", []), _channel_constraints)
+
+
+## `the constraint of sprite N`, for `preview/interaction.gd:constraint_box`.
+##
+## A method rather than a reach into `_channel_constraints`, because the module
+## already takes the node untyped and one more `host._field` is one more thing
+## that answers `null` instead of failing when it moves.
+func lingo_sprite_constraint(channel: int) -> int:
+	return int(_channel_constraints.get(channel, 0))
 
 
 func lingo_puppet_sprite(channel: int, on: bool) -> void:
@@ -2038,8 +2064,69 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		_cursor_applied = " "
 		_resolve_cursor()
 		return
+	# `the locH of sprite` and `the locV of sprite` are one operation in Director
+	# and this is where the drag arrives as well, so the constraint is applied in
+	# one place for both. See `_write_position`.
+	if prop == "loch" or prop == "locv":
+		_write_position(channel, prop, value)
+		return
 	SpriteProps.write(channel, prop, value, _overrides,
-		_score.frame(_index).get("sprites", []))
+		_score.frame(_index).get("sprites", []), _channel_constraints)
+
+
+## A position write, through `Channel::setPosition`'s rule (§7.6).
+##
+## Director has no separate `locH` and `locV` setters: both arrive at
+## `setPosition`, which takes a **point**, clamps it into `the constraint of
+## sprite`'s channel and stores both coordinates. Two consequences follow, and
+## both are the reason this is a function rather than two lines in the caller.
+##
+## **The constraint is not part of the drag.** Everything that moves a sprite
+## comes through here -- `InputRouter.mouse_motion`'s drag writes and a script's
+## own `set the locH of sprite N` alike -- so a constrained sprite is constrained
+## whether or not anything is dragging it, and whether or not it is moveable at
+## all. SHUFFLE says so directly: it constrains sprite 7 as well as sprite 6, and
+## only sprite 6 is ever made moveable.
+##
+## **A write to one axis clamps the other**, because the reference clamps a point
+## and then sets both coordinates from it. Stored only when the clamp actually
+## moved that other axis, though, and that restraint is not an optimisation:
+## puppeting is per field (`preview/sprite_state.gd`), so writing `locV` on every
+## `set the locH` would pin an unconstrained sprite's vertical position against
+## the score's own animation -- and this game walks its characters by score
+## animation.
+##
+## The unconstrained path stores the value the script wrote, untouched, exactly
+## as it did before this existed. A script may legitimately write VOID here --
+## `set the locH of sprite 30 to egozh` with `egozh` never set -- and coercing it
+## to an int is `sprite_state.effective`'s job, not this one's.
+##
+## The unconstrained case is also the *hot* case -- this game walks its
+## characters by writing `the locH of sprite` every frame -- so it is decided
+## before anything else is read, on `constraint_box`'s own answer rather than on
+## a second copy of "0 means unconstrained" kept here.
+func _write_position(channel: int, prop: String, value: Variant) -> void:
+	var sprites: Array = [] if _score == null else _score.frame(_index).get("sprites", [])
+	if Interaction.constraint_box(self, channel) == Rect2():
+		SpriteProps.write(channel, prop, value, _overrides, sprites, _channel_constraints)
+		return
+	var axis := 0 if prop == "loch" else 1
+	var wanted := Vector2(
+		float(LingoValue.to_int(
+			SpriteProps.read(channel, "loch", _overrides, sprites, _channel_constraints))),
+		float(LingoValue.to_int(
+			SpriteProps.read(channel, "locv", _overrides, sprites, _channel_constraints))))
+	wanted[axis] = float(LingoValue.to_int(value))
+	var at: Vector2 = Interaction.constrain(self, channel, wanted)
+	if at[axis] == wanted[axis]:
+		SpriteProps.write(channel, prop, value, _overrides, sprites, _channel_constraints)
+	else:
+		SpriteProps.write(channel, prop, int(at[axis]), _overrides, sprites,
+			_channel_constraints)
+	var other := 1 - axis
+	if at[other] != wanted[other]:
+		SpriteProps.write(channel, "locv" if other == 1 else "loch", int(at[other]),
+			_overrides, sprites, _channel_constraints)
 
 
 ## `field "name"`, and `put x into field "name"`.

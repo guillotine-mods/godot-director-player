@@ -30,12 +30,6 @@ the sprite's flag OR the member's, the first editable sprite takes focus, and
 `keyDown`/`keyUp` route to the focused sprite rather than the one under the
 mouse. Keyboard input itself is done; this is the widget half.
 
-**Hilite on click.** §4.6. `shouldHilite()` needs `isActive()` and requires not
-moveable and not puppet; for a bitmap it is driven by the member's auto-hilite
-info flag, falling back to Matte ink. The inversion is a masked XOR through the
-sprite's matte, so an irregular sprite inverts its silhouette rather than its
-box. This is the feedback that tells a player a click landed.
-
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
@@ -112,6 +106,33 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   tables (Rainbow, Pastels, Vivid, NTSC, Metallic) are authored data with no
   generating rule: the engine warns by name and substitutes system Mac rather
   than inventing them. Lifting them from a Director install is the fix.
+- **Hilite on click.** §4.6, implemented clause for clause in
+  `scenes/preview/hilite.gd`: `isActive()` presence-only, not moveable, not
+  puppet, bitmaps only, the member's Auto Hilite info flag with "ink is Matte"
+  as the no-cast-info fallback. The inversion is a masked XOR through the matte
+  -- the inverted copy carries the source alpha and is drawn *instead of* the
+  artwork, so an irregular sprite inverts its silhouette rather than its box. On
+  at mouse-down, off when the pointer leaves by the ink-aware test, on again on
+  re-entry, off at mouse-up.
+
+  **0 cast members carry the flag in any of the three titles** -- 73,994 +
+  282,995 + 75,000 (`tools/hilite_survey.gd`) -- and Piposh 2 cannot reach the
+  fallback arm either, since every one of its members has an info block. These
+  games swap members instead. So `tools/hilite.gd` drives it from a parsed
+  member, the way `tools/trails.gd` does.
+
+  The flag had never been decoded: it is bit 1 of the word at offset 12 of the
+  cast info block, which `director_cast.gd:_parse_info` skipped. Two
+  corroborations that offset 12 really is the flag word rather than a plausible
+  guess -- Piposh 1's only non-zero value is `0x10` on 17 members, every one of
+  them a *sound*, which is exactly where the reference reads a sound's looping
+  bit; Piposh 2's is `0x40` on 32 bitmaps and 1 shape.
+
+  Two deliberate divergences: hilite follows the channel the press latched
+  rather than re-resolving under the pointer, and where an ink keys more than
+  the matte does, the destination behind the holes is not inverted -- the same
+  limit dirty rects already impose.
+
 - **Trails**, on a corpus where 0 of 816,318 records set the flag.
 - **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in
   this game holds a sound member, so all of it is proved against synthesised
