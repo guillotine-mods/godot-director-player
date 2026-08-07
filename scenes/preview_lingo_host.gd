@@ -185,6 +185,33 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			var which := LingoValue.to_int(args[0]) if not args.is_empty() else 0
 			return 1 if preview.lingo_rollover(which) else 0
+		"intersects", "within":
+			# `sprite A intersects B` -- do the two channels' rects overlap -- and
+			# `sprite A within B`, does B contain A. The interpreter routes both
+			# here as operators rather than as calls, so `left`/`right` arrive
+			# already evaluated to channel numbers.
+			#
+			# **This is how every drop in the corpus is decided.** Director's
+			# inventory idiom drags a moveable sprite and then asks, in `on
+			# mouseUp`, what it was let go over: `MASTER/External/BehaviorScript
+			# 52` tests `sprite the clickOn intersects 100` (Piposh's head, "what
+			# is this?") and then channels 18-21 in turn, and eleven near-copies
+			# of it across the corpus do the same. Unbound, the operator answered
+			# `null` -- falsy -- so *no* drop target ever matched in any room, in
+			# any title. That is not a missing nicety: it is the answer to the
+			# question the whole mechanic asks, hardcoded to "nothing".
+			#
+			# A zero-size rect is an empty or hidden channel, and answers 0 rather
+			# than overlapping everything at the origin.
+			if preview == null or args.size() < 2:
+				return 0
+			var first: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[0]))
+			var second: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[1]))
+			if first.size == Vector2.ZERO or second.size == Vector2.ZERO:
+				return 0
+			if low == "intersects":
+				return 1 if first.intersects(second) else 0
+			return 1 if second.encloses(first) else 0
 		"soundbusy":
 			# Scripts wait on this before speaking. Unbound it answers 0, which
 			# reads as "nothing is playing" and lets a room talk over itself.

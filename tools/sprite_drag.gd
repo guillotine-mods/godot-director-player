@@ -8,6 +8,13 @@ extends SceneTree
 ## records the channel and the offset from the click to the sprite's position,
 ## and every pointer move until mouse-up writes `locH`/`locV`.
 ##
+## **Both ends of it, because they broke separately and a week apart.** Picking
+## up failed on the property-name mismatch below; letting go failed because the
+## engine sent `mouseUp` on the *press*, alongside `mouseDown`, and then threw
+## the real release away — so a drag never delivered the one message a drop is
+## decided in. The two look identical from the player's chair ("the inventory
+## does not work") and share no code at all.
+##
 ## Reported symptom: in Piposh 2's DAY1 you cannot drag anything out of the
 ## inventory. `init all` and `displayobject` both run
 ##
@@ -188,15 +195,25 @@ func _init() -> void:
 		quit(h.finish("Director's moveableSprite drag"))
 		return
 
-	# 3. The drag, through the real mouse-down path: `route_click` is what
-	# `InputRouter.mouse_button` calls and it is where `_begin_drag` sits.
-	# Asserting the sprite's *rect* moved, not that a setter and a getter agree —
-	# the player's complaint is that the item does not follow the cursor.
+	# 3. The drag, through the real mouse-down path: `route_press` is what
+	# `InputRouter.mouse_button` calls on a press and it is where `_begin_drag`
+	# sits. Asserting the sprite's *rect* moved, not that a setter and a getter
+	# agree — the player's complaint is that the item does not follow the cursor.
 	h.begin("mouse-down starts a drag and the sprite follows the pointer")
-	preview.call("route_click", centre)
+	var sent: Dictionary = preview.get("_sent")
+	var ups_before := int(sent.get("mouseUp", 0))
+	preview.call("route_press", centre)
 	h.check("the drag took the sprite's channel",
 		int(preview.get("_drag_channel")) == slot,
 		"channel %d, wanted %d" % [int(preview.get("_drag_channel")), slot])
+	# The regression this half of the harness exists for. `mouseDown` and
+	# `mouseUp` used to go out back to back from the press, which meant a drop was
+	# decided before the drag had moved the sprite a single pixel — see
+	# `preview/interaction.gd:press`.
+	h.check("the press sends mouseDown and NOT mouseUp",
+		int(sent.get("mouseDown", 0)) > 0 and int(sent.get("mouseUp", 0)) == ups_before,
+		"mouseDown %d, mouseUp %d (was %d)" % [
+			int(sent.get("mouseDown", 0)), int(sent.get("mouseUp", 0)), ups_before])
 	var moved := _drag_to(preview, centre)
 	# Exactly the two writes `InputRouter.mouse_motion` makes on each move. It
 	# cannot be called here: it reads the live pointer and headless Godot has
@@ -216,7 +233,46 @@ func _init() -> void:
 		"centre %s, pointer %s" % [str(now.get_center()), str(moved)])
 	h.complete("mouse-down starts a drag and the sprite follows the pointer")
 
-	# 4. The same thing with a real pointer and real pixels. Headless Godot has
+	# 4. The release. Picking an item up is half a drag; the reported bug was the
+	# other half — "I cannot drop the item I started dragging". §7.6: the drag
+	# ends on mouse-up, and Director does not suppress the message because a drag
+	# was in progress. `InputRouter.mouse_button` used to clear `_drag_channel`
+	# and return, so the release of a drag was the one mouse event in the engine
+	# that dispatched nothing at all.
+	#
+	# Asserted on the *engine's* invariants rather than on any drop's outcome,
+	# because what a drop does is the movie's business and this harness has to
+	# hold for whichever title `director_game.cfg` names. What the engine owes the
+	# movie is exactly three things, and all three failed before: the drag has
+	# ended, a `mouseUp` has gone out, and `the clickOn` still names the sprite
+	# that was picked up so the handler can ask where it landed.
+	h.begin("mouse-up ends the drag and delivers the message a drop is decided in")
+	preview.call("route_release", moved)
+	h.check("the drag has ended", int(preview.get("_drag_channel")) == 0,
+		"channel %d" % int(preview.get("_drag_channel")))
+	h.check("the release sends mouseUp",
+		int(sent.get("mouseUp", 0)) == ups_before + 1,
+		"mouseUp %d, wanted %d" % [int(sent.get("mouseUp", 0)), ups_before + 1])
+	# Latched by the mouse-DOWN and held across the whole drag, which is what lets
+	# `sprite the clickOn intersects <target>` — the corpus's entire drop idiom —
+	# ask about the sprite the player picked up rather than about whatever the
+	# pointer is over at the end.
+	h.check("`the clickOn` still names the dragged sprite",
+		int((preview.get("_host") as Object).get("click_sprite")) == slot,
+		"clickOn %d, wanted %d" % [
+			int((preview.get("_host") as Object).get("click_sprite")), slot])
+	# A release with no press behind it is not a click. Before the split there was
+	# no press to have: every release cleared the drag and returned, so this could
+	# not be got wrong; with a latch there is now a stale-latch failure mode, and
+	# it would show up as a phantom second `mouseUp` on the next button-up.
+	var after_up := int(sent.get("mouseUp", 0))
+	preview.call("route_release", moved)
+	h.check("a second release with no press behind it sends nothing",
+		int(sent.get("mouseUp", 0)) == after_up,
+		"mouseUp %d, wanted %d" % [int(sent.get("mouseUp", 0)), after_up])
+	h.complete("mouse-up ends the drag and delivers the message a drop is decided in")
+
+	# 5. The same thing with a real pointer and real pixels. Headless Godot has
 	# neither -- it never paints, and its mouse never moves -- so every check
 	# above can pass while nothing happens on screen. That is the trap
 	# `tools/window_renders.gd` documents, and it applies here for the same
@@ -242,7 +298,8 @@ func _init() -> void:
 	Input.warp_mouse(to_screen * centre)
 	await process_frame
 	await process_frame
-	preview.call("route_click", preview.call("stage_mouse"))
+	var real_ups := int(sent.get("mouseUp", 0))
+	preview.call("route_press", preview.call("stage_mouse"))
 	h.check("the pointer is over the sprite and the drag started",
 		int(preview.get("_drag_channel")) == slot,
 		"stage_mouse %s, wanted %s" % [str(preview.call("stage_mouse")), str(centre)])
@@ -269,5 +326,40 @@ func _init() -> void:
 		before_pixels.size() > 0 and after_pixels != before_pixels,
 		"%d bytes sampled" % after_pixels.size())
 	h.complete("a real pointer move drags the sprite on screen")
+
+	# 6. Letting go, through `InputRouter.mouse_button` itself rather than through
+	# `route_release`. That is the whole point of doing it here: the bug was not in
+	# the routing but in the *router*, which took a non-pressed event, cleared the
+	# drag and returned before anything was dispatched. A check that calls
+	# `route_release` directly would have passed against the broken build.
+	h.begin("a real button-up delivers the drop")
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	InputRouter.mouse_button(preview, up, preview.call("stage_mouse"), Rect2())
+	await process_frame
+	await RenderingServer.frame_post_draw
+	h.check("the real button-up ended the drag",
+		int(preview.get("_drag_channel")) == 0,
+		"channel %d" % int(preview.get("_drag_channel")))
+	h.check("the real button-up sent mouseUp",
+		int(sent.get("mouseUp", 0)) == real_ups + 1,
+		"mouseUp %d, wanted %d" % [int(sent.get("mouseUp", 0)), real_ups + 1])
+	# The sprite stops following the pointer once the button is up. Moving the
+	# mouse again and finding the sprite still where it was let go is the
+	# player-visible half of "the drag ended" — `_drag_channel` reading 0 is the
+	# model agreeing with itself.
+	var dropped: Rect2 = preview.call("_sprite_rect",
+		preview.call("_effective", _sprite_on(preview, slot)))
+	Input.warp_mouse(to_screen * (target + Vector2(0, 40)))
+	await process_frame
+	InputRouter.mouse_motion(preview)
+	await process_frame
+	var still: Rect2 = preview.call("_sprite_rect",
+		preview.call("_effective", _sprite_on(preview, slot)))
+	h.check("the sprite no longer follows the pointer",
+		still.position.is_equal_approx(dropped.position),
+		"was %s, now %s" % [str(dropped.position), str(still.position)])
+	h.complete("a real button-up delivers the drop")
 
 	quit(h.finish("Director's moveableSprite drag"))

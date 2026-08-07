@@ -18,6 +18,7 @@ extends RefCounted
 ## the artwork cache and the script table, all of which are the node's.
 
 const Ink := preload("res://director/director_ink.gd")
+const Snapshot := preload("res://scenes/preview/snapshot.gd")
 
 
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
@@ -147,6 +148,120 @@ static func begin_drag(host, at: Vector2, channel: int, sprites: Array) -> Array
 			float(live.get("loc_h", 0)), float(live.get("loc_v", 0))
 		) - at]
 	return []
+
+
+## The mouse-DOWN half of a click: what was hit, which script answers for it,
+## and the `mouseDown` message.
+##
+## **A click is two messages at two moments, and this port used to send both on
+## the press.** `mouseDown` and `mouseUp` went out back to back from the same
+## call, and the release then cleared the drag and returned without dispatching
+## anything at all. For a plain click that is invisible -- the two handlers run
+## in the right order either way, a few milliseconds early. For a *drag* it is
+## the whole mechanism, because the only thing that distinguishes a drop from a
+## pick-up is **where the sprite is when `mouseUp` arrives**, and on the press it
+## is still exactly where it started.
+##
+## Director's own inventory idiom (`MASTER/External/BehaviorScript 52`, attached
+## to the eight slot channels, and eleven near-copies of it across the corpus)
+## is written entirely around that gap:
+##
+##     on mouseDown            -- remember where the item lives
+##       objectxx = the locH of sprite the clickOn
+##     on mouseUp              -- decide what it was dropped on, then send it home
+##       if sprite the clickOn intersects 100 then ...
+##       set the locH of sprite the clickOn to objectxx
+##
+## Sent together on the press, `intersects` is asked while the item is still in
+## its slot, so no drop target ever matches; and the snap-back writes the home
+## position over the home position, so it does nothing either. Then the drag runs
+## and the release throws its message away, and the item is simply abandoned
+## wherever the button came up. That is the reported bug -- "I cannot drop the
+## item I started dragging" -- and it is a general fault in the click model, not
+## an inventory one: every `mouseUp` handler in every title was running before
+## the mouse came up.
+##
+## §7.6: the drag ends on mouse-up, and Director does not suppress the message
+## because a drag was in progress.
+##
+## Director does have a rule shaped like the old behaviour, which is probably how
+## it got written: §15's **immediate sprites** run their script on the mouse-down
+## and have a mouse-up synthesised straight after. That is one authored sprite
+## flag, though, not the click model -- applied to every sprite it makes the
+## whole engine immediate, and nothing can be dragged anywhere.
+static func press(host, at: Vector2) -> void:
+	# Cleared first, so a press the interpreter is not up for cannot leave the
+	# *previous* click's script latched for the release to send a message to.
+	host._click_script = {}
+	if not host._lingo_on or host._interpreter == null:
+		return
+	# A click always produces a message. What is under the cursor decides which
+	# script sees it first; it does not decide whether one is sent.
+	#
+	# Bailing out on a miss or a hole is why the menu went from unreliable to
+	# dead: its backdrop covers the stage, so the hit test answered "hole" and
+	# nothing was ever dispatched -- while the handler the menu actually uses
+	# lives in the frame script and reads `the clickOn`.
+	# Annotated rather than inferred: a call through `host` is untyped, so `:=`
+	# has nothing to infer from and the whole module fails to compile.
+	var channel: int = host._channel_at(at)
+	# `the clickOn` is latched by the mouse-DOWN and holds until the next one, so
+	# it still names the dragged channel when the release arrives. Recomputing it
+	# under the pointer at mouse-up would usually answer the same thing -- the
+	# dragged sprite is under the cursor by construction -- and would be wrong the
+	# moment a handler moves or hides it, which `BehaviorScript 52` does on its
+	# own last two lines.
+	host._host.click_sprite = channel
+	var chosen: Array = script_for_click(
+		host, channel, host._score.frame(host._index).get("sprites", []))
+	var script: Dictionary = chosen[0]
+	# Says what was clicked, which script is about to answer for it, and whether
+	# a handler actually exists. "clicked nothing" and "clicked something with no
+	# mouseUp" look identical on screen and are entirely different faults.
+	var has_up: bool = host._interpreter.call("_script_has_handler", script, "mouseup") \
+		or host._interpreter.has_handler("mouseup")
+	# Kept, not just printed: the snapshot key reports the click that went wrong,
+	# and by the time anyone presses it the score has moved on several frames.
+	host._last_click = Snapshot.note_click(
+		at, host._index, channel, str(chosen[1]), script, has_up)
+	print(Snapshot.click_line(host._last_click))
+	# Held for the release. Director sends `mouseUp` to the sprite that took the
+	# `mouseDown`, not to whatever is under the pointer when the button comes up,
+	# and resolving it again at release would ask a different question of a score
+	# that may have advanced frames in between.
+	host._click_script = script
+	host._dispatch("mouseDown", script)
+	host.queue_redraw()
+
+
+## The mouse-UP half: the drag ends, and the message the press promised goes out.
+##
+## Reached only through `route_release`, which is reached only after a press this
+## movie actually took -- so an empty `_click_script` here means "the press
+## resolved to the movie tier", which is a real answer, and not "there was no
+## press". That distinction is why the guard lives in the routing and not here.
+##
+## **Known divergence, and it is the honest half of this fix.** Director tests
+## whether the button came up over the *same* sprite that took the `mouseDown`:
+## if it did not, the sprite gets `mouseUpOutSide` (D6) and no `mouseUp`. This
+## port has none of the D6 mouse events -- `mouseEnter`, `mouseLeave`,
+## `mouseWithin`, `mouseUpOutSide` are all absent, and `ENGINE_TODO.md` carries
+## the entry -- so `mouseUp` goes to the press's recipient unconditionally. For a
+## drag that is exactly right and is the case that matters: a moveable sprite
+## follows the cursor, so the button always comes up over it. For a press-here-
+## release-there click it over-delivers, where the old code over-delivered *and*
+## sent it at the wrong moment.
+static func release(host) -> void:
+	# §7.6: the drag ends on mouse-up. §7.5: the cursor is recomputed there too --
+	# one of the four moments Director recomputes it at all.
+	host._drag_channel = 0
+	host._resolve_cursor()
+	var script: Dictionary = host._click_script
+	host._click_script = {}
+	if not host._lingo_on or host._interpreter == null:
+		return
+	host._dispatch("mouseUp", script)
+	host.queue_redraw()
 
 
 ## Which script answers for a click on `channel`, and at which tier.

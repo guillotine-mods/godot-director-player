@@ -41,6 +41,24 @@ registration offset. Drag itself is done.
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
 in this corpus carries it; it currently falls through to Matte.
 
+**`mouseUpOutSide` and the D6 mouse events.** §8.1. `mouseEnter`, `mouseLeave`,
+`mouseWithin` and `mouseUpOutSide` do not exist here. The consequence that is
+already load-bearing is the last one: Director sends a sprite `mouseUp` only if
+the button came up over the sprite that took the `mouseDown`, and
+`mouseUpOutSide` otherwise, whereas `preview/interaction.gd:release` sends
+`mouseUp` to the press's recipient unconditionally. A drag is unaffected — a
+moveable sprite is under the cursor by construction, so the two rules agree —
+but a press-here-release-there click over-delivers.
+
+Two neighbouring rules from §15 are unimplemented for the same reason and are
+worth reading together with it: **`the clickOn` updates on mouse-up too**, when
+the release was over a sprite (this port latches it on the mouse-down only), and
+**cast-script targeting on mouse-up** uses the member under the mouse at the
+start of the mouse-down chain, so a `mouseDown` handler that swaps the member
+still leaves the *old* member holding the `mouseUp`. The latching half of the
+second one is now done — `director_preview.gd:_click_script` holds the script the
+press resolved — but it keys on the script, not on the member.
+
 **Mouse primary handlers and `pass` propagation.** §6.3. `when <event> then`
 installs and fires at tier 1 for keys; the mouse tiers and real `pass` /
 `dontPassEvent` propagation need the hierarchy to queue the whole chain rather

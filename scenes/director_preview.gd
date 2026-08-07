@@ -228,6 +228,15 @@ var _loop_start: Dictionary = {}
 var _preloader = null
 var _drag_channel := 0
 var _drag_offset := Vector2.ZERO
+## Which movie took the mouse-DOWN, and which script answered for it. Both are
+## latched by the press and consumed by the release, because a click is two
+## messages at two moments and `mouseUp` belongs to the thing that received the
+## `mouseDown` -- not to whatever the pointer happens to be over when the button
+## comes back up. A drag moves the sprite the entire time it is held, so
+## resolving either again at release would be answering a different question.
+## `preview/interaction.gd:press` has the rest of that argument.
+var _press_target: Node = null
+var _click_script: Dictionary = {}
 ## What the `cursor` builtin last set, used when no channel supplies one.
 var _global_cursor: Variant = 0
 ## What is actually on screen, so the cursor is only pushed when it changes.
@@ -981,34 +990,15 @@ func _begin_drag(at: Vector2) -> void:
 	_drag_offset = started[1]
 
 
-func _click(at: Vector2) -> void:
-	if not _lingo_on or _interpreter == null:
-		return
-	# A click always produces a message. What is under the cursor decides which
-	# script sees it first; it does not decide whether one is sent.
-	#
-	# Bailing out on a miss or a hole is why the menu went from unreliable to
-	# dead: its backdrop covers the stage, so the hit test answered "hole" and
-	# nothing was ever dispatched -- while the handler the menu actually uses
-	# lives in the frame script and reads `the clickOn`.
-	var channel := _channel_at(at)
-	_host.click_sprite = channel
-	var chosen: Array = Interaction.script_for_click(
-		self, channel, _score.frame(_index).get("sprites", []))
-	var script: Dictionary = chosen[0]
-	# Says what was clicked, which script is about to answer for it, and whether
-	# a handler actually exists. "clicked nothing" and "clicked something with no
-	# mouseUp" look identical on screen and are entirely different faults.
-	var has_up: bool = _interpreter.call("_script_has_handler", script, "mouseup") 		or _interpreter.has_handler("mouseup")
-	# Kept, not just printed: the snapshot key reports the click that went wrong,
-	# and by the time anyone presses it the score has moved on several frames.
-	_last_click = Snapshot.note_click(at, _index, channel, str(chosen[1]),
-		script, has_up)
-	print(Snapshot.click_line(_last_click))
-	# Director sends both, and a menu may answer either.
-	_dispatch("mouseDown", script)
-	_dispatch("mouseUp", script)
-	queue_redraw()
+## The two halves of a click, delegated to `preview/interaction.gd`. They used to
+## be one `_click` that dispatched `mouseDown` and `mouseUp` back to back on the
+## press; the module's `press` doc comment has why that broke every drop.
+func _press_click(at: Vector2) -> void:
+	Interaction.press(self, at)
+
+
+func _release_click() -> void:
+	Interaction.release(self)
 
 
 ## Placement, delegated to `preview/sprite_geometry.gd`.
@@ -1079,6 +1069,29 @@ func lingo_rollover(channel: int) -> bool:
 		if int(sprite["channel"]) == channel:
 			return _sprite_rect(sprite).has_point(stage_mouse())
 	return false
+
+
+## The rect `sprite A intersects B` and `sprite A within B` measure: where the
+## sprite is **now**, puppet writes included.
+##
+## Deliberately *not* `lingo_rollover`'s rect, and the difference is the point of
+## having two. `rollOver` reads the score because a menu script swaps a button's
+## art precisely *because* `rollOver` is true, so measuring the swapped member
+## feeds the answer back into the question and nothing ever settles. Nothing
+## feeds back here: `intersects` is asked about a sprite the player is dragging,
+## and where the player has dragged it to is the entire question.
+##
+## An empty answer for a hidden sprite rather than its last rect, because
+## `_effective` treats `visible` as "not drawn and not measured" -- the same rule
+## the hit test uses -- and a sprite nobody can see should not be droppable onto.
+func lingo_sprite_rect(channel: int) -> Rect2:
+	if _score == null or channel <= 0:
+		return Rect2()
+	for sprite in _score.frame(_index).get("sprites", []):
+		if int(sprite["channel"]) == channel:
+			var live: Dictionary = _effective(sprite)
+			return Rect2() if live.is_empty() else _sprite_rect(live)
+	return Rect2()
 
 
 func current_frame() -> int:
@@ -1500,16 +1513,28 @@ func stage_to_local(at: Vector2) -> Vector2:
 	return local
 
 
-## Deliver a click at a stage point to whichever movie owns that point.
+## A whole click at a stage point — press then release — delivered to whichever
+## movie owns that point.
 ##
-## Called from `_input` and directly by the harnesses, which is the point of it
-## being a method: routing that only exists inside an `InputEvent` handler cannot
-## be asserted headlessly, and "the click went to the wrong movie" is precisely
-## the failure this change is about.
+## Called directly by the harnesses, which is the point of it being a method:
+## routing that only exists inside an `InputEvent` handler cannot be asserted
+## headlessly, and "the click went to the wrong movie" is precisely the failure
+## this change is about. `_input` drives the two halves separately, because a
+## real button is down for as long as the player holds it and everything a drag
+## does happens in that gap.
 ##
 ## Returns the movie that took the click, or null when a modal window swallowed
 ## one aimed elsewhere.
 func route_click(at: Vector2) -> Node:
+	var took := route_press(at)
+	route_release(at)
+	return took
+
+
+## The mouse-down: which movie owns the point, the holds a press releases, the
+## drag it may start, and the `mouseDown` message.
+func route_press(at: Vector2) -> Node:
+	_press_target = null
 	var blocking := modal_window()
 	if blocking != null and not blocking.window_frame().has_point(at):
 		# §14: a modal window blocks its parent, so a click outside it is
@@ -1517,8 +1542,10 @@ func route_click(at: Vector2) -> Node:
 		return null
 	var front := window_at(at)
 	if front != null and front != self:
-		front.route_click(front.stage_to_local(at))
+		_press_target = front
+		front.route_press(front.stage_to_local(at))
 		return front
+	_press_target = self
 	# A wait-for-click frame is released by the mouse-down and not by the score
 	# (§9.2), and it is released in the movie that was clicked — JOKE's last frame
 	# is a wait-for-click that the player ends by clicking the window.
@@ -1536,7 +1563,28 @@ func route_click(at: Vector2) -> Node:
 		if _clock.hold_reason() == FrameClock.REASON_PALETTE:
 			_clock.release()
 	_begin_drag(at)
-	_click(at)
+	_press_click(at)
+	return self
+
+
+## The mouse-up: it goes to the movie that took the *press*, wherever the pointer
+## has since travelled.
+##
+## Following the pointer instead would be wrong in exactly the case that matters:
+## a sprite dragged out of a window, or off the stage's edge and back, would have
+## its release answered by whatever it was let go over. Director sends `mouseUp`
+## to the recipient of the `mouseDown`, and a release with no press behind it —
+## the button coming up over a movie that opened mid-click, or after SKIP took
+## the press — is not a click at all and dispatches nothing.
+func route_release(at: Vector2) -> Node:
+	var target: Node = _press_target
+	_press_target = null
+	if target == null or not is_instance_valid(target):
+		return null
+	if target != self:
+		target.route_release(target.stage_to_local(at))
+		return target
+	_release_click()
 	return self
 
 

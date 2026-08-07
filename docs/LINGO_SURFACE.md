@@ -1035,6 +1035,19 @@ Plus `walkonby`, which is not a Director builtin at all but the game's own
 handler that this port implements natively and lets win over the original
 definition (`NATIVE_HANDLERS`).
 
+**There are two hosts, and this list describes the one that is no longer
+driving.** `lingo/lingo_host.gd` belongs to the retired renderer
+(`director/movie_player.gd`, reached only from `scenes/main.tscn`); the live
+player is `scenes/director_preview.tscn`, and its host is
+`scenes/preview_lingo_host.gd`, which binds a deliberately smaller set. A
+builtin listed above is therefore **not** evidence that the running engine has
+it. `intersects` and `within` were bound in the retired host and unbound in the
+live one for as long as the preview has been the main scene, which made every
+drop in the corpus answer "nothing" — the operators are how Director's inventory
+idiom asks what an item was let go over, so the answer was hardcoded to no. When
+adding a builtin, check `scenes/preview_lingo_host.gd:call_builtin`, and read
+its `unbound` tally rather than this section.
+
 **Builtins with no engine side** are answered by `lingo/lingo_builtins.gd`, the
 title-agnostic module `tools/lingo_builtins_check.gd` checks against §1. It is
 the *only* answer for each of them. `lingo_interpreter.gd` used to carry a

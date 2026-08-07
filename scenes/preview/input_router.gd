@@ -14,6 +14,13 @@ extends RefCounted
 ## either the window routing or the sprite hit-test, because it is the preview's
 ## own affordance and is drawn over everything.
 ##
+## A click is also two events at two moments, and the routing above is decided by
+## the **press**. The release is then delivered to whatever the press landed on,
+## however far the pointer has travelled in between -- which is the whole of a
+## drag. `director_preview.gd:route_press` / `route_release` hold that pair, and
+## `preview/interaction.gd:press` has why sending both halves at once broke every
+## drop in the corpus.
+##
 ## **A key** goes to the movie in the active window: the modal window if there is
 ## one, else the window under the pointer, else the front-most window, else the
 ## stage. The game's own keys are offered first and the debug bindings only see
@@ -120,9 +127,25 @@ static func mouse_button(host, event: InputEventMouseButton, at: Vector2,
 			var w: Node = host._windows[key]
 			if w != null:
 				w._saw_press = true
+		# A press that never reaches `route_press` -- SKIP below takes it, or a
+		# modal discards it -- must not leave the *previous* press latched, or the
+		# release that follows sends a second `mouseUp` for a click that already
+		# finished.
+		host._press_target = null
 	else:
-		# A drag ends on mouse-up, and the cursor is re-resolved then.
-		host._drag_channel = 0
+		# The mouse-up. This used to clear `_drag_channel`, re-resolve the cursor
+		# and `return` -- so the release of a drag was the one mouse event in the
+		# engine that dispatched no message at all, and the drag was swallowing
+		# the very `mouseUp` every drop is decided in. §7.6 is explicit that a
+		# moveable sprite follows the cursor *until mouse-up*, and that Director
+		# does not suppress the message because a drag was in progress.
+		#
+		# Both of those now live in `route_release`, so the drag ends and the
+		# cursor is recomputed for whichever movie took the press rather than
+		# always for the stage.
+		host.route_release(at)
+		# ...and once more unconditionally, because §7.5 recomputes the cursor on
+		# every mouse-up, including one with no press behind it.
 		host._resolve_cursor()
 		return
 	# Tested before the sprite hit-test, or a hotspot underneath would eat it.
