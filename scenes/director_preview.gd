@@ -35,6 +35,7 @@ const FilmLoop := preload("res://director/director_film_loop.gd")
 const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
+const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
@@ -1792,8 +1793,12 @@ func _note_member(channel: int, cast_id: int) -> void:
 	SpriteState.note_member(channel, cast_id, _last_member, _loop_start, _ticks)
 
 
+## Through `preview/sprite_props.gd`, which translates the name the *script*
+## wrote into the key the override table is merged under. The two vocabularies
+## differ on `the moveableSprite of sprite`, and nothing used to sit between
+## them -- see that file for what that cost.
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
-	return SpriteState.read_prop(channel, prop, _overrides,
+	return SpriteProps.read(channel, prop, _overrides,
 		_score.frame(_index).get("sprites", []))
 
 
@@ -1811,7 +1816,7 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		_cursor_applied = " "
 		_resolve_cursor()
 		return
-	SpriteState.write_prop(channel, prop, value, _overrides,
+	SpriteProps.write(channel, prop, value, _overrides,
 		_score.frame(_index).get("sprites", []))
 
 
