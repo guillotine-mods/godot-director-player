@@ -68,7 +68,7 @@ today.
 
 ---
 
-## 36. Every one of DAY1's eleven talk clips is an inescapable two-frame loop when the movie was entered without `globalday`
+## 36. Every one of DAY1's nine talk clips is an inescapable two-frame loop when the movie was entered without `globalday`
 
 **Status:** open · **Area:** movie entry / cold globals · **not the film loop and
 not `play`/`play done`** · reported from play twice, as two different symptoms
@@ -80,9 +80,9 @@ Two reports, one fault:
 | DAY1 f2686 of 2783 | f959 ch18 `BehaviorScript 644` | 2685 ↔ 2686 (`tofclicktalk`) | "the mouth loop keeps going and never stops" |
 | DAY1 f2614 of 2783 | f1562 ch18 `BehaviorScript 642` | 2613 ↔ 2614 (`dnzclicktalk`) | "my click makes my character disappear" |
 
-**The mechanism.** DAY1 frames 2595–2783 are eleven `<character>clicktalk` clips.
-Each is one preamble frame followed by a `soundBusy` loop whose body is
-`BehaviorScript 250`:
+**The mechanism.** DAY1's tail holds nine `<character>clicktalk` clips, from
+`bonclicktalk` to `hezfldclicktalk`, ending at the last frame 2783. Each is one
+preamble frame followed by a `soundBusy` loop whose body is `BehaviorScript 250`:
 
 ```
 on exitFrame
@@ -93,8 +93,8 @@ end
 ```
 
 Its only exit is the preamble frame having started a sound. That frame —
-`BehaviorScript 291` for `tofclicktalk`, `281` for `dnzclicktalk`, and nine more
-of the same shape — looks its line up in the `master` cast's `clickoncharacter`
+`BehaviorScript 291` for `tofclicktalk`, `281` for `dnzclicktalk`, and one for
+each of the rest — looks its line up in the `master` cast's `clickoncharacter`
 field by the key `usfulobject = "tofday" & globalday`. With `globalday` VOID the
 key is `"tofday"`, no line of the field matches, `r` stays `"not"`, and the
 handler falls out without reaching `sound playFile`. So `soundBusy(1)` is never
@@ -114,9 +114,15 @@ channel 30 at all. The clip's own restore —
 then `go(lastmark)` — is on the exit path that is never reached.
 
 **Ruled out, with the trace rather than by argument.** `_play_stack` is empty for
-the whole park *and no `play` is executed on this path at all* (the `play frame`
-in these scripts is only on the `who contains "mov"` branch, which needs the
-lookup that failed). The clock names no hold for a single tick of it —
+the whole park *and no `play` is executed on this path at all*. DAY1's tail is
+two different mechanisms and only one of them is `play`: the `*mov*` segments
+(`chocomov` 2739, `fuelmov` 2756, and the last frame 2783) are entered by
+`play frame who` and end on `play done`, which is `docs/bugs-closed.md` 32's
+subject; the nine `clicktalk` clips are entered by `go("<char>clicktalk")` from
+the sprite behaviour and end on `go(lastmark)`. Both of the reports here are in
+the second half. The `play frame who` inside `291`/`281` is on the
+`who contains "mov"` branch, which is downstream of the field lookup that failed,
+so it is never reached either. The clock names no hold for a single tick of it —
 `hold_reason()` is `""` throughout, so it is not a tempo delay, a transition, a
 wait-for-click or a wait-for-sound, and `sound.gd:pump` has nothing to release.
 `Scripts.for_frame` resolves correctly: 250 and 291 are the scripts that run.
