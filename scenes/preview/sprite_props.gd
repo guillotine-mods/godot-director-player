@@ -40,12 +40,35 @@ extends RefCounted
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 
 ## Director's spelling -> the score record's. `movablesprite` is Director's own
-## accepted misspelling, and it is carried for the same reason `lingo_host.gd`
-## carries it: the vocabulary lists it, so a script may use it.
+## accepted misspelling, and it is carried because the vocabulary lists it, so a
+## script may use it.
+##
+## `editabletext` is the third entry and the third instance of the same bug.
+## `the editableText of sprite N` arrives lower-cased as `editabletext`; the
+## record's flag byte is decoded as `editable` (`director_score.gd`, colour-code
+## bit 0x40). Unaliased, a *read* of the property cannot see the author's own
+## tick in the Score window -- it answers only what a script wrote, through the
+## override store, which round-trips perfectly and is why it looks implemented.
+## Exactly the shape `moveableSprite` had, and `the constraint of sprite` after
+## it. `preview/text_focus.gd:editable` currently reads both spellings off the
+## sprite to work around the gap; that is a patch at the consumer, and this is
+## the fix at the seam.
 const ALIASES := {
 	"moveablesprite": "moveable",
 	"movablesprite": "moveable",
+	"editabletext": "editable",
 }
+
+## Properties the *score record* carries a value for and `sprite_state.read_prop`
+## has no arm for, so a read has to fall back to the record here or answer 0 for
+## a flag the author set.
+##
+## Both are flags rather than values, and both are half of a property whose other
+## half is a Lingo write -- which is the whole reason this file exists. Adding a
+## key here is not enough on its own to make the property *work*: a Lingo write
+## also has to be merged into the effective sprite by `sprite_state.effective`,
+## which has an arm for `moveable` and none for `editable`.
+const SCORE_FLAGS := ["moveable", "editable"]
 
 
 ## The override-table key for a Lingo property name, already lower-cased by the
@@ -96,13 +119,13 @@ static func write(channel: int, prop: String, value: Variant,
 
 ## `the <prop> of sprite N`.
 ##
-## `moveable` needs its own score fallback where the other properties do not.
+## `SCORE_FLAGS` need their own score fallback where the other properties do not.
 ## `read_prop` answers from the score record for everything a sprite record
-## carries, and it has no arm for this one -- so a sprite the *author* ticked
-## Moveable on in the Score window read back as 0 until a script had written the
-## property itself. That is the same half-a-property the merge fix closes, seen
-## from the read side: the score's bit and the Lingo write are one property from
-## two sources, and both readers have to say so.
+## carries, and it has no arm for either of them -- so a sprite the *author*
+## ticked Moveable or Editable on in the Score window read back as 0 until a
+## script had written the property itself. That is the same half-a-property the
+## merge fix closes, seen from the read side: the score's bit and the Lingo write
+## are one property from two sources, and both readers have to say so.
 ##
 ## `constraint` answers from `constraints` and never reaches `read_prop`, which
 ## would answer 0 from its fall-through for a property the score record does not
@@ -114,9 +137,9 @@ static func read(channel: int, prop: String, overrides: Dictionary,
 	if key == "constraint":
 		return int(constraints.get(channel, 0))
 	var value: Variant = SpriteState.read_prop(channel, key, overrides, sprites)
-	if key != "moveable" or overrides.get(channel, {}).has(key):
+	if not SCORE_FLAGS.has(key) or overrides.get(channel, {}).has(key):
 		return value
 	for sprite in sprites:
 		if int(sprite["channel"]) == channel:
-			return 1 if bool(sprite.get("moveable", false)) else 0
+			return 1 if bool(sprite.get(key, false)) else 0
 	return value

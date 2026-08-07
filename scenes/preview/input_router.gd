@@ -241,6 +241,15 @@ static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
 	host._resolve_cursor()
 	if was != host._hover_channel:
 		host.queue_redraw()
+		return
+	# §4.6's hilite follows the pointer *inside* the sprite the press latched, and
+	# that is a different question from which sprite is hovered: sliding off the
+	# pressed sprite while staying over the same one above it changes the
+	# inversion and changes no hover. Without this the repaint is left to the
+	# score's own cadence -- invisible on a running movie, and a stale inversion
+	# held on screen for as long as a paused preview stays paused.
+	if int(host._press_channel) > 0:
+		host.queue_redraw()
 
 
 ## The preview's own bindings, reached only by a key no script claimed.
