@@ -21,6 +21,7 @@ extends SceneTree
 ## cast, and two different movies must never equal each other.
 
 const Harness := preload("res://tools/lib/harness.gd")
+const ContainerName := preload("res://director/director_container.gd")
 
 
 func _init() -> void:
@@ -65,5 +66,51 @@ func _init() -> void:
 	h.check("compare() still orders unrelated names",
 		LingoValue.compare("a.dir", "b.dir") < 0)
 	h.complete("the reconciliation survives the paths a script actually writes")
+
+	# The rule has one home. A second copy is how `.dxr` came to resolve one way
+	# for a path lookup and another for a Lingo comparison.
+	h.begin("path resolution and Lingo agree, because they share the rule")
+	for pair in [["day1.dxr", "day1.dir"], ["master.cxt", "master.cst"]]:
+		var spellings: Array = ContainerName.spellings(pair[0])
+		h.check("%s offers %s as an alternative" % [pair[0], pair[1]],
+			spellings.has(pair[1]), str(spellings))
+		h.check("%s is offered first" % pair[0],
+			spellings.size() > 0 and str(spellings[0]) == pair[0], str(spellings))
+		h.check("Lingo agrees they are equal", LingoValue.equal(pair[0], pair[1]))
+	h.check("a non-container name offers only itself",
+		ContainerName.spellings("notes.txt").size() == 1, str(ContainerName.spellings("notes.txt")))
+	h.check("canonical collapses packaging",
+		ContainerName.canonical("DAY1.DXR") == ContainerName.canonical("day1.dir"),
+		"%s vs %s" % [ContainerName.canonical("DAY1.DXR"), ContainerName.canonical("day1.dir")])
+	h.check("canonical keeps movies and casts apart",
+		ContainerName.canonical("x.dir") != ContainerName.canonical("x.cst"))
+	h.complete("path resolution and Lingo agree, because they share the rule")
+
+	# A title is free to test its packaging any way Lingo allows. This corpus
+	# writes `the movieName = "day1.dxr"` and `the movieName contains "hotel"`,
+	# but nothing stops another from writing any of these, and each has to keep
+	# working against a converted container or the bug has only moved.
+	h.begin("every way a script might test its packaging")
+	var name := "day1.dir"          # what `the movieName` answers after conversion
+	h.check("= against the protected spelling", LingoValue.equal(name, "day1.dxr"))
+	h.check("<> against it is false", LingoValue.equal(name, "day1.dxr"))
+	h.check("contains the protected extension", LingoValue.contains(name, "dxr"))
+	h.check("contains the whole protected name", LingoValue.contains(name, "day1.dxr"))
+	h.check("starts with the stem still works", LingoValue.starts(name, "day1"))
+	h.check("starts with the protected name", LingoValue.starts(name, "day1.dxr"))
+	# `the last 4 chars of the movieName = ".dxr"` -- a bare extension parses as a
+	# name with an empty stem, so the same rule covers it with no special case.
+	h.check("a bare extension compares equal", LingoValue.equal(".dir", ".dxr"))
+	# `case the movieName of "day1.dxr":` routes through `equal`, so it follows.
+	h.check("a cast name reconciles the same way", LingoValue.equal("master.cst", "master.cxt"))
+	# And the negatives, which matter more here than anywhere: reconciliation
+	# must not leak into text that merely mentions an extension.
+	h.check("a non-container haystack is untouched",
+		not LingoValue.contains("notes.txt", "dxr"))
+	h.check("a movie never contains a cast extension",
+		not LingoValue.contains("day1.dir", "cxt"))
+	h.check("a different movie is still different",
+		not LingoValue.contains("day2.dir", "day1.dxr"))
+	h.complete("every way a script might test its packaging")
 
 	quit(h.finish("container-extension equality in Lingo"))

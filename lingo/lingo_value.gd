@@ -77,47 +77,12 @@ static func is_numeric(value: Variant) -> bool:
 	return text != "" and (text.is_valid_int() or text.is_valid_float())
 
 
-## Movie container extensions, and cast container extensions, that name the same
-## thing in different states. `.dxr` is a protected `.dir` and `.cxt` a protected
-## `.cst`; `.dcr`/`.cct` are the Shockwave forms. Which one a title ships is a
-## packaging decision, not a different file.
-const MOVIE_EXTENSIONS := ["dir", "dxr", "dcr"]
-const CAST_EXTENSIONS := ["cst", "cxt", "cct"]
-
-
-## Do two strings name the same container in different packaging?
-##
-## `strtgame.dxr` and `strtgame.dir` are the same movie, and a script that
-## compares a filename against one spelling means the file, not the extension.
-## Director never had to care: a shipped title was protected throughout, so the
-## spelling in the source and the spelling on disk always agreed. A port that
-## converts the originals to unprotected containers breaks that agreement, and
-## the comparisons start answering false.
-##
-## In Piposh 2 that is not hypothetical. `the movieName = "day1.dxr"` appears
-## four times, and it is the *only* exact filename comparison in the whole corpus
-## — every other room is matched with `contains` on a stem. Those four gate the
-## entire cursor assignment in `cursorfunk` (sprites 2, 7-9, 14, and 10-13, which
-## are the exit arrows) and, twice inside `whatodoeveryframe`, the `go` that
-## changes room when a walk finishes. With the file named `.dir` the character
-## walks to the doorway, is hidden by the line above the test, and the room never
-## changes. Renaming the file fixes it; so does this, and this also fixes the
-## other 60 movies without anyone having to notice them one at a time.
-##
-## Deliberately *not* extension-blind: a movie never equals a cast. The two
-## families are kept apart so `x.dir` and `x.cst` still compare false.
-static func same_container(a: String, b: String) -> bool:
-	var ea := a.get_extension().to_lower()
-	var eb := b.get_extension().to_lower()
-	if ea == "" or eb == "":
-		return false
-	if ea == eb:
-		return false # Handled by the plain comparison; nothing to reconcile.
-	var both_movies := MOVIE_EXTENSIONS.has(ea) and MOVIE_EXTENSIONS.has(eb)
-	var both_casts := CAST_EXTENSIONS.has(ea) and CAST_EXTENSIONS.has(eb)
-	if not (both_movies or both_casts):
-		return false
-	return a.get_basename().to_lower() == b.get_basename().to_lower()
+## Whether two names mean the same Director container is a format question, not
+## a value-coercion one, so it lives in `director_container.gd` and is consulted
+## from here. `lingo/` otherwise does not reach into `director/`; it does for
+## this because the alternative is a second copy of the rule, and a rule kept in
+## two places is a rule that will disagree with itself.
+const ContainerName := preload("res://director/director_container.gd")
 
 
 static func equal(a: Variant, b: Variant) -> bool:
@@ -129,9 +94,9 @@ static func equal(a: Variant, b: Variant) -> bool:
 	if sa == sb:
 		return true
 	# `day1.dxr` and `day1.dir` are one movie in two packagings. See
-	# `same_container` for why this belongs in equality rather than in whatever
-	# supplies `the movieName`.
-	return same_container(sa, sb)
+	# `director_container.gd` for why this belongs in equality rather than in
+	# whatever supplies `the movieName`.
+	return ContainerName.same(sa, sb)
 
 
 static func compare(a: Variant, b: Variant) -> int:
@@ -143,7 +108,7 @@ static func compare(a: Variant, b: Variant) -> int:
 		return -1 if fa < fb else 1
 	var sa := to_str(a).to_lower()
 	var sb := to_str(b).to_lower()
-	if sa == sb or same_container(sa, sb):
+	if sa == sb or ContainerName.same(sa, sb):
 		return 0
 	return -1 if sa < sb else 1
 
@@ -202,12 +167,33 @@ static func concat_space(a: Variant, b: Variant) -> String:
 	return to_str(a) + " " + to_str(b)
 
 
+## `contains` and `starts` reconcile container packaging the same way `=` does.
+##
+## Equality alone is not enough, because a title is free to test its packaging
+## any way Lingo allows. This game happens to write `the movieName = "day1.dxr"`
+## and `the movieName contains "hotel"`, but `the movieName contains "dxr"` is
+## just as natural to write and would fail against a converted `.dir` for exactly
+## the same reason -- silently, and gating whatever the author put behind it.
+##
+## So when the haystack is a container name it is tested under every spelling of
+## itself. A haystack that is not a container name is untouched, which keeps
+## `"notes.txt" contains "dxr"` false.
 static func contains(haystack: Variant, needle: Variant) -> bool:
-	return to_str(haystack).to_lower().find(to_str(needle).to_lower()) >= 0
+	var text := to_str(haystack).to_lower()
+	var want := to_str(needle).to_lower()
+	for spelling in ContainerName.alternatives(text):
+		if str(spelling).find(want) >= 0:
+			return true
+	return false
 
 
 static func starts(haystack: Variant, needle: Variant) -> bool:
-	return to_str(haystack).to_lower().begins_with(to_str(needle).to_lower())
+	var text := to_str(haystack).to_lower()
+	var want := to_str(needle).to_lower()
+	for spelling in ContainerName.alternatives(text):
+		if str(spelling).begins_with(want):
+			return true
+	return false
 
 
 static func split_lines(text: String) -> PackedStringArray:

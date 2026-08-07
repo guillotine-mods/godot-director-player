@@ -433,14 +433,30 @@ without a dozen bitmaps existing.
 Text and button sprites disable applyColor at blit time and colourise in a
 preprocessing step instead.
 
-*This port:* **nothing implements colourisation.** The fore/back colours are
-decoded and dropped. For a movie that recolours 1-bit art this renders
-everything black-and-white — "wrong but not obviously broken", which is the
-worst failure mode. *Change:* in
-`director/render_model_loader.gd:_apply_transparency` and the preview's
-`_texture_for`, when the sprite's fore/back differ from black/white, remap the
-decoded image's black pixels to foreColor and white pixels to backColor before
-keying. The texture cache key must include both colours.
+One thing worth noticing about the switch above: the two clauses are the same
+condition written two ways — "fore != black **or** back != white" and "**not**
+(fore == black **and** back == white)" are equivalent. So nothing distinguishes
+the two ink groups except membership; every ink outside both lists never applies
+colour.
+
+*This port:* the container-reading preview implements it —
+`director/director_ink.gd:applies_colour` / `apply_colour`, called from
+`scenes/director_preview.gd:_texture_for` **after** keying rather than before,
+because a matte is flooded from white and repainting the whites first leaves the
+flood nothing to match. The cache key carries both colours. Colourisation is
+applied to a decoded RGBA image and leaves every pixel that is neither pure black
+nor pure white alone — the conservative half of the reference's Copy rule, which
+would otherwise punch holes.
+`director/render_model_loader.gd:_apply_transparency`, the other renderer, still
+drops the colours.
+
+**How much this is worth, measured** (`tools/draw_survey.gd -- --all`, 816,318
+sprite records in 61 movies): 50,714 records carry non-default colours on an ink
+that admits applyColor, and **50,063 of them name shape members**, which are
+painted by the shape primitives instead (§13) and never reach this code. Only
+**651 records — 7 distinct sprites — are bitmaps**, and **no field sprite in the
+corpus has non-default colours at all**. Colourisation and text rendering look
+like one piece of work and are not.
 
 ### 2.4 The inks at pixel level
 
@@ -1119,8 +1135,15 @@ With no tempo, the previous rate carries forward. A **puppet tempo** overrides
 the score's but is cancelled the moment the score writes a tempo or the effective
 tempo changes.
 
-*This port:* `director/director_score.gd:161-163` carries FPS forward and
-`:252-253` decodes delay and wait-for-click. Sound and video waits are absent.
+*This port:* `director/director_score.gd` carries FPS forward and decodes delay
+and wait-for-click; `director/director_frame_clock.gd` is what stops the playhead
+for them. Sound and video waits are absent, and nothing in this corpus asks for
+one: across all 61 containers the tempo byte only ever holds 246, 247 or 248 —
+the D6 numbering, not D5's — so every tempo written is a frame rate, a delay or a
+wait-for-click and there is no sound or video wait to miss. The delay operand is
+read as **whole seconds**: `strtgame.dir` writes 1 and 2 there, which is 1 s and
+2 s under that reading and 17 ms and 33 ms under a tick reading, and nobody
+authors a 17 ms pause.
 
 ### 9.2 Waits are a state, not a sleep
 
@@ -1179,7 +1202,14 @@ bug. The thing that must not be skipped is the **time**: a transition consumes
 its duration and scripts time against it, so rendering transitions instantly runs
 the following frames early.
 
-*This port:* nothing. See §17.6.
+*This port:* the **time**, in full; the **drawing**, not at all — a transition
+cuts. `director/director_transition.gd` decodes the transition cast member and
+resolves the three sources in the order above; `director/director_frame_clock.gd`
+holds the playhead for the duration, and the frame's `enterFrame` is deferred to
+the end of it because §6.2 puts the transition inside `renderFrame`. Events keep
+being pumped throughout, because the hold is a state polled per tick and Godot's
+input is untouched by it. See §16.7 for what the corpus actually asks for, which
+is five frames and four seconds.
 
 ---
 
@@ -1264,6 +1294,27 @@ transparent/reverse/ghost family. Colourisation is preprocessed rather than
 blitted. Scrollbars are the only producer of the hit-test Hole (§4.2).
 `the selStart`/`selEnd` are movie-global (§8.4).
 
+*This port:* the preview draws fields — `director/director_text.gd`, called from
+`scenes/director_preview.gd:_draw_text`, with the member's own point size,
+colour, slant and alignment out of its `STXT` style run and its box out of the
+score. **Legible text in roughly the right place at roughly the right size, and
+not period-accurate glyph rendering**: the font id is carried and unresolved (no
+font table here), so the typeface and therefore the advance widths are Godot's
+fallback and a caption does not land pixel-for-pixel where Director put it. No
+widget, no character-box/glyph mask distinction, no scrolling, no editing, and no
+push of the laid-out size back onto the sprite (§1.2) — the score's size is used
+as authored. `put x into field` now reaches the drawn text
+(`director_preview.gd:lingo_set_field`), which it did not before: the host's
+setter was a no-op, so a HUD would have shown its authored placeholder for ever.
+
+Measured, over the corpus's 321 field members: exactly **one style run each**, so
+one style per field; point size 12 in 292 of them; alignment left in 308 and
+centre in 13; colour black in 308. Every one of the 11,525 field sprite records
+uses Background Transparent and the default foreColor. **Buttons (type 7) and
+rich text (type 12) do not occur in this corpus at all**, so §1.2's
+"buttons draw at the member's `initialRect`" rule is unexercised and
+unimplemented.
+
 **Shapes (QuickDraw)** — sprite types 2-6 and 12-15 are drawn by primitives, not
 bitmaps: rectangle, rounded rectangle, oval, two line directions, outlined
 variants, thick line. From D3 a **shape cast member** carries its own shape type
@@ -1274,6 +1325,34 @@ with built-in fallbacks. Shapes get their own matte by drawing the filled shape
 into a scratch surface and flood-filling from the border — the same algorithm as
 §2.5 — which is what makes an oval hit-test as an oval. Shapes are colourised by
 the primitives, not the ink pass.
+
+*This port:* `director/director_shape.gd`, reached through
+`director_preview.gd:_texture_for`. Rectangle and rounded rectangle are drawn
+from measured data; oval and line are written from the reference and are
+unverified, because no member in this corpus is either. The fill and the outline
+take the **sprite's** foreColor; the paper is left transparent rather than
+painted, and a shape image is returned already keyed (no ink pass runs over it).
+Patterns are not implemented and a patterned shape comes out solid.
+
+**The thickness rule is the whole story here, measured.** 162 of the corpus's 169
+shape members are unfilled rectangles with a stored line thickness of 1 — an
+outline zero pixels wide, which draws nothing — and they account for **60,100 of
+the 60,914 shape sprite records**. They are the game's invisible hotspots: a
+rectangle over the scenery with a behaviour attached, named `to clif2` or
+`dwarf_well`. So the port returns *nothing* for them rather than a transparent
+image, and above all does not paint the paper: filling the rect with the sprite's
+backColor before keying would be invisible under Background Transparent and would
+put an opaque white rectangle on screen for each of the 8,302 shape records that
+use Copy. Every one of the 60,914 records carries sprite type 16 (cast member),
+so the member's own kind always decides and the sprite record's type never does.
+
+One divergence taken deliberately: **a matte-inked shape hit-tests as its
+rectangle, not per pixel.** A matte is flooded in from the border of a bitmap's
+*image* and a shape has none. 452 shape records carry Matte, every member they
+name is one of the invisible rectangles above, and a per-pixel test against
+nothing rejects every click — the doors stop working. The reference's claim that
+shapes build their own matte from the filled shape is not reproduced, and would
+be wrong here for exactly that reason.
 
 ---
 
@@ -1359,21 +1438,47 @@ branch at `scenes/director_preview.gd:525-574`, plus a movie-global default the
 `visible` — **not** in `_overrides`, which is cleared on room change (`:1073-1074`)
 and movie change (`:1143`).
 
-**16.4 No colourisation from fore/back colour. (Neither side.)** §2.3. Decoded at
-`director/director_score.gd:248-249` and dropped. A movie that recolours 1-bit art
-renders monochrome.
+**16.4 Colourisation: done in the preview, still missing in the working
+renderer.** §2.3. `director/director_ink.gd:applies_colour` / `apply_colour`,
+applied in `director_preview.gd:_texture_for` after keying;
+`director/render_model_loader.gd` still drops the colours. **Also: this was
+mis-scoped as a Tier 1 gap.** Only 651 sprite records on 7 distinct bitmap
+sprites reach it in the whole corpus. The 50,063 records that made it look large
+name *shape* members, which the shape primitives colour instead — see §13.
 
 **16.5 Keyboard is entirely absent. (Neither side.)** §8. Survivable for Piposh 2,
 not for a Director engine — dialogue skipping, name entry, cheat keys and menu
 navigation all live here.
 
 **16.6 `prepareFrame`/`enterFrame`/`exitFrame` all fire in one step in the
-preview. (Differ.)** `scenes/director_preview.gd:515-517`. §6.1.
-*Change:* move `exitFrame` to the top of the *next* step and put the advance and
-redraw between `prepareFrame` and `enterFrame`.
+preview. (Differ.)** §6.1. **Done** in `scenes/director_preview.gd:_advance`:
+`exitFrame` is dispatched for the frame being left at the top of the step, then
+the playhead advance, then `prepareFrame`, then the redraw, then `enterFrame`.
+`_advance` returns `{exited, frame}` so the ordering can be asserted rather than
+inferred; `tools/frame_events.gd` checks that every step exits the frame the step
+before it was on, including the first step of a movie. One divergence remains and
+is not cheap to remove: Godot paints at the end of the process frame rather than
+where `renderFrame` sits, so what `enterFrame` writes lands in the same painted
+frame instead of the next one.
 
-**16.7 Nothing implements transitions. (Neither side.)** §10. Missing transitions
-do not break logic, but they consume real time that scripts time against.
+**16.7 Nothing implements transitions. (Neither side.)** §10. **Partly done**, and
+the measurement is the point. `tools/transition_survey.gd` over all 61 containers
+(61,371 frames) finds **3** transition cast members, **5** frames that name one,
+**2** distinct types (11 push left ×4, 52 dissolve bits ×1), durations of 600/700/
+1000 ms, and **4.0 s** of transition in the whole game; `reference/lingo/` calls
+`puppetTransition` **zero** times. So the time is implemented in full —
+`director/director_transition.gd` decodes the member, resolves §10's three
+sources in order, and `director/director_frame_clock.gd` holds the playhead for
+the duration with `enterFrame` deferred to the end of it — and the *drawing* is
+deliberately a cut, per §10's own advice, rather than thirteen algorithms for
+five frames.
+
+Measured alongside it, and much larger: the tempo channel's **delays** and
+**wait-for-click** frames, which the preview also took no time over. The corpus
+has 36 delay frames worth **74.0 s** and 24 wait-for-click frames; `strtgame.dir`
+alone has 23 delays worth 46.0 s. Both are now honoured
+(`director/director_frame_clock.gd`), which is a far bigger change to pacing than
+the transitions were.
 
 ### Tier 2 — breaks scenes
 
@@ -1419,9 +1524,19 @@ are wrong".
 **16.19 `set_size` does not re-derive the anchor.** §1.5,
 `director/sprite_channel.gd:133-139`.
 **16.20 No `beginSprite`/`endSprite`, `stepFrame`, `prepareMovie`, `idle`
-cadence, `timeout`.** §8.1, §9.3.
-**16.21 No shapes, text rendering, digital video, or Movie-In-A-Window.**
-§13, §14.
+cadence, `timeout`.** §8.1, §9.3. Deliberately still nothing, on a count of the
+handlers in `reference/lingo/`: `on exitFrame` 2504, `on enterFrame` 33,
+`on prepareFrame` 0, `on beginSprite` 0, `on endSprite` 0, `on stepFrame` 0,
+`on timeout` 0, `on stepMovie` 0, `on idle` **1** — and that one is
+`on idle / dontPassEvent() / end`. `the timeoutLength`, `timeoutMouse`,
+`timeoutKeyDown`, `timeoutPlay`, `startTimer`, `the timer` and `the ticks` appear
+**zero** times between them. For this title every one of these would be dead
+code; for another title they are the cheapest things on this list to add, and
+§9.3 has the semantics.
+**16.21 No digital video or Movie-In-A-Window.** §13, §14. Shapes and field text
+*are* now drawn in the preview (§13) and still are not in
+`director/render_model_loader.gd`. Text is legible, not period-accurate; buttons
+and rich text remain unimplemented and do not occur in this corpus.
 **16.22 No rollOver bbox cache (D4 blank-sprite rule).** §4.5.
 **16.23 Mask ink (9) treated as Matte.** §2.6.
 **16.24 Float positions where Director truncates.** §1.10.
@@ -1443,13 +1558,13 @@ destination-reading inks.
 | Cursor compositing | **done** | `render_model_loader.gd:847-911` |
 | Cursor resolution | **partial**: working side only, **nothing in the preview** | `director_runtime.gd:1500-1518` |
 | Puppet | **partial**: whole-sprite on one side, per-field on the other, no copy-back mask | `sprite_channel.gd:55-74`; `director_preview.gd:911-941` |
-| Ink | **partial**: Copy / BackgroundTrans / Matte, no colourisation | `render_model_loader.gd:828-844` |
+| Ink | **partial**: Copy / BackgroundTrans / Matte; colourisation in the preview only | `render_model_loader.gd:828-844`; `director_ink.gd:applies_colour` |
 | Matte flood fill | **partial**: different paper sampling, tolerant match, no no-matte rule | `render_model_loader.gd:765-794`; `director_preview.gd:1374-1422` |
 | Visibility | **partial** | `sprite_channel.gd:37`; `director_runtime.gd:1426-1427` |
-| Frame ordering | **partial** | `director_runtime.gd`; `director_preview.gd:515-517` |
-| Tempo: fps, delay, wait-for-click | **done** | `director_score.gd:161-163`, `:252-253` |
-| Tempo: wait-for-sound, wait-for-video | **nothing** | — |
-| Transitions | **nothing** | — |
+| Frame ordering | **done** in the preview (§16.6); **partial** in the runtime | `director_preview.gd:_advance` |
+| Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** by both renderers | `director_score.gd`; `director_frame_clock.gd`; `director_runtime.gd:276-281` |
+| Tempo: wait-for-sound, wait-for-video | **nothing** — and no frame in the corpus writes one | — |
+| Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
 | Palette resolution / cycling / fades | **nothing** | `director_palette.gd:30-33` |
 | Trails | **nothing** (flag decoded) | `director_score.gd:246` |
 | Blend / alpha | **nothing** | — |
@@ -1462,8 +1577,8 @@ destination-reading inks.
 | Sound channels, restart-on-change | **partial** | `director_runtime.gd` |
 | Sound cue points, fades | **nothing** | — |
 | Digital video | **nothing** | — |
-| Text / field rendering | **nothing** (non-bitmaps produce no texture) | `director_preview.gd:653` |
-| Shapes | **nothing** | — |
+| Text / field rendering | **partial**: legible, not period-accurate; preview only | `director_text.gd`; `director_preview.gd:_draw_text` |
+| Shapes | **partial**: rect and rounded rect measured, oval and line unverified; preview only | `director_shape.gd` |
 | Windows / MIAW / embedded movies | **nothing** | — |
 | Movie stack | **partial** | `director_preview.gd:1143` |
 | Labels | **done** | `director_labels.gd` |
@@ -1495,6 +1610,20 @@ destination-reading inks.
   selection round-trip were read.
 - **Transition behaviour during input** — whether events are pumped mid-transition
   the way they are mid-palette-cycle was not read.
+- **Two bytes of the D5 frame's transition record.** The record at main-channel
+  offset 96 decodes as `[96-97] cast lib, [98-99] member`, and 100-101 is zero on
+  every one of the five frames that use it — but **102-103 is not**, and holds
+  0x132c, 0x69ba, 0x69b4, 0x402c, 0x406b. Two of those differ between adjacent
+  frames naming the *same* member, so it is not a parameter of the transition.
+  Nothing reads it and nothing depends on it.
+- **Which of the transition member's bytes 0 and 3 is the flags byte and which is
+  the change area.** Byte 0 is 0 and byte 3 is 2 in all three members in this
+  corpus, so a constant column cannot tell them apart. Both are carried through
+  unread.
+- **Whether `enterFrame` really is deferred past a transition.** §6.2 puts the
+  transition inside `renderFrame` and §6.1 puts `enterFrame` after it, which is
+  the reading implemented; ScummVM's own `playTransition` was not read line by
+  line to confirm no `enterFrame` is dispatched inside it.
 - **Sound restart semantics below D6** were read only in outline.
 - **The exact D6 tempo cue-point encoding** was read but not reasoned about.
 - **`the timer` / `startTimer`** are described from the tick base and the timeout

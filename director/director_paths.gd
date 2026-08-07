@@ -14,7 +14,13 @@ extends RefCounted
 ## build into a game that cannot find its own boot movie.
 
 const CONFIG_PATH := "res://director_game.cfg"
-const CONTAINER_EXTENSIONS := ["dir", "cst", "dxr", "cxt"]
+const ContainerName := preload("res://director/director_container.gd")
+
+## Every extension that names a Director container. The list, and the rule that
+## `.dxr` and `.dir` are one movie, belong to `director_container.gd` -- this
+## used to carry its own copy alongside an identical one in `lingo_value.gd`,
+## which is how one rule becomes two that disagree.
+const CONTAINER_EXTENSIONS := ContainerName.ALL
 
 ## Which game, and which file starts it. Empty until a config says otherwise:
 ## naming a title here would put one game's name in the engine, and the engine
@@ -63,6 +69,17 @@ func resolve(name: String, from_dir: String = "") -> String:
 	if wanted == "":
 		return ""
 	_build_index()
+	# The spelling the caller used wins if it exists; only then are the other
+	# packagings of the same container tried, so a game that ships both a `.dir`
+	# and a `.dxr` of one movie still gets the one it asked for.
+	for spelling in ContainerName.spellings(wanted):
+		var hit := _lookup(spelling, from_dir)
+		if hit != "":
+			return hit
+	return ""
+
+
+func _lookup(wanted: String, from_dir: String) -> String:
 	# A reference may carry its own subpath ("MOVIES:x.dir" once normalised), so
 	# the whole tail is matched, not only the filename.
 	var tail := wanted.to_lower()

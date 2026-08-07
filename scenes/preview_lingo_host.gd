@@ -42,7 +42,7 @@ const HANDLED := [
 ## has no state to implement, and letting them report as unbound would drown the
 ## ones that genuinely are.
 const IGNORED := [
-	"puppettransition", "updatestage", "beep", "delay", "preloadmember",
+	"updatestage", "beep", "delay", "preloadmember",
 	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
 	"dontpassevent", "puppetsprite", "halt", "quit", "starttimer",
 	# `cursor` is NOT here any more — see the match above.
@@ -132,6 +132,15 @@ func call_builtin(name: String, args: Array) -> Variant:
 			if preview == null:
 				return 0
 			preview.lingo_global_cursor(args[0] if not args.is_empty() else 0)
+			return 0
+		"puppettransition":
+			# A scripted transition: one-shot, applied at the next frame change.
+			# Nothing in this game calls it, so it is bound for the engine's sake
+			# rather than this title's — but bound rather than ignored, because
+			# "the frame's own transition wins over a scripted one" is a bug that
+			# only ever shows up once something does.
+			if preview != null:
+				preview.lingo_puppet_transition(args)
 			return 0
 		"rollover":
 			# The whole of this game's menu is built on it: a frame script asks
@@ -342,8 +351,13 @@ func get_field(name: String, cast: Variant) -> Variant:
 	return preview.lingo_field(name, str(cast))
 
 
-func set_field(_name: String, _cast: Variant, _value: Variant) -> void:
-	pass
+## `put x into field "y"`. Was a no-op, which was invisible while nothing drew
+## fields: the value went nowhere, `field "y"` read back the authored placeholder,
+## and the screen showed nothing either way. With fields rendered, dropping the
+## write is the difference between a live score and one frozen at `000`.
+func set_field(name: String, cast: Variant, value: Variant) -> void:
+	if preview != null:
+		preview.lingo_set_field(name, str(cast), LingoValue.to_str(value))
 
 
 func member_number(which: Variant, cast: Variant) -> Variant:

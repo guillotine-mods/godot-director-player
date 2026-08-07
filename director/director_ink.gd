@@ -80,11 +80,93 @@ static func key_for(ink: int) -> int:
 
 ## Does a click land on this sprite only where it has pixels?
 ##
-## Only Matte. This is the whole asymmetry, and it is the single rule most worth
-## not "tidying up" later: Background Transparent is 68% of this corpus and every
-## one of those sprites catches clicks across its full rectangle.
-static func hits_per_pixel(ink: int) -> bool:
-	return (ink & INK_MASK) == MATTE
+## Only Matte, and only for a bitmap. This is the whole asymmetry, and it is the
+## single rule most worth not "tidying up" later: Background Transparent is 68% of
+## this corpus and every one of those sprites catches clicks across its full
+## rectangle.
+##
+## The cast-type half is the part that is easy to leave out. A matte is built by
+## flooding the *member's image* in from the border, and only a bitmap has one; a
+## shape has no image to flood, so a matte-inked shape hit-tests as its rectangle.
+## Leaving it out is not a near-miss here, it is a dead hotspot: 452 of this
+## corpus's shape sprite records carry Matte, every shape member they name is an
+## unfilled rectangle with a stored line thickness of 1 — which Director draws as
+## nothing — and a per-pixel test against nothing rejects every click. Their names
+## are `to clif2`, `to stairs`, `to uplight`: they are the doors.
+##
+## `member_type` is the `CASt` type code, defaulting to bitmap so a caller that
+## has only an ink number keeps the old answer.
+static func hits_per_pixel(ink: int, member_type: int = TYPE_BITMAP) -> bool:
+	return (ink & INK_MASK) == MATTE and member_type == TYPE_BITMAP
+
+
+## `CASt` type codes this file needs to tell apart. Plain ints for the same
+## reason the keying constants are: an enum does not survive a `preload`.
+const TYPE_BITMAP := 1
+const TYPE_FIELD := 3
+const TYPE_SHAPE := 8
+
+
+## Does this sprite render in applyColor mode — its blacks repainted foreColor and
+## its whites repainted backColor — rather than with the image's own colours?
+##
+## Director chooses before any pixel is touched (`setApplyColor`). The reference
+## states the switch as two clauses over two groups of inks: "foreColor != black
+## or backColor != white" for the Matte/Mask/Copy/Not-Copy group, and "not
+## (foreColor == black and backColor == white)" for the transparent/ghost group.
+## Those two clauses are the same condition written two ways, so what actually
+## differs between the groups is nothing, and only membership of the list matters:
+## every other ink — the arithmetic ones, Reverse, Blend — never applies colour.
+##
+## The indices are Director's inverted 8-bit convention, where black is 255 and
+## white is 0 (2.2), so "default" means fore 255 and back 0.
+static func applies_colour(ink: int, fore: int, back: int) -> bool:
+	if fore == INDEX_BLACK and back == INDEX_WHITE:
+		return false
+	return APPLY_COLOR_INKS.has(ink & INK_MASK)
+
+
+const INDEX_WHITE := 0
+const INDEX_BLACK := 255
+const APPLY_COLOR_INKS := [
+	MATTE, MASK, COPY, NOT_COPY, TRANSPARENT, NOT_TRANSPARENT,
+	BACKGND_TRANS, GHOST, NOT_GHOST,
+]
+
+
+## Repaint an image's black pixels `fore` and its white pixels `back`, in place.
+## Returns how many pixels changed.
+##
+## This is Director's colourisation, and it is why one 1-bit cast member appears
+## in a dozen colours across a movie without a dozen bitmaps existing. Every other
+## pixel is left alone: the reference's Copy arm says a colourised copy of
+## multi-colour art leaves non-black, non-white pixels as the *destination*, which
+## is a hole rather than a colour, and punching holes through artwork is a worse
+## failure than not colourising it. Leaving them is the conservative half of that
+## rule and the only half that cannot make a sprite disappear.
+##
+## Exact matches only, for the reason `key_paper` gives: an 8-bit image decoded
+## through the same palette reproduces black and white exactly, so a tolerance
+## buys nothing and eats near-white artwork.
+##
+## Scope, measured: only 651 bitmap sprite records in this corpus reach here.
+## Colourisation is not what makes this game's non-default colours numerous —
+## 50,063 of those records name *shape* members, which are painted by the shape
+## primitives instead (13) and never come through this function.
+static func apply_colour(image: Image, fore: Color, back: Color) -> int:
+	var changed := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			var c := image.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			if c.r8 == 0 and c.g8 == 0 and c.b8 == 0:
+				image.set_pixel(x, y, Color(fore.r, fore.g, fore.b, c.a))
+				changed += 1
+			elif c.r8 == 255 and c.g8 == 255 and c.b8 == 255:
+				image.set_pixel(x, y, Color(back.r, back.g, back.b, c.a))
+				changed += 1
+	return changed
 
 
 ## The alpha a sprite draws at, 0.0 to 1.0.

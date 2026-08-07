@@ -32,11 +32,13 @@ const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 
 const Ink := preload("res://director/director_ink.gd")
+const Shape := preload("res://director/director_shape.gd")
+const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
+const FrameClock := preload("res://director/director_frame_clock.gd")
+const Transition := preload("res://director/director_transition.gd")
 
 const STAGE := Vector2i(640, 480)
-## What Director falls back to when no frame has set a tempo.
-const DEFAULT_FPS := 15.0
 ## Floating skip control, in stage coordinates so it scales and letterboxes with
 ## everything else rather than drifting when the window is resized.
 const SKIP_RECT := Rect2(STAGE.x - 62, 8, 54, 22)
@@ -47,7 +49,36 @@ var _labels = null
 var _table = null
 var _palette: PackedByteArray
 var _index := 0
-var _accumulated := 0.0
+## Tempo, delays, wait-for-click and the time a transition takes. See
+## `director/director_frame_clock.gd`; this node owns only the phase order.
+var _clock = FrameClock.new()
+## The frame `_clock` was last armed for. The playhead is moved from a dozen
+## places — the score's own advance, `go`, a click, `play done` — so a genuine
+## frame *entry* is detected by comparing indices rather than by hooking every
+## writer, which is a funnel any one of them could quietly forget to use.
+var _entered_index := -1
+## Set when the playhead was moved by a `go` from outside the step loop. Director
+## does not send `exitFrame` for a frame that is being left by a queued `go to`
+## (DIRECTOR_ENGINE.md §6.1 step 7), and a click that navigates is exactly that.
+var _jump_queued := false
+## True only while `exitFrame` is being dispatched. It is what tells a `go` which
+## tick it lands in: `exitFrame` runs at step 7 and the playhead is resolved at
+## step 10, so a redirect from there is honoured by the same tick — while a `go`
+## from `prepareFrame`, `enterFrame`, a mouse handler or a key handler comes
+## *after* step 10 and is honoured by the next one, which is also the tick that
+## then sends no `exitFrame` of its own (§6.1).
+var _in_exit_frame := false
+## The frame script whose `enterFrame` is waiting for a transition to finish.
+## §6.2 plays the transition inside `renderFrame`, which is after `prepareFrame`
+## and before `enterFrame`, so a handler that runs on entry runs when the new
+## frame has finished arriving and not while it is still wiping in.
+var _pending_enter = null
+## What `puppetTransition` last asked for. One-shot: §10 gives a puppet
+## transition priority over the frame's own and consumes it at the next frame
+## change.
+var _puppet_transition: Dictionary = {}
+## Transitions actually played, for `_report`.
+var _transitions_played := 0
 var _paused := false
 var _status := ""
 ## `[display] aspect` from the game config. See `director_game.cfg`.
@@ -57,6 +88,16 @@ var _textures: Dictionary = {}
 ## Same keys as `_textures`, holding the decoded Image so a click can be tested
 ## against the artwork rather than against its bounding box.
 var _hit_images: Dictionary = {}
+## "<lib>:<member>" -> what a script last put into that field, overriding the text
+## authored into the member's `STXT`. Held here rather than written back into the
+## cast because the cast is a parsed view of a read-only container, and because a
+## movie change has to forget it: member numbers are local to a cast.
+var _field_text: Dictionary = {}
+## channel -> what the last paint laid out for the field on it: the text, the box,
+## the style and how many lines were drawn. Written by `_draw_text` and read by
+## `tools/text_and_shapes.gd`, which has no other way to see a paint that headless
+## Godot discards.
+var _text_drawn: Dictionary = {}
 var _interpreter = null
 var _host = null
 var _audio: Node = null
@@ -188,12 +229,17 @@ func _ready() -> void:
 	var ccl_ids: Array = _movie.ids_of("ccl ")
 	if not ccl_ids.is_empty():
 		_ccl = FilmLoop.read_cast_list(_movie.read_chunk(ccl_ids[0]))
+	# The frame the movie opens on is entered like any other: its tempo arms the
+	# clock and its transition, if it has one, is played before anything runs on
+	# it. Without this the first frame is paced by the 15 fps default whatever the
+	# score says, and `_advance` would then re-enter it and re-arm the same delay.
+	_sync_frame_entry()
 	if _lingo_on and _interpreter != null:
 		# Director sends these once, before the first frame is drawn, and this is
 		# where a movie's opening sound and its global setup live.
 		_dispatch("prepareMovie", {})
 		_dispatch("startMovie", {})
-		_dispatch("enterFrame", _frame_script(_index))
+		_enter_frame_or_defer(_frame_script(_index))
 
 	get_window().title = "%s  â€”  %d frames" % [path.get_file(), _score.frame_count]
 	print("playing %s from frame %d of %d" % [path.get_file(), _index, _score.frame_count])
@@ -210,12 +256,38 @@ func root_node(name: String) -> Node:
 ## handlers that play sound, move inventory and drive the HUD live in the shared
 ## cast the movie links â€” `MASTER` here â€” and a preview that compiles only the
 ## internal cast runs rooms that hold and say nothing.
+## Globals outlive the movie that set them. That is the entire point of a Lingo
+## global, and this game is built on it: `EXODUS` sets `syz` and `globalday` and
+## then goes to `DAY1`, and `DAY1` reads them. Director clears them only on
+## `clearGlobals` or on quitting -- never on `go to movie`.
+##
+## A movie change stands up a fresh interpreter here, because the scripts, the
+## casts and the handler tables all belong to the movie being left. The globals
+## do not, so they are carried across. Without this every room began with every
+## global VOID, which is not a subtle failure: rooms that decide what to show
+## from accumulated state show the wrong thing, and the wrongness looks like a
+## rendering fault rather than a lost variable.
+##
+## The interpreter's own dictionary is the one that matters. `owns_global` on the
+## host answers "do I already hold this name", and nothing ever seeds the host's
+## dictionary, so it is always false and every global lives here. Both are
+## carried anyway, so that stops being load-bearing if the host ever does claim
+## one.
 func _start_lingo(path: String) -> void:
+	var carried_globals: Dictionary = {}
+	var carried_host_globals: Dictionary = {}
+	if _interpreter != null:
+		carried_globals = _interpreter.globals
+	if _host != null:
+		carried_host_globals = _host.globals
+
 	var movie := path.get_file().get_basename().to_upper()
 	_interpreter = Interpreter.new()
 	_host = PreviewHost.new()
 	_host.preview = self
 	_interpreter.host = _host
+	_interpreter.globals = carried_globals
+	_host.globals = carried_host_globals
 
 	var compiler := Compiler.new()
 	var started := Time.get_ticks_usec()
@@ -377,6 +449,13 @@ func _report() -> void:
 		print("builtins unbound : %s" % JSON.stringify(_host.unbound))
 	print("ccl cast list  : %s" % str(_ccl))
 	print("film loops     : %s" % JSON.stringify(_loop_stats))
+	# "The pacing feels wrong" has to be separable into "the score asked for a
+	# hold and nothing took it" and "the score asked for nothing". Only five
+	# frames in this corpus carry a transition and thirty-six carry a delay, so a
+	# run that reports zero of each is usually telling the truth about the movie.
+	print("clock          : %s, %d transition(s) played" % [
+		_clock.status(), _transitions_played,
+	])
 	# Whether a room set any cursor at all is a question that kept being answered
 	# by looking at the screen and seeing an arrow, which cannot distinguish "the
 	# cursor code is broken" from "this room asks for no cursor". Most of them ask
@@ -532,48 +611,168 @@ func _fail(message: String) -> void:
 func _process(delta: float) -> void:
 	if _score == null or _paused:
 		return
+	if _score.frame(_index).is_empty():
+		return
+	# A click or a key may have moved the playhead since the last step. Take the
+	# frame it landed on before deciding how much time that frame is owed, or the
+	# old frame's tempo paces the new one.
+	_sync_frame_entry()
+	var due := _clock.tick(delta)
+	if due <= 0:
+		return
+	for _i in due:
+		# Film loops advance on the movie's clock, not the playhead's: a loop
+		# keeps animating on a frame the score is holding still on, which is
+		# exactly what a talking character does while its line plays. That is why
+		# the tick is counted before the wait is tested rather than after — a
+		# wait-for-click frame with a character talking on it must not freeze.
+		_ticks += 1
+		if _clock.playhead_held():
+			continue
+		if _pending_enter != null:
+			# The transition has finished arriving; the frame it revealed gets its
+			# `enterFrame` now (§6.2).
+			var resumed: Dictionary = _pending_enter
+			_pending_enter = null
+			_dispatch("enterFrame", resumed)
+			continue
+		_advance()
+	queue_redraw()
+
+
+## The playhead has landed somewhere this tick has not accounted for yet: take
+## the frame's tempo, arm whatever it waits for, and start any transition it
+## carries.
+func _sync_frame_entry() -> void:
+	if _index == _entered_index or _score == null:
+		return
+	_entered_index = _index
 	var frame: Dictionary = _score.frame(_index)
 	if frame.is_empty():
 		return
-	# The score's own clock: a frame's tempo sets the rate and it persists until
-	# another frame changes it.
-	var fps: float = float(frame.get("fps", 0.0))
-	if fps <= 0.0:
-		fps = DEFAULT_FPS
-	_accumulated += delta
-	var step := 1.0 / fps
-	while _accumulated >= step:
-		_accumulated -= step
-		# Film loops advance on the movie's clock, not the playhead's: a loop
-		# keeps animating on a frame the score is holding still on, which is
-		# exactly what a talking character does while its line plays.
-		_ticks += 1
-		_advance()
-		queue_redraw()
+	_clock.enter_frame(frame)
+	_begin_transition(frame)
 
 
-## Director's tick: the frame script's `exitFrame` runs, and only if it does not
-## redirect the playhead does the frame advance. `go to the frame` is how a room
-## stays where it is â€” without it the score simply runs on, which is what this
-## preview did before and looks exactly like a rendering fault.
-func _advance() -> void:
+## Resolve this frame's transition and hold the playhead for as long as it takes.
+##
+## §10's three sources in order: a puppet transition set from Lingo, which is
+## one-shot and consumed here; the frame's own, which in a D5 score is a
+## reference to a transition cast member; or nothing. Only the *time* is
+## reproduced — the new frame cuts in rather than wiping — because §10 is
+## explicit that a cut reads as a stylistic choice while a wrong wipe reads as a
+## bug, and that the duration is the part scripts are timed against.
+##
+## `tools/transition_survey.gd` says this corpus spends 4.0 s in transitions
+## across five frames of three movies, against 74.0 s in tempo delays across
+## thirty-six. Both were being skipped entirely.
+func _begin_transition(frame: Dictionary) -> bool:
+	var puppet := _puppet_transition
+	_puppet_transition = {}
+	var from_frame: Dictionary = {}
+	var number := int(frame.get("transition_member", 0))
+	if number > 0 and _table != null:
+		var cast = _table.cast_for(int(frame.get("transition_lib", 1)))
+		if cast != null:
+			from_frame = cast.member(number)
+	var transition: Dictionary = Transition.resolve(puppet, from_frame)
+	if not Transition.is_transition(transition):
+		return false
+	_transitions_played += 1
+	_clock.hold(Transition.hold_ms(transition), FrameClock.REASON_TRANSITION)
+	_trace("f%d transition %s" % [_index, Transition.describe(transition)])
+	return true
+
+
+## One step of the movie, in Director's order (DIRECTOR_ENGINE.md §6.1).
+##
+## The correction that matters is where `exitFrame` sits. It belongs to the frame
+## being *left*, and it runs at the **top of the step that leaves it** — with the
+## playhead advance and the redraw after it, and `enterFrame` after those. Firing
+## `prepareFrame`, `enterFrame` and `exitFrame` back to back on one frame, as this
+## did, runs both halves of the standard "set up in enterFrame, tear down in
+## exitFrame" idiom against the same rendered state, and puts `enterFrame` for a
+## frame *before* the `exitFrame` of the frame it followed.
+##
+## For this title `exitFrame` is where everything lives — 2,504 of the corpus's
+## handlers are `on exitFrame` against 33 `on enterFrame` and none at all for
+## `prepareFrame` — so the walk state machine in `MovieScript 28
+## whatodoeveryframe` is stepped from here, once per tick, and the frame it is
+## stepped *for* is the one the player is looking at rather than the one the
+## score is about to move to.
+##
+## The first step of a movie sends `exitFrame` for the frame it started on, and
+## that is load-bearing rather than tidy: DAY1's frame 0 script `init all` is an
+## `on exitFrame` handler that establishes the whole opening state of the room —
+## the puppeted channels, `egozh`/`egozv`/`syz`, the inventory slots — and ends
+## with `go("shore2")`. Skip it and the room draws with nothing initialised.
+##
+## Returns what the step did, so a harness can assert the ordering rather than
+## infer it: `exited` is the frame `exitFrame` was sent for, -1 when it was
+## skipped, and `frame` is the frame the rest of the step ran on.
+func _advance() -> Dictionary:
 	if not _lingo_on:
 		_index = (_index + 1) % maxi(_score.frame_count, 1)
-		return
-	# Director's order within one tick, all on the frame the playhead is on:
-	# prepareFrame, enterFrame, then exitFrame. Firing enterFrame after the
-	# advance instead makes it a once-per-room event rather than a per-tick one,
-	# and a room whose logic hangs off it runs that logic exactly once.
+		_sync_frame_entry()
+		return {"exited": -1, "frame": _index}
+
+	# A step must never begin with an `enterFrame` still owed for the frame it is
+	# about to leave. `_process` normally pays it when the transition's hold runs
+	# out; a caller stepping this directly — a harness, the arrow keys — never
+	# consults the clock, so the debt is settled here instead of being carried
+	# into the next frame and dispatched against the wrong one.
+	if _pending_enter != null:
+		var owed: Dictionary = _pending_enter
+		_pending_enter = null
+		_dispatch("enterFrame", owed)
+	# A `go to` queued from outside the step loop has already moved the playhead,
+	# and Director sends no `exitFrame` for a frame it is leaving that way. The
+	# step still runs: it renders and enters the frame the jump landed on, and the
+	# *next* step is the one that leaves it.
+	var exited := -1
+	_held = _jump_queued
+	_jump_queued = false
+	if not _held:
+		exited = _index
+		_in_exit_frame = true
+		_dispatch("exitFrame", _frame_script(_index))
+		_in_exit_frame = false
+
+	# Step 10, `updateCurrentFrame`: the handler above decided where the playhead
+	# goes. `go to the frame` — how a room stands still at all — reaches this as a
+	# hold, and any other `go` has already written the destination.
+	if not _held:
+		_index += 1
+		if _index >= _score.frame_count:
+			_index = 0
 	_held = false
+	_sync_frame_entry()
+
 	var script := _frame_script(_index)
 	_dispatch("prepareFrame", script)
-	_dispatch("enterFrame", script)
-	_dispatch("exitFrame", script)
-	if _held:
+	# Step 14, the draw. Godot paints at the end of the process frame rather than
+	# here, so this is a request and not a completed paint: what `enterFrame`
+	# writes below still lands in the same painted frame, where Director would
+	# have shown it on the next one. A real divergence, and the cheapest one on
+	# offer — the alternative is deferring every `enterFrame` by a whole frame.
+	queue_redraw()
+	_enter_frame_or_defer(script)
+	return {"exited": exited, "frame": _index}
+
+
+## Send `enterFrame`, or owe it until the frame has finished arriving.
+##
+## §6.2 plays a transition inside the render step, which sits between
+## `prepareFrame` and `enterFrame`. A handler that runs on entry must not run
+## while the frame it is about to touch is still wiping in — that is the whole
+## difference between "set the room up once it is visible" and "set it up over
+## the top of the room being left". Every path that enters a frame goes through
+## here: the step loop, the first frame of a movie, and a `go to movie`.
+func _enter_frame_or_defer(script: Dictionary) -> void:
+	if _clock.holding_transition():
+		_pending_enter = script
 		return
-	_index += 1
-	if _index >= _score.frame_count:
-		_index = 0
+	_dispatch("enterFrame", script)
 
 
 func _input(event: InputEvent) -> void:
@@ -585,6 +784,10 @@ func _input(event: InputEvent) -> void:
 			_drag_channel = 0
 			_resolve_cursor()
 			return
+		# A wait-for-click frame is released by the mouse-down handler and not by
+		# the score (DIRECTOR_ENGINE.md §9.2), so this runs before anything that
+		# might return early: a click that lands on nothing still ends the wait.
+		_clock.clicked()
 		# Tested before the sprite hit-test, or a hotspot underneath would eat it.
 		if SKIP_RECT.has_point(at):
 			skip_to_end()
@@ -637,6 +840,12 @@ func _input(event: InputEvent) -> void:
 			queue_redraw()
 		KEY_R:
 			_index = 0
+			# Restarting from a frame that was holding — a delay, a wait for a
+			# click — must not carry that hold onto the frame it restarts at, or
+			# `R` looks like it did nothing.
+			_clock.reset()
+			_entered_index = -1
+			_pending_enter = null
 			queue_redraw()
 		KEY_B:
 			_show_boxes = not _show_boxes
@@ -665,6 +874,10 @@ func _draw() -> void:
 	if _score == null:
 		return
 
+	# Rebuilt from scratch each paint rather than accumulated: it is a record of
+	# what is on the stage now, and a field that left the frame must stop being in
+	# it or a harness would assert against a channel that is no longer drawn.
+	_text_drawn.clear()
 	var frame: Dictionary = _score.frame(_index)
 	for raw_sprite in frame.get("sprites", []):
 		# What a script puppeted wins over what the score recorded. Ignoring it
@@ -679,6 +892,12 @@ func _draw() -> void:
 		var over: Dictionary = _overrides.get(int(sprite["channel"]), {})
 		# A film loop draws its own children rather than a bitmap of its own.
 		if _draw_film_loop(sprite):
+			continue
+		# A field draws glyphs, not pixels, so it takes the canvas directly rather
+		# than going through the texture cache: its text is the one thing in the
+		# frame a script rewrites constantly, and a cached texture would have to be
+		# thrown away and rebuilt every time it did.
+		if _draw_text(sprite):
 			continue
 		var texture: Texture2D = _texture_for(sprite)
 		if texture == null:
@@ -729,20 +948,48 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.75))
 
 
-## Decoded once per (member, ink) and kept. A member costs milliseconds to
-## decode and nothing to draw again, so the cost is paid on first appearance.
+## Decoded once per (member, ink, size, colours) and kept. A member costs
+## milliseconds to decode and nothing to draw again, so the cost is paid on first
+## appearance.
+##
+## Two cast types come through here. A bitmap is decoded, resized, keyed by its
+## ink and then colourised; a shape is painted from its own geometry and needs
+## none of that, because the shape primitives already draw only what they draw
+## (13). Fields do not: they go through `_draw_text` instead.
 func _texture_for(sprite: Dictionary) -> Texture2D:
 	var lib := int(sprite["cast_lib"])
 	var id := int(sprite["cast_id"])
 	var ink := int(sprite["ink"])
 	var m: Dictionary = _table.get_member(lib, id)
-	if m.is_empty() or int(m.get("type", 0)) != 1:
+	if m.is_empty():
+		return null
+	var type_code := int(m.get("type", 0))
+	if type_code != Ink.TYPE_BITMAP and type_code != Ink.TYPE_SHAPE:
 		return null
 	var key := _texture_key(sprite, _drawn_size(sprite, m))
 	if _textures.has(key):
 		return _textures[key]
 
 	_textures[key] = null
+	# Both colours, resolved through the palette once and used by both branches.
+	# Director's 8-bit convention puts white at index 0 and black at 255, so the
+	# defaults a sprite record carries are fore 255 and back 0 (2.2).
+	var fore := Ink.colour_of(_palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
+	var back := Ink.colour_of(_palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
+	var drawn := _drawn_size(sprite, m)
+
+	if type_code == Ink.TYPE_SHAPE:
+		# A shape has no artwork and no registration point: its sprite rect is the
+		# whole of its geometry, and the image comes back already keyed — or as
+		# null, which is the answer for the invisible hotspot rectangles that are
+		# 60,100 of this corpus's 60,914 shape sprite records.
+		var painted: Image = Shape.render(m, fore, back, Vector2i(drawn))
+		if painted == null:
+			return null
+		_hit_images[key] = painted
+		_textures[key] = ImageTexture.create_from_image(painted)
+		return _textures[key]
+
 	var f = _table.file_for(lib)
 	if f == null:
 		return null
@@ -751,7 +998,6 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 	var image: Image = Bitmap.decode(m, chunk, _palette, error)
 	if image == null:
 		return null
-	var drawn := _drawn_size(sprite, m)
 	if drawn.x > 0 and drawn.y > 0 \
 			and (int(drawn.x) != image.get_width() or int(drawn.y) != image.get_height()):
 		image.resize(int(drawn.x), int(drawn.y), Image.INTERPOLATE_NEAREST)
@@ -769,13 +1015,57 @@ func _texture_for(sprite: Dictionary) -> Texture2D:
 		Ink.KEY_MATTE:
 			Ink.key_matte(image)
 		Ink.KEY_PAPER:
-			Ink.key_paper(image, Ink.colour_of(_palette, int(sprite.get("back_color", 0))))
+			Ink.key_paper(image, back)
+	# Colourisation last, and after keying rather than before it, which is not an
+	# arbitrary order. A matte is built by flooding *white* in from the border, and
+	# Director builds it from the member's own image; repainting the whites first
+	# leaves the flood nothing to match and the sprite comes out as a solid
+	# rectangle. Keying first also means the pixels this repaints are exactly the
+	# ones that survived, so the keyed-out paper cannot come back as a colour.
+	if Ink.applies_colour(ink, int(sprite.get("fore_color", Ink.INDEX_BLACK)),
+			int(sprite.get("back_color", Ink.INDEX_WHITE))):
+		Ink.apply_colour(image, fore, back)
 	# Kept alongside the texture for hit-testing: a click lands on a sprite only
 	# where the sprite actually has pixels, so a keyed-out region passes the
 	# click through to whatever is behind it.
 	_hit_images[key] = image
 	_textures[key] = ImageTexture.create_from_image(image)
 	return _textures[key]
+
+
+## Draw a field member's text, and say whether this sprite was one.
+##
+## Until now `_texture_for` answered null for every member that was not a bitmap,
+## so a field drew nothing: 11,525 sprite records across this corpus, and with
+## them the whole HUD — the score, the inventory, the process list — while the
+## Lingo that maintains them worked perfectly and had nowhere to show it.
+##
+## What is drawn is legible text in roughly the right place at roughly the right
+## size and in the member's own colour and alignment. It is not period-accurate
+## glyph rendering and does not pretend to be; `director/director_text.gd` says
+## exactly what is and is not reproduced.
+func _draw_text(sprite: Dictionary) -> bool:
+	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	if m.is_empty() or int(m.get("type", 0)) != Ink.TYPE_FIELD:
+		return false
+	var rect := _stage_rect(sprite)
+	var text := _field_text_of(m)
+	var style: Dictionary = Text.style_of(m)
+	var lines: int = Text.draw(self, rect, text, style, Ink.blend_alpha(sprite))
+	# What the paint actually put on the canvas, kept per channel. Headless Godot
+	# builds the draw list and throws it away, so there is no painted surface to
+	# read back and a harness has no other way to tell "the text reached the
+	# screen" from "the sprite was skipped" — both look like a blank stage.
+	_text_drawn[int(sprite["channel"])] = {
+		"member": int(sprite["cast_id"]), "name": str(m.get("name", "")),
+		"text": text, "lines": lines, "rect": rect,
+		"font_size": int(style["font_size"]), "color": style["color"],
+		"align": int(style["align"]),
+	}
+	# True even when there was nothing to draw. The sprite *is* a field, and
+	# falling through to the bitmap path would only ask the cast for artwork that
+	# a field does not have.
+	return true
 
 
 ## Does this sprite have a visible pixel at a stage point?
@@ -850,7 +1140,12 @@ func _click(at: Vector2) -> void:
 		if script.is_empty():
 			for sprite in _score.frame(_index).get("sprites", []):
 				if int(sprite["channel"]) == channel:
-					script = _script_for_member(int(sprite["cast_id"]))
+					# Same rule as the eligibility test above: the member's own
+					# library decides, or a click runs a handler belonging to a
+					# different cast's member of the same number.
+					script = _script_in_lib(
+						int(sprite["cast_lib"]), int(sprite["cast_id"])
+					)
 					break
 	var tier := "sprite"
 	if script.is_empty():
@@ -919,7 +1214,7 @@ func _draw_film_loop(sprite: Dictionary) -> bool:
 	if kids.is_empty():
 		_tally(_loop_stats, "loop has no children this tick")
 	for child in kids:
-		var child_lib := _child_lib(child)
+		var child_lib := _child_lib(child, lib)
 		if child_lib < 0:
 			_tally(_loop_stats, "child unresolved cast=%s" % str(child["cast_name"]))
 			continue
@@ -984,18 +1279,31 @@ func _scaled_reg(member: Dictionary, drawn: Vector2, _stretched: bool) -> Vector
 
 
 ## The movie's cast-library number for a child's named cast, or -1.
-func _child_lib(child: Dictionary) -> int:
+func _child_lib(child: Dictionary, owner_lib: int) -> int:
 	var name := str(child["cast_name"])
 	if name == "":
-		return 1
-	# A `ccl ` entry is the cast's authoring path â€” Mac colon form, naming a
-	# volume that has not existed for twenty years. Only the filename survives,
-	# and the cast library table names casts without an extension.
-	var stem := name.replace(":", "/").get_file().get_basename().to_lower()
+		return owner_lib
+	# A `ccl ` entry is the cast's authoring path, in whichever separator the
+	# machine that saved the movie used: Mac colon form in the 1997 originals, a
+	# Windows path in a file that has been through a converter. Only the filename
+	# is of any use, so both separators are normalised before it is taken.
+	var stem := name.replace(":", "/").replace("\\", "/").get_file().get_basename().to_lower()
 	for number in _table.cast_libs:
 		if str(_table.cast_libs[number].get("name", "")).to_lower() == stem:
 			return int(number)
-	return -1
+	# Unresolvable, which for a converted file is the normal case rather than the
+	# exception: DAY1's `ccl ` holds a single truncated local path
+	# (`...\PIP2DATA\won`) that names none of its five libraries.
+	#
+	# The loop's own library is the answer, not a guess at the name. A film
+	# loop's children live in the cast the loop lives in, and that is knowledge
+	# the container gives us directly. Guessing from the name is actively worse
+	# than dropping the child: matching `won` as a prefix of `wonder` resolved
+	# master's loops 2:57 and 2:59 into the *wonder* cast, where the same member
+	# numbers name unrelated art -- so the loops drew, with somebody else's
+	# pictures in them. A missing asset is a bug you can see; a plausible wrong
+	# one is a bug you argue about.
+	return owner_lib
 
 
 func _open_loop(lib: int, member: Dictionary):
@@ -1011,22 +1319,11 @@ func _open_loop(lib: int, member: Dictionary):
 	return loop
 
 
-## A child names its cast by name, not by this movie's library number.
-func _child_texture(child: Dictionary) -> Texture2D:
-	var name := str(child["cast_name"])
-	var lib := 1
-	if name != "":
-		# A `ccl ` entry is the cast's authoring path â€” Mac colon form, naming a
-		# volume that has not existed for twenty years. Only the filename
-		# survives, and the cast library table names casts without an extension.
-		var stem := name.replace(":", "/").get_file().get_basename().to_lower()
-		lib = -1
-		for number in _table.cast_libs:
-			if str(_table.cast_libs[number].get("name", "")).to_lower() == stem:
-				lib = int(number)
-				break
-		if lib < 0:
-			return null
+## A child names its cast by name, not by this movie's library number -- and when
+## that name resolves to nothing, the loop's own library is the answer. Same rule
+## as `_child_lib`, which this defers to so the two cannot drift apart.
+func _child_texture(child: Dictionary, owner_lib: int = 1) -> Texture2D:
+	var lib := _child_lib(child, owner_lib)
 	return _texture_for(
 		_child_sprite(child, lib, _table.get_member(lib, int(child["cast_id"])))
 	)
@@ -1100,10 +1397,30 @@ func _effective(sprite: Dictionary) -> Dictionary:
 		# The score moved this channel to a different member and no script
 		# claimed the member. Geometry belongs to the new member, so positional
 		# overrides taken against the old one are stale.
-		over = {}
-		_overrides.erase(channel)
+		#
+		# `visible` is not geometry and does not go with them. It is channel
+		# state, like `the cursor of sprite`: Director does not un-hide a sprite
+		# because the score moved that channel to another member, and a port that
+		# does gets a very specific bug -- a room hides something during its
+		# initialisation and it reappears later, looking like a rendering fault.
+		#
+		# DAY1 is the case that found this. Its `init all` runs as the frame
+		# script on frame 0 and does `sprite(6).visible = 0`, but channel 6 is
+		# *empty* on frame 0, so no member was ever recorded against the
+		# override. The moment channel 6 acquires a member -- at the beach, 37
+		# frames later -- the test below fires and the sprite is un-hidden. The
+		# hide was guaranteed to be discarded before it could ever apply.
+		var kept: Dictionary = {"_member": int(sprite["cast_id"])}
+		if over.has("visible"):
+			kept["visible"] = over["visible"]
+			_overrides[channel] = kept
+		else:
+			_overrides.erase(channel)
+		over = kept
+		if int(LingoValue.to_int(over.get("visible", 1))) == 0:
+			return {}
 		return sprite
-	if over.has("visible") and int(over["visible"]) == 0:
+	if int(LingoValue.to_int(over.get("visible", 1))) == 0:
 		return {}
 	var out := sprite.duplicate()
 	for key in ["membernum", "castnum"]:
@@ -1135,14 +1452,21 @@ func _effective(sprite: Dictionary) -> Dictionary:
 	# allowed to reset the size back to the member's natural one. Forcing it here
 	# changed which branch the drawn size and the texture cache took, for a
 	# property that should only have changed a number.
+	# Coerced through Lingo's own rules rather than GDScript's. A script can
+	# legitimately store VOID here -- `set the locH of sprite 30 to egozh` when
+	# `egozh` has never been set does exactly that -- and `int(null)` is not a
+	# conversion in GDScript, it is a runtime error that aborts whatever is
+	# running. This one aborted `_draw` partway through, every frame, so the
+	# sprites after it in channel order simply vanished. VOID is 0 in Director's
+	# numeric context, which is what `LingoValue.to_int` answers.
 	if over.has("width"):
-		out["width"] = int(over["width"])
+		out["width"] = LingoValue.to_int(over["width"])
 	if over.has("height"):
-		out["height"] = int(over["height"])
+		out["height"] = LingoValue.to_int(over["height"])
 	if over.has("loch"):
-		out["loc_h"] = int(over["loch"])
+		out["loc_h"] = LingoValue.to_int(over["loch"])
 	if over.has("locv"):
-		out["loc_v"] = int(over["locv"])
+		out["loc_v"] = LingoValue.to_int(over["locv"])
 	return out
 
 
@@ -1187,10 +1511,19 @@ func _channel_at(at: Vector2) -> int:
 			continue
 		if not _sprite_rect(sprite).has_point(at):
 			continue
-		# Only Matte samples the artwork. Every other ink is a plain rectangle
-		# for hit-testing even when it renders per-pixel â€” the asymmetry is
-		# deliberate in Director and easy to get wrong in both directions.
-		if _hit_pixels and Ink.hits_per_pixel(int(sprite["ink"])) and not _opaque_at(sprite, at):
+		# Only Matte samples the artwork, and only on a bitmap. Every other ink is
+		# a plain rectangle for hit-testing even when it renders per-pixel â€” the
+		# asymmetry is deliberate in Director and easy to get wrong in both
+		# directions. The cast type is the other half of the same rule: a matte is
+		# flooded in from the border of the *member's image*, and a shape has no
+		# image, so a matte-inked shape hit-tests as its box. Without that, this
+		# game's invisible shape hotspots that happen to carry Matte answered no
+		# click at all (`director/director_ink.gd:hits_per_pixel`).
+		var member: Dictionary = _table.get_member(
+			int(sprite["cast_lib"]), int(sprite["cast_id"]))
+		if _hit_pixels \
+				and Ink.hits_per_pixel(int(sprite["ink"]), int(member.get("type", 0))) \
+				and not _opaque_at(sprite, at):
 			continue
 		# Eligibility is tested HERE, inside the descent, not applied to the
 		# answer afterwards. A sprite the point is over but which cannot respond
@@ -1212,7 +1545,21 @@ func _responds_to_mouse(sprite: Dictionary) -> bool:
 	var behaviour := _sprite_script(channel, _index)
 	if _declares_mouse_handler(behaviour):
 		return true
-	if _declares_mouse_handler(_script_for_member(int(sprite["cast_id"]))):
+	# In the library the sprite names, not by number alone. Member numbers are
+	# per cast, so a number-only search answers with a stranger -- and here that
+	# is not silence but a false positive: it makes a sprite clickable because
+	# some *other* cast happens to have a script at that number, and the click
+	# then runs that stranger.
+	#
+	# DAY1's beach is the case that found it. Channel 1 is `3:10`, the room
+	# backdrop `shore2`, a plain bitmap with no script of its own. A number-only
+	# search found a mouse handler anyway, so the backdrop answered clicks across
+	# its whole 640x400 rect -- and since the walkable ground is a separate Matte
+	# sprite on channel 2 covering only the bottom 154 pixels, clicking the *sea*
+	# fell through to the backdrop and walked the character up into it.
+	if _declares_mouse_handler(_script_in_lib(
+		int(sprite["cast_lib"]), int(sprite["cast_id"])
+	)):
 		return true
 	# A moveable sprite is click-eligible on its own, with no script at all â€”
 	# it has to be, or nothing could start a drag.
@@ -1239,23 +1586,41 @@ func _declares_mouse_handler(script: Dictionary) -> bool:
 ## are drawn, distinguished rather than filtered.
 func _draw_hotspots(frame: Dictionary) -> void:
 	var font := ThemeDB.fallback_font
-	for sprite in frame.get("sprites", []):
+	for raw_sprite in frame.get("sprites", []):
+		# Puppet state, exactly as the hit test sees it. A sprite a script has
+		# hidden or moved is not where the score says, and outlining it there
+		# would be worse than not outlining it at all.
+		var sprite: Dictionary = _effective(raw_sprite)
+		if sprite.is_empty():
+			continue
 		var channel := int(sprite["channel"])
 		var rect := _sprite_rect(sprite)
 		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
 			continue
-		var scripted := not _sprite_script(channel, _index).is_empty()
+		# Only what can actually answer a click. This used to outline every
+		# sprite and merely tint the ones with a behaviour attached, which made
+		# the overlay a picture of the score rather than of what the mouse can
+		# reach -- and eligibility is not "has a behaviour": a member script, a
+		# button or `moveable` all qualify, and a behaviour that declares no
+		# mouse handler does not.
+		if not _responds_to_mouse(sprite):
+			continue
+		# Green where the whole rectangle answers, amber where only the artwork
+		# does. That distinction is the one that costs people time: a Matte
+		# sprite is clickable on its pixels and transparent to the mouse
+		# everywhere else, so an outline that implies a solid target is a lie.
+		var per_pixel := _hit_pixels and Ink.hits_per_pixel(int(sprite["ink"]))
 		var hovered := channel == _hover_channel
-		var tint := Color(0.2, 1.0, 0.4) if scripted else Color(0.35, 0.6, 1.0)
+		var tint := Color(1.0, 0.75, 0.2) if per_pixel else Color(0.2, 1.0, 0.4)
 		if hovered:
 			draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.18), true)
-		draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.35),
+		draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.45),
 			false, 2.0 if hovered else 1.0)
 		if hovered:
 			draw_string(font, rect.position + Vector2(2, -3),
-				"ch%d  %d:%d%s" % [
+				"ch%d  %d:%d  %s" % [
 					channel, int(sprite["cast_lib"]), int(sprite["cast_id"]),
-					"  script" if scripted else "",
+					"artwork only" if per_pixel else "whole rect",
 				],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
 
@@ -1299,10 +1664,17 @@ func _drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 ##
 ## The blend amount deliberately does *not*: blending is applied as a draw-time
 ## modulate rather than baked into the image, so one decode serves every alpha.
+## So does the fore colour, for two reasons that arrived together: it is what
+## colourisation repaints an image's black pixels (2.3), and it is the colour a
+## shape's primitives paint with (13). Without it the second sprite to share a
+## member gets the first one's colour — and this game recolours one 60x23 shape
+## through several colours across 48,570 sprite records, so the omission would be
+## visible everywhere the same hotspot is drawn twice.
 func _texture_key(sprite: Dictionary, drawn: Vector2) -> String:
-	return "%d:%d:%d:%dx%d:%d" % [
+	return "%d:%d:%d:%dx%d:%d:%d" % [
 		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
 		int(drawn.x), int(drawn.y), int(sprite.get("back_color", 0)),
+		int(sprite.get("fore_color", Ink.INDEX_BLACK)),
 	]
 
 
@@ -1336,8 +1708,15 @@ func skip_to_end() -> void:
 		return
 	_index = _score.frame_count - 1
 	_held = false
-	_accumulated = 0.0
-	_dispatch("enterFrame", _frame_script(_index))
+	# A jump cancels every wait (§9.2) — including one this button is being used
+	# to escape, since a movie sitting on a wait-for-click frame is exactly when
+	# a player reaches for it.
+	_clock.reset()
+	_pending_enter = null
+	# The landing frame is entered by the next step, the way any other jump from
+	# outside the step loop is: that step skips `exitFrame`, renders, and sends
+	# `enterFrame`. Sending `enterFrame` from here as well ran it twice.
+	_jump_queued = true
 	queue_redraw()
 
 
@@ -1371,19 +1750,83 @@ func lingo_hold() -> void:
 	_held = true
 
 
-## Entering a different room drops what scripts puppeted in the last one.
+## `puppetTransition <type>[, <chunkSize>, <duration in quarter-seconds>, <area>]`.
 ##
-## Without this an override outlives its room: a script hides sprite 15 to take
-## a collectable off the beach, the playhead moves somewhere else, and channel 15
-## stays invisible for the rest of the session even though the score has put
-## something entirely different there. It reads as a layering fault â€” art missing
-## from in front of other art â€” and it is stale state, not stacking order.
+## Source 1 of §10's three, and the only one a script can reach. It applies to
+## the next frame change and is consumed there — Director does not keep it armed,
+## which is why the call is always written immediately before the `go` that uses
+## it and never has to be cancelled.
+##
+## The duration argument is in **quarter seconds**, unlike the transition cast
+## member's, which is in milliseconds. That is a genuine Director inconsistency
+## and not a decoding error; getting it wrong scales every scripted transition by
+## 250.
+##
+## Nothing in this game's 61 movies calls it — `tools/transition_survey.gd` and a
+## grep of `reference/lingo/` both say zero — so this exists for the engine's
+## sake rather than this title's, and `tools/frame_events.gd` is what exercises
+## it.
+func lingo_puppet_transition(args: Array) -> void:
+	if args.is_empty():
+		_puppet_transition = {}
+		return
+	var type_code := LingoValue.to_int(args[0])
+	if type_code <= 0:
+		_puppet_transition = {}
+		return
+	var quarters: int = LingoValue.to_int(args[2]) if args.size() >= 3 else 4
+	_puppet_transition = {
+		"transition_type": type_code,
+		"chunk_size": LingoValue.to_int(args[1]) if args.size() >= 2 else 16,
+		"duration_ms": float(maxi(quarters, 1)) * 250.0,
+		"change_area": LingoValue.to_int(args[3]) if args.size() >= 4 else 0,
+		"flags": 0,
+	}
+
+
+## A frame jump does **not** drop what scripts puppeted.
+##
+## This used to clear every override whenever a jump crossed a marker boundary,
+## on the reasoning that an override should not outlive its room -- a script
+## hides sprite 15 to take a collectable off the beach, the playhead moves
+## elsewhere, and channel 15 stays invisible over whatever the score puts there
+## next.
+##
+## That symptom is real but the cure was wrong, and wrong in a way that
+## destroyed room initialisation wholesale. `DIRECTOR_ENGINE.md` §5.4 is
+## explicit: puppet state survives frame jumps and `go to`, and dies only on
+## `puppetSprite N, FALSE` or a movie change. Nothing in the frame loop clears
+## it implicitly.
+##
+## DAY1 is the case that found it. Its `init all` is the frame script on frame 0:
+## it hides sprites 6, 15 and 33, shows 17 and 23, puppets channels 30, 100 and
+## 103-110, and then ends with `go("shore2")` -- a jump to frame 37, a different
+## marker. Every one of those writes was thrown away on the way out, so the room
+## arrived having initialised nothing. The boat that should have been hidden was
+## visible, and the cursors survived only because they are kept in a separate
+## dictionary for exactly this reason.
+##
+## The stale-collectable case is handled by Director's own mechanism instead. The
+## score carries no visible flag, so visibility is channel state rather than
+## something the score restores, and this game re-establishes it on entry to
+## every room: DAY1's own frame script sets the visibility of sprites 15, 17 and
+## 33 on every `enterFrame`.
 func lingo_go_frame(frame: int) -> void:
 	_held = true
 	var target := clampi(frame, 0, maxi(_score.frame_count - 1, 0))
-	if _labels != null and _labels.marker_at(target) != _labels.marker_at(_index):
-		_overrides.clear()
 	_index = target
+	# A pending `go to` cancels every wait — sound, click and delay alike (§9.2).
+	# It is how a script escapes a wait-for-click frame without a click, and
+	# without it a room reached by `go` would serve out the wait the frame it left
+	# had armed.
+	_clock.release()
+	if not _in_exit_frame:
+		# Anywhere but `exitFrame` — a mouse handler, a key handler, `enterFrame`
+		# — is after the playhead has already been resolved for this tick, so the
+		# jump belongs to the next one. Director sends no `exitFrame` for a frame
+		# it is leaving that way (§6.1 step 7); that next step renders and enters
+		# the destination, and the step after it is the first to leave it.
+		_jump_queued = true
 
 
 func lingo_go_label(label: String) -> void:
@@ -1426,7 +1869,7 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	var here := str(_movie.path).get_base_dir()
 	var target: String = _paths.resolve(name, here)
 	if target == "":
-		target = _paths.resolve(name.replace(":", "/").get_file(), here)
+		target = _paths.resolve(name.replace(":", "/").replace("\\", "/").get_file(), here)
 	if target == "":
 		_trace("go movie %s -> not found" % name)
 		return
@@ -1463,6 +1906,11 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 
 	_textures.clear()
 	_hit_images.clear()
+	# Field overrides are keyed by cast library and member number, and both are
+	# local to the movie that was open when a script wrote them. Carried across,
+	# member 10 of the next movie's cast gets the last movie's score written into
+	# it — which is not a stale value, it is text appearing on an unrelated field.
+	_field_text.clear()
 	_loops.clear()
 	_overrides.clear()
 	# Channel cursors survive frame changes and cast swaps (DIRECTOR_ENGINE.md 7.5)
@@ -1486,7 +1934,15 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_index = 0
 	_ticks = 0
 	_held = true
-	_accumulated = 0.0
+	# The clock belongs to the movie that is being left: its tempo, any wait it
+	# had armed and any transition it was still playing all go with it. So does
+	# the deferred `enterFrame` a transition was holding — the frame it was owed
+	# to is in a container that is now closed.
+	_clock.reset()
+	_pending_enter = null
+	_puppet_transition = {}
+	_entered_index = -1
+	_jump_queued = false
 
 	if _lingo_on:
 		_start_lingo(target)
@@ -1498,8 +1954,12 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 		_index = int(_labels.labels.get(str(where).to_lower(), 0))
 	elif where != null:
 		_index = clampi(int(where) - 1, 0, maxi(_score.frame_count - 1, 0))
+	# Entered like the first frame of any movie: the tempo is taken from the frame
+	# rather than inherited, so a room that runs at 30 fps does not open at the
+	# rate the movie before it was using.
+	_sync_frame_entry()
 	if _lingo_on:
-		_dispatch("enterFrame", _frame_script(_index))
+		_enter_frame_or_defer(_frame_script(_index))
 	get_window().title = "%s  â€”  %d frames" % [target.get_file(), _score.frame_count]
 	print("go movie -> %s frame %d" % [target.get_file(), _index])
 	queue_redraw()
@@ -1541,6 +2001,12 @@ func lingo_play_done() -> void:
 		lingo_go_movie(str(back["movie"]).get_file(), null)
 	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
 	_held = true
+	# Returning from an interlude is a jump like any other: it cancels the wait
+	# the interlude's last frame armed, and the frame it returns to is entered by
+	# the next step rather than by this call (§6.1 step 7, §9.2).
+	_clock.release()
+	if not _in_exit_frame:
+		_jump_queued = true
 	queue_redraw()
 
 
@@ -1929,8 +2395,8 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 
 
 func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
-	var number := _resolve_member(which, cast)
-	var m: Dictionary = _table.get_member(1, number)
+	var where := _resolve_member_ref(which, cast)
+	var m: Dictionary = _table.get_member(int(where[0]), int(where[1]))
 	match prop:
 		"name":
 			return str(m.get("name", ""))
@@ -1939,7 +2405,10 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 		"height":
 			return int(m.get("height", 0))
 		"text":
-			return str(m.get("text", ""))
+			# Through the same override the renderer reads, or `the text of member`
+			# would answer the authored placeholder while the screen showed the
+			# current value.
+			return _field_text_of(m)
 		"number", "membernum", "castnum":
 			# `member("able1").memberNum` and `the number of member "able1"` ask the
 			# same question by two spellings, and only the second had a path here:
@@ -1949,13 +2418,81 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 			# in MAP therefore stored [0, 0] and composed to nothing. The same
 			# omission was found and fixed in `lingo/lingo_host.gd` for the other
 			# renderer; this host had it too.
-			return number
+			return int(where[1])
 	return 0
 
 
+## `field "name"`, and `put x into field "name"`.
+##
+## Two things had to change together here, and neither is worth much alone. The
+## read used to look only in cast library 1, the movie's own; a `field` a script
+## names by itself is resolved across every library the movie can address, and in
+## this game the shared HUD fields — the score, the inventory — live in a *linked*
+## cast, so `field "points"` answered "" from a movie that has one on screen. And
+## the write was a no-op, so nothing a script put into a field could ever be read
+## back or drawn: the score would have rendered its authored placeholder for ever.
 func lingo_field(name: String, _cast: String) -> Variant:
-	var number := _resolve_member(name, "")
-	return str(_table.get_member(1, number).get("text", ""))
+	var where := _resolve_field(name)
+	if where.is_empty():
+		return ""
+	return _field_text_of(_table.get_member(int(where[0]), int(where[1])))
+
+
+func lingo_set_field(name: String, _cast: String, text: String) -> void:
+	var where := _resolve_field(name)
+	if where.is_empty():
+		return
+	_field_text[_field_key(int(where[0]), int(where[1]))] = text
+	# The text is drawn straight from here on the next paint, so a write has to ask
+	# for one. Without it a HUD updates only when something else happens to redraw.
+	queue_redraw()
+
+
+## `[cast library, member number]` for a field name, or `[]`.
+##
+## `_resolve_member_ref` already searches every library the movie can address, in
+## Director's own order, and it is asked first so that a `field` and a `member`
+## reference to the same name never disagree. What it cannot do is prefer a field:
+## a name is unique within a cast and not across casts, so a *bitmap* called
+## `points` in the movie's own library would win over the *field* called `points`
+## in the shared one, and the write would land on a member that has no text. So the
+## answer is accepted only when it really is a field, and otherwise the libraries
+## are walked again looking only at fields.
+func _resolve_field(name: String) -> Array:
+	if _table == null:
+		return []
+	var first := _resolve_member_ref(name, "")
+	if int(first[1]) > 0 \
+			and int(_table.get_member(int(first[0]), int(first[1])).get("type", 0)) \
+				== Ink.TYPE_FIELD:
+		return first
+	var libs: Array = _table.cast_libs.keys()
+	libs.sort()
+	for lib in libs:
+		var cast = _table.cast_for(int(lib))
+		if cast == null:
+			continue
+		var number: int = cast.number_of(name)
+		if number <= 0:
+			continue
+		if int(cast.member(number).get("type", 0)) == Ink.TYPE_FIELD:
+			return [int(lib), number]
+	return []
+
+
+## What a field member currently holds: what a script last put there, or failing
+## that the text authored into its `STXT`.
+func _field_text_of(member: Dictionary) -> String:
+	if member.is_empty():
+		return ""
+	var key := _field_key(int(member.get("cast_lib", 1)), int(member.get("cast_id", 0)))
+	if _field_text.has(key):
+		return str(_field_text[key])
+	return str(member.get("text", ""))
+
+
+func _field_key(lib: int, number: int) -> String:
+	return "%d:%d" % [lib, number]
 
 
 func lingo_member_number(which: Variant, cast: String) -> Variant:
@@ -1972,12 +2509,59 @@ func lingo_member_number(which: Variant, cast: String) -> Variant:
 ## arm above and this was reached rarely. With it, MAP's frame script performs 24
 ## name lookups per exitFrame and the cost is on the frame path. Measured over 250
 ## steps of MAP: 125-144 ms before, 65-81 ms after, over three runs each.
-func _resolve_member(which: Variant, _cast: String) -> int:
+## Which library and member a Lingo member reference names.
+##
+## The library is part of the answer, not a hint. Member numbers are per cast, so
+## `member(64, "island2")` and member 64 of the movie's own cast are different
+## members that happen to share a number, and resolving in the wrong one returns
+## a stranger rather than nothing -- which is silence, not an error.
+##
+## `searchfunk` in MASTER is what this cost. It does
+## `myname = member(the memberNum of sprite the clickOn, "island2").name` and
+## then matches that name against a table to decide what a click on the scenery
+## reveals. Resolving in library 1 gave it the name of an unrelated member, no
+## line ever matched, and the handler returned having done nothing. Every "I
+## clicked the thing and nothing happened" of that shape is this.
+##
+## An unnamed cast means the movie's own, which is how Director resolves a bare
+## `member(N)`; a name that matches no library falls back to the same rather than
+## answering nothing, because a wrong-but-present member is easier to see in a
+## trace than a silent zero.
+func _resolve_member_ref(which: Variant, cast: String) -> Array:
+	if _table == null:
+		return [1, 0]
+	var lib := 1
+	var wanted := cast.strip_edges().to_lower()
+	if wanted != "":
+		for number in _table.cast_libs:
+			if str(_table.cast_libs[number].get("name", "")).to_lower() == wanted:
+				lib = int(number)
+				break
 	if typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT:
-		return int(which)
-	var cast = _table.cast_for(1)
-	if cast == null:
-		return 0
-	return cast.number_of(str(which))
+		return [lib, int(which)]
+	# A name, which Director looks up across every cast when the reference does
+	# not name one. Searching the named library first keeps an explicit
+	# `of castLib "master"` authoritative.
+	var named = _table.cast_for(lib)
+	if named != null:
+		var here: int = named.number_of(str(which))
+		if here > 0:
+			return [lib, here]
+	if wanted != "":
+		return [lib, 0]
+	var libs: Array = _table.cast_libs.keys()
+	libs.sort()
+	for other in libs:
+		var cast_file = _table.cast_for(int(other))
+		if cast_file == null:
+			continue
+		var found: int = cast_file.number_of(str(which))
+		if found > 0:
+			return [int(other), found]
+	return [lib, 0]
+
+
+func _resolve_member(which: Variant, cast: String) -> int:
+	return int(_resolve_member_ref(which, cast)[1])
 
 

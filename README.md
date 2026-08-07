@@ -169,6 +169,10 @@ godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the 
 godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # where the playhead goes
+godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
+godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
+godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
+godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
 ```
 
 The Lingo compiler and interpreter have their own set, all pass/fail, all
@@ -196,7 +200,7 @@ harness — that is what `tools/lib/` exists to make cheap.
 
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
-`cursor_preview.gd`, `keyboard_check.gd`,
+`cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `text_and_shapes.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
 pass/fail ones, alongside the whole Lingo block above. Read
 `.claude/skills/porting-fidelity-verification/SKILL.md` before trusting any of the

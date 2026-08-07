@@ -16,6 +16,8 @@ extends RefCounted
 ## exists to repair after the fact. Read by the table and there is nothing to
 ## repair.
 
+const Transition := preload("res://director/director_transition.gd")
+
 ## `director_cast_types.py`'s spelling, kept so tooling and this agree.
 const TYPE_NAMES := {
 	1: "bitmap", 2: "filmLoop", 3: "field", 4: "palette", 5: "picture",
@@ -202,6 +204,7 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 		out["data_chunk_id"] = int(owned.get(want, -1))
 		if type_code == 3 and out["data_chunk_id"] >= 0:
 			out["text"] = _read_stxt(int(out["data_chunk_id"]))
+			out["text_style"] = _read_stxt_style(int(out["data_chunk_id"]))
 	return out
 
 
@@ -268,6 +271,46 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["reg_offset_x"] = reg_x - left
 			out["reg_offset_y"] = reg_y - top
 			out["palette_id"] = _be_i16(spec, 24) if spec.size() >= 26 else -1
+		3:
+			# A field's specific block is 28 bytes in every one of this corpus's
+			# 321 field members, and this layout was settled by measuring the
+			# distribution of each slot rather than by reading one example: bytes
+			# 0-2 are zero in all 321, byte 3 is 0 or 3, the i16 at 4 is 0 or 1,
+			# the three u16 at 6-11 are ffff ffff ffff in all 321 (white, as a Mac
+			# 48-bit RGB), and the rect at 14-21 comes out positive and under 1200
+			# on both axes in all 321. A wrong alignment does not land that cleanly.
+			#
+			# Cross-checked against a number stored somewhere else entirely: over
+			# the corpus this rect's width equals the sprite record's width in
+			# 9,917 of 11,525 field sprite records and its height is exactly 2
+			# larger in 9,723 of them. The 2 is the field's box, which Director
+			# lays out inside the member rect.
+			if spec.size() < 22:
+				return
+			out["border"] = spec[0]
+			out["gutter"] = spec[1]
+			out["box_shadow"] = spec[2]
+			out["text_type"] = spec[3]
+			# 0 left, 1 centre, -1 right. Only 0 (308 members) and 1 (13) occur
+			# here, so the right-aligned arm is written from the reference and is
+			# unexercised by this corpus.
+			out["text_align"] = _be_i16(spec, 4)
+			# Director stores a colour here as a Mac RGBColor — three 16-bit
+			# channels, not a palette index — so the high byte of each is the
+			# 8-bit value. This is the field's paper, and it is what an ink keys
+			# against for a text sprite rather than the sprite's own backColor.
+			out["bg_color"] = Color8(spec[6], spec[8], spec[10])
+			out["scroll"] = _be_u16(spec, 12)
+			var ft := _be_i16(spec, 14)
+			var fl := _be_i16(spec, 16)
+			var fb := _be_i16(spec, 18)
+			var fr := _be_i16(spec, 20)
+			out["width"] = fr - fl
+			out["height"] = fb - ft
+			out["initial_rect"] = {"top": ft, "left": fl, "bottom": fb, "right": fr}
+			# Bytes 22-27 are three more u16. 22 and 26 usually repeat the rect
+			# height and 24 is almost always zero; what they are is unsettled, and
+			# nothing here needs them.
 		2:
 			if spec.size() < 12:
 				return
@@ -288,18 +331,46 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			# Bit 0x20 CLEAR means looping.
 			out["looping"] = (_be_u32(spec, 8) & 32) == 0
 		8:
-			if spec.size() < 15:
+			if spec.size() < 17:
 				return
+			# Byte 0 is unidentified and zero throughout this corpus; byte 1 is
+			# the shape kind, which from D3 overrides the sprite record's own
+			# type byte. All 169 shape members here are 1 (rectangle, 167) or 2
+			# (rounded rectangle, 2).
+			out["shape_type"] = spec[1]
 			var st := _be_i16(spec, 2)
 			var sl := _be_i16(spec, 4)
 			var sb := _be_i16(spec, 6)
 			var sr := _be_i16(spec, 8)
 			out["width"] = sr - sl
 			out["height"] = sb - st
+			out["initial_rect"] = {"top": st, "left": sl, "bottom": sb, "right": sr}
+			out["pattern"] = _be_u16(spec, 10)
+			# Bytes 12 and 13 are the member's own fore and back colour. The score
+			# overrides both per sprite and every consumer here reads the sprite's,
+			# so they are carried and not used.
+			out["shape_fore"] = spec[12]
+			out["shape_back"] = spec[13]
+			out["fill_type"] = spec[14]
 			out["filled"] = spec[14] != 0
+			# The stored thickness is one greater than the drawn one: for an
+			# outlined shape a stored 1 means an invisible outline. That is not a
+			# quirk to work around, it is how this game hides its hotspots — 162 of
+			# the 169 shape members here are unfilled rectangles with a stored
+			# thickness of 1, which Director draws as nothing at all while they go
+			# on catching clicks.
+			out["line_thickness"] = spec[15]
+			out["line_direction"] = spec[16]
 		11:
 			if spec.size() >= 2:
 				out["script_type"] = _be_u16(spec, 0)
+		14:
+			# A transition member is six bytes and no info block: the type, the
+			# chunk size, the change area and the duration the frame that names
+			# it will spend. Decoded in `director/director_transition.gd`, where
+			# the byte layout is written down against the three members in this
+			# corpus that exercise it.
+			out.merge(Transition.decode_member(spec))
 
 
 func _read_stxt(chunk_id: int) -> String:
@@ -311,6 +382,47 @@ func _read_stxt(chunk_id: int) -> String:
 	if offset + length > data.size():
 		return ""
 	return _text(data.slice(offset, offset + length))
+
+
+## The first style run of an `STXT`: how the member's text is meant to look.
+##
+## `STXT` is a header, the characters, then a run table — a u16 count followed by
+## 20 bytes per run: the character offset the run starts at (u32), the line height
+## and the ascent (u16 each), then the font id, the slant byte, one unidentified
+## byte, the point size, and the colour as a Mac RGBColor of three u16.
+##
+## That the run is 20 bytes is not assumed. Across this corpus's 321 field members
+## `12 + strLen + 2 + 20 * count` equals the chunk size exactly 321 times out of
+## 321, which no wrong stride does.
+##
+## Only the first run is read. Every field member here declares exactly one, so a
+## run table is a uniform style per member in practice; a member with genuinely
+## mixed styling would render in its first run's style, which is a visible
+## simplification rather than a silent one.
+func _read_stxt_style(chunk_id: int) -> Dictionary:
+	var data: PackedByteArray = file.read_chunk(chunk_id)
+	if data.size() < 12:
+		return {}
+	var at: int = _be_u32(data, 0) + _be_u32(data, 4)
+	if at + 2 > data.size():
+		return {}
+	var count := _be_u16(data, at)
+	at += 2
+	if count <= 0 or at + 20 > data.size():
+		return {}
+	return {
+		# Kept for the record: this corpus uses 13 distinct font ids and there is
+		# no font table here to resolve them against, so nothing selects a
+		# typeface from this. The point size below is what the renderer honours.
+		"font_id": _be_u16(data, at + 8),
+		"slant": data[at + 10],
+		"font_size": _be_u16(data, at + 12),
+		# Zero on some members, where the renderer has to derive a line height
+		# from the point size instead.
+		"line_height": _be_u16(data, at + 4),
+		"ascent": _be_u16(data, at + 6),
+		"color": Color8(data[at + 14], data[at + 16], data[at + 18]),
+	}
 
 
 # ------------------------------------------------------------------ KEY*

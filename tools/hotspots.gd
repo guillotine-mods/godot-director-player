@@ -80,6 +80,12 @@ func _init() -> void:
 			continue
 		var channel := int(sprite["channel"])
 		var ink := int(sprite["ink"])
+		# The cast type decides how a click is tested as much as the ink does: a
+		# matte is flooded in from the border of a *bitmap's* image, and a shape
+		# has none, so a matte-inked shape is a rectangle. Reporting it as "pixel"
+		# would send the next reader looking for artwork that does not exist.
+		var member_type: int = int(preview.get("_table").get_member(
+			int(sprite["cast_lib"]), int(sprite["cast_id"])).get("type", 0))
 		var rect: Rect2 = preview.call("_stage_rect", sprite)
 		var responds: bool = preview.call("_responds_to_mouse", sprite)
 		classified += 1
@@ -100,7 +106,7 @@ func _init() -> void:
 				int(rect.position.x), int(rect.position.y),
 				int(rect.size.x), int(rect.size.y),
 			],
-			ink, "pixel" if Ink.hits_per_pixel(ink) else "rect",
+			ink, "pixel" if Ink.hits_per_pixel(ink, member_type) else "rect",
 			"YES" if responds else "no", why,
 		])
 

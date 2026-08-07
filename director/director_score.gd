@@ -284,6 +284,13 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		"delay_ms": tempo_cue * 1000 if tempo == TEMPO_DELAY else 0,
 		"wait_click": tempo == TEMPO_WAIT_CLICK,
 		"transition_member": _u16(buffer, 98),
+		# The library the transition member lives in, two bytes ahead of it, the
+		# same pairing the frame script uses. Every one of the five frames in
+		# this corpus that names a transition names library 1, so the field is
+		# not what distinguishes them — it is here because resolving a member by
+		# number alone is the mistake `frame_script_lib` exists to prevent, and a
+		# transition in a linked cast would hit it in exactly the same way.
+		"transition_lib": 1 if _u16(buffer, 96) == OWN_CAST_LIB else _u16(buffer, 96),
 		"palette_member": _u16(buffer, 242),
 	}
 	out["fps"] = _fps[index] if index < _fps.size() else 0.0
