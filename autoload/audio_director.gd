@@ -28,6 +28,18 @@ const VOLUME_MAX := 255
 const SOUND_LEVEL_MAX := 7
 
 var _stem_index: Dictionary = {} ## lower stem -> res path
+## Relative path (no extension) -> file on disc. The precise index.
+
+var _path_index: Dictionary = {}
+
+## Stems that exist in more than one folder, so a filename-only request can
+
+## say so rather than silently picking one.
+
+var _ambiguous: Dictionary = {}
+
+var _root_key := ""
+
 var _stream_cache: Dictionary = {} ## path -> AudioStream
 var _channels: Dictionary = {} ## int -> AudioStreamPlayer
 var _channel_file: Dictionary = {} ## int -> stem currently requested
@@ -102,11 +114,9 @@ func _build_index() -> void:
 	var paths := Paths.new()
 	if paths.load_config():
 		_index_dir_recursive(paths.root)
-	# Then the generated WAVs, as a fallback for as long as they exist. Delete
-	# these two lines with the folder.
-	_index_dir_recursive("res://assets/audio/sounds")
-	_index_dir_recursive("res://assets/audio/fx")
-	GameState.emit_log("Audio index: %d stems" % _stem_index.size(), "info")
+	GameState.emit_log("Audio index: %d files, %d ambiguous stem(s)" % [
+		_path_index.size(), _ambiguous.size()
+	], "info")
 
 
 func _index_dir_recursive(path: String) -> void:
@@ -126,8 +136,20 @@ func _index_dir_recursive(path: String) -> void:
 			var ext := name.get_extension().to_lower()
 			if ext in ["wav", "ogg", "mp3", "aif"]:
 				var stem := name.get_basename().to_lower()
-				if not _stem_index.has(stem):
+				# The stem index is the last resort, and it is where the folder
+				# used to be thrown away: the first file with a given name won
+				# and every later one was unreachable. This game keeps the same
+				# actor's lines under several folders, so that is not a corner
+				# case -- it plays the wrong take.
+				if _stem_index.has(stem):
+					_ambiguous[stem] = true
+				else:
 					_stem_index[stem] = full
+				# What the scripts actually name: a path. Keyed relative to the
+				# game root, lowercased, separators normalised and the extension
+				# dropped, so `songs\strtgame\krupsong.aif` can find
+				# `SONGS/strtgame/KRUPSONG.WAV`.
+				_path_index[_relative_key(full)] = full
 		name = dir.get_next()
 	dir.list_dir_end()
 
@@ -139,11 +161,68 @@ func resolve_path(file_name: String) -> String:
 		return ""
 	if raw == "$whichsnd":
 		raw = str(GameState.whichsnd).to_lower()
-	raw = raw.get_file()
-	var stem := raw.get_basename()
+	return _resolve_normalised(raw)
+
+
+## A request is a path, and the folder in it is meaning, not decoration.
+##
+## Scripts build these by concatenation from a global -- `playfromdisk` is
+## `"songs\strtgame\\"`, `soundspath` is `"sounds\days\\"` -- so the same
+## filename appears under several folders and only the whole path picks the right
+## one. Matching on the filename alone is how the wrong take of a line gets
+## played, and it is silent: a sound plays, so nothing looks broken.
+##
+## Matched by suffix rather than equality, because the request usually carries a
+## prefix this engine cannot see: `the moviePath` on the authoring machine, or a
+## CD drive letter. Longest match wins, so a more specific request beats a less
+## specific one. The bare stem is still tried last, because a script that names
+## only a filename is legal and common.
+func _resolve_normalised(raw: String) -> String:
+	var key := _normalise(raw)
+	if key == "":
+		return ""
+	if _path_index.has(key):
+		return str(_path_index[key])
+	# Drop leading segments until something matches: the request may be absolute
+	# where the index is relative to the game root.
+	var parts := key.split("/", false)
+	for start in range(1, parts.size()):
+		var tail := "/".join(Array(parts).slice(start))
+		if _path_index.has(tail):
+			return str(_path_index[tail])
+	var stem := key.get_file()
 	if _stem_index.has(stem):
+		if _ambiguous.has(stem):
+			push_warning(
+				"sound '%s' names only a filename and %s exists in more than one folder"
+				% [raw, stem]
+			)
 		return str(_stem_index[stem])
 	return ""
+
+
+## Lowercased, both separators folded to `/`, extension dropped. The extension is
+## dropped because the scripts name `.aif` and a converted disc may hold `.wav`.
+static func _normalise(path: String) -> String:
+	return path.to_lower().replace("\\", "/").replace(":", "/") 		.trim_suffix("/").get_basename()
+
+
+## The index key for a file on disc: its path relative to the game root.
+func _relative_key(full: String) -> String:
+	var root := _root_prefix()
+	var key := _normalise(full)
+	if root != "" and key.begins_with(root):
+		key = key.substr(root.length())
+	return key.lstrip("/")
+
+
+func _root_prefix() -> String:
+	if _root_key != "":
+		return _root_key
+	var paths := Paths.new()
+	if paths.load_config():
+		_root_key = _normalise(paths.root)
+	return _root_key
 
 
 func play_file(channel: int, file_name: String) -> void:
@@ -172,17 +251,24 @@ func play_file(channel: int, file_name: String) -> void:
 	# remaining 2 (CHESS BehaviorScript 81 and 87) are gated on `the mouseDown`
 	# and jump to another marker in the same branch — so no authored path in this
 	# game re-plays a file on a channel that is already playing it.
-	if str(_channel_file.get(ch, "")) == stem:
+	# Identity is the whole request, not the filename in it. Two folders holding
+	# the same filename are two different sounds -- this game keeps the same
+	# actor's lines under several -- and comparing stems made the second one
+	# look like the first and skip.
+	if str(_channel_file.get(ch, "")) == raw:
 		var existing: AudioStreamPlayer = _channels.get(ch)
 		if existing and existing.playing:
 			return
 
-	_channel_file[ch] = stem
+	_channel_file[ch] = raw
 	_channel_failed[ch] = false
-	var path := resolve_path(stem)
+	# The whole path, so the folder can pick between same-named files. Passing
+	# the stem here is what made it play the wrong take: the resolver never saw
+	# the folder the script had gone to the trouble of building.
+	var path := resolve_path(raw)
 	if path.is_empty():
 		_channel_failed[ch] = true
-		GameState.emit_log("Audio miss: %s" % stem, "warn")
+		GameState.emit_log("Audio miss: %s" % raw, "warn")
 		return
 
 	var stream := _load_stream(path)
