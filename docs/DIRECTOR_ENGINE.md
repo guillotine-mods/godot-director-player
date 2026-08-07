@@ -1223,10 +1223,9 @@ are special-cased into `the key` as characters 28 (left), 29 (right), 30 (up),
 
 *This port:* the focus routing is `director_preview.gd:_dispatch_key`, which asks
 `preview/text_focus.gd` who owns the widget and falls back to the frame script
-with channel 0. **The arrow substitution is not implemented** —
-`director/director_keys.gd:char_for` answers `""` for the four arrows, so
-`the key` is empty where Director would report 28-31 while `the keyCode` is
-correct (123-126). 30+ sites in this corpus navigate by arrow and every one of
+with channel 0. **The arrow substitution is implemented** --
+`director/director_keys.gd:char_for` answers characters 28-31 for the four
+arrows, matching Director, and `the keyCode` reports 123-126. 30+ sites in this corpus navigate by arrow and every one of
 them tests `the keyCode`, so the divergence is unexercised here and is still a
 divergence.
 
@@ -1992,7 +1991,7 @@ destination-reading inks.
 | Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
 | Moveable / drag / constraint | **done**: drag reachable from the score's own flag as well as from Lingo; `the constraint of sprite` clamps the position point on every position write, not only on a drag | `preview/interaction.gd:constrain`; `director_preview.gd:_write_position`; `tools/sprite_drag.gd` |
 | Editable text / focus / selection | **done** bar auto-expanding size push-back: `sprite OR member` editability, first-editable-claims-focus, movie-level `selStart`/`selEnd`, caret, selection, click-to-caret, auto-tab | `preview/text_focus.gd`; `director_text.gd:layout`; `tools/editable_text.gd` |
-| Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map, and §8.3 focus routing (the focused sprite, else the frame at channel 0); modifiers not carried, and `the key` is empty for the arrows where Director reports 28-31 | `director_keys.gd`; `director_preview.gd:_dispatch_key`; `preview/text_focus.gd` |
+| Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key` (both **persist** after the event, which is what lets a frame poll them from its own `exitFrame` -- the idiom Rating is built on), the arrow substitution to characters 28-31, the full Mac virtual key map, and §8.3 focus routing. `the keyUpScript` and modifier carrying are not done | `director_keys.gd`; `director_preview.gd:_dispatch_key`; `preview/text_focus.gd` |
 | Primary handlers, pass/dontPassEvent | **partial**: `when <event> then` installs and fires at tier 1 for keys; mouse tiers and `pass` propagation not | `lingo_interpreter.gd:run_primary` |
 | Event hierarchy | **partial**: sprite → cast → frame → movie | `director_preview.gd:728-740` |
 | Hilite on click | **nothing** | — |
