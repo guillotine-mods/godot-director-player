@@ -83,6 +83,32 @@ able to suspend a handler mid-block and resume it, which
 in `director_preview.gd:lingo_play_done` and one at frame entry. Nothing in
 `preview/interaction.gd` is involved.
 
+**Tempo: the pre-D6 numbering is implemented but unexercised.** §9.1.
+`director/director_frame_clock.gd:rate_from_tempo` reads the tempo cell under
+both conventions and chooses by the movie's file version -- but
+`director_score.gd` decodes the D6/D7 main-channel layout only, so a D4 or D5
+score does not parse and the older branch has no input. The collision is the
+reason it has to branch on version and not on value: 246/247/248 mean "set rate
+/ delay / wait-click" from D6 and "delay ten / nine / eight seconds" before it.
+`FrameClock.movie_file_version` is consequently never set to anything but its
+D6 default.
+
+**Tempo: the one-shot meanings are decoded without a version.** §9.1.
+`director_score.gd` applies the D6 numbering unconditionally, so a D6 movie's
+cells 134 and 135 -- digital-video waits in the reference -- are read as
+sound-channel waits, and a pre-D6 movie's delay band (`256 - cell` seconds, taken
+from the cell itself with no operand) and its click wait at 128 are not read at
+all. No container in either corpus writes any of them.
+
+**Tempo: the video waits.** §9.1. Neither pre-D6's `136 ... 135 + channelCount`
+nor D6's "any other value is a video wait" is implemented, and there is no
+digital video to wait on.
+
+**`puppetTempo` is bound inert.** §9.1 gives it precedence over the score's
+tempo until the score writes one or the effective tempo changes.
+`scenes/preview_lingo_host.gd` lists `puppettempo` among the no-ops, so a script
+that sets it changes nothing and `FrameClock` has no puppet rate to hold.
+
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
