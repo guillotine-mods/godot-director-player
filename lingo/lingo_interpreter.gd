@@ -25,7 +25,7 @@ extends RefCounted
 ## for that reason (`docs/bugs-closed.md` 27), and a missing method is now
 ## reported rather than discarded.
 
-enum Flow { NORMAL, EXIT_REPEAT, NEXT_REPEAT, RETURN, ABORT }
+enum Flow { NORMAL, EXIT_REPEAT, NEXT_REPEAT, RETURN, ABORT, SUSPEND }
 
 ## Runaway guard. `repeat while` with a condition the host never changes would
 ## otherwise hang the frame.
@@ -60,6 +60,54 @@ var _line: int = 0
 var _current_handler: Dictionary = {}
 ## script|handler -> {name: true}, built the first time a handler reports.
 var _assigned_names: Dictionary = {}
+
+# ------------------------------------------------------- suspension (§6.1, §9.4)
+#
+# `play` and `go` do not return to the statement after them. Director stashes the
+# *running handler* and requeues it later: `Lingo::func_goto` sets `_freezeState`
+# and the handler resumes once the next frame has been entered;
+# `Lingo::func_play` sets `_freezePlay` and the handler resumes at `play done`.
+# The statements after the call are therefore not dead — they run, later — and
+# running them at the call is the divergence this machinery closes. In Rating's
+# dialogue idiom the statement after `play frame` is a `go`, and running it
+# immediately overwrote the branch the `play` had just set: the talking loop was
+# skipped and the line of speech was cut off a frame after it started.
+#
+# **What suspending means here.** A tree-walking interpreter cannot be paused
+# mid-`_exec`, so what is captured is not a program counter but a *chain of block
+# positions*: for every statement list on the way out, the index of the statement
+# after the one that suspended, plus enough of each enclosing `repeat` to carry on
+# looping. Resuming replays that chain from the inside out, which is exactly what
+# returning from the nested `_exec_block` calls would have done.
+#
+# **What it does not capture** is a suspension that happens part-way through
+# evaluating an *expression*: `if talkproc() then` where `talkproc` plays. The
+# unwinding is at statement granularity, so the call answers VOID and the rest of
+# that one statement runs before the chain is taken. Reported rather than
+# silent — `LingoDiagnostics.BUILTIN` "suspend inside an expression".
+
+## Set while a freezing command is unwinding, from the moment the host asks for
+## it until the chain it produced has been parked.
+var _suspending := false
+## "play" or "go" — which buffer the chain belongs in. Director keeps them apart
+## because they have different resume triggers.
+var _suspend_kind := ""
+## The chain being built, innermost position first.
+var _suspended: Array = []
+## Chains waiting to be resumed when no host is holding them. The interpreter
+## stays complete on its own; `park_lingo_state` on the host takes over when
+## there is one, because a `go to movie` replaces the *interpreter* and the
+## frozen handler has to outlive it.
+var _own_frozen: Array = []
+var _own_play: Array = []
+## `tell` bodies run in the other movie's interpreter, and a chain captured there
+## cannot be resumed by the caller's. Suspension is declined inside one.
+var _told_depth := 0
+## How many dispatches are on the stack. A chain leaves the interpreter when the
+## outermost one unwinds and not before, and `_depth` cannot answer that: a
+## `when` body and a resumed chain both run with no `_invoke` beneath them, so a
+## nested handler call inside either would look outermost and park half a chain.
+var _running := 0
 
 
 func _init(host_object: Object = null) -> void:
@@ -159,11 +207,28 @@ func run_primary(event: String) -> bool:
 	var body: Array = primary_handlers[key]
 	if body.is_empty():
 		return false
+	_running += 1
 	_exec_block(body, {})
+	_running -= 1
+	if _running == 0:
+		_park()
 	return true
 
 
 func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Variant:
+	_running += 1
+	var value: Variant = _resolve_and_call(name, args, script)
+	_running -= 1
+	# The outermost dispatch is where a suspended chain leaves the interpreter.
+	# Every entry point funnels through here -- the frame loop, the mouse, the
+	# keyboard and `_read_var`'s bare-identifier calls alike -- so no dispatch
+	# site has to know that suspension exists.
+	if _running == 0:
+		_park()
+	return value
+
+
+func _resolve_and_call(name: String, args: Array, script: Dictionary) -> Variant:
 	## Resolution order is Director's, narrowed to what this port needs: the
 	## script that owns the event first, then any movie script.
 	var key := name.to_lower()
@@ -202,6 +267,18 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 		frame["locals"][str(params[i]).to_lower()] = args[i] if i < args.size() else 0
 	_return_value = null
 	var flow := _exec_block(handler.get("body", []), frame)
+	if flow == Flow.SUSPEND:
+		# A handler boundary in the chain. It carries nothing to run: its only job
+		# is to be where a `return` from a resumed statement stops unwinding, so
+		# that `on mouseUp / talkproc() / <more>` resumes `<more>` after
+		# `talkproc` finishes rather than abandoning the caller with it.
+		#
+		# The caller's value is lost: `_invoke` answers VOID and whatever
+		# expression the call sat in completes with that. `_exec_from` reports it
+		# ("suspend inside an expression") for any statement that is not a bare
+		# call, because the alternative is a wrong number that reads as
+		# arithmetic. Zero sites in either corpus.
+		_suspended.append({"k": "handler"})
 	_script_name = outer_script
 	_handler_name = outer_handler
 	_current_handler = outer_body
@@ -257,7 +334,17 @@ func run_told(body: Array, frame: Dictionary, caller = null) -> int:
 		_handler_name = caller._handler_name
 		_line = caller._line
 		_steps = caller._steps
+	# **A `tell` body may not suspend.** The chain a `play` or `go` builds is a
+	# position inside *this* interpreter's blocks, and the handler that has to
+	# resume it is the caller's, running in another one; there is no object that
+	# could hold both. So `_take_suspend_request` declines while this is set and
+	# reports the gap, and the body runs straight through as it always has —
+	# which loses the ordering, not the statements. `tools/suspend_survey.gd`
+	# counts the exposure: in Rating, 18 `go` and no `play` are written inside a
+	# `tell`; in Piposh 2, 34 `go` and 16 `play`.
+	_told_depth += 1
 	var flow := _exec_block(body, told)
+	_told_depth -= 1
 	if caller != null:
 		caller._steps = _steps
 		# `return` inside a `tell` unwinds the caller's handler, so the value has
@@ -278,9 +365,178 @@ func run_handler_in_script(script: Dictionary, name: String, args: Array = []) -
 	var key := name.to_lower()
 	for handler in script.get("handlers", []):
 		if str(handler.get("name", "")).to_lower() == key:
+			_running += 1
 			_invoke(handler, args, script)
+			_running -= 1
+			if _running == 0:
+				_park()
 			return true
 	return false
+
+
+# ---------------------------------------------------------------- suspension
+
+
+## Whether anything is waiting to be resumed. A host holding the chains answers
+## for itself; this is the interpreter's own buffer, for callers with no host.
+func has_frozen_state() -> bool:
+	return not _own_frozen.is_empty()
+
+
+## Move the handler a `play` parked into the queue the next thaw takes from —
+## Director's `requeueLingoPlayState`, and the reason `play done` is a *resume*
+## rather than a second branch. False when no handler was waiting, which is the
+## `play done` written on a frame nobody played into.
+##
+## Inserted at the bottom of the queue rather than the top, matching the
+## reference: anything frozen since the `play` is nearer the surface and finishes
+## first. In practice the queue is empty and the distinction never shows.
+func requeue_play_state() -> bool:
+	if _own_play.is_empty():
+		return false
+	_own_frozen.insert(0, _own_play)
+	_own_play = []
+	return true
+
+
+## Resume one frozen chain. Returns false when there was none.
+func thaw() -> bool:
+	if _own_frozen.is_empty():
+		return false
+	resume_chain(_own_frozen.pop_back())
+	return true
+
+
+## Run a chain of block positions to completion, or until it freezes again.
+##
+## Innermost first: each record finishes the block it was suspended in, and
+## reaching the end of one hands control to the record outside it — which is
+## exactly what returning from the nested `_exec_block` calls would have done, in
+## the same order, with the same frames.
+##
+## The four abnormal exits have to be honoured across the join or the chain means
+## something different from the code it was cut out of:
+##
+##   - `return` unwinds to the handler it was written in **and no further**, which
+##     is what the `handler` markers are in the chain for;
+##   - `exit repeat` skips to just past the innermost enclosing loop;
+##   - `next repeat` skips to that loop and lets it run its next pass;
+##   - an aborted step budget abandons everything, because there is no position
+##     left worth trusting.
+func resume_chain(chain: Array) -> void:
+	if chain.is_empty():
+		return
+	var outer_script := _script_name
+	var outer_handler := _handler_name
+	var outer_body := _current_handler
+	var outer_line := _line
+	_running += 1
+	var pending: Array = chain.duplicate()
+	while not pending.is_empty():
+		var entry: Dictionary = pending.pop_front()
+		var flow := _resume_entry(entry)
+		if _suspending:
+			# Frozen again before it finished. Whatever is left of the old chain is
+			# *outside* the new one, so it goes on the end and the two become one.
+			_suspended.append_array(pending)
+			break
+		match flow:
+			Flow.RETURN:
+				while not pending.is_empty():
+					if str((pending.pop_front() as Dictionary).get("k", "")) == "handler":
+						break
+			Flow.ABORT:
+				pending.clear()
+			Flow.EXIT_REPEAT:
+				while not pending.is_empty():
+					if _is_repeat(pending.pop_front()):
+						break
+			Flow.NEXT_REPEAT:
+				while not pending.is_empty() and not _is_repeat(pending[0]):
+					pending.pop_front()
+	_script_name = outer_script
+	_handler_name = outer_handler
+	_current_handler = outer_body
+	_line = outer_line
+	_running -= 1
+	_park()
+
+
+static func _is_repeat(entry: Dictionary) -> bool:
+	return str(entry.get("k", "")).begins_with("repeat")
+
+
+func _resume_entry(entry: Dictionary) -> int:
+	var kind := str(entry.get("k", ""))
+	if kind == "handler":
+		# A marker, not a position. Reaching it means the callee ran out.
+		return Flow.NORMAL
+	_script_name = str(entry.get("script", ""))
+	_handler_name = str(entry.get("handler", ""))
+	_current_handler = entry.get("hbody", {})
+	var frame: Dictionary = entry.get("frame", {})
+	var stmt: Dictionary = entry.get("stmt", {})
+	match kind:
+		"block":
+			return _exec_from(entry["stmts"], frame, int(entry["i"]))
+		"repeat_while":
+			return _repeat_while(stmt, frame)
+		"repeat_forever":
+			return _repeat_forever(stmt, frame)
+		"repeat_with":
+			return _repeat_with(stmt, frame, str(entry["name"]),
+				int(entry["i"]), int(entry["to"]), bool(entry["down"]))
+		"repeat_in":
+			return _repeat_in(stmt, frame, str(entry["name"]),
+				entry["items"], int(entry["i"]))
+	return Flow.NORMAL
+
+
+## Hand the finished chain to whoever is holding frozen state.
+##
+## The host gets it when it has somewhere to put it, and it must: `go to movie`
+## replaces the interpreter, and a handler frozen by the `go` that *caused* the
+## movie change would die with the object that captured it. Director keeps frozen
+## states on the window for the same reason.
+func _park() -> void:
+	if not _suspending or _running > 0:
+		# Still unwinding. Parking now would hand over the inner half of a chain
+		# and leave the outer half to run as though nothing had frozen.
+		return
+	_suspending = false
+	var kind := _suspend_kind
+	_suspend_kind = ""
+	var chain: Array = _suspended
+	_suspended = []
+	if chain.is_empty():
+		return
+	if host != null and host.has_method("park_lingo_state"):
+		host.call("park_lingo_state", chain, kind)
+		return
+	if kind == "play":
+		_own_play = chain
+	else:
+		_own_frozen.append(chain)
+
+
+## Director suspends the handler that ran `play` or `go`, and the host binding
+## cannot say so by returning a value: `go to movie` has already replaced the
+## preview's interpreter by the time the binding returns, so an interpreter told
+## directly would be the wrong one. The binding leaves the request on the host
+## object instead, and the interpreter that actually ran the statement takes it.
+func _take_suspend_request() -> void:
+	if host == null or not host.has_method("take_suspend_request"):
+		return
+	var kind := str(host.call("take_suspend_request"))
+	if kind == "":
+		return
+	if _told_depth > 0:
+		report(LingoDiagnostics.BUILTIN, "suspend across tell")
+		return
+	if _suspending:
+		return
+	_suspending = true
+	_suspend_kind = kind
 
 
 func reset_steps() -> void:
@@ -307,11 +563,142 @@ func location() -> Array:
 func _exec_block(stmts: Variant, frame: Dictionary) -> int:
 	if typeof(stmts) != TYPE_ARRAY:
 		return Flow.NORMAL
-	for stmt in stmts:
-		if typeof(stmt) != TYPE_DICTIONARY:
+	return _exec_from(stmts, frame, 0)
+
+
+## A statement list from `start` onward.
+##
+## Written with an index rather than `for stmt in stmts` for one reason: resuming
+## a suspended handler is re-entering *this* at the statement after the one that
+## suspended. The index is the whole of what a block position is.
+func _exec_from(stmts: Array, frame: Dictionary, start: int) -> int:
+	for i in range(start, stmts.size()):
+		if typeof(stmts[i]) != TYPE_DICTIONARY:
 			continue
-		var flow := _exec(stmt, frame)
+		var flow := _exec(stmts[i], frame)
+		if _suspending:
+			# Tested instead of `flow == SUSPEND` so that one check covers both the
+			# ordinary case -- a nested block handed SUSPEND up -- and a `play`
+			# reached from inside an expression, where the arm that ran it has no
+			# way to report anything but its own value.
+			if flow != Flow.SUSPEND and str(stmts[i].get("node", "")) != "call_stmt":
+				# The second case, named. Unwinding is at statement granularity, so
+				# the *rest of this one statement* has already run against the VOID
+				# the frozen call answered. `play` and `go` are commands and this is
+				# only reachable through a handler that calls one and is then used
+				# for its value; zero sites in either corpus, and silence here would
+				# make the first one look like arithmetic.
+				report(LingoDiagnostics.BUILTIN, "suspend inside an expression")
+			_suspended.append(_at_position({
+				"k": "block", "stmts": stmts, "i": i + 1, "frame": frame,
+			}))
+			return Flow.SUSPEND
 		if flow != Flow.NORMAL:
+			return flow
+	return Flow.NORMAL
+
+
+## Stamp a resume record with where it was written, so a diagnostic raised by a
+## resumed statement still names the handler it is lexically in rather than
+## whatever was running when the thaw happened.
+func _at_position(record: Dictionary) -> Dictionary:
+	record["script"] = _script_name
+	record["handler"] = _handler_name
+	record["hbody"] = _current_handler
+	return record
+
+
+## The four loops, each able to say where it had got to.
+##
+## They were inline in `_exec` and are functions now for one reason: a suspend
+## inside a loop body has to record more than "the rest of this block" — the loop
+## has to keep going afterwards, and `repeat with` and `repeat in` have to keep
+## going *from the right element*. Resuming re-enters the same function with the
+## position the record carried, and the body's own tail is a separate record
+## sitting inside this one, so the two compose without the loop knowing about it.
+##
+## `repeat with`'s bounds are captured rather than re-evaluated on resume:
+## Director evaluates `to` once, and an expression that has changed in the
+## meantime — which, given the whole point is that a frame went by, it may have —
+## would otherwise silently change the trip count mid-loop.
+func _repeat_while(stmt: Dictionary, frame: Dictionary) -> int:
+	while true:
+		var condition: Variant = _eval(stmt.get("cond", {}), frame)
+		if _suspending:
+			return Flow.SUSPEND
+		if not LingoValue.truthy(condition):
+			break
+		_steps += 1
+		if _steps > MAX_STEPS:
+			_fail("repeat while did not terminate")
+			return Flow.ABORT
+		var flow := _exec_block(stmt.get("body", []), frame)
+		if flow == Flow.SUSPEND:
+			_suspended.append(_at_position({
+				"k": "repeat_while", "stmt": stmt, "frame": frame}))
+			return flow
+		if flow == Flow.EXIT_REPEAT:
+			break
+		if flow == Flow.RETURN or flow == Flow.ABORT:
+			return flow
+	return Flow.NORMAL
+
+
+func _repeat_with(stmt: Dictionary, frame: Dictionary, name: String,
+		from: int, to: int, down: bool) -> int:
+	var step := -1 if down else 1
+	var i := from
+	while (i <= to) if not down else (i >= to):
+		_set_var(name, i, frame)
+		var flow := _exec_block(stmt.get("body", []), frame)
+		if flow == Flow.SUSPEND:
+			_suspended.append(_at_position({
+				"k": "repeat_with", "stmt": stmt, "frame": frame,
+				"name": name, "i": i + step, "to": to, "down": down}))
+			return flow
+		if flow == Flow.EXIT_REPEAT:
+			break
+		if flow == Flow.RETURN or flow == Flow.ABORT:
+			return flow
+		i += step
+		_steps += 1
+		if _steps > MAX_STEPS:
+			_fail("repeat with did not terminate")
+			return Flow.ABORT
+	return Flow.NORMAL
+
+
+func _repeat_in(stmt: Dictionary, frame: Dictionary, name: String,
+		items: Array, at: int) -> int:
+	for index in range(at, items.size()):
+		_set_var(name, items[index], frame)
+		var flow := _exec_block(stmt.get("body", []), frame)
+		if flow == Flow.SUSPEND:
+			_suspended.append(_at_position({
+				"k": "repeat_in", "stmt": stmt, "frame": frame,
+				"name": name, "items": items, "i": index + 1}))
+			return flow
+		if flow == Flow.EXIT_REPEAT:
+			break
+		if flow == Flow.RETURN or flow == Flow.ABORT:
+			return flow
+	return Flow.NORMAL
+
+
+func _repeat_forever(stmt: Dictionary, frame: Dictionary) -> int:
+	while true:
+		_steps += 1
+		if _steps > MAX_STEPS:
+			_fail("bare repeat did not terminate")
+			return Flow.ABORT
+		var flow := _exec_block(stmt.get("body", []), frame)
+		if flow == Flow.SUSPEND:
+			_suspended.append(_at_position({
+				"k": "repeat_forever", "stmt": stmt, "frame": frame}))
+			return flow
+		if flow == Flow.EXIT_REPEAT:
+			break
+		if flow == Flow.RETURN or flow == Flow.ABORT:
 			return flow
 	return Flow.NORMAL
 
@@ -356,67 +743,37 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			_eval(stmt.get("call", {}), frame)
 			return Flow.NORMAL
 		"if":
-			if LingoValue.truthy(_eval(stmt.get("cond", {}), frame)):
+			var condition: Variant = _eval(stmt.get("cond", {}), frame)
+			# A condition that froze part-way answers VOID, and a branch chosen from
+			# VOID is a branch nobody wrote. `_exec_from` takes the chain from here.
+			if _suspending:
+				return Flow.SUSPEND
+			if LingoValue.truthy(condition):
 				return _exec_block(stmt.get("then", []), frame)
 			return _exec_block(stmt.get("else", []), frame)
 		"repeat_while":
-			while LingoValue.truthy(_eval(stmt.get("cond", {}), frame)):
-				_steps += 1
-				if _steps > MAX_STEPS:
-					_fail("repeat while did not terminate")
-					return Flow.ABORT
-				var flow := _exec_block(stmt.get("body", []), frame)
-				if flow == Flow.EXIT_REPEAT:
-					break
-				if flow == Flow.RETURN or flow == Flow.ABORT:
-					return flow
-			return Flow.NORMAL
+			return _repeat_while(stmt, frame)
 		"repeat_with":
 			var name := str(stmt.get("var", "")).to_lower()
 			var from := LingoValue.to_int(_eval(stmt.get("from", {}), frame))
 			var to := LingoValue.to_int(_eval(stmt.get("to", {}), frame))
-			var down := bool(stmt.get("down", false))
-			var step := -1 if down else 1
-			var i := from
-			while (i <= to) if not down else (i >= to):
-				_set_var(name, i, frame)
-				var flow := _exec_block(stmt.get("body", []), frame)
-				if flow == Flow.EXIT_REPEAT:
-					break
-				if flow == Flow.RETURN or flow == Flow.ABORT:
-					return flow
-				i += step
-				_steps += 1
-				if _steps > MAX_STEPS:
-					_fail("repeat with did not terminate")
-					return Flow.ABORT
-			return Flow.NORMAL
+			if _suspending:
+				return Flow.SUSPEND
+			return _repeat_with(stmt, frame, name, from, to,
+				bool(stmt.get("down", false)))
 		"repeat_in":
 			var name := str(stmt.get("var", "")).to_lower()
 			var seq: Variant = _eval(stmt.get("seq", {}), frame)
+			if _suspending:
+				return Flow.SUSPEND
 			var items: Array = seq if typeof(seq) == TYPE_ARRAY else []
-			for value in items:
-				_set_var(name, value, frame)
-				var flow := _exec_block(stmt.get("body", []), frame)
-				if flow == Flow.EXIT_REPEAT:
-					break
-				if flow == Flow.RETURN or flow == Flow.ABORT:
-					return flow
-			return Flow.NORMAL
+			return _repeat_in(stmt, frame, name, items, 0)
 		"repeat_forever":
-			while true:
-				_steps += 1
-				if _steps > MAX_STEPS:
-					_fail("bare repeat did not terminate")
-					return Flow.ABORT
-				var flow := _exec_block(stmt.get("body", []), frame)
-				if flow == Flow.EXIT_REPEAT:
-					break
-				if flow == Flow.RETURN or flow == Flow.ABORT:
-					return flow
-			return Flow.NORMAL
+			return _repeat_forever(stmt, frame)
 		"case":
 			var subject: Variant = _eval(stmt.get("subject", {}), frame)
+			if _suspending:
+				return Flow.SUSPEND
 			for branch in stmt.get("branches", []):
 				for candidate in (branch as Dictionary).get("values", []):
 					if LingoValue.equal(subject, _eval(candidate, frame)):
@@ -1015,7 +1372,14 @@ func _host_call(method: String, args: Array) -> Variant:
 		if method != "call_builtin":
 			report(LingoDiagnostics.UNBOUND_NAME, "host.%s" % method)
 		return null
-	return host.callv(method, args)
+	var value: Variant = host.callv(method, args)
+	# `play` and `go` are builtins, so this is the one place every freezing
+	# statement passes through -- rather than the two arms of `_call` and the
+	# three of `_read_var` that reach the host, which is five places for one rule
+	# and four of them to forget.
+	if method == "call_builtin":
+		_take_suspend_request()
+	return value
 
 
 func _fail(message: String) -> void:

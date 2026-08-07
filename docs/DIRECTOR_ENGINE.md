@@ -958,8 +958,11 @@ both against the same rendered state, which breaks the standard "set up in
 enterFrame, tear down in exitFrame" idiom.
 
 Almost every step checks whether a script **froze** and bails out of the rest of
-the tick. That is how Director makes blocking Lingo work without threads
-(§10.4).
+the tick. That is how Director makes blocking Lingo work without threads (§9.4),
+and step 18 is where what froze gets to finish. `play` and `go` are what freeze,
+so a handler that calls either does not run its next statement until a later tick
+— which is not a detail of the tick order but the semantics of both verbs. §9.4
+has the mechanism and what this port does about it.
 
 ### 6.2 renderFrame
 
@@ -1356,6 +1359,35 @@ point, bailing out of the tick if a handler froze. D4 and below allow unbounded
 recursion through the per-frame hook; D4+ stop at depth 2 and force a thaw; 64 is
 treated as runaway. A port with a synchronous interpreter needs an equivalent, or
 a `go to` from `enterFrame` runs two frames' handlers in one tick.
+
+A handler freezes at `play` and at `go`, and the two use different buffers
+because they thaw on different events: `freezeLingoState` pushes onto the
+ordinary stack, resumed at step 18 of the next tick; `freezeLingoPlayState` puts
+the handler in a slot of its own, resumed when `play done` runs
+(`requeueLingoPlayState` moves it to the bottom of the ordinary stack) or the
+playhead reaches the end of the movie. `play done` itself does not freeze — the
+`_playDone` flag suppresses the `_freezeState` its internal `func_goto` would
+otherwise set — so the handler that wrote it runs on. `func_gotoloop`,
+`func_gotonext` and `func_gotoprevious` do not freeze at all; only `func_goto`
+does.
+
+*This port:* implemented. `lingo/lingo_interpreter.gd` cannot be paused
+mid-statement, so it captures a **chain of block positions** on the way out —
+for each statement list, the index after the statement that suspended, plus the
+counter and bounds of each enclosing `repeat`, plus a marker at each handler
+boundary so a later `return` unwinds to the right place. `resume_chain` replays
+it from the inside out. The chains are held by `scenes/director_preview.gd`
+rather than by the interpreter, because `go to movie` builds a new interpreter
+inside the call that froze the handler; Director keeps them on the window for the
+same reason. `_advance` thaws at the end of each step, except when `enterFrame`
+was what froze — the reference bails out of the tick there, because the frame the
+`go` chose has not been entered yet. Freezing is *declined* past eight parked
+handlers, which is the pre-suspension behaviour rather than an unbounded queue.
+Two gaps remain: a `tell` body may not suspend (the chain would belong to the
+other movie's interpreter), and the unwinding is statement-granular, so a `play`
+reached from inside an expression lets the rest of that one statement run. Both
+are reported. `tools/play_suspends.gd` is the harness and
+`tools/suspend_survey.gd` counts the exposure per title.
 
 ---
 

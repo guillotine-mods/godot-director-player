@@ -195,10 +195,52 @@ onto the first, so `go(marker(0) + 1)` jumped to the same frame from everywhere
 and a cinematic looped for ever. `marker(0)` must be resolved by scanning
 sorted marker frame numbers against the current playhead.
 
-`play` versus `go` matters only if the movie uses `play done`. This game does
-not — `lingo/lingo_host.gd` maps `play` onto `go` deliberately and says so —
-but a port that inherits that shortcut into a title which *does* use the play
-stack will return to the wrong place with no error.
+**`play` and `go` suspend the handler that called them.** This is the second
+most dangerous item here, and unlike `marker` it does not announce itself: a
+port that runs the rest of the handler works perfectly on every site where the
+call is the last statement, which is most of them.
+
+`Lingo::func_goto` sets `_freezeState` and `Lingo::func_play` sets `_freezePlay`,
+and in both cases `Window::freezeLingoState` / `freezeLingoPlayState` stashes the
+*running handler* — statement position and all — and hands execution a fresh,
+empty state. The statements after the call are not dead; they run later, and the
+two verbs differ only in when:
+
+- a **`go`** is requeued as an ordinary frozen state and resumed at step 7 of the
+  next tick, once the frame it chose has been entered and its `enterFrame` has
+  run (§6.1);
+- a **`play`** goes into a buffer of its own and is resumed only by `play done`
+  (or the playhead reaching the end of the movie), which requeues it as the first
+  frozen state to process. `play done` itself does *not* freeze — its internal
+  `go` is guarded — so the handler that wrote it keeps running.
+
+The idiom that depends on it, and the one that made this visible here, is a
+dialogue option:
+
+```lingo
+on mouseUp
+  sound playFile 1, soundspath & "egoz1.aif"
+  play frame "egozspeak1"    -- Director suspends the handler HERE
+  go("batz2a")               -- ...and runs this at `play done`
+end
+```
+
+Run straight through, line 3 overwrites the branch line 2 just set: the talking
+loop is skipped and the line of speech stops a frame after it starts. In Rating
+922 of 1,239 `play` sites carry Lingo after them (621 of them a `go`, 309 a
+`sound`); the 166 that are the last statement of their handler are the ones that
+behave the same either way. `tools/suspend_survey.gd` counts them per title.
+
+`go loop`, `go next` and `go previous` are the exception: `func_gotoloop`,
+`func_gotonext` and `func_gotoprevious` set only `_skipFrameAdvance` and never
+freeze. `go to the frame` is `func_goto` with a frame number and does.
+
+*This port:* `lingo/lingo_interpreter.gd` captures a chain of block positions on
+the way out of `_exec_block` and replays it from the inside out;
+`scenes/director_preview.gd` holds the chains (because `go to movie` replaces the
+interpreter) and thaws them at the end of each step. A `tell` body may not
+suspend — the chain would belong to the other movie's interpreter — and that is
+reported rather than silent. `tools/play_suspends.gd` is the harness.
 
 ## 1.5 Sprites
 

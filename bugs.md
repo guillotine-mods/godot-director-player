@@ -1455,3 +1455,85 @@ Two spellings account for most of them, and both are ordinary Lingo:
 
 Nothing here is title-specific: they are language surface this parser does not
 have yet, and every one is a handler that silently does not run.
+
+---
+
+## 40. Unnamed markers are dropped, so `marker(n)` cannot count to a `play done` frame
+
+**Status:** open · **Area:** `director/director_labels.gd` · found while landing
+`play`/`go` suspension, and it is the other half of the same dialogue
+
+`DirectorLabels.parse` drops every VWLB entry whose name is empty. The reference
+keeps them: `Score::loadLabels` inserts one `Label` per entry regardless of name,
+and `getNextLabelNumber` walks the whole array — so **`marker(1)` counts unnamed
+markers and this port's does not.** An unnamed marker is not decoration. It is
+how a Director author marks a frame that only the score needs to reach.
+
+Rating's `BATZEGOZ.dir` is the case that found it. Its VWLB has 28 entries and
+nine of them are unnamed, one at 0-based frame 214:
+
+```
+godot --headless --path . --script tools/play_suspends.gd -- \
+    --dialogue --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+```
+
+prints, before it puts them back for itself:
+
+```
+NOTE: 9 of this movie's 28 markers are unnamed and were dropped by
+      director_labels.gd.
+```
+
+Frame 214 is `BehaviorScript 36`, whose whole body is `on exitFrame / play done /
+end`, and it sits between `egozspeak1` (207) and `Batz2A` (216). The talking loop
+at 207-213 leaves with `go(marker(1))`. With the unnamed marker kept that is
+frame 214, `play done` runs, and the mouseUp that called `play frame
+"egozspeak1"` is resumed so that its own trailing `go` picks the room. With it
+dropped, `marker(1)` is 216 and **frame 214 is unreachable**: `play done` never
+runs anywhere in this movie, and all three of Egoz1's dialogue options arrive at
+the first one's destination.
+
+Measured, clicking the three options in turn (`tools/scratch` is gone; the same
+walk is what `--dialogue` asserts):
+
+| option | script | markers as parsed | markers with the unnamed ones kept |
+|---|---|---|---|
+| channel 11 | `go("batz2a")` | Batz2A | Batz2A |
+| channel 12 | `go("batz2b")` | Batz2A | Batz2b |
+| channel 13 | `go("batz2c")` | Batz2A | batz2c |
+
+so the visible symptom is *a dialogue that answers every option with the same
+reply*, and it is one line away.
+
+The fix is not simply to stop dropping them, because `marker_at` is the reason
+they were dropped in the first place — a frame inside an unnamed marker's span
+must still report the last *named* one, or "which room am I in" answers blank.
+Both halves:
+
+```gdscript
+        var name := payload.slice(start, stop).get_string_from_ascii().strip_edges()
+        var zero_based := frame - 1
+        markers.append({"frame": zero_based, "name": name})
+        if name == "":
+            continue
+        var key := name.to_lower()
+        if not labels.has(key):
+            labels[key] = zero_based
+```
+
+```gdscript
+func marker_at(frame: int) -> String:
+    var found := ""
+    for marker in markers:
+        if int(marker["frame"]) > frame:
+            break
+        if str(marker["name"]) != "":
+            found = str(marker["name"])
+    return found
+```
+
+The other readers of `markers` are `director_preview.gd:lingo_marker` (which
+wants the full list — that is the bug), `lingo_go_next`'s search for the next
+marker (Director's `gotoNext` also counts unnamed ones), and
+`tools/click_trace.gd`, `hotspots.gd`, `mouse_poll.gd`, `director_frames.gd`,
+which name markers for a human. `click_trace` already skips empty names.

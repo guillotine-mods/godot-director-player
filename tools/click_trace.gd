@@ -113,6 +113,17 @@ func _init() -> void:
 		stack.size(),
 		"" if stack.is_empty() else "  %s" % str(stack),
 	])
+	# The other half of the same question, and the one the play stack alone could
+	# not answer. A `play` suspends the handler that called it (§9.4), so an
+	# entry on the stack and a handler in the play buffer are one pending return:
+	# a stack entry with an *empty* buffer is a `play` whose caller had nothing
+	# left to run, and a buffer that is still full long after the interlude ended
+	# is a handler waiting on a `play done` the movie never reaches.
+	print("suspended handlers  : %d parked at a `go`, %s at a `play`; %d parked in all" % [
+		(preview.get("_frozen_lingo") as Array).size(),
+		"one" if not (preview.get("_frozen_play") as Array).is_empty() else "none",
+		int(preview.get("_frozen_parked")),
+	])
 
 	var traced: Array = preview.get("_traced")
 	print("sound and score, from the click onward:")
@@ -151,6 +162,13 @@ func _where(preview: Node, frame: int) -> String:
 	var start := 0
 	if labels != null:
 		for m in labels.markers:
+			# Unnamed markers are skipped rather than reported as a blank name.
+			# `director_labels.gd` drops them today, so this changes nothing yet --
+			# and it is what stops this reading "frame 215 ()" the moment they are
+			# kept, which they have to be for `marker(n)` to count correctly
+			# (`bugs.md`, the `play done` entry).
+			if str(m["name"]) == "":
+				continue
 			if int(m["frame"]) <= frame and int(m["frame"]) >= start:
 				start = int(m["frame"])
 				name = str(m["name"])
