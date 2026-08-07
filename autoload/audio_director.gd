@@ -226,10 +226,34 @@ func _resolve_normalised(raw: String) -> String:
 	return ""
 
 
-## Lowercased, both separators folded to `/`, extension dropped. The extension is
-## dropped because the scripts name `.aif` and a converted disc may hold `.wav`.
+## Lowercased, **all three separators** folded to `/`, extension dropped.
+##
+## Three, not two, and the third is the one a port forgets. Director ran on the
+## Mac first and its path separator is the **colon**: `the moviePath` on a Mac
+## answers `HD:Rating:` and a script concatenating onto it produces
+## `HD:Rating:sounds:batzegoz:f1.aif`. The Windows player wrote backslashes, and
+## the same corpus carries both -- `soundspath` is built as
+## `soundspathstart & "days" & "\"` in one movie and `the moviePath &
+## "sounds:batzegoz:f1.aif"` in another, and BATZEGOZ.dir is a movie that does
+## both within four members of each other. They are one problem and this is the
+## one rule: a request is a path, and which byte the author's machine wrote
+## between its segments is not information the lookup may act on.
+##
+## Applied to the request *and* to every file on disc (`_relative_key`), so both
+## sides of the comparison are in the same alphabet. It folds the colon in
+## `res://` as well, which costs nothing: `_resolve_normalised` drops leading
+## segments until something matches, and a prefix this engine cannot see -- an
+## authoring machine's volume name, a CD drive letter -- is exactly what those
+## leading segments are.
+##
+## The extension is dropped because the scripts name `.aif` and a converted disc
+## may hold `.wav`.
 static func _normalise(path: String) -> String:
-	return path.to_lower().replace("\\", "/").replace(":", "/") 		.trim_suffix("/").get_basename()
+	return path.to_lower() \
+		.replace("\\", "/") \
+		.replace(":", "/") \
+		.trim_suffix("/") \
+		.get_basename()
 
 
 ## The index key for a file on disc: its path relative to the game root.
@@ -286,7 +310,16 @@ func play_file(channel: int, file_name: String) -> void:
 	# the same filename are two different sounds -- this game keeps the same
 	# actor's lines under several -- and comparing stems made the second one
 	# look like the first and skip.
-	if str(_channel_file.get(ch, "")) == raw:
+	#
+	# Compared *normalised*, for the reason `_normalise` gives: the same file can
+	# be asked for with colons or with backslashes, and this corpus does both.
+	# Comparing the raw strings made `sounds:batzegoz:h.aif` and
+	# `sounds\batzegoz\h.aif` two different sounds, so a room that reached the
+	# same line by two routes restarted it from the top instead of leaving it
+	# alone -- which is the machine-gunning this guard exists to prevent, arrived
+	# at through the separator instead of through the frame loop.
+	var previous := str(_channel_file.get(ch, ""))
+	if previous != "" and _normalise(previous) == _normalise(raw):
 		var existing: AudioStreamPlayer = _channels.get(ch)
 		if existing and existing.playing:
 			return
