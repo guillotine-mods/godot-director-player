@@ -46,6 +46,8 @@ const Trails := preload("res://scenes/preview/trails.gd")
 const PaletteView := preload("res://scenes/preview/palette_view.gd")
 const StagePaint := preload("res://scenes/preview/stage_paint.gd")
 const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
+const Scripts := preload("res://scenes/preview/scripts.gd")
+const Members := preload("res://scenes/preview/members.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -576,75 +578,23 @@ func _start_lingo(path: String) -> void:
 		print("lingo: nothing compiled; %s" % compiler.error)
 
 
-## A script named by member number *and* the cast library it lives in.
-##
-## Searching every cast for any script with that number finds something almost
-## always â€” 758 of 758 intervals "resolved" that way â€” and what it finds is a
-## stranger: a frame script's number matching some sprite behaviour in another
-## cast. The symptom is not an error but silence, because the script that comes
-## back has no `exitFrame` in it. Member numbers are per cast, so the library is
-## part of the key, not a hint.
+## Script resolution and dispatch, delegated to `preview/scripts.gd`. The rule
+## that matters -- a member number is per cast, so the library is part of the key
+## -- lives there with the evidence for it.
 func _script_in_lib(cast_lib: int, member: int) -> Dictionary:
-	if _interpreter == null or member <= 0:
-		return {}
-	var lib := 1 if cast_lib <= 0 or cast_lib == 0xFFFF else cast_lib
-	if _lib_keys.has(lib):
-		return _interpreter.find_script_by_member(str(_lib_keys[lib]), member)
-	return {}
+	return Scripts.in_lib(_interpreter, _lib_keys, cast_lib, member)
 
 
-## Without a library to go on â€” a member script reached through a sprite â€” the
-## movie's own cast wins over a linked one, as Director resolves it.
 func _script_for_member(member: int) -> Dictionary:
-	if _interpreter == null or member <= 0:
-		return {}
-	for key in _script_casts:
-		var script: Dictionary = _interpreter.find_script_by_member(str(key), member)
-		if not script.is_empty():
-			return script
-	return {}
+	return Scripts.for_member(_interpreter, _script_casts, member)
 
 
-## The behaviour attached to a sprite channel on this frame, from the score's own
-## interval entries â€” the only place the attachment exists.
 func _sprite_script(channel: int, frame_index: int) -> Dictionary:
-	if _score == null:
-		return {}
-	for interval in _score.intervals():
-		if str(interval["kind"]) != "sprite" or int(interval["channel"]) != channel:
-			continue
-		if frame_index < int(interval["start"]) or frame_index > int(interval["end"]):
-			continue
-		return _script_in_lib(
-			int(interval["script_cast_lib"]), int(interval["script_member"])
-		)
-	return {}
+	return Scripts.for_sprite(self, _score, channel, frame_index)
 
 
-## Director's message hierarchy, as much of it as this preview has: the script
-## that owns the message first, then any movie script.
-##
-## The movie-script fallback is not a nicety. `prepareMovie`, `startMovie` and
-## most of a room's sound live in movie scripts, not on the frame, so a dispatch
-## that only ever asks the frame script runs nothing at all on a frame that has
-## none â€” which is every frame of some movies.
 func _dispatch(handler: String, script: Dictionary) -> void:
-	if _interpreter == null:
-		return
-	_tally(_sent, handler)
-	# `call_handler` already resolves Director's order â€” the owning script, then
-	# any movie script â€” and lowercases the name on the way in. Guarding it with
-	# `_script_has_handler` was worse than redundant: that helper compares the
-	# handler's lowercased name against the key *as given*, so "exitFrame" never
-	# matched "exitframe" and every dispatch was refused before it ran.
-	# Whether it ran, not what it returned: a void handler answers null, so a
-	# `!= null` test scores every successful dispatch as a miss. The key is
-	# lowercased because `_script_has_handler` compares against it as given.
-	var key := handler.to_lower()
-	var owns: bool = _interpreter.call("_script_has_handler", script, key)
-	if owns or _interpreter.has_handler(key):
-		_tally(_ran, handler)
-	_interpreter.call_handler(handler, [], script)
+	Scripts.dispatch(self, _interpreter, handler, script)
 
 
 ## `cuePassed me, <channel>, <cueNumber>, <cueName>`.
@@ -2416,34 +2366,6 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		_score.frame(_index).get("sprites", []))
 
 
-func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
-	var where := _resolve_member_ref(which, cast)
-	var m: Dictionary = _table.get_member(int(where[0]), int(where[1]))
-	match prop:
-		"name":
-			return str(m.get("name", ""))
-		"width":
-			return int(m.get("width", 0))
-		"height":
-			return int(m.get("height", 0))
-		"text":
-			# Through the same override the renderer reads, or `the text of member`
-			# would answer the authored placeholder while the screen showed the
-			# current value.
-			return _field_text_of(m)
-		"number", "membernum", "castnum":
-			# `member("able1").memberNum` and `the number of member "able1"` ask the
-			# same question by two spellings, and only the second had a path here:
-			# the first fell out of this match and returned 0. That is silent,
-			# because 0 is a plausible member number. Every `set the cursor of
-			# sprite i to [member("able1").memberNum, member("able2").memberNum]`
-			# in MAP therefore stored [0, 0] and composed to nothing. The same
-			# omission was found and fixed in `lingo/lingo_host.gd` for the other
-			# renderer; this host had it too.
-			return int(where[1])
-	return 0
-
-
 ## `field "name"`, and `put x into field "name"`.
 ##
 ## Two things had to change together here, and neither is worth much alone. The
@@ -2490,72 +2412,20 @@ func _forget_field_text_of(container_path: String) -> void:
 	TextArt.forget(container_path, _field_text)
 
 
-func lingo_member_number(which: Variant, cast: String) -> Variant:
-	return _resolve_member(which, cast)
-
-
-## A member reference is a number already, or a name to look up in the movie's
-## own cast. Names are what scripts actually use.
-##
-## Through `_table`, whose internal cast is opened once and cached, rather than a
-## fresh `Cast` per call: `number_of` builds its name map by parsing every member
-## in the library, so a new instance each time re-reads the CAS* chunk and every
-## CASt record behind it. That was tolerable while `member("x").memberNum` had no
-## arm above and this was reached rarely. With it, MAP's frame script performs 24
-## name lookups per exitFrame and the cost is on the frame path. Measured over 250
-## steps of MAP: 125-144 ms before, 65-81 ms after, over three runs each.
-## Which library and member a Lingo member reference names.
-##
-## The library is part of the answer, not a hint. Member numbers are per cast, so
-## `member(64, "island2")` and member 64 of the movie's own cast are different
-## members that happen to share a number, and resolving in the wrong one returns
-## a stranger rather than nothing -- which is silence, not an error.
-##
-## `searchfunk` in MASTER is what this cost. It does
-## `myname = member(the memberNum of sprite the clickOn, "island2").name` and
-## then matches that name against a table to decide what a click on the scenery
-## reveals. Resolving in library 1 gave it the name of an unrelated member, no
-## line ever matched, and the handler returned having done nothing. Every "I
-## clicked the thing and nothing happened" of that shape is this.
-##
-## An unnamed cast means the movie's own, which is how Director resolves a bare
-## `member(N)`; a name that matches no library falls back to the same rather than
-## answering nothing, because a wrong-but-present member is easier to see in a
-## trace than a silent zero.
+## Member resolution, delegated to `preview/members.gd`. The rule that matters --
+## the library is part of the answer, not a hint -- lives there with the evidence.
 func _resolve_member_ref(which: Variant, cast: String) -> Array:
-	if _table == null:
-		return [1, 0]
-	var lib := 1
-	var wanted := cast.strip_edges().to_lower()
-	if wanted != "":
-		for number in _table.cast_libs:
-			if str(_table.cast_libs[number].get("name", "")).to_lower() == wanted:
-				lib = int(number)
-				break
-	if typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT:
-		return [lib, int(which)]
-	# A name, which Director looks up across every cast when the reference does
-	# not name one. Searching the named library first keeps an explicit
-	# `of castLib "master"` authoritative.
-	var named = _table.cast_for(lib)
-	if named != null:
-		var here: int = named.number_of(str(which))
-		if here > 0:
-			return [lib, here]
-	if wanted != "":
-		return [lib, 0]
-	var libs: Array = _table.cast_libs.keys()
-	libs.sort()
-	for other in libs:
-		var cast_file = _table.cast_for(int(other))
-		if cast_file == null:
-			continue
-		var found: int = cast_file.number_of(str(which))
-		if found > 0:
-			return [int(other), found]
-	return [lib, 0]
+	return Members.resolve_ref(which, cast, _table)
 
 
 func _resolve_member(which: Variant, cast: String) -> int:
 	return int(_resolve_member_ref(which, cast)[1])
+
+
+func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
+	return Members.read_prop(self, _resolve_member_ref(which, cast), prop, _table)
+
+
+func lingo_member_number(which: Variant, cast: String) -> Variant:
+	return _resolve_member(which, cast)
 
