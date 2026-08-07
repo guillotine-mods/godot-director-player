@@ -1042,17 +1042,38 @@ func _sprite_rect(sprite: Dictionary) -> Rect2:
 func skip_to_end() -> void:
 	if _score == null or _score.frame_count <= 0:
 		return
-	_index = _score.frame_count - 1
-	_held = false
-	# A jump cancels every wait (§9.2) — including one this button is being used
-	# to escape, since a movie sitting on a wait-for-click frame is exactly when
-	# a player reaches for it.
-	_clock.reset()
-	_pending_enter = null
-	# The landing frame is entered by the next step, the way any other jump from
-	# outside the step loop is: that step skips `exitFrame`, renders, and sends
-	# `enterFrame`. Sending `enterFrame` from here as well ran it twice.
-	_jump_queued = true
+	# Release what this frame is waiting on, and nothing else.
+	#
+	# This used to jump the playhead to the last frame of the movie, on the
+	# assumption that the end of the file is the end of the scene. **A Director
+	# movie's last frame is not its ending.** A movie is a strip of
+	# independently labelled segments, and the last frame is only the last
+	# *segment's* last frame -- so the jump lands somewhere the author never
+	# meant to be entered from here, and `tools/skip_state.gd` measures what
+	# that costs across this corpus:
+	#
+	#   MURDER1 f883 runs `go("conect2")`, which is frame 790 -- the jump goes
+	#   *backwards* into the tail being skipped and replays 94 frames, so from
+	#   the player's chair SKIP did nothing and they press it again;
+	#
+	#   DAY1 f2783 is the tail of a `play`-called talk clip and runs
+	#   `play "done"` with nothing on the stack, so nothing returns and the
+	#   score's own advance has nowhere to go. The playhead never moves again.
+	#   Every symptom downstream of that reads as something else -- most of a
+	#   session went into "the cursor never comes back", which was the cursor
+	#   correctly recomputing over a dead playhead.
+	#
+	# Running the intervening frame scripts instead is not the fix either. That
+	# is right for a linear cutscene and catastrophic for a hub: the frames
+	# between here and the end of DAY1 are dozens of unrelated rooms, not "the
+	# rest of this scene".
+	#
+	# What a player means by SKIP is "stop waiting", not "go to the end of the
+	# file". Releasing the hold lets the movie's own scripts drive to their own
+	# exit -- which walks MURDER1 to its `go("clif2","day1.dir")` and does
+	# nothing harmful in a hub. Director has no skip, so there is no fidelity
+	# question here; this is a judgement about an affordance.
+	_clock.release()
 	queue_redraw()
 
 
