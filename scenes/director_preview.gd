@@ -49,6 +49,8 @@ const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Scripts := preload("res://scenes/preview/scripts.gd")
 const Members := preload("res://scenes/preview/members.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
+const InputRouter := preload("res://scenes/preview/input_router.gd")
+const DebugReport := preload("res://scenes/preview/debug_report.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -703,73 +705,9 @@ func _tally(into: Dictionary, key: String) -> void:
 	into[key] = int(into.get(key, 0)) + 1
 
 
-## Everything the run learned about its own Lingo, in one place. Printed on `L`
-## and at exit, because "no sound" has at least four distinct causes and only
-## this tells them apart: no handler dispatched, none found, none reached a
-## builtin, or a builtin reached and did nothing.
+## The debug report, delegated to `preview/debug_report.gd`.
 func _report() -> void:
-	# A window's report is the same report for a different movie, and the two
-	# would otherwise be indistinguishable in a log where a window opened, ran and
-	# was forgotten in the middle of the stage's run.
-	if _window_key != "":
-		print("--- window %s (%s) ---" % [_window_key, movie_name()])
-	print("lingo dispatched : %s" % JSON.stringify(_sent))
-	print("lingo ran        : %s" % JSON.stringify(_ran))
-	if _host != null:
-		print("builtins reached : %s" % JSON.stringify(_host.reached))
-		print("builtins unbound : %s" % JSON.stringify(_host.unbound))
-	print("ccl cast list  : %s" % str(_ccl))
-	print("film loops     : %s" % JSON.stringify(_loop_stats))
-	# "The pacing feels wrong" has to be separable into "the score asked for a
-	# hold and nothing took it" and "the score asked for nothing". Only five
-	# frames in this corpus carry a transition and thirty-six carry a delay, so a
-	# run that reports zero of each is usually telling the truth about the movie.
-	print("clock          : %s, %d transition(s) played" % [
-		_clock.status(), _transitions_played,
-	])
-	# Whether a room set any cursor at all is a question that kept being answered
-	# by looking at the screen and seeing an arrow, which cannot distinguish "the
-	# cursor code is broken" from "this room asks for no cursor". Most of them ask
-	# for none: the game sets `the cursor of sprite` on inventory items and in a
-	# handful of rooms, so an arrow is usually correct.
-	print("cursors        : %d channel(s) %s, global %s" % [
-		_channel_cursors.size(), str(_channel_cursors.keys()), str(_global_cursor)
-	])
-	if not _traced.is_empty():
-		print("sound trace (last %d):" % _traced.size())
-		for line in _traced:
-			print("   %s" % line)
-	if _score != null:
-		var kinds: Dictionary = {}
-		var resolved := 0
-		var unresolved: Array = []
-		for interval in _score.intervals():
-			_tally(kinds, str(interval["kind"]))
-			var member := int(interval["script_member"])
-			if _script_for_member(member).is_empty():
-				if unresolved.size() < 8 and not unresolved.has(member):
-					unresolved.append(member)
-			else:
-				resolved += 1
-		print("score intervals  : %s" % JSON.stringify(kinds))
-		print("  scripts found  : %d of %d" % [resolved, _score.intervals().size()])
-		if not unresolved.is_empty():
-			print("  unresolved mbr : %s" % str(unresolved))
-		var fs: Dictionary = _frame_script(_index)
-		var handlers: Array = []
-		for handler in fs.get("handlers", []):
-			handlers.append(str((handler as Dictionary).get("name", "")))
-		print("  frame %d script: %s  handlers: %s" % [
-			_index, str(fs.get("script", "NONE")), ", ".join(handlers),
-		])
-	if _interpreter != null:
-		var names: PackedStringArray = _interpreter.movie_handler_names()
-		print("movie handlers   : %d  %s" % [names.size(), ", ".join(names)])
-		var errors: Array = _interpreter.errors
-		if not errors.is_empty():
-			print("interpreter errors (%d):" % errors.size())
-			for line in errors.slice(0, 8):
-				print("   %s" % line)
+	DebugReport.emit(self)
 
 
 func _exit_tree() -> void:
@@ -1061,121 +999,26 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 	_dispatch("enterFrame", script)
 
 
+## Input, delegated to `preview/input_router.gd`. The routing decisions live
+## there because Godot's own reverse-tree `_input` order is invisible to a
+## headless harness, and "the click went to the wrong movie" has to be
+## assertable.
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton \
-			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		var at := stage_mouse()
-		if (event as InputEventMouseButton).pressed:
-			# Recorded on every movie on the stage, windows included, so a window
-			# that opens during this click still has not seen its press.
-			_saw_press = true
-			for key in _windows:
-				var w: Node = _windows[key]
-				if w != null:
-					w._saw_press = true
-		if not (event as InputEventMouseButton).pressed:
-			# A drag ends on mouse-up, and the cursor is re-resolved then.
-			_drag_channel = 0
-			_resolve_cursor()
-			return
-		# Tested before the sprite hit-test, or a hotspot underneath would eat it.
-		# Before the window routing too: it is the preview's own control and it is
-		# drawn over everything, including a window.
-		if SKIP_RECT.has_point(at):
-			skip_to_end()
-			return
-		# A window over this point takes the click, and takes it whole — including
-		# releasing *its* wait-for-click rather than the stage's (§9.2, §4.2).
-		route_click(at)
+	if event is InputEventMouseButton 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		InputRouter.mouse_button(
+			self, event as InputEventMouseButton, stage_mouse(), SKIP_RECT)
 		return
 	if event is InputEventMouseMotion:
-		var over := window_at(stage_mouse())
-		if over != null and over != self:
-			over._hover_channel = over._channel_at(over.stage_to_local(stage_mouse()))
-			over._resolve_cursor()
-			queue_redraw()
-			return
-		var was := _hover_channel
-		_hover_channel = _channel_at(stage_mouse())
-		if _drag_channel > 0:
-			# The dragged sprite follows the cursor by the offset recorded when
-			# the drag began, so it does not snap its registration point to the
-			# pointer on the first movement.
-			var to := stage_mouse() + _drag_offset
-			lingo_set_sprite_prop(_drag_channel, "loch", int(to.x))
-			lingo_set_sprite_prop(_drag_channel, "locv", int(to.y))
-			queue_redraw()
-			return
-		# The cursor is resolved on mouse movement, not once per frame. Director
-		# recomputes it on move, on button-up, on entering the window and on a
-		# new movie â€” so a sprite that swaps to a member with a different cursor
-		# under a stationary mouse keeps the old one until the mouse moves.
-		_resolve_cursor()
-		if was != _hover_channel:
-			queue_redraw()
+		InputRouter.mouse_motion(self)
 		return
 	if not (event is InputEventKey and event.pressed):
 		return
-	# The game's keys are offered first, and the debug bindings below only see
-	# what the movie did not claim. Space is the case that matters: `fromnow`,
-	# which 46 scripts install, stops sound channel 1 when the key code is 49,
-	# and that is how every line of speech in this game is skipped.
-	#
-	# A key goes to the front window when there is one, which is Director's rule
-	# (§8.3: the keypress goes to the movie in the active window). Nothing in this
-	# corpus installs a `keyDownScript` in a window movie, so this is the engine's
-	# rule rather than this title's need — but sending it to the stage instead
-	# would have the covered movie skipping speech it is not playing.
-	var focus := modal_window()
-	if focus == null:
-		focus = window_at(stage_mouse())
-	if focus == null:
-		focus = _front_window()
-	if focus == null:
-		focus = self
+	# The game's keys are offered first, and the debug bindings only see what the
+	# movie did not claim.
+	var focus := InputRouter.key_focus(self)
 	if not (event as InputEventKey).echo and focus._dispatch_key(event as InputEventKey):
 		return
-	match (event as InputEventKey).keycode:
-		# F10, not space. Space is the game's own key -- Director titles use it to
-		# skip a line of speech or a cut scene -- and a debug binding that eats it
-		# makes the movie look unresponsive to the one key a player reaches for
-		# first.
-		KEY_F10:
-			_paused = not _paused
-		KEY_RIGHT:
-			_paused = true
-			_index = mini(_index + 1, _score.frame_count - 1)
-			queue_redraw()
-		KEY_LEFT:
-			_paused = true
-			_index = maxi(_index - 1, 0)
-			queue_redraw()
-		KEY_R:
-			_index = 0
-			# Restarting from a frame that was holding — a delay, a wait for a
-			# click — must not carry that hold onto the frame it restarts at, or
-			# `R` looks like it did nothing.
-			_clock.reset()
-			_entered_index = -1
-			_pending_enter = null
-			queue_redraw()
-		KEY_B:
-			_show_boxes = not _show_boxes
-			queue_redraw()
-		KEY_M:
-			_hit_pixels = not _hit_pixels
-			print("hit test: %s" % ("artwork" if _hit_pixels else "full rectangle"))
-			queue_redraw()
-		KEY_L:
-			_report()
-		KEY_F:
-			var window := get_window()
-			window.mode = (
-				Window.MODE_WINDOWED if window.mode == Window.MODE_FULLSCREEN
-				else Window.MODE_FULLSCREEN
-			)
-		KEY_ESCAPE:
-			get_tree().quit()
+	InputRouter.debug_key(self, (event as InputEventKey).keycode)
 
 
 ## Arm the clip rectangle. Re-armed from `_draw` every paint rather than at
