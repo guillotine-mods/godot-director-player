@@ -364,8 +364,13 @@ In the port:
 - `director/inventory_drag.gd` holds the icon in flight. Its rect is the item's
   own bitmap, not the slot's score rect, because `displayobject` sets the slot's
   `memberNum` to the item and `intersects` measures that.
-- `data/inventory_drops.json` holds the rules, one Lingo citation each, read by
-  `director/inventory_drops.gd`. Rules are tried in order, first match wins.
+- The drop rules were a hand-authored table in `data/inventory_drops.json`, read
+  by `director/inventory_drops.gd`. **Both are gone**, along with the rest of the
+  pre-decoded export. They were also dead before they were deleted: the item to
+  cast-member mapping came from a catalog that was always empty, so every rule
+  failed its lookup and `apply_inventory_drop` returned false unconditionally.
+  Reinstating this means running the original Lingo rather than re-authoring the
+  table — the handlers are in `reference/lingo/`.
 - `InputRouter` carries `stage_press` / `stage_drag` / `stage_release` alongside
   `stage_click`. Clicks still fire on press, so existing hotspots are unchanged.
 - `DirectorRuntime.slot_sprite_at()` finds slots by channel rather than through

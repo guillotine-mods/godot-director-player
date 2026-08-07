@@ -6,10 +6,22 @@ that runs whether or not the movie has a single line of script.
 
 The reference is ScummVM's `engines/director`, read at master. It is GPL, so
 nothing here is copied from it: this is a description of behaviour written from
-reading the implementation. Where ScummVM and this port's working renderer
-(`director/movie_player.gd`, `sprite_channel.gd`, `render_model_loader.gd`)
-agree, that is called out explicitly and should be treated as **settled** —
-stop second-guessing it. Where they differ, that is called out too.
+reading the implementation.
+
+**A warning about the agreement notes below.** Where this document says ScummVM
+and "this port's working renderer" agree, and calls that **settled**, the
+renderer it means is `director/movie_player.gd` / `sprite_channel.gd` /
+`render_model_loader.gd` — which has since been **retired**. It drew from a
+pre-decoded JSON and BMP export under `assets/render_model/`, and that export no
+longer exists. The live renderer is `scenes/director_preview.gd` and the modules
+in `scenes/preview/`, which read the original containers at runtime.
+
+Those agreement notes are still evidence — two independent implementations
+reaching the same reading is worth something regardless of which one is now
+running. But they are **not** a statement about the current code, and several
+have already been found not to hold in it. Treat "settled" as "settled about
+Director", never as "already correct here", and check the live path before
+relying on one.
 
 **Reading order.** Part I is the visual core — where a sprite lands, how big it
 is, what of it is transparent, and whether it appears at all. Nearly every
