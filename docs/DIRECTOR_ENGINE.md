@@ -1689,28 +1689,28 @@ destination-reading inks.
 | --- | --- | --- |
 | Sprite placement / registration / scaling | **done** in the working renderer; **wrong hit rect** in the preview | `movie_player.gd:187-199`; `director_preview.gd:1007-1013` |
 | Stretch semantics | **done** | `sprite_channel.gd:110-126` |
-| Flip | **nothing** (byte undecoded) | — |
+| Flip | **decoded, never applied**: thickness byte read, and 0 of 816,318 records set either bit — so nothing to apply it to here | `director_score.gd:_snapshot`; `tools/ink_survey.gd` |
 | Rotation / skew | n/a below D7; ScummVM does not implement it either | — |
 | Film loop compositing | **done, two dialects** | `movie_player.gd:247-349`; `director_preview.gd:784-826` |
-| Mouse hit test | **partial**: eligibility on one side, per-pixel on the other, never both | `director_runtime.gd:1426-1447`; `director_preview.gd:966-976` |
+| Mouse hit test | **done** in the preview: eligibility inside the descent *and* per-pixel for Matte only; **partial** in the runtime (no per-pixel stage) | `director_preview.gd:_channel_at`; `director_runtime.gd:1426-1447` |
 | Cursor compositing | **done** | `render_model_loader.gd:847-911` |
-| Cursor resolution | **partial**: working side only, **nothing in the preview** | `director_runtime.gd:1500-1518` |
+| Cursor resolution | **done** on both sides | `director_preview.gd:_resolve_cursor`; `director_runtime.gd:1500-1518` |
 | Puppet | **partial**: whole-sprite on one side, per-field on the other, no copy-back mask | `sprite_channel.gd:55-74`; `director_preview.gd:911-941` |
-| Ink | **partial**: Copy / BackgroundTrans / Matte; colourisation in the preview only | `render_model_loader.gd:828-844`; `director_ink.gd:applies_colour` |
-| Matte flood fill | **partial**: different paper sampling, tolerant match, no no-matte rule | `render_model_loader.gd:765-794`; `director_preview.gd:1374-1422` |
+| Ink | **done** for the five inks this format uses, everything else falls through to Copy per the reference's own fallback chain; colourisation in the preview only | `director_ink.gd` |
+| Matte flood fill | **done** in the preview: whole border ring, exact match, and the no-white-no-matte rule; **partial** in the runtime (corner vote, 14/255 tolerance) | `director_ink.gd:key_matte`; `render_model_loader.gd:765-794` |
 | Visibility | **partial** | `sprite_channel.gd:37`; `director_runtime.gd:1426-1427` |
 | Frame ordering | **done** in the preview (§16.6); **partial** in the runtime | `director_preview.gd:_advance` |
 | Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** by both renderers | `director_score.gd`; `director_frame_clock.gd`; `director_runtime.gd:276-281` |
 | Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
 | Tempo: wait-for-video | **nothing** | — |
 | Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
-| Palette resolution / cycling / fades | **done**, unverified against this corpus (0 frames cycle, 0 name anything but system Mac). 5 built-in tables are data, not code | `director_palette.gd`; `director_palette_state.gd`; `tools/palette_cycle.gd` |
-| Trails | **done**, unverified against this corpus (0 of 816,318 records set the flag); reachable via `the trails of sprite` | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
-| Blend / alpha | **nothing** | — |
-| Moveable / drag / constraint | **nothing** (flag stored) | `sprite_channel.gd:40` |
+| Palette resolution / cycling / fades | **done, unverified**: resolution order, cycling, fades and a CLUT reader, on a corpus that cycles 0 times; five built-in tables are authored data this port does not have | `director_palette_state.gd`; `director_palette.gd` |
+| Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
+| Blend / alpha | **done**: ink 32 and the has-blend flag, amount is a 0-100 percentage | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
+| Moveable / drag / constraint | **partial**: drag done, `the constraint of sprite` not | `director_preview.gd:_begin_drag` |
 | Editable text / focus / selection | **nothing** | — |
-| Keyboard, modifiers, key events | **nothing** | — |
-| Primary handlers, pass/dontPassEvent | **nothing** | — |
+| Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map; modifiers not carried | `director_keys.gd`; `director_preview.gd:_dispatch_key` |
+| Primary handlers, pass/dontPassEvent | **partial**: `when <event> then` installs and fires at tier 1 for keys; mouse tiers and `pass` propagation not | `lingo_interpreter.gd:run_primary` |
 | Event hierarchy | **partial**: sprite → cast → frame → movie | `director_preview.gd:728-740` |
 | Hilite on click | **nothing** | — |
 | Score sound channels, restart-on-change | **done, unverified**: decoded and driven, but no cast in this game holds a `sound` member and no frame writes either channel, so the path never executes here | `director_score.gd:_sound_channels`; `score_sound.gd`; `tools/score_sound_check.gd` |
@@ -1721,10 +1721,12 @@ destination-reading inks.
 | Digital video | **nothing** | — |
 | Text / field rendering | **partial**: legible, not period-accurate; preview only | `director_text.gd`; `director_preview.gd:_draw_text` |
 | Shapes | **partial**: rect and rounded rect measured, oval and line unverified; preview only | `director_shape.gd` |
-| Windows / MIAW / embedded movies | **nothing** | — |
+| Windows / MIAW / embedded movies | **done**: open, close, forget, `tell`, window properties, geometry, click routing to the topmost window | `director_preview.gd:lingo_open_window`; `tools/window_preview.gd` |
 | Movie stack | **partial** | `director_preview.gd:1143` |
 | Labels | **done** | `director_labels.gd` |
-| Stage clipping | **done** on both sides. 16.1% of the corpus's drawing sprite records reach past the stage | `movie_player.gd:43-44`; `director_preview.gd:_clip_to_stage`; `tools/stage_clip.gd` |
+| Stage clipping | **done** on both sides. 16.1% of sprite records reach past 640x480 | `director_preview.gd:_clip_to_stage` |
+| Preloading | **done**: lookahead decode, time-boxed. Worst single step on strtgame fell from 145.7 ms to 0.45 ms | `director_preloader.gd`; `tools/decode_stall.gd` |
+| Container packaging (`.dxr` = `.dir`) | **done**: one rule, used by path resolution and by Lingo `=`, `<>`, ordering, `case`, `contains`, `starts` | `director_container.gd` |
 | Dirty rects | **nothing** — acceptable | — |
 | Score recording | **nothing** — rarely needed | — |
 

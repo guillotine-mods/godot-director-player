@@ -9,150 +9,67 @@ This is a work queue, not a bug list — nothing here is a mystery. Each item sa
 what Director does, what happens without it, and where the change goes. Ordered
 by how visible the absence is.
 
-## Placement
 
-**Withdrawn: "a cast swap must shift the start point by the bbox delta."** This
-was listed here as a gap, implemented, and it corrupted every animation in the
-game. The claim was that Director captures the bounding box before a member
-change and shifts the start point by the difference so a new registration offset
-does not move the sprite. No such rule appears anywhere in `DIRECTOR_ENGINE.md`'s
-placement chapter, which is the deeper reading — the sprite's own start point is
-authoritative on every frame, and for a non-puppet channel the score's start
-point is copied in wholesale.
+## What is genuinely still missing
 
-The reason it is destructive rather than merely useless: the score changes
-members on a channel constantly, because that is how a walk cycle is authored,
-and it supplies its own `loc` for each of those members. The correction was being
-added to a position that was already right, and accumulating.
-`tools/nudge_drift.gd` replays the real score and measures it — 451px of drift on
-one DAY1 channel, 9 of 17 channels displaced; 12 of 13 on EXODUS. Kept runnable
-as the evidence.
+Corrected against the code on 2026-08-06, after the windows, palette, trails,
+sound and preload work landed. `DIRECTOR_ENGINE.md` §17 is the full table; this
+is the short list of what has no implementation at all.
 
-**Done: a genuine member change resets a film loop's frame counter to 1.** The
-counter is channel state, not member state, so two sprites showing the same loop
-animate independently. `scenes/director_preview.gd` `_note_member`.
+**Editable text, focus, caret and selection.** §8.4. Effective editability is
+the sprite's flag OR the member's, the first editable sprite takes focus, and
+`keyDown`/`keyUp` route to the focused sprite rather than the one under the
+mouse. Keyboard input itself is done; this is the widget half.
 
-**Done: one placement rule, not two.** The renderer scaled the registration
-offset by the drawn size and the hit test took it raw, so a resized sprite was
-clickable somewhere it was not drawn. `_stage_rect` is now the single rule, used
-by the renderer, the hit test, `rollOver` and the debug boxes.
+**Hilite on click.** §4.6. `shouldHilite()` needs `isActive()` and requires not
+moveable and not puppet; for a bitmap it is driven by the member's auto-hilite
+info flag, falling back to Matte ink. The inversion is a masked XOR through the
+sprite's matte, so an irregular sprite inverts its silhouette rather than its
+box. This is the feedback that tells a player a click landed.
 
-**Done: a sprite is drawn at its own size, not its member's.** The preview
-honoured the score's rect only when the stretch flag was set, treating it as
-authoring residue otherwise. That rule is right for a film loop's *children* —
-`tools/film_loop_stretch.gd` separates those two populations cleanly on the flag
-— and wrong for the main score, where §1.2 says the sprite's own width and height
-always win and the member's size enters only as the denominator when scaling the
-registration offset.
+**Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
-`tools/drawn_size.gd` settles it against the export. The new rule reproduces the
-export's top-left for 95% of EXODUS's sprites, 98% of STRTGAME's and 99.8% of
-DAY1's; the old rule scored 2,762 of 3,172 on EXODUS — which is *exactly* the
-number of sprites whose score rect already equalled their member's size. It only
-ever landed where the question did not arise. Worst single miss 136px on
-STRTGAME, 55px on DAY1.
+**Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
+which is a reason to build it last and not a reason to skip it.
 
-The two rules now live at their own call sites rather than as a branch in the
-shared path: `_drawn_size` is the main score's, `_child_sprite` is the film
-loop's. The texture cache key gained the drawn size with it, since one member
-legitimately appears at several sizes in a movie.
+**`the constraint of sprite`.** §7.6. A dragged position is clamped into the
+constraint channel's bounding box before being stored -- it clamps the position
+*point*, not the rect, so a sprite may legitimately hang outside the box by its
+registration offset. Drag itself is done.
 
-**Done: `setCast` overwrites width and height from the member when `stretch` is
-clear.** This was filed as small and it was not. The score's width and height
-describe whatever member the *score* put on a channel, so a script that swaps the
-member leaves them describing the wrong artwork.
+**Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
+in this corpus carries it; it currently falls through to Matte.
 
-This game walks its characters entirely by member swap —
-`member("walkright" & syz & x)`, where `syz` is one of six size tiers and `x` the
-animation frame — and never writes a width or a height anywhere. Without the rule
-every frame of the cycle is squashed into the previous one's rect, which reads as
-the character stretching as his arms move, and all six size tiers draw at one
-size, which reads as perspective scaling that stopped working. Two reported bugs,
-one missing rule. `scenes/director_preview.gd` `_effective`;
-`director/sprite_channel.gd:110-126` already had it right.
+**Mouse primary handlers and `pass` propagation.** §6.3. `when <event> then`
+installs and fires at tier 1 for keys; the mouse tiers and real `pass` /
+`dontPassEvent` propagation need the hierarchy to queue the whole chain rather
+than stopping at the first handler that answers.
 
-**Flip is in the data and is not decoded.** Horizontal and vertical flip live in
-the sprite record's thickness byte (`0x20`, `0x40`), along with the has-blend
-flag (`0x10`) and the thickness itself. `director/director_score.gd` `_snapshot`
-reads bytes 1, 2, 3, 12, 14, 16, 18 and never touches byte 4, so all of it is
-dropped. ScummVM parses the byte and never applies the flip anywhere in its
-render path, so it is not a specification for how flip interacts with
-registration or hit testing — the reasoned reading is that flip mirrors the image
-within the sprite's rect, leaving the rect, the position and the hit rectangle
-unchanged. Worth checking early: if the original mirrors walk-cycle art rather
-than shipping left and right versions, ignoring this makes characters face the
-wrong way.
+**Dirty rects.** §6.3. Acceptable to omit, but it forecloses
+destination-reading inks and leaves one known trails divergence: a sprite in
+front of an old mark that has not moved should occlude it and does not.
 
-**Colourisation is decoded and dropped.** `director_score.gd:248-249` reads
-`fore_color` and `back_color` and nothing consumes them. When they differ from
-black and white, Director repaints the image's black pixels `foreColor` and its
-white pixels `backColor` — which is how one 1-bit member appears in a dozen
-colours without a dozen bitmaps existing. A movie that recolours 1-bit art
-currently renders monochrome, which is wrong without looking broken. Both colours
-have to join the texture cache key.
+**Score recording.** Rarely needed.
 
-**Rotation and skew do not exist in D4.** Stated so it stops being a suspect:
-they are D7-only sprite fields. Anything that looks rotated in this game is
-pre-rendered art or a film loop.
+## Built but never compared against Director running
 
-## Mouse
+Worth separating from the above, because these are implementations rather than
+gaps -- and an unverified implementation is an honest state, not a missing one.
 
-**`moveableSprite` drag.** Eligibility is implemented — a moveable sprite is
-clickable with no script — but the drag itself is not: mouse-down should record
-the dragged channel and the offset from the click to the sprite's position, and
-every mouse-move should set the position to offset plus mouse. The drag ends on
-mouse-up or when the sprite stops being moveable. Nothing in this game is known
-to need it yet; anything with a slider or a draggable inventory will.
+- **Palette** cycling and fades, on a corpus that cycles 0 times. Five built-in
+  tables (Rainbow, Pastels, Vivid, NTSC, Metallic) are authored data with no
+  generating rule: the engine warns by name and substitutes system Mac rather
+  than inventing them. Lifting them from a Director install is the fix.
+- **Trails**, on a corpus where 0 of 816,318 records set the flag.
+- **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in
+  this game holds a sound member, so all of it is proved against synthesised
+  bytes only.
+- **Flip** is decoded and never applied, because 0 records set either bit.
+- **Rounded-rect, oval and line shapes** -- no member in the corpus draws one.
 
-**`the constraint of sprite`.** A dragged position is clamped into the constraint
-channel's bounding box before being stored. It clamps the position *point*, not
-the sprite rect, so a sprite can legitimately hang outside the constraint box by
-its registration offset.
+## The rule that governs this list
 
-**A hole aborts the hit descent.** Only text cast members return one, and only
-over a scrollbar arrow. Irrelevant until text members render.
-
-## Keyboard and text
-
-**Editable text.** Effective editability is the sprite's flag OR the cast
-member's — either alone is enough. The first editable sprite becomes the focused
-widget, and `keyDown`/`keyUp` are routed to the sprite owning that focus rather
-than to the sprite under the mouse. None of this exists here, and no keyboard
-handling exists at all.
-
-## Cursor
-
-**Wait-for-click forces its own cursor.** While the score waits for a click,
-Director overrides everything with an alternating up/down pair, toggling once a
-second, and skips channel and global resolution entirely.
-
-**Windows before D5 ignores custom hotspots** and always uses (8,8). If this
-build should behave as the Windows original did, that is correct for every cursor
-in the game — worth testing, because it would explain any systematic sense of the
-cursor pointing slightly off.
-
-## Lingo
-
-**`and` and `or` do not short-circuit in Director.** Single opcodes, both
-operands always evaluated. `lingo/lingo_interpreter.gd` short-circuits, which is
-a live divergence rather than a missing feature: a right-hand side with a side
-effect runs there and not here.
-
-**Two answers to one question.** `lingo/lingo_builtins.gd` and the interpreter's
-own inline `match` disagree on `getAt`, `abs` and `value` — `getAt` past the end
-answers 0 inline and VOID in the module. The inline ones are matched first, so
-the module never sees them.
-
-**Three designator gaps**, all the shape the `sound N` fix already solved — a
-designator suffix parsed as an ignorable modifier and dropped: `go to frame E of
-movie F` loses the movie (6 scripts), `field (E) of castLib N` loses the library
-(4), `the <prop> of window "x"` cannot be assigned (2). And `when <event> then`
-(1 script) misparses into two junk statements.
-
-## Not investigated
-
-The subsystem sweep is still running. Transitions, palette effects, trails,
-blends, sound cue points, video, text and shape rendering, windows and
-Movie-In-A-Window, timers and idle handling, and double-click semantics have not
-been assessed at all. Absence from this file means unexamined, not absent from
-Director.
+A measured zero is a reason to build something *last* and to mark it unverified.
+It is never a reason not to build it -- see `AGENTS.md`, "Build Director, not
+this game". Several entries above were closed the wrong way once already and had
+to be reopened.
