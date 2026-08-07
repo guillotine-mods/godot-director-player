@@ -11,6 +11,12 @@ G="/c/Program Files/Godot_v4.7.1/Godot_v4.7.1-stable_mono_win64_console.exe"
 # regressions that are really five different movies. Restored on exit.
 ROOT="${GATE_ROOT:-piposh2}"
 
+# Per-harness ceiling. Raised from 300s because several harnesses now sweep the
+# whole corpus, and with a handful of agents running Godot at once a sweep that
+# takes 40s alone can exceed five minutes. A timeout reports as ERROR, which
+# reads as a regression and is not one -- `movie_churn` was called flaky on
+# exactly this. Override with GATE_TIMEOUT.
+
 # Serialise concurrent runs. Pinning the corpus means writing a file the whole
 # repo shares, so two gates running at once -- which happens the moment more
 # than one agent is working -- have each other's corpus swapped out from under
@@ -35,7 +41,7 @@ open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\
 echo "corpus: $ROOT"
 ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input"
 for t in ${@:-$ALL}; do
-  out=$(timeout 300 "$G" --headless --path . --script "tools/$t.gd" 2>&1)
+  out=$(timeout ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" 2>&1)
   r=$(printf '%s' "$out" | grep -E "^(PASS|FAIL)" | tail -1)
   if [ -z "$r" ]; then
     printf '%-26s ERROR\n' "$t"

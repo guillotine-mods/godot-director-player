@@ -1,9 +1,17 @@
 # Known engine gaps, not yet implemented
 
-Behaviour the reference describes and this port does not have. Every entry was
-verified against ScummVM's Director engine and, where noted, against this repo's
-own working renderer; the full descriptions are in
-[`DIRECTOR_ENGINE.md`](DIRECTOR_ENGINE.md) and [`LINGO_SURFACE.md`](LINGO_SURFACE.md).
+Behaviour the reference describes and this port does not have. The full
+descriptions are in [`DIRECTOR_ENGINE.md`](DIRECTOR_ENGINE.md) and
+[`LINGO_SURFACE.md`](LINGO_SURFACE.md).
+
+Entries were verified against ScummVM's Director engine and, where noted, against
+"this repo's own working renderer" — which meant `movie_player.gd` /
+`render_model_loader.gd`, drawing from a pre-decoded export. **That renderer has
+been deleted.** A note here saying the two agreed is still evidence about
+Director, and is not a statement about the live code; several such notes turned
+out not to hold once checked against `scenes/preview/`. Two cost real debugging
+time: `intersects` was listed as implemented while only the retired host bound
+it, so every inventory drop in every title silently evaluated to nothing.
 
 This is a work queue, not a bug list — nothing here is a mystery. Each item says
 what Director does, what happens without it, and where the change goes. Ordered
