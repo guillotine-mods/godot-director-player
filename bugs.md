@@ -1365,3 +1365,93 @@ Two things found alongside, both only reachable through this trap and both real:
   sounds are requested as `start\story.aif` rather than under the game root,
   while the same global was correct in `MAINMENU` a moment earlier. Not
   investigated; `tools/globals_survive.gd` is the tool for it.
+
+---
+
+## 38. Piposh 1 English "stuck on the logo" does not reproduce, and the CD-drive probe it points at was dead for a different reason
+
+**Status:** open (the symptom), partly closed (what was found underneath) ·
+**Area:** `games/piposh-en` boot, `strtgame.dir` · reported from play as "the
+game gets stuck on the logo; pressing SKIP moves on to a disc message, and from
+there the right-hand button reaches the main menu"
+
+**The symptom does not reproduce on this commit**, headless or windowed. Boot
+`piposh-en` and the playhead runs f0 → the CD probe at `option1` → f2 (the
+guillotine logo) → f86 `oliver` → the intro comic → `mainscreen` at f608, and
+idles on the menu. It takes **95 s** to get there, against **68 s** for the
+Hebrew build of the same title, and both are authentic: the intro is a long
+comic with music under it and the movie states 8 fps. A player who does not sit
+through it reads that as stuck, and that is the most likely reading of the
+report, but it is a reading and not a measurement.
+
+```
+godot --headless --path . --script tools/movie_churn.gd -- --root piposh-en --window-off --steps 600
+```
+
+**The other two thirds of the report are fully explained, and place the
+reporter.** SKIP is the *preview's* affordance, not a button the movie has:
+`skip_to_end` walks to the next marker (entries 32 and 37). `strtgame.dir`'s
+marker list ends with `option1`..`option26`, `maybondisk`, `inserta` and `cont`
+— the CD-drive probe — and frame 1347 `inserta` renders as **"Please Insert CD
+and click OK"** with `Quit` on the left and a yellow `Ooooooooooo K !` on the
+right, whose script goes to `cont` and from there back to f2. So "SKIP → a disc
+message → the right-hand button → the main menu" is SKIP walking into the probe
+region, exactly as entry 37 describes it doing on `rating`. It says the reporter
+was on an early frame of `strtgame.dir`; it does not say why.
+
+**What was found underneath, and is fixed.** Every one of those probe frames ran
+a script that did not compile. `set the searchpath = [...]` — Director accepts
+`=` where the parser demanded `to` — killed **27 of `strtgame.dir`'s 75
+scripts**, which is the whole of `option1`..`option26`. A script that does not
+compile is a handler that never runs and nothing at run time says so: the probe
+frames fell through on the score's own step and the movie carried on with
+`cdsavepath`, `soundspathstart`, `gWinDriveLetter` and `whichins` never set. The
+Hebrew and Russian builds spell every `set` with `to`, so no amount of playing
+the corpus this port was built on would have shown it.
+`tools/script_compile_check.gd` is the harness that does, and it is what to run
+first the next time a localisation misbehaves.
+
+**What to capture if it still reproduces.** The F3 report on the stuck frame:
+which movie, which frame, and what the clock says is holding it. Everything
+above is consistent with the playhead being parked somewhere in f0-f5 or in the
+probe region, and nothing measured here parks it in either.
+
+---
+
+## 39. Every title except Piposh 2 still has scripts that do not compile
+
+**Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · found by
+`tools/script_compile_check.gd`, which is why it is a number and not an
+impression
+
+| root | compiled |
+|---|---|
+| `piposh2` | 3,307 of 3,307 |
+| `piposh` | 8,738 of 8,754 |
+| `piposh-en` | 9,406 of 9,422 |
+| `piposh-ru` | 9,710 of 9,726 |
+| `rating` | 5,437 of 5,441 |
+| `piposh-dream` | 1,725 of 1,746 |
+
+Piposh 2 is the corpus this parser was written against, which is exactly why its
+green says nothing about the language. Each Piposh 1 localisation fails 16 and
+they are not the same 16 — the shared ones are `MASTER.CST`'s five CLOCK SCRIPTs
+and `MovieScript 34`, plus `POOLWAR` 66 and `ROULLETE` 149:
+
+```
+godot --headless --path . --script tools/script_compile_check.gd -- --root piposh --verbose
+```
+
+Two spellings account for most of them, and both are ordinary Lingo:
+
+- `set the editable of member ("save" & i - 27) of castLib 1 to 0`
+  (`MAINMENU.dir` 112 and 145 in `piposh`, `MANAEGOZ.dir` 99 and 109 in
+  `rating`) reports "set needs `to`", so the target parse is swallowing the `to`
+  rather than the `=` this time. That is the save/load screen's field enabling,
+  so entry 34's neighbourhood.
+- `expected end` at the last line of five near-identical CLOCK SCRIPTs, and
+  `unexpected "\n"` in eleven more across `piposh-dream` and `rating`. Not
+  diagnosed.
+
+Nothing here is title-specific: they are language surface this parser does not
+have yet, and every one is a handler that silently does not run.

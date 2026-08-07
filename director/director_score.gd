@@ -74,23 +74,59 @@ const EDITABLE_FLAG := 0x40
 const MOVEABLE_FLAG := 0x80
 ## A sprite record naming this library means "the movie's own cast".
 const OWN_CAST_LIB := 0xFFFF
-## Tempo is a sentinel code and `tempo_cue` its operand.
+## The file version at which Director renumbered the tempo cell. `director_config.gd`
+## reads it out of the movie's `VWCF`; `parse()` takes it, because **which
+## convention the cell is in is a property of the movie and nothing in the byte
+## says which** — the two numberings collide outright, and 247 is either "delay
+## for the operand in seconds" or "delay nine seconds" depending only on this.
+##
+## `director_frame_clock.gd:63` carries the same constant for the rate half of
+## the same cell. One number in two files is a drift waiting to happen; that file
+## already preloads this one, so the fold is a one-line change there and is left
+## for whoever owns it.
+const FILE_VERSION_D6 := 0x4C2
+## Tempo is a sentinel code and `tempo_cue` its operand — **from D6 on**.
 const TEMPO_SET_FPS := 246
 const TEMPO_DELAY := 247
 const TEMPO_WAIT_CLICK := 248
-## Wait for a sound to finish, or for a cue point in it. D6 renumbered the tempo
-## codes wholesale and put the cue index in the operand beside them (§9.1); D5
-## and below used a different pair with no cue index at all. Both are decoded,
-## because the code is a property of the movie's authoring version and this
-## decoder reads containers from several.
+## Wait for a sound to finish, or for a cue point in it, from D6 on. The cue
+## index is the operand beside the code (§9.1).
 ##
 ## Unexercised by the corpus this port was built on: across all 61 scores and
-## 61,371 frames the tempo cell holds only 246, 247 and 248, never any of these
-## four (`tools/sound_survey.gd`). So the numbering is the reference's.
+## 61,371 frames the tempo cell holds only 246, 247 and 248, never either of
+## these (`tools/sound_survey.gd`). So the numbering is the reference's.
 const TEMPO_WAIT_SOUND_1 := 255
 const TEMPO_WAIT_SOUND_2 := 254
-const TEMPO_WAIT_SOUND_1_D5 := 135
-const TEMPO_WAIT_SOUND_2_D5 := 134
+
+## The pre-D6 cell, where the byte is the instruction and there is no operand.
+##
+## 1-120 is the frame rate itself and is resolved by `director_frame_clock.gd`,
+## not here; what is left is the one-shot meanings, and they are a different set
+## from D6's rather than a renumbering of it:
+##
+##   128            wait for a click
+##   134, 135       wait on sound channel 2, 1 — with **no cue index**, which is
+##                  why `wait_cue` reads 0 on this path however the operand byte
+##                  happens to sit
+##   136 .. 195     wait for the digital video in sprite channel `cell - 135`
+##   196 .. 255     delay for `256 - cell` seconds
+##
+## The delay band starts at `256 - maxDelay`, and `maxDelay` is 60 from D4 on —
+## 95 in D3 and 120 before that, which would put the band at 161 and 136 and
+## overlap the digital-video range. Only the D4-and-later split is decoded: the
+## container formats this port reads begin at D4, so a D3 movie could not get
+## this far to be decoded wrongly.
+##
+## The collision with D6 is total and silent. Read a D6 movie with these rules
+## and its `set the rate to 8` (246, operand 8) becomes a ten-second delay; read
+## a D5 movie with D6's and its two-second delay (254) becomes a wait on a sound
+## channel that will never report busy. Neither raises anything.
+const TEMPO_D5_WAIT_CLICK := 128
+const TEMPO_D5_WAIT_SOUND_2 := 134
+const TEMPO_D5_WAIT_SOUND_1 := 135
+const TEMPO_D5_VIDEO_FIRST := 136
+const TEMPO_D5_VIDEO_CHANNEL_BIAS := 135
+const TEMPO_D5_DELAY_FIRST := 196
 ## Cue indices with a meaning other than "the Nth cue point": Director writes -1
 ## for "the next one" and -2 for "the end of the sound".
 const CUE_NEXT := -1
@@ -119,6 +155,10 @@ const KEYFRAME_INTERVAL := 64
 var frame_count: int = 0
 var frames_version: int = 0
 var sprite_record_size: int = 0
+## The movie's own file version, as `parse()` was told it. 0 means "not told",
+## which is read as D6-or-later — the convention every container in both corpora
+## here is in, and the one the decoder used unconditionally before this existed.
+var file_version: int = 0
 var channels: int = 0
 ## How many sprite channels this movie actually uses. Read, never assumed: the
 ## widely-quoted 120 truncates the movies that write up to channel 150.
@@ -132,17 +172,18 @@ var _stream := PackedByteArray()
 var _frame_at := PackedInt32Array()
 ## Buffer state after every KEYFRAME_INTERVAL-th frame, keyed by frame index.
 var _keyframes: Dictionary = {}
-## Frame rate per frame. Tempo is rewritten to zero on frames that carry none
-## while the rate it set persists, so the carry-forward is resolved during the
-## scan rather than needing the previous frame to already be decoded.
-var _fps := PackedFloat32Array()
 var _buffer_size := 0
 var _cached_index := -1
 var _cached: Dictionary = {}
 
 
-func parse(payload: PackedByteArray) -> bool:
+## `file_version` is the movie's own, from its config chunk. It is a parameter
+## rather than a field set afterwards because the frame scan reads the tempo cell
+## as it goes, and a version arriving after `parse()` would be a version that
+## arrived too late for half the work it governs.
+func parse(payload: PackedByteArray, movie_file_version: int = 0) -> bool:
 	error = ""
+	file_version = movie_file_version
 	_intervals.clear()
 	if payload.size() < 28:
 		error = "VWSC too short (%d bytes)" % payload.size()
@@ -221,16 +262,21 @@ func _read_frames(stream: PackedByteArray) -> bool:
 	_stream = stream
 	_buffer_size = buffer.size()
 	_frame_at = PackedInt32Array()
-	_fps = PackedFloat32Array()
 	_keyframes.clear()
 	_cached_index = -1
 
+	# **No frame rate is resolved here any more, and none is published.** This
+	# scan used to carry a rate forward from a literal 15.0 and hand it to every
+	# frame as `fps`, which made the number a fabrication twice over: a movie
+	# whose score never writes a tempo got the decoder's own guess reported as its
+	# rate — 56 of Piposh 1's 99 scores, every one of them stating 2-12 in its
+	# config — and the carry-forward applied D6's numbering to whatever version
+	# the movie was in. `director_frame_clock.gd` resolves the rate now, from the
+	# raw cell and the file version, and it is the only thing that does; a decoder
+	# that also published an answer was a second source for one fact, and the
+	# second source was the wrong one.
 	var at := header_len
 	var limit: int = min(stream.size(), stream_size if stream_size > 0 else stream.size())
-	# Director's default until a frame writes a tempo. Starting at zero made
-	# every frame before the first tempo report 0 fps, and six movies in this
-	# game never set one at all, so they reported 0 for their whole length.
-	var carried_fps := 15.0
 	while at + 2 <= limit:
 		var frame_size := _u16(stream, at)
 		if frame_size == 0:
@@ -240,9 +286,6 @@ func _read_frames(stream: PackedByteArray) -> bool:
 		if not _apply(stream, at, buffer):
 			error = "frame %d writes outside the channel buffer" % index
 			return false
-		if buffer[54] == TEMPO_SET_FPS:
-			carried_fps = float(buffer[53])
-		_fps.append(carried_fps)
 		if index % KEYFRAME_INTERVAL == 0:
 			_keyframes[index] = buffer.duplicate()
 		at += frame_size
@@ -296,6 +339,30 @@ func _buffer_at(index: int) -> PackedByteArray:
 	for i in range(from, index + 1):
 		_apply(_stream, _frame_at[i], buffer)
 	return buffer
+
+
+## Frame N's tempo cell and its operand, as `(cell, operand)`, without decoding
+## anything else about the frame.
+##
+## The raw pair, not a meaning: what the cell means needs the file version, and
+## the two callers that want it want different halves — `director_frame_clock.gd`
+## resolves the rate from it and `tools/movie_tempo.gd` checks that resolution
+## against the whole corpus.
+##
+## It exists because `frame()` is the wrong shape for the question. Reading two
+## bytes through it costs a full `_snapshot`: up to 150 sprite records decoded
+## into a dictionary each, thrown away unread. `movie_tempo.gd` asks it of every
+## frame of every movie — about 110,000 frames a corpus — and it is in the gate,
+## so that was four to six minutes of every run spent building sprite lists
+## nobody looked at. The buffer replay is the same either way; only the decode is
+## skipped.
+func tempo_at(index: int) -> Vector2i:
+	if index < 0 or index >= _frame_at.size():
+		return Vector2i.ZERO
+	var buffer := _buffer_at(index)
+	if buffer.size() < 55:
+		return Vector2i.ZERO
+	return Vector2i(buffer[54], buffer[53])
 
 
 ## The 288-byte main channel block of frame N, for tools that survey raw bytes.
@@ -430,6 +497,7 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 	# internal script that happens to be numbered 105, silently, and what runs
 	# is a stranger.
 	var script_lib := _u16(buffer, 0)
+	var waits := _tempo_waits(tempo, tempo_cue)
 	var out := {
 		"frame_index": index,
 		"sprites": sprites,
@@ -437,15 +505,22 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		"frame_script_lib": 1 if script_lib == OWN_CAST_LIB or script_lib == 0 else script_lib,
 		"tempo": tempo,
 		"tempo_cue": tempo_cue,
-		"delay_ms": tempo_cue * 1000 if tempo == TEMPO_DELAY else 0,
-		"wait_click": tempo == TEMPO_WAIT_CLICK,
+		"delay_ms": waits["delay_ms"],
+		"wait_click": waits["wait_click"],
 		# 0 when the frame waits for no sound, otherwise the channel it waits on.
-		"wait_sound_channel": _wait_sound_channel(tempo),
+		"wait_sound_channel": waits["wait_sound_channel"],
 		# Which cue point in that sound releases the wait: a 1-based index, or
 		# CUE_NEXT / CUE_END. Signed, because those two are negative and reading
 		# the operand unsigned turns "wait for the end" into cue point 254.
-		"wait_cue": (tempo_cue - 256 if tempo_cue >= 128 else tempo_cue) \
-			if _wait_sound_channel(tempo) > 0 else 0,
+		"wait_cue": waits["wait_cue"],
+		# The sprite channel whose digital video this frame waits for, or 0.
+		# **Decoded and nothing consumes it**: the clock's `enter_frame` reads the
+		# other three waits and not this one, and no member in either corpus is a
+		# digital video for it to wait on. It is here because it is what the cell
+		# means — leaving it undecoded is what made a D6 movie's video wait on
+		# channel 1 read as a *sound* wait on channel 2 below, which is a hold the
+		# playhead would never have been released from.
+		"wait_video_channel": waits["wait_video_channel"],
 		"transition_member": _u16(buffer, 98),
 		# The library the transition member lives in, two bytes ahead of it, the
 		# same pairing the frame script uses. Every one of the five frames in
@@ -458,7 +533,68 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		"palette": _palette_record(buffer),
 		"sound_channels": _sound_channels(buffer),
 	}
-	out["fps"] = _fps[index] if index < _fps.size() else 0.0
+	return out
+
+
+## Everything the tempo cell stops the playhead for, in this movie's convention.
+##
+## One function rather than four expressions inline, because the four answers are
+## a *partition* of one byte: exactly one of them can be non-empty, and working
+## each out separately is how `wait_sound_channel` came to answer 1 for a D6 cell
+## of 135 while `delay_ms` was simultaneously answering 0 for the same byte. The
+## rate is not here — it persists past the frame that sets it, so it belongs to
+## the clock (`rate_from_tempo`) and not to a per-frame decode.
+##
+## The version split is the whole point; see `FILE_VERSION_D6` above for why a
+## byte cannot be read without it. Version 0 means the caller did not say, and is
+## taken as D6-or-later: that is what every container in both corpora here is,
+## and it is what this decoder assumed unconditionally before the split existed,
+## so an un-updated caller keeps exactly the behaviour it had.
+func _tempo_waits(tempo: int, operand: int) -> Dictionary:
+	var out := {
+		"delay_ms": 0, "wait_click": false,
+		"wait_sound_channel": 0, "wait_cue": 0, "wait_video_channel": 0,
+	}
+	if tempo <= 0:
+		return out
+	if file_version != 0 and file_version < FILE_VERSION_D6:
+		# Pre-D6: the byte is the instruction and carries no operand at all, so
+		# `wait_cue` stays 0 — the byte beside it is not a cue index here, and
+		# reading it as one would arm a wait on a cue point the sound has not got.
+		match tempo:
+			TEMPO_D5_WAIT_CLICK:
+				out["wait_click"] = true
+			TEMPO_D5_WAIT_SOUND_1:
+				out["wait_sound_channel"] = 1
+			TEMPO_D5_WAIT_SOUND_2:
+				out["wait_sound_channel"] = 2
+			_:
+				if tempo >= TEMPO_D5_DELAY_FIRST:
+					out["delay_ms"] = (256 - tempo) * 1000
+				elif tempo >= TEMPO_D5_VIDEO_FIRST:
+					out["wait_video_channel"] = tempo - TEMPO_D5_VIDEO_CHANNEL_BIAS
+				# 1-120 is the frame rate, which the clock takes; anything left
+				# over is a cell this decoder has no meaning for, and saying
+				# nothing is the honest answer to it.
+		return out
+	match tempo:
+		TEMPO_SET_FPS:
+			pass # A rate, and the clock's business.
+		TEMPO_DELAY:
+			out["delay_ms"] = operand * 1000
+		TEMPO_WAIT_CLICK:
+			out["wait_click"] = true
+		TEMPO_WAIT_SOUND_1, TEMPO_WAIT_SOUND_2:
+			out["wait_sound_channel"] = 1 if tempo == TEMPO_WAIT_SOUND_1 else 2
+			# Signed: -1 is "the next cue" and -2 "the end of the sound", and
+			# reading the operand unsigned turns the second into cue point 254.
+			out["wait_cue"] = operand - 256 if operand >= 128 else operand
+		_:
+			# From D6 on **every other non-zero cell** waits for the digital video
+			# in the sprite channel it numbers. 134 and 135 land here, and that is
+			# the fix: they were being read as this format's sound waits, which
+			# they are only in the format before it.
+			out["wait_video_channel"] = tempo
 	return out
 
 
@@ -518,18 +654,6 @@ func _palette_record(buffer: PackedByteArray) -> Dictionary:
 		"frame_count": _u16(buffer, PALETTE_AT + 8),
 		"cycle_count": _u16(buffer, PALETTE_AT + 10),
 	}
-
-
-## Which sound channel a wait-for-sound tempo names, or 0 for any other tempo.
-## Both numberings answer here rather than the caller having to know which
-## authoring version wrote the movie.
-static func _wait_sound_channel(tempo: int) -> int:
-	match tempo:
-		TEMPO_WAIT_SOUND_1, TEMPO_WAIT_SOUND_1_D5:
-			return 1
-		TEMPO_WAIT_SOUND_2, TEMPO_WAIT_SOUND_2_D5:
-			return 2
-	return 0
 
 
 ## The two score sound channels, as `{channel, cast_lib, cast_id}` for whichever

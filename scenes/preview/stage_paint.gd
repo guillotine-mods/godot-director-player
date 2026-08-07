@@ -146,8 +146,15 @@ static func draw_overlays(host, frame: Dictionary, stage: Vector2i,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.9)
 	)
 	var marker: String = host._labels.marker_at(host._index) if host._labels != null else ""
+	# The rate is read off the clock, which is the only thing that resolves one.
+	# It used to come from the frame dictionary, where `director_score.gd`
+	# published a number it carried forward from a hardcoded 15 — so a movie that
+	# writes no tempo, of which Piposh 1 has 56, read out at 15 on the HUD while
+	# playing at the 2-12 its config states. The decoder no longer answers that
+	# question at all; see `director_score.gd:_read_frames`.
+	var rate: float = host._clock.fps if host._clock != null else 0.0
 	var hud := "frame %d/%d  %s  fps %.0f  hit:%s  cur:%s%s" % [
-		host._index, host._score.frame_count - 1, marker, frame.get("fps", 0.0),
+		host._index, host._score.frame_count - 1, marker, rate,
 		"art" if host._hit_pixels else "rect", host._cursor_now,
 		"  PAUSED" if host._paused else "",
 	]

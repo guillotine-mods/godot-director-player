@@ -452,6 +452,35 @@ var _modal := false
 ## Where `play` came from, so `play done` can return there.
 var _play_stack: Array = []
 
+# --------------------------------------------- frozen Lingo (§6.1 step 18, §9.4)
+#
+# Director does not run the rest of a handler that called `play` or `go`. It
+# stashes it and requeues it later, and the two verbs differ only in where the
+# stash lives and what makes it runnable again: a `go` resumes once the frame it
+# chose has been entered, a `play` resumes at `play done`.
+#
+# The chains are held **here rather than in the interpreter** for one reason:
+# `go to movie` builds a new interpreter inside the very call that froze the
+# handler, so a chain the interpreter owned would be destroyed by the statement
+# that created it. Director keeps frozen states on the window across a movie
+# change for the same reason, and a chain resumed after one runs the old movie's
+# statements against the new movie -- which is what the reference does.
+
+## Handlers stopped at a `go`, oldest first. The next thaw takes the last.
+var _frozen_lingo: Array = []
+## The one handler stopped at a `play`. Director keeps a single slot and warns
+## when a second `play` clobbers it; so does this.
+var _frozen_play: Array = []
+## True when `enterFrame` was what froze. §6.1 bails out of the rest of the tick
+## in that case, so the resume waits for the step that enters the new frame.
+var _enter_frame_froze := false
+## How many handlers may be parked at once. ScummVM stops recursive freezing at
+## depth 2 and calls 64 runaway; the number matters less than there being one,
+## because past the cap the request is *declined* -- the handler runs straight
+## through, exactly as it did before any of this -- rather than parked somewhere
+## nothing will drain.
+const MAX_FROZEN := 8
+
 
 ## A window is the same scene standing up a second movie, configured before it
 ## enters the tree rather than from the command line. Split in
@@ -473,6 +502,21 @@ func _start_lingo(path: String) -> void:
 	Boot.start_lingo(self, path)
 
 
+## The file version a container states, for whoever needs it *before*
+## `preview/movie_session.gd` reads the config into `_config`.
+##
+## The score does: which convention its tempo cell is written in is a property of
+## the movie and nothing in the byte says which, so `DirectorScore.parse` takes
+## the version and the config has to be read first. `movie_session.adopt` reads
+## the same chunk a moment later for the stage rect and the stated rate; a second
+## read of one small chunk is cheaper than reordering the load around it, and
+## much cheaper than a decoder that has to be told its own input's format
+## afterwards.
+func _stated_file_version(container) -> int:
+	var config = Config.new()
+	return int(config.version) if config.read(container) else 0
+
+
 ## Open a container and make it the movie now playing.
 ##
 ## The per-container work is `preview/movie_session.gd`'s and shared with
@@ -488,7 +532,7 @@ func _load_container(path: String) -> bool:
 		_fail("%s has no score" % path)
 		return false
 	_score = Score.new()
-	if not _score.parse(_movie.read_chunk(vwsc[0])):
+	if not _score.parse(_movie.read_chunk(vwsc[0]), _stated_file_version(_movie)):
 		_fail("%s: %s" % [path, _score.error])
 		return false
 	_preloader = Preloader.new(_score)
@@ -525,7 +569,7 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 		_trace("go movie %s -> no score" % name)
 		return
 	var score = Score.new()
-	if not score.parse(next.read_chunk(vwsc[0])):
+	if not score.parse(next.read_chunk(vwsc[0]), _stated_file_version(next)):
 		_trace("go movie %s -> %s" % [name, score.error])
 		return
 
@@ -692,54 +736,150 @@ func _dispatch_cue_passed(channel: int, cue: Dictionary) -> void:
 ## `preview/input_router.gd` had to reach the same conclusion for the F-keys, and
 ## a widget that believed `claimed` would be untypeable in most of this game.
 ##
-## No script in this corpus declares `on keyDown` or `on keyUp` at all, so the
-## suppression arm is written from the reference and is unexercised here.
+## **§8.2's default was inverted here, and that is the second half of this
+## function's history.** A primary handler — `the keyDownScript`, `the
+## keyUpScript`, `when keyDown then` — *passes the event on by default* and has
+## to call `dontPassEvent` to stop it, while every other tier consumes by default
+## and has to call `pass` to continue. The reference queues the whole chain with
+## `passByDefault` true for the primary element and false for the rest
+## (`lingo-events.cpp:486-490`), sets `_passEvent` to that default before each
+## element runs (`:763`), and skips the next element only when the previous one
+## *found a script* and left the flag false (`:756`). This port had the primary
+## handler on the consuming side of an `if`/`else`, so while a `keyDownScript`
+## was installed — which is 46 scripts of Piposh 2, 97 of Rating and 116 of
+## Piposh 1 — `keyDown` never reached a sprite, frame or movie script at all.
+##
+## Unexercised in Piposh 2, which declares no `on keyDown`; **not** unexercised
+## in the corpus: Piposh 1, its English and its Russian build declare 16 each and
+## call `dontPassEvent` 42-44 times, and Rating calls it 9 times. A
+## `dontPassEvent` is a statement about a chain that continues, so the calls are
+## the evidence the chain was wrong even where nothing observable changed.
+## `preview_lingo_host.gd:pass_event` is the flag; the two statements that write
+## it were bound inert until this landed.
 func _dispatch_key(event: InputEventKey) -> bool:
 	if not _lingo_on or _interpreter == null or _host == null:
 		return false
-	var script_name := str(_host.key_down_script).strip_edges()
 	_host.key_code = Keys.code_for(event)
 	_host.key_char = Keys.char_for(event)
-	# Tier 1 first: a primary handler installed by `when keyDown then` runs ahead
-	# of everything, which is where Director puts it. `strtgame`'s `gomenu` is
-	# nothing but one of these, so without it the intro has no way out.
-	# Typed explicitly: `_interpreter` is untyped, so `:=` has nothing to infer
-	# the return type from and the file will not compile.
-	var claimed: bool = _interpreter.run_primary("keydown")
-	if claimed:
-		_tally(_ran, "when keyDown")
-	# Whether a script took responsibility for the *character*. Deliberately not
-	# `claimed`: a tier-1 primary handler passes by default (§8.2), and this
-	# port's `claimed` from a `keyDownScript` is not evidence the movie wanted the
-	# key at all. Only a sprite-level `keyDown` suppresses typing.
-	var typed_away := false
-	# §8.3: the focused sprite, or the frame when nothing holds focus. A sprite
-	# script is reachable by a keypress only through this line.
-	var focus_channel: int = TextFocus.arbitrate(self)
-	if script_name != "" and _interpreter.has_handler(script_name.to_lower()):
-		_tally(_sent, "keyDownScript:%s" % script_name)
-		_tally(_ran, "keyDownScript:%s" % script_name)
-		_interpreter.call_handler(script_name)
-		claimed = true
-	else:
-		var owner: Dictionary = _sprite_script(focus_channel, _index) \
-			if focus_channel > 0 else {}
-		typed_away = not owner.is_empty() \
-			and bool(_interpreter.call("_script_has_handler", owner, "keydown"))
-		if typed_away:
-			_tally(_sent, "keyDown:ch%d" % focus_channel)
-		# A sprite-level `keyDown` that ran is Director's "handled, do not type
-		# it" -- the documented way a field validates its own input.
-		_dispatch("keyDown", owner if typed_away else _frame_script(_index))
-		claimed = claimed or typed_away
-	# The widget last. `arbitrate` above has already run, so focus is current for
-	# the key being delivered rather than for the frame before it.
-	if not typed_away and TextFocus.key(self, event):
+	var claimed := _dispatch_key_event("keyDown", str(_host.key_down_script))
+	# The widget last, and only if no sprite-level handler answered. The focus
+	# arbitration inside `_dispatch_key_event` has already run, so focus is
+	# current for the key being delivered rather than for the frame before it.
+	if not _typed_away and TextFocus.key(self, event):
 		claimed = true
 	# Nothing is cleared here. See the note above: `the key` and `the keyCode`
 	# hold the last key pressed until the next one, which is what every script
 	# that polls them from `exitFrame` or `idle` is reading.
 	queue_redraw()
+	return claimed
+
+
+## The release. `the keyUpScript` and `on keyUp`, §8.1 and §8.2, and the exact
+## mirror of the press bar three things.
+##
+## **`the key` and `the keyCode` are not touched.** The reference's `EVENT_KEYUP`
+## arm sets `_keyFlags` and dispatches, and nothing else (`events.cpp:378-381`);
+## only `EVENT_KEYDOWN` writes the pair. So a `keyUp` handler asking `the keyCode`
+## reads the key that went *down*, which is exactly what makes Rating's
+## `normalkeysx` work — it is a `keyUpScript` whose whole body tests
+## `the keyCode = 109`.
+##
+## **No widget arm.** Typing happens on the press; a release that reached
+## `TextFocus.key` would type every character twice.
+##
+## **No debug binding arm** — `preview/input_router.gd` offers the release to the
+## movie only. A preview command that also ran on the release would toggle itself
+## back on every press.
+##
+## **Measured, and it is not this title's need.** `tools/key_script_survey.gd --
+## --all`: `the keyUpScript` is set at 195 sites in Piposh Dream and 10 in
+## Rating, and at 0 in Piposh 2 — the title this port was built on, which is why
+## the whole release half was missing. `ARCADE1.dir` member 20's
+## `set the keyUpScript to "normalkeysx"` is the handler that leaves a timed
+## scene, so those rooms had no key exit however free F10 was made.
+func _dispatch_key_up(event: InputEventKey) -> bool:
+	if not _lingo_on or _interpreter == null or _host == null:
+		return false
+	# The event carries the key that was released; it is deliberately not stored.
+	# Named rather than `_` so the signature says what a caller must hand over.
+	var _released := event
+	var claimed := _dispatch_key_event("keyUp", str(_host.key_up_script))
+	queue_redraw()
+	return claimed
+
+
+## Whether the last key event was consumed by a *sprite-level* handler, which is
+## Director's "handled, do not type it". Set by `_dispatch_key_event` and read by
+## `_dispatch_key` on the line after, rather than returned, because the return
+## value answers a different question — whether any script took the key at all,
+## which a `keyDownScript` says yes to for every key it ignores.
+var _typed_away := false
+
+
+## One key event down §8.2's chain: primary handler, then sprite, cast, frame and
+## movie scripts, with the pass flag deciding whether the second half runs.
+##
+## Shared by the press and the release because Director's queue is: the reference
+## builds both from the same `case kEventKeyUp: case kEventKeyDown:` arms, with
+## the same primary-handler push and the same fall-through to
+## sprite → cast → frame → movie.
+##
+## `primary_name` is the handler name `the keyDownScript` / `the keyUpScript`
+## holds. This port stores a *name* where Director stores a string of Lingo
+## source compiled on assignment; `preview_lingo_host.gd:set_system_prop` records
+## why, and every site in either corpus assigns a name.
+func _dispatch_key_event(handler: String, primary_name: String) -> bool:
+	var script_name := primary_name.strip_edges()
+	var event_key := handler.to_lower()
+	_typed_away = false
+	# §8.3: the focused sprite, or the frame when nothing holds focus. A sprite
+	# script is reachable by a key event only through this line. Arbitrated before
+	# anything runs, so a handler that changes focus does not redirect its own
+	# event.
+	var focus_channel: int = TextFocus.arbitrate(self)
+
+	# ------------------------------------------------------- tier 1, pass by default
+	# A primary handler installed by `when keyDown then` runs ahead of everything,
+	# which is where Director puts it. `strtgame`'s `gomenu` is nothing but one of
+	# these, so without it the intro has no way out. Typed explicitly:
+	# `_interpreter` is untyped, so `:=` has nothing to infer the return type from
+	# and the file will not compile.
+	var claimed := false
+	var pass_on := true
+	_host.pass_event = true
+	var fired: bool = _interpreter.run_primary(event_key)
+	if fired:
+		_tally(_ran, "when %s" % handler)
+		claimed = true
+		pass_on = bool(_host.pass_event)
+	if script_name != "" and _interpreter.has_handler(script_name.to_lower()):
+		var tag := "%sScript:%s" % [handler, script_name]
+		_tally(_sent, tag)
+		_tally(_ran, tag)
+		# Reset per element, not once per event: two primary handlers both pass
+		# by default, and the second must not inherit the first's `dontPassEvent`.
+		_host.pass_event = true
+		_interpreter.call_handler(script_name)
+		claimed = true
+		pass_on = bool(_host.pass_event)
+
+	# ------------------------------------------- the rest, consuming by default
+	# Reached unless a primary handler said `dontPassEvent`. This is the arm the
+	# inverted default cut off entirely.
+	if pass_on:
+		var owner: Dictionary = _sprite_script(focus_channel, _index) \
+			if focus_channel > 0 else {}
+		_typed_away = not owner.is_empty() \
+			and bool(_interpreter.call("_script_has_handler", owner, event_key))
+		if _typed_away:
+			_tally(_sent, "%s:ch%d" % [handler, focus_channel])
+		# A sprite-level handler that ran is Director's "handled, do not type it"
+		# -- the documented way a field validates its own input. With no focused
+		# sprite the message starts at the frame script, and `Scripts.dispatch`
+		# carries it on to the movie scripts.
+		_host.pass_event = false
+		_dispatch(handler, owner if _typed_away else _frame_script(_index))
+		claimed = claimed or _typed_away
 	return claimed
 
 
@@ -981,7 +1121,47 @@ func _process(delta: float) -> void:
 	# cursor included. Ahead of the tick because the reference puts it there,
 	# before the playhead can move out from under it.
 	Interaction.within(self)
-	FrameLoop.tick(self, delta)
+	FrameLoop.tick(self, _fast_forward_delta(delta))
+
+
+## The fast-forward toggle's rate, in frames per second; 0 when it is off.
+## `preview/input_router.gd` flips it, `preview/debug_keys.gd` reads the number
+## out of `director_game.cfg`, and the line above is the whole of its effect.
+var _fast_forward_fps := 0.0
+
+
+## Real seconds in, *score* seconds out.
+##
+## **Why the delta and not the clock's `fps`.** The rate has exactly one carrier
+## and it is `director/director_frame_clock.gd:fps`, which every frame carrying a
+## tempo cell overwrites (`_take_rate`). Forcing 60 into it would survive until
+## the next tempo cell and no longer, so the fast-forward would switch itself off
+## somewhere in the middle of a movie and look like a bug in the toggle. Scaling
+## the time the clock is *told about* leaves the score's own rate intact and is
+## exact: the clock steps once per `1/fps` of the seconds it is handed, so
+## handing it `target/fps` times as many makes it step `target` times a second
+## whatever the score asked for.
+##
+## It scales the holds with it, and that is wanted rather than tolerated: a
+## `delay` and a transition are both counted down in `tick` off the same delta,
+## and a fast-forward that ran the frames faster but still sat out every
+## two-second tempo delay would barely be faster at all -- this corpus spends
+## 74 s in tempo delays across thirty-six frames. Sound is the exception and
+## cannot be otherwise: the mixer runs on the audio server's clock, so a
+## `soundBusy` wait still takes as long as the sound does.
+##
+## `director_frame_clock.gd:MAX_CATCHUP_STEPS` caps one tick at four score steps,
+## so the ceiling is four times the engine's own frame rate however high the
+## configured number is. That is a real limit and not worth removing here: the
+## clock is another agent's file this week, and 60 fps against a 60 Hz process
+## loop is one step per tick.
+func _fast_forward_delta(delta: float) -> float:
+	if _fast_forward_fps <= 0.0:
+		return delta
+	var rate := float(_clock.fps)
+	if rate <= 0.0:
+		return delta
+	return delta * (_fast_forward_fps / rate)
 
 
 func _sync_frame_entry() -> void:
@@ -993,7 +1173,68 @@ func _begin_transition(frame: Dictionary) -> bool:
 
 
 func _advance() -> Dictionary:
-	return FrameLoop.advance(self)
+	_enter_frame_froze = false
+	var stepped: Dictionary = FrameLoop.advance(self)
+	# §6.1 step 18. The step has entered its frame, run `prepareFrame` and
+	# `enterFrame`, and drawn; whatever a `go` earlier in it froze is now runnable,
+	# because the frame that `go` chose is the one on screen. An `exitFrame`
+	# handler that ends `go("b") / <more>` therefore runs `<more>` on b, which is
+	# the whole point.
+	#
+	# The exception is `enterFrame` itself: the reference bails out of the rest of
+	# the tick when *that* freezes, because the frame its `go` chose has not been
+	# entered yet. Resuming here would run the tail against the frame the handler
+	# was already leaving.
+	if not _enter_frame_froze:
+		_thaw_lingo()
+	return stepped
+
+
+## Whether another handler may be parked (§6.1 step 18).
+##
+## No is not a failure: a declined freeze runs the handler straight through, the
+## way every one of them ran before this existed. Yes to a `play` always, because
+## Director's play slot is a single buffer that a second `play` overwrites --
+## clobbering it is the reference's own behaviour and it warns rather than
+## refusing.
+func lingo_accepts_freeze(kind: String) -> bool:
+	if kind == "play":
+		return true
+	if _frozen_lingo.size() >= MAX_FROZEN:
+		_trace("freeze declined: %d handlers already parked" % _frozen_lingo.size())
+		return false
+	return true
+
+
+## Take a suspended handler off the interpreter.
+func lingo_park_state(chain: Array, kind: String) -> void:
+	if kind == "play":
+		if not _frozen_play.is_empty():
+			# The reference warns here too, and it is worth a trace line rather
+			# than a silent overwrite: it means a second `play` started before the
+			# first one's `play done`, and the first handler's tail is now lost.
+			_trace("play froze over a handler still parked")
+		_frozen_play = chain
+		return
+	_frozen_lingo.append(chain)
+
+
+## Run whatever is waiting, newest first, until one freezes again.
+##
+## Stopping at the first re-freeze is not an optimisation. A handler ending in
+## `go` freezes, is resumed, and freezes again — so a loop that kept going would
+## run a room's whole hold cycle inside one step, at whatever rate the CPU
+## allows, and the score would stop pacing anything.
+func _thaw_lingo() -> void:
+	if _interpreter == null:
+		return
+	for _i in MAX_FROZEN + 1:
+		if _frozen_lingo.is_empty():
+			return
+		var before := _frozen_lingo.size()
+		_interpreter.resume_chain(_frozen_lingo.pop_back())
+		if _frozen_lingo.size() >= before:
+			return
 
 
 ## Send `enterFrame`, or owe it until the frame has finished arriving.
@@ -1008,7 +1249,12 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 	if _clock.holding_transition():
 		_pending_enter = script
 		return
+	var parked := _frozen_lingo.size()
 	_dispatch("enterFrame", script)
+	# Recorded rather than acted on, because the decision belongs to the step and
+	# this is called from inside one. §6.1: a freeze here ends the tick, so the
+	# handler waits for the step that enters the frame its `go` chose.
+	_enter_frame_froze = _frozen_lingo.size() > parked
 
 
 ## Input, delegated to `preview/input_router.gd`. The routing decisions live
@@ -1041,8 +1287,14 @@ func _input(event: InputEvent) -> void:
 		TextFocus.drag(self, at)
 		InputRouter.mouse_motion(self, at)
 		return
-	if not (event is InputEventKey and event.pressed):
+	if not (event is InputEventKey):
 		return
+	# **The release is an event too** (§8.1: `keyUp`, D4). This line used to read
+	# `and event.pressed`, so every key-up in the engine was dropped one call
+	# before the router and `the keyUpScript` could not have worked whatever else
+	# was built -- 205 sites across the corpus set one. The router decides what
+	# the two halves reach; a release is offered to the movie and never to the
+	# preview's own bindings.
 	InputRouter.key_event(self, event as InputEventKey)
 
 
@@ -2009,8 +2261,21 @@ func lingo_play_push(args: Array) -> void:
 		lingo_go_frame(int(where) - 1)
 
 
-## `play done` â€” return to whatever called `play`.
+## `play done` â€” return to whatever called `play`, and let that handler finish.
+##
+## Two returns, not one, and the second is the one this port was missing. The
+## playhead goes back to the frame `play` left, and the *handler* that called
+## `play` -- parked since, mid-statement -- becomes runnable again (§9.4,
+## `Window::requeueLingoPlayState`). In Rating's dialogue that handler's next
+## statement is the `go` that leaves the conversation, so without the requeue the
+## playhead returns to the dialog frame and the option can be clicked for ever.
+##
+## Requeued rather than resumed here: the handler that wrote `play done` is
+## itself still running, and Director refuses to thaw into a live call stack. The
+## next step picks it up, which is also what puts the frame `play done` chose on
+## screen before the trailing `go` overrides it.
 func lingo_play_done() -> void:
+	_requeue_play_state()
 	if _play_stack.is_empty():
 		_held = true
 		return
@@ -2026,6 +2291,24 @@ func lingo_play_done() -> void:
 	if not _in_exit_frame:
 		_jump_queued = true
 	queue_redraw()
+
+
+## Make the handler a `play` parked runnable again.
+##
+## Inserted at the *bottom* of the queue, matching `Window::requeueLingoPlayState`:
+## anything frozen since the `play` is nearer the surface and finishes first.
+## With one `play` outstanding -- which is every case in both corpora -- the queue
+## is empty and the distinction never shows.
+##
+## Called for every `play done`, including the ones with an empty play stack: a
+## handler can be parked by a `play` whose movie stack entry has since been
+## consumed, and leaving it parked is the shape of hang this whole mechanism has
+## to avoid.
+func _requeue_play_state() -> void:
+	if _frozen_play.is_empty():
+		return
+	_frozen_lingo.insert(0, _frozen_play)
+	_frozen_play = []
 
 
 ## The `cursor` builtin: `cursor N`, `cursor 0`, `cursor [dataMember, maskMember]`.

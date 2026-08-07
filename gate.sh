@@ -39,8 +39,25 @@ import sys,re
 s=open('director_game.cfg').read()
 open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\"' % sys.argv[1], s, count=1, flags=re.M))" "$ROOT"
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo"
-for t in ${@:-$ALL}; do
+ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
+# A name given on the command line picks up the arguments its ALL entry carries.
+# Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
+# which is not the subject it was written for -- it reported FAIL twice for that
+# reason and both times the harness was fine. A harness silently losing its
+# subject is the same class of fault as one passing with zero checks.
+WANTED=""
+for name in "$@"; do
+  case "$name" in
+    *:*) WANTED="$WANTED $name" ;;
+    *)   match=""
+         for entry in $ALL; do
+           case "$entry" in "$name"|"$name":*) match="$entry"; break ;; esac
+         done
+         WANTED="$WANTED ${match:-$name}" ;;
+  esac
+done
+
+for t in ${WANTED:-$ALL}; do
   extra=""
   case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
   out=$(timeout ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- $extra 2>&1)

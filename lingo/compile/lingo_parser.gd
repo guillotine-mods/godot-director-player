@@ -578,10 +578,27 @@ func _parse_put() -> Dictionary:
 	return {"node": "put", "mode": mode, "value": value, "target": target, "line": line}
 
 
+## `set <place> to <value>` and `set <place> = <value>`, which Director accepts
+## interchangeably.
+##
+## The target is parsed above the comparison level for the same reason the bare
+## assignment at `_parse_statement` is: `=` is Lingo's equality operator as well
+## as its assignment operator, and a full-precedence parse of the target swallows
+## it — `set the searchpath = [...]` came back as one comparison expression, the
+## `=` was gone by the time this function looked for it, and the statement failed
+## with "set needs `to`".
+##
+## It fails the *whole script*, not the statement: a handler that will not compile
+## is a handler that never runs, and nothing at run time says so. Piposh 1
+## English lost 27 of `strtgame.dir`'s 75 scripts to this one line — every
+## `option1`..`option26` frame of the CD-drive probe, which is what sets
+## `cdsavepath`, `soundspathstart` and `gWinDriveLetter` for the rest of the
+## game. The Hebrew and Russian builds of the same title spell every `set` with
+## `to` and lost nothing, which is why it took a third localisation to surface.
 func _parse_set() -> Dictionary:
 	var line := _ln()
 	_advance() # set
-	var target := _parse_expr()
+	var target := _parse_expr(Grammar.NO_COMPARISON)
 	if not (_eat_kw("to") or _eat_op("=")):
 		return _fail("set needs `to`", _ln())
 	var value := _parse_expr()
@@ -786,11 +803,40 @@ func _parse_primary() -> Dictionary:
 		# a newline means a bare variable reference instead.
 		if command_head or _starts_command_args():
 			var args: Array = []
+			# A command's own keyword is a keyword wherever it stands, including
+			# immediately before `(`. Lingo has no `movie()`, `frame()` or
+			# `window()` function for it to be mistaken for, so the parenthesis
+			# after one opens either a grouped expression — `go to movie
+			# (cdsavepath & "opening.dxr")` — or the command's arguments written in
+			# call form. Both are handled below; treating the word as a callee
+			# instead produced `go("to", movie(<path>))`, in which nothing looks
+			# like a movie and no `movie` keyword survives, so `_go` fell through to
+			# its marker branch, found no marker of that name and parked the
+			# playhead on frame 0 with the music still running. That is
+			# `strtgame.dir`'s Start Game button in Piposh 1 English: measured with
+			# the old reading it lands on frame 0 of the movie it is already in,
+			# with the button's `sound playFile` still running — "the music plays
+			# and the scene never changes" — and with the new one it opens
+			# `Opening.dir`, which is what the Hebrew build (spelt `go(1, …)`, so
+			# never affected) has always done.
+			#
+			# The `window` sites in the same corpus are the other half of the same
+			# misparse and are **not** behaviourally broken, measured the same way:
+			# `open window (…)` mis-read as `open(window(…))` happens to land on a
+			# binding that means the same thing. They are fixed here because the
+			# parse was wrong, not because anything visible was.
 			while (keywords != null and (_k() == "ident" or _k() == "kw")
-					and keywords.has(_v().to_lower()) and not _at_op("(", 1)):
+					and keywords.has(_v().to_lower())):
 				args.append({"node": "str", "value": _advance(), "line": line})
 			if not (not args.is_empty() and (_k() == "nl" or _k() == "eof")):
-				if not args.is_empty() and not _at_op(","):
+				if not args.is_empty() and _at_op("(") and _paren_holds_arg_list():
+					# `sound playFile(1, x)` — the call spelling of the command form.
+					# Told apart from a grouped first argument by a comma at the
+					# group's own depth, because `(a & b)` and `(a, b)` are different
+					# statements and the parenthesis alone cannot say which.
+					for a in _parse_call_args():
+						args.append(a)
+				elif not args.is_empty() and not _at_op(","):
 					args.append(_parse_expr())
 				elif args.is_empty():
 					args.append(_parse_expr())
@@ -806,6 +852,34 @@ func _parse_primary() -> Dictionary:
 			}
 		return {"node": "var", "name": name_text, "line": line}
 	return _fail("unexpected %s" % JSON.stringify(_v()), line)
+
+
+## Does the parenthesised group the cursor is sitting on hold a comma of its own?
+##
+## Only the group's own depth counts: `(marker(0), 1)` is an argument list and
+## `(f(a, b) & c)` is one expression, and a scan that did not track depth would
+## call both the same. A group that runs to the end of the line without closing
+## is not an argument list either — the caller then parses it as an expression
+## and the missing `)` is reported there, where the error has the right line.
+func _paren_holds_arg_list() -> bool:
+	var depth := 0
+	var ahead := 0
+	while true:
+		var kind := _k(ahead)
+		if kind == "eof" or kind == "nl":
+			return false
+		if kind == "op":
+			var op := _v(ahead)
+			if op == "(" or op == "[":
+				depth += 1
+			elif op == ")" or op == "]":
+				depth -= 1
+				if depth <= 0:
+					return false
+			elif op == "," and depth == 1:
+				return true
+		ahead += 1
+	return false
 
 
 func _starts_command_args() -> bool:

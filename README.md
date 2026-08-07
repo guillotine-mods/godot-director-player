@@ -242,12 +242,22 @@ The Lingo compiler and interpreter have their own set, all pass/fail, all
 checked against `docs/LINGO_SURFACE.md`:
 
 ```
+godot --headless --script tools/script_compile_check.gd     # every script in the whole game compiles, and no command keyword parsed as a call
 godot --headless --script tools/lingo_parse.gd -- --file PIP2DATA/DAY1.DIR   # every script in a container compiles
 godot --headless --script tools/lingo_compile_check.gd -- --file PIP2DATA/DAY1.DIR  # ASTs against the committed ones
 godot --headless --script tools/lingo_builtins_check.gd     # the engine-free builtins, §1
 godot --headless --script tools/lingo_logic_check.gd        # `and`/`or` evaluate both operands, §13/§17
 godot --headless --script tools/lingo_designator_check.gd   # designator suffixes survive the parser, §16.4
 ```
+
+`script_compile_check.gd` is the corpus-wide one and the one to reach for first
+when a title misbehaves: `lingo_parse.gd` asks the same question of a single
+container, which is the wrong scale for a failure that is invisible from inside
+the game. A script that does not compile is a handler that never runs and
+nothing at run time says so. It reports 3,307 of 3,307 on Piposh 2 and 16
+failures on each Piposh 1 localisation (`bugs.md` 39); pointed at
+`--root piposh-en` before the parser fix that shipped with it, it reported 43,
+of which 27 were one spelling that killed that build's whole CD-drive probe.
 
 `lingo_compile_check.gd` **cannot do its job right now, and reports PASS anyway.**
 It diffs the compiler's output against ASTs committed under `data/lingo/`, which

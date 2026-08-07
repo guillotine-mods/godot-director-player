@@ -107,8 +107,14 @@ func _init() -> void:
 	var frame: Dictionary = score.frame(index)
 	print("seek       : %.1f ms" % ((Time.get_ticks_usec() - seek_started) / 1000.0))
 	print("")
-	print("frame %d  (%s)  fps %.0f  script %s%s%s" % [
-		index, labels.marker_at(index), frame["fps"],
+	# The raw tempo cell and its operand, not a resolved rate. `director_score.gd`
+	# used to publish an `fps` it had carried forward from a hardcoded 15, so this
+	# line reported 15 for every movie that never writes a tempo; resolving the
+	# cell needs the movie's file version and belongs to `director_frame_clock.gd`,
+	# which is what `tools/movie_tempo.gd` checks. Printing the byte is what a
+	# dump of one frame can honestly say.
+	print("frame %d  (%s)  tempo %d/%d  script %s%s%s" % [
+		index, labels.marker_at(index), int(frame["tempo"]), int(frame["tempo_cue"]),
 		str(frame["frame_script"]),
 		"  wait-click" if frame["wait_click"] else "",
 		("  delay %dms" % frame["delay_ms"]) if int(frame["delay_ms"]) > 0 else "",

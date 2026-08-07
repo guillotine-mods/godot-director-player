@@ -99,9 +99,21 @@ func _replay(score, stated: int, file_version: int) -> Dictionary:
 	var writes_a_rate := false
 	var before_first := 0
 	for i in score.frame_count:
-		var frame: Dictionary = score.frame(i)
-		var tempo := int(frame.get("tempo", 0))
-		var cue := int(frame.get("tempo_cue", 0))
+		# The tempo cell alone, not the whole decoded frame. `score.frame(i)`
+		# builds up to 150 sprite dictionaries to answer a question about two
+		# bytes, and this loop runs over every frame of every movie -- about
+		# 110,000 a corpus, four to six minutes of a gate run spent on sprite
+		# lists nothing here looks at. `tempo_at` replays the same buffer and
+		# skips the decode.
+		#
+		# What `enter_frame` is handed is therefore the cell and nothing else.
+		# That is the whole of its input for the rate, which is what this harness
+		# measures; the holds it also arms -- delay, wait-for-click, wait-for-sound
+		# -- do not move `fps`, and no time is advanced here for them to matter to.
+		var cell: Vector2i = score.tempo_at(i)
+		var tempo := cell.x
+		var cue := cell.y
+		var frame := {"tempo": tempo, "tempo_cue": cue}
 		var named := _rate_named_by(tempo, cue, file_version)
 		if not writes_a_rate and named <= 0.0:
 			before_first += 1
@@ -171,7 +183,10 @@ func _init() -> void:
 		var ids: Array = f.ids_of("VWSC")
 		if not ids.is_empty():
 			var score = Score.new()
-			if score.parse(f.read_chunk(int(ids[0]))) and score.frame_count > 0:
+			# The version goes in with the payload: it is what tells the decoder
+			# which convention the tempo cell is written in, and half of what it
+			# decodes about that cell is wrong without it.
+			if score.parse(f.read_chunk(int(ids[0])), file_version) and score.frame_count > 0:
 				with_score += 1
 				var played := _replay(score, stated, file_version)
 				var rates: Dictionary = played["rates"]
@@ -323,14 +338,13 @@ func _trace(name: String, config, has_config: bool, score, played: Dictionary) -
 	var lines: Array[String] = []
 	var last := -1
 	for i in score.frame_count:
-		var frame: Dictionary = score.frame(i)
-		var tempo := int(frame.get("tempo", 0))
+		var cell: Vector2i = score.tempo_at(i)
+		var tempo := cell.x
 		if tempo == 0 or tempo == last:
 			last = tempo
 			continue
 		last = tempo
-		lines.append("      frame %d: cell %d, operand %d"
-			% [i, tempo, int(frame.get("tempo_cue", 0))])
+		lines.append("      frame %d: cell %d, operand %d" % [i, tempo, cell.y])
 	if lines.is_empty():
 		print("  tempo : no frame sets one, so the whole movie plays at %.0f fps"
 			% float(played["first_rate"]))
