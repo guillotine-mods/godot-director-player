@@ -1,8 +1,10 @@
 # Working on this port
 
-Godot 4.7 port of Piposh 2, a Macromedia Director game. The decompiled original is
-in `reference/lingo/`, its decoded score and art in `assets/render_model/`, and it is
-the reference for every behavioural question.
+Godot 4.7 general Macromedia Director engine, reading original `.dir`/`.cst`
+containers at runtime. It is title-agnostic: `director_game.cfg` names a folder
+under `games/` and a boot movie, and the same engine runs whichever is pointed at.
+The decompiled Lingo of the title it was built on is in `reference/lingo/`, and it
+is the reference for every behavioural question.
 
 Read `docs/ENGINE.md` for how the engine works, `bugs.md` for what is known broken,
 `docs/bugs-closed.md` for what was fixed and what was ruled out along the way, and
@@ -10,6 +12,13 @@ Read `docs/ENGINE.md` for how the engine works, `bugs.md` for what is known brok
 mean either file: resolved entries keep their number and move to the second. The skills in `.claude/skills/` carry
 what the port cost to learn; the one-line descriptions in `README.md` say when each
 applies.
+
+**Start at [`scenes/preview/README.md`](scenes/preview/README.md).** The player is
+a node plus nineteen modules, and that file has a symptom-to-file table — which
+one your bug is in — plus the two conventions the split relies on. Most
+importantly: `tools/` reaches into the preview *by name*, and a field moved off
+the node makes a harness read null and report zero rather than fail. Run
+`tools/preview_surface.gd` before and after anything you move.
 
 ## Standing rules
 
