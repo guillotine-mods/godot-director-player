@@ -34,6 +34,7 @@ const FilmLoop := preload("res://director/director_film_loop.gd")
 
 const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -2237,140 +2238,6 @@ func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionar
 	}
 
 
-## A sprite as it currently stands: the score's record with whatever a script has
-## puppeted onto it. `{}` when a script has hidden it.
-##
-## Every path that asks about a sprite goes through this â€” drawing, hit-testing,
-## `rollOver`. They diverged before: the screen showed the puppeted member while
-## a click was tested against the score's, so a menu button was only clickable
-## where its two states happened to overlap, and moving the mouse made it
-## flicker in and out of reach.
-##
-## Notice a member change on a channel, so a film loop arriving there starts at
-## its first frame rather than resuming wherever the previous one left off. The
-## loop's frame counter is channel state, not member state: two sprites showing
-## the same loop animate independently.
-##
-## This deliberately does *not* adjust the sprite's position. A previous version
-## carried a running per-channel correction for the change in registration
-## anchor across a swap, on the theory that Director shifts the start point so a
-## new offset does not move the sprite. The score changes members on a channel
-## constantly — that is how a walk cycle is authored — and it supplies its own
-## `loc` for each of those members, so the correction was being added on top of a
-## position that was already right, and accumulating. `tools/nudge_drift.gd`
-## measures it: 451px of drift on one DAY1 channel, 9 of 17 channels displaced.
-func _note_member(channel: int, cast_id: int) -> void:
-	if int(_last_member.get(channel, -1)) == cast_id:
-		return
-	_last_member[channel] = cast_id
-	_loop_start[channel] = _ticks
-
-
-func _effective(sprite: Dictionary) -> Dictionary:
-	var channel := int(sprite["channel"])
-	var over: Dictionary = _overrides.get(channel, {})
-	if over.is_empty():
-		return sprite
-	# Puppeting is per field, not per sprite. Director tracks which properties a
-	# script has written and overwrites everything else from the score on every
-	# frame; a sprite is not wholesale handed over because one property was set.
-	#
-	# The distinction matters when the score changes the member underneath: a
-	# script that pinned `locV` once should keep that and still follow the
-	# score's member swaps, where holding the whole record freezes the sprite
-	# against its own animation.
-	if int(over.get("_member", -1)) != int(sprite["cast_id"]) and not over.has("membernum"):
-		# The score moved this channel to a different member and no script
-		# claimed the member. Geometry belongs to the new member, so positional
-		# overrides taken against the old one are stale.
-		#
-		# `visible` is not geometry and does not go with them. It is channel
-		# state, like `the cursor of sprite`: Director does not un-hide a sprite
-		# because the score moved that channel to another member, and a port that
-		# does gets a very specific bug -- a room hides something during its
-		# initialisation and it reappears later, looking like a rendering fault.
-		#
-		# DAY1 is the case that found this. Its `init all` runs as the frame
-		# script on frame 0 and does `sprite(6).visible = 0`, but channel 6 is
-		# *empty* on frame 0, so no member was ever recorded against the
-		# override. The moment channel 6 acquires a member -- at the beach, 37
-		# frames later -- the test below fires and the sprite is un-hidden. The
-		# hide was guaranteed to be discarded before it could ever apply.
-		var kept: Dictionary = {"_member": int(sprite["cast_id"])}
-		if over.has("visible"):
-			kept["visible"] = over["visible"]
-			_overrides[channel] = kept
-		else:
-			_overrides.erase(channel)
-		over = kept
-		if int(LingoValue.to_int(over.get("visible", 1))) == 0:
-			return {}
-		return sprite
-	if int(LingoValue.to_int(over.get("visible", 1))) == 0:
-		return {}
-	var out := sprite.duplicate()
-	for key in ["membernum", "castnum"]:
-		if over.has(key):
-			out["cast_id"] = int(over[key])
-	# Director's `setCast` rule: a member swap replaces the sprite's width and
-	# height with the new member's natural size, unless the stretch flag says the
-	# author deliberately resized this sprite.
-	#
-	# It matters here because the score's width and height describe whatever
-	# member the *score* put on this channel, and a script that swaps the member
-	# leaves them describing the wrong artwork. This game walks its characters
-	# entirely by member swap -- `member("walkright" & syz & x)`, where `syz` is
-	# one of six size tiers and `x` the animation frame -- and never writes a
-	# width or a height anywhere. So without this every frame of the cycle is
-	# squashed into the previous one's rect, which reads as the character
-	# stretching as his arms move, and all six size tiers draw at one size, which
-	# reads as perspective scaling that stopped working.
-	if int(out["cast_id"]) != int(sprite["cast_id"]) and not bool(sprite["stretch"]):
-		var swapped: Dictionary = _table.get_member(
-			int(sprite["cast_lib"]), int(out["cast_id"])
-		)
-		if int(swapped.get("width", 0)) > 0 and int(swapped.get("height", 0)) > 0:
-			out["width"] = int(swapped["width"])
-			out["height"] = int(swapped["height"])
-	# A script that writes `the width of sprite` resizes it. Deliberately without
-	# setting `stretch`: the flag does not mean "is resized", it means "the author
-	# resized this deliberately", and all it governs is whether a cast swap is
-	# allowed to reset the size back to the member's natural one. Forcing it here
-	# changed which branch the drawn size and the texture cache took, for a
-	# property that should only have changed a number.
-	# Coerced through Lingo's own rules rather than GDScript's. A script can
-	# legitimately store VOID here -- `set the locH of sprite 30 to egozh` when
-	# `egozh` has never been set does exactly that -- and `int(null)` is not a
-	# conversion in GDScript, it is a runtime error that aborts whatever is
-	# running. This one aborted `_draw` partway through, every frame, so the
-	# sprites after it in channel order simply vanished. VOID is 0 in Director's
-	# numeric context, which is what `LingoValue.to_int` answers.
-	if over.has("width"):
-		out["width"] = LingoValue.to_int(over["width"])
-	if over.has("height"):
-		out["height"] = LingoValue.to_int(over["height"])
-	if over.has("loch"):
-		out["loc_h"] = LingoValue.to_int(over["loch"])
-	if over.has("locv"):
-		out["loc_v"] = LingoValue.to_int(over["locv"])
-	# `the trails of sprite N` is a real Director property and the only way a
-	# movie can ask for §13's accumulation buffer at runtime; the score's own
-	# trails bit is the other. Merged here so the two arrive at the renderer as
-	# one field and `_draw` has a single thing to test.
-	if over.has("trails"):
-		out["trails"] = LingoValue.to_int(over["trails"]) != 0
-	# `the moveableSprite of sprite N` and the score's own moveable bit are the
-	# same property from two sources, exactly as trails is, and they are merged
-	# here for the same reason. Before this only the Lingo write existed, so a
-	# sprite the author ticked "Moveable" on in the Score window could not be
-	# dragged at all and was not even click-eligible — an authoring-time property
-	# that simply did nothing. 744 of Piposh 1's records set it; Piposh 2 sets it
-	# on none, which is why nothing missed it until a second title was loaded.
-	if over.has("moveable"):
-		out["moveable"] = LingoValue.to_int(over["moveable"]) != 0
-	return out
-
-
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
 ## which is Director's stacking order and therefore its hit order.
 func _channel_at(at: Vector2) -> int:
@@ -3798,44 +3665,23 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 	play_sound_member(ch, int(ref[0]), int(ref[1]))
 
 
+## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
+## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
+func _effective(sprite: Dictionary) -> Dictionary:
+	return SpriteState.effective(sprite, _overrides, _table)
+
+
+func _note_member(channel: int, cast_id: int) -> void:
+	SpriteState.note_member(channel, cast_id, _last_member, _loop_start, _ticks)
+
+
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
-	var over: Dictionary = _overrides.get(channel, {})
-	if over.has(prop):
-		return over[prop]
-	for sprite in _score.frame(_index).get("sprites", []):
-		if int(sprite["channel"]) != channel:
-			continue
-		match prop:
-			"membernum", "castnum":
-				return int(sprite["cast_id"])
-			"loch":
-				return int(sprite["loc_h"])
-			"locv":
-				return int(sprite["loc_v"])
-			"width":
-				return int(sprite["width"])
-			"height":
-				return int(sprite["height"])
-			"visible":
-				return 1
-			"ink":
-				return int(sprite["ink"])
-			"trails":
-				# From the score's own ink byte when no script has written it, so
-				# a movie that reads the property back before setting it gets what
-				# the author put there rather than a default.
-				return 1 if bool(sprite.get("trails", false)) else 0
-	return 0
+	return SpriteState.read_prop(channel, prop, _overrides,
+		_score.frame(_index).get("sprites", []))
 
 
-## `puppetSprite N, FALSE` returns the channel to the score, which means
-## discarding whatever the scripts wrote to it rather than merely stopping.
 func lingo_puppet_sprite(channel: int, on: bool) -> void:
-	if on:
-		if not _overrides.has(channel):
-			_overrides[channel] = {}
-	else:
-		_overrides.erase(channel)
+	SpriteState.set_puppet(channel, on, _overrides)
 
 
 func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
@@ -3848,16 +3694,8 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		_cursor_applied = " "
 		_resolve_cursor()
 		return
-	if not _overrides.has(channel):
-		_overrides[channel] = {}
-	var over: Dictionary = _overrides[channel]
-	over[prop] = value
-	# Which member the override was taken against, so `_effective` can tell a
-	# still-valid puppet from one the score has moved out from under.
-	for sprite in _score.frame(_index).get("sprites", []):
-		if int(sprite["channel"]) == channel:
-			over["_member"] = int(sprite["cast_id"])
-			break
+	SpriteState.write_prop(channel, prop, value, _overrides,
+		_score.frame(_index).get("sprites", []))
 
 
 func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
