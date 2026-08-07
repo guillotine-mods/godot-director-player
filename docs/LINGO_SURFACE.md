@@ -1101,14 +1101,19 @@ Expression node kinds: `num`,
 paragraph enumerates `lingo/lingo_host.gd`'s tables, which are deleted. The live
 host routes sprite properties generically through
 `scenes/preview/sprite_props.gd` into the score record, so the *set* below is not
-the live set in either direction. One concrete difference, of exactly the
-`intersects` shape: **`set the text of member` and `set the editable of member`
-do nothing in the live engine** — `preview_lingo_host.set_member_prop` is `pass`,
-an unreported no-op — while this paragraph lists "Member writes: `editable`,
-`text`" as implemented. No script in this corpus writes either (0 uses in
-`reference/lingo/`), so it bites no room today; it will bite the first title that
-updates on-screen text that way. `put x into field "y"` is a *different* path and
-does work (`set_field`).
+the live set in either direction. One difference has since been closed and is
+worth keeping as a record of the shape: **`set the text of member` and `set the
+editable of member` did nothing in the live engine** —
+`preview_lingo_host.set_member_prop` was a bare `pass`, an *unreported* no-op,
+the worst kind, since an unbound write is at least counted and named — while this
+paragraph listed "Member writes: `editable`, `text`" as implemented off the
+deleted host's tables. Both are bound now
+(`director_preview.gd:lingo_set_member_prop`, §8.4), resolved by member reference
+rather than by name so `member(12, "master").text` reaches the right library,
+with `editable` re-arbitrating focus on the way through. `editable` had five
+sites in this corpus — all in `SAVELOAD.dir`, choosing which save slot is
+typeable — and `text` had none; `put x into field "y"` is a different path and
+always worked (`set_field`).
 
 Sprite reads: `bottom`, `castLibNum`, `castNum`, `constraint`,
 `cursor`, `height`, `ink`, `left`, `locH`, `locV`, `member`, `memberNum`,

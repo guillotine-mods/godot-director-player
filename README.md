@@ -203,6 +203,7 @@ godot --headless --script tools/sprite_size_survey.gd -- --all  # score rect ver
 godot --headless --script tools/tween_survey.gd -- --all  # whether a tweened span carries a value per frame or only keyframes
 godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped sprite is mirrored inside its own rect, pass/fail — NOT --headless
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
+godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
@@ -220,8 +221,8 @@ from offsets already occupied by the cast lib and the width, so flip, blend and
 tweened had all been counted as zero for reasons that had nothing to do with the
 data. It asserts, rather than assuming, that no two decoded fields share a byte.
 
-`stage_clip.gd`, `trails.gd` and `sprite_flip.gd` are the tools here that want to
-run **without** `--headless`. Their other cases work either way, but the ones that
+`stage_clip.gd`, `trails.gd`, `sprite_flip.gd` and `editable_text.gd` are the
+tools here that want to run **without** `--headless`. Their other cases work either way, but the ones that
 matter read the framebuffer back, and headless Godot paints nothing to read. Both
 caught a renderer change that every headless check passed over: the stage clip
 was armed once at startup and Godot reset it on the next repaint, and the trail
@@ -255,7 +256,7 @@ against the container's own scripts. It is still the right *idea* for a parser
 regression gate, which is why it is still here.
 
 `cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `movie_churn.gd`,
-`text_and_shapes.gd`,
+`text_and_shapes.gd`, `editable_text.gd`,
 `stage_clip.gd`, `trails.gd`, `palette_cycle.gd`, `sprite_flip.gd`,
 `sprite_record_bytes.gd`, `sprite_size_survey.gd`, `tween_survey.gd`,
 `drawn_size_stability.gd`,

@@ -11,6 +11,12 @@ extends RefCounted
 ## keyed by the cast's **file**, never by its library number, and the comment
 ## there explains why that distinction is not pedantry.
 ##
+## `paint` also draws the caret and the selection for whichever field holds the
+## active widget (§8.4). Which field that is, and where the caret sits, is
+## `scenes/preview/text_focus.gd`'s decision -- this only draws it, and records
+## it into the paint log so a headless harness can assert an insertion point that
+## is one pixel wide.
+##
 ## The cache and the cast table stay on the node and are passed in, for the same
 ## reason as `sprite_state.gd`: `tools/` reads `_text_drawn` by name.
 
@@ -93,25 +99,76 @@ static func forget(container_path: String, field_text: Dictionary) -> void:
 			field_text.erase(key)
 
 
+## How a selected run is marked. Director's widget inverts the destination; this
+## draws a translucent bar behind the glyphs instead, for the same reason the
+## text is drawn straight rather than inverted through a matte -- there is no
+## destination surface to read here (§13, dirty rects).
+const SELECTION_TINT := Color(0.25, 0.45, 0.95, 0.45)
+
+
 ## Paint a field member's text into `rect` on `canvas`, and return the record of
 ## what was painted.
 ##
 ## The record exists because headless Godot builds the draw list and throws it
 ## away, so there is no painted surface to read back and a harness has no other
 ## way to tell "the text reached the screen" from "the sprite was skipped" --
-## both look like a blank stage.
+## both look like a blank stage. `caret` and `selection` are in it for exactly
+## that reason and are the only way a headless harness can assert where the
+## insertion point went: the caret is a one-pixel bar and reading it back off a
+## framebuffer would be asserting the font.
 ##
 ## What is drawn is legible text in roughly the right place at roughly the right
 ## size and in the member's own colour and alignment. It is not period-accurate
 ## glyph rendering and does not pretend to be; `director/director_text.gd` says
 ## exactly what is and is not reproduced.
+##
+## `focus` is `{}` for every field that does not hold the active widget, which is
+## all of them in most movies -- so the editable path costs one dictionary test
+## on the 11,525 field sprite records that are not being typed into.
 static func paint(canvas: CanvasItem, sprite: Dictionary, member: Dictionary,
-		rect: Rect2, text: String) -> Dictionary:
+		rect: Rect2, text: String, editable: bool = false,
+		focus: Dictionary = {}) -> Dictionary:
 	var style: Dictionary = Text.style_of(member)
+	var caret := Rect2()
+	if not focus.is_empty():
+		var start := int(focus.get("sel_start", 0))
+		var end := int(focus.get("sel_end", 0))
+		# The selection is drawn *under* the glyphs, so the text stays readable.
+		if end > start:
+			_mark_selection(canvas, rect, text, style, start, end)
+		caret = Text.caret_rect(rect, text, style, end)
 	var lines: int = Text.draw(canvas, rect, text, style, Ink.blend_alpha(sprite))
+	if not focus.is_empty() and bool(focus.get("caret_on", false)) and caret.size.y > 0.0:
+		canvas.draw_rect(caret, style["color"], true)
 	return {
 		"member": int(sprite["cast_id"]), "name": str(member.get("name", "")),
 		"text": text, "lines": lines, "rect": rect,
 		"font_size": int(style["font_size"]), "color": style["color"],
 		"align": int(style["align"]),
+		# The editing state, for a harness that cannot read pixels.
+		"editable": editable, "focused": not focus.is_empty(),
+		"caret": caret,
+		"selection": [int(focus.get("sel_start", 0)), int(focus.get("sel_end", 0))],
 	}
+
+
+## Bars behind the selected characters, one per laid-out line the range touches.
+##
+## Per line rather than one rectangle, because a selection that spans a wrap is
+## two disjoint runs on screen and a single box would highlight the whole gap
+## between them.
+static func _mark_selection(canvas: CanvasItem, rect: Rect2, text: String,
+		style: Dictionary, start: int, end: int) -> void:
+	for line_value in Text.layout(rect, text, style):
+		var line: Dictionary = line_value
+		var from: int = int(line["start"])
+		var to: int = from + str(line["text"]).length()
+		var lo: int = maxi(start, from)
+		var hi: int = mini(end, to)
+		if hi <= lo:
+			continue
+		var left: Rect2 = Text.caret_rect(rect, text, style, lo)
+		var right: Rect2 = Text.caret_rect(rect, text, style, hi)
+		canvas.draw_rect(Rect2(left.position,
+			Vector2(maxf(1.0, right.position.x - left.position.x), left.size.y)),
+			SELECTION_TINT, true)

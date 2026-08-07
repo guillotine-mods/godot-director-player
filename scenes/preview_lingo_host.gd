@@ -624,6 +624,15 @@ func get_system_prop(prop: String) -> Variant:
 			return key_code
 		"key":
 			return key_char
+		"selstart", "selend":
+			# §8.4: **movie properties, not field ones.** One range for the whole
+			# movie, pushed into whichever editable text sprite holds focus, which
+			# is why setting `the selStart` before focusing a different field
+			# behaves oddly in real Director. Bound to the widget rather than to
+			# storage so a read after the player has typed answers where the caret
+			# actually is.
+			return preview.lingo_sel_start() if prop.to_lower() == "selstart" \
+				else preview.lingo_sel_end()
 		"keydownscript":
 			return key_down_script
 		"mousedownscript":
@@ -693,6 +702,13 @@ func _ticks_since(when_ms: int) -> int:
 
 func set_system_prop(prop: String, value: Variant) -> void:
 	match prop.to_lower():
+		"selstart", "selend":
+			# The other half of §8.4's selection round-trip. Writable, and both
+			# ends are clamped against the focused field's own length on the way
+			# back out -- a script may legally set a range longer than the text
+			# and Director answers what it can honour.
+			if preview != null:
+				preview.lingo_set_sel(prop.to_lower(), LingoValue.to_int(value))
 		"keydownscript":
 			key_down_script = LingoValue.to_str(value).strip_edges()
 		"mousedownscript", "mouseupscript":
@@ -740,8 +756,27 @@ func get_member_prop(which: Variant, cast: Variant, prop: String) -> Variant:
 	return preview.lingo_member_prop(which, str(cast), prop.to_lower())
 
 
-func set_member_prop(_which: Variant, _cast: Variant, _prop: String, _value: Variant) -> void:
-	pass
+## `member("save1").editable = 1` and `set the text of member "x"`.
+##
+## This was a bare `pass` — an **unreported** no-op, which is the worst shape a
+## gap can take here: an unbound write is counted and named, and this one
+## returned cleanly and did nothing while `docs/LINGO_SURFACE.md` §9.3 listed
+## both properties as implemented. The doc was describing the *retired* renderer's
+## host, which did bind them and has since been deleted.
+##
+## `editable` is the write that was actually being lost: five sites, all in
+## `SAVELOAD.dir`, and they decide which of the eight save slots the player can
+## type a name into. With it dropped the authored flag alone decided, so `save1`
+## was editable for ever and the other seven never — a slot could be chosen and
+## then not named.
+##
+## `text` had 0 sites, and is a second spelling of a path that already worked:
+## `put x into field "y"` goes through `set_field`. Built anyway, because "0 uses
+## in the corpus" is a reason to build something last (`AGENTS.md`).
+func set_member_prop(which: Variant, cast: Variant, prop: String, value: Variant) -> void:
+	if preview == null:
+		return
+	preview.lingo_set_member_prop(which, str(cast), prop.to_lower(), value)
 
 
 ## A sound channel's own properties, `the volume of sound 2` above all.

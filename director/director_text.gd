@@ -3,6 +3,14 @@ extends RefCounted
 ##
 ## Title-agnostic. Nothing here knows what game is loaded.
 ##
+## **`layout` is the piece everything else here is built on**, and it was split
+## out of `draw` rather than added beside it. A caret is a character index and a
+## glyph run is pixels, and the only honest bridge between them is knowing where
+## each drawn line began *in the source string* -- which wrapping destroys unless
+## it is tracked. Two layout functions that disagree by one wrapped line put the
+## caret on the wrong row while the drawn text looks perfectly correct, so the
+## painter, the caret and the click-to-caret mapping all read this one.
+##
 ## **Scope, stated plainly rather than implied.** This draws legible text in
 ## roughly the right place at roughly the right size, in the member's own colour
 ## and alignment. It is *not* period-accurate glyph rendering: Director composed
@@ -71,6 +79,53 @@ static func style_of(member: Dictionary) -> Dictionary:
 	}
 
 
+## Where every line of a field's text lands, before anything is painted.
+##
+## One entry per drawn line: `{"text", "start", "top", "baseline"}`, with `start`
+## the offset of the line's first character **in the whole string**. That last
+## field is what makes a caret possible at all -- a caret is a character index and
+## a glyph run is pixels, and the only honest bridge between them is knowing where
+## each drawn line began in the source.
+##
+## Split out of `draw` rather than added beside it on purpose. Two layout
+## functions that disagree by one wrapped line put the caret on the wrong row and
+## nothing about the drawn text looks wrong, so both the painter and the hit test
+## read this one.
+##
+## Lines that fall past the bottom edge are **not** returned, because Director
+## clips to the box and a caret cannot be placed where no glyph was drawn.
+static func layout(rect: Rect2, text: String, style: Dictionary) -> Array:
+	var out: Array = []
+	var font: Font = ThemeDB.fallback_font
+	if font == null or rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return out
+	var size := int(style.get("font_size", 12))
+	var line_height := int(style.get("line_height", 16))
+	var ascent := int(style.get("ascent", 12))
+	var top := rect.position.y
+	var at := 0
+	# Director's own line breaks first, then wrapping inside each of them. Doing
+	# it in this order matters: a field's text is frequently a record with one
+	# item per line — `empty\nempty\nempty` for an inventory — and wrapping that
+	# as one paragraph would silently merge rows that the scripts index by line.
+	for raw_line in text.split("\n"):
+		for span in _wrap(font, str(raw_line), size, rect.size.x):
+			if top >= rect.position.y + rect.size.y:
+				return out
+			var start := at + int(span[0])
+			out.append({
+				"text": str(span[2]),
+				"start": start,
+				"top": top,
+				"baseline": top + ascent,
+			})
+			top += line_height
+		# +1 for the newline the split consumed. A trailing newline therefore
+		# leaves the caret a row of its own, which is what a text widget does.
+		at += str(raw_line).length() + 1
+	return out
+
+
 ## Draw a field's text into a canvas, inside `rect`.
 ##
 ## `rect` is the sprite's stage rect — the single placement rule of 1.1, with a
@@ -95,52 +150,145 @@ static func draw(canvas: CanvasItem, rect: Rect2, text: String, style: Dictionar
 	if font == null:
 		return 0
 	var size := int(style.get("font_size", 12))
-	var line_height := int(style.get("line_height", 16))
-	var ascent := int(style.get("ascent", 12))
 	var colour: Color = style.get("color", Color.BLACK)
 	colour.a *= clampf(alpha, 0.0, 1.0)
-	var align := int(style.get("align", ALIGN_LEFT))
-	var h_align := HORIZONTAL_ALIGNMENT_LEFT
-	if align == ALIGN_CENTRE:
-		h_align = HORIZONTAL_ALIGNMENT_CENTER
-	elif align == ALIGN_RIGHT:
-		h_align = HORIZONTAL_ALIGNMENT_RIGHT
+	var h_align := h_alignment(style)
 
 	var drawn := 0
-	var y := rect.position.y + ascent
-	# Director's own line breaks first, then wrapping inside each of them. Doing
-	# it in this order matters: a field's text is frequently a record with one
-	# item per line — `empty\nempty\nempty` for an inventory — and wrapping that
-	# as one paragraph would silently merge rows that the scripts index by line.
-	for raw_line in text.split("\n"):
-		for line in _wrap(font, str(raw_line), size, rect.size.x):
-			if y - ascent >= rect.position.y + rect.size.y:
-				return drawn
-			canvas.draw_string(font, Vector2(rect.position.x, y), line,
-				h_align, rect.size.x, size, colour)
-			y += line_height
-			drawn += 1
+	for line_value in layout(rect, text, style):
+		var line: Dictionary = line_value
+		canvas.draw_string(font, Vector2(rect.position.x, float(line["baseline"])),
+			str(line["text"]), h_align, rect.size.x, size, colour)
+		drawn += 1
 	return drawn
 
 
-## Break one authored line at the field's width. Returns at least one entry, so a
+## The member's alignment as Godot spells it.
+static func h_alignment(style: Dictionary) -> int:
+	match int(style.get("align", ALIGN_LEFT)):
+		ALIGN_CENTRE:
+			return HORIZONTAL_ALIGNMENT_CENTER
+		ALIGN_RIGHT:
+			return HORIZONTAL_ALIGNMENT_RIGHT
+	return HORIZONTAL_ALIGNMENT_LEFT
+
+
+## Where a drawn line starts horizontally, which is only `rect.position.x` for a
+## left-aligned field. `draw_string` is given the box width and does the
+## alignment itself, so a caret that assumed the left edge would sit under the
+## wrong character in all 13 of this corpus's centred fields.
+static func line_origin_x(rect: Rect2, line: String, style: Dictionary) -> float:
+	var font: Font = ThemeDB.fallback_font
+	if font == null:
+		return rect.position.x
+	var size := int(style.get("font_size", 12))
+	var width: float = font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	match h_alignment(style):
+		HORIZONTAL_ALIGNMENT_CENTER:
+			return rect.position.x + maxf(0.0, (rect.size.x - width) * 0.5)
+		HORIZONTAL_ALIGNMENT_RIGHT:
+			return rect.position.x + maxf(0.0, rect.size.x - width)
+	return rect.position.x
+
+
+## The caret rectangle for a character index: a one-pixel-wide bar the height of
+## a line, or an empty rect when the index is not on a drawn line.
+##
+## An index past the end of the text is answered at the end of the last line
+## rather than refused, because that is where the caret sits after typing the
+## final character and refusing it would make the caret vanish exactly when the
+## player is using it.
+static func caret_rect(rect: Rect2, text: String, style: Dictionary, index: int) -> Rect2:
+	var lines: Array = layout(rect, text, style)
+	if lines.is_empty():
+		# An empty field still has a caret, at the start of the box.
+		return Rect2(line_origin_x(rect, "", style), rect.position.y,
+			1.0, float(style.get("line_height", 16)))
+	var want: int = clampi(index, 0, text.length())
+	var chosen: Dictionary = lines[lines.size() - 1]
+	var column: int = str(chosen["text"]).length()
+	for line_value in lines:
+		var line: Dictionary = line_value
+		var start := int(line["start"])
+		var length: int = str(line["text"]).length()
+		if want <= start + length:
+			chosen = line
+			column = maxi(0, want - start)
+			break
+	var font: Font = ThemeDB.fallback_font
+	var size := int(style.get("font_size", 12))
+	var before: String = str(chosen["text"]).substr(0, column)
+	var x: float = line_origin_x(rect, str(chosen["text"]), style)
+	if font != null:
+		x += font.get_string_size(before, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	return Rect2(x, float(chosen["top"]), 1.0, float(style.get("line_height", 16)))
+
+
+## The character index a stage point falls on: which line the y is in, then the
+## nearest character boundary along it.
+##
+## **Boundary, not glyph.** Clicking the left half of a character puts the caret
+## before it and the right half after it, which is what every text widget since
+## the Mac has done and what makes clicking at the end of a word behave.
+static func index_at(rect: Rect2, text: String, style: Dictionary, at: Vector2) -> int:
+	var lines: Array = layout(rect, text, style)
+	if lines.is_empty():
+		return 0
+	var chosen: Dictionary = lines[0]
+	for line_value in lines:
+		var line: Dictionary = line_value
+		if at.y >= float(line["top"]):
+			chosen = line
+	var font: Font = ThemeDB.fallback_font
+	var body: String = str(chosen["text"])
+	if font == null:
+		return int(chosen["start"])
+	var size := int(style.get("font_size", 12))
+	var origin: float = line_origin_x(rect, body, style)
+	var best := 0
+	var best_gap: float = absf(at.x - origin)
+	for i in range(1, body.length() + 1):
+		var edge: float = origin + font.get_string_size(
+			body.substr(0, i), HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+		var gap: float = absf(at.x - edge)
+		if gap < best_gap:
+			best_gap = gap
+			best = i
+	return int(chosen["start"]) + best
+
+
+## Break one authored line at the field's width. Returns at least one span, so a
 ## line that cannot be broken is still drawn (and clipped) rather than dropped.
-static func _wrap(font: Font, line: String, size: int, width: float) -> PackedStringArray:
-	var out := PackedStringArray()
-	if line == "" or width <= 0.0:
-		out.append(line)
+##
+## `[start, end, text]` per span, with the offsets relative to `line`. The
+## offsets are the reason this returns triples rather than strings: reassembling
+## the wrapped text with a single space between words loses where the break fell,
+## and a caret index counted off the reassembly drifts by one per wrap.
+static func _wrap(font: Font, line: String, size: int, width: float) -> Array:
+	var out: Array = []
+	if line == "" or width <= 0.0 \
+			or font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= width:
+		out.append([0, line.length(), line])
 		return out
-	if font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= width:
-		out.append(line)
-		return out
-	var current := ""
-	for word in line.split(" "):
-		var candidate: String = word if current == "" else current + " " + word
-		if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= width \
-				or current == "":
-			current = candidate
-			continue
-		out.append(current)
-		current = str(word)
-	out.append(current)
+	# Greedy, one word at a time, exactly as this wrapped before indices were
+	# tracked: take words while the line still fits, and break in front of the
+	# first one that does not. A word wider than the box is kept on its own line
+	# and clipped rather than dropped, which is the `or accepted < 0` arm.
+	var start := 0
+	var accepted := -1
+	var word_at := 0
+	var words: PackedStringArray = line.split(" ")
+	for w in words.size():
+		var word: String = str(words[w])
+		var candidate_end: int = word_at + word.length()
+		if accepted < 0 or font.get_string_size(line.substr(start, candidate_end - start),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= width:
+			accepted = candidate_end
+		else:
+			out.append([start, accepted, line.substr(start, accepted - start)])
+			start = word_at
+			accepted = candidate_end
+		# +1 for the space the split consumed.
+		word_at = candidate_end + 1
+	out.append([start, accepted, line.substr(start, accepted - start)])
 	return out

@@ -40,6 +40,7 @@ const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
+const TextFocus := preload("res://scenes/preview/text_focus.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
@@ -161,6 +162,26 @@ var _field_text: Dictionary = {}
 ## `tools/text_and_shapes.gd`, which has no other way to see a paint that headless
 ## Godot discards.
 var _text_drawn: Dictionary = {}
+## The editable-text widget's state (§8.4), kept here rather than in
+## `preview/text_edit.gd` for the reason `scenes/preview/README.md` gives: state
+## stays on the node, because `tools/` reads it by name and a field moved off
+## makes a harness read null and report zero rather than fail.
+##
+## `the selStart` and `the selEnd` are **movie-level and not per-field**, which
+## is Director's design and not a simplification -- one range, pushed into
+## whichever widget holds focus. `_focus_member` is the cast id the focus was
+## claimed on, so §7.7's "preserved across a frame when the cast id is unchanged"
+## can be tested rather than assumed.
+var _focus_channel := 0
+var _focus_member := 0
+var _sel_start := 0
+var _sel_end := 0
+## When the caret last moved, so the blink restarts on a keystroke instead of
+## possibly blinking out on the character just typed.
+var _caret_since := 0
+## Same keys as `_field_text`: `member("x").editable = <n>` from Lingo, overriding
+## the member's own authored flag.
+var _member_editable: Dictionary = {}
 var _interpreter = null
 var _host = null
 var _audio: Node = null
@@ -529,6 +550,12 @@ func _share_movie_state_with(other: Node) -> void:
 	_interpreter.globals = other._interpreter.globals
 	_host.globals = other._host.globals
 	_field_text = other._field_text
+	# **Editability travels with the text, for the same reason.** `SAVELOAD` is a
+	# window over the stage and writes `member("save1").editable = 1` against a
+	# cast the stage also has open; keyed by the cast's file (`_field_key`), the
+	# two movies name the same entry, and a copy rather than a share would let one
+	# of them go on believing a field is typeable after the other turned it off.
+	_member_editable = other._member_editable
 
 
 func root_node(name: String) -> Node:
@@ -588,6 +615,25 @@ func _dispatch_cue_passed(channel: int, cue: Dictionary) -> void:
 ## `the keyCode` and `the key` are only meaningful during the dispatch, so they
 ## are set around it and cleared after: a script reading `the keyCode` outside a
 ## key event should see nothing, not the last key pressed.
+##
+## **§8.3: with a focused editable field the message starts at that sprite, not
+## at the frame** — "dispatched with the channel id of the sprite owning the
+## active widget, not the sprite under the mouse", and channel 0 (the frame) only
+## when nothing has focus. That is the one route by which a keypress reaches a
+## sprite script at all.
+##
+## Then the widget itself, and only if no sprite-level handler answered. Director
+## suppresses the character when a `keyDown` handler does not `pass`, which is
+## the documented idiom for validating typed input. What is deliberately *not*
+## allowed to suppress it is `the keyDownScript`: it is a tier-1 primary handler
+## and those pass by default (§8.2), and this port's `claimed` from one is not
+## evidence the movie wanted the key anyway — `fromnow` is installed by 46
+## scripts, acts on key code 49 alone and reports every other key as claimed.
+## `preview/input_router.gd` had to reach the same conclusion for the F-keys, and
+## a widget that believed `claimed` would be untypeable in most of this game.
+##
+## No script in this corpus declares `on keyDown` or `on keyUp` at all, so the
+## suppression arm is written from the reference and is unexercised here.
 func _dispatch_key(event: InputEventKey) -> bool:
 	if not _lingo_on or _interpreter == null or _host == null:
 		return false
@@ -602,15 +648,34 @@ func _dispatch_key(event: InputEventKey) -> bool:
 	var claimed: bool = _interpreter.run_primary("keydown")
 	if claimed:
 		_tally(_ran, "when keyDown")
+	# Whether a script took responsibility for the *character*. Deliberately not
+	# `claimed`: a tier-1 primary handler passes by default (§8.2), and this
+	# port's `claimed` from a `keyDownScript` is not evidence the movie wanted the
+	# key at all. Only a sprite-level `keyDown` suppresses typing.
+	var typed_away := false
+	# §8.3: the focused sprite, or the frame when nothing holds focus. A sprite
+	# script is reachable by a keypress only through this line.
+	var focus_channel: int = TextFocus.arbitrate(self)
 	if script_name != "" and _interpreter.has_handler(script_name.to_lower()):
 		_tally(_sent, "keyDownScript:%s" % script_name)
 		_tally(_ran, "keyDownScript:%s" % script_name)
 		_interpreter.call_handler(script_name)
 		claimed = true
 	else:
-		# No movie-wide script, so the message goes to the frame the way any
-		# other event does.
-		_dispatch("keyDown", _frame_script(_index))
+		var owner: Dictionary = _sprite_script(focus_channel, _index) \
+			if focus_channel > 0 else {}
+		typed_away = not owner.is_empty() \
+			and bool(_interpreter.call("_script_has_handler", owner, "keydown"))
+		if typed_away:
+			_tally(_sent, "keyDown:ch%d" % focus_channel)
+		# A sprite-level `keyDown` that ran is Director's "handled, do not type
+		# it" -- the documented way a field validates its own input.
+		_dispatch("keyDown", owner if typed_away else _frame_script(_index))
+		claimed = claimed or typed_away
+	# The widget last. `arbitrate` above has already run, so focus is current for
+	# the key being delivered rather than for the frame before it.
+	if not typed_away and TextFocus.key(self, event):
+		claimed = true
 	_host.key_code = -1
 	_host.key_char = ""
 	queue_redraw()
@@ -941,8 +1006,19 @@ func _draw() -> void:
 	# what is on the stage now, and a field that left the frame must stop being
 	# in it or a harness would assert against a channel that is no longer drawn.
 	_text_drawn.clear()
+	# §8.4: the movie's selection is pushed into the widget of any editable text
+	# sprite **every frame**, so focus is re-arbitrated as part of resolving the
+	# frame rather than on a frame-change signal. Doing it here is also what makes
+	# a paused harness and a running player agree without a second code path --
+	# several harnesses set `_index` directly and never tick.
+	TextFocus.arbitrate(self)
 	var frame: Dictionary = _score.frame(_index)
 	StagePaint.paint_frame(self, frame, _table, STAGE)
+	# A caret blinks, and a preview holding on `go to the frame` repaints only
+	# when asked. Same reason `Toast.draw` asks below, and the ask is confined to
+	# the frames that actually have a focused widget on them.
+	if _focus_channel > 0:
+		queue_redraw()
 	if _show_boxes:
 		_draw_hotspots(frame)
 	if _window_key != "":
@@ -988,8 +1064,10 @@ func _draw_text(sprite: Dictionary) -> bool:
 	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
 	if m.is_empty() or int(m.get("type", 0)) != Ink.TYPE_FIELD:
 		return false
-	_text_drawn[int(sprite["channel"])] = TextArt.paint(
-		self, sprite, m, _stage_rect(sprite), _field_text_of(m))
+	var channel := int(sprite["channel"])
+	_text_drawn[channel] = TextArt.paint(
+		self, sprite, m, _stage_rect(sprite), _field_text_of(m),
+		TextFocus.editable(self, sprite, m), TextFocus.paint_state(self, channel))
 	return true
 
 
@@ -1735,6 +1813,14 @@ func route_press(at: Vector2) -> Node:
 		# rather than unconditionally is what keeps the two apart.
 		if _clock.hold_reason() == FrameClock.REASON_PALETTE:
 			_clock.release()
+	# §8.4: the text widget sees the press before the sprite hit test does, and
+	# **does not consume it**. Clicking into a field is a window-manager act, not
+	# a Director message -- §4.3's eligibility says nothing about editability, so
+	# a field with no script is not a click target and never would be reached by
+	# the descent below. Consuming it instead would break the case this exists
+	# for: `SAVELOAD`'s slot buttons sit in the channels *above* its eight name
+	# boxes, and the `mouseUp` that chooses a slot has to get through.
+	TextFocus.press(self, at)
 	_begin_drag(at)
 	_press_click(at)
 	return self
@@ -2173,6 +2259,12 @@ func _field_key(lib: int, number: int) -> String:
 
 func _forget_field_text_of(container_path: String) -> void:
 	TextArt.forget(container_path, _field_text)
+	# The editability overrides are dropped with the text and at the same moment.
+	# A movie that is left and re-entered must show the flags its members were
+	# authored with, or `SAVELOAD` would come back with whichever slot the player
+	# last chose still editable and `save1` -- the one the score arms on entry --
+	# not.
+	TextFocus.forget(container_path, _member_editable)
 
 
 ## Member resolution, delegated to `preview/members.gd`. The rule that matters --
@@ -2185,8 +2277,83 @@ func _resolve_member(which: Variant, cast: String) -> int:
 	return int(_resolve_member_ref(which, cast)[1])
 
 
+## `the <prop> of member N`.
+##
+## `editable` is answered here rather than in `preview/members.gd` for one
+## reason: it is the only member property whose value is not in the parsed member
+## record alone. It is the authored flag *or* whatever Lingo last wrote, and the
+## override store is the node's. `read_prop`'s fall-through answers 0 for an
+## unknown name, so without this arm `the editable of member "save1"` would read
+## back 0 immediately after being set to 1 — a write that round-trips as a lie,
+## which is the exact failure `preview/sprite_props.gd` was written to prevent.
 func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
-	return Members.read_prop(self, _resolve_member_ref(which, cast), prop, _table)
+	var where := _resolve_member_ref(which, cast)
+	if prop == "editable":
+		return 1 if TextFocus.member_editable(
+			self, _table.get_member(int(where[0]), int(where[1]))) else 0
+	return Members.read_prop(self, where, prop, _table)
+
+
+## `member("save1").editable = 1`. §8.4's focus arbitration is re-run inside
+## `TextFocus.set_member_editable`, because this is how a movie *moves* focus:
+## `SAVELOAD`'s slot buttons clear the flag on seven fields and set it on the
+## eighth inside a single `mouseUp` handler, and the caret has to follow before
+## the handler returns.
+##
+## Written five times in this corpus, all of them in `SAVELOAD.dir`, and until
+## now accepted and dropped with a comment saying the port had no in-game text
+## entry — which was true and is the thing this change removes.
+##
+## `text` is the other half of the same `pass`, and it is a *different spelling*
+## of a path that already worked rather than a broken feature: `put x into field
+## "y"` goes through `lingo_set_field` and always reached the screen, while
+## `set the text of member "y"` went nowhere. 0 sites in this corpus use the
+## second spelling, which is why it was invisible — and per AGENTS.md that is a
+## reason to build it last, not to skip it.
+##
+## Resolved by reference rather than by name, which is what the deleted
+## `lingo/lingo_host.gd` could not do: it forwarded to `set_field(name)`, so
+## `set the text of member 12 of castLib 2` — a number, in a named library — had
+## no name to forward and was dropped. The library is part of the answer here.
+func lingo_set_member_prop(which: Variant, cast: String, prop: String,
+		value: Variant) -> void:
+	if _table == null:
+		return
+	var where := _resolve_member_ref(which, cast)
+	match prop:
+		"editable":
+			TextFocus.set_member_editable(
+				self, _table.get_member(int(where[0]), int(where[1])),
+				LingoValue.to_int(value) != 0)
+		"text":
+			if int(where[1]) <= 0:
+				return
+			_field_text[_field_key(int(where[0]), int(where[1]))] = \
+				LingoValue.to_str(value)
+			queue_redraw()
+
+
+## `the selStart` / `the selEnd` — **movie properties, not field ones** (§8.4).
+## One range for the movie, pushed into whichever editable sprite holds focus.
+func lingo_sel_start() -> int:
+	return int(TextFocus.selection(self)[0])
+
+
+func lingo_sel_end() -> int:
+	return int(TextFocus.selection(self)[1])
+
+
+func lingo_set_sel(prop: String, value: int) -> void:
+	if prop == "selstart":
+		TextFocus.set_selection(self, value, maxi(value, _sel_end))
+	else:
+		TextFocus.set_selection(self, mini(_sel_start, value), value)
+
+
+## The channel owning the active text widget, or 0. What §8.3 routes a keypress
+## by, and the one thing a harness needs to see focus arbitration happen.
+func lingo_focus_channel() -> int:
+	return TextFocus.arbitrate(self)
 
 
 func lingo_member_number(which: Variant, cast: String) -> Variant:

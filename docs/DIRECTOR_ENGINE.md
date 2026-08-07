@@ -1044,7 +1044,12 @@ excluded from the dimension-change test elsewhere.
 
 ## 8. Keyboard, focus and the event hierarchy
 
-This port has none of it.
+*This port:* it used to have none of it; it now has §8.1-§8.4 bar the arrow-key
+substitution in §8.3 and `pass`/`dontPassEvent` in §8.2, both noted where they
+belong below. Keys arrive through `scenes/director_preview.gd:_dispatch_key`
+(routed by `preview/input_router.gd`), the widget half is
+`scenes/preview/text_focus.gd`, and `tools/editable_text.gd` drives real
+`InputEventKey`s through it and reads the framebuffer back.
 
 ### 8.1 The event vocabulary
 
@@ -1099,6 +1104,15 @@ only for a focused editable field.
 are special-cased into `the key` as characters 28 (left), 29 (right), 30 (up),
 31 (down) — a real quirk, since most non-letter keys do not affect `the key`.
 
+*This port:* the focus routing is `director_preview.gd:_dispatch_key`, which asks
+`preview/text_focus.gd` who owns the widget and falls back to the frame script
+with channel 0. **The arrow substitution is not implemented** —
+`director/director_keys.gd:char_for` answers `""` for the four arrows, so
+`the key` is empty where Director would report 28-31 while `the keyCode` is
+correct (123-126). 30+ sites in this corpus navigate by arrow and every one of
+them tests `the keyCode`, so the divergence is unexercised here and is still a
+divergence.
+
 **Modifier keys do not generate keyDown events** — shift, control, option/alt and
 command/super are recorded into a flag word and return without dispatching.
 `the commandDown`, `optionDown`, `shiftDown` and `controlDown` read that same
@@ -1120,6 +1134,31 @@ Typing, caret, Enter and Tab are handled inside the shared Mac text widget, so
 ScummVM is not a good spec for them. What the Director layer contributes is
 focus arbitration, the selection round-trip, pushing changed text back to the
 cast member, and auto-expanding dimensions flowing back to the sprite.
+
+*This port:* `scenes/preview/text_focus.gd`, with the state on the preview node
+(`_focus_channel`, `_sel_start`, `_sel_end`, `_member_editable`) and the caret
+and selection painted by `preview/text_art.gd` off geometry from
+`director/director_text.gd`. Focus is re-arbitrated from `_draw`, which is
+literally this section's "pushed into the widget every frame" and also what makes
+a paused harness and a running player agree. Insertion, deletion, arrow and
+shift-arrow movement, Home/End, Enter, click-to-caret and auto-tab are all there;
+typed text goes back to the member through the same `lingo_set_field` a script's
+`put x into field` uses, so `field("save1")` reads what the player typed.
+
+**Effective editability is `sprite editable OR member editable`, and the member
+half is the one that matters**: 0 of Piposh 2's 816,318 sprite records set the
+score's own bit, 0 of Piposh 1's 1,886,362 and 0 of Rating's 847,431, while
+`director_cast.gd` byte 25 bit 0 finds 1, 9 and 0 editable members respectively —
+`SAVELOAD.dir`'s `save1`, Piposh 1's `Mainmenu`/`Arcade`/`Roullete`/`Caproom`/
+`Zuzroom`. A port that read only the score's half measures zero and concludes the
+feature is unexercised.
+
+Two things this deliberately does not do. **Auto-expanding dimensions do not flow
+back to the sprite** — that needs the size change to reach `sprite_geometry.gd`
+and `tools/text_and_shapes.gd` currently asserts the opposite, so it is a change
+with its own evidence. And the caret is drawn as a bar with a translucent
+selection bar behind the glyphs rather than as Director's destination inversion,
+for the same reason §13 gives: there is no destination surface to read.
 
 ### 8.5 Keyboard in the score
 
@@ -1452,9 +1491,12 @@ score. **Legible text in roughly the right place at roughly the right size, and
 not period-accurate glyph rendering**: the font id is carried and unresolved (no
 font table here), so the typeface and therefore the advance widths are Godot's
 fallback and a caption does not land pixel-for-pixel where Director put it. No
-widget, no character-box/glyph mask distinction, no scrolling, no editing, and no
-push of the laid-out size back onto the sprite (§1.2) — the score's size is used
-as authored. `put x into field` now reaches the drawn text
+character-box/glyph mask distinction, no scrolling, and no push of the laid-out
+size back onto the sprite (§1.2) — the score's size is used as authored. Editing
+*is* now there (§8.4, `scenes/preview/text_focus.gd`): caret, selection,
+`the selStart`/`selEnd`, click-to-caret and focus arbitration, with the caret and
+the selection painted by `preview/text_art.gd` and the character-to-pixel mapping
+in `director_text.gd:layout`. `put x into field` now reaches the drawn text
 (`director_preview.gd:lingo_set_field`), which it did not before: the host's
 setter was a no-op, so a HUD would have shown its authored placeholder for ever.
 
@@ -1710,7 +1752,16 @@ sprite the author ticked "Moveable" on in the Score window is draggable and
 click-eligible. 744 of Piposh 1's records set it and none of Piposh 2's, which is
 why nothing missed it until a second title was loaded. `the constraint of sprite`
 remains unimplemented.
-**16.17 No editable text, focus, caret or selection.** §8.4.
+**16.17 No editable text, focus, caret or selection.** §8.4. **Done** --
+`scenes/preview/text_focus.gd`, asserted windowed by `tools/editable_text.gd`
+(real `InputEventKey`s through `Input.parse_input_event`, and the framebuffer
+read back over the field's own rectangle). The measurement that decided how to
+build it: **0 of 3,550,111 sprite records across Piposh 2, Piposh 1 and Rating
+set the score's editable bit**, so the whole of `sprite OR member` rests on the
+member half, which nothing decoded. `SAVELOAD.dir`'s `save1` is the one editable
+member in Piposh 2, and `member("saveN").editable = <n>` in four of its
+behaviours is how the save screen chooses which slot is typeable. Auto-expanding
+dimensions flowing back to the sprite is the one clause of §7.7 left open.
 **16.18 No hilite-on-click.** §4.6.
 **16.19 `set_size` does not re-derive the anchor.** §1.5,
 `director/sprite_channel.gd:133-139`.
@@ -1773,8 +1824,8 @@ destination-reading inks.
 | Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
 | Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
 | Moveable / drag / constraint | **partial**: drag done and now reachable from the score's own flag as well as from Lingo, `the constraint of sprite` not | `director_preview.gd:_begin_drag`; `director_score.gd:_snapshot` |
-| Editable text / focus / selection | **nothing** | — |
-| Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map; modifiers not carried | `director_keys.gd`; `director_preview.gd:_dispatch_key` |
+| Editable text / focus / selection | **done** bar auto-expanding size push-back: `sprite OR member` editability, first-editable-claims-focus, movie-level `selStart`/`selEnd`, caret, selection, click-to-caret, auto-tab | `preview/text_focus.gd`; `director_text.gd:layout`; `tools/editable_text.gd` |
+| Keyboard, modifiers, key events | **done**: `the keyDownScript`, `the keyCode`, `the key`, full Mac virtual key map, and §8.3 focus routing (the focused sprite, else the frame at channel 0); modifiers not carried, and `the key` is empty for the arrows where Director reports 28-31 | `director_keys.gd`; `director_preview.gd:_dispatch_key`; `preview/text_focus.gd` |
 | Primary handlers, pass/dontPassEvent | **partial**: `when <event> then` installs and fires at tier 1 for keys; mouse tiers and `pass` propagation not | `lingo_interpreter.gd:run_primary` |
 | Event hierarchy | **partial**: sprite → cast → frame → movie | `director_preview.gd:728-740` |
 | Hilite on click | **nothing** | — |
@@ -1784,7 +1835,7 @@ destination-reading inks.
 | Sound cast members (`snd `, embedded AIFF/WAV) | **done, unverified**: no container in this game holds one | `director/director_sound.gd`; `tools/score_sound_check.gd` |
 | Sound fades, `puppetSound`, `sound close` | **done, unverified**: written nowhere in this corpus | `audio_director.gd:step_fades`; `director_preview.gd:lingo_puppet_sound` |
 | Digital video | **nothing** | — |
-| Text / field rendering | **partial**: legible, not period-accurate. `set the text of member` is an unreported no-op (§9.3) | `director_text.gd`; `director_preview.gd:_draw_text` |
+| Text / field rendering | **partial**: legible, not period-accurate; editable now, with a caret and a selection. No character-box/glyph mask split, no scrolling | `director_text.gd`; `preview/text_art.gd`; `director_preview.gd:_draw_text` |
 | Shapes | **partial**: rect and rounded rect measured, oval and line unverified | `director_shape.gd` |
 | Windows / MIAW / embedded movies | **done**: open, close, forget, `tell`, window properties, geometry, click routing to the topmost window | `director_preview.gd:lingo_open_window`; `tools/window_preview.gd` |
 | Movie stack | **partial** | `director_preview.gd:1143` |

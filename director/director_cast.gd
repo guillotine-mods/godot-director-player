@@ -41,6 +41,14 @@ const INFO_AUTO_HILITE := 0x02
 ## rather than stored in this cast. Decoded, unused, and named so it is not
 ## mistaken for a spare bit later.
 const INFO_EXTERNAL := 0x01
+## Byte 25 of a text member's specific block: the Field dialog's three tick
+## boxes. `editable` is the one that matters — see `_parse_specific`, where the
+## measurement that identifies this byte is written down. `word_wrap` is stored
+## inverted, which is why the constant is named for the bit and not for the
+## property.
+const TEXT_EDITABLE_FLAG := 0x01
+const TEXT_AUTO_TAB_FLAG := 0x02
+const TEXT_NO_WRAP_FLAG := 0x04
 
 ## Not owned: the caller opened it and the caller closes it.
 var file = null
@@ -361,9 +369,37 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["width"] = fr - fl
 			out["height"] = fb - ft
 			out["initial_rect"] = {"top": ft, "left": fl, "bottom": fb, "right": fr}
-			# Bytes 22-27 are three more u16. 22 and 26 usually repeat the rect
-			# height and 24 is almost always zero; what they are is unsettled, and
-			# nothing here needs them.
+			# Bytes 22-27, which used to be recorded as "three more u16, and what
+			# they are is unsettled". They are not three u16: 22 is the maximum
+			# height the box may grow to, **24 and 25 are two bytes** — a drop
+			# shadow width and a **flag byte** — and 26 is the laid-out text
+			# height. That the middle pair is two bytes and not one u16 is why the
+			# old reading saw "24 is almost always zero": byte 24 is zero in all
+			# 321 members here, so the u16 only ever moved when byte 25 did.
+			#
+			# **Byte 25 bit 0 is `the editable of member`, and it is the only
+			# source of editability this corpus has.** Not one of Piposh 2's
+			# 816,318 sprite records sets the score's own editable bit, nor one of
+			# Piposh 1's 1,886,362, nor one of Rating's 847,431 — so a port that
+			# read only the score's half would find nothing editable anywhere and
+			# conclude, wrongly, that the feature is unexercised. The member half
+			# says otherwise and says it in exactly the place it should:
+			# `SAVELOAD.dir`'s `save1` (120x19, the save-slot name box), Piposh 1
+			# English's eight 120x19 boxes in `Mainmenu.dir` and Russian's
+			# sixteen, plus `Arcade`'s high-score entry, `Roullete`'s five bet
+			# boxes and `Caproom`/`Zuzroom`. A wrong offset does not land on the
+			# save screen of three different builds.
+			#
+			# Bits 1 and 2 come from the same byte and the same reference:
+			# auto-tab (Tab moves to the next editable field) and do-not-wrap.
+			if spec.size() >= 28:
+				out["max_height"] = _be_u16(spec, 22)
+				out["text_shadow"] = spec[24]
+				out["text_flags"] = spec[25]
+				out["editable"] = (spec[25] & TEXT_EDITABLE_FLAG) != 0
+				out["auto_tab"] = (spec[25] & TEXT_AUTO_TAB_FLAG) != 0
+				out["word_wrap"] = (spec[25] & TEXT_NO_WRAP_FLAG) == 0
+				out["text_height"] = _be_u16(spec, 26)
 		2:
 			if spec.size() < 12:
 				return

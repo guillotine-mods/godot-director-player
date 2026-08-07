@@ -15,6 +15,7 @@ the Godot lifecycle; the modules own the rules.
 | a script hid/moved/swapped a sprite and the screen disagrees | `sprite_state.gd` |
 | wrong colours, a matte punching holes, a solid black rectangle | `sprite_art.gd` |
 | a field shows the authored placeholder, or a HUD value never updates | `text_art.gd` |
+| typing does nothing, the caret is in the wrong field or the wrong place | `text_focus.gd` |
 | an animation plays in the wrong place, or with the wrong pictures | `film_loop_view.gd` |
 | a click goes to the wrong sprite, or nothing answers it | `interaction.gd` |
 | no hand cursor where there should be one, or a corrupt one | `cursor.gd` |
