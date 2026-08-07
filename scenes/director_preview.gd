@@ -1215,38 +1215,59 @@ func _sprite_rect(sprite: Dictionary) -> Rect2:
 func skip_to_end() -> void:
 	if _score == null or _score.frame_count <= 0:
 		return
-	# Release what this frame is waiting on, and nothing else.
+	# Two stages, and which one runs depends on whether the frame is waiting.
 	#
-	# This used to jump the playhead to the last frame of the movie, on the
-	# assumption that the end of the file is the end of the scene. **A Director
-	# movie's last frame is not its ending.** A movie is a strip of
-	# independently labelled segments, and the last frame is only the last
-	# *segment's* last frame -- so the jump lands somewhere the author never
-	# meant to be entered from here, and `tools/skip_state.gd` measures what
-	# that costs across this corpus:
+	# **If something is holding the playhead, release it and stop.** That is a
+	# wait-for-click, a tempo delay, a wait-for-sound or a transition, and what
+	# the player means by SKIP there is "stop waiting" -- not "leave the scene".
+	# Releasing is enough; the movie's own scripts carry on from where they are.
 	#
-	#   MURDER1 f883 runs `go("conect2")`, which is frame 790 -- the jump goes
-	#   *backwards* into the tail being skipped and replays 94 frames, so from
-	#   the player's chair SKIP did nothing and they press it again;
+	# **If nothing is holding it, jump to the next marker.** A Director movie is
+	# a strip of independently labelled segments, so the marker after the
+	# playhead is the start of the next scene and is what "skip this bit" means.
+	# EXODUS has 15 markers across 448 frames, MURDER1 34 across 884.
 	#
-	#   DAY1 f2783 is the tail of a `play`-called talk clip and runs
-	#   `play "done"` with nothing on the stack, so nothing returns and the
-	#   score's own advance has nowhere to go. The playhead never moves again.
-	#   Every symptom downstream of that reads as something else -- most of a
-	#   session went into "the cursor never comes back", which was the cursor
-	#   correctly recomputing over a dead playhead.
+	# The last frame is the fallback and only the fallback, because **a movie's
+	# last frame is not its ending** -- it is only the last *segment's* last
+	# frame, and entering it from here runs a script that was written to be
+	# reached from somewhere else. `tools/skip_state.gd` measures the two ways
+	# that goes wrong: MURDER1's f883 runs `go("conect2")` at frame 790, so a
+	# jump there goes *backwards* into the tail being skipped and replays 94
+	# frames -- which is why SKIP looked like it did nothing and got pressed
+	# again -- and DAY1's f2783 runs `play "done"` with nothing on the stack, so
+	# the playhead never moves again and every symptom downstream reads as a
+	# different bug. Most of a session went into "the cursor never comes back",
+	# which was the cursor recomputing correctly over a dead playhead.
 	#
-	# Running the intervening frame scripts instead is not the fix either. That
-	# is right for a linear cutscene and catastrophic for a hub: the frames
-	# between here and the end of DAY1 are dozens of unrelated rooms, not "the
-	# rest of this scene".
-	#
-	# What a player means by SKIP is "stop waiting", not "go to the end of the
-	# file". Releasing the hold lets the movie's own scripts drive to their own
-	# exit -- which walks MURDER1 to its `go("clif2","day1.dir")` and does
-	# nothing harmful in a hub. Director has no skip, so there is no fidelity
-	# question here; this is a judgement about an affordance.
+	# Releasing alone was the previous attempt and it is not enough: a frame that
+	# is simply playing holds nothing, so SKIP did nothing at all in EXODUS.
+	# Releasing alone was the first attempt and it is not enough, in two separate
+	# ways that both present as "the button does nothing". A frame that is simply
+	# playing holds nothing, so there was nothing to release -- that was EXODUS.
+	# And a cutscene frame that *is* waiting is typically `go to the frame` with a
+	# wait on it, so it **re-arms the wait on the very next entry**: the release is
+	# consumed by one step and the playhead is held again before anything is
+	# drawn. That was MURDER1. So releasing is paired with a move rather than
+	# tried first and returned on.
 	_clock.release()
+	var target := -1
+	if _labels != null:
+		for marker in _labels.markers:
+			var at := int(marker.get("frame", -1))
+			if at > _index:
+				target = at
+				break
+	if target < 0:
+		target = _score.frame_count - 1
+	if target <= _index:
+		return
+	_index = target
+	_held = false
+	_clock.reset()
+	_pending_enter = null
+	# Entered by the next step, the way any jump from outside the step loop is:
+	# that step skips `exitFrame`, renders, and sends `enterFrame`.
+	_jump_queued = true
 	queue_redraw()
 
 
