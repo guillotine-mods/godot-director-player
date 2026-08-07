@@ -1126,7 +1126,9 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   `generate_sprite_stretch --check` are byte-identical across the change, and
   `lingo_walk_diff` differs only in Godot's exit-time leak counters.
 
-  Covered by `tools/verify_film_loops.gd` in two ways, and the difference matters.
+  Was covered by `tools/verify_film_loops.gd` in two ways, and the difference
+  mattered; that harness is deleted (retired renderer). `tools/film_loop_cast.gd`
+  covers the cast half only.
   Its 6 added `CASES` assert which cast a named child comes from and its size
   there — but that check resolves the child itself, so it gates the **exported
   data** and passes with the renderer reverted. Its `COMPOSITIONS` list gates the
@@ -1181,7 +1183,8 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   the fix leaves the file **identical once `stretch` is stripped**, which is how
   the change was attributed.
 
-  Covered by `tools/film_loop_stretch.gd`. Its fourth case is a **negative
+  Was covered by `tools/film_loop_stretch.gd`, deleted with the retired renderer —
+  **this rule has no harness now.** Its fourth case was a **negative
   control** and is the reason the harness is worth having: `wonder` loop 175 is a
   zoom, every child flagged, its members recorded at ~88% of natural size. A "fix"
   that simply stopped honouring the recorded rect would pass all three positive
@@ -1222,7 +1225,8 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   `frames.json` field by field and refusing the movie outright if it does not
   reproduce the export. `RenderModelLoader._resolve_sprite_rects()` applies them
   once per movie load, so the channel array, drawing, hit-testing and any script
-  reading the sprite all see one rect. Covered by `tools/sprite_stretch.gd`.
+  reading the sprite all see one rect. Was covered by `tools/sprite_stretch.gd`
+  (deleted); `tools/drawn_size_stability.gd` covers it now.
 
   Three things to know. **16 movies have no recovered flags and keep the exported
   rects**; only `strtgame` matters, and it is entry 14's remaining work. **820 of
@@ -1240,7 +1244,8 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   anywhere in the idle span back to the `*go` frame, so by frame number every
   iteration looked like an arrival; each replay re-ran `b4 bk's` and its
   `set the visible of sprite 15 to 0`. Arrival is now decided by the marker.
-  Covered by `tools/collectables.gd`.
+  Was covered by `tools/collectables.gd`, deleted with the retired renderer —
+  **no harness now.**
 - **Every interpreted script died after a window, meeting or minigame.** `go_back`
   reloaded the movie but never called `lingo.prepare_movie()`, so the interpreter's
   current movie stayed on the one being left. `frame_script(1858)` then looked for
@@ -1278,13 +1283,16 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   `island:10` (`shore2`) while DAY1's own member 10 is the cursor `wlkcur1`. 25 of 32
   rooms answered with a cursor name and 7 with the empty string, and `nof` is the key
   `shellfield` and `jokefield` are written under, so one shell taken in any of those
-  7 marked all of them collected. Covered by `tools/room_names.gd`.
+  7 marked all of them collected. Was covered by `tools/room_names.gd`, deleted with
+  the retired renderer — **no harness now**, and it had been reporting green over
+  0 rooms before it went.
 
 - **Piposh drawn twice across a room transition.** The canned transition animation
   draws him in a low channel while the puppet drew unconditionally. `the visible of
   sprite 30` is now a real property (`PuppetController.visible`), hidden on the
   original's own `ifmovie` condition and restored by `BehaviorScript 207`.
-  Covered by `tools/puppet_visibility.gd`.
+  Was covered by `tools/puppet_visibility.gd`, deleted with the retired renderer —
+  **no harness now.**
 - **`LingoHost.navigated` was never raised**, so every interpreted `go` was
   overridden by the exported fallthrough one step later.
 - **`_try_transition_redirect` ran before `exitFrame` dispatch**, answering from
