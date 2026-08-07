@@ -13,8 +13,9 @@ by how visible the absence is.
 ## What is genuinely still missing
 
 Corrected against the code on 2026-08-06, after the windows, palette, trails,
-sound and preload work landed. `DIRECTOR_ENGINE.md` §17 is the full table; this
-is the short list of what has no implementation at all.
+sound and preload work landed, and re-checked on 2026-08-07 after the player was
+split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
+the short list of what has no implementation at all.
 
 **Editable text, focus, caret and selection.** §8.4. Effective editability is
 the sprite's flag OR the member's, the first editable sprite takes focus, and
@@ -64,8 +65,17 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
 - **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in
   this game holds a sound member, so all of it is proved against synthesised
   bytes only.
-- **Flip** is decoded and never applied, because 0 records set either bit.
-- **Rounded-rect, oval and line shapes** -- no member in the corpus draws one.
+- **Flip** is decoded and applied -- `scenes/preview/sprite_art.gd` mirrors the
+  draw with a negative extent and mirrors the hit-test sample with it, so the
+  clickable pixels are not the mirror image of the visible ones. Unverified
+  because 0 of Piposh 2's 816,318 sprite records and 0 of Piposh 1's 1,886,362
+  set either bit; `tools/sprite_flip.gd` drives it from a synthetic record.
+- **Rounded-rect, oval and line shapes** are drawn by `director/director_shape.gd`.
+  Of the corpus's 169 shape members, 167 are plain rectangles and 2 are rounded
+  rectangles; no member is an oval or a line, so those two are the unexercised
+  pair. Director stores no corner radius, so the rounded inset is chosen to look
+  like QuickDraw's default rather than decoded -- that is the part to check first
+  against Director running.
 
 ## The rule that governs this list
 
@@ -73,3 +83,9 @@ A measured zero is a reason to build something *last* and to mark it unverified.
 It is never a reason not to build it -- see `AGENTS.md`, "Build Director, not
 this game". Several entries above were closed the wrong way once already and had
 to be reopened.
+
+An entry is closed when the reference section it names is implemented, not when
+the current game stops misbehaving -- see `AGENTS.md`, "The reference documents
+are the specification". Closing one is part of landing the change, because this
+list is only worth reading if it is true: two entries above described the code as
+it was several commits earlier, and both understated what was already built.

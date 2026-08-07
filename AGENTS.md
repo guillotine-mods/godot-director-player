@@ -67,6 +67,24 @@ This is the counterweight to the rule above it, not a contradiction of it. The
 engine stays ignorant of *this game's* rooms and channels; it does not stay
 ignorant of Director's features.
 
+**The reference documents are the specification.** `docs/DIRECTOR_ENGINE.md` is
+everything the engine does without a script; `docs/LINGO_SURFACE.md` is the
+language surface. Between them they are what *finished* means, and
+`docs/ENGINE_TODO.md` is the running list of what is still missing against them.
+Read the section before building the thing it describes, and close its entry when
+the thing lands -- a stale gap list is worse than no list, because it is trusted.
+It claimed flip was "decoded and never applied" long after `sprite_art.gd` was
+applying it *and* mirroring the hit test with it, and claimed no member in this
+corpus draws a rounded rectangle when two do. Either reading sends the next
+session to build what is already there, or to skip what is not.
+
+Done is what the document describes, not what this game stops complaining about.
+A room that renders correctly proves the paths that room exercises and nothing
+else, so "the symptom is gone" closes a bug and never closes a feature. The
+engine is complete when the reference has no unimplemented section left; until
+then `ENGINE_TODO.md` is the honest statement of the distance, and keeping it
+honest is part of the work rather than bookkeeping after it.
+
 **"Not a bug" needs more evidence than a bug does**, because it is the verdict
 that stops work. The export is the port's *input*, not the original: the renderer
 agreeing with `frames.json` or `cast_registry.json` proves the renderer, never
