@@ -453,14 +453,51 @@ static func release(host, at: Vector2) -> void:
 	host._press_channel = 0
 	if not host._lingo_on or host._interpreter == null:
 		return
-	# §15: `the clickOn` updates on mouse-down always, and on mouse-up **only when
-	# the release was over a sprite**. Updated before the dispatch, so a handler
-	# reading it sees the click it is answering -- and left alone on a release
-	# over bare stage, which is what keeps `sprite the clickOn` naming something
-	# real after a drag that ended off every hotspot.
-	var under: int = host._channel_at(at)
-	if under > 0:
-		host._host.click_sprite = under
+	# **`the clickOn` is NOT recomputed here**, and the missing three lines are the
+	# whole of this comment. It stays what the press latched, for the whole of the
+	# release, which is the same sprite this function is about to deliver the
+	# message to.
+	#
+	# It was recomputed, briefly: `under = host._channel_at(at)` and, if that hit
+	# anything, `click_sprite = under` before the dispatch. That is §15's clause
+	# read literally, and it is what ScummVM does -- `Movie::resolveScriptEvent`
+	# sets `_lastClickedSpriteId` to `getMouseSpriteIDFromPos(event.mousePos)` on
+	# a mouse-up whenever that answers non-zero, and does it at execution time, so
+	# the handler sees the new value.
+	#
+	# **Copying it here takes half of ScummVM's mechanism.** ScummVM can say "the
+	# sprite under the release" because ScummVM *delivers* the mouse-up to the
+	# sprite under the release (`kSpriteHandler`, D4 and later). This port
+	# deliberately does the opposite two lines below: the message goes to the
+	# sprite that took the press, and to anything else it goes as
+	# `mouseUpOutSide`. Both engines are saying the same thing -- `the clickOn`
+	# names the recipient of the message being dispatched -- and it is only the
+	# recipient rule that differs. Taking ScummVM's answer while keeping this
+	# port's recipient made one dispatch give two different answers to "which
+	# sprite is this about", which is incoherent whichever recipient is right.
+	#
+	# The corpus decides which is right, and it is not close. `MASTER/External/
+	# BehaviorScript 52` is attached to all eight of DAY1's inventory slot
+	# channels, occupied or empty, and its two handlers are a matched pair keyed
+	# on `the clickOn` being the same sprite in both:
+	#
+	#     on mouseDown   objectxx = the locH of sprite the clickOn
+	#     on mouseUp     ... set the locH of sprite the clickOn to objectxx
+	#
+	# Drag the ladder out of slot 1 and let go anywhere over slot 4 -- which is
+	# what "drag an item along the bar and drop it on an empty space" is -- and
+	# the recompute answered 106 rather than 103, because 106 is the higher
+	# channel and an empty slot answers the mouse (it carries the same behaviour).
+	# Measured: the ladder was abandoned at 430,441 instead of returning to its
+	# slot at 332,441, and the empty marker on slot 4 was *given* 332,441 and
+	# jumped into the ladder's place. Two sprites wrong from one click, and the
+	# `sprite the clickOn intersects` tests above the snap-back were asking about
+	# the wrong sprite as well. Eleven near-copies of the idiom across the corpus
+	# do the same thing.
+	#
+	# So a shipped game cannot have run on the literal reading, and this port
+	# keeps the latch. §15's clause is recorded in `docs/DIRECTOR_ENGINE.md` with
+	# the divergence noted next to it.
 	if pressed > 0 and not _release_inside(host, at, pressed):
 		# §6.5: sprite behaviours only. There is deliberately no frame or movie
 		# fallback -- a cancelled click is the sprite's business and nobody

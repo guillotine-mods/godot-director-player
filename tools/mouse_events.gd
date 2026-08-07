@@ -65,6 +65,13 @@ func _sprites(preview: Node) -> Array:
 	return score.frame(int(preview.get("_index"))).get("sprites", [])
 
 
+func _sprite_on(preview: Node, channel: int) -> Dictionary:
+	for raw in _sprites(preview):
+		if int((raw as Dictionary)["channel"]) == channel:
+			return raw
+	return {}
+
+
 ## The busiest frame, which is the one most likely to carry a sprite the mouse
 ## can reach. Chosen the same way `sprite_drag.gd` chooses its subject, and for
 ## the same reason: a harness that hardcodes a frame is a harness that tests one
@@ -158,6 +165,176 @@ func _reachable(preview: Node) -> Array:
 		if at.x >= 0.0:
 			return [channel, at, rect]
 	return []
+
+
+## The channel next to `subject` in stacking order, on the given side, big enough
+## to aim at, and made eligible for the mouse. 0 when the frame has nothing there.
+##
+## Nearest rather than furthest, deliberately: the topmost sprite on a room frame
+## is usually a full-stage backdrop, and a drop target that covers everything
+## cannot be told apart from a drop target that was never found.
+##
+## Made eligible with `the moveableSprite` rather than searched for as an
+## authored hotspot, for the reason `_clickable` gives at length -- §4.3 makes
+## that Director's own way of turning any sprite into a mouse target, and a
+## harness that needed two authored, overlapping hotspots would run on almost no
+## frame of any title.
+func _neighbour_channel(preview: Node, subject: int, above: bool) -> int:
+	var best := 0
+	for raw in _sprites(preview):
+		var sprite: Dictionary = preview.call("_effective", raw)
+		if sprite.is_empty():
+			continue
+		var channel := int(sprite["channel"])
+		if above:
+			if channel <= subject or (best > 0 and channel > best):
+				continue
+		else:
+			if channel >= subject or (best > 0 and channel < best):
+				continue
+		var rect: Rect2 = preview.call("_sprite_rect", sprite)
+		if rect.size.x < 8.0 or rect.size.y < 8.0:
+			continue
+		best = channel
+	if best > 0:
+		preview.call("lingo_set_sprite_prop", best, "moveablesprite", 1)
+	return best
+
+
+## Which two channels to stage the drop with: `[carried, target]` with
+## `target > carried`, or `[]`.
+##
+## The subject is the frame's topmost reachable sprite, so on a lot of frames
+## there is nothing above it -- DAY1's inventory bar ends at channel 110 and the
+## subject *is* 110. Rather than skip, the roles swap: carry the sprite below and
+## drop it onto the subject. The rule under test is about channel order, and it
+## does not care which of the two the harness happens to have found first.
+func _drop_pair(preview: Node, subject: int) -> Array:
+	var above := _neighbour_channel(preview, subject, true)
+	if above > 0:
+		return [subject, above]
+	var below := _neighbour_channel(preview, subject, false)
+	if below > 0:
+		return [below, subject]
+	return []
+
+
+## Stage point -> window pixel. Three transforms, not one: the node's own
+## letterbox placement, the canvas, and the project's `canvas_items` stretch.
+func _to_window(preview: Node, stage: Vector2) -> Vector2:
+	var to_screen: Transform2D = (
+		preview.get_viewport().get_screen_transform()
+		* preview.get_global_transform_with_canvas()
+	)
+	return to_screen * stage
+
+
+## One event, delivered the way a mouse delivers one: queued through
+## `Input.parse_input_event`, routed by the viewport, handed to `_input`. The
+## event carries its own position and `_input` routes by *that*, so nothing here
+## warps the OS cursor -- see `tools/sprite_drag.gd` for why warping as well puts
+## a second, OS-generated motion into the queue behind the synthetic one.
+func _send(preview: Node, stage: Vector2, event: InputEventMouse) -> void:
+	event.position = _to_window(preview, stage)
+	Input.parse_input_event(event)
+
+
+## Pick a sprite up, carry it over a **higher** channel, and let go there.
+##
+## `the clickOn` must still name the sprite that was pressed, because that is the
+## sprite this port delivers the `mouseUp` to, and one dispatch cannot give two
+## answers to "which sprite is this about". Recomputing it under the pointer
+## instead is §15's clause read literally and is what ScummVM does -- but ScummVM
+## also delivers the message to the sprite under the release, and taking one
+## without the other is what this exists to stop coming back.
+##
+## It is the corpus's entire drop idiom. `MASTER/External/BehaviorScript 52`, on
+## all eight of DAY1's inventory slots and in eleven near-copies elsewhere,
+## records `objectxx = the locH of sprite the clickOn` on the way down and writes
+## it back to `sprite the clickOn` on the way up. With the recompute, dragging the
+## ladder one slot along the bar wrote slot 1's home coordinates onto slot 4's
+## sprite -- the empty marker jumped into the ladder's place and the ladder was
+## abandoned mid-bar. `preview/interaction.gd:release` carries the measurement.
+##
+## Run twice: once driving the routing directly, which is the only way to assert
+## it headlessly, and once through `_input` with real events, which is the path a
+## player has. The two have been wrong separately before (`107b0a4f`: the
+## press/release split reached `route_press`/`route_release` and stopped one line
+## short of the only caller a mouse can reach), so neither alone is the check.
+func _drop_over_a_higher_channel(preview: Node, h, host: Object, subject: int,
+		real: bool) -> void:
+	var how := "real events through `_input`" if real else "the routing directly"
+	var pair := _drop_pair(preview, subject)
+	if pair.is_empty():
+		print("      this frame carries one usable sprite; no drop to stage")
+		return
+	var carried := int(pair[0])
+	var target := int(pair[1])
+	var target_rect: Rect2 = preview.call("_sprite_rect",
+		preview.call("_effective", _sprite_on(preview, target)))
+	var home := Vector2(
+		float(preview.call("lingo_sprite_prop", carried, "loch")),
+		float(preview.call("lingo_sprite_prop", carried, "locv")))
+	# Both points are found *after* the target was made eligible, and that is not
+	# fussiness: a target the subject sits under is now the topmost answer over
+	# part of the subject too, so a point that reached the subject a moment ago
+	# may not any more. A target that covers the subject completely leaves nothing
+	# to pick up, and the case cannot be staged on this frame at all.
+	var lift := _point_on(preview, preview.call("_sprite_rect",
+		preview.call("_effective", _sprite_on(preview, carried))), carried)
+	var land := _point_on(preview, target_rect, target)
+	h.check("[%s] the drop target is reachable" % how, land.x >= 0.0,
+		"channel %d, rect %s" % [target, str(target_rect)])
+	h.check("[%s] the subject is still reachable under it" % how, lift.x >= 0.0,
+		"channel %d under channel %d" % [carried, target])
+	if land.x >= 0.0 and lift.x >= 0.0:
+		if real:
+			var down := InputEventMouseButton.new()
+			down.button_index = MOUSE_BUTTON_LEFT
+			down.pressed = true
+			_send(preview, lift, down)
+			await preview.get_tree().process_frame
+		else:
+			preview.call("route_press", lift)
+		h.check("[%s] the press latched the sprite that was pressed" % how,
+			int(host.get("click_sprite")) == carried,
+			"clickOn %d, wanted %d" % [int(host.get("click_sprite")), carried])
+		if real:
+			# The real drag: `InputRouter.mouse_motion` makes the position writes
+			# itself off the event's own point.
+			var move := InputEventMouseMotion.new()
+			move.relative = _to_window(preview, land) - _to_window(preview, lift)
+			_send(preview, land, move)
+			await preview.get_tree().process_frame
+			await preview.get_tree().process_frame
+		else:
+			# Exactly the two writes `InputRouter.mouse_motion` makes on each move.
+			var carry: Vector2 = preview.get("_drag_offset")
+			preview.call("lingo_set_sprite_prop", carried, "loch", int(land.x + carry.x))
+			preview.call("lingo_set_sprite_prop", carried, "locv", int(land.y + carry.y))
+		# The situation is real, and asserted rather than assumed: with the carried
+		# sprite now under the pointer as well, the hit test must still answer the
+		# *higher* channel, or there is nothing here to get wrong.
+		h.check("[%s] the drop point answers the higher channel" % how,
+			int(preview.call("_channel_at", land)) == target,
+			"under the pointer: %d, wanted %d" % [
+				int(preview.call("_channel_at", land)), target])
+		if real:
+			var up := InputEventMouseButton.new()
+			up.button_index = MOUSE_BUTTON_LEFT
+			up.pressed = false
+			_send(preview, land, up)
+			await preview.get_tree().process_frame
+		else:
+			preview.call("route_release", land)
+		h.check("[%s] the release did not hand `the clickOn` to the drop target" % how,
+			int(host.get("click_sprite")) == carried,
+			"clickOn %d, wanted %d (drop target %d)" % [
+				int(host.get("click_sprite")), carried, target])
+	# Put it back: what follows measures the rollover where the subject started,
+	# and a sprite left sitting somewhere else changes what is there.
+	preview.call("lingo_set_sprite_prop", carried, "loch", int(home.x))
+	preview.call("lingo_set_sprite_prop", carried, "locv", int(home.y))
 
 
 ## Somewhere on the stage that is NOT inside `rect`, for the cancelled-click
@@ -421,50 +598,82 @@ func _init() -> void:
 	preview.call("route_release", inside)
 	h.complete("§6: the click clock — clickLoc, lastClick, doubleClick")
 
+	# The drop check goes **last**, after the real-pointer section below rather
+	# than before it, and that ordering is load-bearing: staging a drop is
+	# destructive. It makes a second sprite eligible, carries one sprite across
+	# the stage, and sends a genuine `mouseDown`/`mouseUp` pair into whatever the
+	# movie has attached to the two channels -- which in DAY1 is
+	# `BehaviorScript 52` itself, a handler that moves sprites and swaps members
+	# of its own accord. Placed before the rollover checks it moved their subject
+	# out from under them, and cost three failures that were the harness's.
+	var windowed := DisplayServer.get_name() != "headless"
+
 	# ------------------------------------------------------------- real pointer
 	# Everything above drives the routing directly, which is the only way to
 	# assert it -- but it proves the routing and not the wiring. `_input` is
 	# reached by a real event, and headless Godot has no pointer to make one
-	# with, so a run that stops here has not shown that moving the mouse does
+	# with, so a run that skips this has not shown that moving the mouse does
 	# anything at all. Same trap `tools/window_renders.gd` documents.
-	if DisplayServer.get_name() == "headless":
+	if not windowed:
 		print("")
 		print("windowed stage skipped: run without --headless to drive a real pointer")
-		quit(h.finish("Director's mouse event vocabulary"))
-		return
 
-	h.begin("a real pointer move updates the rollover channel through `_input`")
-	preview.set("_paused", false)
-	var to_screen: Transform2D = (
-		preview.get_viewport().get_screen_transform()
-		* preview.get_global_transform_with_canvas()
-	)
-	# Away first, so the move onto the sprite is a genuine crossing rather than
-	# a no-op from wherever the OS left the pointer.
-	Input.warp_mouse(to_screen * Vector2(4, 4))
-	for i in 4:
-		await process_frame
-	Input.warp_mouse(to_screen * inside)
-	for i in 4:
-		await process_frame
-	h.check("the pointer landed on the sprite",
-		int(preview.get("_rollover_channel")) == rolled,
-		"rollover %d, wanted %d" % [int(preview.get("_rollover_channel")), rolled])
-	h.check("`the mouseH` / `the mouseV` agree with where it landed",
-		absf(float(host.call("get_system_prop", "mouseh")) - inside.x) < 3.0
-		and absf(float(host.call("get_system_prop", "mousev")) - inside.y) < 3.0,
-		"host (%s,%s), wanted %s" % [
-			str(host.call("get_system_prop", "mouseh")),
-			str(host.call("get_system_prop", "mousev")), str(inside)])
-	h.check("`the lastRoll` is a small number of ticks",
-		int(host.call("get_system_prop", "lastroll")) < 120,
-		"lastRoll %s" % str(host.call("get_system_prop", "lastroll")))
-	# The value `rollOver(n)` could not be asserted headlessly, now that there is
-	# a pointer for it to be measured against.
-	h.check("`rollOver(n)` is true of the sprite the pointer is on",
-		int(host.call("call_builtin", "rollover", [rolled])) == 1,
-		"rollOver(%d) = %s" % [
-			rolled, str(host.call("call_builtin", "rollover", [rolled]))])
-	h.complete("a real pointer move updates the rollover channel through `_input`")
+	if windowed:
+		h.begin("a real pointer move updates the rollover channel through `_input`")
+		preview.set("_paused", false)
+		var to_screen: Transform2D = (
+			preview.get_viewport().get_screen_transform()
+			* preview.get_global_transform_with_canvas()
+		)
+		# Away first, so the move onto the sprite is a genuine crossing rather than
+		# a no-op from wherever the OS left the pointer.
+		Input.warp_mouse(to_screen * Vector2(4, 4))
+		for i in 4:
+			await process_frame
+		Input.warp_mouse(to_screen * inside)
+		for i in 4:
+			await process_frame
+		h.check("the pointer landed on the sprite",
+			int(preview.get("_rollover_channel")) == rolled,
+			"rollover %d, wanted %d" % [int(preview.get("_rollover_channel")), rolled])
+		h.check("`the mouseH` / `the mouseV` agree with where it landed",
+			absf(float(host.call("get_system_prop", "mouseh")) - inside.x) < 3.0
+			and absf(float(host.call("get_system_prop", "mousev")) - inside.y) < 3.0,
+			"host (%s,%s), wanted %s" % [
+				str(host.call("get_system_prop", "mouseh")),
+				str(host.call("get_system_prop", "mousev")), str(inside)])
+		h.check("`the lastRoll` is a small number of ticks",
+			int(host.call("get_system_prop", "lastroll")) < 120,
+			"lastRoll %s" % str(host.call("get_system_prop", "lastroll")))
+		# The value `rollOver(n)` could not be asserted headlessly, now that there
+		# is a pointer for it to be measured against.
+		h.check("`rollOver(n)` is true of the sprite the pointer is on",
+			int(host.call("call_builtin", "rollover", [rolled])) == 1,
+			"rollOver(%d) = %s" % [
+				rolled, str(host.call("call_builtin", "rollover", [rolled]))])
+		h.complete("a real pointer move updates the rollover channel through `_input`")
+
+	# ------------------------------------------------------------- §15, the drop
+	# The half of `the clickOn` a single subject cannot show: a release that lands
+	# over a **higher** channel than the one that was pressed. See
+	# `_drop_over_a_higher_channel` for the rule and what breaking it did to the
+	# corpus's inventory.
+	#
+	# The playhead is stopped for both. The score keeps running across every
+	# `await` above, and a frame change moves the two subjects out from under the
+	# measurement -- which reads as the check failing when it is the harness
+	# measuring a different frame.
+	preview.set("_paused", true)
+	h.begin("§15: `the clickOn` survives a release over a higher channel")
+	await _drop_over_a_higher_channel(preview, h, host, channel, false)
+	h.complete("§15: `the clickOn` survives a release over a higher channel")
+
+	if windowed:
+		# ...and again all the way in through `_input`: press, carry and release
+		# are all `Input.parse_input_event`, so what is checked is the path a
+		# player has rather than the path a harness has.
+		h.begin("a real drop over a higher channel leaves `the clickOn` alone")
+		await _drop_over_a_higher_channel(preview, h, host, channel, true)
+		h.complete("a real drop over a higher channel leaves `the clickOn` alone")
 
 	quit(h.finish("Director's mouse event vocabulary"))

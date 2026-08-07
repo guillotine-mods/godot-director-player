@@ -1587,7 +1587,14 @@ non-empty, and otherwise **wraps to frame 1** — it does not stop.
   mouse-*down* was in *any* button, the button under the mouse-up flips its
   hilite. ScummVM notes this makes no sense and does it anyway.
 - **`the clickOn`** updates on mouse-down always, on mouse-up only when the
-  release was over a sprite.
+  release was over a sprite. **The mouse-up half is a deliberate divergence in
+  this port and is not implemented** — see `preview/interaction.gd:release`. It
+  is coherent in ScummVM only because ScummVM also delivers the mouse-up to the
+  sprite under the release; this port delivers it to the sprite that took the
+  press (D6's `mouseUp`/`mouseUpOutSide` pair), and the two rules have to name
+  the same sprite. Implementing the clause on its own broke every drop in the
+  corpus, whose idiom is a `mouseDown`/`mouseUp` pair keyed on `the clickOn`
+  being stable across the click.
 - **Immediate sprites** invert the ordering: the script runs on mouse-down and a
   paired mouse-up is synthesised immediately after. Before D4, mouse-up goes to
   the sprite that was *pressed*; from D4, to the sprite under the *release*.
