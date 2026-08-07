@@ -39,6 +39,7 @@ const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
+const Cursor := preload("res://scenes/preview/cursor.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -2831,8 +2832,8 @@ func lingo_global_cursor(value: Variant) -> void:
 ##
 ## Called on mouse movement, on mouse-up and whenever a script writes a cursor,
 ## which is Director's own cadence: the cursor is NOT recomputed per frame, so a
-## sprite that swaps to a member with a different cursor under a stationary mouse
-## keeps the old one until something moves (DIRECTOR_ENGINE.md 7.5).
+## sprite that swaps to a member with a different cursor under a stationary
+## mouse keeps the old one until something moves.
 func _resolve_cursor() -> void:
 	if _score == null:
 		return
@@ -2845,216 +2846,28 @@ func _resolve_cursor() -> void:
 	lingo_set_cursor(chosen)
 
 
-## What the cursor should be at a stage point: a channel's pair, or the global.
-##
-## Descend channels highest first, rect-test, and take the first channel whose
-## cursor is non-empty; if none supplies one, the global cursor stands
-## (DIRECTOR_ENGINE.md 7.4). The descent deliberately does NOT filter on
-## responds-to-mouse: cursor eligibility and click eligibility are different tests
-## over the same stack, so a sprite that cannot be clicked can still change the
-## cursor over it. `_score.frame()` builds its sprite array in ascending channel
-## order, so walking it backwards is highest-first.
-##
-## Split out of `_resolve_cursor` so the arbitration can be asked a question
-## without a real pointer. Headless there is no mouse, so a check that drove
-## `_resolve_cursor` alone could only ever observe the global cursor and would
-## pass while every channel was mis-resolved — which is exactly the state this
-## whole path was in.
 func cursor_at(at: Vector2) -> Variant:
 	if _score == null:
 		return _global_cursor
-	var sprites: Array = _score.frame(_index).get("sprites", [])
-	for i in range(sprites.size() - 1, -1, -1):
-		# `_effective`, not the raw score record, and for the same reason the draw
-		# path uses it: a script that hid a channel or moved it returns `{}` or a
-		# different rect, and a cursor arbitrated off the score's copy would answer
-		# for a sprite that is not where the player sees it — or is not there at
-		# all. MAP's own frame script does both (`the locH of sprite 15 to 1000`,
-		# `sprite(20).visible = 0`), so this is not a hypothetical shape.
-		var sprite: Dictionary = _effective(sprites[i])
-		if sprite.is_empty():
-			continue
-		var channel := int(sprite["channel"])
-		if not _channel_cursors.has(channel):
-			continue
-		var candidate: Variant = _channel_cursors[channel]
-		if _cursor_is_empty(candidate):
-			continue
-		if not _sprite_rect(sprite).has_point(at):
-			continue
-		return candidate
-	return _global_cursor
+	return Cursor.at(self, at, _score.frame(_index).get("sprites", []),
+		_channel_cursors, _global_cursor)
 
 
-## Is this channel one to fall through rather than stop on?
-##
-## "Empty" is a distinct state in Director: a cursor counts as empty when its
-## resource id is the integer 0 and *not* a list (DIRECTOR_ENGINE.md 7.1). So a
-## list always stops the descent, even one that will not compose — which is why
-## the corpus's `set the cursor of sprite N to [1, 1]` reads as "arrow here",
-## not as "ask the channel underneath".
-static func _cursor_is_empty(value: Variant) -> bool:
-	if typeof(value) == TYPE_ARRAY:
-		return (value as Array).is_empty()
-	return int(value) == 0
-
-
-## Install a cursor: a `[data, mask]` member pair, or a built-in number.
-##
-## A custom cursor is a pair of 1-bit members: the data holds the shape, the mask
-## says which of it is opaque. Composed the way `render_model_loader.cursor_image`
-## does — a set data bit is black, a clear one white, and the mask decides whether
-## the pixel is drawn at all, so the two must be read together or the cursor
-## becomes a black rectangle.
 func lingo_set_cursor(value: Variant) -> void:
-	if typeof(value) == TYPE_ARRAY:
-		var pair: Array = value
-		if not pair.is_empty():
-			var mask_id := int(pair[1]) if pair.size() > 1 else 0
-			var composed = _cursor_image(int(pair[0]), mask_id)
-			if composed != null:
-				var scaled := _cursor_for_stage(
-					composed["image"] as Image, composed["hotspot"] as Vector2
-				)
-				Input.set_custom_mouse_cursor(
-					ImageTexture.create_from_image(scaled["image"]),
-					Input.CURSOR_ARROW, scaled["hotspot"]
-				)
-				_cursor_now = "custom %s/%s" % [str(pair[0]), str(mask_id)]
-				return
-		# A pair that composes to nothing visible would hand Godot a fully
-		# transparent image, and the cursor disappears rather than falling back.
-		# An invisible cursor and a broken one look the same to the player.
-		Input.set_custom_mouse_cursor(null)
-		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
-		_cursor_now = "arrow (pair empty)"
-		return
-	var which := int(value)
-	Input.set_custom_mouse_cursor(null)
-	# Director's built-in numbers. -1 and 0 are the arrow; the rest map onto the
-	# nearest shape Godot offers, which is a translation rather than the real
-	# artwork and is noted as such.
-	match which:
-		1:
-			Input.set_default_cursor_shape(Input.CURSOR_IBEAM)
-		2, 3:
-			Input.set_default_cursor_shape(Input.CURSOR_CROSS)
-		4:
-			Input.set_default_cursor_shape(Input.CURSOR_WAIT)
-		200:
-			# Director's blank cursor: a transparent 1x1 image, since Godot has
-			# no "hidden" shape that survives a custom-cursor reset.
-			var blank := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-			blank.fill(Color(0, 0, 0, 0))
-			Input.set_custom_mouse_cursor(ImageTexture.create_from_image(blank))
-		_:
-			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
-	_cursor_now = str(which)
+	_cursor_now = Cursor.install(value, _table, _palette, scale.x)
 
 
-## Compose a 1-bit data/mask pair into a cursor image.
-## `{image, hotspot}`, or null when nothing visible came out.
-##
-## Fixed 16x16, cropped from the members' top-left: larger members are cropped,
-## smaller ones padded transparent. The mask's BLACK region is the visible
-## silhouette — where the mask is white the pixel is transparent, and where it is
-## black the colour comes from the data member. Reading only the data gives a
-## black rectangle; inverting the mask gives an invisible cursor.
-##
-## Null on a fully transparent result, so the caller can fall back to the arrow
-## rather than installing a cursor the player cannot see.
-const CURSOR_SIZE := 16
-## Largest a member may be and still be treated as cursor art. Matches
-## `render_model_loader.MAX_CURSOR_SIZE`, and for the same reason: the corpus
-## clears a channel's cursor with `set the cursor of sprite N to [1, 1]` 208
-## times, and member 1 is not cursor art. Measured in MAP's internal cast it is
-## `a1`, a 640x400 backdrop; cropping that to 16x16 puts a patch of scenery under
-## the pointer, which reads as a corrupt cursor rather than as the arrow the
-## author asked for. The biggest real cursor in this corpus is 17x17.
-## Godot refuses a custom cursor above this, and a cursor that large would be
-## absurd anyway. 16x16 art at a 4x stage is 64, so the ceiling only bites on
-## genuinely enormous windows, where the cursor stops growing rather than
-## disappearing.
-const MAX_CURSOR_PIXELS := 128
-
-
-## A cursor is stage art and has to grow with the stage.
-##
-## Everything else the movie draws goes through this node's own `scale`, which
-## `_fit_to_window` sets from the window size -- 1.5x at the default window. The
-## OS cursor does not: `Input.set_custom_mouse_cursor` takes real screen pixels,
-## so a 16x16 cursor handed over unscaled is drawn at a third of the size of the
-## artwork it is supposed to belong to, which is what "the cursor is tiny" is.
-##
-## Nearest-neighbour on purpose: this is 1-bit art from 1997 with hard edges, and
-## smoothing it produces a grey halo around every pixel. The hotspot scales with
-## the image, because Godot reads it in the texture's own pixels.
-func _cursor_for_stage(image: Image, hotspot: Vector2) -> Dictionary:
-	var factor := maxi(1, int(round(scale.x)))
-	if factor <= 1:
-		return {"image": image, "hotspot": hotspot}
-	var width := image.get_width() * factor
-	var height := image.get_height() * factor
-	if width > MAX_CURSOR_PIXELS or height > MAX_CURSOR_PIXELS:
-		return {"image": image, "hotspot": hotspot}
-	var grown := Image.new()
-	grown.copy_from(image)
-	grown.resize(width, height, Image.INTERPOLATE_NEAREST)
-	return {"image": grown, "hotspot": hotspot * float(factor)}
-
-
-const MAX_CURSOR_SIZE := 32
-
-
+## Kept on the node: `_cursor_image` and `_member_image` are reached by name.
 func _cursor_image(data_id: int, mask_id: int):
-	var data := _member_image(data_id)
-	if data == null:
-		return null
-	if data.get_width() > MAX_CURSOR_SIZE or data.get_height() > MAX_CURSOR_SIZE:
-		return null
-	var mask := _member_image(mask_id) if mask_id > 0 else null
-	var out := Image.create(CURSOR_SIZE, CURSOR_SIZE, false, Image.FORMAT_RGBA8)
-	out.fill(Color(0, 0, 0, 0))
-	var visible := 0
-	for y in CURSOR_SIZE:
-		for x in CURSOR_SIZE:
-			if x >= data.get_width() or y >= data.get_height():
-				continue
-			var shown := true
-			if mask != null:
-				if x >= mask.get_width() or y >= mask.get_height():
-					shown = false
-				else:
-					shown = mask.get_pixel(x, y).r < 0.5
-			if not shown:
-				continue
-			visible += 1
-			out.set_pixel(x, y, Color.BLACK if data.get_pixel(x, y).r < 0.5 else Color.WHITE)
-	if visible == 0:
-		return null
-
-	# The hotspot is the data member's registration point, and it is recentred
-	# when it falls outside the 16x16 crop — an out-of-range hotspot would put
-	# the click somewhere the cursor is not drawn.
-	var m: Dictionary = _table.get_member(1, data_id)
-	var hotspot := Vector2i(
-		int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))
-	)
-	if hotspot.x < 0 or hotspot.y < 0 \
-			or hotspot.x >= CURSOR_SIZE or hotspot.y >= CURSOR_SIZE:
-		hotspot = Vector2i(CURSOR_SIZE / 2, CURSOR_SIZE / 2)
-	return {"image": out, "hotspot": Vector2(hotspot)}
+	return Cursor.compose(data_id, mask_id, _table, _palette)
 
 
 func _member_image(cast_id: int) -> Image:
-	var m: Dictionary = _table.get_member(1, cast_id)
-	if m.is_empty() or int(m.get("data_chunk_id", -1)) < 0:
-		return null
-	var f = _table.file_for(1)
-	if f == null:
-		return null
-	var error: Array = []
-	return Bitmap.decode(m, f.read_chunk(int(m["data_chunk_id"])), _palette, error)
+	return Cursor.member_image(cast_id, _table, _palette)
+
+
+func _cursor_for_stage(image: Image, hotspot: Vector2) -> Dictionary:
+	return Cursor.for_stage(image, hotspot, scale.x)
 
 
 ## A sound channel's properties. `volume` is the one this game sets: 66 writes
