@@ -39,9 +39,42 @@ extends RefCounted
 ## A game that wants F5 needs somewhere else to put the step, and an empty value
 ## unbinds a command entirely rather than moving it -- which is the only way to
 ## hand a key back for good.
+##
+## **And then the band ran out.** Twelve F-keys, one of them Rating's, eleven
+## commands: the twelfth command has nowhere in the band to go. So `fast_forward`
+## is the first binding outside it, and the rule it actually keeps is the one the
+## band was only ever a proxy for -- *a preview key must type no character and
+## must be a key no title is measured to test.* Measured over all six roots by
+## `tools/lib/key_sites.gd`, the union of tested Mac codes is
+##
+##   0 1 2 4 7 11 12 13 14 15 18-28 32 36 37 38 45 46 49 51 53 109 123-126
+##
+## PageDown is Mac code 121, is in none of it, produces no character, and is not
+## one of the keys `preview/text_focus.gd` gives to a focused field (which takes
+## Up/Down/Home/End/Delete/Tab and would fight a binding on any of those). F10 --
+## 109, Rating's, 48 sites -- stays unassigned.
+##
+## `tools/debug_bindings.gd` asserts that predicate rather than the band, over
+## every root under `games/`, so the next command added is checked against the
+## games instead of against a habit.
 
 const CONFIG_PATH := "res://director_game.cfg"
 const SECTION := "debug"
+
+## `[debug]` entries that are values rather than keys, with their defaults.
+##
+## Kept beside `DEFAULTS` because the section is validated against both: a name
+## in neither is a typo and is reported, and without this a rate written into
+## `[debug]` would be warned about as "no command called 'fast_forward_fps'".
+##
+## `fast_forward_fps` is the rate the fast-forward toggle forces (§9.1 is the
+## rate the *score* asks for; this overrides it while the toggle is on). It is a
+## setting rather than a constant because the request that produced it was
+## "something really fast, like 60fps" -- an eyeballed number, and an eyeballed
+## number belongs in the file the player can edit.
+const SETTINGS := {
+	"fast_forward_fps": 60.0,
+}
 
 ## Command -> the key it ships on. Read when the config says nothing, and also
 ## the list of commands the config may name: a `[debug]` entry whose key is not
@@ -63,6 +96,9 @@ const DEFAULTS := {
 	"pause": "F9",
 	"snapshot": "F11",
 	"containers": "F12",
+	# The one binding outside the F-key band, because the band is full and F10 is
+	# Rating's. See the header for the measurement that chose it.
+	"fast_forward": "PageDown",
 }
 
 ## Godot keycode -> command name. Built once; the config does not change while a
@@ -71,6 +107,8 @@ const DEFAULTS := {
 ## asserts what the harnesses reach for on the node.
 static var _map: Dictionary = {}
 static var _loaded := false
+## The `SETTINGS` values as the config left them, filled by `load_config`.
+static var _numbers: Dictionary = {}
 
 
 ## The command a keypress runs, or "" when nothing is bound to it.
@@ -101,14 +139,30 @@ static func bindings() -> Dictionary:
 	return out
 
 
+## A `[debug]` setting that is a number rather than a key. Falls back to the
+## shipped default, and refuses a value that is not positive: a fast-forward at
+## 0 fps is a movie that stops, which reads as the toggle having hung the player.
+static func number(name: String) -> float:
+	if not _loaded:
+		load_config()
+	var value := float(_numbers.get(name, SETTINGS.get(name, 0.0)))
+	return value if value > 0.0 else float(SETTINGS.get(name, 0.0))
+
+
 ## Re-read the config. Called on first use; exposed so a harness can point at a
 ## different file, and so a test that has just written one is not reading the
 ## previous run's answer.
 static func load_config(config_path: String = CONFIG_PATH) -> void:
 	_loaded = true
 	_map = {}
+	_numbers = {}
 	var cfg := ConfigFile.new()
 	var has_file := cfg.load(config_path) == OK
+	for setting in SETTINGS:
+		var value: Variant = SETTINGS[setting]
+		if has_file:
+			value = cfg.get_value(SECTION, setting, value)
+		_numbers[setting] = float(value) if str(value).is_valid_float() else float(SETTINGS[setting])
 	for command in DEFAULTS:
 		var wanted := str(DEFAULTS[command])
 		if has_file:
@@ -134,6 +188,6 @@ static func load_config(config_path: String = CONFIG_PATH) -> void:
 	if not has_file:
 		return
 	for named in cfg.get_section_keys(SECTION) if cfg.has_section(SECTION) else []:
-		if not DEFAULTS.has(named):
+		if not DEFAULTS.has(named) and not SETTINGS.has(named):
 			push_warning("director_game.cfg [%s]: no command called '%s'"
 				% [SECTION, named])

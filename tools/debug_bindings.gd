@@ -28,8 +28,15 @@ extends SceneTree
 ## is safe or unsafe for the engine, not for whichever title is loaded. That
 ## sweep is the slow part of this harness and it is the point of it.
 ##
-## So: every binding is an F-key, none of them is a key any title is measured to
-## test, and all of them come from `director_game.cfg`.
+## So: no binding types a character, none of them is a key any title is measured
+## to test, and all of them come from `director_game.cfg`.
+##
+## The first of those used to read "every binding is an F-key", and that band has
+## now run out -- twelve keys, F10 is Rating's, eleven commands, and
+## `fast_forward` made twelve. The band was only ever a proxy for "types no
+## character", which is the property that actually protects the player, so that
+## is what is asserted; PageDown satisfies it exactly as F5 does. The half that
+## caught F10 is the measured sweep, and it is unchanged.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
@@ -64,13 +71,27 @@ func _init() -> void:
 			str(bound.get(command, "unbound")))
 	h.complete("every preview command has a key")
 
-	h.begin("every preview key is in the F-key band")
+	# **The band was a proxy and it has run out.** Twelve F-keys, F10 is Rating's
+	# at 48 sites, and the other eleven commands filled the rest -- so the twelfth
+	# command, `fast_forward`, had nowhere in the band to go. What the band was
+	# ever protecting is that a preview key types no *character*: a binding on a
+	# letter runs the game's handler and the preview's command at once, and what
+	# the player sees is the game misbehaving. That is the property asserted here,
+	# and it is strictly stronger than "F1 to F12" -- every F-key satisfies it,
+	# and so do PageUp/PageDown/Insert, which the band excluded for no reason it
+	# could state.
+	#
+	# The other half of the old check -- "and no title reaches for it" -- is the
+	# measured sweep below, which is where F10 was actually caught. Restating the
+	# band here would only have re-encoded the habit that missed it.
+	h.begin("no preview key types a character")
 	for command in bound:
 		var name := str(bound[command])
 		var code := OS.find_keycode_from_string(name)
-		h.check("%s is on an F-key (%s)" % [command, name],
-			code >= KEY_F1 and code <= KEY_F12)
-	h.complete("every preview key is in the F-key band")
+		var typed := Keys.char_for(_key(code))
+		h.check("%s (%s) types nothing" % [command, name], typed == "",
+			"types '%s'" % typed)
+	h.complete("no preview key types a character")
 
 	# The band is a convention. This is the statement that actually protects the
 	# player, and it is read out of the games rather than out of a constant: for
@@ -124,6 +145,7 @@ func _init() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("debug", "pause", "F9")
 	cfg.set_value("debug", "report", "")
+	cfg.set_value("debug", "fast_forward_fps", 24)
 	cfg.save(written)
 
 	h.begin("the config decides, not the defaults")
@@ -138,6 +160,21 @@ func _init() -> void:
 		DebugKeys.key_name("report") == "", DebugKeys.key_name("report"))
 	h.check("a command the file says nothing about keeps its default",
 		DebugKeys.command_for(KEY_F1) == "boxes", DebugKeys.command_for(KEY_F1))
+	# The section carries numbers as well as keys now, and the fast-forward rate
+	# is one: "make the F9 fps configurable from the cfg" was the request, so a
+	# rate the file names and the engine ignores is the failure to catch.
+	h.check("a `[debug]` number comes out of the file",
+		is_equal_approx(DebugKeys.number("fast_forward_fps"), 24.0),
+		"%.1f" % DebugKeys.number("fast_forward_fps"))
+	# 0 fps is a stopped movie, which reads as the toggle having hung the player,
+	# so a nonsense value falls back rather than being honoured.
+	cfg.set_value("debug", "fast_forward_fps", 0)
+	cfg.save(written)
+	DebugKeys.load_config(written)
+	h.check("and a value that would stop the movie falls back to the default",
+		is_equal_approx(DebugKeys.number("fast_forward_fps"),
+			float(DebugKeys.SETTINGS["fast_forward_fps"])),
+		"%.1f" % DebugKeys.number("fast_forward_fps"))
 	h.complete("the config decides, not the defaults")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(written))

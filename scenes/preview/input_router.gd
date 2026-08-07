@@ -292,6 +292,23 @@ static func debug_key(host, code: int) -> void:
 	match DebugKeys.command_for(code):
 		"pause":
 			host._paused = not host._paused
+		"fast_forward":
+			# A toggle, not a hold: one press runs the movie at the configured
+			# rate, the next hands it back to the score. The rate is stored on
+			# the node rather than a boolean because the node is what has to
+			# apply it, and 0 is a clearer "off" than a separate flag that could
+			# disagree with it.
+			host._fast_forward_fps = (
+				0.0 if host._fast_forward_fps > 0.0
+				else DebugKeys.number("fast_forward_fps")
+			)
+			var rate: float = host._fast_forward_fps
+			var said: Array = Toast.show(
+				"fast forward: %.0f fps" % rate if rate > 0.0
+				else "fast forward off")
+			host._toast = str(said[0])
+			host._toast_until = int(said[1])
+			host.queue_redraw()
 		"step_forward":
 			host._paused = true
 			host._index = mini(host._index + 1, host._score.frame_count - 1)
