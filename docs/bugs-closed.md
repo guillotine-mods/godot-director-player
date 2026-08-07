@@ -15,6 +15,113 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 31. Sprites drew at the score's rect, which is authoring residue unless the author stretched them
+
+**Status:** FIXED · **Area:** preview renderer ·
+`scenes/preview/sprite_geometry.gd:drawn_size` ·
+reported from play twice — Piposh 1 as "some sprites stretch outward and back in
+again, only some elements, only sometimes", Piposh 2 as art with a visibly wrong
+aspect for a run of frames around `DAY1` frame 1780
+
+`drawn_size` returned the sprite record's own width and height whenever it stated
+any, and fell back to the member's natural size only for a degenerate rect. It now
+returns the **member's** natural size unless the author resized the sprite — the
+stretch flag, a script write, or a shape or text member, which the reference
+excepts by type.
+
+**What the score actually holds.** `PIPDATA/WRESTLE.dir` channel 9 settles it
+without reference to anything outside the container. The channel runs a wrestler's
+animation, members `a1`..`a4`, natural 369x303, 375x308, 379x312, 379x313. The
+frame stream writes the channel a full 48-byte record on two frames out of every
+three and four bytes at offset 16 on the third:
+
+```
+f2  full record  member a1  loc 372,193  size 556x438
+f3  full record  member a1  loc 372,193  size 556x438
+f4  4 bytes @16                          size 369x303   <- a1's own size
+f5  full record  member a2  loc 372,194  size 556x438
+f7  4 bytes @16                          size 375x308   <- a2's own size
+```
+
+556x438 is not any of their sizes, it never changes, and the stretch bit is clear
+throughout. A rect that is the member's own in the middle of a span and a constant
+foreign value at the frames the record is rewritten in full is not a size anybody
+authored. Channel 10 shows the same thing carrying *between* members: on the frame
+`egozbox2` arrives the rect is 409x323, which is the natural size of the member the
+*neighbouring* channel is holding, and on the frame `foedizzy` arrives it is
+148x254, which is `egozbox2`'s.
+
+`PIPDATA/INVENTOR.dir` shows the other half of the same symptom, the one nobody
+would file as "stretching". Member `dot` is a 1x1 bitmap. Its residue is 1x1, and
+channels 10 and 11 — members 92x17 and 78x14 — carry it, so those two sprites drew
+as a single pixel each. Frame 0 hands `dot` 640x480, so the same member is also a
+full-stage rectangle for one frame.
+
+The Piposh 2 reproduction is `PIP2DATA/DAY1.DIR` channel 2, the walk-in to the
+tennis court. It plays four backdrop members in turn at one registration point:
+`island2` 25, 26, 27, 28. Three of them carry a rect exactly equal to their own
+size; 27 carries 620x150 against a 456x150 member, and drew 1.36x wide for 59
+frames. At its natural size it lands flush against the right edge of the stage;
+at the score's it runs 115 px off it.
+
+**Why the two hypotheses this was filed with are still disproved and it was still
+a bug.** Neither was about the drawn size in the score-playback path. The
+disproof recorded against hypothesis 1 — that ScummVM's `sprite.cpp:replaceFrom`
+copies the record's width and height with no natural-size reset, and the reset
+lives only in `channel.cpp:setCast` — is accurate as far as it goes, and it is why
+`_drawn_size` was left alone. What it missed is that `setCast` is not a Lingo-only
+path: `Sprite::setCast(memberID, replaceDims)` takes `replaceDims = !_stretch`, and
+`Channel::setCast` is what *every* route to putting a member on a channel goes
+through. `setCast` excepts exactly two cast types from the reset, `kCastShape` and
+`kCastText`, and that exception list is now the port's.
+
+**Why the export comparison that argued the other way is no longer evidence.**
+`tools/drawn_size.gd` scored the two rules against
+`assets/render_model/<movie>/frames.json` and reported the score's own rect
+reproducing the export's top-left on ~100% of records. Two things are wrong with
+that, and either alone is fatal:
+
+- `frames.json` carries the **exporter's** `x`/`y`, derived from the same rect by
+  the same expression the harness was scoring. Agreement is arithmetic, not a fact
+  about Director — the circularity `porting-fidelity-verification` is about.
+- the renderer that drew from that export **never used those numbers**.
+  `RenderModelLoader._resolve_sprite_rects` rewrites the rect and the top-left of
+  every unstretched sprite at load — 22,806 records in Piposh 2 — and that
+  rewrite *is* this rule. The picture known to have been right was already the
+  corrected one, and closed entry 14 was closed on a screenshot of it.
+
+The export has since been deleted (`e340f212`) and that renderer retired
+(`ead3cee2`), so `drawn_size.gd` could no longer run at all. It is gone, replaced
+by `tools/drawn_size_stability.gd`, which asks nothing of any export and asserts
+instead that **a sprite the author did not mark as stretched must not change size
+while its member and its position hold still**.
+
+This also removes the "two populations behave oppositely" note in
+`film_loop_view.child_sprite`. They never did — the main score was the odd one out.
+
+Measured before and after, over every container in both corpora:
+
+| | Piposh 1 | Piposh 2 |
+|---|---|---|
+| sprite records resolving to a member with a size | 1,886,088 | 816,318 |
+| unstretched records whose rect is not the member's | 243,522 of 1,779,608 (13.7%) | 21,093 of 729,473 (2.9%) |
+| runs that pulse, before | 11,418 | 419 |
+| runs that pulse, after | 0 | 0 |
+
+```
+$ godot --headless --script tools/drawn_size_stability.gd -- --all
+$ godot --headless --script tools/drawn_size_stability.gd -- --file PIPDATA/WRESTLE.dir
+```
+
+**Not fixed, and deliberately.** The `stretch`-set population is untouched: 32,126
+Piposh 2 records and 87,717 Piposh 1 records still draw at the score's rect,
+because that is what the flag is for. Whether *those* rects are all authored is a
+separate question nobody has asked. Text and shape members likewise keep the
+score's rect, following the reference's own exception list, so a field that
+auto-expands is still governed by whatever `text_art.gd` does with it.
+
+---
+
 ## 29. The preview resolved cursor member numbers in cast library 1 only
 
 **Status:** FIXED · **Area:** preview cursor ·

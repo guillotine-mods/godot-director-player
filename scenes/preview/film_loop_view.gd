@@ -64,14 +64,18 @@ static func open_loop(lib: int, member: Dictionary, table, ccl: PackedStringArra
 
 ## A film-loop child as a sprite record the rest of the renderer understands.
 ##
-## The size rule here is the opposite of the main score's, and deliberately so.
-## `tools/film_loop_stretch.gd` separates the two populations on the flag: of the
-## 2,053 children carrying it, **zero** have a rect equal to their member's
-## natural size, so with the flag clear the recorded rect really is authoring
-## residue and the child draws at its member's size. The main score does not
-## behave that way -- see `sprite_geometry.drawn_size` -- so the resolution
-## happens here, before the shared path sees it, rather than as a branch inside
-## it.
+## The size rule here is the same one the main score gets, and always was the
+## right one. `tools/film_loop_stretch.gd` separates the two populations on the
+## flag: of the 2,053 children carrying it, **zero** have a rect equal to their
+## member's natural size, so with the flag clear the recorded rect really is
+## authoring residue and the child draws at its member's size. This used to carry
+## a note that the main score behaved oppositely and deliberately; it did not --
+## the main score was reading residue, which is bugs.md 31, now closed.
+##
+## The resolution still happens here rather than by calling `drawn_size`, because
+## a child arrives as a loop record and not as a sprite record: it has no member
+## dictionary of its own until the caller resolves one, and it has no cast type to
+## except on.
 static func child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:
 	var w := int(member.get("width", 0))
 	var h := int(member.get("height", 0))
@@ -97,12 +101,17 @@ static func child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dic
 ##
 ## Its registration point is the centre of its rect, so `loc - half the drawn
 ## size` -- the scaled form of the same rule every other cast type uses.
+##
+## The drawn size comes from `Geometry.drawn_size`, not from the sprite record,
+## for the reason the module docstring in `sprite_geometry.gd` gives: there is one
+## rect. Reading the record here while the hit test read the resolved size put a
+## loop's artwork somewhere its own clickable box was not, by half the difference
+## between the score's residue rect and the member's own.
 static func stage_origin(sprite: Dictionary, member: Dictionary) -> Vector2:
-	var parent_w := float(sprite.get("width", member.get("width", 0)))
-	var parent_h := float(sprite.get("height", member.get("height", 0)))
+	var drawn := Geometry.drawn_size(sprite, member)
 	return Vector2(
-		float(sprite["loc_h"]) - floor(parent_w * 0.5),
-		float(sprite["loc_v"]) - floor(parent_h * 0.5)
+		float(sprite["loc_h"]) - floor(drawn.x * 0.5),
+		float(sprite["loc_v"]) - floor(drawn.y * 0.5)
 	)
 
 

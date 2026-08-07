@@ -15,20 +15,65 @@ extends RefCounted
 
 const Ink := preload("res://director/director_ink.gd")
 
+## Cast types whose sprite keeps its own width and height on a member swap.
+## `sprite.cpp:Sprite::setCast` resets the sprite's dimensions to the member's
+## `initialRect` for every type except these two: a shape *is* its rect, and a
+## text member's laid-out size is pushed back onto the sprite rather than read
+## from it (DIRECTOR_ENGINE.md 1.2). Rich text is not here because the reference
+## does not except it either -- it takes the default branch.
+const KEEPS_ITS_OWN_SIZE := [3, 8]  # field, shape
+
 
 ## How big the sprite is drawn.
 ##
-## The sprite's own size wins when it states one. That is not an optimisation --
-## it is the rule, and the member's natural size is the fallback for a sprite
-## that states nothing rather than the default. Reading the member first instead
-## makes every resized sprite in a score draw at its original dimensions, which
-## is what `tools/drawn_size.gd` exists to keep from happening again.
+## **The member's natural size wins unless the author resized the sprite.** The
+## score's stored width and height are the drawn rect only when the sprite's
+## stretch flag is set; with it clear they are authoring residue -- whatever the
+## channel was last resized to, or the size of a member that used to be there --
+## and Director never shows them, because every path that puts a member on a
+## channel resets the dimensions to the member's own (`sprite.cpp:setCast`, via
+## `channel.cpp:setCast`, with `replaceDims = !stretch`).
+##
+## This used to read the sprite's own size unconditionally, and that is what
+## bugs.md 31 was: art elongated for a run of frames and then correct again.
+## `tools/drawn_size_stability.gd` has the measurement. The clearest instance is
+## `PIPDATA/WRESTLE.dir` channel 9, where every member of a wrestler's animation
+## is written with the rect 556x438 on the two frames its record is rewritten in
+## full and with its own size on the third -- 369x303, 375x308, 379x312 in turn.
+## A rect that is right in the middle of a span and foreign at its edges is not a
+## size anybody authored. `PIPDATA/INVENTOR.dir` shows the same residue moving
+## between channels: the 1x1 member `dot` leaves 1x1 behind on channels 10 and 11
+## whose members are 92x17 and 78x14, so those sprites drew as nothing at all.
+##
+## The rule this replaces was settled against `assets/render_model/*/frames.json`
+## by `tools/drawn_size.gd`, and that comparison could not settle it: the export
+## carries the exporter's own `x`/`y`, derived from the same rect, so agreement
+## with it is arithmetic rather than evidence -- and the renderer that drew from
+## that export applied `RenderModelLoader._resolve_sprite_rects` on top, which is
+## this rule, to 22,806 Piposh 2 records before drawing a frame. The picture
+## known to have been right was already the corrected one. That is also why the
+## film-loop children in `film_loop_view.child_sprite` behave "the opposite way":
+## they never did -- the main score was the odd one out.
+##
+## Three things keep their stated size: a sprite whose stretch flag is set, a
+## sprite a script has resized (`sprite_state.effective` marks it, because
+## Director's `setWidth` makes the size stick without touching the flag), and a
+## shape or text member, which the reference excepts by type.
 static func drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 	var w := int(sprite.get("width", 0))
 	var h := int(sprite.get("height", 0))
-	if w > 0 and h > 0:
+	var natural := Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
+	# Nothing to fall back to: a member this cast does not describe, or one whose
+	# geometry did not decode. The sprite's rect is all there is.
+	if natural.x <= 0.0 or natural.y <= 0.0:
 		return Vector2(w, h)
-	return Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
+	if w <= 0 or h <= 0:
+		return natural
+	if bool(sprite.get("stretch", false)) or bool(sprite.get("size_from_script", false)):
+		return Vector2(w, h)
+	if KEEPS_ITS_OWN_SIZE.has(int(member.get("type", 0))):
+		return Vector2(w, h)
+	return natural
 
 
 ## The registration offset, scaled into the size the sprite is actually drawn at.

@@ -104,10 +104,21 @@ static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dicti
 	# running. This one aborted `_draw` partway through, every frame, so the
 	# sprites after it in channel order simply vanished. VOID is 0 in Director's
 	# numeric context, which is what `LingoValue.to_int` answers.
+	#
+	# `size_from_script` is what carries that distinction to the renderer.
+	# `sprite_geometry.drawn_size` draws an unstretched sprite at its member's
+	# natural size, because the score's rect is residue; a size a script wrote is
+	# not residue and has to survive that. Director gets there by another route --
+	# `Sprite::setWidth` sets the width autopuppet, which stops the score writing
+	# over it, and `getBbox` then uses whatever the sprite holds. The flag itself
+	# still must not be set: it governs whether a later cast swap may reset the
+	# size, and in Director a script-set width does not survive one.
 	if over.has("width"):
 		out["width"] = LingoValue.to_int(over["width"])
+		out["size_from_script"] = true
 	if over.has("height"):
 		out["height"] = LingoValue.to_int(over["height"])
+		out["size_from_script"] = true
 	if over.has("loch"):
 		out["loc_h"] = LingoValue.to_int(over["loch"])
 	if over.has("locv"):
