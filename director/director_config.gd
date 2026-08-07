@@ -31,25 +31,49 @@ var rect := Rect2i(0, 0, 0, 0)
 ## is the field that proves the rest of the header is aligned.
 var cast_array_start := 0
 var cast_array_end := 0
-## Director's own version word, `0x57E` for D7.
+## Director's own file-version word. Piposh 2's containers state `0x57E` and
+## Piposh 1's `0x73A`; the reference's own table puts D6 at `0x4C2` and D7 at
+## `0x4C8`, so both corpora are D6 or later by a wide margin.
+##
+## Read, rather than decoded into a human version number, because what the engine
+## needs it for is threshold tests: the reference chooses the score's channel
+## layout and the tempo cell's numbering from this word and nothing else, and a
+## comparison does not need the word turned into "8.5" first. See
+## `FrameClock.movie_file_version`.
 var version := 0
 ## The rate the movie plays at until its score says otherwise, in frames per
-## second. 0 when the movie states none.
+## second. Zero or below when the movie states none usable; no container in
+## either corpus does.
 ##
 ## `DIRECTOR_ENGINE.md` §9.1 says "with no tempo, the previous rate carries
 ## forward" and never says what the *first* rate is. This is it, and without it a
 ## movie that never writes a tempo runs at whatever the engine assumed -- 15 fps
 ## here, which is nearly twice the speed most of these movies want.
 ##
-## Offset 54, settled by distribution rather than by a spec. Across the 124
-## containers of a second title it reads
-## `{0:25, 2:1, 3:2, 4:3, 5:2, 6:1, 8:84, 10:5, 12:1}` -- small, plausible frame
-## rates with a strong mode at 8 and a quarter of movies stating none. Nothing
-## else in the chunk is shaped like that: offset 62 is 60 in all 124, which is a
+## Offset 54, and no longer only a distribution argument. It was settled here by
+## one: across the 124 containers of a second title it reads
+## `{2:1, 3:2, 4:3, 5:2, 6:1, 8:84, 10:5, 12:1}` over the 99 that have a config
+## at all -- small, plausible frame rates with a strong mode at 8. Nothing else
+## in the chunk is shaped like that: offset 62 is 60 in all 124, which is a
 ## constant, and the fields either side are the stage rect and the cast range,
-## both independently confirmed. It is *not* proof, and a movie whose rate you
-## can judge by eye is what would make it proof -- `tools/movie_tempo.gd` prints
-## the field so that check is one command.
+## both independently confirmed.
+##
+## The reference now confirms it outright. Walking its config reader field by
+## field from the start of the chunk -- length, file version, the four rect
+## edges, the cast range, then a run of single bytes and words for the comment
+## font, the stage colour and the bit depth, the version word again at 36, the
+## movie depth, and three long words -- lands a signed 16-bit **frame rate** at
+## exactly 54, for every file version from D4 on. And the reference does with it
+## precisely what `FrameClock.movie_default_fps` does: it sets the score's
+## current frame rate from this field when the movie's archive is loaded, before
+## a frame has been read.
+##
+## Two neighbours are worth naming because they are *not* this field. Offset 16
+## is a single byte holding D3-and-below's rate, which is not a rate but an index
+## into a table of authoring-tool slider positions; every container in both
+## corpora holds 1 there and it is dead for D4 and later. Offset 56 is the
+## platform id, which is why reading this field as 32 bits would come out
+## enormous rather than merely wrong.
 var default_tempo := 0
 var error: String = ""
 
@@ -76,7 +100,11 @@ func parse(payload: PackedByteArray) -> bool:
 	cast_array_start = _u16(payload, 12)
 	cast_array_end = _u16(payload, 14)
 	version = _u16(payload, 36) if payload.size() >= 38 else 0
-	default_tempo = _u16(payload, 54) if payload.size() >= 56 else 0
+	# Signed, as the reference reads it. Unsigned turns a negative field into a
+	# five-digit frame rate, which is a number a caller can plausibly act on;
+	# negative is one nothing will take, and "the movie states no usable rate" is
+	# the honest reading of a field that is out of range either way.
+	default_tempo = _i16(payload, 54) if payload.size() >= 56 else 0
 	return true
 
 
