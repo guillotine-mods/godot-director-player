@@ -26,7 +26,6 @@ const Labels := preload("res://director/director_labels.gd")
 const Paths := preload("res://director/director_paths.gd")
 const Palette := preload("res://director/director_palette.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
-const Cast := preload("res://director/director_cast.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
@@ -1368,6 +1367,19 @@ func lingo_go_label(label: String) -> void:
 ## belong to the file that is being left. Keeping any of it means the next movie
 ## draws with the last one's art and resolves members in the last one's casts,
 ## which resolves to real members and looks like corruption rather than an error.
+## `the movieName` — the container currently playing, as it is named on disk.
+##
+## Four scripts in this game compare it against a literal `"day1.dxr"`, and it is
+## the only exact filename comparison in the corpus. Those comparisons are
+## reconciled in `LingoValue.same_container`, not here, so this stays honest
+## about which file is loaded rather than reporting a spelling that is no longer
+## true.
+func movie_name() -> String:
+	if _movie == null:
+		return ""
+	return str(_movie.path).get_file()
+
+
 func lingo_go_movie(name: String, where: Variant) -> void:
 	if _paths == null:
 		return
@@ -1413,6 +1425,18 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	_hit_images.clear()
 	_loops.clear()
 	_overrides.clear()
+	# Channel cursors survive frame changes and cast swaps (DIRECTOR_ENGINE.md 7.5)
+	# but not a new movie, which is one of the points Director forces a recompute
+	# at. The stored value is a pair of member *numbers*, and those are local to
+	# the cast that was open when the script wrote them: MAP leaves [14, 15] on
+	# channels 3-14 for `able1`/`able2`, and members 14 and 15 of the next movie's
+	# cast are whatever that movie happens to hold. Carried over, the pair does not
+	# keep a cursor, it installs a different one. `_cursor_applied` is cleared with
+	# them, or the new movie's first genuine assignment compares equal to the stale
+	# key and is never pushed to the OS at all.
+	_channel_cursors.clear()
+	_global_cursor = 0
+	_cursor_applied = "?none"
 	# Both are keyed by channel and measured against `_ticks`, which restarts
 	# below. Left behind, a channel's loop start would sit in the *previous*
 	# movie's clock and every film loop in the new room would be asked for a
@@ -1480,50 +1504,33 @@ func lingo_play_done() -> void:
 	queue_redraw()
 
 
-## A sound channel's properties. `volume` is the one this game sets, 52 times.
-## `cursor N`, `cursor 0`, or `cursor [dataMember, maskMember]`.
+## The `cursor` builtin: `cursor N`, `cursor 0`, `cursor [dataMember, maskMember]`.
 ##
-## A custom cursor is a pair of 1-bit members: the data holds the shape, the mask
-## says which of it is opaque. Composed the way `render_model_loader.cursor_image`
-## does â€” a set data bit is black, a clear one white, and the mask decides
-## whether the pixel is drawn at all, so the two must be read together or the
-## cursor becomes a black rectangle.
-## Which cursor the point under the mouse calls for, and apply it if it changed.
+## Score-level state that stands wherever no channel supplies a cursor of its own,
+## and persists until changed, like the channel cursors. An id of 0 means "no
+## cursor set" â€” something to fall through, not an explicit arrow. Treating 0 as
+## the arrow would make every sprite override the global cursor.
 ##
-## Descend channels highest first, rect-test, and take the first channel whose
-## cursor is non-empty; if none supplies one, the global cursor stands. This
-## descent deliberately does NOT filter on responds-to-mouse: cursor eligibility
-## and click eligibility are different tests over the same stack, so a sprite
-## that cannot be clicked can still change the cursor over it.
-##
-## An id of 0 means "no cursor set" â€” a channel to fall through, not an explicit
-## arrow. Treating 0 as the arrow makes every sprite override the global cursor.
-## The `cursor` builtin sets score-level state that stands wherever no channel
-## supplies one of its own. It persists until changed, like the channel cursors.
+## Three doc comments had collided above this function and none of them described
+## it: a stray line about sound channels, the composition rules that belong to
+## `lingo_set_cursor`, and the arbitration that belongs to `cursor_at`. Split back
+## apart here, because a comment attached to the wrong function is worse than none.
 func lingo_global_cursor(value: Variant) -> void:
 	_global_cursor = value
 	_cursor_applied = " "
 	_resolve_cursor()
 
 
+## Recompute the cursor under the pointer and push it if it changed.
+##
+## Called on mouse movement, on mouse-up and whenever a script writes a cursor,
+## which is Director's own cadence: the cursor is NOT recomputed per frame, so a
+## sprite that swaps to a member with a different cursor under a stationary mouse
+## keeps the old one until something moves (DIRECTOR_ENGINE.md 7.5).
 func _resolve_cursor() -> void:
 	if _score == null:
 		return
-	var at := stage_mouse()
-	var chosen: Variant = _global_cursor
-	var sprites: Array = _score.frame(_index).get("sprites", [])
-	for i in range(sprites.size() - 1, -1, -1):
-		var sprite: Dictionary = sprites[i]
-		var channel := int(sprite["channel"])
-		if not _channel_cursors.has(channel):
-			continue
-		var candidate: Variant = _channel_cursors[channel]
-		if _cursor_is_empty(candidate):
-			continue
-		if not _sprite_rect(sprite).has_point(at):
-			continue
-		chosen = candidate
-		break
+	var chosen: Variant = cursor_at(stage_mouse())
 	# Compared by what was asked for, not by pixels, and only pushed on a change.
 	var key := JSON.stringify(chosen)
 	if key == _cursor_applied:
@@ -1532,12 +1539,67 @@ func _resolve_cursor() -> void:
 	lingo_set_cursor(chosen)
 
 
+## What the cursor should be at a stage point: a channel's pair, or the global.
+##
+## Descend channels highest first, rect-test, and take the first channel whose
+## cursor is non-empty; if none supplies one, the global cursor stands
+## (DIRECTOR_ENGINE.md 7.4). The descent deliberately does NOT filter on
+## responds-to-mouse: cursor eligibility and click eligibility are different tests
+## over the same stack, so a sprite that cannot be clicked can still change the
+## cursor over it. `_score.frame()` builds its sprite array in ascending channel
+## order, so walking it backwards is highest-first.
+##
+## Split out of `_resolve_cursor` so the arbitration can be asked a question
+## without a real pointer. Headless there is no mouse, so a check that drove
+## `_resolve_cursor` alone could only ever observe the global cursor and would
+## pass while every channel was mis-resolved — which is exactly the state this
+## whole path was in.
+func cursor_at(at: Vector2) -> Variant:
+	if _score == null:
+		return _global_cursor
+	var sprites: Array = _score.frame(_index).get("sprites", [])
+	for i in range(sprites.size() - 1, -1, -1):
+		# `_effective`, not the raw score record, and for the same reason the draw
+		# path uses it: a script that hid a channel or moved it returns `{}` or a
+		# different rect, and a cursor arbitrated off the score's copy would answer
+		# for a sprite that is not where the player sees it — or is not there at
+		# all. MAP's own frame script does both (`the locH of sprite 15 to 1000`,
+		# `sprite(20).visible = 0`), so this is not a hypothetical shape.
+		var sprite: Dictionary = _effective(sprites[i])
+		if sprite.is_empty():
+			continue
+		var channel := int(sprite["channel"])
+		if not _channel_cursors.has(channel):
+			continue
+		var candidate: Variant = _channel_cursors[channel]
+		if _cursor_is_empty(candidate):
+			continue
+		if not _sprite_rect(sprite).has_point(at):
+			continue
+		return candidate
+	return _global_cursor
+
+
+## Is this channel one to fall through rather than stop on?
+##
+## "Empty" is a distinct state in Director: a cursor counts as empty when its
+## resource id is the integer 0 and *not* a list (DIRECTOR_ENGINE.md 7.1). So a
+## list always stops the descent, even one that will not compose — which is why
+## the corpus's `set the cursor of sprite N to [1, 1]` reads as "arrow here",
+## not as "ask the channel underneath".
 static func _cursor_is_empty(value: Variant) -> bool:
 	if typeof(value) == TYPE_ARRAY:
 		return (value as Array).is_empty()
 	return int(value) == 0
 
 
+## Install a cursor: a `[data, mask]` member pair, or a built-in number.
+##
+## A custom cursor is a pair of 1-bit members: the data holds the shape, the mask
+## says which of it is opaque. Composed the way `render_model_loader.cursor_image`
+## does — a set data bit is black, a clear one white, and the mask decides whether
+## the pixel is drawn at all, so the two must be read together or the cursor
+## becomes a black rectangle.
 func lingo_set_cursor(value: Variant) -> void:
 	if typeof(value) == TYPE_ARRAY:
 		var pair: Array = value
@@ -1593,11 +1655,21 @@ func lingo_set_cursor(value: Variant) -> void:
 ## Null on a fully transparent result, so the caller can fall back to the arrow
 ## rather than installing a cursor the player cannot see.
 const CURSOR_SIZE := 16
+## Largest a member may be and still be treated as cursor art. Matches
+## `render_model_loader.MAX_CURSOR_SIZE`, and for the same reason: the corpus
+## clears a channel's cursor with `set the cursor of sprite N to [1, 1]` 208
+## times, and member 1 is not cursor art. Measured in MAP's internal cast it is
+## `a1`, a 640x400 backdrop; cropping that to 16x16 puts a patch of scenery under
+## the pointer, which reads as a corrupt cursor rather than as the arrow the
+## author asked for. The biggest real cursor in this corpus is 17x17.
+const MAX_CURSOR_SIZE := 32
 
 
 func _cursor_image(data_id: int, mask_id: int):
 	var data := _member_image(data_id)
 	if data == null:
+		return null
+	if data.get_width() > MAX_CURSOR_SIZE or data.get_height() > MAX_CURSOR_SIZE:
 		return null
 	var mask := _member_image(mask_id) if mask_id > 0 else null
 	var out := Image.create(CURSOR_SIZE, CURSOR_SIZE, false, Image.FORMAT_RGBA8)
@@ -1644,6 +1716,7 @@ func _member_image(cast_id: int) -> Image:
 	return Bitmap.decode(m, f.read_chunk(int(m["data_chunk_id"])), _palette, error)
 
 
+## A sound channel's properties. `volume` is the one this game sets, 52 times.
 func lingo_sound_prop(channel: int, prop: String) -> Variant:
 	match prop:
 		"volume":
@@ -1792,6 +1865,16 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 			return int(m.get("height", 0))
 		"text":
 			return str(m.get("text", ""))
+		"number", "membernum", "castnum":
+			# `member("able1").memberNum` and `the number of member "able1"` ask the
+			# same question by two spellings, and only the second had a path here:
+			# the first fell out of this match and returned 0. That is silent,
+			# because 0 is a plausible member number. Every `set the cursor of
+			# sprite i to [member("able1").memberNum, member("able2").memberNum]`
+			# in MAP therefore stored [0, 0] and composed to nothing. The same
+			# omission was found and fixed in `lingo/lingo_host.gd` for the other
+			# renderer; this host had it too.
+			return number
 	return 0
 
 
@@ -1806,11 +1889,19 @@ func lingo_member_number(which: Variant, cast: String) -> Variant:
 
 ## A member reference is a number already, or a name to look up in the movie's
 ## own cast. Names are what scripts actually use.
+##
+## Through `_table`, whose internal cast is opened once and cached, rather than a
+## fresh `Cast` per call: `number_of` builds its name map by parsing every member
+## in the library, so a new instance each time re-reads the CAS* chunk and every
+## CASt record behind it. That was tolerable while `member("x").memberNum` had no
+## arm above and this was reached rarely. With it, MAP's frame script performs 24
+## name lookups per exitFrame and the cost is on the frame path. Measured over 250
+## steps of MAP: 125-144 ms before, 65-81 ms after, over three runs each.
 func _resolve_member(which: Variant, _cast: String) -> int:
 	if typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT:
 		return int(which)
-	var cast := Cast.new()
-	if not cast.open(_movie):
+	var cast = _table.cast_for(1)
+	if cast == null:
 		return 0
 	return cast.number_of(str(which))
 

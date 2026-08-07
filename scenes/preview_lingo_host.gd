@@ -280,6 +280,12 @@ func get_system_prop(prop: String) -> Variant:
 			return Time.get_ticks_msec()
 		"machinetype":
 			return 256
+		"moviename":
+			# The file as it is actually named on disk. Deliberately not
+			# rewritten to the `.dxr` spelling the scripts were authored
+			# against: `LingoValue.same_container` makes the comparison succeed
+			# either way, so this can stay honest about what is loaded.
+			return preview.movie_name()
 		"keycode":
 			# Compared as a string in the corpus (`the keyCode = "49"`) and as a
 			# number elsewhere, which Lingo's coercion handles either way.

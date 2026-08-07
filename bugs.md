@@ -754,3 +754,126 @@ running the hub's frame-1 handler on any cold entry broke 9 green checks, becaus
 the caller had set up. Do not add an init-seeding path; route the entry through
 frame 1 instead. The decision to make is whether these two dev tools should
 auto-start a game, not how to seed.
+
+---
+
+## 27. `set the volume of sound N` parses correctly and still reaches nothing
+
+**Status:** open · **Area:** interpreter host ·
+found while closing `docs/LINGO_SURFACE.md` §16.4 rows 3–6
+
+`docs/LINGO_SURFACE.md` §16.3 records that `set the volume of sound 2 to 100` —
+65 statements across 52 scripts, every speech and effect volume the game sets —
+was parsed as a property of the *result of calling* a function named `sound`, and
+that the interpreter's assignment path rejected it with `cannot assign to prop_of
+call`. The parser half is fixed: `_parse_the` builds a `sound_prop` designator and
+`lingo_interpreter.gd` routes it to `set_sound_prop` / `get_sound_prop`.
+
+**`lingo/lingo_host.gd` implements neither method.** Only
+`scenes/preview_lingo_host.gd` does, and that host is the room preview, not the
+game.
+
+Reproduce it statically — the whole of the evidence is which files name it:
+
+```
+$ grep -rn "sound_prop" --include=*.gd .
+lingo/compile/lingo_parser.gd:969        builds  "sound_prop"
+lingo/lingo_interpreter.gd:398           calls   set_sound_prop
+lingo/lingo_interpreter.gd:575           calls   get_sound_prop
+scenes/director_preview.gd:1539,1550     implements the preview's pair
+scenes/preview_lingo_host.gd:300,306     implements  get_/set_sound_prop
+
+$ grep -c "func set_sound_prop\|func get_sound_prop" lingo/lingo_host.gd
+0
+```
+
+`LingoInterpreter._host_call` returns null when the host has no such method, so
+the write is discarded. The volume is still never set, and the failure is now
+*quieter* than before: the old path at least appended to `interpreter.errors`,
+and this one returns null, which is indistinguishable from a host that handled it.
+
+Two things to decide together, which is why this is one entry and not two:
+
+1. **The binding.** A `set_sound_prop(channel, prop, value)` on `lingo_host.gd`
+   that drives the channel's bus, the way `set_system_prop`'s `soundlevel` arm
+   already drives bus 0. `AudioDirector` owns the channels.
+2. **The silence.** A `_host_call` that finds no method should be reportable.
+   Every other unbound name in this port is reported with its location — that is
+   the discipline `docs/LINGO_SURFACE.md` §9.3 calls "the most valuable thing in
+   the host" — and a missing *method* is the one hole in it. Note the constraint:
+   `_read_var` probes `call_builtin` for every bare identifier, so a blanket
+   report would misfile every unset variable. The check belongs on the
+   property/designator calls, not on `call_builtin`.
+
+Not measured at runtime: the two greps above and the one-line
+`_host_call` body settle it without a play session, and a harness that asserts a
+volume the port has no way to set would only be asserting the gap. Write the
+harness with the binding.
+
+---
+
+## 28. The preview's cursor never scales with the stage, and its hotspot rule is unverified
+
+**Status:** open, cosmetic · **Area:** preview renderer ·
+found while fixing the preview's custom cursors
+
+Two things about how a composed cursor lands on screen in
+`scenes/director_preview.gd`, neither of which stops a cursor appearing now that
+it appears at all.
+
+**Scale.** `lingo_set_cursor` hands `Input.set_custom_mouse_cursor` the composed
+image at its native 16x16 and nothing else. The preview draws the 640x480 stage
+through `_fit_to_window`, which at the project's default 1280x720 window and the
+`native_4_3` aspect picks `min(1280/640, 720/480)` = **1.5**, so every piece of
+artwork is half again as large as the cursor sitting on it. This is bugs.md 19
+for the other renderer, one step worse: `MoviePlayer._apply_cursor` at least
+scales in integer steps, and this does not scale at all.
+
+Reproduce: run
+`godot --path . res://scenes/director_preview.tscn -- --file PIP2DATA/MAP.DIR`,
+hover any of channels 3-14 on the map, and compare the 16x16 cursor against the
+map art around it.
+
+**Hotspot.** `_cursor_image` takes the hotspot from the data member's
+registration point and recentres it to (8,8) only when it falls outside the 16x16
+crop, which is `docs/DIRECTOR_ENGINE.md` 7.3 rule 1. Rule 2 of the same section
+says **Windows Director before D5 ignores custom hotspots entirely and always
+uses (8,8)**. This game's containers are D4 and the original shipped on Windows,
+so (8,8) may be right for every cursor here. Measured for MAP's pair: `able1` has
+a registration point of (10,9), so the two rules differ by (2,1) — small enough
+that nobody would notice it and large enough to make every click land off by a
+couple of pixels from where the cursor points. Not resolved either way: deciding
+it needs a source on what the original build did, not a preference.
+
+---
+
+## 29. The preview resolves member names in cast library 1 only
+
+**Status:** open · **Area:** preview host ·
+found while fixing the preview's custom cursors
+
+`_resolve_member` looks a name up in the movie's internal cast and nowhere else,
+and `_member_image`, `_cursor_image` and `lingo_member_prop` all read back
+through `_table.get_member(1, ...)`. A script naming a member that lives in a
+linked cast therefore gets 0, which composes to nothing and reads as the arrow —
+the same silent shape as the `memberNum` hole that was just closed.
+
+Not observed as a failure. Both movies that were measured resolve inside library
+1: MAP's `able1`/`able2` are members 14 and 15 of its internal cast, and AIR1's
+`hand1`/`hand2` are 194 and 195 of its own. `render_model_loader`'s equivalent
+deliberately does the same thing and says why — `member("wlkcur1").memberNum`
+drops the library, and the number that survives means whatever the name lookup
+meant — so lib 1 may well be the correct reading rather than a shortcut. What is
+missing is a case that proves it either way.
+
+Reproduce the shape, not a failure:
+
+```
+$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR
+   [14, 15] -> able1: 16x16, 116/256 opaque, hotspot (10.0, 9.0)
+$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/AIR1.DIR
+   [194, 195] -> hand1: 16x16, 184/256 opaque, hotspot (7.0, 8.0)
+```
+
+A movie whose cursor members are only in a linked cast would print `[0, 0]` and
+fail `no pair resolved to member 0`. Finding one is the next step.
