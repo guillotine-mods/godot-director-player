@@ -144,6 +144,13 @@ var _textures: Dictionary = {}
 ## Same keys as `_textures`, holding the decoded Image so a click can be tested
 ## against the artwork rather than against its bounding box.
 var _hit_images: Dictionary = {}
+## Same keys again, holding the inverted artwork a sprite draws with while it is
+## being pressed (§4.6, `preview/hilite.gd`). Kept rather than derived per paint:
+## a held button would otherwise cost a full per-pixel pass over its member every
+## frame. Each entry carries the `_hit_images` Image it was derived from and is
+## discarded when that object is replaced, so it needs no clearing of its own --
+## `preview/hilite.gd:_inverted` says why that is not just an optimisation.
+var _hilite_textures: Dictionary = {}
 ## "<lib>:<member>" -> what a script last put into that field, overriding the text
 ## authored into the member's `STXT`. Held here rather than written back into the
 ## cast because the cast is a parsed view of a read-only container, and because a
@@ -798,6 +805,7 @@ func _palette_applied() -> void:
 	_palette = _palette_state.table
 	_textures.clear()
 	_hit_images.clear()
+	_hilite_textures.clear()
 	queue_redraw()
 
 

@@ -201,6 +201,42 @@ static func blend_alpha(sprite: Dictionary) -> float:
 	return float(255 - amount) / 255.0
 
 
+## A copy of `image` with every colour inverted and every alpha kept.
+##
+## This is the pixel half of hilite-on-click (§4.6). Director inverts the
+## **destination** through the sprite's matte -- `Window::invertChannel` runs
+## `_wm->inverter` over the composed surface for every pixel the matte lets
+## through -- so what appears is the silhouette of the sprite in reverse video,
+## which is the only feedback a Director title gives that a click has landed.
+##
+## Alpha is the mask. It is carried through untouched rather than inverted,
+## because the keyed-out paper is exactly the region the matte excludes: under
+## Matte ink the image's own alpha **is** the matte, so inverting the image and
+## drawing it in place of the original reproduces the masked XOR exactly.
+##
+## **Where this diverges, and why it is not fixable here.** Under an ink that
+## keys more than the matte does -- Background Transparent drops every paper
+## pixel, including the ones enclosed by artwork that a matte keeps -- Director
+## would invert whatever is *behind* the sprite in those holes, and this inverts
+## nothing there. Reading the destination back needs a screen the renderer can
+## sample mid-frame, which is the same thing §16.25 says the absence of dirty
+## rects forecloses. It is unreachable from either corpus: the arm that admits a
+## non-Matte ink is the Auto Hilite flag, and 0 of 73,994 Piposh 2 members and 0
+## of Piposh 1's carry it (`tools/hilite_survey.gd`).
+##
+## Inverting in linear-free 8-bit terms -- 255 minus the channel -- because that
+## is what `inverter` does to an index's RGB and what a period title was drawn
+## against. A gamma-correct inversion would be a different picture.
+static func invert(image: Image) -> Image:
+	var out := Image.create_empty(
+		image.get_width(), image.get_height(), false, Image.FORMAT_RGBA8)
+	for y in image.get_height():
+		for x in image.get_width():
+			var c := image.get_pixel(x, y)
+			out.set_pixel(x, y, Color8(255 - c.r8, 255 - c.g8, 255 - c.b8, c.a8))
+	return out
+
+
 ## Key out every pixel exactly equal to the paper colour.
 ##
 ## Exact, not near-enough. Director compares palette indices, and an 8-bit image

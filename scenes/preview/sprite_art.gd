@@ -13,6 +13,11 @@ extends RefCounted
 ## match and the sprite comes out as a solid rectangle. That was a real bug --
 ## EXODUS's selection highlight drew as a filled black box.
 ##
+## `draw` adds one thing on top of that: the sprite being pressed draws its
+## inverted copy instead of its artwork, which is Director's hilite-on-click. The
+## rule and its cache live in `preview/hilite.gd`; only the substitution is here,
+## so that flip, blend and placement are written once and apply to both pictures.
+##
 ## The caches stay on the node and are passed in. `tools/` reads `_textures` and
 ## `_hit_images` by name, and they are dictionaries, so passing them reads as
 ## owning them. The palette is passed per call rather than held because it is a
@@ -23,6 +28,7 @@ const Ink := preload("res://director/director_ink.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+const Hilite := preload("res://scenes/preview/hilite.gd")
 
 
 ## Decoded once per (member, ink, size, colours) and kept. A member costs
@@ -130,6 +136,17 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 ## synthetic record for that reason.
 static func draw(canvas: CanvasItem, texture: Texture2D, at: Vector2,
 		sprite: Dictionary, modulate: Color) -> void:
+	# Hilite (§4.6) is a *substitution*, not an overlay, and that is the whole
+	# reason it lands here rather than as another pass in `stage_paint`. Director
+	# inverts the destination through the sprite's matte, and the inverted copy
+	# carries the same alpha, so drawing it in place of the artwork inverts the
+	# silhouette and nothing else. Painting a rectangle over the top instead is
+	# the failure this ordering exists to avoid -- it is the same shape of bug as
+	# the solid black box EXODUS's selection highlight drew.
+	#
+	# It also means flip, blend and the clip below apply to the hilited picture
+	# exactly as they do to the plain one, with no second copy of any of them.
+	texture = Hilite.artwork(canvas, texture, sprite)
 	var flip_h := bool(sprite.get("flip_h", false))
 	var flip_v := bool(sprite.get("flip_v", false))
 	if not flip_h and not flip_v:

@@ -34,6 +34,13 @@ const STRIDE_MASK := 0x0FFF
 ## 32-bit members, which is why the depth comes from the specific block's own
 ## byte and this is kept only as a cross-check.
 const DEPTH_FLAG := 0x8000
+## Bit 1 of the cast info flag word: the Cast Info dialog's **Auto Hilite** tick
+## box. §4.6 -- a bitmap sprite inverts on mouse-down when its member carries it.
+const INFO_AUTO_HILITE := 0x02
+## Bit 0 of the same word: the member's artwork is linked from an external file
+## rather than stored in this cast. Decoded, unused, and named so it is not
+## mistaken for a spare bit later.
+const INFO_EXTERNAL := 0x01
 
 ## Not owned: the caller opened it and the caller closes it.
 var file = null
@@ -181,6 +188,15 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 		"height": 0,
 		"reg_offset_x": 0,
 		"reg_offset_y": 0,
+		# The info block's own flag word, and the two bits of it anything reads.
+		# **`has_cast_info` is not the same as `auto_hilite` being false**, and
+		# §4.6 turns on the difference: a bitmap with cast info answers hilite
+		# from the flag, and a bitmap *without* one falls back to "ink is Matte".
+		# D3 only wrote an info block for a member the author had named, scripted
+		# or otherwise touched, so the absent case is real data and not an error.
+		"info_flags": 0,
+		"auto_hilite": false,
+		"has_cast_info": false,
 	}
 
 	# 5 of DAY1's 372 members carry no info block at all.
@@ -237,6 +253,20 @@ func _parse_info(info: PackedByteArray, out: Dictionary) -> void:
 	if info.size() < 20:
 		return
 	var data_offset := _be_u32(info, 0)
+	out["has_cast_info"] = true
+	# The header is five big-endian words before the string table: the offset to
+	# that table, two the reference does not name, the flag word, and the script
+	# id. Only the first and last were read here, which is why the flag word had
+	# to be found rather than looked up -- and it is checked by the same rule that
+	# settled the script id: **script_id lands at 16**, so the word before it at
+	# 12 is the flags, and nothing else can be.
+	#
+	# Bit 1 is Auto Hilite, the Cast Info dialog's tick box, and it is what §4.6
+	# drives a bitmap's hilite-on-click from. Bit 0 is "external" (a linked
+	# member), decoded here only because it is the other documented bit in the
+	# same word and leaving it out would invite the next reader to re-derive it.
+	out["info_flags"] = _be_u32(info, 12)
+	out["auto_hilite"] = (int(out["info_flags"]) & INFO_AUTO_HILITE) != 0
 	out["script_id"] = _be_u32(info, 16)
 	if data_offset + 2 > info.size():
 		return
