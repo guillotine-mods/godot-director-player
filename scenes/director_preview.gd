@@ -37,6 +37,7 @@ const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
+const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -1921,132 +1922,29 @@ func _click(at: Vector2) -> void:
 	queue_redraw()
 
 
-## Draw a film-loop sprite by drawing its children. False when the member is not
-## a film loop, so the caller falls through to the bitmap path.
-##
-## Children are positioned relative to the loop's own registration point, and
-## stack among themselves by their mini-score channel â€” the loop as a whole still
-## occupies one channel on the stage, so it layers where the score put it.
+## Film loops, delegated to `preview/film_loop_view.gd`. The loop cache and the
+## per-channel start ticks stay on the node; the module reaches back through
+## `host` for artwork and painting, because the texture cache and the canvas are
+## the node's and a loop's children must go through exactly the same path as any
+## other sprite.
 func _draw_film_loop(sprite: Dictionary) -> bool:
-	var lib := int(sprite["cast_lib"])
-	var id := int(sprite["cast_id"])
-	var m: Dictionary = _table.get_member(lib, id)
-	if m.is_empty() or int(m.get("type", 0)) != 2:
-		return false
-
-	var key := "%d:%d" % [lib, id]
-	if not _loops.has(key):
-		_loops[key] = _open_loop(lib, m)
-	var loop = _loops[key]
-	if loop == null:
-		_tally(_loop_stats, "loop unparsed")
-		return true # a film loop that will not parse still draws no bitmap
-	_tally(_loop_stats, "loop drawn")
-
-	# The loop's own top-left on the stage. Its registration point is the centre
-	# of its rect, so `loc - half the drawn size` â€” the scaled form of the same
-	# rule every other cast type uses.
-	var parent_w := float(sprite.get("width", m.get("width", 0)))
-	var parent_h := float(sprite.get("height", m.get("height", 0)))
-	var origin := Vector2(
-		float(sprite["loc_h"]) - floor(parent_w * 0.5),
-		float(sprite["loc_v"]) - floor(parent_h * 0.5)
-	)
-	# A child's loc is its registration point inside the loop's own coordinate
-	# space, which the loop's rect anchors â€” not a top-left on the stage. Adding
-	# it to the sprite's position, as the first version did, places every child
-	# by however far the loop's rect happens to sit from the origin, which is
-	# why the animations that had never drawn before appeared in the wrong place.
-	var rect: Dictionary = m.get("initial_rect", {})
-	var loop_origin := Vector2(int(rect.get("left", 0)), int(rect.get("top", 0)))
-
-	# Counted from when this loop arrived on the channel, not from the movie
-	# clock: a loop entered a second time starts at its first frame rather than
-	# resuming wherever the previous one left off.
-	var since := maxi(0, _ticks - int(_loop_start.get(int(sprite["channel"]), 0)))
-	var kids: Array = loop.children(since)
-	_tally(_loop_stats, "children offered")
-	if kids.is_empty():
-		_tally(_loop_stats, "loop has no children this tick")
-	for child in kids:
-		var child_lib := _child_lib(child, lib)
-		if child_lib < 0:
-			_tally(_loop_stats, "child unresolved cast=%s" % str(child["cast_name"]))
-			continue
-		var cm: Dictionary = _table.get_member(child_lib, int(child["cast_id"]))
-		var texture: Texture2D = _texture_for(_child_sprite(child, child_lib, cm))
-		if texture == null:
-			_tally(_loop_stats, "child has no art")
-			continue
-		_tally(_loop_stats, "child drawn")
-		# Deliberately NOT scaled by the stretch factor. Scaling it here â€” which
-		# is what the stage path does for a stretched sprite â€” measurably moved
-		# the animations further from where they belong, so a loop's children
-		# anchor in the loop's own coordinate space rather than in the drawn one.
-		# Reverted on evidence, not theory; the stage path keeps its scaling.
-		# Two subtractions, not one. A child's own start point is first made
-		# relative to the loop's rect origin, then placed at where the loop
-		# landed on the stage â€” and only then does the child's own registration
-		# offset come off, by the same rule as any other sprite. Forgetting
-		# either subtraction gives a constant offset: the loop's rect origin, or
-		# half the loop's size.
-		var child_reg := _scaled_reg(cm, texture.get_size())
-		var at := Vector2(float(child["loc_h"]), float(child["loc_v"]))
-		# A child carries its own ink and its own blend, and the loop's alpha
-		# multiplies through: a blended loop dims everything inside it.
-		_draw_sprite_texture(
-			texture,
-			origin + (at - loop_origin) - child_reg,
-			child,
-			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
-		)
-	return true
+	return FilmLoopView.draw(self, sprite, _table, _loops, _ccl, _ticks, _loop_start)
 
 
-## The movie's cast-library number for a child's named cast, or -1.
 func _child_lib(child: Dictionary, owner_lib: int) -> int:
-	var name := str(child["cast_name"])
-	if name == "":
-		return owner_lib
-	# A `ccl ` entry is the cast's authoring path, in whichever separator the
-	# machine that saved the movie used: Mac colon form in the 1997 originals, a
-	# Windows path in a file that has been through a converter. Only the filename
-	# is of any use, so both separators are normalised before it is taken.
-	var stem := name.replace(":", "/").replace("\\", "/").get_file().get_basename().to_lower()
-	for number in _table.cast_libs:
-		if str(_table.cast_libs[number].get("name", "")).to_lower() == stem:
-			return int(number)
-	# Unresolvable, which for a converted file is the normal case rather than the
-	# exception: DAY1's `ccl ` holds a single truncated local path
-	# (`...\PIP2DATA\won`) that names none of its five libraries.
-	#
-	# The loop's own library is the answer, not a guess at the name. A film
-	# loop's children live in the cast the loop lives in, and that is knowledge
-	# the container gives us directly. Guessing from the name is actively worse
-	# than dropping the child: matching `won` as a prefix of `wonder` resolved
-	# master's loops 2:57 and 2:59 into the *wonder* cast, where the same member
-	# numbers name unrelated art -- so the loops drew, with somebody else's
-	# pictures in them. A missing asset is a bug you can see; a plausible wrong
-	# one is a bug you argue about.
-	return owner_lib
+	return FilmLoopView.child_lib(child, owner_lib, _table)
 
 
 func _open_loop(lib: int, member: Dictionary):
-	var chunk_id := int(member.get("data_chunk_id", -1))
-	if chunk_id < 0:
-		return null
-	var f = _table.file_for(lib)
-	if f == null:
-		return null
-	var loop = FilmLoop.new()
-	if not loop.parse(f.read_chunk(chunk_id), _ccl, bool(member.get("looping", true))):
-		return null
-	return loop
+	return FilmLoopView.open_loop(lib, member, _table, _ccl)
+
+
+func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:
+	return FilmLoopView.child_sprite(child, lib, member)
 
 
 ## A child names its cast by name, not by this movie's library number -- and when
-## that name resolves to nothing, the loop's own library is the answer. Same rule
-## as `_child_lib`, which this defers to so the two cannot drift apart.
+## that name resolves to nothing, the loop's own library is the answer.
 func _child_texture(child: Dictionary, owner_lib: int = 1) -> Texture2D:
 	var lib := _child_lib(child, owner_lib)
 	return _texture_for(
@@ -2054,34 +1952,10 @@ func _child_texture(child: Dictionary, owner_lib: int = 1) -> Texture2D:
 	)
 
 
-## A film-loop child as a sprite record the rest of the renderer understands.
-##
-## The size rule here is the opposite of the main score's, and deliberately so.
-## `tools/film_loop_stretch.gd` separates the two populations on the flag: of the
-## 2,053 children carrying it, **zero** have a rect equal to their member's
-## natural size, so with the flag clear the recorded rect really is authoring
-## residue and the child draws at its member's size. The main score does not
-## behave that way — see `_drawn_size` — so the resolution happens here, before
-## the shared path sees it, rather than as a branch inside it.
-func _child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:
-	var w := int(member.get("width", 0))
-	var h := int(member.get("height", 0))
-	if bool(child["stretch"]) and int(child["width"]) > 0 and int(child["height"]) > 0:
-		w = int(child["width"])
-		h = int(child["height"])
-	# The rendering attributes come across too. `_texture_for` keys on the ink and
-	# the colours, `blend_alpha` reads the blend pair and `_draw_sprite_texture`
-	# the flip bits; a child stripped of them draws by the loop's rules instead of
-	# its own, and nothing says a half is missing.
-	return {
-		"cast_lib": lib, "cast_id": int(child["cast_id"]),
-		"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
-		"width": w, "height": h,
-		"flip_h": bool(child.get("flip_h", false)),
-		"flip_v": bool(child.get("flip_v", false)),
-		"has_blend": bool(child.get("has_blend", false)),
-		"blend_amount": int(child.get("blend_amount", 0)),
-	}
+## Counted for the loop report. Named apart from `_tally` because the module
+## calls it back through `host` and a bare `_tally` would read as the node's own.
+func _tally_loop(key: String) -> void:
+	_tally(_loop_stats, key)
 
 
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
