@@ -505,6 +505,11 @@ func _fit_to_window() -> void:
 	var factor := minf(area.x / STAGE.x, area.y / STAGE.y)
 	scale = Vector2(factor, factor)
 	position = ((canvas - Vector2(STAGE) * factor) * 0.5).floor()
+	# The cursor is built at the stage's scale, so a resize invalidates whatever
+	# is installed. Forcing the cached key to miss makes the next resolve rebuild
+	# it rather than leaving a cursor sized for the previous window.
+	_cursor_applied = "?resized"
+	_resolve_cursor()
 
 
 ## The largest rectangle of the given aspect that fits inside the canvas.
@@ -1104,6 +1109,26 @@ func _effective(sprite: Dictionary) -> Dictionary:
 	for key in ["membernum", "castnum"]:
 		if over.has(key):
 			out["cast_id"] = int(over[key])
+	# Director's `setCast` rule: a member swap replaces the sprite's width and
+	# height with the new member's natural size, unless the stretch flag says the
+	# author deliberately resized this sprite.
+	#
+	# It matters here because the score's width and height describe whatever
+	# member the *score* put on this channel, and a script that swaps the member
+	# leaves them describing the wrong artwork. This game walks its characters
+	# entirely by member swap -- `member("walkright" & syz & x)`, where `syz` is
+	# one of six size tiers and `x` the animation frame -- and never writes a
+	# width or a height anywhere. So without this every frame of the cycle is
+	# squashed into the previous one's rect, which reads as the character
+	# stretching as his arms move, and all six size tiers draw at one size, which
+	# reads as perspective scaling that stopped working.
+	if int(out["cast_id"]) != int(sprite["cast_id"]) and not bool(sprite["stretch"]):
+		var swapped: Dictionary = _table.get_member(
+			int(sprite["cast_lib"]), int(out["cast_id"])
+		)
+		if int(swapped.get("width", 0)) > 0 and int(swapped.get("height", 0)) > 0:
+			out["width"] = int(swapped["width"])
+			out["height"] = int(swapped["height"])
 	# A script that writes `the width of sprite` resizes it. Deliberately without
 	# setting `stretch`: the flag does not mean "is resized", it means "the author
 	# resized this deliberately", and all it governs is whether a cast swap is
@@ -1607,9 +1632,12 @@ func lingo_set_cursor(value: Variant) -> void:
 			var mask_id := int(pair[1]) if pair.size() > 1 else 0
 			var composed = _cursor_image(int(pair[0]), mask_id)
 			if composed != null:
+				var scaled := _cursor_for_stage(
+					composed["image"] as Image, composed["hotspot"] as Vector2
+				)
 				Input.set_custom_mouse_cursor(
-					ImageTexture.create_from_image(composed["image"]),
-					Input.CURSOR_ARROW, composed["hotspot"]
+					ImageTexture.create_from_image(scaled["image"]),
+					Input.CURSOR_ARROW, scaled["hotspot"]
 				)
 				_cursor_now = "custom %s/%s" % [str(pair[0]), str(mask_id)]
 				return
@@ -1662,6 +1690,38 @@ const CURSOR_SIZE := 16
 ## `a1`, a 640x400 backdrop; cropping that to 16x16 puts a patch of scenery under
 ## the pointer, which reads as a corrupt cursor rather than as the arrow the
 ## author asked for. The biggest real cursor in this corpus is 17x17.
+## Godot refuses a custom cursor above this, and a cursor that large would be
+## absurd anyway. 16x16 art at a 4x stage is 64, so the ceiling only bites on
+## genuinely enormous windows, where the cursor stops growing rather than
+## disappearing.
+const MAX_CURSOR_PIXELS := 128
+
+
+## A cursor is stage art and has to grow with the stage.
+##
+## Everything else the movie draws goes through this node's own `scale`, which
+## `_fit_to_window` sets from the window size -- 1.5x at the default window. The
+## OS cursor does not: `Input.set_custom_mouse_cursor` takes real screen pixels,
+## so a 16x16 cursor handed over unscaled is drawn at a third of the size of the
+## artwork it is supposed to belong to, which is what "the cursor is tiny" is.
+##
+## Nearest-neighbour on purpose: this is 1-bit art from 1997 with hard edges, and
+## smoothing it produces a grey halo around every pixel. The hotspot scales with
+## the image, because Godot reads it in the texture's own pixels.
+func _cursor_for_stage(image: Image, hotspot: Vector2) -> Dictionary:
+	var factor := maxi(1, int(round(scale.x)))
+	if factor <= 1:
+		return {"image": image, "hotspot": hotspot}
+	var width := image.get_width() * factor
+	var height := image.get_height() * factor
+	if width > MAX_CURSOR_PIXELS or height > MAX_CURSOR_PIXELS:
+		return {"image": image, "hotspot": hotspot}
+	var grown := Image.new()
+	grown.copy_from(image)
+	grown.resize(width, height, Image.INTERPOLATE_NEAREST)
+	return {"image": grown, "hotspot": hotspot * float(factor)}
+
+
 const MAX_CURSOR_SIZE := 32
 
 

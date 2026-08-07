@@ -57,13 +57,19 @@ shared path: `_drawn_size` is the main score's, `_child_sprite` is the film
 loop's. The texture cache key gained the drawn size with it, since one member
 legitimately appears at several sizes in a movie.
 
-**`setCast` overwrites width and height from the member only when `stretch` is
-clear.** Still open, and smaller than it looked: `stretch` does not mean "is
-resized", it means "the author resized this deliberately", and all it governs is
-whether a cast swap may reset the size back to the member's natural one. The
-preview has no reset-on-swap path at all — it takes width and height from the
-score record every frame — so there is nothing yet for the flag to protect.
-`director/sprite_channel.gd:110-126` already implements the real rule correctly.
+**Done: `setCast` overwrites width and height from the member when `stretch` is
+clear.** This was filed as small and it was not. The score's width and height
+describe whatever member the *score* put on a channel, so a script that swaps the
+member leaves them describing the wrong artwork.
+
+This game walks its characters entirely by member swap —
+`member("walkright" & syz & x)`, where `syz` is one of six size tiers and `x` the
+animation frame — and never writes a width or a height anywhere. Without the rule
+every frame of the cycle is squashed into the previous one's rect, which reads as
+the character stretching as his arms move, and all six size tiers draw at one
+size, which reads as perspective scaling that stopped working. Two reported bugs,
+one missing rule. `scenes/director_preview.gd` `_effective`;
+`director/sprite_channel.gd:110-126` already had it right.
 
 **Flip is in the data and is not decoded.** Horizontal and vertical flip live in
 the sprite record's thickness byte (`0x20`, `0x40`), along with the has-blend
