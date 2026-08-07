@@ -172,6 +172,7 @@ godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs
 godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
 godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # where the playhead goes
 godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
+godot --headless --script tools/movie_churn.gd     # the stage and a window each settle on a movie rather than cycling, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
 godot --headless --script tools/sprite_record_bytes.gd -- --all  # what each of the 48 bytes of a sprite record holds, pass/fail
@@ -236,7 +237,8 @@ harness — that is what `tools/lib/` exists to make cheap.
 
 `smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
 `sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
-`cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `text_and_shapes.gd`,
+`cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `movie_churn.gd`,
+`text_and_shapes.gd`,
 `stage_clip.gd`, `trails.gd`, `palette_cycle.gd`, `sprite_flip.gd`,
 `sprite_record_bytes.gd`, `sprite_size_survey.gd`, `tween_survey.gd`,
 `drawn_size_stability.gd`,

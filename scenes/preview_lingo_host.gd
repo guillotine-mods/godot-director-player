@@ -14,6 +14,15 @@ extends RefCounted
 ## nothing". The difference is the whole point of `unbound` below.
 
 const ContainerName := preload("res://director/director_container.gd")
+const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
+
+## The bare words `go`'s own grammar puts in front of its arguments.
+##
+## Taken from the parser's table rather than restated, because a command's words
+## and the host that has to skip them are one rule: the parser emitted them, so
+## the parser's list is the authority on what can arrive. Restating it is what
+## left `frame` unhandled while `to` and `movie` were dropped — see `_go`.
+const GO_WORDS: Dictionary = Grammar.COMMAND_WORDS["go"]
 
 var preview: Node = null
 ## Lingo globals. The real host aliases several of these onto engine state; here
@@ -230,76 +239,92 @@ func call_builtin(name: String, args: Array) -> Variant:
 	return null
 
 
-## `go to the frame`, `go to frame N`, `go(marker(0))`, `go "label"`.
+## `go to the frame`, `go to frame N`, `go to frame "x" of movie "y"`,
+## `go(marker(0))`, `go "label"`.
 ##
 ## The first is why a Director room sits still at all: the frame script's
 ## `exitFrame` sends the playhead back to where it already is, every tick. A
 ## preview without it runs the score off the end of the room, which looks like a
 ## rendering fault and is the absence of this one call.
+##
+## `go` is a *command*, so what arrives here is the command's own bare words in
+## front of its evaluated arguments: `go to frame "savegame2" of movie X` reaches
+## this as `["to", "frame", "savegame2", X]`. They are split off as a set rather
+## than filtered one name at a time, because filtering one name at a time is how
+## this went wrong. Only `to` and `movie` were dropped, so `frame` was left
+## standing in the argument position and read as the destination *marker*. No
+## movie has a marker called `frame`, so the lookup fell back to frame 0 — and
+## frame 0 of `SAVELOAD` runs back into `HEZSAVE` five frames later, so the two
+## movies changed places for ever, reloading the stage every few ticks and
+## painting it black in between. Every spelled-out `go to frame ... of movie ...`
+## in this corpus is a save/load hop, so the whole save screen was unreachable.
+##
+## The word set is `go`'s own grammar entry — what the parser emitted the words
+## from — so the two cannot drift apart. Only *leading* words are taken, which
+## leaves a marker genuinely named `frame` reachable as the first argument.
 func _go(args: Array) -> Variant:
 	if preview == null:
 		return 0
 	var words: Array = []
 	for a in args:
 		words.append(str(a).to_lower() if typeof(a) == TYPE_STRING else a)
-	# `to` is a bare command word and carries no meaning here. The type test is
-	# not decoration: this array mixes the command's bare words with evaluated
-	# arguments, and GDScript raises on `int != String` rather than answering
-	# true — so `go to marker(+1)` threw on this line every time and the
-	# playhead never moved, with the error buried in a lambda.
-	var kept: Array = []
-	for w in words:
-		if typeof(w) == TYPE_STRING and str(w) == "to":
-			continue
-		kept.append(w)
-	words = kept
-	if words.is_empty():
-		return 0
 
-	# A movie name can arrive in either shape: `go to movie "day1.dir"` puts the
-	# bare word `movie` first, and `go(1, "day1.dir")` puts the frame first and
-	# the file second. Both are in this game, so the file is found by looking
-	# like one rather than by its position.
+	# The type test is not decoration: this array mixes bare words with evaluated
+	# arguments, and GDScript raises on `int != String` rather than answering
+	# true — so `go to marker(+1)` threw on this line every time and the playhead
+	# never moved, with the error buried in a lambda.
+	var spoken: Dictionary = {}
+	var values: Array = []
+	for w in words:
+		if values.is_empty() and typeof(w) == TYPE_STRING and GO_WORDS.has(str(w)):
+			spoken[str(w)] = true
+			continue
+		values.append(w)
+
+	# A movie name arrives in one of three shapes: `go to movie "day1.dir"`,
+	# `go(1, "day1.dir")`, and `go to frame "x" of movie "day1.dir"`. All three
+	# are in this game, so the file is found by looking like one rather than by
+	# its position — and by the engine's own list of container extensions rather
+	# than a third hand-written copy that omitted `.dcr`, `.cxt` and `.cct`.
 	var movie := ""
 	var where: Variant = null
-	for w in words:
-		if typeof(w) == TYPE_STRING:
-			var text := str(w)
-			if text.ends_with(".dir") or text.ends_with(".dxr") or text.ends_with(".cst"):
-				movie = text
-				continue
-			if text == "movie":
-				continue
-			if where == null:
-				where = text
-		elif where == null:
+	for w in values:
+		if typeof(w) == TYPE_STRING and ContainerName.is_container(str(w)):
+			movie = str(w)
+			continue
+		if where == null:
 			where = w
+	# `go to movie "day1"` may leave the extension off, and then nothing in the
+	# arguments looks like a container: the command word is the only thing saying
+	# a movie was named at all. Director resolves the name either way.
+	if movie == "" and spoken.has("movie") and where != null:
+		movie = str(where)
+		where = null
 	if movie != "":
 		preview.lingo_go_movie(movie, where)
 		return 0
 
-	var first: Variant = words[0]
-	if typeof(first) == TYPE_STRING:
-		match str(first):
-			"the frame", "frame":
-				# `go to frame N` names a number; `go to the frame` does not.
-				if words.size() >= 2 and typeof(words[1]) != TYPE_STRING:
-					preview.lingo_go_frame(LingoValue.to_int(words[1]))
-					return 0
-				preview.lingo_hold()
-				return 0
-			"loop":
-				preview.lingo_hold()
-				return 0
-			"next", "previous":
-				# Relative score navigation, which nothing here models yet.
-				# Holding is closer to right than running on into unrelated
-				# frames, and it is visible rather than silent.
-				preview.lingo_hold()
-				return 0
-		preview.lingo_go_label(str(first))
+	if values.is_empty():
+		# `go loop`, `go next`, `go previous`. Relative score navigation is not
+		# modelled; holding is closer to right than running on into unrelated
+		# frames, and it is visible rather than silent.
+		preview.lingo_hold()
 		return 0
-	preview.lingo_go_frame(LingoValue.to_int(first))
+
+	var first: Variant = values[0]
+	if typeof(first) != TYPE_STRING:
+		preview.lingo_go_frame(LingoValue.to_int(first))
+		return 0
+	match str(first):
+		"the frame", "loop", "next", "previous":
+			preview.lingo_hold()
+			return 0
+	# Director's frame argument is a number *or* a marker name, and both spellings
+	# reach here: `go to frame item 1 of nextroomdata` is how MASTER puts the
+	# player back in the room they came from, and that item is a marker name.
+	# Reading the bare word `frame` as the destination made that statement hold
+	# instead of jump.
+	preview.lingo_go_label(str(first))
 	return 0
 
 

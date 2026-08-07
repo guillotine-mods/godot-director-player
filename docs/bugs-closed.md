@@ -15,6 +15,72 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 33. `go to frame X of movie Y` read its own command word as the destination, so the save screen looped for ever
+
+**Status:** FIXED · **Area:** Lingo host, `go` ·
+`scenes/preview_lingo_host.gd:_go` ·
+reported from play as "save (piposh2) — when I enter it, it gets stuck in a weird
+loop, I see black and non-black"
+
+The repeating trace, from `tools/movie_churn.gd` before the fix:
+
+```
+SAVELOAD.dir:5 -> HEZSAVE.DIR:27 -> SAVELOAD.dir:0 -> ... -> SAVELOAD.dir:5
+  -> HEZSAVE.DIR:27 -> SAVELOAD.dir:0 -> ...
+114 movie changes in 400 steps, across 2 movies, 30 in the worst 100-step window
+```
+
+**Root cause.** `go` is a command, so the parser puts the command's own bare words
+in front of its evaluated arguments (`lingo/compile/lingo_parser.gd:_parse_optional_of_movie`
+appends the movie as a plain second argument, with no marker word). `HEZSAVE.DIR`'s
+`fillnames` says
+
+```
+go to frame "savegame2" of movie cdsavepath & "saveload.dxr"
+```
+
+which reached the host as `["to", "frame", "savegame2", "pip2data\saveload.dxr"]`.
+`_go` filtered the words one name at a time — it dropped `to` and `movie` and knew
+nothing about `frame` — so `frame` stood in the argument position and was read as
+the destination *marker*. No movie has a marker called `frame`, and
+`director_preview.gd:lingo_go_movie` falls back to frame 0 on a label it cannot
+find. `SAVELOAD` frame 0 is five frames ahead of `savegame`, whose `exitFrame`
+sends the playhead straight back into `HEZSAVE` — so the two movies changed places
+every six steps for ever. `MovieSession.forget_previous` drops the textures on each
+hop and `_draw` clears the stage to black before painting, which is the black /
+non-black flicker the player saw. Nothing was wrong with the renderer, and nothing
+was wrong with the window: `SAVELOAD` **is** a Movie-In-A-Window here, correctly,
+and it was the window's own playhead that never settled.
+
+**The general rule applied.** A command's bare words are a *set*, and the set is
+the parser's, so `_go` now splits the leading run of `Grammar.COMMAND_WORDS["go"]`
+off the front and reads the destination from what is left. The word list is not
+restated — it is the same constant the parser emitted them from, so the two cannot
+drift apart again, which is exactly how this survived: `lingo/lingo_host.gd:_go`
+had already grown its own strip list and the preview's copy had not.
+
+Two more defects fell out of the same rule:
+
+* `MASTER.CST`'s `go to frame item 1 of nextroomdata` — how a room puts the player
+  back where they came from — passes a *marker name* as `go`'s frame argument.
+  Reading `frame` as the destination made the old code take the "frame with a
+  non-numeric argument" branch and **hold** instead of jumping.
+* The movie-name test spelled `.dir`/`.dxr`/`.cst` by hand and so did not recognise
+  `.dcr`, `.cxt` or `.cct`. It now asks `director_container.gd:is_container`, which
+  is the engine's one list.
+
+`go to frame ... of movie ...` appears at seven sites in this corpus: the four
+`HEZSAVE` exits (`savegame2`, `loadgame2`, `aftersave`, `afterload`) — that is
+every exit from the save/load round trip, so the entire save screen was unreachable
+— plus `go to frame "path5" of movie "day1.dir"` twice in `MASTER.CST` and one dead
+`mainmenu.dxr` branch.
+
+**Covered by** `tools/movie_churn.gd`, which asserts a *rate*: no more than four
+movie changes in any 100 score steps, on the stage and on a Movie-In-A-Window. It
+fails with the trace above when `_go`'s word set is put back to `{to, movie}`.
+
+---
+
 ## 31. Sprites drew at the score's rect, which is authoring residue unless the author stretched them
 
 **Status:** FIXED · **Area:** preview renderer ·
