@@ -33,7 +33,7 @@ import sys,re
 s=open('director_game.cfg').read()
 open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\"' % sys.argv[1], s, count=1, flags=re.M))" "$ROOT"
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails"
+ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check"
 for t in ${@:-$ALL}; do
   out=$(timeout 300 "$G" --headless --path . --script "tools/$t.gd" 2>&1)
   r=$(printf '%s' "$out" | grep -E "^(PASS|FAIL)" | tail -1)
