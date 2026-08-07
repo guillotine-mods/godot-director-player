@@ -50,7 +50,7 @@ the files out is to run the installer on Windows.
 |------|------:|-----:|-----|
 | `.CXT` / `.CST` cast libraries | 25 | 61 MB | Bitmaps and film loops for the linked casts. |
 | `.DXR` / `.DIR` movies | 61 | 86 MB | Carry the original Lingo, which drives room conditions and day-to-day progression. |
-| `.AIF` audio | 3141 | 432 MB | **Not needed** — already converted in `assets/audio`. |
+| `.AIF` audio | 3141 | 432 MB | **Needed** — `assets/audio` was deleted along with the rest of the pre-decoded export. |
 
 Roughly **147 MB** to recover, not 593 MB.
 

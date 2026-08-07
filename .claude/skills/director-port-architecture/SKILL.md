@@ -16,8 +16,11 @@ versions, so these transfer largely intact:
   scripts. Assignment-versus-comparison is resolved by position, `tell` is parsed,
   chunk expressions (`item 2 of line 3 of field "x"`) are supported.
 - `lingo/lingo_interpreter.gd` — AST walker, scopes, chunk assignment, repeat forms
-- `lingo/lingo_host.gd` — the Director-specific bindings
-- `lingo/lingo_engine.gd` — the message hierarchy and script resolution
+- `scenes/preview_lingo_host.gd` — the Director-specific bindings
+- `scenes/preview/scripts.gd` — the message hierarchy and script resolution
+
+  (These were `lingo/lingo_host.gd` and `lingo/lingo_engine.gd`, both since
+  deleted with the renderer they served. Do not go looking for them.)
 
 Rewriting the parser would be the most expensive available mistake. What *will*
 need work is the host: bindings are game-shaped, and each new title uses a
@@ -27,7 +30,7 @@ different subset.
 
 | module | owns |
 |---|---|
-| render-model loader | frames, members, cast libraries, bitmaps, textures |
+| container reader | frames, members, cast libraries, bitmaps, textures — read from the shipped `.dir`/`.cst` at runtime, not from a pre-decoded export |
 | score runner | tempo clock, frame entry, navigation, transitions |
 | interpreter host | Director bindings: sprites, fields, sound, navigation |
 | engine | message hierarchy, script resolution per cast and member |

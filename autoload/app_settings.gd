@@ -25,34 +25,21 @@ var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST
 ## ON while the port is being built. FLIP THIS TO false BEFORE SHIPPING, or an
 ## exported build hands players a skip button and boxes over every hotspot.
 var dev_mode: bool = true
-## Interpret the original Lingo for mouse clicks instead of the lifted on_click.
+## Interpret the original Lingo for mouse clicks, and for `on exitFrame`.
 ##
-## OFF, and the remaining gap is measured. `walkonby` is now wired natively
-## (LingoHost.NATIVE_HANDLERS), and the walk globals `egozh`, `egozv`, `whatodo`
-## and `syz` alias PuppetController rather than shadowing it, so an interpreted
-## click does start a walk. tools/lingo_walk_diff.gd over 117 walk hotspots in
-## DAY1, NIGHT1 and HOTEL1:
+## **Both are orphans: nothing reads either flag any more.** They chose between
+## interpreting the movie's own Lingo and replaying a lifted `on_click` / score
+## path from the pre-decoded export. That export and the renderer that consumed
+## it are deleted, so the interpreter is the only path and there is nothing left
+## to switch to. They are still written to and read from `director_game.cfg`, so
+## removing them changes an on-disk config schema -- left in place deliberately,
+## and dead.
 ##
-##   51  identical outcome
-##   33  right room, Piposh faces the other way
-##   25  wrong room
-##    8  click no longer starts a walk
-##
-## 84 of 117 reach the correct room, against 3 before walkonby was wired. The 25
-## wrong-room and 8 dead cases are what is left. Note the facing difference may be
-## the interpreter being right: it uses the Lingo's own egozh, where the export
-## path applies the walk_doorways.json corrections that were themselves patching
-## bad exported walk targets.
+## The measurements that used to justify them (117 walk hotspots across DAY1,
+## NIGHT1 and HOTEL1, via `tools/lingo_walk_diff.gd`) were against the export as
+## oracle; that tool is deleted and the numbers are not reproducible. They are in
+## git history at the commit that retired the renderer.
 var use_lingo_clicks: bool = true
-## Interpret `on exitFrame`: 2504 of the game's 3457 handlers, so most of the
-## script logic now runs from the original Lingo rather than the lifted score data.
-##
-## ON, on this evidence: with clicks left off, tools/lingo_walk_diff.gd finds
-## 115/117 walk outcomes identical across DAY1, NIGHT1 and HOTEL1, and the two
-## differences are improvements (HOTEL1 roomago and roombgo now reach `hallgo`
-## instead of stranding at `what`, both listed as unmapped transitions in
-## data/movie_context.json). The three deleted suites also returned to their exact
-## 0/0/28 baseline with this on.
 var use_lingo_frames: bool = true
 var show_debug_overlays: bool = true
 var show_hotspot_hints: bool = false

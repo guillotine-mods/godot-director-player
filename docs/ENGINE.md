@@ -1,6 +1,23 @@
-# Director engine (Godot)
+# Director engine (Godot) — **RETIRED. This document describes deleted code.**
 
-Native Godot score runner for Piposh 2, using `assets/render_model` (frames / members / BMPs) plus `assets/audio`.
+> **Do not use this as a description of the engine.** Every module named below —
+> `director/director_runtime.gd`, `movie_context.gd`, `nav_actions.gd`,
+> `puppet_controller.gd`, `render_model_loader.gd`, `movie_player.gd`,
+> `sprite_channel.gd`, `lingo/lingo_host.gd`, `lingo/lingo_engine.gd` — has been
+> **deleted**, along with the `assets/render_model` and `data/` export it read
+> and the `scenes/main.tscn` that reached it. Every "Covered by `tools/…`" line
+> cites a harness that was deleted with it.
+>
+> The engine now reads the original `.dir`/`.cst` containers at runtime. For how
+> it works, read **`scenes/preview/README.md`** (which file your bug is in),
+> `docs/DIRECTOR_ENGINE.md` (the specification) and `docs/LINGO_SURFACE.md`.
+>
+> This file is kept because its *observations about Director* — the tempo rules,
+> the walk model, the ink and matte behaviour, the transition timing — were
+> expensive to work out and are still true of Director. Read it for those, and
+> for nothing about this repository's current code.
+
+Native Godot score runner for Piposh 2, using `assets/render_model` (frames / members / BMPs) plus `assets/audio`. **All of the following is historical.**
 
 ## Modules
 

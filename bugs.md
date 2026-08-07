@@ -13,6 +13,141 @@ Resolved entries live in [`docs/bugs-closed.md`](docs/bugs-closed.md), under the
 numbers they were filed with, because source comments cite them. Entries 14, 22
 and 25 appear in both files: the fixed half is there, the remainder is here.
 
+> **Many "Reproduce:" lines below name tools that no longer exist.** The retired
+> renderer and the ~24 harnesses that drove it were deleted; every command naming
+> `smoke.gd`, `probe.gd`, `cursors.gd`, `room_names.gd`, `sprite_channels.gd`,
+> `sprite_stretch.gd`, `film_loop_stretch.gd`, `verify_film_loops.gd`,
+> `collectables.gd`, `cliff_meeting.gd`, `wandering_characters.gd`,
+> `puppet_visibility.gd`, `lingo_converge.gd`, `lingo_frames.gd`,
+> `lingo_walk_diff.gd`, `lingo_handler_scope.gd`, `sound_state.gd`,
+> `check_surface_coverage.gd`, `score_diff.gd`, `place_diff.gd`, `member_diff.gd`
+> or `tools/lib/driver.gd` will not run, and so will anything reading
+> `assets/render_model/` or `data/` — both directories are deleted. The
+> *observation* in each entry may still be true; the command proving it is gone,
+> and re-proving it against the live player is the first step on any of them.
+>
+> **Entries 18 and 19 are about `MoviePlayer`, which is deleted**, and entry 8
+> asks for `movie_context.json` / `walk_doorways.json` to be retired, which has
+> happened. Those three are candidates for closing outright rather than fixing.
+> Entry 2's subject, `PuppetController`, is also deleted — the underlying
+> question (does the port reimplement a walk state machine the movie's own
+> scripts already answer?) survives the file.
+
+---
+
+## Coverage debt — harnesses deleted with the retired renderer
+
+These asserted rules that still matter, through an engine that no longer exists.
+Nothing replaced them. Listed worst first, so that "we have no coverage of X" is
+written down rather than remembered.
+
+| Was | Asserted | Live equivalent |
+|---|---|---|
+| `tools/smoke.gd` | The first minute of play, end to end: menu, new game, opening sequence advances rather than loops, an item is picked up *and* leaves the room | **none.** `gate.sh` tests mechanisms one at a time and nothing walks a playthrough. The biggest hole |
+| `tools/check_surface_coverage.gd` | Which Lingo names the host actually binds, against `docs/LINGO_SURFACE.md` | **none.** This is the tool that would have caught the `intersects` hole and could not, because it audited the retired host. Rebuilding it against `scenes/preview_lingo_host.gd` is the highest-value port on this list |
+| `tools/probe.gd` | Not pass/fail: where the playhead went, what it repeated, where it stopped, in real time | **none.** `AGENTS.md` told every session to reach for this first |
+| `tools/sprite_channels.gd` | A Lingo sprite write reaches the stage — not that a setter and getter agree | **none.** `preview_surface` proves the surface resolves, not that a write is consumed. This is the exact shape of the `moveableSprite` bug |
+| `tools/lingo_handler_scope.gd` | Which script receives a message, in which order | **none.** `scenes/preview/scripts.gd` is unharnessed |
+| `tools/sound_state.gd` | `soundBusy`, volume and `soundLevel` as a script sees them | **none.** `scenes/preview/sound.gd` is unharnessed |
+| `tools/puppet_visibility.gd` | A puppeted sprite's visibility survives a transition | **none** |
+| `tools/room_names.gd` | `nof` resolves to the room, and no two rooms share a key | **none.** It also printed "0 failure(s)" over 0 rooms, so it had stopped asserting anything long before it was deleted |
+| `tools/collectables.gd`, `cliff_meeting.gd`, `wandering_characters.gd` | Scenario coverage: items reveal/stay/take, a dialogue runs to its end, guests are placed once | **none** |
+| `tools/cursors.gd` | cursorfunk's cursor per channel | `tools/cursor_preview.gd`, in `gate.sh`, green |
+| `tools/sprite_stretch.gd` | A sprite draws at its member's size | `tools/drawn_size_stability.gd`, in `gate.sh`, green |
+| `tools/verify_film_loops.gd`, `film_loop_stretch.gd` | Film loops resolve to children, at the child's size | `tools/film_loop_cast.gd`, in `gate.sh`, green — the size half is not covered |
+| `tools/score_diff.gd`, `place_diff.gd`, `member_diff.gd` | The container reader against the exported JSON | `tools/container_equality_check.gd`, in `gate.sh`, green, against the ProjectorRays dumps instead. The export oracle is gone for good |
+| `tools/lingo_converge.gd`, `lingo_frames.gd`, `lingo_walk_diff.gd` | Interpreted clicks / frames / walks against the export | **unportable** — the oracle was the export |
+
+Separately: **`tools/lingo_compile_check.gd` still exists and reports `PASS` over
+nothing.** Its oracle was `data/lingo/`, deleted; it prints
+`containers with no bundle under res://data/lingo (1)` and then
+`PASS (11 checks, 0 failed)`. `README.md` called it "the regression gate for any
+parser change". It was left in the tree because it gates the parser rather than
+the renderer and comes back if `data/lingo/` does, but its green means nothing
+today.
+
+---
+
+## 36. Every one of DAY1's eleven talk clips is an inescapable two-frame loop when the movie was entered without `globalday`
+
+**Status:** open · **Area:** movie entry / cold globals · **not the film loop and
+not `play`/`play done`** · reported from play twice, as two different symptoms
+
+Two reports, one fault:
+
+| snapshot | click | parked on | what the player saw |
+|---|---|---|---|
+| DAY1 f2686 of 2783 | f959 ch18 `BehaviorScript 644` | 2685 ↔ 2686 (`tofclicktalk`) | "the mouth loop keeps going and never stops" |
+| DAY1 f2614 of 2783 | f1562 ch18 `BehaviorScript 642` | 2613 ↔ 2614 (`dnzclicktalk`) | "my click makes my character disappear" |
+
+**The mechanism.** DAY1 frames 2595–2783 are eleven `<character>clicktalk` clips.
+Each is one preamble frame followed by a `soundBusy` loop whose body is
+`BehaviorScript 250`:
+
+```
+on exitFrame
+  if not soundBusy(1) then
+    go(marker(0))
+  end if
+end
+```
+
+Its only exit is the preamble frame having started a sound. That frame —
+`BehaviorScript 291` for `tofclicktalk`, `281` for `dnzclicktalk`, and nine more
+of the same shape — looks its line up in the `master` cast's `clickoncharacter`
+field by the key `usfulobject = "tofday" & globalday`. With `globalday` VOID the
+key is `"tofday"`, no line of the field matches, `r` stays `"not"`, and the
+handler falls out without reaching `sound playFile`. So `soundBusy(1)` is never
+true, `250` bounces the playhead back to the marker every step, the preamble runs
+and does nothing every step, and the two frames trade places until the player
+quits.
+
+**Both symptoms follow from the park, and neither is a second bug.** The mouth
+keeps moving because a film loop advances on the *movie's* clock and not the
+playhead's — deliberate, `film_loop_view.gd:draw`, and the reason a character can
+keep talking while the score holds still. Traced at `tofclicktalk`, channels 18
+and 20 hold `atofspk1`/`btofspk1`; at `dnzclicktalk`, `adnzlop1`/`bdnzlop1`. The
+character disappears in the second case and not the first because the *score*
+differs: DAY1 f2686 carries a channel 30 (`standright9`), and f2613 carries no
+channel 30 at all. The clip's own restore —
+`set the memberNum of sprite 30 to the number of member ("standleft" & syz)`,
+then `go(lastmark)` — is on the exit path that is never reached.
+
+**Ruled out, with the trace rather than by argument.** `_play_stack` is empty for
+the whole park *and no `play` is executed on this path at all* (the `play frame`
+in these scripts is only on the `who contains "mov"` branch, which needs the
+lookup that failed). The clock names no hold for a single tick of it —
+`hold_reason()` is `""` throughout, so it is not a tempo delay, a transition, a
+wait-for-click or a wait-for-sound, and `sound.gd:pump` has nothing to release.
+`Scripts.for_frame` resolves correctly: 250 and 291 are the scripts that run.
+The engine is reproducing the movie faithfully; Director parks here too.
+
+**`globalday` is VOID exactly when DAY1 was not entered through `EXODUS`.**
+`EXODUS/master/BehaviorScript 46` sets `globalday = 1`; DAY1's own
+`BehaviorScript 56 - init all` reads it and never writes it, and its
+`if globalday = 1` block is where `meetings` and `soundspath` come from. So the
+F12 container picker, `--file`, and F6 warp all open DAY1 into a state where
+every character in the game is a trap. This is the player-visible half of
+entry 25 and of `tools/boot_state.gd`'s standing red check "every global the next
+room reads is set" — the safety net was already on the floor, reporting the
+cause, and nothing connected it to the symptom.
+
+Reproduce, and the one-line proof of the cause:
+
+```bash
+# parks: 2685 <-> 2686 for ever, no sound, no hold
+godot --headless --path . --script tools/playhead_escape.gd -- --cold
+# passes: the same click through the boot chain plays the clip and returns
+godot --headless --path . --script tools/playhead_escape.gd
+```
+
+**What to change.** Not the clip, not the loop and not the film loop. The engine
+may not invent a movie's globals — Director does not, and entry 25 records that
+seeding `init all` on a cold entry was tried and broke nine green checks. The
+decision is the one entry 25 leaves open, now with a second, worse consequence
+attached: a debug entry point that drops the player into a hub mid-game either
+routes through the chain that establishes the day, or says that it has not.
+
 ---
 
 ## 35. `field "x" of castLib Y` drops the library

@@ -1,9 +1,15 @@
-# Piposh 2 — Godot Port
+# Godot Director Player
 
-Godot **4.7** port of **Piposh 2** (Macromedia Director / DXR), driven by decoded `render_model` data plus WAV audio.
+Godot **4.7** general Macromedia Director engine, reading original `.dir`/`.cst`
+containers at runtime. Title-agnostic: `director_game.cfg` names a folder under
+`games/` and a boot movie, and the same engine runs whichever it is pointed at.
+It was built on **Piposh 2**, which is still the corpus every gate is measured
+against.
 
-**Project overview:** [`docs/PROJECT.md`](docs/PROJECT.md)  
-**Engine loop:** [`docs/ENGINE.md`](docs/ENGINE.md) · **Save format, widescreen, hooks:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+**Start here:** [`scenes/preview/README.md`](scenes/preview/README.md) — the player, and which file your bug is in.  
+**The specification:** [`docs/DIRECTOR_ENGINE.md`](docs/DIRECTOR_ENGINE.md) (engine) · [`docs/LINGO_SURFACE.md`](docs/LINGO_SURFACE.md) (language) · [`docs/ENGINE_TODO.md`](docs/ENGINE_TODO.md) (the gap)  
+**Retired, kept for history:** [`docs/PROJECT.md`](docs/PROJECT.md) and [`docs/ENGINE.md`](docs/ENGINE.md) describe the pre-decoded-export renderer that no longer exists. Read their headers first.  
+**Save format, widescreen, hooks:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
 **Android install:** [`docs/ANDROID.md`](docs/ANDROID.md) · **What mobile imposes on the design:** [`docs/MOBILE.md`](docs/MOBILE.md)  
 **Known bugs:** [`bugs.md`](bugs.md) · **Fixed ones:** [`docs/bugs-closed.md`](docs/bugs-closed.md) · **Working on it:** [`AGENTS.md`](AGENTS.md)
 
@@ -14,11 +20,14 @@ projector. Each room is a Director *movie*: a score of frames, a cast of bitmaps
 and sounds, and Lingo scripts attached to sprites, cast members, frames and the
 movie itself.
 
-This repo does not wrap the original player. It runs the decoded score in a native
-Godot runtime, and runs the original Lingo through an interpreter written here.
-The score data and art come in as JSON plus BMP under `assets/render_model/`, the
-original scripts are compiled to ASTs under `data/lingo/`, and the runtime steps
+This repo does not wrap the original player. It opens the shipped `.dir`/`.cst`
+containers, decodes the score, cast and Lingo out of them at runtime, and steps
 them the way Director's tempo clock did.
+
+It used to work from a pre-decoded export instead — JSON score data and extracted
+BMPs under `assets/render_model/` and `data/`. Both directories, and the renderer
+that read them, have been deleted. Anything you find that still describes that
+pipeline is stale, and worth fixing where you find it.
 
 Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVELOAD` (JSON slots).
 
@@ -26,13 +35,12 @@ Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVEL
 
 | Path | What lives there |
 |------|------------------|
-| `director/` | The score runner: tempo clock, sprite channels, renderer, navigation, puppet walk |
-| `lingo/` | The Lingo interpreter, its Director bindings, and Director's message hierarchy |
+| `director/` | The container reader: chunks, cast, score, palettes, film loops, transitions, tempo |
+| `lingo/` | The Lingo compiler and interpreter, and Director's value semantics |
 | `autoload/` | Godot singletons: game state, audio, input, settings |
-| `scenes/`, `ui/` | Entry scene, debug HUD, save editor, settings panel |
+| `scenes/` | `director_preview.tscn`, the player. `scenes/preview/` is the module split — **start at its README** |
+| `games/` | The original containers, per title, as submodules. **Read-only** |
 | `tools/` | Verification harnesses (GDScript), data tools (Python), installer extraction (Docker + Wine) |
-| `data/` | Compiled Lingo ASTs, generated lookup tables, hand-authored scaffolding |
-| `assets/` | Decoded Director movies and audio. Mirrored in, not authored here |
 | `reference/` | The decompiled original: Lingo source, Director text chunks, ScummVM sources |
 | `docs/` | Architecture and process notes, plus design docs and plans under `docs/superpowers/` |
 | `openspec/` | Spec-driven change artifacts for in-flight work (`openspec/changes/`) |
@@ -76,70 +84,65 @@ transfer to another Director port unchanged:
 | `tools/lingo_compile.py` | Lingo lexer, parser and AST emitter |
 | `lingo/lingo_interpreter.gd` | AST walker: scopes, chunk expressions, repeat forms |
 | `lingo/lingo_value.gd` | Lingo's value coercion rules |
-| `lingo/lingo_engine.gd` | Which script receives a message, in which order |
-| `lingo/lingo_diagnostics.gd`, `lingo/lingo_trace.gd` | Dispatch tracing (the env var names carry the title) |
-| `director/sprite_channel.gd` | One live channel: score sprite versus puppet state |
-| `director/stage_canvas.gd` | Stage compositing surface |
-| `director/nav_actions.gd` | Resolve `label` / `movie` / `walk` / `marker` / `hold` / `quit` |
+| `lingo/lingo_diagnostics.gd` | What the runtime could not bind, deduplicated |
+| `director/director_container.gd`, `director_file.gd`, `director_cast.gd`, `director_score.gd` | The container reader: chunks, cast libraries, score records |
+| `director/director_bitmap.gd`, `director_shape.gd`, `director_text.gd`, `director_ink.gd`, `director_palette.gd` | Cast member kinds, inks and palettes |
+| `director/director_film_loop.gd`, `director_transition.gd`, `director_frame_clock.gd`, `director_labels.gd` | Film loops, transitions, tempo, markers |
 | `autoload/audio_director.gd` | Director's sound channels: `playFile`, `soundBusy`, volume, `soundLevel`, fades, cue points |
 | `director/score_sound.gd`, `director/director_sound.gd` | The score's own sound channels, and a sound cast member decoded to a stream |
 | `autoload/input_router.gd` | Mouse and gamepad virtual cursor |
-| `tools/lib/harness.gd`, `driver.gd`, `args.gd` | Headless boot, step, click, assert |
+| `tools/lib/harness.gd`, `args.gd` | Headless assert, command line |
 
 **The seam.** The structure transfers, the contents are per-title. Expect to
 rewrite the constants, not the file:
 
 | File | What is title-specific in it |
 |------|------------------------------|
-| `lingo/lingo_host.gd` | Bindings are game-shaped by design; `objectsfield` and the `meetings` / `globalday` globals are named in code |
-| `director/render_model_loader.gd` | A `strtgame` branch and a `DAY1` bitmap fallback path |
-| `director/movie_player.gd` | `STRTGAME_MENU_HOVER`, and the title movie it boots into |
-| `director/puppet_controller.gd` | Generic walk state machine over a `PIPOSH_BY_SYZ` art table |
-| `director/inventory_drag.gd`, `inventory_drops.gd` | Director's drag model, driven by `data/inventory_drops.json` |
+| `scenes/preview_lingo_host.gd` | Bindings are game-shaped by design; every port needs a host and each title binds a different subset |
 | `autoload/app_settings.gd` | Config filename and the dev warp default |
-| `tools/lib/game_hooks.gd` | The one file in `tools/lib/` that is rewritten per title, on purpose |
+| `director_game.cfg` | Which folder under `games/` and which boot movie |
 
 **Title-specific.** `autoload/game_state.gd` (inventory, day, meetings, save
-slots), `director/movie_context.gd` (hubs, phase transitions, walk doorways),
-`ui/`, `scenes/`, and everything under `data/`, `assets/` and `reference/`.
+slots) and everything under `games/` and `reference/`.
 
-Three calls here are contestable, so they are stated rather than smoothed:
+One call here is contestable, so it is stated rather than smoothed:
 
-- **`director/director_runtime.gd` is where the rule and the code disagree.** It is
-  the largest file in the port and its score loop is the engine core, but it also
-  carries `MOVIE_ALIASES`, `BOOT_MOVIES`, the `HEZSAVE` / `SAVELOAD` / `MAP`
-  routing and the `EXODUS` intro skips. The clock and the routing are not
-  separated, and nothing currently tracks separating them.
-- **`lingo_host.gd`'s hits are expected, not debt.** `director-port-architecture`
-  puts the host on the reusable side precisely because every port needs one, while
-  each title binds a different subset.
-- **`puppet_controller.gd` is a generic machine with a game-shaped table.** The
-  walk states are Director's; the art pack per `syz` value is Piposh 2's.
+- **`scenes/director_preview.gd` is where the rule and the code disagree.** It is
+  the largest file in the port; `scenes/preview/README.md` says what came out of
+  it and what has not.
+
+The retired renderer used to occupy most of this section — `director_runtime.gd`,
+`render_model_loader.gd`, `movie_player.gd`, `lingo_host.gd`,
+`puppet_controller.gd`, `inventory_drag.gd`, `movie_context.gd`,
+`sprite_channel.gd`, `lingo_engine.gd`, `nav_actions.gd`, `stage_canvas.gd`,
+`lingo_trace.gd`, `tools/lib/driver.gd`, `game_hooks.gd` and `ui/`. All deleted.
+If you are reading a doc that grades any of them, the doc is stale.
 
 Native stage is **640×480**. Widescreen modes letterbox a target aspect, then fit
 the stage (optional edge-hotspot expansion).
 
 ## Where the data comes from
 
+The engine reads the shipped containers directly. There is no decode step and no
+Godot import step:
+
 ```
-assets/render_model/     Director movies (frames.json, members.json, bitmaps/)
-assets/audio/sounds/     Game WAVs (indexed by stem)
-assets/audio/fx/         Shared FX WAVs
-assets/inventory_items.json
+games/<title>/          The original .dir / .cst / .dxr containers, a submodule. READ-ONLY
+director_game.cfg       Which folder under games/, and the boot movie
 ```
 
-`assets/` is the bulk of the checkout. The tree does not show which directories
-are safe to hand-edit, and most are not:
+The tree does not show which directories are safe to hand-edit, and most are not:
 
 | Path | Origin |
 |------|--------|
-| `assets/render_model/`, `assets/audio/` | Mirrored from the upstream decode machine, see `assets/SOURCE.txt`. Loaded from source files at runtime, no Godot import step |
+| `games/` | The originals, per title, as git submodules. **Never modify anything under here** |
 | `reference/lingo/`, `reference/chunks/` | Merged from two independent ProjectorRays runs over the original DXRs. The source of truth for every behavioural question |
 | `reference/scummvm/` | Fetched by `tools/fetch_scummvm_reference.sh`. GPL, read for the model only |
-| `data/lingo/` | Generated: ASTs from `tools/lingo_compile.py`, plus `attach.json` (`lingo_attach.py --emit`), `sprite_scripts.json` (`dump_sprite_scripts.py`), `fields.json` and `member_names.json` (`dump_fields.py`) |
-| `data/lingo_vocabulary.json` | Generated by `tools/generate_lingo_vocabulary.py`; `--check` fails if it is stale |
-| `data/movie_context.json`, `data/walk_doorways.json`, `data/inventory_drops.json` | Hand-authored, one citation per rule. Scaffolding with a retirement plan: prefer the Lingo over the guess |
-| `data/declared_divergences.json` | Hand-authored: where this port deliberately differs from ScummVM's Director engine, so `tools/oracle_diff.py` reports it as expected |
+
+`assets/` and `data/` are **gone.** They held a pre-decoded export — JSON score
+data, extracted BMPs, compiled Lingo ASTs and hand-authored scaffolding — that
+the retired renderer read instead of the containers. Several tools and docs still
+name paths under them; those are stale, not missing files to restore.
 
 Recovering the originals from the Windows installer is
 [`docs/EXTRACT_FROM_INSTALLER.md`](docs/EXTRACT_FROM_INSTALLER.md), automated by
@@ -155,42 +158,42 @@ are in [`reference/README.md`](reference/README.md).
 On a fresh checkout, **open the editor once before running anything headless.**
 `.godot/` is gitignored, and `global_script_class_cache.cfg` inside it is what
 makes `class_name` scripts resolvable. Without it, `godot --headless --script`
-fails with `Could not find type "InventoryDrag"` in a file you did not touch.
+fails with `Could not find type "DirectorContainer"` in a file you did not touch.
 
 ## Verification tools
 
-There is no test suite. What remains are measurement tools, each printing a
-number rather than pass/fail:
+There is no test suite.
+
+**`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
+actually run against the live player and are expected to pass: **23 pass, 1 fail**
+(`boot_state`, long-standing). Anything below that is *not* in `ALL` is a survey
+or a one-off — useful, but nothing runs it, so nothing notices when it rots. A
+long run of tools listed here rotted exactly that way and was deleted; see
+"Retired" at the end of this section.
 
 ```
-godot --headless --script tools/smoke.gd            # the first minute of play, pass/fail
-python3 tools/lingo_compile.py                      # 3349/3349 scripts parse
+bash gate.sh                                        # the whole suite, ~10 min
+bash gate.sh hotspots trails                        # named harnesses only
+bash check.sh                                       # fast structural gate: parses, surface resolves
+```
+
+The surveys and one-offs, each printing a number rather than a verdict:
+
+```
+python3 tools/lingo_compile.py                      # every script parses
 python3 tools/check_cast_coverage.py                # every referenced cast member resolves
 python3 tools/dump_sprite_scripts.py                # sprite -> script attachment
 python3 tools/dump_fields.py                        # Director fields + member names
 python3 tools/add_cast_script_names.py              # linked-cast member names
-godot --headless --script tools/verify_film_loops.gd # film loops resolve to children
-godot --headless --script tools/collectables.gd     # shells/bottles reveal, stay, take, pass/fail
-godot --headless --script tools/room_names.gd       # `nof` resolves to the room, pass/fail
-godot --headless --script tools/sprite_channels.gd  # Lingo sprite writes reach the stage, pass/fail
-godot --headless --script tools/sprite_stretch.gd   # a sprite draws at its member's size, pass/fail
-godot --headless --script tools/film_loop_stretch.gd # a film-loop child draws at its member's size, pass/fail
 godot --headless --script tools/film_loop_cast.gd   # a film-loop child draws out of the cast its own container named, whole corpus, pass/fail
 godot --headless --script tools/drawn_size_stability.gd # no unstretched sprite resizes while its picture and its place hold still, whole corpus, pass/fail
-godot --headless --script tools/cursors.gd          # cursorfunk's cursor per channel, pass/fail
-godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # the same cursors in the container-reading preview, pass/fail
-godot --headless --script tools/cliff_meeting.gd    # MURDER1 through both dialogue prompts, pass/fail (minutes, real time)
+godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # cursorfunk's cursor per channel, pass/fail
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
 python3 tools/repair_1bit_members.py                # re-decode 1-bit members from the raw chunks
 python3 tools/generate_sprite_stretch.py            # recover the sprite stretch flags from the containers
 python3 tools/generate_sprite_stretch.py --check    # sprite_stretch.json still matches them, pass/fail
 python3 tools/dump_movie_chunks.py --verify         # container reader vs the ProjectorRays dumps, pass/fail
 python3 tools/dump_movie_chunks.py --out <dir>      # dump chunks straight from the .DXR originals
-godot --headless --script tools/puppet_visibility.gd # sprite 30 across a transition, pass/fail
-godot --headless --script tools/lingo_converge.gd   # interpreted clicks vs the export
-godot --headless --script tools/lingo_walk_diff.gd  # walk outcomes, flag off vs on
-godot --headless --script tools/lingo_frames.gd     # interpreted exitFrame vs the score runner
-godot --headless --script tools/probe.gd -- --movie X --label Y --seconds N  # where the playhead goes
 godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
 godot --headless --script tools/movie_churn.gd     # the stage and a window each settle on a movie rather than cycling, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
@@ -203,7 +206,6 @@ godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
-godot --headless --script tools/sound_state.gd      # soundBusy, volume and soundLevel as a script sees them, pass/fail
 godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail
 godot --headless --script tools/score_sound_check.gd # score sound channels, cue points, fades and sound members, on synthesised fixtures, pass/fail
 godot --headless --script tools/palette_cycle.gd -- --file strtgame.dir  # palette tables, CLUT, cycling, fades, resolution order, pass/fail
@@ -243,26 +245,21 @@ godot --headless --script tools/lingo_logic_check.gd        # `and`/`or` evaluat
 godot --headless --script tools/lingo_designator_check.gd   # designator suffixes survive the parser, §16.4
 ```
 
-`lingo_compile_check.gd` is the regression gate for any parser change. It fails
-today on an int-versus-float difference in every numeric literal — `JSON.parse_string`
-widens the committed ASTs — so read the `by reason` tally rather than the verdict:
-`type` differences are the baseline and anything under `value`, `missing` or
-`extra` is structural. A parser change that is meant to be behaviour-neutral
-must leave that structural count where it found it.
+`lingo_compile_check.gd` **cannot do its job right now, and reports PASS anyway.**
+It diffs the compiler's output against ASTs committed under `data/lingo/`, which
+was deleted; with no bundle to compare against it prints
+`containers with no bundle under res://data/lingo (1)` and then
+`PASS (11 checks, 0 failed)` over the empty set. Treat its green as no
+information until either `data/lingo/` comes back or it is rebuilt to diff
+against the container's own scripts. It is still the right *idea* for a parser
+regression gate, which is why it is still here.
 
-`probe.gd` is the general one: point it at any room and it reports where the score
-went, what it repeated and where it stopped. `--click-prompts` plays a dialogue
-prompt the way a player would. Reach for it before writing another one-off
-harness — that is what `tools/lib/` exists to make cheap.
-
-`smoke.gd`, `puppet_visibility.gd`, `collectables.gd`, `room_names.gd`,
-`sprite_channels.gd`, `sprite_stretch.gd`, `film_loop_stretch.gd`, `cursors.gd`,
 `cursor_preview.gd`, `keyboard_check.gd`, `frame_events.gd`, `movie_churn.gd`,
 `text_and_shapes.gd`,
 `stage_clip.gd`, `trails.gd`, `palette_cycle.gd`, `sprite_flip.gd`,
 `sprite_record_bytes.gd`, `sprite_size_survey.gd`, `tween_survey.gd`,
 `drawn_size_stability.gd`,
-`aiff_check.gd`, `audio_index.gd`, `sound_state.gd`,
+`aiff_check.gd`, `audio_index.gd`,
 `sound_survey.gd`,
 `verify_1bit_members.py` and `generate_sprite_stretch.py --check` are the
 pass/fail ones, alongside the whole Lingo block above. Read
@@ -270,9 +267,38 @@ pass/fail ones, alongside the whole Lingo block above. Read
 others: agreement with the lifted export falls as the port becomes more faithful,
 so those numbers are not higher-is-better.
 
-Writing a `--script` tool: autoloads are not compile-time globals, because the
-script loads before the tree exists, so reach them with
-`root.get_node("GameState")`.
+Writing a `--script` tool: instantiate `scenes/director_preview.tscn`, add it to
+`root`, and `await process_frame` — `tools/hotspots.gd` is the shortest example.
+Autoloads are not compile-time globals, because the script loads before the tree
+exists, so reach them with `root.get_node("GameState")`. And **await real
+frames**: a synthetic `for i in N: tick()` loop advances the runtime's clock and
+not the audio server's, so every `soundBusy` guard holds for ever and any scene
+with speech in it looks stuck (bugs.md 22).
+
+### Retired
+
+These were listed here as runnable until they were deleted. All of them drove the
+retired renderer (`DirectorRuntime`, `RenderModelLoader`, `MoviePlayer`) or diffed
+against the deleted `assets/render_model/` export, so none could pass, and none
+was in `gate.sh` to say so:
+
+`smoke.gd`, `probe.gd`, `cursors.gd`, `room_names.gd`, `sprite_channels.gd`,
+`sprite_stretch.gd`, `film_loop_stretch.gd`, `verify_film_loops.gd`,
+`collectables.gd`, `cliff_meeting.gd`, `wandering_characters.gd`,
+`puppet_visibility.gd`, `lingo_converge.gd`, `lingo_frames.gd`,
+`lingo_walk_diff.gd`, `lingo_handler_scope.gd`, `sound_state.gd`,
+`check_surface_coverage.gd`, `score_diff.gd`, `place_diff.gd`, `member_diff.gd`,
+`shoot_film_loops.gd`, `tools/lib/driver.gd`, `tools/lib/game_hooks.gd`.
+
+Three of them printed **green over an empty set**, which is the failure
+`tools/preview_surface.gd` exists to catch — a check that goes dark without going
+red. `room_names.gd` reported "0 failure(s)" over 0 rooms and exited clean;
+`cursors.gd` counted "0 channels" a FAIL and then printed
+`ok every pair resolves to an image` over the empty set; `score_diff.gd` printed
+"skipped: no exported frames.json" and exited 0. If you write a harness, assert
+that the population you are checking is non-empty *first*.
+
+The coverage genuinely lost with them is in `bugs.md` under "Coverage debt".
 
 ## Skills
 
@@ -293,16 +319,21 @@ another Director title:
 | Mouse | Hover + click hotspots |
 | Gamepad stick / D-pad | Move virtual cursor |
 | Gamepad A / Enter | Click at cursor |
-| **F1** | Debug HUD (hidden until pressed) |
-| **F5** | Save editor |
-| **F6** / **Shift+F6** | Warp to the bookmarked room / bookmark the current one (dev mode) |
-| **F10** | Display / QoL settings |
-| **H** | Hotspot hint |
-| **Esc** | Skip intro / minigame (if enabled) |
+| **F1** | Sprite boxes |
+| **F2** | Hit test |
+| **F3** | Diagnostic report |
+| **F4** | Restart the movie |
+| **F5** / **F6** | Step the playhead back / forward |
+| **F7** | Fullscreen |
+| **F8** | Quit |
+| **F10** | Pause |
+| **F11** | Copy a diagnostic snapshot |
+| **F12** | Container picker (type to filter, Enter to play) |
 
-## Working now
+Every debug binding is an F-key, and `scenes/preview/debug_keys.gd` explains at
+length why that is a rule rather than a taste: the movie is offered every key
+first, and a debug binding on a key a game wants reads to the player as the game
+misbehaving. All twelve are rebindable from `[debug]` in `director_game.cfg`.
 
-- Score tempo, clicks, puppet walk, meetings (`people_funk`)
-- Audio channels + `soundBusy` guards
-- Save/load JSON slots (F5 + in-game SAVELOAD/HEZSAVE)
-- BMP matte / transparent inks (export-safe buffer decode)
+The old **F1 debug HUD / F5 save editor / F10 settings panel** were `ui/`, which
+belonged to the retired renderer and is gone.

@@ -17,8 +17,9 @@ notes and had to be redone from scratch because of exactly that.
 
 ## Implicit (automatic) puppeting
 
-This is the question `director/sprite_channel.gd` defers, and this section is the
-answer it asks for. Three separate mechanisms, and they are easy to conflate.
+This was the question `director/sprite_channel.gd` deferred (deleted with the
+retired renderer); the live equivalent is `scenes/preview/sprite_state.gd`, which
+has not been re-read against this section. Three separate mechanisms, and they are easy to conflate.
 
 **1. Acquisition — writing a property claims it.** `Lingo::setTheSprite`
 (`lingo/lingo-the.cpp:1826`) calls `sprite->setAutoPuppet(kAP<Property>, true)` on
@@ -69,13 +70,13 @@ what this game's hub rooms need, since they sit on one frame calling
 Explicit `puppetSprite N, 0` is different again: it hands the channel back and the
 score reclaims it on the next reconcile.
 
-**What it would take here.** `SpriteChannel` currently has one boolean `puppet`
+**What it would take here.** `SpriteChannel` (deleted) had one boolean `puppet`
 covering the whole channel. Implementing this properly means a per-property claim
 set, a reconcile that consults it field by field, and score data that records
 which fields each frame re-specifies — the port's exported frames do not carry
 that today, which is why per-field release cannot be built yet.
 
-**Whether it matters yet.** Probably not, and `sprite_channel.gd` is right to say
+**Whether it matters yet.** Probably not, and `sprite_channel.gd` was right to say
 so: every channel this game drives from Lingo is claimed explicitly by its hub's
 `init all` (`puppetSprite(30, 1)`, and 103-110 for the inventory), and the gate
 above makes auto-puppet a no-op on an explicitly puppeted channel. It becomes

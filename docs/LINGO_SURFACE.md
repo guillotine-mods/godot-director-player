@@ -4,12 +4,28 @@ What the language actually exposes, catalogued so that an interpreter written
 here can be checked against it rather than grown one missing name at a time.
 
 The port already runs the original's scripts (`lingo/lingo_interpreter.gd`) and
-binds them to the engine (`lingo/lingo_host.gd`). What it has never had is the
-*other* half of the picture: the list of everything Director offers, so that a
-name the game reaches for and the port answers with VOID can be told apart from
-a name nobody will ever use. `data/lingo_vocabulary.json` closed that for
-properties. This closes it for the language as a whole, and ends with the gap
-analysis the two together make possible.
+binds them to the engine (`scenes/preview_lingo_host.gd`). What it has never had
+is the *other* half of the picture: the list of everything Director offers, so
+that a name the game reaches for and the port answers with VOID can be told apart
+from a name nobody will ever use. This closes it for the language as a whole, and
+ends with the gap analysis it makes possible.
+
+> **A warning about this document's citations.** It was written while a second,
+> now-retired engine was the running one, and it cites that engine's files
+> throughout: `lingo/lingo_host.gd`, `lingo/lingo_engine.gd`,
+> `director/director_runtime.gd`. **All three have been deleted.** A sentence here
+> saying "`lingo_host.gd` gets this right" is a statement about code that no
+> longer exists, and is *not* evidence that the running engine does it.
+>
+> This is not a hypothetical failure mode. §9.3 listed `intersects` as
+> implemented on the strength of the retired host; the live host had no binding,
+> so every inventory drop in every room of every title silently evaluated to
+> "nothing" — and this document is why nobody checked. The live host is
+> `scenes/preview_lingo_host.gd`, and its `unbound` tally is the only honest
+> answer to "does the engine have this?"
+>
+> The *language* half of this document — §1 through §8, the grammar, the
+> precedence table, the chunk rules — is about Director and is unaffected.
 
 ## Where this comes from, and how much to trust it
 
@@ -504,7 +520,7 @@ Read-only unless marked.
 `the clickOn` is the channel number of the sprite that received the current
 mouse message and is only meaningful *during* that dispatch. This port sets it
 on the host immediately before running a handler and clears it after
-(`lingo/lingo_engine.gd`), which is the only way it can be right — a value
+(`lingo/lingo_engine.gd`, retired — unverified against `scenes/preview/scripts.gd`), which is the only way it can be right — a value
 computed on demand from the current mouse position answers a different question
 once the handler has moved something.
 
@@ -794,7 +810,7 @@ order:
 4. **The frame script** of the current frame.
 5. **Movie scripts**, searched in cast-library order.
 
-`lingo/lingo_engine.gd` implements tiers 2–5 exactly (`dispatch_sprite_event`:
+`lingo/lingo_engine.gd` implemented tiers 2–5 exactly (`dispatch_sprite_event`:
 behaviour, then member script, then frame script, then movie handler) and does
 not implement tier 1.
 
@@ -1081,7 +1097,20 @@ Expression node kinds: `num`,
 `sprite_prop`, `member_prop`, `sound_prop`, `window_prop`, `prop`, `prop_of`,
 `dot`, `index`, `call`.
 
-**Properties.** Sprite reads: `bottom`, `castLibNum`, `castNum`, `constraint`,
+**Properties — RETIRED HOST, same warning as the builtin list above.** This
+paragraph enumerates `lingo/lingo_host.gd`'s tables, which are deleted. The live
+host routes sprite properties generically through
+`scenes/preview/sprite_props.gd` into the score record, so the *set* below is not
+the live set in either direction. One concrete difference, of exactly the
+`intersects` shape: **`set the text of member` and `set the editable of member`
+do nothing in the live engine** — `preview_lingo_host.set_member_prop` is `pass`,
+an unreported no-op — while this paragraph lists "Member writes: `editable`,
+`text`" as implemented. No script in this corpus writes either (0 uses in
+`reference/lingo/`), so it bites no room today; it will bite the first title that
+updates on-screen text that way. `put x into field "y"` is a *different* path and
+does work (`set_field`).
+
+Sprite reads: `bottom`, `castLibNum`, `castNum`, `constraint`,
 `cursor`, `height`, `ink`, `left`, `locH`, `locV`, `member`, `memberNum`,
 `moveableSprite`, `puppet`, `right`, `top`, `visible`, `width`. Sprite writes:
 the same minus the four edges, plus `volume`. System reads: `centerStage`,
@@ -1094,21 +1123,31 @@ Window fields accepted and dropped: `drawRect`, `rect`, `titleVisible`,
 `windowType`. Member reads: `memberNum`, `name`, `number`, `text`. Member
 writes: `editable`, `text`. `the itemDelimiter` is owned by the interpreter.
 
-Everything else in the enumerated vocabulary is listed in one of the three
+Everything else in the enumerated vocabulary was listed in one of the three
 `*_UNSUPPORTED` tables in `lingo/lingo_host.gd` — **a decision, recorded, not a
-hole.** Reads against those tables answer VOID and report the name with an
-`(unsupported)` mark, so a log distinguishes "the port refuses this" from "the
-port never heard of this". That distinction is the most valuable thing in the
-host and should survive any rewrite.
+hole.** Reads against those tables answered VOID and reported the name with an
+`(unsupported)` mark, so a log distinguished "the port refuses this" from "the
+port never heard of this". That distinction was the most valuable thing in that
+host, **it did not survive the rewrite**, and rebuilding it on
+`scenes/preview_lingo_host.gd` is the highest-value thing anyone could do to this
+document's honesty. Today the live host has `reached` and `unbound` tallies and
+no third category, so "refused" and "never heard of" look identical.
 
-**Event model.** `lingo/lingo_engine.gd` implements tiers 2–5 of the mouse
+**Event model — RETIRED FILES.** The description below is of
+`lingo/lingo_engine.gd` and `director/director_runtime.gd`, both deleted. The
+live dispatch is `scenes/preview/scripts.gd` (which script receives a message)
+and `scenes/preview/frame_loop.gd` (when frame events fire); **this paragraph has
+not been re-verified against them**, and the tier behaviour it claims should be
+read as a description of Director, not as a claim about the running engine.
+
+`lingo/lingo_engine.gd` implemented tiers 2–5 of the mouse
 hierarchy (`dispatch_sprite_event`), frame-and-movie dispatch for frame events
 (`dispatch_frame_event`), and `enterFrame`/`exitFrame` broadcast to every
 sprite behaviour in the frame (`dispatch_sprite_behaviours`) — which the
-comment there notes is load-bearing, because `whereami`, gated on by 138
+comment there noted was load-bearing, because `whereami`, gated on by 138
 `mouseUp` handlers, is set by an `enterFrame` in a sprite behaviour rather than
-any frame script. `director/director_runtime.gd` drives `enterFrame`,
-`exitFrame`, `startMovie`, and dispatches `mouseDown` followed by `mouseUp` on
+any frame script. `director/director_runtime.gd` drove `enterFrame`,
+`exitFrame`, `startMovie`, and dispatched `mouseDown` followed by `mouseUp` on
 a click.
 
 **Not implemented in the event model**: `prepareFrame`, `beginSprite`,
@@ -2080,7 +2119,8 @@ of that entry is why the gap survived so long: `_host_call` answered null for a
 method the host lacked, which is indistinguishable from a host that handled the
 call, so 66 writes went nowhere with nothing recorded. A missing host method is
 now reported as `host.<method>` under `unbound_name`, and
-`tools/sound_state.gd` case 5 reproduces the old failure on demand.
+`tools/sound_state.gd` reproduced the old failure on demand; it drove the retired
+renderer and was deleted with it, so this rule now has no harness.
 
 Item 2 is not a parser change at all, and is the only one that needs a decision
 rather than a fix.
@@ -2159,7 +2199,7 @@ that contains it.
   from the extracted authored text.
 - ~~**§16.3's claim that `set the volume of sound N` is dropped** was read out of
   `lingo_interpreter.gd`'s assignment path, not observed at runtime.~~ Now
-  observed: `tools/sound_state.gd` runs the corpus's own two shapes through the
+  observed: `tools/sound_state.gd` (deleted with the retired renderer) ran the corpus's own two shapes through the
   real compiler, interpreter and game host and asserts the volume that lands on
   the channel, and its last case reproduces the dropped write against a host with
   the binding deliberately absent.

@@ -6,7 +6,10 @@ under `games/` and a boot movie, and the same engine runs whichever is pointed a
 The decompiled Lingo of the title it was built on is in `reference/lingo/`, and it
 is the reference for every behavioural question.
 
-Read `docs/ENGINE.md` for how the engine works, `bugs.md` for what is known broken,
+`docs/ENGINE.md` and `docs/PROJECT.md` describe the **retired** renderer and have
+not been rewritten — read their headers before believing a word of either. For
+how the engine works now, read `scenes/preview/README.md` and the two reference
+documents. Then `bugs.md` for what is known broken,
 `docs/bugs-closed.md` for what was fixed and what was ruled out along the way, and
 `README.md` for the verification tools. A source comment citing `bugs.md <n>` may
 mean either file: resolved entries keep their number and move to the second. The skills in `.claude/skills/` carry
@@ -27,15 +30,19 @@ game that happens to behave. A fix that special-cases one room, one channel or o
 member is almost always the general mechanism written once per instance, and the
 giveaway is the port growing another renderer exception. The channel 30, channel 100
 and inventory-slot special cases all existed because there was no general sprite
-path; one correct `SpriteChannel` replaced all of them.
+path; one correct sprite channel replaced all of them. (That was the retired
+renderer's `SpriteChannel`; the lesson carried over to `scenes/preview/`, the
+class did not.)
 
 **The engine decides from the scripts, not from hardcoded values.** The original's
 logic is in `reference/lingo/`, and the interpreter can run it. Before writing a
 table or a native handler, check whether a script already answers the question:
 `BehaviorScript 207` knows its own destination from `nextroomdata`, so the
 hand-authored transition table it was being asked instead is now only a fallback.
-`data/movie_context.json` and `data/walk_doorways.json` are scaffolding with a
-retirement plan, not data. Where a native reimplementation is unavoidable, drive it
+That scaffolding — `data/movie_context.json`, `data/walk_doorways.json` and the
+rest of `data/` — has since been deleted outright along with the renderer that
+read it, which is the retirement plan carried out. Where a native
+reimplementation is unavoidable, drive it
 from the original's own globals rather than inventing parallel state.
 
 **The engine is agnostic to the game.** No room name, character, channel number or
@@ -86,25 +93,29 @@ then `ENGINE_TODO.md` is the honest statement of the distance, and keeping it
 honest is part of the work rather than bookkeeping after it.
 
 **"Not a bug" needs more evidence than a bug does**, because it is the verdict
-that stops work. The export is the port's *input*, not the original: the renderer
-agreeing with `frames.json` or `cast_registry.json` proves the renderer, never
-fidelity, so "the data says X, therefore X is authentic" is circular. Before
-ruling anything authentic, get a source from outside the pipeline — start with
-`data/lingo/member_names.json`, which is nearly free and the most underused file
-here. The duplicated-guest report above was dismissed as authentic crowd art on
+that stops work. A decode is the port's *input*, not the original: the renderer
+agreeing with the data it was handed proves the renderer, never fidelity, so "the
+data says X, therefore X is authentic" is circular. Before ruling anything
+authentic, get a source from outside the pipeline — member *names* are the
+cheapest one and still the most underused, now read from the container itself
+rather than from the deleted `data/lingo/member_names.json`. The
+duplicated-guest report above was dismissed as authentic crowd art on
 three passing consistency checks; one name lookup (`atoflop1` / `btoflop1`) said
 the opposite and had been available from the first minute. Read
 `porting-fidelity-verification` for the full account.
 
 ## Environment
 
-- **There is no test suite.** `README.md` lists the tools; the pass/fail ones exit
-  non-zero. Everything else prints a number that is not higher-is-better, which is
-  why `porting-fidelity-verification` exists.
+- **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
+  harnesses that run and are expected to pass — 23 pass, 1 fail (`boot_state`).
+  `README.md` lists more tools than that; the ones outside `ALL` are surveys and
+  one-offs, and are the ones that rot, because nothing runs them. Everything that
+  is not pass/fail prints a number that is not higher-is-better, which is why
+  `porting-fidelity-verification` exists.
 - **Open the Godot editor once on a fresh checkout or worktree** before running
   anything headless. `.godot/` is gitignored and `global_script_class_cache.cfg`
   inside it is what makes `class_name` scripts resolvable; without it a headless
-  script fails with `Could not find type "RenderModelLoader"` in a file nobody
+  script fails with `Could not find type "DirectorContainer"` in a file nobody
   touched. Seeding that one file from another checkout is enough.
 - **The editor and headless runs contend over `.godot/`.** A headless sweep can hang
   indefinitely with an editor open on the same project. Close it, run, reopen.
@@ -115,18 +126,38 @@ the opposite and had been available from the first minute. Read
 
 ## Fixing something
 
-Reproduce it headlessly before theorising, and reach for
-`tools/probe.gd -- --movie X --label Y --seconds N` before writing a throwaway
-script: it boots anywhere, steps in real time and reports where the playhead went.
-Where a harness is still the answer, build it on `tools/lib/` — `harness.gd` for
-pass/fail, `driver.gd` for boot/step/click/trace, `args.gd` for the command line.
-The scenario stays in the tool; only the driving is shared. Two rules there:
-`harness.gd`, `driver.gd` and `args.gd` may not know which game this is, and
-everything that does lives in `game_hooks.gd`, the one file rewritten when the lib
-is carried to another Director port. And `driver.run_for` awaits real frames on
-purpose — a synthetic `for i in N: tick()` loop advances the runtime's clock and
-not the audio server's, so every `soundBusy` guard holds for ever and any scene
-with speech in it looks stuck (bugs.md 22, diagnosed wrong twice). Where an asset is involved, extract and look at it: converting one bitmap
+Reproduce it headlessly before theorising. Build the harness on `tools/lib/` —
+`harness.gd` for pass/fail, `args.gd` for the command line — and boot the real
+player the way every harness in `gate.sh` does, by instantiating the main scene
+and awaiting a frame:
+
+```gdscript
+const Harness := preload("res://tools/lib/harness.gd")
+const Args := preload("res://tools/lib/args.gd")
+
+var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
+root.add_child(preview)
+await process_frame
+```
+
+`tools/hotspots.gd` is the shortest worked example. The scenario stays in the
+tool; only the driving is shared, and `harness.gd` and `args.gd` may not know
+which game this is.
+
+**There is no general "where did the playhead go" probe right now.** There was —
+`tools/probe.gd`, on `tools/lib/driver.gd` — and this section told you to reach
+for it before writing anything throwaway. Both drove `DirectorRuntime`, the
+retired renderer, and were deleted with it; the instruction outlived the tool by
+long enough to be worth this paragraph. Rebuilding one on the preview is the
+single most useful tool this repo is missing.
+
+Whatever you build, **await real frames.** A synthetic `for i in N: tick()` loop
+advances the runtime's clock and not the audio server's, so every `soundBusy`
+guard holds for ever and any scene with speech in it looks stuck (bugs.md 22,
+diagnosed wrong twice). That rule cost two misdiagnoses and it did not retire
+with the renderer that taught it.
+
+Where an asset is involved, extract and look at it: converting one bitmap
 and viewing it identified a mystery sprite in seconds after a long run of wrong
 theories about coordinates.
 

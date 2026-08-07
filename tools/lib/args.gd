@@ -7,7 +7,7 @@ extends RefCounted
 ##
 ## Godot swallows its own arguments, so a tool's arguments go after `--`:
 ##
-##   godot --headless --script tools/probe.gd -- --movie <movie> --label <marker>
+##   godot --headless --script tools/hotspots.gd -- --file PIP2DATA/DAY1.dir --marker shore2
 ##
 ## Title-agnostic.
 

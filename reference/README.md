@@ -2,7 +2,7 @@
 
 Decompiled Lingo for every Piposh 2 movie and cast, plus the Director text-member
 chunks. This is the **source of truth** the port is reconstructing. The exported
-`assets/render_model/*/frames.json` carries only what `lingo_nav.py` lifted out of
+`assets/render_model/*/frames.json` (deleted) carried only what `lingo_nav.py` lifted out of
 these scripts (nav, sounds, unconditional inventory add/remove); everything
 conditional lives here and nowhere else.
 

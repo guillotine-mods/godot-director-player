@@ -1,3 +1,14 @@
+> **STALE — read before acting on this change.** This design was written while
+> the port ran two stacked engines. The lower one is gone: `director_runtime.gd`,
+> `render_model_loader.gd`, `movie_player.gd`, `lingo_host.gd`, `lingo_engine.gd`
+> and the `assets/render_model` export have all been deleted, and the
+> container-reading preview (`scenes/director_preview.tscn`) is the only engine.
+> Unchecked task items in `tasks.md` that target those files cannot be done as
+> written, and the run-commands in `surface-gap-backlog.md`, `oracle-status.md`
+> and `handler-scope-baseline.md` name harnesses (`check_surface_coverage.gd`,
+> `smoke.gd`, `lingo_handler_scope.gd`, `lingo_converge.gd`) that were deleted
+> with them. Re-scope against the live engine before continuing.
+
 ## Context
 
 The port runs two stacked engines. A native Godot score runner (`director/director_runtime.gd` tempo

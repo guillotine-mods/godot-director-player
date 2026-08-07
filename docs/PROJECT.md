@@ -1,4 +1,18 @@
-# Piposh 2 — Godot Port
+# Piposh 2 — Godot Port — **RETIRED. This document describes deleted code.**
+
+> **Do not read this as a status report.** It describes the port as it was when it
+> played a *pre-decoded export* — JSON score data and extracted BMPs under
+> `assets/render_model/` and `data/`, driven by `DirectorRuntime`. Those
+> directories and that renderer have been deleted. The "Goals / Status" table
+> below grades code that no longer exists, and the repository layout it gives is
+> wrong.
+>
+> Current: the engine opens the original `.dir`/`.cst` containers at runtime and
+> is title-agnostic. Start at **`README.md`** and **`scenes/preview/README.md`**.
+> The specification is `docs/DIRECTOR_ENGINE.md` and `docs/LINGO_SURFACE.md`; the
+> gap against it is `docs/ENGINE_TODO.md`.
+>
+> Kept for the project history and the account of why the port exists.
 
 ## What this is
 

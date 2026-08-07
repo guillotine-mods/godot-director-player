@@ -125,9 +125,11 @@ expected screen, new game reaches the expected movies, the opening sequence
 advances rather than looping, an item can be picked up *and* leaves the room,
 conditional content is hidden and shown in the right states.
 
-`tools/smoke.gd` in this repo is that test — 20 checks, seconds to run. It was
+`tools/smoke.gd` in this repo *was* that test — 20 checks, seconds to run. It was
 described four times before it was written, and it would have caught four of the
-five.
+five. It drove the retired renderer and has been deleted; **nothing replaced it,
+and that is the largest hole in this repo's verification.** `gate.sh` covers
+mechanisms one at a time and nothing walks the first minute of play end to end.
 
 ## When a fix changes nothing, do not keep it
 

@@ -109,10 +109,10 @@ Two exceptions where the widget overrides the sprite:
 
 *This port:* `director/render_model_loader.gd:229-317` resolves every
 unstretched sprite's rect to the member's natural size at load time and
-recomputes x/y as `loc − reg`, which normalises the whole problem away for the
-working renderer. That is a legitimate strategy and it agrees with ScummVM's
-outcome. It does mean the port has no live notion of "the score said one size
-and the member is another".
+recomputed x/y as `loc − reg`, which normalised the whole problem away for that
+renderer. That renderer and that loader are deleted; the live engine reads the
+rect from the score record and treats it as residue unless the author stretched
+it (`tools/drawn_size_stability.gd`).
 
 ### 1.3 What the stretch flag actually changes
 
@@ -1381,7 +1381,7 @@ way, all in one options screen. `puppetSound`, `sound close`, `sound fadeIn`,
 being relied on: Godot's `Dummy` audio driver still mixes on a real clock, so a
 sound started headless advances and clears `playing` at the end of the stream --
 3,340 ms of wall clock for a 3,376 ms sound. `soundBusy` therefore answers
-truthfully in a harness. The catch is `tools/lib/driver.gd`'s: real frames must
+truthfully in a harness. The catch is the deleted `tools/lib/driver.gd`'s, and it still applies: real frames must
 be *awaited*, because a synthetic tick loop advances the runtime's clock and not
 the audio server's, and then every wait holds for ever (bugs.md 22).
 
@@ -1559,9 +1559,16 @@ non-empty, and otherwise **wraps to frame 1** — it does not stop.
 
 ## 16. Prioritised gap list
 
-"Both" = ScummVM and this port's working renderer agree, so it is settled and
-the only question is why the preview differs. "Differ" = the two references
-disagree and the gap needs deciding.
+> **This section's "Both" is no longer a usable verdict.** It meant "ScummVM and
+> this port's *other* renderer agree" — and that other renderer has been deleted,
+> so half of every "Both" is now unreadable. Worse, several entries below were
+> written against a preview that has since fixed them: **16.3 says the preview has
+> no cursor resolution at all**, and `cursor_preview` is green in `gate.sh` today.
+> Re-check each entry against the live engine before acting on it; the entries are
+> still a useful list of *questions*, and are no longer a list of open gaps.
+
+"Both" = ScummVM and this port's retired renderer agreed. "Differ" = the two
+references disagree and the gap needs deciding.
 
 ### Tier 1 — breaks a playthrough
 
@@ -1582,8 +1589,10 @@ not as the eligibility test.
 
 **16.3 The preview has no cursor resolution at all. (Both.)**
 No default cursor, no per-channel cursor, no call site.
-`director/director_runtime.gd:1500-1518` is the working implementation and it
-matches Director's shape. *Change:* add §7.4's resolution to the mouse-move
+`director/director_runtime.gd:1500-1518` was the working implementation and
+matched Director's shape; it is deleted, so read it out of git history rather
+than the tree. **This entry is stale — the preview resolves cursors today and
+`tools/cursor_preview.gd` passes in `gate.sh`.** *Historical change:* add §7.4's resolution to the mouse-move
 branch at `scenes/director_preview.gd:525-574`, plus a movie-global default the
 `cursor` builtin writes. Store per-channel cursor state with the same lifetime as
 `visible` — **not** in `_overrides`, which is cleared on room change (`:1073-1074`)
@@ -1729,24 +1738,34 @@ destination-reading inks.
 
 ## 17. Subsystem inventory
 
+> **Re-graded after the retired renderer was deleted.** This table used to grade two
+> renderers side by side and called the dead one "the working renderer", which is
+> now exactly backwards. Rows that said "done in the working renderer" or "done on
+> both sides" have had the dead half removed; where the *only* implementation was
+> the dead one, the row now reads **gone** and is a real hole, not a done item.
+> `movie_player.gd`, `sprite_channel.gd`, `render_model_loader.gd`,
+> `director_runtime.gd`, `lingo_host.gd`, `lingo_engine.gd` and
+> `tools/sound_state.gd` are all deleted; any surviving citation of them is
+> historical.
+
 | Subsystem | This port | Where |
 | --- | --- | --- |
-| Sprite placement / registration / scaling | **done** in the working renderer; **wrong hit rect** in the preview | `movie_player.gd:187-199`; `director_preview.gd:1007-1013` |
-| Stretch semantics | **done** | `sprite_channel.gd:110-126` |
+| Sprite placement / registration / scaling | **wrong hit rect** — the renderer that had this right is deleted | `director_preview.gd:1007-1013` |
+| Stretch semantics | **done**: the score rect is residue unless the author stretched it | `director_preview.gd`; `tools/drawn_size_stability.gd` |
 | Flip | **done, unverified**: mirrored within the rect, hit test mirrored to match; 0 of 816,318 and 0 of 1,886,362 records set either bit | `director_score.gd:_snapshot`; `director_preview.gd:_draw_sprite_texture`; `tools/sprite_flip.gd` |
 | Sprite record layout | **done**: all 48 bytes of the D7 record accounted for, and no two decoded fields share one | `director_score.gd`; `tools/sprite_record_bytes.gd` |
 | Tweening | **decoded, deliberately not consumed**: 88,197 tweened spans in Piposh 1, some changing every frame and some holding one value for 4,255 frames, so the flag is a Score-window attribute and the frame stream already carries the result | `director_score.gd:_snapshot`; `tools/tween_survey.gd` |
 | Rotation / skew | n/a below D7; ScummVM does not implement it either | — |
-| Film loop compositing | **done, two dialects** | `movie_player.gd:247-349`; `director_preview.gd:784-826` |
-| Mouse hit test | **done** in the preview: eligibility inside the descent *and* per-pixel for Matte only; **partial** in the runtime (no per-pixel stage) | `director_preview.gd:_channel_at`; `director_runtime.gd:1426-1447` |
-| Cursor compositing | **done** | `render_model_loader.gd:847-911` |
-| Cursor resolution | **done** on both sides | `director_preview.gd:_resolve_cursor`; `director_runtime.gd:1500-1518` |
-| Puppet | **partial**: whole-sprite on one side, per-field on the other, no copy-back mask | `sprite_channel.gd:55-74`; `director_preview.gd:911-941` |
+| Film loop compositing | **done** (one dialect now; the second was the retired renderer's) | `director_preview.gd:784-826`; `tools/film_loop_cast.gd` |
+| Mouse hit test | **done**: eligibility inside the descent *and* per-pixel for Matte only | `director_preview.gd:_channel_at`; `tools/hotspots.gd` |
+| Cursor compositing | **gone** — the only implementation was `render_model_loader.gd:847-911`, deleted. `scenes/preview/cursor.gd` resolves a cursor but the compositing rules are unre-verified | `scenes/preview/cursor.gd` |
+| Cursor resolution | **done** | `director_preview.gd:_resolve_cursor`; `tools/cursor_preview.gd` |
+| Puppet | **partial**: per-field, no copy-back mask. The whole-sprite dialect went with `sprite_channel.gd` | `director_preview.gd:911-941` |
 | Ink | **done** for the five inks this format uses, everything else falls through to Copy per the reference's own fallback chain; colourisation in the preview only | `director_ink.gd` |
-| Matte flood fill | **done** in the preview: whole border ring, exact match, and the no-white-no-matte rule; **partial** in the runtime (corner vote, 14/255 tolerance) | `director_ink.gd:key_matte`; `render_model_loader.gd:765-794` |
-| Visibility | **partial** | `sprite_channel.gd:37`; `director_runtime.gd:1426-1427` |
-| Frame ordering | **done** in the preview (§16.6); **partial** in the runtime | `director_preview.gd:_advance` |
-| Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** by both renderers | `director_score.gd`; `director_frame_clock.gd`; `director_runtime.gd:276-281` |
+| Matte flood fill | **done**: whole border ring, exact match, and the no-white-no-matte rule | `director_ink.gd:key_matte` |
+| Visibility | **partial**, and now unharnessed: `tools/puppet_visibility.gd` covered it and was deleted with the renderer it drove | `scenes/preview/sprite_state.gd` |
+| Frame ordering | **done** (§16.6) | `director_preview.gd:_advance`; `tools/frame_events.gd` |
+| Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** | `director_score.gd`; `director_frame_clock.gd` |
 | Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
 | Tempo: wait-for-video | **nothing** | — |
 | Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
@@ -1760,13 +1779,13 @@ destination-reading inks.
 | Event hierarchy | **partial**: sprite → cast → frame → movie | `director_preview.gd:728-740` |
 | Hilite on click | **nothing** | — |
 | Score sound channels, restart-on-change | **done, unverified**: decoded and driven, but no cast in this game holds a `sound` member and no frame writes either channel, so the path never executes here | `director_score.gd:_sound_channels`; `score_sound.gd`; `tools/score_sound_check.gd` |
-| Lingo sound: playFile, stop, close, fadeIn/Out, soundBusy, volume, soundLevel | **done on both hosts**; the first two are 2,515 + 69 sites, the rest 245 + 67 + 14, and the fades 0. `soundBusy` is faithful headless | `autoload/audio_director.gd`; `tools/sound_state.gd` |
+| Lingo sound: playFile, stop, close, fadeIn/Out, soundBusy, volume, soundLevel | **done**, and now **unharnessed** — `tools/sound_state.gd` was the coverage and is deleted. The first two are 2,515 + 69 sites, the rest 245 + 67 + 14, and the fades 0. `soundBusy` is faithful headless | `autoload/audio_director.gd`; `scenes/preview/sound.gd` |
 | Sound cue points, `cuePassed`, wait-for-cue | **done, unverified**: 0 of 336 markers in this game's 3,141 files lie inside their own audio and no script or tempo cell reads one, so nothing here fires | `aiff_loader.gd:cue_points`; `director_frame_clock.gd`; `tools/aiff_check.gd` |
 | Sound cast members (`snd `, embedded AIFF/WAV) | **done, unverified**: no container in this game holds one | `director/director_sound.gd`; `tools/score_sound_check.gd` |
-| Sound fades, `puppetSound`, `sound close` | **done, unverified**: written nowhere in this corpus. `puppetSound` on the preview host only — the exported-nav host has no member-to-audio path and reports it | `audio_director.gd:step_fades`; `director_preview.gd:lingo_puppet_sound` |
+| Sound fades, `puppetSound`, `sound close` | **done, unverified**: written nowhere in this corpus | `audio_director.gd:step_fades`; `director_preview.gd:lingo_puppet_sound` |
 | Digital video | **nothing** | — |
-| Text / field rendering | **partial**: legible, not period-accurate; preview only | `director_text.gd`; `director_preview.gd:_draw_text` |
-| Shapes | **partial**: rect and rounded rect measured, oval and line unverified; preview only | `director_shape.gd` |
+| Text / field rendering | **partial**: legible, not period-accurate. `set the text of member` is an unreported no-op (§9.3) | `director_text.gd`; `director_preview.gd:_draw_text` |
+| Shapes | **partial**: rect and rounded rect measured, oval and line unverified | `director_shape.gd` |
 | Windows / MIAW / embedded movies | **done**: open, close, forget, `tell`, window properties, geometry, click routing to the topmost window | `director_preview.gd:lingo_open_window`; `tools/window_preview.gd` |
 | Movie stack | **partial** | `director_preview.gd:1143` |
 | Labels | **done** | `director_labels.gd` |

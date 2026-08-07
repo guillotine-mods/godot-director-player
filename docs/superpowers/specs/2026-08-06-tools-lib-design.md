@@ -1,3 +1,9 @@
+> **SUPERSEDED.** `tools/lib/driver.gd`, `game_hooks.gd` and `probe.gd` drove the
+> retired renderer and were deleted with it. `tools/lib/` is now `harness.gd` and
+> `args.gd` only; harnesses instantiate `scenes/director_preview.tscn` directly
+> (`tools/hotspots.gd` is the example). This document is the reason `AGENTS.md`
+> and `README.md` told sessions to reach for `probe.gd`; those lines are fixed.
+
 # A shared harness for the verification tools
 
 The 18 `.gd` tools in `tools/` each hand-roll their boot, their stepping, their

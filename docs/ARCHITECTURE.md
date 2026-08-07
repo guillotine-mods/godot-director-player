@@ -15,7 +15,7 @@ PIP2DATA/*.DXR
   → reports/render_model/<movie>/
 ```
 
-That output is mirrored into `assets/render_model/` and loaded from the source
+That output *was* mirrored into `assets/render_model/` and loaded from the source
 files at runtime, with no Godot import step. Recovering `PIP2DATA` from the
 installer is [`EXTRACT_FROM_INSTALLER.md`](EXTRACT_FROM_INSTALLER.md).
 
@@ -58,8 +58,10 @@ writer stamps on.
 - `AppSettings.upscale_mode` — scale factor + filter
 - `AppSettings.test_mode_enhanced_graphics` — switch to smooth filtering; later: alternate texture root
 - `GameState.MINIGAME_MOVIES` — Esc skip targets
-- `data/movie_context.json` — hubs, transition destinations, sprite gates, and
-  the whole inferred progression spine (meeting triggers, phase transitions,
-  day advance). `GameState` receives the trigger table from `MovieContext` at
-  boot rather than holding its own copy.
+- ~~`data/movie_context.json`~~ — **gone.** It held hubs, transition
+  destinations, sprite gates and an inferred progression spine, and `GameState`
+  took its trigger table from `MovieContext` at boot. Both the file and
+  `MovieContext` are deleted; the engine reads the movie's own scripts instead,
+  which is what `AGENTS.md` asks for. `GameState` now boots with an empty
+  trigger table (`Meeting triggers loaded: 0`).
 - `InputRouter` — single place to extend remapping / accessibility
