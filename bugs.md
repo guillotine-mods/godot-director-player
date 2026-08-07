@@ -878,69 +878,91 @@ it exactly the kind of change that wants its own before-and-after measurement.
 
 ---
 
-## 32. Reported: after MURDER1 the cursor stops being customised. Not reproduced, and here is what that rules out
+## 32. The SKIP button parks the playhead on a frame the movie can never leave, and that is the cursor "never coming back"
 
-**Status:** open · **Area:** preview cursor ·
-reported from play; every mechanism reachable headless was measured and cleared
+**Status:** open · **Area:** preview, `skip_to_end` · **not the cursor path** ·
+reported from play as "after MURDER1 the cursor reverts to the arrow and never
+returns"; reproduced once the missing step arrived — **the player presses SKIP**
 
-The report is that custom cursors work until the cliff meeting plays, and that
-afterwards the pointer is the plain arrow and never comes back. Nothing found so
-far reproduces it. This entry exists so the next session starts past the four
-hypotheses that have already been paid for.
+The cursor is not broken. `docs/bugs-closed.md` 29 and the cursor harness cover
+that path end to end, and it is correct: measured across all 61 movies, every
+assigned pair composes; `MovieSession.forget_previous` clears `_channel_cursors`
+on a movie change; and playing MURDER1 to its own `go("clif2", "day1.dir")` lands
+in DAY1 with nine channels armed and all three on-stage sprites arbitrating
+correctly. None of that is what the player does. They press SKIP.
 
-**Ruled out: channel cursors surviving the movie change.** They do not.
-`MovieSession.forget_previous` clears `_channel_cursors`, `_global_cursor` and
-`_cursor_applied`, and `tools/cursor_preview.gd` now proves it with a sentinel
-pair on an unused channel across a real reload. The reason that check used to
-fail is in the harness and not the engine — see the commit that closed it.
+**A Director movie's last frame is not its ending.** A movie is a strip of
+independently labelled segments and the last frame is only the last segment's
+last frame. `skip_to_end` moves the playhead there and nothing else, on the
+premise that the end of the file is the end of the scene. Measured, that premise
+is false in both of the movies this report touches, in two different ways:
 
-**Ruled out: the pair not being reassigned on return.** MURDER1's frame script
-ends `go("clif2", "day1.dir")`, and DAY1 re-arms nine channels on arrival.
-Stepped headless from MURDER1 frame 875 until the movie changes and settled:
+| movie | last frame | its `exitFrame` | effect |
+|---|---|---|---|
+| MURDER1 | 883 | `go("conect2")`, and `conect2` is frame **790** | jumps *backwards* into the tail being skipped |
+| MAP | 80 | — | next frame entered is **45** |
+| DAY1 | 2783 | `play "done"` | subroutine return with nothing on the stack |
 
-```
---- after MURDER1 -> DAY1, settled: DAY1.dir f1918
-    cursors={"2":[10,11],"7":[203,204],"8":[203,204],"9":[203,204],
-             "10":[24,25],"11":[22,23],"12":[20,21],"13":[14,15],"14":[16,17]}
-      ch2    (313.8, 197.5) -> [10, 11]   composes=yes
-      ch8    (241.5, 67.5)  -> [203, 204] composes=yes
-      ch12   (176.0, 380.0) -> [20, 21]   composes=yes
-```
+So: SKIP during MURDER1 lands on 883, which immediately sends the playhead back
+to 790 and replays the last 94 frames. From the player's chair SKIP did nothing,
+so they press it again — and whichever press lands after MURDER1 has already
+handed off to DAY1 skips **DAY1**, the hub movie that holds every room of day one
+in 2,784 frames. Its last frame is the tail of one of the `play`-called talk
+clips at 2595-2783, and its `exitFrame` is `play done`. `lingo_play_done`
+(`scenes/director_preview.gd:1621`) finds `_play_stack` empty and returns without
+moving anything; it is also the last frame, so the score's own advance has nowhere
+to go either. **The playhead never moves again.**
 
-Assignment, arbitration and composition all answer correctly on the far side.
+The cursor then behaves exactly as it should and looks broken:
+`_channel_cursors` still holds all nine pairs the room assigned, but none of
+those channels has a sprite on frame 2783, so the descent correctly falls through
+to the global cursor — 0, the arrow — at every point on the stage, for ever.
+Moving the mouse does recompute (`input_router.gd:mouse_motion` ->
+`_resolve_cursor`); it recomputes to the arrow.
 
-**Ruled out: a pair that composes to nothing.** Every movie in the corpus was
-booted in turn and settled, and every distinct pair any of them assigned was
-composed. Six movies assign cursors — AIR1, DAY1, ENDMOVI4, HOTEL1, MAP, NIGHT1
-— and not one pair resolves to member 0 or fails to compose.
+**The stale-window lead from the previous pass is dead.** `Windows.at` skips any
+window whose `_window_shown` is false and `lingo_forget_window` erases destroyed
+ones, so a hidden or freed window cannot capture the stage's recompute. `_windows`
+was empty at every sampled step of both reproductions. Windows surviving a
+`go to movie` is correct Director behaviour and is not this.
 
-**Ruled out: cursor art in a linked cast.** Entry 29, now fixed anyway. Measured
-before the fix: every cursor member in this corpus is in the movie's own cast.
-
-**What is left, and neither is confirmed.**
-
-1. **A real pointer.** Every measurement above asks `cursor_at` directly, because
-   headless has no mouse. `_resolve_cursor` is driven from `input_router.gd` on
-   motion and mouse-up, and `mouse_motion` hands the recompute to
-   `window_at(point)` when a Movie-In-A-Window covers the pointer — a window left
-   registered would freeze the stage's cursor exactly as reported. MURDER1 opens
-   no window, so this needs the room the player was actually in.
-2. **`[1, 1]` as "back to the arrow".** The corpus writes it 208 times.
-   `MAX_CURSOR_SIZE` rejects it in MAP, where member 1 is a 640x400 backdrop —
-   but in DAY1 member 1 is a 9x2 unnamed bitmap, so it composes and installs a
-   12-pixel speck instead of the arrow the author asked for. Whether Director
-   composed it too or treated a one-member "clear" specially is not settled here;
-   `docs/DIRECTOR_ENGINE.md` 7.2 says only that both elements must be bitmaps.
-
-Also noted while reading 7.4 against `Cursor.at`: the descent is a plain rect
-test, and Director's aborts on a **hole** — a transparent pixel of a matte
-sprite stops the descent instead of falling through to the channel below. That
-makes the port hand out *more* custom cursors than the original, so it is not
-this report, but it is a real gap.
-
-Reproduce what was measured:
+Reproduce, and note that MAP loops back too but keeps its cursor, because MAP's
+cursor-bearing channels *are* on the frames it lands among — which is the whole
+mechanism in one contrast:
 
 ```
-$ godot --headless --script tools/cursor_preview.gd
-$ godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/DAY1.DIR
+$ godot --headless --script tools/skip_state.gd -- --file PIP2DATA/DAY1.DIR
+   DAY1.dir  f46 -> skip -> f2783 -> f2783 -> f2783
+   cursor at the stage centre: [16, 17] -> 0, 9 channel(s) still recorded
+FAIL  DAY1.dir: the movie can still move after SKIP  (parked on DAY1.dir f2783)
+
+$ godot --headless --script tools/skip_state.gd -- --file PIP2DATA/MURDER1.DIR
+   MURDER1.dir  f34 -> skip -> f883 -> f790 -> f828
+FAIL  MURDER1.dir: the last frame is an ending, not a jump back
+
+$ godot --headless --script tools/skip_state.gd -- --file PIP2DATA/MAP.DIR
+   MAP.dir  f34 -> skip -> f80 -> f45 -> f47
+   cursor at the stage centre: [14, 15] -> [14, 15], 12 channel(s) still recorded
 ```
+
+`tools/skip_state.gd` is title-agnostic and not in `gate.sh`: it is red on this
+corpus by design, because it asserts the property SKIP needs and does not have.
+`--all` sweeps every container under the game root.
+
+**What to change, and what not to.** Director has no skip, so there is nothing to
+be faithful to and this is a judgement about a debug affordance rather than an
+engine gap. Two candidate shapes, and the obvious one is wrong:
+
+- **Wrong: run the intervening frame scripts instead of jumping over them.** For a
+  linear cutscene that is what is wanted; for DAY1 it would run the whole rest of
+  the movie — dozens of unrelated rooms, every `go`, every sound — because the
+  frames between here and the end are not "the rest of this scene".
+- **Right: stop jumping the playhead at all.** What the player means by SKIP is
+  "stop waiting", not "go to the end of the file". Releasing whatever the current
+  frame is holding on — the wait, the sound — and letting the movie's own scripts
+  drive to their own exit walks MURDER1 to its `go("clif2", "day1.dir")` and does
+  nothing harmful in DAY1. `_clock.release()` already exists and is what the jump
+  currently does *in addition to* the damage.
+
+Both live in `skip_to_end` (`scenes/director_preview.gd:1035`), and the SKIP
+hit-test is in `input_router.gd:mouse_button`. Neither is in this change.
