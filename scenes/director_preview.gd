@@ -103,6 +103,10 @@ var _palette_state = PaletteState.new()
 ## to a stream and handing it to the mixer.
 var _score_sound = ScoreSound.new()
 var _index := 0
+## Frames SKIP has already sent the playhead to, in this movie. A marker list is
+## not a list of scenes -- see `skip_to_end` -- and without this the button can
+## cycle. Cleared with the rest of the per-movie state.
+var _skip_sent: Dictionary = {}
 ## Tempo, delays, wait-for-click and the time a transition takes. See
 ## `director/director_frame_clock.gd`; this node owns only the phase order.
 var _clock = FrameClock.new()
@@ -474,6 +478,11 @@ var _frozen_play: Array = []
 ## True when `enterFrame` was what froze. §6.1 bails out of the rest of the tick
 ## in that case, so the resume waits for the step that enters the new frame.
 var _enter_frame_froze := false
+## How many handlers have been parked over the whole session. The queue drains
+## inside the step that filled it, so nothing sampling it between frames can tell
+## "suspension is working" from "suspension never happened" -- which is a harness
+## that passes over an empty set, and this repo has shipped four of those.
+var _frozen_parked := 0
 ## How many handlers may be parked at once. ScummVM stops recursive freezing at
 ## depth 2 and calls 64 runaway; the number matters less than there being one,
 ## because past the cap the request is *declined* -- the handler runs straight
@@ -1208,6 +1217,7 @@ func lingo_accepts_freeze(kind: String) -> bool:
 
 ## Take a suspended handler off the interpreter.
 func lingo_park_state(chain: Array, kind: String) -> void:
+	_frozen_parked += 1
 	if kind == "play":
 		if not _frozen_play.is_empty():
 			# The reference warns here too, and it is worth a trace line rather
@@ -1583,13 +1593,29 @@ func skip_to_end() -> void:
 	if _labels != null:
 		for marker in _labels.markers:
 			var at := int(marker.get("frame", -1))
-			if at > _index:
+			if at > _index and not _skip_sent.has(at):
 				target = at
 				break
-	if target < 0:
+	if target < 0 and not _skip_sent.has(_score.frame_count - 1):
 		target = _score.frame_count - 1
-	if target <= _index:
+	if target < 0 or target <= _index:
+		# Every marker ahead has already been skipped to once. Stop rather than
+		# wrap, because wrapping is how this becomes a loop the player cannot leave
+		# -- and a marker list is not a list of scenes.
+		#
+		# Rating's `MAINMENU.dir` is the case. Its markers run past the menu into
+		# `option1`..`option6`, a CD drive-letter probe entered only by name whose
+		# frames end in `go(2)`. SKIP from the menu lands on 587, the probe sends
+		# the playhead back to frame 2, and pressing again cycles
+		# 14 -> 46 -> 504 -> 587 -> 2 for ever. Each jump is forward and correct;
+		# the cycle belongs to the movie, not to the button.
+		#
+		# Nothing in a `VWLB` says which markers are scenes, so no title-agnostic
+		# rule can tell `option1` from `mainscreen` by looking. Refusing to send the
+		# playhead to the same marker twice needs no such rule and bounds it.
+		print("skip: nothing further to skip to in %s" % movie_name())
 		return
+	_skip_sent[target] = true
 	_index = target
 	_held = false
 	_clock.reset()

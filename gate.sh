@@ -23,11 +23,22 @@ ROOT="${GATE_ROOT:-piposh2}"
 # them mid-run. That does not fail loudly: it reports the other title's movies
 # as this title's regressions. One run measured six that way and none was real.
 LOCK=".gate.lock"
-for _ in $(seq 1 600); do
-  if mkdir "$LOCK" 2>/dev/null; then break; fi
+HELD=""
+for _ in $(seq 1 900); do
+  if mkdir "$LOCK" 2>/dev/null; then HELD=yes; break; fi
   sleep 1
 done
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+# Refuse rather than proceed. The first version fell through the wait and ran
+# anyway, and its EXIT trap then removed *whoever's* lock was there -- so a long
+# run lost its lock to a later one, two gates pinned the corpus against each
+# other, and the results of both were fiction. Releasing only a lock we took is
+# the other half: without it the trap is a lock-breaker with extra steps.
+if [ -z "$HELD" ]; then
+  echo "gate: another run has held $LOCK for 15 minutes; not starting a second one." >&2
+  echo "gate: if nothing is running, remove $LOCK by hand." >&2
+  exit 2
+fi
+trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 BEFORE=$(grep '^root' director_game.cfg)
 trap 'rmdir "$LOCK" 2>/dev/null; python -c "
@@ -39,7 +50,7 @@ import sys,re
 s=open('director_game.cfg').read()
 open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\"' % sys.argv[1], s, count=1, flags=re.M))" "$ROOT"
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
+ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that

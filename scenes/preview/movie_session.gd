@@ -112,6 +112,7 @@ static func forget_previous(host, previous_path: String) -> void:
 	# in the next movie, and an invented one is silent: all it does is stop a
 	# position write landing where the script asked.
 	host._channel_constraints.clear()
+	host._skip_sent.clear()
 	# Both are keyed by channel and measured against `_ticks`, which restarts
 	# below. Left behind, a channel's loop start would sit in the *previous*
 	# movie's clock and every film loop in the new room would be asked for a
