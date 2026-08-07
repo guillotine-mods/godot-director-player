@@ -25,11 +25,6 @@ sound and preload work landed, and re-checked on 2026-08-07 after the player was
 split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
 the short list of what has no implementation at all.
 
-**Editable text, focus, caret and selection.** §8.4. Effective editability is
-the sprite's flag OR the member's, the first editable sprite takes focus, and
-`keyDown`/`keyUp` route to the focused sprite rather than the one under the
-mouse. Keyboard input itself is done; this is the widget half.
-
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
@@ -132,6 +127,27 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   rather than re-resolving under the pointer, and where an ink keys more than
   the matte does, the destination behind the holes is not inverted -- the same
   limit dirty rects already impose.
+
+- **Editable text, focus, caret and selection.** §8.4/§7.7, in
+  `scenes/preview/text_focus.gd`: `sprite OR member` editability,
+  first-editable-claims-focus and keeps it while the cast id holds, movie-level
+  `selStart`/`selEnd`, caret, selection, insertion, deletion, arrows, Home/End,
+  Enter, auto-tab, click-to-caret, and the typed text pushed back to the member
+  through the same store `put x into field` writes. §8.3 routes `keyDown` to the
+  focused sprite, channel 0 to the frame otherwise.
+
+  **The member half was the whole feature and had never been decoded.** 0 of
+  3,550,111 sprite records across the three titles set the score's editable bit;
+  every editable field in all of them comes from byte 25 bit 0 of the text
+  member's specific block (`director_cast.gd`) -- 1 member in Piposh 2
+  (`SAVELOAD.dir`'s `save1`), 9 in Piposh 1, 0 in Rating. A wrong byte offset
+  does not land on the save screen of three separate builds.
+
+  Unverified against Director running: auto-tab (no member in any corpus sets
+  the bit), the sprite-side editable flag (no record sets it), and Director's
+  suppress-on-`keyDown` rule (no script in either corpus declares one). **One
+  clause of §7.7 left open**: auto-expanding boxes do not push their laid-out
+  size back onto the sprite.
 
 - **Trails**, on a corpus where 0 of 816,318 records set the flag.
 - **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in

@@ -61,5 +61,8 @@ resolves. Seconds. `gate.sh` is the behavioural suite; it pins the corpus to
 against another title reads as five regressions that are really five different
 movies.
 
-The recorded baseline is **12 pass, 2 fail**. `boot_state` and `cursor_preview`
-were already failing before the split began and are unrelated to it.
+The recorded baseline is **24 pass, 1 fail** -- `boot_state` only, whose
+`meetings` global reads null on a cold boot chain. That is a movie-globals
+question rather than a renderer one; `bugs.md` 25 and 36 carry it, and 36 is the
+player-visible half (DAY1's talk clips trap the playhead when the movie was
+opened without the global that decides which day it is).
