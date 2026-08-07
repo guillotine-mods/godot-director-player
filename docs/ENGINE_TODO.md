@@ -109,6 +109,31 @@ tempo until the score writes one or the effective tempo changes.
 `scenes/preview_lingo_host.gd` lists `puppettempo` among the no-ops, so a script
 that sets it changes nothing and `FrameClock` has no puppet rate to hold.
 
+**`play` and `go` suspend a handler, with three residues.** §6.1/§9.4. Both now
+capture the caller's position and resume it -- a `go` at the end of the step that
+entered the destination, a `play` at `play done`. What is left: a `tell` body
+cannot suspend; unwinding is statement-granular, so a suspend inside a compound
+expression resumes at the statement rather than mid-expression; and reaching the
+end of a score does not thaw a parked `play`.
+
+**The event chain is resolved lazily, not queued.** §6.3/§8.2. Director decides
+the whole chain before running any of it; this resolves each tier as it reaches
+it. Two consequences: a `mouseDown` handler that swaps a member changes what the
+*next* element of the same chain resolves to, where Director had already decided;
+and `pass` / `dontPassEvent` are honoured only on the key chain -- the mouse
+tiers still stop at the first handler that answers, so writing the flag from a
+mouse handler is inert. The key half is done, including pass-by-default.
+
+**Modifier keys are read live, not latched.** §8.3. `the shiftDown`,
+`optionDown`, `commandDown` and `controlDown` ask the keyboard now rather than
+reporting the modifier word that came with the keystroke, so a script asking
+between events gets the wrong answer. `the timeoutKeyDown` is unbound.
+
+**`LingoInterpreter.reset_steps()` has no callers.** `_steps` accumulates for the
+life of a session against `MAX_STEPS`, so a long enough session eventually aborts
+every handler with "step budget exhausted". Pre-existing; nothing has run long
+enough to hit it.
+
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
