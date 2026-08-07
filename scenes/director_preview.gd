@@ -38,6 +38,7 @@ const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
+const Interaction := preload("res://scenes/preview/interaction.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Keys := preload("res://director/director_keys.gd")
@@ -1846,81 +1847,6 @@ func _draw_text(sprite: Dictionary) -> bool:
 
 # ------------------------------------------------------- what the host calls
 
-## Topmost sprite under the point gets the click, highest channel first â€” that is
-## Director's stacking order, and hit-testing from channel 1 up would hand every
-## click to the room background.
-##
-## A mouse-down over a moveable sprite starts a drag first: Director records the
-## channel and the offset from the click to the sprite's position, then follows
-## the cursor until mouse-up or until the sprite stops being moveable. The offset
-## matters, or the sprite snaps its registration point onto the pointer.
-func _begin_drag(at: Vector2) -> void:
-	_drag_channel = 0
-	var channel := _channel_at(at)
-	if channel <= 0:
-		return
-	for sprite in _score.frame(_index).get("sprites", []):
-		if int(sprite["channel"]) != channel:
-			continue
-		# Asked of the effective sprite, which is where the score's own moveable
-		# bit and any `the moveableSprite of sprite` write have already been
-		# merged into one answer. Reading `_overrides` directly, as this used to,
-		# saw only the Lingo half.
-		var live: Dictionary = _effective(sprite)
-		if live.is_empty() or not bool(live.get("moveable", false)):
-			return
-		_drag_channel = channel
-		_drag_offset = Vector2(
-			float(live.get("loc_h", 0)), float(live.get("loc_v", 0))
-		) - at
-		return
-
-
-func _click(at: Vector2) -> void:
-	if not _lingo_on or _interpreter == null:
-		return
-	# A click always produces a message. What is under the cursor decides which
-	# script sees it first; it does not decide whether one is sent.
-	#
-	# Bailing out on a miss or a hole is why the menu went from unreliable to
-	# dead: its backdrop covers the stage, so the hit test answered "hole" and
-	# nothing was ever dispatched â€” while the handler the menu actually uses
-	# lives in the frame script and reads `the clickOn`.
-	var channel := _channel_at(at)
-	_host.click_sprite = channel
-	# Director's order: the sprite's own behaviour, then the script on the cast
-	# member it displays, then the frame script, then any movie script.
-	var script: Dictionary = {}
-	if channel > 0:
-		script = _sprite_script(channel, _index)
-		if script.is_empty():
-			for sprite in _score.frame(_index).get("sprites", []):
-				if int(sprite["channel"]) == channel:
-					# Same rule as the eligibility test above: the member's own
-					# library decides, or a click runs a handler belonging to a
-					# different cast's member of the same number.
-					script = _script_in_lib(
-						int(sprite["cast_lib"]), int(sprite["cast_id"])
-					)
-					break
-	var tier := "sprite"
-	if script.is_empty():
-		script = _frame_script(_index)
-		tier = "frame" if not script.is_empty() else "movie"
-	# Says what was clicked, which script is about to answer for it, and whether
-	# a handler actually exists. "clicked nothing" and "clicked something with no
-	# mouseUp" look identical on screen and are entirely different faults.
-	var has_up: bool = _interpreter.call("_script_has_handler", script, "mouseup") \
-		or _interpreter.has_handler("mouseup")
-	print("clicked (%d,%d) frame %d  ch%d  %s script %s  mouseUp:%s" % [
-		int(at.x), int(at.y), _index, channel, tier,
-		str(script.get("script", "none")), "yes" if has_up else "NO HANDLER",
-	])
-	# Director sends both, and a menu may answer either.
-	_dispatch("mouseDown", script)
-	_dispatch("mouseUp", script)
-	queue_redraw()
-
 
 ## Film loops, delegated to `preview/film_loop_view.gd`. The loop cache and the
 ## per-channel start ticks stay on the node; the module reaches back through
@@ -1958,160 +1884,65 @@ func _tally_loop(key: String) -> void:
 	_tally(_loop_stats, key)
 
 
-## The topmost sprite whose rect contains a point, or 0. Highest channel first,
-## which is Director's stacking order and therefore its hit order.
+## The mouse, delegated to `preview/interaction.gd`. Everything there takes the
+## node as `host`, because the hit test needs puppet state, the artwork cache and
+## the script table -- all of which are the node's.
 func _channel_at(at: Vector2) -> int:
-	# Highest channel first, since channel number is depth â€” but a sprite drawn
-	# with a keying ink is only hit where it has pixels, and where it does not
-	# the search CONTINUES to the sprite behind.
-	#
-	# Both simpler rules fail on this game's own menu. A pure bounding-box test
-	# hands every click to channel 21, a large keyed sprite covering the stage,
-	# so the buttons on channels 4-7 are never reached. Treating a transparent
-	# pixel as a hole that ends the search is worse still: nothing is ever hit
-	# at all. Transparency means "not this sprite", not "stop looking".
-	#
-	# Opaque inks are hit anywhere inside their rect, so the pixel test only
-	# applies where the sprite is keyed at all.
-	# Which of the two is right is an open question. `score.cpp` describes a
-	# bounding-box test and no per-pixel matte test â€” but Director also skips
-	# sprites that do not respond to the mouse, which this preview has no notion
-	# of, and without that filter a pure rect test hands every click to the
-	# backdrop on channel 21. The pixel test is standing in for the filter I
-	# cannot model yet, so both are available and `M` switches between them.
-	var sprites: Array = _score.frame(_index).get("sprites", [])
-	for i in range(sprites.size() - 1, -1, -1):
-		# Puppet state, not the raw score record. The descent used to read the
-		# score directly, which meant a sprite a script had hidden still absorbed
-		# every click inside its rect, and a sprite a script had moved absorbed
-		# them at the position the score last gave it rather than where it is.
-		#
-		# Both are invisible from the player's chair and read as "something I
-		# cannot see is covering what I am trying to click". DAY1's beach frame
-		# script alone hides sprites 15, 17 and 33, all of them on channels above
-		# the backdrop and two of them above the character.
-		#
-		# `visible` is the case the reference is most explicit about: false means
-		# not drawn *and* not hit-tested, and it is the first thing `isMouseIn`
-		# checks. `_effective` answers `{}` for it.
-		var sprite: Dictionary = _effective(sprites[i])
-		if sprite.is_empty():
-			continue
-		if not _sprite_rect(sprite).has_point(at):
-			continue
-		# Only Matte samples the artwork, and only on a bitmap. Every other ink is
-		# a plain rectangle for hit-testing even when it renders per-pixel â€” the
-		# asymmetry is deliberate in Director and easy to get wrong in both
-		# directions. The cast type is the other half of the same rule: a matte is
-		# flooded in from the border of the *member's image*, and a shape has no
-		# image, so a matte-inked shape hit-tests as its box. Without that, this
-		# game's invisible shape hotspots that happen to carry Matte answered no
-		# click at all (`director/director_ink.gd:hits_per_pixel`).
-		var member: Dictionary = _table.get_member(
-			int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		if _hit_pixels \
-				and Ink.hits_per_pixel(int(sprite["ink"]), int(member.get("type", 0))) \
-				and not _opaque_at(sprite, at):
-			continue
-		# Eligibility is tested HERE, inside the descent, not applied to the
-		# answer afterwards. A sprite the point is over but which cannot respond
-		# does not absorb the click: the search carries on to what is beneath.
-		# That is the whole reason a backdrop was taking every click.
-		if _responds_to_mouse(sprite):
-			return int(sprite["channel"])
-	return 0
+	return Interaction.channel_at(
+		self, at, _score.frame(_index).get("sprites", []), _hit_pixels, _table)
 
 
-## Can this sprite answer a mouse message at all?
-##
-## Director asks whether a script attached to the sprite or to its cast member
-## actually declares a mouse handler â€” the presence of a script id is not enough
-## â€” or whether the sprite is moveable or a button. A backdrop with no handler
-## is visible, hit-testable for other purposes, and simply not clickable.
 func _responds_to_mouse(sprite: Dictionary) -> bool:
-	var channel := int(sprite["channel"])
-	var behaviour := _sprite_script(channel, _index)
-	if _declares_mouse_handler(behaviour):
-		return true
-	# In the library the sprite names, not by number alone. Member numbers are
-	# per cast, so a number-only search answers with a stranger -- and here that
-	# is not silence but a false positive: it makes a sprite clickable because
-	# some *other* cast happens to have a script at that number, and the click
-	# then runs that stranger.
-	#
-	# DAY1's beach is the case that found it. Channel 1 is `3:10`, the room
-	# backdrop `shore2`, a plain bitmap with no script of its own. A number-only
-	# search found a mouse handler anyway, so the backdrop answered clicks across
-	# its whole 640x400 rect -- and since the walkable ground is a separate Matte
-	# sprite on channel 2 covering only the bottom 154 pixels, clicking the *sea*
-	# fell through to the backdrop and walked the character up into it.
-	if _declares_mouse_handler(_script_in_lib(
-		int(sprite["cast_lib"]), int(sprite["cast_id"])
-	)):
-		return true
-	# A moveable sprite is click-eligible on its own, with no script at all â€”
-	# it has to be, or nothing could start a drag. The sprite handed in here has
-	# already been through `_effective`, so this is the score's bit and the Lingo
-	# write merged, not just the latter.
-	if bool(sprite.get("moveable", false)):
-		return true
-	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
-	return str(m.get("type_name", "")) == "button"
+	return Interaction.responds_to_mouse(self, sprite, _table)
 
 
 func _declares_mouse_handler(script: Dictionary) -> bool:
-	if script.is_empty() or _interpreter == null:
-		return false
-	for name in ["mousedown", "mouseup"]:
-		if _interpreter.call("_script_has_handler", script, name):
-			return true
-	return false
+	return Interaction.declares_mouse_handler(script, _interpreter)
 
 
-## Outline every sprite on the frame, and say which of them a script could
-## actually answer for. A sprite with a behaviour attached is a hotspot in the
-## ordinary sense; the rest are only reachable if a frame script asks
-## `rollOver` or `the clickOn`, which is how this game's menu works â€” so both
-## are drawn, distinguished rather than filtered.
 func _draw_hotspots(frame: Dictionary) -> void:
-	var font := ThemeDB.fallback_font
-	for raw_sprite in frame.get("sprites", []):
-		# Puppet state, exactly as the hit test sees it. A sprite a script has
-		# hidden or moved is not where the score says, and outlining it there
-		# would be worse than not outlining it at all.
-		var sprite: Dictionary = _effective(raw_sprite)
-		if sprite.is_empty():
-			continue
-		var channel := int(sprite["channel"])
-		var rect := _sprite_rect(sprite)
-		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-			continue
-		# Only what can actually answer a click. This used to outline every
-		# sprite and merely tint the ones with a behaviour attached, which made
-		# the overlay a picture of the score rather than of what the mouse can
-		# reach -- and eligibility is not "has a behaviour": a member script, a
-		# button or `moveable` all qualify, and a behaviour that declares no
-		# mouse handler does not.
-		if not _responds_to_mouse(sprite):
-			continue
-		# Green where the whole rectangle answers, amber where only the artwork
-		# does. That distinction is the one that costs people time: a Matte
-		# sprite is clickable on its pixels and transparent to the mouse
-		# everywhere else, so an outline that implies a solid target is a lie.
-		var per_pixel := _hit_pixels and Ink.hits_per_pixel(int(sprite["ink"]))
-		var hovered := channel == _hover_channel
-		var tint := Color(1.0, 0.75, 0.2) if per_pixel else Color(0.2, 1.0, 0.4)
-		if hovered:
-			draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.18), true)
-		draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.45),
-			false, 2.0 if hovered else 1.0)
-		if hovered:
-			draw_string(font, rect.position + Vector2(2, -3),
-				"ch%d  %d:%d  %s" % [
-					channel, int(sprite["cast_lib"]), int(sprite["cast_id"]),
-					"artwork only" if per_pixel else "whole rect",
-				],
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tint)
+	Interaction.draw_hotspots(self, frame, _hover_channel, _hit_pixels, _table)
+
+
+## A mouse-down over a moveable sprite starts a drag: Director records the
+## channel and the offset from the click to the sprite's position, then follows
+## the cursor until mouse-up or until the sprite stops being moveable.
+func _begin_drag(at: Vector2) -> void:
+	var started: Array = Interaction.begin_drag(
+		self, at, _channel_at(at), _score.frame(_index).get("sprites", []))
+	if started.is_empty():
+		return
+	_drag_channel = int(started[0])
+	_drag_offset = started[1]
+
+
+func _click(at: Vector2) -> void:
+	if not _lingo_on or _interpreter == null:
+		return
+	# A click always produces a message. What is under the cursor decides which
+	# script sees it first; it does not decide whether one is sent.
+	#
+	# Bailing out on a miss or a hole is why the menu went from unreliable to
+	# dead: its backdrop covers the stage, so the hit test answered "hole" and
+	# nothing was ever dispatched -- while the handler the menu actually uses
+	# lives in the frame script and reads `the clickOn`.
+	var channel := _channel_at(at)
+	_host.click_sprite = channel
+	var chosen: Array = Interaction.script_for_click(
+		self, channel, _score.frame(_index).get("sprites", []))
+	var script: Dictionary = chosen[0]
+	# Says what was clicked, which script is about to answer for it, and whether
+	# a handler actually exists. "clicked nothing" and "clicked something with no
+	# mouseUp" look identical on screen and are entirely different faults.
+	var has_up: bool = _interpreter.call("_script_has_handler", script, "mouseup") 		or _interpreter.has_handler("mouseup")
+	print("clicked (%d,%d) frame %d  ch%d  %s script %s  mouseUp:%s" % [
+		int(at.x), int(at.y), _index, channel, str(chosen[1]),
+		str(script.get("script", "none")), "yes" if has_up else "NO HANDLER",
+	])
+	# Director sends both, and a menu may answer either.
+	_dispatch("mouseDown", script)
+	_dispatch("mouseUp", script)
+	queue_redraw()
 
 
 ## Placement, delegated to `preview/sprite_geometry.gd`.
