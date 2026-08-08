@@ -450,14 +450,50 @@ another Director title:
 | **F5** / **F6** | Step the playhead back / forward |
 | **F7** | Fullscreen |
 | **F8** | Quit |
-| **F10** | Pause |
+| **F9** | Pause |
 | **F11** | Copy a diagnostic snapshot |
 | **F12** | Container picker (type to filter, Enter to play) |
+| **PageDown** | Fast-forward toggle (`[debug] fast_forward_fps`, default 60) |
+| **PageUp** | Collision-zone overlay |
+| **Shift+F1** | Print every global |
+| **Shift+F5** / **Shift+F6** | Quick-save / quick-load |
+| **Shift+F7** / **Shift+F8** | Save-as / load, with a file dialog |
 
-Every debug binding is an F-key, and `scenes/preview/debug_keys.gd` explains at
+Almost every binding is an F-key, and `scenes/preview/debug_keys.gd` explains at
 length why that is a rule rather than a taste: the movie is offered every key
 first, and a debug binding on a key a game wants reads to the player as the game
-misbehaving. All twelve are rebindable from `[debug]` in `director_game.cfg`.
+misbehaving. The two exceptions sit outside the band because it is full and F10
+belongs to Rating, which tests that keycode at 48 sites. All of them are
+rebindable from `[debug]` in `director_game.cfg`, and an empty value unbinds one
+outright.
 
-The old **F1 debug HUD / F5 save editor / F10 settings panel** were `ui/`, which
-belonged to the retired renderer and is gone.
+
+## Shipping a build without the debug layer
+
+None of the above should reach a player. One switch removes all of it:
+
+```ini
+[debug]
+enabled = "auto"
+```
+
+  * `auto` — **the default.** On when running from source or from a debug
+    export; off in a release export.
+  * `true` — keep the tools even in a release export. This is the QA build.
+  * `false` — off everywhere, including from source.
+
+`--debug-ui on|off` beats the file for a single run.
+
+Off means *off*: no key is bound at all, the SKIP button is neither drawn nor
+hit-tested, and the hotspot outlines, the HUD line, the snapshot toast, the
+container picker and the exit report are all absent. A shipped game does not have
+F3 dumping a report or F12 opening a movie picker.
+
+**Why `auto` rather than `true`.** `director_game.cfg` is tracked, so whatever it
+says is what ships. A plain default of `true` means the debug layer reaches
+players whenever someone forgets a line — which is the failure this switch exists
+to prevent. With `auto`, the safe answer is the one you get by doing nothing, and
+shipping a build *with* the tools has to be typed deliberately.
+
+`tools/debug_bindings.gd` asserts it: with the switch off, no keycode is claimed
+by the preview at all.
