@@ -305,6 +305,7 @@ godot --headless --script tools/tween_survey.gd -- --all  # whether a tweened sp
 godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped sprite is mirrored inside its own rect, pass/fail — NOT --headless
 godot --headless --script tools/sprite_collision.gd  # `intersects`/`within` measure a hidden sprite, the mouse does not, pass/fail
 godot --headless --script tools/cannon_hit.gd -- --root piposh  # the same rule played: piposh 1's cannon round sinks a ship, pass/fail
+godot --headless --script tools/pause_holds.gd -- --file PIP2DATA/SAVELOAD.dir --label savegame2 --hotspot  # `pause` holds the frame that paused, keeps its hotspots, and `continue` does not re-run the handler that paused, pass/fail
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
 godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail

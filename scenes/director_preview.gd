@@ -130,6 +130,24 @@ var _jump_queued := false
 ## *after* step 10 and is honoured by the next one, which is also the tick that
 ## then sends no `exitFrame` of its own (§6.1).
 var _in_exit_frame := false
+## `exitFrame` has already been sent for the frame the playhead is standing on.
+##
+## `Score::_exitFrameCalled` (`reference/scummvm/score.cpp:672-675`), and it exists
+## for one situation: a frame whose `exitFrame` handler calls `pause`. The playhead
+## stays on that frame, so without this the *next* runnable step would send its
+## `exitFrame` again, call `pause` again, and undo the `continue` that a click just
+## ran — the room would sit on the pausing frame re-pausing itself on every click,
+## which is a lock and not a pause.
+##
+## **Cleared where the reference clears it: once per unpaused step, beside the
+## `enterFrame` dispatch** (`score.cpp:827-828`), which is `_enter_frame_or_defer`
+## here. Not on a frame-number change, which is the tempting spelling and is wrong:
+## `frame_loop.gd:sync_frame_entry` early-returns when the index has not moved, so a
+## latch cleared there would never clear under `go to the frame` — and that is how
+## every room in both corpora stands still. `BLAEGOZ.dir` frames 1051-1076 poll
+## `soundBusy` from `exitFrame` on every step of exactly such a hold, and a
+## once-per-frame-number latch would answer that poll once and then go deaf.
+var _exit_frame_called := false
 ## The frame script whose `enterFrame` is waiting for a transition to finish.
 ## §6.2 plays the transition inside `renderFrame`, which is after `prepareFrame`
 ## and before `enterFrame`, so a handler that runs on entry runs when the new
@@ -1304,10 +1322,15 @@ func _begin_transition(frame: Dictionary) -> bool:
 
 
 func _advance() -> Dictionary:
-	# Director's `pause`, and the whole of what it suspends: no `exitFrame`, no
-	# playhead move, no `prepareFrame`, no `enterFrame`. The reference guards each
-	# of those five separately against `_playbackPaused`; one guard here is the
-	# same set, because this port has exactly one place a step happens.
+	# Director's `pause`: a step does not begin on a movie that is already paused —
+	# no `exitFrame`, no playhead move, no `prepareFrame`, no `enterFrame`.
+	#
+	# **This guard is not the whole of it, and believing it was is `bugs.md` 52.**
+	# `pause` is called from inside an `exitFrame` handler, so on the step that
+	# pauses this test has already passed; the reading that keeps the playhead on
+	# the frame that paused is the second one, in `frame_loop.gd:advance`, between
+	# the `exitFrame` dispatch and the playhead move, where `updateCurrentFrame`
+	# has it (`reference/scummvm/score.cpp:443-452`).
 	#
 	# Deliberately *not* in `_process`: a paused movie in Director stays drawn,
 	# keeps its rollover current and keeps taking clicks -- which is the only way
@@ -1390,6 +1413,12 @@ func _thaw_lingo() -> void:
 ## the top of the room being left". Every path that enters a frame goes through
 ## here: the step loop, the first frame of a movie, and a `go to movie`.
 func _enter_frame_or_defer(script: Dictionary) -> void:
+	# The step has entered a frame, so the `exitFrame` owed for it has not been sent
+	# yet. `score.cpp:827-828` clears the same flag in the same place, and it is
+	# cleared *before* the transition check rather than after: a frame that defers
+	# its `enterFrame` has still been entered, and it is the entry that makes the
+	# next `exitFrame` due.
+	_exit_frame_called = false
 	if _clock.holding_transition():
 		_pending_enter = script
 		return

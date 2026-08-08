@@ -25,6 +25,7 @@ the Godot lifecycle; the modules own the rules.
 | the whole stage paints wrong, or spills outside the letterbox | `stage_paint.gd` |
 | the wrong colours after a palette change | `palette_view.gd` |
 | a room runs too fast or too slow, a wait never releases | `frame_loop.gd` |
+| a `pause`d room is on the wrong frame, or a click cannot lift the pause | `frame_loop.gd` |
 | a sound doesn't play, or the room moves on before speech ends | `sound.gd` |
 | a handler doesn't run, or the *wrong* handler runs | `scripts.gd` |
 | `member("x")` resolves to something unrelated | `members.gd` |
@@ -100,15 +101,19 @@ still came from the config, so with the tracked config naming a `rating` contain
 every harness that does not pass its own `--file` loaded no score and asserted over
 nothing. `bugs.md` 51 carries it.
 
-The recorded baseline is **45 pass, 3 fail**, and none of the three is a renderer
-question:
+The recorded baseline is **47 pass, 2 fail** over a list that is **49 entries**
+since `pause_holds` joined it, and neither failure is a renderer question:
 
 - `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
   keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).
-- `lingo_surface_audit` — `_score` is bound and unclaimed in
-  `docs/LINGO_SURFACE.md` §19.
 - `play_suspends` — the known flake, `bugs.md` 41. Roughly half its runs, on the
   cross-movie `suspendhop` assertion, not the dialogue one.
+
+`lingo_surface_audit` was the third and passes now. The 47/2 is the count that was
+recorded on the commit before `pause_holds` existed; the entry passes on both
+`piposh2` and `rating` when run alone, so the expected total is 48/2 — but **that
+sum has not been measured by a whole-suite run** and this line is a prediction until
+somebody replaces it with one, which is the same warning the paragraph below carries.
 
 `boot_state`, which this file recorded as the single baseline failure, passes — and
 **not because anything here fixed it.** Measured both ways: it passes with the

@@ -1016,9 +1016,13 @@ excluded for *moveable* sprites; size counts only when stretched.
 6. **Wait check** — clock, wait-for-click, wait-for-sound, wait-for-video. If
    waiting, the update ends here; video still gets a widget update and a render.
 7. **exitFrame** for the frame being left — *not* if it is being left by a
-   `go to`.
+   `go to`, *not* if playback is paused, and *not* if it has already been sent for
+   this frame (`_exitFrameCalled`). The last two are what make `pause` work: see
+   the note under step 10.
 8. `the delay` check.
-9. Expiring behaviours killed.
+9. Expiring behaviours killed — **not while paused**, so a paused frame keeps the
+   behaviours attached to it, and the click that resumes the movie still has
+   something to land on.
 10. **`updateCurrentFrame`** — resolve the next frame number, cache rollOver
     bboxes (pre-D5), **load the frame**, release auto-puppets, and
     **`updateSprites`** to apply the delta and flag channels for drawing.
@@ -1042,6 +1046,22 @@ A port running `enterFrame` before the draw shows one frame of lag on everything
 it changes. A port running `exitFrame` and `enterFrame` in the same tick runs
 both against the same rendered state, which breaks the standard "set up in
 enterFrame, tear down in exitFrame" idiom.
+
+**Where `pause` takes effect, and why it is step 10 and not step 1.** `pause`
+names no destination, so unlike `go` it cannot be implemented by writing the next
+frame number. It sets a flag, and every step from 9 onwards tests that flag —
+crucially step 10, where `nextFrameNumberToLoad` starts at the *current* frame and
+only the unpaused arm moves it. Since `pause` is almost always called from the
+`exitFrame` handler at step 7, a port that tests the flag only at the top of a tick
+has already decided to advance by the time it is set, and parks the playhead one
+frame past the frame that paused. That is `docs/bugs-closed.md` 52, and it made a
+room of Rating unfinishable because the behaviour that lifts the pause was attached
+to the pausing frame alone. `_exitFrameCalled` at step 7 is the other half: without
+it the resumed step re-runs the handler that paused, which pauses again.
+
+*This port:* both, in `scenes/preview/frame_loop.gd:advance`, with the latch on the
+node at `director_preview.gd:_exit_frame_called` and cleared beside `enterFrame` as
+the reference clears it. `tools/pause_holds.gd` is the gate entry.
 
 Almost every step checks whether a script **froze** and bails out of the rest of
 the tick. That is how Director makes blocking Lingo work without threads (§9.4),

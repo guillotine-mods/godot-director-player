@@ -18,12 +18,28 @@ extends RefCounted
 ## establishes the entire opening state of the room and ends with `go("shore2")`.
 ## Skip it and the room draws with nothing initialised.
 ##
+## **Within that step, `pause` is read twice**, and both readings are the
+## reference's. A step is refused before it starts when the movie is already
+## paused, and the playhead move is refused *again* after `exitFrame` has run,
+## because `pause` is normally called from inside that handler and there is no
+## other moment at which its own frame is still the current one. A single guard at
+## the top is the bug this file used to have: it parked the playhead one frame past
+## every frame that paused itself.
+##
 ## Film loops advance on the movie's clock rather than the playhead's, which is
 ## why the tick is counted before the hold is tested: a character keeps talking
 ## on a frame the score is standing still on.
 
 const FrameClock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
+
+
+## Director's `pause` — the movie's own, not the debug key's `_paused`.
+##
+## One reader, because this file tests it in three places now and a host that is
+## null in a harness would be three copies of the same null check.
+static func paused(host) -> bool:
+	return host._host != null and host._host.playback_paused
 
 
 ## The playhead has landed somewhere this tick has not accounted for yet: release
@@ -134,7 +150,7 @@ static func tick(host, delta: float) -> void:
 		# loops' clock, and a paused room whose characters keep talking is what
 		# skipping it looks like. The rest of what `pause` suspends is one guard in
 		# `director_preview.gd:_advance`.
-		if host._host != null and host._host.playback_paused:
+		if paused(host):
 			continue
 		# Counted before the hold is tested, not after: a wait-for-click frame
 		# with a character talking on it must not freeze the character.
@@ -188,15 +204,39 @@ static func advance(host) -> Dictionary:
 	var exited := -1
 	host._held = host._jump_queued
 	host._jump_queued = false
-	if not host._held:
+	# `score.cpp:668-675`: **two** independent reasons not to send this, and the
+	# reference states both. It is sent at most once per frame (`_exitFrameCalled`),
+	# and never on a frame the movie has paused on. They are not the same guard --
+	# the pause one is what makes the paused frame stop receiving the event, and the
+	# latch is what stops a *resumed* frame from receiving it a second time.
+	if not host._held and not paused(host) and not host._exit_frame_called:
 		exited = host._index
 		host._in_exit_frame = true
+		host._exit_frame_called = true
 		host._dispatch("exitFrame", host._frame_script(host._index))
 		host._in_exit_frame = false
 
 	# `updateCurrentFrame`: the handler above decided where the playhead goes.
 	# `go to the frame` -- how a room stands still at all -- reaches this as a
 	# hold, and any other `go` has already written the destination.
+	#
+	# **The pause is read here, after the handler that may have set it**, which is
+	# `score.cpp:443-452` exactly: `nextFrameNumberToLoad` starts at the current
+	# frame and only the `if (!_playbackPaused)` arm moves it. `pause` is the one
+	# hold that does not set `_held` -- it cannot, because `_held` means "a jump
+	# chose the destination" and is consumed by this step -- so a pause read only at
+	# the top of the *next* step parks the playhead one frame past the frame that
+	# paused. Rating's reception desk is what that costs: `BLAEGOZ.dir` frame 1079
+	# pauses, the behaviour that lifts the pause is attached to 1079 alone, and a
+	# playhead parked on 1080 can never be clicked, so the key is uncollectable and
+	# the room is a lock (`docs/bugs-closed.md` 52).
+	#
+	# The rest of what the pause suspends is suspended by returning here:
+	# `prepareFrame` and `enterFrame` are guarded the same way in the reference
+	# (`score.cpp:812`, `:827`), and this is the one place they are sent.
+	if paused(host):
+		host._held = false
+		return {"exited": exited, "frame": host._index}
 	if not host._held:
 		host._index += 1
 		if host._index >= host._score.frame_count:

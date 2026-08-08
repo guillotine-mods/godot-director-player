@@ -2312,3 +2312,85 @@ optional `member` argument that **no caller passes yet**: the four sites that as
 for an alpha (`stage_paint.gd`, `film_loop_view.gd` twice, `text_art.gd`) were
 outside this change's file set, so they still get the member-blind answer. One
 line each to wire up, and 0 corpus records reach it either way.
+
+---
+
+## 53. `field "x"` resolves by name across every cast, and the library the script named is thrown away
+
+**Status:** open · **Area:** `scenes/director_preview.gd`
+
+`lingo_field(name, _cast)` and `lingo_set_field(name, _cast, text)`
+(`scenes/director_preview.gd:3199`, `:3206`) take the cast library the script
+named and discard it — the parameter is spelled `_cast`. Both forward to
+`_resolve_field(name)`, which asks `TextArt.resolve` for whichever library answers
+first.
+
+Found while tracing `docs/bugs-closed.md` 52. Rating's pickup writes
+`field "inventorylist" of castLib "panel.cst"`, and the write does land on the
+right member — `_resolve_field("inventorylist")` answers `[7, 147]`, `panel.cst`
+member 147 — because the name happens to be unique across the five casts
+`BLAEGOZ.dir` loads. That is luck, not resolution.
+
+The library being part of the answer is a rule this port has already been bitten by
+twice and has written down twice: `preview/members.gd` carries it ("the library is
+part of the answer, not a hint"), and `lingo_set_member_prop`'s own comment says
+the same thing about `set the text of member 12 of castLib 2` — which *does*
+resolve by reference, one function below the two that do not. So the fix is to
+route these two through `_resolve_member_ref(name, cast)` like their neighbour,
+not to invent anything.
+
+Not fixed alongside 52 deliberately: it is a separate defect with a separate
+failure mode, and 52's change had no reason to touch field resolution.
+
+**Unmeasured:** whether any container in any of the six roots actually ships two
+same-named fields in two casts one movie loads. `field` names are written by
+scripts rather than by the score, so the survey is a grep of the compiled sources
+against the cast tables per movie, and nobody has run it. Until it has been run,
+this is a hole with an unknown blast radius rather than a known wrong answer.
+
+---
+
+## 54. Rating's `inventorylist` is never reset, and the shipped field already has the first item collected
+
+**Status:** open · **Area:** data / `rating`, possibly no engine defect at all
+
+Found while closing `docs/bugs-closed.md` 52, and it is the reason a player may
+judge that fix by the wrong thing.
+
+`line 2 of field "inventorylist" of castLib "panel.cst"` is Rating's have-list:
+`OBJECTS.cst` `BehaviorScript 71` and `156` walk its items and show inventory
+sprite `i + 1` for every item that reads `1`. The desk pickup writes item 1
+(`BLAEGOZ.dir` `BehaviorScript 161`). But the authored member already reads
+`1,0,0,0,…` — `od -c` on the extracted field, line 2 begins `1,`, and line 1
+carries a `1` at item 6 — so `put "1" into item 1 of line 2` is a **no-op against
+the shipped text**, and the inventory panel would show the key before the player
+has been anywhere near the desk.
+
+That is consistent with the original's `saveMovie` writing a played session's state
+back into `Panel.cst`, which is how this game saves: the container on the CD
+carries whatever the authors last played. If so, something must reset the field on
+New Game, and it was not found.
+
+**Searched:** `BLAEGOZ.dir`, `Panel.cst`, `MAINMENU.dir`, `INVENTOR.dir`,
+`HOTEL.cst`, `TOOLS.cst`, `OBJECTS.cst` — **7 of `rating`'s 117 containers**. Every
+reference found is item-level: `Panel.cst` `32` writes item 38, `282` writes item
+37, `182` reads item 18, `183` reads item 24, and the two `OBJECTS.cst` readers
+above. No whole-field write, and no `inventorylistinit` beside the
+`TimeBaseinit`/`TimeBaseBackup` and `GuestBaseinit`/`GuestBaseBackup` pairs that
+are how this title resets its other tables.
+
+**Reproduce the observation:**
+
+```bash
+godot --headless --path . --script tools/director_extract.gd -- \
+    --root rating --file Panel.cst --out /tmp/panel
+od -c /tmp/panel/fields/0147_inventorylist.txt | head -3
+```
+
+Three outcomes, and which one it is has not been established: the reset is in one
+of the 110 containers not searched; or the engine drops a whole-field write that a
+`--root rating` boot performs (the mechanism for that would be entry 53); or the
+original really does ship a dirty field and the first inventory slot is populated
+from the start, in which case there is nothing here to fix and this entry should be
+closed as authentic. Per AGENTS.md the third needs more evidence than the first
+two, and none of the three has any yet.

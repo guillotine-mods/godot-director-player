@@ -15,6 +15,162 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 52. `pause` parked the playhead one frame past the frame that paused, so a hotspot scoped to that frame could never be clicked
+
+**Status:** FIXED · **Area:** `scenes/preview/frame_loop.gd`,
+`scenes/director_preview.gd` · reported from play as "i cannot collect the key
+from the desk", from `.snapshots/2026-08-08T22-06-09.png`
+
+`rating`'s `BLAEGOZ.dir` `EgozKey` is the hotel reception desk. The manager
+finishes his line, the score pauses on the key lying on the counter, the cursor
+becomes a take cursor, and clicking the key resumes the score — which is what
+collects it. The room could not be finished: the click did nothing, for ever.
+
+**The three scripts that are the whole pickup.** Frame 1079, `BehaviorScript 126`:
+
+```
+on exitFrame
+  set the cursor of sprite 7 to [the number of member "takecursor" of castLib 1, the number of member "takecursor2" of castLib 1]
+  pause()
+end
+```
+
+channel 7's behaviour on that frame, `BehaviorScript 127`:
+
+```
+on mouseUp
+  continue()
+  set the cursor of sprite 7 to [1]
+end
+```
+
+and frame 1080, `BehaviorScript 161`:
+
+```
+on exitFrame
+  put "1" into item 1 of line 2 of field "inventorylist" of castLib "panel.cst"
+end
+```
+
+`line 2 of field "inventorylist"` is the have-list: `OBJECTS.cst`
+`BehaviorScript 71` and `156` walk its items and show inventory sprite `i + 1`
+for each `1`. Frame 1085 plays `keys.aif`, 1089 the manager's follow-up.
+
+**The defect.** `pause` is the one hold in Director that does not name a
+destination. `go`, `go to the frame` and `play done` all write `_index` and set
+`_held`; `pause` sets a flag and nothing else. The port read that flag at the top
+of a step — `director_preview.gd:_advance` and `frame_loop.gd:tick` — and `pause`
+is called from an `exitFrame` handler, so by the time it is set the step has
+already committed to advancing. `frame_loop.gd:advance` went on to `_index += 1`,
+`sync_frame_entry`, `prepareFrame` and `enterFrame` for the *next* frame, and only
+the following step was refused.
+
+The reference reads it between the two, in `Score::updateCurrentFrame`
+(`reference/scummvm/score.cpp:443-452`):
+
+```cpp
+uint32 nextFrameNumberToLoad = _curFrameNumber;
+if (!_window->_playbackPaused) {
+    if (_nextFrame) { nextFrameNumberToLoad = _nextFrame; }
+    else if (!_window->_newMovieStarted) nextFrameNumberToLoad = (_curFrameNumber+1);
+}
+```
+
+`update()` sends `exitFrame` at `score.cpp:668-678` and calls
+`updateCurrentFrame()` at `:706` in the same cycle, so a `pause` from inside the
+handler is visible to the advance. `prepareFrame`/`stepMovie` and `enterFrame` are
+guarded the same way (`:812`, `:827`), and `killScriptInstances` is skipped while
+paused (`:701-702`) — Director explicitly keeping the paused frame's behaviours
+alive to receive the click that resumes it.
+
+**Why one frame was fatal here and invisible elsewhere.** Eligibility is a
+behaviour interval test at the current frame (`preview/interaction.gd:181-191`,
+§4.3 clause 4, and `:256-264`), and the author attached the take behaviour to
+frame 1079 alone. Measured: the score rows for 1079, 1080 and 1081 are identical —
+channel 7 is `1:3` at (131,326) on all three — while `_channel_at(104,317)`
+answered 7 on 1079 and 0 on 1078, 1080 and 1081. So the port parked the playhead
+on the one frame either side where the key was not clickable, `continue` was never
+reached, and the room was a lock. `cursor.gd:54-55` does not filter the cursor
+descent on eligibility, which is correct (`the cursor of sprite N` is a channel
+property) and is why the player was still shown a take cursor over a sprite no
+click could reach.
+
+**The second half, and why it had to land in the same change.** With only the
+guard above, holding on 1079 means the next runnable step sends 1079's `exitFrame`
+again and `pause` runs again, so `continue` is undone before the playhead can
+move: the 1080 lock becomes a 1079 lock. `Score::_exitFrameCalled`
+(`score.cpp:672-675`) makes `exitFrame` at most once per frame, and it is cleared
+in the unpaused `enterFrame` arm (`:827-828`). `director_preview.gd:_exit_frame_called`
+is that flag, cleared in `_enter_frame_or_defer`. **Not on a frame-number change**,
+which is the tempting spelling: `frame_loop.gd:sync_frame_entry` early-returns when
+the index has not moved, so a latch cleared there would never clear under `go to
+the frame` and every room in every title would stop polling what it waits on.
+`score.cpp:519` is the reference being explicit about the same case — loading the
+same frame takes the `else if (!_playbackPaused)` arm and reloads nothing, and the
+flag is cleared anyway because the clear lives beside `enterFrame`.
+
+**Measured before and after**, `tools/pause_holds.gd` against the pinned piposh2
+corpus (`PIP2DATA/SAVELOAD.dir` `savegame2`, whose frame 8 is `on exitFrame /
+pause()`):
+
+| | before | after |
+|---|---|---|
+| the step that paused stayed on frame 8 | FAIL, left the playhead on 9 | ok |
+| the playhead reads that frame afterwards | FAIL, `current_frame 9` | ok |
+| a `mouseUp` behaviour is reachable on frame 8 | FAIL, none | ok, ten of them |
+| the resuming step sent no `exitFrame` | FAIL, `exited 9` | ok |
+
+and end to end in Rating, playing in to `EgozKey` rather than jumping: the
+playhead parks on 1079, the click at (104,317) reports `ch7 sprite script
+BehaviorScript 127 mouseUp:yes` — the same line the player's snapshot recorded —
+`keys.aif` plays at 1085, `_field_text` gains
+`res://games/rating/panel.cst:147`, and the room walks on to its next beat at
+1132, whose frame script is the movie's second `on exitFrame / pause()`.
+
+**Sites this was never about Rating.** `preview_lingo_host.gd:341-361` lists the
+corpus's pause frames: `mainmenu.dir` 92, `hezsave.dir` 8, `psyday1.dir` 200,
+`exchange.dir` 33, `docroom.dir` 301, plus `PIP2DATA/SAVELOAD.dir` 2 and
+`ARCADE1`/`ARCADE2`/`SHUFFLE` in piposh2 and three frame scripts in `BLAEGOZ.dir`
+alone. Every one of them parked on the wrong frame and ran a `prepareFrame` and an
+`enterFrame` Director does not.
+
+**What is still uncovered, deliberately stated.** `tools/pause_holds.gd` asserts
+that an unpaused step still receives `exitFrame` for the frame it is on, which
+catches a latch that is never cleared. It does **not** assert the sharpest form —
+a frame holding *itself* with `go to the frame`, where `sync_frame_entry`
+early-returns and a wrongly-placed clear would go deaf and nowhere else. Neither
+`strtgame.dir` nor `PIP2DATA/CHESS.dir` reaches its `go(the frame)` within 4,000
+headless steps (CHESS's sits inside a handler waiting on a move the harness does
+not make), so there is no subject to assert against and the harness reports the
+gap instead of carrying a check that is red for a reason no engine change can fix.
+`--hold <container>` exists to point the search at a movie that does.
+
+**One divergence identified and left in place, unverified.** The reference holds the
+destination in `_nextFrame` and `updateCurrentFrame` skips the whole
+`if (!_playbackPaused)` arm — the `_nextFrame` branch included — before clearing
+`_nextFrame` to 0, so in Director a handler that calls `go` *and then* `pause`
+loses the jump and stays where it was. This port writes `_index` eagerly in
+`lingo_go_frame`, so by the time `pause` is read the jump has already happened and
+cannot be discarded; the paused return here can only decline to advance further.
+Nothing found in six roots does both in one handler, so this is a difference on
+paper with no measured consequence, and it is written down rather than fixed
+because the fix is a `_nextFrame`-shaped change to how every `go` in the port
+works.
+
+**One thing that was not reconciled.** The player's snapshot reads `frame 1079`,
+and the HUD prints `_index` raw (`preview/stage_paint.gd:156-157`). The pre-fix
+tree parks on **1080**, measured five ways — `_index` set to 1046, 1070, 1077 and
+1078, and playing in with `lingo_go_label("EgozKey")` from the movie's own first
+frame. Version skew was checked and excluded: before `7411d1ed` unnamed markers
+were dropped, so `marker(1)` at 1051 was `Egoz4` (1176) and the room never reached
+1079 at all. The debug step-back key was excluded too — it sets `_paused`, and
+`stage_paint.gd:159` would have printed `PAUSED`. So the reading is unexplained by
+either tree, and it is recorded here rather than resolved. It changes nothing about
+the fix: both halves are required either way, and after the fix the playhead parks
+on 1079, which is what the snapshot said.
+
+---
+
 ## 47. The dwarf's mouth never stops, because the release of an auto-puppet was inferred from a value instead of an event
 
 **Status:** FIXED · **Area:** `scenes/preview/sprite_state.gd`,

@@ -72,6 +72,12 @@ const ACCOUNTED := {
 	"_entered_index": "saved",
 	"_held": "saved",
 	"_jump_queued": "saved",
+	# Saved for the same reason `held` and `jump_queued` are: it is a statement
+	# about the step the save was taken *inside*. A movie paused on a frame whose
+	# `exitFrame` calls `pause` comes back with the latch clear if this is dropped,
+	# so the first step after the load re-sends that `exitFrame`, re-pauses, and the
+	# restored session can never be resumed — a load that looks like a hang.
+	"_exit_frame_called": "saved",
 	"_skip_sent": "saved",
 	"_overrides": "saved",
 	"_field_text": "saved",
@@ -232,6 +238,7 @@ static func capture(host) -> Dictionary:
 		"entered_index": int(host._entered_index),
 		"held": bool(host._held),
 		"jump_queued": bool(host._jump_queued),
+		"exit_frame_called": bool(host._exit_frame_called),
 		"pending_enter": host._pending_enter != null,
 		"interpreter_globals": encode(
 			host._interpreter.globals if host._interpreter != null else {}),
@@ -468,6 +475,7 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	host._ticks = int(data.get("ticks", 0))
 	host._held = bool(data.get("held", false))
 	host._jump_queued = bool(data.get("jump_queued", false))
+	host._exit_frame_called = bool(data.get("exit_frame_called", false))
 	host._entered_index = int(data.get("entered_index", -1))
 	host._pending_enter = (host.call("_frame_script", host._index)
 		if bool(data.get("pending_enter", false)) else null)
