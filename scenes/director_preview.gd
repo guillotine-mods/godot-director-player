@@ -1054,8 +1054,8 @@ var _trail_dirty := false
 ## Trails, delegated to `preview/trails.gd`. The layer stays on the node: it is
 ## read by name from `tools/trails.gd`, and `_trail_image` is reassigned to null
 ## on a movie change, which a held reference could not do.
-func _wants_trails(frame: Dictionary) -> bool:
-	return Trails.wanted(frame, _overrides)
+func _wants_trails() -> bool:
+	return Trails.wanted(frame_sprites(), _overrides)
 
 
 func _settle_trails(placed_now: Dictionary, to_stamp: Array[Dictionary]) -> void:
@@ -1437,7 +1437,7 @@ func _draw() -> void:
 	# several harnesses set `_index` directly and never tick.
 	TextFocus.arbitrate(self)
 	var frame: Dictionary = _score.frame(_index)
-	StagePaint.paint_frame(self, frame, _table, STAGE)
+	StagePaint.paint_frame(self, _table, STAGE)
 	# A caret blinks, and a preview holding on `go to the frame` repaints only
 	# when asked. Same reason `Toast.draw` asks below, and the ask is confined to
 	# the frames that actually have a focused widget on them.
@@ -1450,7 +1450,7 @@ func _draw() -> void:
 	if not DebugKeys.enabled():
 		return
 	if _show_boxes:
-		_draw_hotspots(frame)
+		_draw_hotspots()
 	if _show_collisions:
 		_draw_collision_zones()
 	if _window_key != "":
@@ -1546,20 +1546,34 @@ func _tally_loop(key: String) -> void:
 ## node as `host`, because the hit test needs puppet state, the artwork cache and
 ## the script table -- all of which are the node's.
 func _channel_at(at: Vector2) -> int:
-	return Interaction.channel_at(
-		self, at, _score.frame(_index).get("sprites", []), _hit_pixels, _table)
+	return Interaction.channel_at(self, at, frame_sprites(), _hit_pixels, _table)
 
 
 func _responds_to_mouse(sprite: Dictionary) -> bool:
 	return Interaction.responds_to_mouse(self, sprite, _table)
 
 
+## Which eligibility clause makes this sprite answer the mouse, or `""`.
+##
+## The reason rather than the boolean above, because "why is this clickable" is
+## the question a reader actually has and `responds_to_mouse` is the same
+## function with the answer thrown away (`preview/interaction.gd:129`).
+##
+## Here because nothing on the node answered it. `tools/channel_report.gd` asks
+## for it by name and falls back to the boolean when the node does not, so the
+## tool has been printing "yes" where it meant to print the clause -- and
+## `tools/preview_surface.gd` reports the name as moved, which is the one thing
+## that file exists to catch. Unrelated to what the rest of this commit is about.
+func _eligibility_reason(sprite: Dictionary) -> String:
+	return Interaction.eligibility_reason(self, sprite, _table)
+
+
 func _declares_mouse_handler(script: Dictionary) -> bool:
 	return Interaction.declares_mouse_handler(script, _interpreter)
 
 
-func _draw_hotspots(frame: Dictionary) -> void:
-	Interaction.draw_hotspots(self, frame, _hover_channel, _hit_pixels, _table)
+func _draw_hotspots() -> void:
+	Interaction.draw_hotspots(self, _hover_channel, _hit_pixels, _table)
 
 
 ## Outline every channel the movie has measured with `intersects` or `within`.
@@ -1586,7 +1600,7 @@ func _draw_collision_zones() -> void:
 ## the cursor until mouse-up or until the sprite stops being moveable.
 func _begin_drag(at: Vector2) -> void:
 	var started: Array = Interaction.begin_drag(
-		self, at, _channel_at(at), _score.frame(_index).get("sprites", []))
+		self, at, _channel_at(at), frame_sprites())
 	if started.is_empty():
 		return
 	_drag_channel = int(started[0])
@@ -1656,8 +1670,7 @@ func track_rollover(at: Vector2) -> void:
 		# sprite boundary.
 		_host.last_roll_ms = Time.get_ticks_msec()
 	var was := _rollover_channel
-	_rollover_channel = Interaction.rollover_channel(
-		self, at, _score.frame(_index).get("sprites", []))
+	_rollover_channel = Interaction.rollover_channel(self, at, frame_sprites())
 	Interaction.hover_changed(self, was, _rollover_channel)
 
 
@@ -1851,7 +1864,7 @@ func lingo_rollover(channel: int) -> bool:
 	# swapped member's rect feeds the answer back into the question: the
 	# highlight changes the rect, the new rect no longer holds the cursor, the
 	# highlight drops, and nothing ever settles.
-	for sprite in _score.frame(_index).get("sprites", []):
+	for sprite in frame_sprites():
 		if int(sprite["channel"]) == channel:
 			return _sprite_rect(sprite).has_point(stage_mouse())
 	return false
@@ -1913,7 +1926,7 @@ func note_collision_channel(channel: int) -> void:
 func lingo_sprite_rect(channel: int) -> Rect2:
 	if _score == null or channel <= 0:
 		return Rect2()
-	for sprite in _score.frame(_index).get("sprites", []):
+	for sprite in frame_sprites():
 		if int(sprite["channel"]) == channel:
 			var live: Dictionary = _effective(sprite, true)
 			return Rect2() if live.is_empty() else _sprite_rect(live)
@@ -1922,6 +1935,27 @@ func lingo_sprite_rect(channel: int) -> Rect2:
 
 func current_frame() -> int:
 	return _index
+
+
+## What the frame the playhead is on actually shows, in channel order.
+##
+## **The score's record for this frame is not the answer on its own.** A channel
+## a script has whole-sprite puppeted is not reconciled from the score at all
+## (`preview/sprite_state.gd:with_puppets`), so it stays on screen through frames
+## whose score carries nothing for it -- which is how DAY1's player character
+## survives the eleven cut-scene clips that have no channel 30.
+##
+## Every path that asks what is on the frame comes here rather than reading
+## `_score.frame(_index)` itself: drawing, the hit test, the cursor, `rollOver`,
+## `the memberNum of sprite`, the text-focus arbitration and the mouse chain.
+## They diverged once already over `_effective` -- the screen showed the puppeted
+## member while the click was tested against the score's -- and the same split
+## here would make a sprite that is drawn unclickable, or the reverse.
+func frame_sprites() -> Array:
+	if _score == null:
+		return []
+	return SpriteState.with_puppets(
+		_score.frame(_index).get("sprites", []), _overrides)
 
 
 ## Where the pointer is, in this movie's own coordinates.
@@ -2628,8 +2662,8 @@ func _resolve_cursor() -> void:
 func cursor_at(at: Vector2) -> Variant:
 	if _score == null:
 		return _global_cursor
-	return Cursor.at(self, at, _score.frame(_index).get("sprites", []),
-		_channel_cursors, _global_cursor)
+	return Cursor.at(
+		self, at, frame_sprites(), _channel_cursors, _global_cursor)
 
 
 func lingo_set_cursor(value: Variant) -> void:
@@ -2808,8 +2842,17 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 
 ## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
 ## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
-func _effective(sprite: Dictionary, ignore_visible: bool = false) -> Dictionary:
-	return SpriteState.effective(sprite, _overrides, _table, ignore_visible)
+func _effective(sprite: Dictionary, ignore_visible: bool = false,
+		peek: bool = false) -> Dictionary:
+	return SpriteState.effective(sprite, _overrides, _table, ignore_visible, peek)
+
+
+## `_effective` for a caller that is only *looking* -- the preloader, walking
+## frames the playhead has not reached. Same answer, no release of live puppet
+## state; see `sprite_state.gd:effective` on `peek` for what asking the mutating
+## form about a future frame cost.
+func _effective_ahead(sprite: Dictionary) -> Dictionary:
+	return _effective(sprite, false, true)
 
 
 func _note_member(channel: int, cast_id: int) -> void:
@@ -2832,8 +2875,8 @@ func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 			LingoValue.to_int(lingo_sprite_prop(channel, "locv")),
 		]
 	_note_sprite_prop(prop)
-	return SpriteProps.read(channel, prop, _overrides,
-		_score.frame(_index).get("sprites", []), _channel_constraints)
+	return SpriteProps.read(
+		channel, prop, _overrides, frame_sprites(), _channel_constraints)
 
 
 ## `the constraint of sprite N`, for `preview/interaction.gd:constraint_box`.
@@ -2877,8 +2920,8 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 			_write_position(channel, "loch", point[0])
 			_write_position(channel, "locv", point[1])
 		return
-	SpriteProps.write(channel, prop, value, _overrides,
-		_score.frame(_index).get("sprites", []), _channel_constraints)
+	SpriteProps.write(
+		channel, prop, value, _overrides, frame_sprites(), _channel_constraints)
 
 
 ## A sprite property nothing in this port consumes, recorded rather than lost.
@@ -2938,7 +2981,7 @@ func _note_sprite_prop(prop: String) -> void:
 ## before anything else is read, on `constraint_box`'s own answer rather than on
 ## a second copy of "0 means unconstrained" kept here.
 func _write_position(channel: int, prop: String, value: Variant) -> void:
-	var sprites: Array = [] if _score == null else _score.frame(_index).get("sprites", [])
+	var sprites: Array = frame_sprites()
 	if Interaction.constraint_box(self, channel) == Rect2():
 		SpriteProps.write(channel, prop, value, _overrides, sprites, _channel_constraints)
 		return

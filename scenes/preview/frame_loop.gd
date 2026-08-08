@@ -107,7 +107,7 @@ static func tick(host, delta: float) -> void:
 	# steps for time Director would have spent preloading.
 	if host._preloader != null:
 		var loading := Time.get_ticks_usec()
-		host._preloader.run(host._index, host._preload_one, host._effective)
+		host._preloader.run(host._index, host._preload_one, host._effective_ahead)
 		host._clock.discount((Time.get_ticks_usec() - loading) / 1000000.0)
 	var due: int = host._clock.tick(delta)
 	if due <= 0:

@@ -44,12 +44,12 @@ const LingoValue := preload("res://lingo/lingo_value.gd")
 ## Does anything in this frame ask for trails, from the score or from a script?
 ## Cheap enough to ask once a paint; the alternative is paying for the tracking
 ## in every movie that never uses the feature.
-static func wanted(frame: Dictionary, overrides: Dictionary) -> bool:
+static func wanted(sprites: Array, overrides: Dictionary) -> bool:
 	for over_value in overrides.values():
 		var over: Dictionary = over_value
 		if over.has("trails") and LingoValue.to_int(over["trails"]) != 0:
 			return true
-	for sprite_value in frame.get("sprites", []):
+	for sprite_value in sprites:
 		var sprite: Dictionary = sprite_value
 		if bool(sprite.get("trails", false)):
 			return true

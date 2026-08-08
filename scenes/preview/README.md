@@ -13,6 +13,7 @@ the Godot lifecycle; the modules own the rules.
 |---|---|
 | a sprite draws in the wrong place, or is clickable where it isn't drawn | `sprite_geometry.gd` |
 | a script hid/moved/swapped a sprite and the screen disagrees | `sprite_state.gd` |
+| a puppeted sprite vanishes, or a script's member swap never wears off | `sprite_state.gd` |
 | wrong colours, a matte punching holes, a solid black rectangle | `sprite_art.gd` |
 | a field shows the authored placeholder, or a HUD value never updates | `text_art.gd` |
 | typing does nothing, the caret is in the wrong field or the wrong place | `text_focus.gd` |

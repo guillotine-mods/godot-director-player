@@ -595,8 +595,7 @@ static func press(host, at: Vector2) -> void:
 	# moment a handler moves or hides it, which `BehaviorScript 52` does on its
 	# own last two lines.
 	host._host.click_sprite = channel
-	var chosen: Array = script_for_click(
-		host, channel, host._score.frame(host._index).get("sprites", []))
+	var chosen: Array = script_for_click(host, channel, host.frame_sprites())
 	var script: Dictionary = chosen[0]
 	# Says what was clicked, which script is about to answer for it, and whether
 	# a handler actually exists. "clicked nothing" and "clicked something with no
@@ -756,7 +755,7 @@ static func _run_primary_script(host, name: String, tally: String) -> void:
 ## a hidden sprite, on purpose, and a sprite a `mouseDown` handler hid is not
 ## something the pointer can be inside of.
 static func _release_inside(host, at: Vector2, channel: int) -> bool:
-	for sprite in host._score.frame(host._index).get("sprites", []):
+	for sprite in host.frame_sprites():
 		if int(sprite["channel"]) != channel:
 			continue
 		var live: Dictionary = host._effective(sprite)
@@ -783,7 +782,7 @@ static func right_button(host, at: Vector2, pressed: bool) -> void:
 	if host._interpreter.run_primary(event.to_lower()):
 		host._tally(host._ran, "when %s" % event)
 	var chosen: Array = script_for_click(
-		host, host._channel_at(at), host._score.frame(host._index).get("sprites", []),
+		host, host._channel_at(at), host.frame_sprites(),
 		["rightmousedown", "rightmouseup"])
 	host._dispatch(event, chosen[0])
 	host.queue_redraw()
@@ -876,10 +875,10 @@ static func _answers_any(host, script: Dictionary, events: Array) -> bool:
 ## exactly the invisible shape hotspots this game is full of -- an overlay that
 ## says a target is smaller than it is sends the reader looking for a hit-test
 ## bug that is not there.
-static func draw_hotspots(host, frame: Dictionary, hover_channel: int,
-		hit_pixels: bool, table) -> void:
+static func draw_hotspots(host, hover_channel: int, hit_pixels: bool,
+		table) -> void:
 	var font := ThemeDB.fallback_font
-	for raw_sprite in frame.get("sprites", []):
+	for raw_sprite in host.frame_sprites():
 		# Puppet state, exactly as the hit test sees it. A sprite a script has
 		# hidden or moved is not where the score says, and outlining it there
 		# would be worse than not outlining it at all.

@@ -550,6 +550,83 @@ covers it, together with the rule underneath this whole entry: a `playFile` that
 cannot start must leave the channel **not busy**, or a `soundBusy` poll is a wait
 for something that can never happen.
 
+### Second correction: the two player reports were never this entry at all
+
+The correction above proved the clips *finish* in normal play and then stopped,
+leaving the two symptoms attributed to a park that the same measurement had just
+ruled out. Four save states taken from real play — `saves/piposh2/tofi_bug.json`,
+`shlomit_hezi_gone.json`, `shlomit_hezi_gone_2.json`, `dward_hezi_gone.json`, all
+with `globalday = 1` and every lookup resolving — say what they actually were.
+**One fault, in the puppet model, with nothing to do with `play`, the film loop,
+`marker(n)`, the clock or the sound.** Fixed; see `preview/sprite_state.gd`.
+
+Director has **two** kinds of puppet (`docs/DIRECTOR_ENGINE.md` §5.2, §5.3, §5.5)
+and this port had one, so it was simultaneously too sticky and not sticky enough.
+
+**"His mouth keeps moving even after everything is done playing."** Traced from
+`tofi_bug.json`, clicking Tofi at (498,171): the clip runs correctly — Hezi's
+line, then Tofi's, `usfultalking` 1→2→3 — and exits to `veranda` on tick 89,
+exactly as it should. What was left behind is channel 18. `BehaviorScript 291`
+does `set the memberNum of sprite rin to (xxx & who)`, which auto-puppets *that
+one property*; the score's channel 18 is `atofspk1` inside the clip and
+`atoflop1` at the veranda, so the write is released the moment the playhead
+leaves. `sprite_state.gd:effective` exempted `membernum` from that release, so
+Tofi went on standing in the veranda animating `btofspk1` — his talking loop —
+for the rest of the movie. The film loop was doing exactly what it should with
+the member it had been given, which is why every earlier reading of this looked
+at `film_loop_view.gd` and found nothing wrong.
+
+**"Hezi is disappearing during the animation, then appearing again."** All three
+saves, one cause, and it is not three: the score of `lilout1` (2514-2522),
+`lilclicktalk` (2595-2611) and `dnzclicktalk` (2613-2629) **carries no channel 30
+on any of those frames**, and DAY1's `init all` does `puppetSprite(30, 1)`. In
+Director a whole-sprite puppet is not reconciled from the score at all, so the
+player stays put; this port drew from `_score.frame(_index).sprites`, so the
+channel simply was not on the frame. The sentence above — "the clip's own restore
+is on the exit path that is never reached" — is wrong twice over: the exit path
+*is* reached, and the restore is not what puts Hezi back. `tofclicktalk` carries
+a channel 30 and that is the whole reason the same fault was filed as two
+unrelated bugs. It is also why "sound is playing well" was the decisive clue.
+
+**A third fault, found on the way and fixed with them.** `director_preloader.gd`
+walks 24 frames ahead of the playhead every step and was calling `_effective` on
+those frames' records — a read that *mutates*, because the auto-puppet release is
+recorded there. Any later frame holding a different member on a channel released
+that channel's live puppet, so a member a script had just written survived
+exactly one tick: measured on channel 18 at `tofclicktalk`, `atofspk1` ↔ the
+script's write, alternating every step. `effective` now takes `peek`, which
+answers the same question without recording, and the preloader asks that.
+
+**What is still open here is the heading**, unchanged: a cold entry that skips
+`EXODUS` leaves `globalday` VOID, `r` stays `"not"`, and the clip parks. So does
+the `hatday<n>` gap in the shipped table, still unproved reachable. Neither was
+what the player was reporting.
+
+Covered by `tools/puppet_persists.gd` (`gate.sh puppet_persists`). It drives the
+boot chain to two rooms, writes a state at each, reloads it into a *fresh*
+preview and clicks: `exitforest3` into `dnzclicktalk`, where the score drops the
+puppeted channel, and `veranda` into `tofclicktalk`, where it moves the
+un-puppeted one. Each room prints which of the two halves it actually proved
+rather than passing on the one it cannot see. The states are built rather than
+committed — `saves/` is gitignored because a save carries the movie's own field
+text — and going through one is also the only check that the puppet claim
+survives `capture`/`restore`, since it lives *inside* `_overrides` and
+`tools/save_state.gd` only asserts that `_overrides` itself is carried.
+
+Reproduce either report from the user's own states, once they are re-taken on a
+build that records the claim:
+
+```bash
+godot --path . -- --save saves/piposh2/tofi_bug.json          # click Tofi
+godot --path . -- --save saves/piposh2/dward_hezi_gone.json   # click Dnz
+```
+
+**The four saves in the report predate the fix and will not show it.** They were
+written before `puppetSprite` recorded anything a save could carry, so their
+`_overrides` name no puppet at all and channel 30 still vanishes when they are
+loaded. That is a property of those files, not of the engine; a state taken now
+carries the claim, which is what `puppet_persists` asserts.
+
 ---
 
 ## 35. `field "x" of castLib Y` drops the library

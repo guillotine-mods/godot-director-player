@@ -52,7 +52,7 @@ static func clip_to_stage(host, stage: Vector2i) -> Rect2:
 
 
 ## Every sprite of one frame, in channel order.
-static func paint_frame(host, frame: Dictionary, table, stage: Vector2i) -> void:
+static func paint_frame(host, table, stage: Vector2i) -> void:
 	# Where each channel is this paint, and what it holds, so the trail layer can
 	# be told which regions the frame repainted.
 	#
@@ -63,8 +63,8 @@ static func paint_frame(host, frame: Dictionary, table, stage: Vector2i) -> void
 	# depend on knowing where everything was.
 	var placed_now: Dictionary = {}
 	var to_stamp: Array[Dictionary] = []
-	var track_trails: bool = host._trail_image != null or host._wants_trails(frame)
-	for raw_sprite in frame.get("sprites", []):
+	var track_trails: bool = host._trail_image != null or host._wants_trails()
+	for raw_sprite in host.frame_sprites():
 		# What a script puppeted wins over what the score recorded. Ignoring it
 		# leaves sprites the Lingo hid still on screen and members it swapped
 		# still showing the old art -- which looks like a layering fault and is

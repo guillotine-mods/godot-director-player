@@ -913,10 +913,14 @@ So: it preserves *everything visual* and re-reads only *script attachment*. That
 is not an accident; it is how a puppeted sprite still picks up per-frame
 behaviour from the score.
 
-*This port:* `director/sprite_channel.gd:58-59` and `:66-67` skip the whole
-reconcile when puppeted — **agrees with ScummVM in outcome**, though it also
-skips the script-id copy. Settled enough; add the script-id copy if frame-scoped
-sprite scripts ever matter.
+*This port:* `scenes/preview/sprite_state.gd`. `effective` skips the staleness
+release for a channel carrying `_puppet`, and `with_puppets` is the other half —
+**a puppeted channel stays on the frame when the score's record for it is
+empty**, which is what "the reconcile is skipped" means for a port that draws
+from the score's per-frame sprite list rather than from a live channel table. It
+still skips the script-id copy; add it if frame-scoped sprite scripts ever
+matter. (`director/sprite_channel.gd`, cited here before, was the retired
+renderer and is gone.)
 
 ### 5.3 Per-field auto-puppet (D6+)
 
@@ -928,10 +932,19 @@ width released by a *cast id* write as well as by an explicit size write.
 Inert below D6, but the shape matters: it is the same "block the score per field"
 idea that whole-sprite puppet does coarsely.
 
-*This port:* `scenes/director_preview.gd:911-941` implements per-field overrides
-with a staleness reset keyed on the cast id — closer to D6 auto-puppet than to D4
-whole-sprite puppet. `director/sprite_channel.gd:18-24` explicitly declines
-implicit puppeting. The two halves disagree about what puppeting means.
+*This port:* `scenes/preview/sprite_state.gd:effective` implements per-field
+overrides with a staleness reset keyed on the cast id — D6 auto-puppet, and the
+release covers the *member* a script wrote as well as the geometry, because
+"released when the score writes that property" includes the cast id. It used to
+exempt `membernum`, which is bugs.md 36: a talk clip's mouth animation outlived
+the score's own member for the rest of the movie. `visible` is deliberately not
+released; it is channel state, not a score field.
+
+The release is **recorded only for the frame the playhead is on**. `effective`'s
+`peek` answers the same question without writing it back, and
+`director_preloader.gd` — which walks 24 frames ahead every step — asks that
+form: a look-ahead that records the release discards a puppet the current frame
+is still using, and it did.
 
 ### 5.4 Hand-written persistence rules
 
@@ -950,12 +963,15 @@ by the score. **Nothing in the frame loop clears whole-sprite puppet
 implicitly** — it survives frame jumps and `go to`, and dies only when the movie
 changes and channels are rebuilt.
 
-*This port diverges:* `scenes/director_preview.gd:1317-1318` **discards** the
-overrides on `puppetSprite N, FALSE`, and `:1073-1074` / `:1143` clear all
-overrides on room and movie change. `director/sprite_channel.gd:71-74` keeps the
-contents until the next reconcile, which matches Director. The preview's discard
-is observably different: Director reverts on the *next frame's delta*, not
-instantly.
+*This port diverges:* `scenes/preview/sprite_state.gd:set_puppet` **discards**
+the overrides on `puppetSprite N, FALSE`, where Director keeps the contents until
+the next reconcile and reverts on the *next frame's delta*. Observably different,
+still. What matches: nothing clears a whole-sprite puppet implicitly —
+`preview/movie_session.gd:forget_previous` is the only place `_overrides` is
+cleared and it runs on a **movie** change, not on a room change, so a puppet set
+in a movie's `init all` survives every `go` inside that movie. It has to: DAY1
+puppets the player in `init all` on frame 0 and never touches it again across
+2,783 frames.
 
 ### 5.6 The dirty test is puppet-aware
 

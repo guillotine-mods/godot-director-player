@@ -104,7 +104,7 @@ static func build(host, channel: int, member: Dictionary) -> Array:
 static func member_on(host, channel: int) -> Dictionary:
 	if channel <= 0 or host._score == null:
 		return {}
-	for raw in host._score.frame(host._index).get("sprites", []):
+	for raw in host.frame_sprites():
 		if int(raw["channel"]) != channel:
 			continue
 		var live: Dictionary = host._effective(raw)

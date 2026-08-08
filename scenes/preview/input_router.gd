@@ -257,7 +257,7 @@ static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
 		# skipped frame, and why the answer has to come from the effective sprite.
 		if not Interaction.still_moveable(
 				host, host._drag_channel,
-				host._score.frame(host._index).get("sprites", [])):
+				host.frame_sprites()):
 			host._drag_channel = 0
 			# §7.5: the cursor is recomputed when the drag ends, exactly as it is
 			# on the mouse-up that usually ends it.

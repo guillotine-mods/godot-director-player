@@ -116,7 +116,7 @@ static func editable_sprites(host) -> Array:
 	var out: Array = []
 	if host._score == null or host._table == null:
 		return out
-	for raw in host._score.frame(host._index).get("sprites", []):
+	for raw in host.frame_sprites():
 		var sprite: Dictionary = host._effective(raw)
 		if sprite.is_empty():
 			continue
@@ -171,7 +171,7 @@ static func focus_on(host, channel: int, member_number: int) -> void:
 static func focused_sprite(host) -> Dictionary:
 	if host._focus_channel <= 0 or host._score == null:
 		return {}
-	for raw in host._score.frame(host._index).get("sprites", []):
+	for raw in host.frame_sprites():
 		if int(raw["channel"]) != host._focus_channel:
 			continue
 		var sprite: Dictionary = host._effective(raw)
