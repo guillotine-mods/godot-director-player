@@ -29,6 +29,23 @@ const Snapshot := preload("res://scenes/preview/snapshot.gd")
 ## named once instead of written into the comparison.
 const DOUBLE_CLICK_MS := 500
 
+## The file-version word at which the behaviour clause of §4.3 turns on.
+##
+## `kFileVer600` in the reference's own version table, which is the threshold
+## `humanVersion()` maps to 600. Every movie either corpus plays is well past it
+## -- Piposh 2's state `0x57E` (D7) and Piposh 1's and Rating's `0x73A` (D8.5),
+## measured on all 241 containers by `tools/container_versions.gd` -- so the
+## clause is live on everything this port has ever run. The test is here anyway,
+## because a D4 title is a title this engine is meant to run and on one the
+## clause must be off: the whole point of §4.3's ordering is that the D6+ arm is
+## much wider than the handler search below it.
+##
+## A movie with no config chunk reads 0 and takes the narrower arm. That is the
+## conservative direction and it costs nothing measurable: the 87 containers in
+## the three corpora without a config chunk are casts, and a cast has no score to
+## put a sprite on.
+const FILE_VERSION_D6 := 0x4C2
+
 
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
 ## which is Director's stacking order and therefore its hit order.
@@ -44,12 +61,19 @@ static func channel_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
 	# pixel as a hole that ends the search is worse still: nothing is ever hit
 	# at all. Transparency means "not this sprite", not "stop looking".
 	#
-	# Which of the two is right is an open question. `score.cpp` describes a
-	# bounding-box test and no per-pixel matte test -- but Director also skips
-	# sprites that do not respond to the mouse, which this preview has no notion
-	# of, and without that filter a pure rect test hands every click to the
-	# backdrop on channel 21. The pixel test is standing in for the filter I
-	# cannot model yet, so both are available and `M` switches between them.
+	# The paragraph that stood here said `score.cpp` describes a bounding-box
+	# test and no per-pixel matte test, and that the pixel test was standing in
+	# for an eligibility filter this preview had no notion of. **It has one now**
+	# (§4.3, all six clauses), and on the case that motivated the stand-in the
+	# filter is enough on its own: measured on `strtgame.dir` frame 850, channel
+	# 21 is `1:312`, 640x485 of BackgndTrans over the whole stage, and it carries
+	# no behaviour, no member script and no moveable bit -- so it is ineligible
+	# and the descent walks past it to the four buttons on channels 4-7 whichever
+	# geometry test is on. The pixel test is no longer load-bearing *there*.
+	#
+	# It is still the honest answer for a Matte sprite, which Director does
+	# hit-test per pixel (§2.5), so both remain available and `M` switches
+	# between them.
 	for i in range(sprites.size() - 1, -1, -1):
 		# Puppet state, not the raw score record. The descent used to read the
 		# score directly, which meant a sprite a script had hidden still absorbed
@@ -94,19 +118,95 @@ static func channel_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
 
 ## Can this sprite answer a mouse message at all?
 ##
-## Director asks whether a script attached to the sprite or to its cast member
-## actually declares a mouse handler -- the presence of a script id is not enough
-## -- or whether the sprite is moveable or a button. A backdrop with no handler
-## is visible, hit-testable for other purposes, and simply not clickable.
+## True when `eligibility_reason` names a clause. The two are one function on
+## purpose: this is the predicate the click descent filters on and the reason is
+## what `tools/hotspots.gd` and the debug overlay print, and a port where the
+## verdict and the explanation are computed separately is a port where the
+## debugging tool eventually lies about the thing it exists to show. The overlay
+## and the hit test already diverged once over `hits_per_pixel`'s arguments (see
+## this module's own header); once was enough.
 static func responds_to_mouse(host, sprite: Dictionary, table) -> bool:
+	return eligibility_reason(host, sprite, table) != ""
+
+
+## *Why* this sprite answers a mouse message, or "" for "it does not".
+##
+## §4.3, clause for clause and **in the reference's order**, which is the whole
+## substance of this function. `respondsToMouse` is a chain of early returns, so
+## the order is not presentation: an earlier clause that passes means the ones
+## below it are never asked, and one of them -- the D6+ behaviour clause -- is so
+## much wider than what follows that everything after it is dead code on a D6+
+## movie. That is not a detail of this corpus. It is the rule, and this port had
+## the rule inverted: it implemented only the clauses that D6 makes unreachable.
+##
+## The measured cost of the omission was Rating's dialogue. The three options at
+## `Egoz1` carry behaviours that declare `exitFrame` and nothing else, so the
+## handler search answered "no" for all three and the player's click reached them
+## only because `script_for_click` falls back to the frame script. Three sprites
+## the movie exists to have you click, and none of them was a click target.
+##
+## **Widening this widens what absorbs clicks, not just what answers them**
+## (§4.2), which is why `tools/click_eligibility.gd` exists and why the change
+## that introduced this function shipped with a before/after sweep of all three
+## corpora rather than with a screenshot of the dialogue working.
+static func eligibility_reason(host, sprite: Dictionary, table) -> String:
+	# Clause 1. A moveable sprite is click-eligible on its own, with no script at
+	# all -- it has to be, or nothing could start a drag. The sprite handed in
+	# here has already been through `effective`, so this is the score's own bit
+	# and any `the moveableSprite` write merged, not just the latter.
+	if bool(sprite.get("moveable", false)):
+		return "moveable"
+	var member: Dictionary = table.get_member(
+		int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	var type_name := str(member.get("type_name", ""))
+	# Clause 2. A button is a click target because it is a button.
+	if type_name == "button":
+		return "button member"
+	# Clause 3. A **movie** member answers the mouse only when its scripts are
+	# enabled -- it is an embedded movie, and the clicks are being routed into
+	# it. Note the shape: the reference *returns* the flag here rather than
+	# falling through on false, so a movie member with scripts off is not a click
+	# target however many behaviours the sprite carries. Reproduced as written.
+	#
+	# **Unverified, and unverifiable on this data.** `director/director_cast.gd`
+	# does not decode the flag, and there is no member to decode it from: 0 of
+	# the 11,520 + 26,552 + 13,278 members across the three corpora is of type
+	# `movie` (or of type `button`, which is why clause 2 has never fired
+	# either). Absent decode, the clause reads enabled, which is the answer that
+	# leaves the sprite reachable; a wrong guess here can affect no title this
+	# engine has been pointed at.
+	if type_name == "movie":
+		return "movie member with scripts enabled" \
+			if bool(member.get("enable_scripts", true)) else ""
 	var channel := int(sprite["channel"])
-	if declares_mouse_handler(host._sprite_script(channel, host._index), host._interpreter):
-		return true
-	# In the library the sprite names, not by number alone. Member numbers are
-	# per cast, so a number-only search answers with a stranger -- and here that
-	# is not silence but a false positive: it makes a sprite clickable because
-	# some *other* cast happens to have a script at that number, and the click
-	# then runs that stranger.
+	var behaviours := behaviour_scripts(host, channel, int(host._index))
+	# Clause 4, **D6 and later**: a sprite with any behaviour attached is a click
+	# target whatever that behaviour declares. An `exitFrame`-only behaviour
+	# absorbs clicks, and that is not a bug in the reference -- from D6 the
+	# behaviour is an instantiated object with a full event surface, and the
+	# engine stops trying to guess from the source which events it wants. This is
+	# the clause the port was missing, and on a D6+ movie it is the one that
+	# fires: everything below it is the D4/D5 rule and unreachable.
+	if not behaviours.is_empty() and is_d6_plus(host):
+		return "D6+ behaviour attached"
+	# Clause 5, the D4/D5 arm, dead on every movie in either corpus and kept
+	# because a D4 title is a title this engine is meant to run. Two traps in it:
+	# a non-zero script id is **not** enough -- the handler has to exist, so a
+	# behaviour declaring only `mouseEnter` is not a click target -- and a
+	# **generic** script counts. The generic one is the D3-style scopeless sprite
+	# script: bare statements rather than an `on <event>` block, which the parser
+	# keeps in `body` (§8.2 says when it runs -- mouse-down if the sprite is
+	# immediate, mouse-up otherwise).
+	for script in behaviours:
+		if declares_mouse_handler(script, host._interpreter):
+			return "behaviour declares mouseDown/mouseUp"
+		if not ((script as Dictionary).get("body", []) as Array).is_empty():
+			return "generic behaviour, no handler scope"
+	# Clause 6, the cast script, resolved in the library the sprite names and not
+	# by number alone. Member numbers are per cast, so a number-only search
+	# answers with a stranger -- and here that is not silence but a false
+	# positive: it makes a sprite clickable because some *other* cast happens to
+	# have a script at that number, and the click then runs that stranger.
 	#
 	# DAY1's beach is the case that found it. Channel 1 is `3:10`, the room
 	# backdrop `shore2`, a plain bitmap with no script of its own. A number-only
@@ -116,16 +216,93 @@ static func responds_to_mouse(host, sprite: Dictionary, table) -> bool:
 	# fell through to the backdrop and walked the character up into it.
 	if declares_mouse_handler(host._script_in_lib(
 			int(sprite["cast_lib"]), int(sprite["cast_id"])), host._interpreter):
-		return true
-	# A moveable sprite is click-eligible on its own, with no script at all --
-	# it has to be, or nothing could start a drag. The sprite handed in here has
-	# already been through `effective`, so this is the score's bit and the Lingo
-	# write merged, not just the latter.
-	if bool(sprite.get("moveable", false)):
-		return true
-	var m: Dictionary = table.get_member(
-		int(sprite["cast_lib"]), int(sprite["cast_id"]))
-	return str(m.get("type_name", "")) == "button"
+		return "member script declares mouseDown/mouseUp"
+	return ""
+
+
+## Is the movie now playing D6 or later?
+##
+## Asked of the **movie's own config chunk**, which is the only version this port
+## holds. The reference asks a global -- the engine is told once which Director
+## it is emulating and every movie is read as that one -- and a per-movie answer
+## is the closer of the two available here: a title that mixes formats (Piposh 1
+## ships `STRTGAME.dir` with 48-byte sprite records and 94 room movies with
+## 24-byte ones) gets each movie read as what it says it is rather than as what
+## its neighbour says.
+static func is_d6_plus(host) -> bool:
+	var config = host._config
+	return config != null and int(config.version) >= FILE_VERSION_D6
+
+
+## Every behaviour attached to a channel on a frame, as the score's own interval
+## entries -- **a list, because from D6 a sprite carries a list** (§8.2).
+##
+## The plural of `preview/scripts.gd:for_sprite`, which answers the first one and
+## is the right answer for "which script does this click run" while this port
+## still queues a single element per sprite. It lives here rather than there
+## because the question it is asked is the eligibility one, and eligibility is
+## a test on the list rather than on any script in it.
+##
+## **The list is at most one entry long today, and the ceiling is the decode.**
+## `director_score.gd:parse` pairs a span's info entry with the next non-empty
+## `VWSC` entry only when that entry is exactly 8 bytes -- one `BehaviorElement`.
+## The reference reads that entry as a *stream* and pushes an element per 8
+## bytes. Measured over Piposh 2: of 145,624 spans a sprite record names, 142,900
+## carry no behaviour, 2,722 carry one, and **2 carry two** -- and those 2 are
+## currently dropped whole, because a 16-byte entry matches neither test. So the
+## multi-behaviour case costs this corpus two spans, the fix is in
+## `director/director_score.gd`, and this function is written against the list so
+## that the fix is a decode change and not a second rewrite of the hit test.
+static func behaviour_intervals(host, channel: int, frame_index: int) -> Array:
+	var out: Array = []
+	if host._score == null:
+		return out
+	for interval in host._score.intervals():
+		if str(interval["kind"]) != "sprite" or int(interval["channel"]) != channel:
+			continue
+		if frame_index < int(interval["start"]) or frame_index > int(interval["end"]):
+			continue
+		out.append(interval)
+	return out
+
+
+## The same list, resolved, and **the ones that resolve to nothing dropped**.
+##
+## The reference's clause 4 tests `_behaviors.size()` -- the attachment, not the
+## lookup -- and taking it literally here is a false positive of exactly the kind
+## §4.2 warns about, because this port's attachment list is not clean.
+## `tools/click_eligibility.gd` counts it per corpus: of the sprite intervals
+## `director_score.gd` decodes, **279 of 2,678 in Piposh 2, 654 of 6,197 in
+## Piposh 1 and 500 of 5,365 in Rating do not resolve**, and by the member type
+## the score names, all but 45 of those are a bitmap, a film loop or a shape --
+## none of which can be a behaviour. `_read_interval` pairs a span's info entry
+## with the next non-empty 8-byte `VWSC` entry rather than indexing by the
+## `sprite_list_idx` the sprite record already carries and the reference indexes
+## by, so a span whose own behaviour entry is empty can be handed one belonging
+## to something else.
+##
+## The cost of taking them was immediate and was exactly the shape the whole
+## measurement exists to catch: `AIR1.dir` channel 1 is `2:5`, a 640x400 Copy-ink
+## backdrop over the whole stage, and it became a click target on 144 frames on
+## the strength of an attachment naming `2:18` -- a bitmap. Across the three
+## corpora requiring the lookup drops 118 of the 188 (movie, channel) pairs the
+## literal reading made eligible, including four of the five over 640x400.
+##
+## It is narrower than the reference in one honest place: the 45 intervals that
+## name a real **script** member this port fails to resolve or compile lose an
+## eligibility Director would give them. The fix for both halves is in
+## `director/director_score.gd` and in the compiler, not here, and until then
+## this errs toward letting the click fall through -- §4.2's own default, and the
+## reversible direction.
+static func behaviour_scripts(host, channel: int, frame_index: int) -> Array:
+	var out: Array = []
+	for value in behaviour_intervals(host, channel, frame_index):
+		var interval: Dictionary = value
+		var script: Dictionary = host._script_in_lib(
+			int(interval["script_cast_lib"]), int(interval["script_member"]))
+		if not script.is_empty():
+			out.append(script)
+	return out
 
 
 static func declares_mouse_handler(script: Dictionary, interpreter) -> bool:
@@ -600,7 +777,8 @@ static func right_button(host, at: Vector2, pressed: bool) -> void:
 	if host._interpreter.run_primary(event.to_lower()):
 		host._tally(host._ran, "when %s" % event)
 	var chosen: Array = script_for_click(
-		host, host._channel_at(at), host._score.frame(host._index).get("sprites", []))
+		host, host._channel_at(at), host._score.frame(host._index).get("sprites", []),
+		["rightmousedown", "rightmouseup"])
 	host._dispatch(event, chosen[0])
 	host.queue_redraw()
 
@@ -609,24 +787,73 @@ static func right_button(host, at: Vector2, pressed: bool) -> void:
 ##
 ## Director's order: the sprite's own behaviour, then the script on the cast
 ## member it displays, then the frame script, then any movie script.
-static func script_for_click(host, channel: int, sprites: Array) -> Array:
+##
+## **A tier that cannot answer the message does not take it**, and that rule is
+## what makes §4.3's D6+ eligibility clause safe to turn on. From D6 a sprite
+## with any behaviour attached is a click target whatever the behaviour declares
+## (see `eligibility_reason`), so the descent now stops on sprites carrying an
+## `exitFrame`-only behaviour -- 86 (movie, channel) pairs across the three
+## corpora, measured by `tools/click_eligibility.gd`. Handing the click to such a
+## behaviour and stopping there would be worse than never reaching it: the frame
+## script is where this corpus's `the clickOn` idiom lives, and every one of
+## those 188 would have become a dead patch of stage. Which is the complaint the
+## eligibility work exists to fix, arriving from the other direction.
+##
+## Director does not have that problem, because it queues the whole chain and an
+## element whose script declares no handler simply does not run -- it consumes
+## nothing. This port resolves one element, so the equivalent is to skip a tier
+## whose script cannot answer, which is what `events` is for. It is **not** the
+## queue (§6.3): `pass` and `dontPassEvent` are still unbound, and a behaviour
+## that declares `mouseDown` and not `mouseUp` still takes both messages and
+## denies the frame script the second. `ENGINE_TODO.md` carries the queue.
+##
+## `events` is the pair the caller is about to send, lowercased. The pair rather
+## than the single message being dispatched, because `press` latches this script
+## for `release` to use (see `release`) -- resolving per message would send the
+## down to the sprite and the up to the frame the moment a behaviour declared
+## only one of them, and split one click between two scripts.
+static func script_for_click(host, channel: int, sprites: Array,
+		events: Array = ["mousedown", "mouseup"]) -> Array:
 	var script: Dictionary = {}
 	if channel > 0:
-		script = host._sprite_script(channel, host._index)
+		var behaviour: Dictionary = host._sprite_script(channel, host._index)
+		if _answers_any(host, behaviour, events):
+			script = behaviour
 		if script.is_empty():
 			for sprite in sprites:
 				if int(sprite["channel"]) == channel:
 					# Same rule as the eligibility test: the member's own library
 					# decides, or a click runs a handler belonging to a different
 					# cast's member of the same number.
-					script = host._script_in_lib(
+					var member_script: Dictionary = host._script_in_lib(
 						int(sprite["cast_lib"]), int(sprite["cast_id"])
 					)
+					if _answers_any(host, member_script, events):
+						script = member_script
 					break
 	if not script.is_empty():
 		return [script, "sprite"]
 	script = host._frame_script(host._index)
 	return [script, "frame" if not script.is_empty() else "movie"]
+
+
+## Can this script answer any of `events`?
+##
+## A **generic** script counts, for the same reason §4.3 counts it as a mouse
+## handler: a scopeless score script is bare statements with no `on <event>` line
+## to name, and §8.2 runs it on the click. So a tier holding one is a tier that
+## answers, and skipping it because no handler is named would drop the whole D3
+## idiom on the floor.
+static func _answers_any(host, script: Dictionary, events: Array) -> bool:
+	if script.is_empty():
+		return false
+	if not (script.get("body", []) as Array).is_empty():
+		return true
+	for event in events:
+		if host._interpreter != null \
+				and host._interpreter.call("_script_has_handler", script, str(event)):
+			return true
+	return false
 
 
 ## Outline every sprite on the frame that a script could actually answer for.
@@ -662,9 +889,11 @@ static func draw_hotspots(host, frame: Dictionary, hover_channel: int,
 		# Only what can actually answer a click. This used to outline every
 		# sprite and merely tint the ones with a behaviour attached, which made
 		# the overlay a picture of the score rather than of what the mouse can
-		# reach -- and eligibility is not "has a behaviour": a member script, a
-		# button or `moveable` all qualify, and a behaviour that declares no
-		# mouse handler does not.
+		# reach. On a D6+ movie "has a behaviour" happens to *be* the clause that
+		# fires most (§4.3, clause 4), but it is one of six and not the test:
+		# `moveable`, a button member and a member script all qualify without
+		# one, and on a pre-D6 movie a behaviour that declares no mouse handler
+		# does not qualify with one.
 		if not responds_to_mouse(host, sprite, table):
 			continue
 		# Green where the whole rectangle answers, amber where only the artwork

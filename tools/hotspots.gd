@@ -13,14 +13,24 @@ extends SceneTree
 ##
 ## So this reports the whole descent for one frame rather than a verdict: every
 ## sprite in channel order with its member, its rect, its ink, whether the ink
-## hit-tests per pixel, and — the part that usually settles it — whether anything
-## gives it a mouse handler.
+## hit-tests per pixel, and — the part that usually settles it — **which of
+## §4.3's six eligibility clauses fired**, beside what the attached behaviours
+## actually declare.
+##
+## Those last two are different answers and on a D6+ movie they usually disagree,
+## which is the thing worth knowing here. From D6 a sprite with any behaviour is
+## a click target whatever the behaviour declares, so `D6+ behaviour attached
+## [1:207 exitFrame]` is an ordinary and correct line: the sprite absorbs the
+## click and the message reaches a script with no handler for it. A sprite that
+## looks dead in the game and reads eligible here is that line, and the next
+## question is §6.3's chain rather than the hit test.
 ##
 ## Reads the real preview node, so what it reports is what the game sees.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Ink := preload("res://director/director_ink.gd")
+const Interaction := preload("res://scenes/preview/interaction.gd")
 
 
 func _init() -> void:
@@ -53,21 +63,46 @@ func _init() -> void:
 
 	# Step the movie to that frame so puppet state and scripts are as they would
 	# be in play, rather than as they are on a cold score read.
+	var arrived := false
 	for i in 400:
 		if int(preview.call("current_frame")) == frame:
+			arrived = true
 			break
 		preview.call("_advance")
 
+	# **The playhead does not always get there, and the report has to be about
+	# the frame it names anyway.** `_advance` follows the movie's own flow, so a
+	# room that holds on a `go to the frame` never reaches a marker further on --
+	# `BATZEGOZ.dir`'s `Egoz1` is frame 194 and 400 steps stop short of it.
+	#
+	# That silently made this tool wrong rather than incomplete, and the wrongness
+	# was quoted as evidence. Everything derived from the *score* was read at
+	# `frame` (the sprite list, `_sprite_script(channel, frame)`) while
+	# `_responds_to_mouse` read `_index`, wherever the playhead had stopped -- so
+	# the three dialogue options at `Egoz1` printed "behaviour declares no mouse
+	# handler" **next to a behaviour that declares `mouseUp`**, and that line went
+	# into `ENGINE_TODO.md` as the measurement of a missing eligibility clause. The
+	# clause was missing; this frame was never the proof of it.
+	#
+	# Pinned rather than reported-and-left, because a report whose columns
+	# disagree about which frame they describe is worse than one with stale
+	# puppet state, and stale puppet state is what is left: it is the state of
+	# wherever the playhead stopped, which is said out loud below.
+	preview._index = frame
 	print("%s frame %d%s" % [
 		str(preview.call("movie_name")), frame,
 		("  (marker %s)" % marker) if marker != "" else "",
 	])
+	if not arrived:
+		print("(the playhead stopped short of this frame; the score is read at"
+			+ " %d and any puppet state is from where it stopped)" % frame)
 	print("")
 	print("ch    member   rect                     ink  hit    responds  why")
 
 	var sprites: Array = score.frame(frame).get("sprites", [])
 	var eligible := 0
 	var classified := 0
+	var table = preview.get("_table")
 	for s_value in sprites:
 		var raw: Dictionary = s_value
 		var sprite: Dictionary = preview.call("_effective", raw)
@@ -87,12 +122,18 @@ func _init() -> void:
 		var member_type: int = int(preview.get("_table").get_member(
 			int(sprite["cast_lib"]), int(sprite["cast_id"])).get("type", 0))
 		var rect: Rect2 = preview.call("_stage_rect", sprite)
-		var responds: bool = preview.call("_responds_to_mouse", sprite)
+		# The clause, not a boolean. §4.3 is six clauses tested in order and which
+		# one fired is the whole of what the reader came for -- "YES" alone sends
+		# them to read the predicate, and on a D6+ movie the answer is nearly
+		# always the *fourth* clause, which is the one nobody expects because it
+		# ignores what the behaviour declares. Asked of the engine's own function
+		# so that this cannot drift from what the hit test does.
+		var why: String = Interaction.eligibility_reason(preview, sprite, table)
+		var responds := why != ""
 		classified += 1
 		if responds:
 			eligible += 1
-		var why := ""
-		if not responds:
+		else:
 			var behaviour: Dictionary = preview.call("_sprite_script", channel, frame)
 			var member_script: Dictionary = preview.call(
 				"_script_for_member", int(sprite["cast_id"])
@@ -100,6 +141,32 @@ func _init() -> void:
 			why = "no behaviour" if behaviour.is_empty() else "behaviour declares no mouse handler"
 			if not member_script.is_empty():
 				why += ", member script declares none"
+		# What the behaviour actually declares, beside the verdict. From D6 the
+		# sprite is a click target whatever that is, so the two answers come
+		# apart routinely -- and when they do, "eligible, declares exitFrame" is
+		# the line that explains why a click on it runs nothing: the message
+		# reaches a script with no handler for it, and §6.3's chain is what
+		# decides whether the tiers below still get a turn.
+		var attached: Array = Interaction.behaviour_intervals(preview, channel, frame)
+		var declares := PackedStringArray()
+		for value in attached:
+			var interval: Dictionary = value
+			var script: Dictionary = preview.call("_script_in_lib",
+				int(interval["script_cast_lib"]), int(interval["script_member"]))
+			if script.is_empty():
+				declares.append("%d:%d unresolved" % [
+					int(interval["script_cast_lib"]), int(interval["script_member"])])
+				continue
+			var names := PackedStringArray()
+			for handler in script.get("handlers", []):
+				names.append(str((handler as Dictionary).get("name", "")))
+			if not (script.get("body", []) as Array).is_empty():
+				names.append("<generic body>")
+			declares.append("%d:%d %s" % [
+				int(interval["script_cast_lib"]), int(interval["script_member"]),
+				"/".join(names) if names.size() > 0 else "nothing"])
+		if declares.size() > 0:
+			why += "%s[%s]" % ["  " if why != "" else "", ", ".join(declares)]
 		print("%-5d %-8s %-24s  %-4d %-6s %-9s %s" % [
 			channel, "%d:%d" % [int(sprite["cast_lib"]), int(sprite["cast_id"])],
 			"(%d,%d) %dx%d" % [

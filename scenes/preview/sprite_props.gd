@@ -53,10 +53,42 @@ const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 ## it. `preview/text_focus.gd:editable` currently reads both spellings off the
 ## sprite to work around the gap; that is a patch at the consumer, and this is
 ## the fix at the seam.
+## `fliph` / `flipv` are the fifth instance and the largest: **456 sites across
+## Piposh Dream**, which both reads and writes them (`if sprite(getAt(ppl, 1))
+## .flipH = 1`, `sprite(getAt(ppl, 2)).flipH = 0`). The record's bits are decoded
+## as `flip_h` / `flip_v` (`director_score.gd`, thickness byte 0x20 and 0x40) and
+## `sprite_art.gd` has drawn from those names since before the bits were decoded
+## -- and mirrors the hit-test sample with them, so a flipped sprite is clickable
+## where it is drawn. Every link of that chain was already in place; the write
+## simply landed under a name at the far end of it.
+##
+## `member` is the sixth, and the highest-usage one left: **1,453 sites**, all in
+## Piposh Dream. `the member of sprite N` is Director's member *reference* where
+## `the memberNum of sprite N` is the integer, and they are two properties in
+## Director. Here they are one, because this port packs the `(library, slot)` pair
+## into a single integer that `member()` accepts either way (§1.6) -- so the alias
+## is correct for every site in the corpus and would be wrong only for a title
+## that compared a member reference against something that is not an integer.
+## Unaliased, the read falls through to `EMPTY_CHANNEL`'s 0 and every one of those
+## sites addresses member 0.
 const ALIASES := {
 	"moveablesprite": "moveable",
 	"movablesprite": "moveable",
 	"editabletext": "editable",
+	"member": "membernum",
+	"fliph": "flip_h",
+	"flipv": "flip_v",
+	# An identity entry, listed rather than omitted. `castLibNum` is its own
+	# field under its own name and needs no translation -- but the reason it
+	# needs none is exactly the fact this table exists to record, and a name
+	# absent from here reads as "nobody has looked at it" rather than as
+	# "checked, and the two vocabularies agree". 3 sites.
+	#
+	# It is live on the **read** only. `sprite_state.read_prop` answers it from
+	# the record's `cast_lib`, and `effective` has no arm for it, so a script
+	# that *writes* `the castLibNum of sprite N` still moves nothing on screen.
+	# Same half-a-property shape as the four above, one seam further along.
+	"castlibnum": "castlibnum",
 }
 
 ## Properties the *score record* carries a value for and `sprite_state.read_prop`
@@ -69,6 +101,47 @@ const ALIASES := {
 ## also has to be merged into the effective sprite by `sprite_state.effective`,
 ## which has an arm for `moveable` and none for `editable`.
 const SCORE_FLAGS := ["moveable", "editable"]
+
+## Every canonical key something in this port actually **consumes**.
+##
+## `sprite_state.write_prop` stores any key at all, and `read_prop` answers a
+## stored key back, so *every* sprite write round-trips and every one of them
+## looks implemented. Only the keys `read_prop` has an arm for or `effective`
+## merges reach the screen. That gap is silent by construction and it has now
+## produced five separate bugs -- `moveableSprite`, `editableText`,
+## `constraint`, `the member of sprite`, `flipH`/`flipV` -- each found by a
+## player noticing something did not move, never by the engine saying so.
+##
+## `LingoDiagnostics` has had a `SPRITE_PROP` category since it was written and
+## **nothing has ever emitted one**, because the check needs a list of what is
+## consumed and there was nowhere for the list to live that was not a second
+## copy of this table. It lives here, next to the aliases, and
+## `director_preview.gd`'s two entry points report against it.
+##
+## Derived rather than invented, so it can be checked: the keys `read_prop`
+## matches on, plus `EMPTY_CHANNEL`'s, plus the keys `effective` merges, plus
+## the three the node routes before either is reached (`constraint` in `write`
+## below, `cursor` and `loc` in `director_preview.gd`). A name missing from here
+## costs one diagnostic row and no behaviour, which is the safe direction for a
+## list whose whole purpose is to be noticed when it is wrong.
+const CONSUMED := {
+	"membernum": true, "castnum": true, "castlibnum": true,
+	"loch": true, "locv": true, "loc": true,
+	"width": true, "height": true, "visible": true,
+	"ink": true, "blend": true, "trails": true,
+	"flip_h": true, "flip_v": true,
+	"moveable": true, "editable": true,
+	"constraint": true, "cursor": true,
+}
+
+
+## Does anything in this port read `prop` after a script writes it?
+##
+## Takes the **Lingo** spelling and canonicalises, so a caller asks the question
+## in the vocabulary it has. False is not "no such property in Director" -- it is
+## "this port will store it and nothing will ever look".
+static func consumed(prop: String) -> bool:
+	return CONSUMED.has(canonical(prop))
 
 
 ## The override-table key for a Lingo property name, already lower-cased by the

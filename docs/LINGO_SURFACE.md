@@ -2452,7 +2452,7 @@ That inflates a rank and never invents one.
 
 ## What is still open, in the order a movie meets it
 
-> **Reachable gaps recorded here: 20.** `tools/lingo_surface_audit.gd` counts the
+> **Reachable gaps recorded here: 17.** `tools/lingo_surface_audit.gd` counts the
 > rows that are not `live` and that at least one of the six titles calls, and
 > fails if the number moves. It can only move two ways and both deserve a red
 > gate: a gap closed and this number not brought down with it, or a name some
@@ -2466,9 +2466,9 @@ doing anything is a gap, including the ones that look harmless.
 | sites | name | state | what a movie sees, and where the fix goes |
 |---|---|---|---|
 | 3,717 | `updateStage` | inert | Director redraws *now*, mid-handler. Every `repeat` loop that animates by moving a sprite and calling this draws nothing until the loop ends. Host `IGNORED` -> a real arm calling the preview's redraw. |
-| 1,453 | `the member of sprite N` | inert | Piposh Dream reads it (`member(the member of sprite xxx).name`). `sprite_state.read_prop` has no arm, so it answers `EMPTY_CHANNEL`'s 0 and the lookup lands on member 0. Needs an arm beside `membernum`. |
-| 450 | `the flipH of sprite N` | inert | Piposh Dream's `fritz1.dir` both reads and writes it (`sprite(getAt(ppl, 1)).flipH = 1`). The write is stored in the override table and `sprite_state.effective` never merges it, so nothing on screen turns round; the read answers 0 before the first write, whatever the score's own flip bit says. |
-| 361 | `the loc of sprite N` | inert | Same file swaps two sprites' positions with it. Read answers 0, write reaches nothing. It is `locH`/`locV` as one point (§7.6), so both directions belong on the existing position path. |
+| 1,453 | `the member of sprite N` | **live** | Piposh Dream reads it (`member(the member of sprite xxx).name`). Aliased to `membernum` in `sprite_props.gd`: Director's member *reference* and its integer are two properties, and one here, because this port packs `(library, slot)` into a single integer `member()` accepts either way (§1.6). Wrong only for a title that compares a member reference against something that is not an integer. |
+| 450 | `the flipH of sprite N` | **live** | Piposh Dream's `fritz1.dir` both reads and writes it (`sprite(getAt(ppl, 1)).flipH = 1`). Aliased to the record's `flip_h`, answered from the score's own bit by `read_prop` and merged by `effective`; `sprite_art.gd` has drawn from that name since before the bit was decoded and mirrors the hit test with it, so a flipped sprite is clickable where it is drawn. `the flipV` (6 sites) is the same entry. |
+| 361 | `the loc of sprite N` | **live** | Same file swaps two sprites' positions with it. Split in `director_preview.gd`'s two entry points rather than aliased: the read composes `locH`/`locV` into the two-element list this port represents a point with, and the write splits one back onto `_write_position`, so the constraint stays applied in exactly one place (§7.6). **`tools/lingo_surface_audit.gd` still counts this row as a gap** -- it reads bindings out of the host and the property tables and cannot see a name the node routes before either -- so the count above is one higher than the truth until the audit learns to look there. |
 | 326 | `the searchPath` | absent | Piposh 1's CD-drive scan, in all three language builds: `set the searchPath to ["d:\sounds\strtgame\"]` then `x = getAt(the searchPath, 1)`. Unbound, the read answers VOID, `getAt` answers VOID, and the loop cannot find the disc. The retired host kept it as a **list with one empty element** precisely so the read answered `""` rather than falling off the end (§3). |
 | 154 | `beep` | inert | Audible in the original, silent here. |
 | 150 | `continue` | inert | The other half of `pause`, which *is* live: a movie that pauses and calls `continue` never resumes. Bound as a pair or not at all. |
@@ -2529,7 +2529,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `setat` | builtin | live | 2758 sites; lingo_builtins.gd |
 | `rollover` | builtin | live | 2444 sites; host arm |
 | `soundbusy` | builtin | live | 2080 sites; host arm |
-| `member` | sprite | inert | 1453 sites; stored in _overrides, consumed by nothing |
+| `member` | sprite | live | 1453 sites; aliased to `membernum` in sprite_props.gd |
 | `random` | builtin | live | 1378 sites; lingo_builtins.gd |
 | `text` | member | live | 1322 sites; members.gd read_prop |
 | `keycode` | system | live | 1172 sites; read only |
@@ -2541,7 +2541,9 @@ Two shapes account for most of that list, and neither is a missing name:
 | `label` | builtin | live | 516 sites; host arm |
 | `mouseh` | system | live | 486 sites; read only |
 | `mousedownscript` | system | live | 477 sites; read+write |
-| `fliph` | sprite | inert | 450 sites; stored in _overrides, consumed by nothing |
+| `fliph` | sprite | live | 450 sites; aliased to the record's `flip_h`, merged by effective, drawn and hit-tested by sprite_art.gd |
+| `flip_h` | sprite | live | 0 sites; not a Director name -- the score record's own spelling, which `read_prop` and `effective` key on and `fliph` aliases to. Recorded because the engine binds it and this table is what the engine is audited against. |
+| `flip_v` | sprite | live | 0 sites; the vertical half of the row above. |
 | `forget` | builtin | live | 389 sites; host arm |
 | `nothing` | builtin | noop | 376 sites; host IGNORED; Director's own explicit no-op; there is nothing to do |
 | `loc` | sprite | inert | 361 sites; stored in _overrides, consumed by nothing |
@@ -2591,7 +2593,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `editabletext` | sprite | live | 11 sites; merged by effective() as `editable` |
 | `addprop` | builtin | live | 6 sites; lingo_builtins.gd |
 | `sort` | builtin | live | 6 sites; lingo_builtins.gd |
-| `flipv` | sprite | inert | 6 sites; stored in _overrides, consumed by nothing |
+| `flipv` | sprite | live | 6 sites; aliased to the record's `flip_v`, merged by effective, drawn and hit-tested by sprite_art.gd |
 | `integer` | builtin | live | 5 sites; lingo_builtins.gd |
 | `map` | builtin | live | 5 sites; lingo_builtins.gd |
 | `exitlock` | system | absent | 5 sites |

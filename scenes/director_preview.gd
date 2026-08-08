@@ -2568,6 +2568,17 @@ func _note_member(channel: int, cast_id: int) -> void:
 ## differ on `the moveableSprite of sprite`, and nothing used to sit between
 ## them -- see that file for what that cost.
 func lingo_sprite_prop(channel: int, prop: String) -> Variant:
+	# `the loc of sprite N` is the pair, answered as the two-element list this
+	# port represents a Lingo point with -- the same shape `the clickLoc`
+	# answers, so a script that reads one and writes it back to another sprite
+	# never needs a type the language here has no notion of. 361 sites, and
+	# `fritz1.dir` swaps two sprites with exactly that read-and-write-back.
+	if prop == "loc":
+		return [
+			LingoValue.to_int(lingo_sprite_prop(channel, "loch")),
+			LingoValue.to_int(lingo_sprite_prop(channel, "locv")),
+		]
+	_note_sprite_prop(prop)
 	return SpriteProps.read(channel, prop, _overrides,
 		_score.frame(_index).get("sprites", []), _channel_constraints)
 
@@ -2586,6 +2597,7 @@ func lingo_puppet_sprite(channel: int, on: bool) -> void:
 
 
 func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
+	_note_sprite_prop(prop)
 	# `the cursor of sprite` is channel state, not a puppeted score field: it is
 	# not part of the frame delta and survives frame changes and member swaps.
 	# Stored in `_overrides` it would be dropped the moment the score moved that
@@ -2601,8 +2613,44 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	if prop == "loch" or prop == "locv":
 		_write_position(channel, prop, value)
 		return
+	# `set the loc of sprite N to <point>` is those two in one statement, which is
+	# what Director's own setter takes. Split here rather than stored under a key
+	# of its own: a `loc` override sitting beside `loch` and `locv` would be a
+	# third source of a position, and the constraint is applied in exactly one
+	# place, which is `_write_position`.
+	if prop == "loc":
+		var point: Array = value if typeof(value) == TYPE_ARRAY else []
+		if point.size() >= 2:
+			_write_position(channel, "loch", point[0])
+			_write_position(channel, "locv", point[1])
+		return
 	SpriteProps.write(channel, prop, value, _overrides,
 		_score.frame(_index).get("sprites", []), _channel_constraints)
+
+
+## A sprite property nothing in this port consumes, recorded rather than lost.
+##
+## **`LingoDiagnostics.SPRITE_PROP` existed and was never once emitted**, and
+## that is why property gaps are found by players and builtin gaps are found by
+## the gate. An unbound *builtin* reports through `_host_call` and lands in the
+## diagnostics; a bound property setter that stores a name nothing reads is
+## completely silent, because `sprite_state.write_prop` accepts any key and
+## `read_prop` hands it straight back. The write round-trips, every obvious test
+## passes, and the only thing that fails is a consumer three modules away.
+##
+## Five bugs have come out of that one gap -- `moveableSprite`, `editableText`,
+## `constraint`, `the member of sprite` and `flipH`/`flipV` -- and each was found
+## by someone noticing a sprite had not moved. `preview/sprite_props.gd:CONSUMED`
+## is the list this asks, and it is kept beside the alias table because the two
+## answer the same question from opposite sides.
+##
+## Reported, not refused: an unconsumed write is still stored and still reads
+## back, exactly as before. The only change is that the session can now say which
+## names went nowhere.
+func _note_sprite_prop(prop: String) -> void:
+	if _interpreter == null or SpriteProps.consumed(prop):
+		return
+	_interpreter.report(LingoDiagnostics.SPRITE_PROP, prop)
 
 
 ## A position write, through `Channel::setPosition`'s rule (§7.6).

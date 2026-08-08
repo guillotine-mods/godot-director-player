@@ -56,6 +56,20 @@ const MOUSE_PROPS := [
 	"mousedownscript", "mouseupscript",
 ]
 
+## Every string §4.3's six clauses can answer with, listed for the same reason
+## the properties above are: a clause renamed or a seventh invented shows up here
+## as an unrecognised answer rather than as a check that quietly stopped
+## covering something.
+const CLAUSES := [
+	"moveable",
+	"button member",
+	"movie member with scripts enabled",
+	"D6+ behaviour attached",
+	"behaviour declares mouseDown/mouseUp",
+	"generic behaviour, no handler scope",
+	"member script declares mouseDown/mouseUp",
+]
+
 
 func _sent(preview: Node, key: String) -> int:
 	return int((preview.get("_sent") as Dictionary).get(key, 0))
@@ -358,6 +372,155 @@ func _point_off(preview: Node, rect: Rect2) -> Vector2:
 	return Vector2(-1, -1)
 
 
+## §4.3, the six eligibility clauses and the order they are tested in.
+##
+## The subject for the clause that matters is **synthesised**, and it has to be.
+## The clause is "from D6 a sprite with any behaviour attached is a click target
+## whatever that behaviour declares", so proving it needs a sprite whose
+## behaviour declares no mouse handler -- and whether the movie under test has
+## one is a property of the movie. The boot movie of this corpus has four
+## behaviours and all four declare `mouseUp`, so a harness that went looking
+## would assert nothing here and pass, which is the failure mode `gate.sh`'s
+## empty-check guard exists for and would not catch, because the other checks in
+## this block do have subjects.
+##
+## So a behaviour is *attached*: a frame-script interval is borrowed from the
+## score (every movie has one, and this corpus's declare `exitFrame` and nothing
+## else), verified to declare no mouse handler, and pushed onto the interval list
+## as a sprite interval on a channel that is currently ineligible. That makes the
+## subject the engine's own data structure rather than a mock, and it makes the
+## check run identically against any `--root`. The interval is removed again, and
+## the sprite going back to ineligible is itself asserted -- an attach that could
+## not be undone would leave every later block measuring a different frame.
+func _check_eligibility(preview: Node, h, subject: int) -> void:
+	h.begin("§4.3: eligibility is six clauses, tested in order")
+	var table = preview.get("_table")
+	var score = preview.get("_score")
+	var index := int(preview.get("_index"))
+
+	# The predicate and the explanation are one function (`responds_to_mouse` is
+	# `eligibility_reason() != ""`), and this is what keeps them one: the hit test
+	# filters on the first and every debugging tool prints the second, so a port
+	# where they can disagree is a port whose overlay lies.
+	var disagreed := 0
+	var unknown := PackedStringArray()
+	var reasons: Dictionary = {}
+	for raw in _sprites(preview):
+		var sprite: Dictionary = preview.call("_effective", raw)
+		if sprite.is_empty():
+			continue
+		var why := Interaction.eligibility_reason(preview, sprite, table)
+		if (why != "") != bool(Interaction.responds_to_mouse(preview, sprite, table)):
+			disagreed += 1
+		if why == "":
+			continue
+		reasons[why] = int(reasons.get(why, 0)) + 1
+		if not CLAUSES.has(why):
+			unknown.append(why)
+	h.check("the verdict and the clause never disagree", disagreed == 0,
+		"%d sprites" % disagreed)
+	h.check("every clause named is one of §4.3's six", unknown.is_empty(),
+		", ".join(unknown))
+	print("      clauses on this frame: %s" % str(reasons))
+
+	# The version gate. `is_d6_plus` is the whole switch between the D6+ clause
+	# and the handler search below it, so it is asserted against the movie's own
+	# config word rather than trusted.
+	var config = preview.get("_config")
+	var version := int(config.version) if config != null else 0
+	h.check("the D6+ clause is gated on the movie's stated file version",
+		Interaction.is_d6_plus(preview) == (version >= Interaction.FILE_VERSION_D6),
+		"config version 0x%X, D6 threshold 0x%X" % [version, Interaction.FILE_VERSION_D6])
+
+	# **The subject for the two experiments below is an ineligible sprite, and
+	# never the one the rest of this harness clicks.** `_clickable` reaches its
+	# subject by setting `the moveableSprite`, so making that channel eligible and
+	# ineligible again to prove a clause takes the frame's only mouse target away
+	# from every block after this one -- measured: the release-outside case then
+	# saw `_press_channel` 0 and sent a `mouseUp` where it wanted
+	# `mouseUpOutSide`, and the failure named the message rather than the cause.
+	var victim := 0
+	var victim_area := 0.0
+	for raw in _sprites(preview):
+		var sprite: Dictionary = preview.call("_effective", raw)
+		if sprite.is_empty() or int(sprite["channel"]) == subject:
+			continue
+		if Interaction.responds_to_mouse(preview, sprite, table):
+			continue
+		var r: Rect2 = preview.call("_sprite_rect", sprite)
+		if r.size.x * r.size.y > victim_area:
+			victim_area = r.size.x * r.size.y
+			victim = int(sprite["channel"])
+	if not h.check("the frame has an ineligible sprite to experiment on", victim > 0):
+		h.complete("§4.3: eligibility is six clauses, tested in order")
+		return
+
+	# Clause 1 is first, and "first" is the whole content of the ordering: a
+	# moveable sprite is eligible before anything is asked about its scripts.
+	preview.call("lingo_set_sprite_prop", victim, "moveablesprite", 1)
+	h.check("clause 1: a moveable sprite reports `moveable` and asks nothing else",
+		Interaction.eligibility_reason(
+			preview, preview.call("_effective", _sprite_on(preview, victim)), table
+		) == "moveable")
+	preview.call("lingo_set_sprite_prop", victim, "moveablesprite", 0)
+	h.check("and clearing it makes the sprite transparent to the mouse again",
+		not bool(Interaction.responds_to_mouse(
+			preview, preview.call("_effective", _sprite_on(preview, victim)), table)))
+
+	# Clause 4 itself, on a borrowed behaviour.
+	var donor: Dictionary = {}
+	for value in score.intervals():
+		var interval: Dictionary = value
+		if str(interval["kind"]) != "frame":
+			continue
+		var script: Dictionary = preview.call("_script_in_lib",
+			int(interval["script_cast_lib"]), int(interval["script_member"]))
+		if script.is_empty() or not (script.get("body", []) as Array).is_empty():
+			continue
+		if preview.call("_declares_mouse_handler", script):
+			continue
+		donor = interval
+		break
+	if not h.check("the movie has a script that declares no mouse handler to attach",
+			not donor.is_empty()):
+		h.complete("§4.3: eligibility is six clauses, tested in order")
+		return
+	var attached := {
+		"kind": "sprite", "channel": victim, "start": 0, "end": 0x7FFFFFFF,
+		"script_cast_lib": int(donor["script_cast_lib"]),
+		"script_member": int(donor["script_member"]),
+	}
+	score.intervals().append(attached)
+	var reason: String = Interaction.eligibility_reason(
+		preview, preview.call("_effective", _sprite_on(preview, victim)), table)
+	if Interaction.is_d6_plus(preview):
+		h.check("clause 4: a behaviour declaring no mouse handler still makes it a click target",
+			reason == "D6+ behaviour attached", "channel %d reports `%s`" % [victim, reason])
+		# The half that makes the check mean something. If the behaviour declared
+		# `mouseDown` or `mouseUp` the D4/D5 arm would answer too, and the clause
+		# under test would be unproven; asserting the arm is silent is what says
+		# the eligibility came from D6 and from nowhere else.
+		h.check("and the D4/D5 handler search below it says no",
+			not bool(preview.call("_declares_mouse_handler", preview.call("_script_in_lib",
+				int(donor["script_cast_lib"]), int(donor["script_member"])))))
+		# §4.2: an eligible sprite stops the descent. That is the cost of the
+		# clause and the reason it was measured before it was written, so it is
+		# asserted rather than assumed.
+		var r: Rect2 = preview.call("_sprite_rect",
+			preview.call("_effective", _sprite_on(preview, victim)))
+		var at := _point_on(preview, r, victim)
+		h.check("and the descent now stops on it", at.x >= 0.0,
+			"channel %d, %dx%d" % [victim, int(r.size.x), int(r.size.y)])
+	else:
+		h.check("clause 4 is off below D6: the attached behaviour changes nothing",
+			reason == "", "channel %d reports `%s`" % [victim, reason])
+	score.intervals().erase(attached)
+	h.check("removing the behaviour hands the sprite back",
+		not bool(Interaction.responds_to_mouse(
+			preview, preview.call("_effective", _sprite_on(preview, victim)), table)))
+	h.complete("§4.3: eligibility is six clauses, tested in order")
+
+
 func _init() -> void:
 	var args := Args.parse()
 	var h := Harness.new()
@@ -414,6 +577,8 @@ func _init() -> void:
 	var inside: Vector2 = found[1]
 	var rect: Rect2 = found[2]
 	var outside := _point_off(preview, rect)
+
+	_check_eligibility(preview, h, channel)
 
 	# ------------------------------------------------------------------ §8.1
 	# The whole point of the two messages. A press that is released inside the
