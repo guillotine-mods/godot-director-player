@@ -93,6 +93,15 @@ const ACCOUNTED := {
 	"_global_cursor": "saved",
 	"_paused": "saved",
 	"_show_boxes": "saved",
+	# The collision-zone overlay, which arrived while this table was being written
+	# and is why the check that caught it fails both ways. The toggle is saved
+	# beside `_show_boxes` because it is the same kind of thing -- a view the user
+	# chose. The zones themselves are not: they accumulate as scripts ask
+	# `intersects` / `within`, so a restored session repopulates them the first
+	# time it asks, and saving them would freeze one playthrough's questions into
+	# a state meant to reproduce the answers.
+	"_show_collisions": "saved",
+	"_collision_channels": "rebuilt: repopulated as scripts ask `intersects`",
 	"_hit_pixels": "saved",
 	"_fast_forward_fps": "saved",
 	"_aspect": "saved",
