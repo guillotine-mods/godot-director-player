@@ -152,6 +152,17 @@ static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dicti
 	# the line below. It is here because Director has it.
 	if over.has("editable"):
 		out["editable"] = LingoValue.to_int(over["editable"]) != 0
+	# `the flipH of sprite N` and `the flipV of sprite N`, normalised to the score
+	# record's own spelling at the seam. `sprite_art.gd` has drawn from `flip_h` /
+	# `flip_v` since before the score's own flip bits were decoded, and it mirrors
+	# the hit-test sample with them too -- so this is the last link of a chain that
+	# was otherwise complete. Without it, 456 sites across Piposh Dream store a flag
+	# nothing reads: the fifth instance of one half of a property reaching nothing,
+	# after `moveableSprite`, `editableText`, `constraint` and `the member of sprite`.
+	if over.has("flip_h"):
+		out["flip_h"] = LingoValue.to_int(over["flip_h"]) != 0
+	if over.has("flip_v"):
+		out["flip_v"] = LingoValue.to_int(over["flip_v"]) != 0
 	return out
 
 
@@ -218,6 +229,12 @@ static func read_prop(channel: int, prop: String, overrides: Dictionary,
 				return 1
 			"ink":
 				return int(sprite["ink"])
+			"flip_h":
+				return 1 if bool(sprite.get("flip_h", false)) else 0
+			"flip_v":
+				return 1 if bool(sprite.get("flip_v", false)) else 0
+			"castlibnum":
+				return int(sprite.get("cast_lib", 0))
 			"trails":
 				# From the score's own ink byte when no script has written it, so
 				# a movie that reads the property back before setting it gets what
