@@ -440,6 +440,12 @@ func _two_process(h: Harness, args: Dictionary) -> void:
 	]
 	if Args.text(args, "root", "") != "":
 		child.append_array(["--root", Args.text(args, "root", "")])
+	# And the boot movie with it, on the same argument as `--root` above. This
+	# child names its own `--file`, so it does not depend on the boot movie today;
+	# forwarding it anyway is what keeps the three child-spawning harnesses saying
+	# the same thing, so the next one copied from here inherits the whole pin.
+	if Args.text(args, "boot", "") != "":
+		child.append_array(["--boot", Args.text(args, "boot", "")])
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), child, out, true)
 	for line in out:

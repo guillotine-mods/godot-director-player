@@ -35,6 +35,14 @@ gate_announce_godot "$G"
 # cannot do that to anybody.
 ROOT="${GATE_ROOT:-piposh2}"
 
+# Pin the boot movie with the root, for the same reason and in the same breath.
+# `--root` alone is half a pin: the boot movie still came from the config, so with
+# the tracked config pointing at `rating`'s `mainmenu.dir` every entry below that
+# does not name its own `--file` looked for that container under `piposh2`, found
+# nothing, and asserted over an empty score. `STRTGAME.dir` is the boot movie of
+# both piposh2 and piposh, which are the two roots this list names.
+BOOT="${GATE_BOOT:-strtgame.dir}"
+
 # Per-harness ceiling. Raised from 300s because several harnesses now sweep the
 # whole corpus, and with a handful of agents running Godot at once a sweep that
 # takes 40s alone can exceed five minutes. Override with GATE_TIMEOUT.
@@ -63,7 +71,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_system_builtins click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision cannon_hit:--root@piposh"
+ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_system_builtins click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index cannon_hit:--root@piposh"
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
 # one place in six titles where the whole chain from `the keyDownScript` to
@@ -95,7 +103,7 @@ for t in ${WANTED:-$ALL}; do
   case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
   # `--root` first, so an ALL entry that names its own wins: the override takes
   # the last one on the line.
-  out=$(gate_run_capped ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- --root "$ROOT" $extra 2>&1)
+  out=$(gate_run_capped ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- --root "$ROOT" --boot "$BOOT" $extra 2>&1)
   status=$?
   # A hang and a crash are not the same finding, and printing both as ERROR is
   # how `movie_churn` got called flaky. 124 is the ceiling, from `timeout` or

@@ -157,7 +157,13 @@ never consumed is still silent.
 which is a reason to build it last and not a reason to skip it.
 
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
-in this corpus carries it; it currently falls through to Matte.
+in this corpus carries it; it currently falls through to **Copy**. It used to fall
+through to Matte, which was wrong in kind rather than by a degree -- flooding this
+member's own paper is not the same mechanism as reading the next member as a mask
+(`reference/scummvm/channel.cpp:228`) -- and `bugs.md` 50 moved it. The mask path
+itself is still unbuilt, deliberately: with 0 records of ink 9 anywhere in the
+corpus the polarity is undecidable, and guessing it backwards makes a sprite
+invisible rather than merely wrong.
 
 **`the clickOn` on mouse-up -- deliberately NOT implemented.** §15. Director
 updates `the clickOn` again on mouse-up when the release was over a sprite; this

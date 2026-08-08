@@ -47,6 +47,7 @@ func load_config(config_path: String = CONFIG_PATH) -> bool:
 	root = str(cfg.get_value("game", "root", ""))
 	boot_movie = str(cfg.get_value("game", "boot_movie", ""))
 	root = _override_root(root)
+	boot_movie = _override_boot(boot_movie)
 	return root != "" and boot_movie != ""
 
 
@@ -86,6 +87,27 @@ static func _override_root(from_config: String) -> String:
 	if wanted.begins_with("res://"):
 		return wanted
 	return "res://games/".path_join(wanted)
+
+
+## `--boot <container>` on the command line beats the config, for every reader.
+##
+## The same argument as `--override_root` above, and it exists because half of that
+## argument was implemented. `--root` moved the corpus and left the boot movie
+## naming a container from the *previous* title, so pinning a root was only ever
+## half a pin: `gate.sh` passes `--root piposh2` while the tracked config carries
+## `boot_movie = "mainmenu.dir"` (a `rating` container, committed in `399feaaa` as
+## a working config), and every harness that does not name its own `--file` fell
+## back to a boot movie that does not exist under the pinned root. They do not
+## fail -- they load no score and assert over nothing, which is the dark-harness
+## failure `gate.sh` warns about two screens further down.
+##
+## So the rule is the file's own: one question, one place. A reader that honours
+## `--root` and not `--boot` disagrees with itself about which title it is running.
+static func _override_boot(from_config: String) -> String:
+	var wanted := _flag("--boot")
+	if wanted == "":
+		return from_config
+	return wanted
 
 
 ## `--name value` or `--name=value` from the user args, "" when absent.

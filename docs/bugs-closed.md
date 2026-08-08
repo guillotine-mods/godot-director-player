@@ -901,8 +901,18 @@ re-checking:
   `gatego` visits frames 237..338, covering `gatefromedge1` at 324.
 - **Not the puppet's size.** Channel 30 draws at the member's natural size in 1290
   of 1290 room sprites, which is what the score does.
-- **Not ink coverage.** The only unhandled inks are 0, which is Copy and correctly
-  opaque, and 32 at 948 sprites.
+- **Not ink coverage** *for this bug* — but the reasoning was wrong, and
+  **`bugs.md` 50 is the counterexample.** This read "the only unhandled inks are 0,
+  which is Copy and correctly opaque, and 32 at 948 sprites". Ink 0 is **not**
+  unconditionally opaque: Director mattes a Copy sprite whose thickness byte
+  carries the blend flag, whatever the blend amount
+  (`reference/scummvm/channel.cpp:206`), and reading the ink number alone drew
+  *Rating*'s dialogue portraits inside opaque white rectangles. Measured on Piposh
+  2 — 209 of its 88,095 Copy records carry the flag — the claim was defensible and
+  the conclusion for *this* entry still holds; measured on Rating it is 27,914 of
+  148,747. Left in place with this correction rather than deleted, because a
+  ruled-out list flagged as not worth re-checking is exactly what sends the next
+  session past a live defect.
 - **Not film loops failing to advance**, at least where they resolve: MURDER1 1 of
   1 film-loop channels advances over 60 ticks, RUNAWAY 3 of 3, SHUFFLE 2 of 2.
 - **Not the sprite stretch flag**, checked because the fix for 14's score-side half

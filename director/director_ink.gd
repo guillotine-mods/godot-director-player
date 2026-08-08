@@ -11,8 +11,15 @@ extends RefCounted
 ## everything rectangular lets irregular matte sprites steal clicks. Both
 ## mistakes were made here before the tables were separated.
 ##
-## What this corpus actually uses, from `tools/ink_survey.gd` over 816,318 sprite
-## records in 61 movies:
+## The second thing to carry away: **the ink number does not decide the keying on
+## its own.** `key_for` takes the sprite record and its member, because Director's
+## own `Channel::getMask` reads the thickness byte's blend flag and the member's
+## bit depth alongside the ink. Reading only the ink is right for the five inks
+## this corpus is mostly made of and wrong for a class of 29,000 records; see
+## `key_for` for the mechanism and `bugs.md` 50 for what it looked like on screen.
+##
+## What the ink *number* is, from `tools/ink_survey.gd` over 816,318 sprite
+## records in Piposh 2's 61 movies:
 ##
 ##   36 Background Transparent  554,242   67.90%
 ##    8 Matte                   172,184   21.09%
@@ -20,10 +27,16 @@ extends RefCounted
 ##   32 Blend                     1,765    0.22%
 ##    1 Transparent                  32    0.00%
 ##
-## Nothing else appears at all — no Mask (9), no arithmetic inks, no Reverse.
-## So the four that matter are implemented properly and everything else falls
-## through to Copy, which is the fallback the reference recommends: mapping
-## unknown inks to Background Transparent instead would key out artwork.
+## Nothing else appears at all — no Mask (9), no arithmetic inks, no Reverse — and
+## that holds across all three roots: 3,550,111 records in 241 scores carry only
+## 0, 1, 8, 32 and 36. The ten arithmetic and Not- inks are implemented from the
+## reference anyway and marked unverified where they land, because "0 uses in this
+## corpus" is a fact about the corpus.
+##
+## The distribution is also why this file's one real defect hid for so long. Of
+## those 88,095 Copy records in Piposh 2, only 209 carry the blend flag that makes
+## Director matte them; in *Rating* it is 27,914 of 148,747. A port measured
+## against one title and shipped against two is exactly where that gap shows.
 
 ## Director's ink numbers. 10-31 are unused by the format itself.
 const COPY := 0
@@ -50,10 +63,12 @@ const DARK := 39
 ## carries a clean number — this exists for anything reading a raw byte.
 const INK_MASK := 0x3F
 
-## How a sprite's pixels are keyed. Deliberately three cases and not eighteen:
-## the fallback chain in Director's own blitter is Blend -> Matte -> Copy, and a
-## port that implements Copy, Background Transparent and Matte correctly and maps
-## the rest to Copy is reproducing that chain rather than approximating it.
+## How a sprite's pixels are keyed. Three outcomes, and the thing to carry away is
+## that **which one applies is not a function of the ink alone.** Director decides
+## in `Channel::getMask` (`channel.cpp:188`) from the ink *and* the thickness
+## byte's blend flag *and* the member's bit depth, and a port that reads only the
+## ink number gets the common cases right and one whole class wrong.
+##
 ## Plain constants rather than an enum: GDScript cannot reconcile an enum type
 ## across a `preload`ed script that has no `class_name`, and every consumer here
 ## reaches this file that way.
@@ -62,20 +77,103 @@ const KEY_PAPER := 1  ## Background Transparent: every pixel equal to backColor 
 const KEY_MATTE := 2  ## Only the paper a flood fill reaches from the border goes.
 
 
-## Which keying an ink asks for.
+## The twelve inks Director builds a matte for on their ink number alone —
+## `channel.cpp:192-203`, transcribed in its order.
 ##
-## Blend is grouped with Matte because Director's blend path returns *before* the
-## ink switch and behaves as Matte regardless of the ink it nominally carries.
-static func key_for(ink: int) -> int:
-	match ink & INK_MASK:
-		MATTE, MASK, BLEND:
-			return KEY_MATTE
-		# Transparent is here rather than under Copy because in 8-bit index space
-		# its bitwise-OR against a white paper of index 0 leaves the destination
-		# untouched, which is the same observable result as keying the paper.
-		TRANSPARENT, BACKGND_TRANS:
-			return KEY_PAPER
+## Two absences are deliberate and are not omissions here. **Reverse (2) and Ghost
+## (3) are not in it**, so they fall through to Copy. **Mask (9) is not in it
+## either**, and does not belong: `getMask`'s `else if` arm (`channel.cpp:228`)
+## takes the *next cast member* as a separate 1-bit mask surface, which is a
+## different mechanism from flooding this member's own paper. `key_for` used to
+## answer `KEY_MATTE` for Mask, which was wrong in kind rather than by a degree.
+##
+## **Ten of these twelve are unverified against any data.** Over all three game
+## roots — 3,550,111 sprite records in 241 scores — the only inks that ever appear
+## are 0, 1, 8, 32 and 36, so 4, 5, 6, 7, 33, 34, 35, 37, 38 and 39 have zero
+## records anywhere. They are implemented because Director has them: a corpus that
+## cannot exercise something is a measurement about the corpus, not a licence to
+## leave a hole that surfaces the first time another title loads.
+const MATTE_INKS := [
+	MATTE, NOT_COPY, NOT_TRANSPARENT, NOT_REVERSE, NOT_GHOST,
+	BLEND, ADD_PIN, ADD, SUB_PIN, LIGHT, SUB, DARK,
+]
+
+## Director's QuickDraw shape *sprite types* (`types.h:157-170`), which are what
+## `Sprite::isQDShape` tests (`sprite.cpp:189`) — the sprite-type byte, not the
+## cast type. Every record in either corpus carries 16, `kCastMemberSprite`.
+const QD_SHAPE_SPRITE_TYPES := [2, 3, 4, 5, 6, 12, 13, 14, 15]
+
+
+## Which keying this sprite asks for, given the member it names.
+##
+## This takes the sprite record and the member rather than an ink number, and that
+## is the whole point of it: Director's own decision reads three things and the ink
+## is only one of them. `Channel::getMask` (`channel.cpp:188-226`) in order:
+##
+## 1. `needsMatte` if the ink is one of `MATTE_INKS`.
+## 2. `needsMatte` if the sprite is blended *and* the amount is non-zero — the
+##    blend flag in the thickness byte or Blend ink, either one.
+## 3. `needsMatte` if the sprite is **not a QuickDraw shape, its ink is Copy, and
+##    the thickness byte carries the blend flag** (`channel.cpp:206`). Note what
+##    this clause does *not* test: the blend amount. A Copy sprite with the flag
+##    set and an amount of 0 — fully opaque — still gets a matte.
+## 4. A matte is only ever built for a **bitmap**; anything else gets none.
+##
+## Clause 3 is why this signature changed. `Rating`'s dialogue portraits carry
+## exactly that combination — ink byte 0x00, thickness byte 0x10, blend amount 0 —
+## and with keying decided from the ink alone they drew their own white paper as an
+## opaque rectangle over the room (`bugs.md` 50). It is not a rare corner: 27,914
+## of that title's 847,431 sprite records are Copy-with-blend, against 209 of
+## Piposh 2's 816,318, which is why the port rendered one corpus acceptably for as
+## long as it did.
+static func key_for(sprite: Dictionary, member: Dictionary) -> int:
+	var ink := int(sprite.get("ink", 0)) & INK_MASK
+	var member_type := int(member.get("type", TYPE_BITMAP))
+	if _needs_matte(sprite, ink):
+		# Mattes are bitmap-only. A shape needs none — its primitives already draw
+		# only what they draw — and a field has no image to flood. Both fall back to
+		# drawing every pixel, which is what a null mask means in the reference.
+		if member_type != TYPE_BITMAP:
+			return KEY_NONE
+		# The 1-bit exception (`channel.cpp:218-223`): a 1-bit member gets a matte
+		# **only** under Matte ink proper. Under anything else in the list — Copy
+		# with the blend flag included — the reference returns no mask at all and
+		# the sprite draws solid.
+		#
+		# **No data in any corpus exercises this.** Of the records that reach a
+		# matte-needing ink across all three roots, 0 name a 1-bit member: 0 under
+		# Matte ink and 0 under the other eleven paths. It is here because it is
+		# the rule, and because leaving it out is the failure that keys 1-bit art
+		# Director leaves alone.
+		if int(member.get("bits_per_pixel", 8)) == 1 and ink != MATTE:
+			return KEY_NONE
+		return KEY_MATTE
+	# Transparent is here rather than under Copy because in 8-bit index space
+	# its bitwise-OR against a white paper of index 0 leaves the destination
+	# untouched, which is the same observable result as keying the paper.
+	if ink == TRANSPARENT or ink == BACKGND_TRANS:
+		return KEY_PAPER
 	return KEY_NONE
+
+
+## `Channel::getMask`'s `needsMatte`, the three clauses, before the cast type and
+## the bit depth get a say. Split out so `key_for` reads as the reference's own
+## two-step: decide whether a matte is wanted, then decide whether one can be had.
+static func _needs_matte(sprite: Dictionary, ink: int) -> bool:
+	if MATTE_INKS.has(ink):
+		return true
+	var has_blend := bool(sprite.get("has_blend", false))
+	# `channel.cpp:204`. The stored amount is the raw byte, exactly as
+	# `_blendAmount` is in the reference (`frame.cpp:1958`), so "non-zero" is the
+	# same test in both — remembering that the byte is inverted, and 0 means
+	# fully opaque rather than fully clear (`blend_alpha`).
+	if (has_blend or ink == BLEND) and int(sprite.get("blend_amount", 0)) > 0:
+		return true
+	# `channel.cpp:206`. The amount is deliberately not consulted.
+	if ink == COPY and has_blend \
+			and not QD_SHAPE_SPRITE_TYPES.has(int(sprite.get("sprite_type", 0))):
+		return true
+	return false
 
 
 ## Does a click land on this sprite only where it has pixels?
@@ -84,6 +182,19 @@ static func key_for(ink: int) -> int:
 ## single rule most worth not "tidying up" later: Background Transparent is 68% of
 ## this corpus and every one of those sprites catches clicks across its full
 ## rectangle.
+##
+## **This deliberately disagrees with `key_for`, and the disagreement is the
+## reference's.** `key_for` mattes a Copy sprite that carries the blend flag —
+## `Channel::getMask` does — while this answers false for it, because
+## `BitmapCastMember::isWithin` (`castmember/bitmap.cpp:920-928`) tests per pixel
+## for `kInkTypeMatte` and nothing else, off the ink alone. So such a sprite draws
+## through a matte and still catches clicks everywhere inside its box, including
+## the parts that are now invisible. Run the hotspot outlines over `Rating`'s
+## dialogue portrait and it will look like a bug: a green "whole rect" box around
+## art with keyed-out corners. It is not. Routing both decisions through one
+## predicate to make the picture tidy is the mistake this paragraph exists to
+## prevent — it would hand every Copy-with-blend sprite a per-pixel hit test that
+## Director never gave it.
 ##
 ## The cast-type half is the part that is easy to leave out. A matte is built by
 ## flooding the *member's image* in from the border, and only a bitmap has one; a
@@ -193,9 +304,29 @@ static func apply_colour(image: Image, fore: Color, back: Color) -> int:
 ## A sprite is blended when its ink is Blend or when the has-blend flag in the
 ## thickness byte is set; the reference tests exactly that pair before it uses
 ## the amount at all (`channel.cpp:getPlotData`).
-static func blend_alpha(sprite: Dictionary) -> float:
+##
+## `member` is the other half of the 1-bit exception `key_for` implements. The
+## reference's mask path does two things to a 1-bit member drawn with Copy ink and
+## the blend flag: it refuses the matte, and it **forces the blend amount to zero**
+## on the way out (`channel.cpp:220-222`) — "1-bit images will not blend with
+## kInkTypeCopy, whereas 8-bit images will", in its own words. So the sprite comes
+## out opaque as well as unkeyed.
+##
+## Two honest caveats. **Nothing in any corpus reaches it**: 0 records across all
+## three roots pair a 1-bit member with Copy, the blend flag and a non-zero amount,
+## so this arm is implemented from the reference and unverified. And the parameter
+## is **optional, and no caller passes it yet** — the four sites that ask for an
+## alpha (`stage_paint.gd`, `film_loop_view.gd` twice, `text_art.gd`) have the
+## member in hand but live outside the change that added this, so they still get
+## the member-blind answer. Passing it is a one-line change at each and the rule is
+## here waiting for it, which is a smaller lie than a rule that does not exist.
+static func blend_alpha(sprite: Dictionary, member: Dictionary = {}) -> float:
 	var ink := int(sprite.get("ink", 0)) & INK_MASK
 	if ink != BLEND and not bool(sprite.get("has_blend", false)):
+		return 1.0
+	if ink == COPY and not member.is_empty() \
+			and int(member.get("type", TYPE_BITMAP)) == TYPE_BITMAP \
+			and int(member.get("bits_per_pixel", 8)) == 1:
 		return 1.0
 	var amount := clampi(int(sprite.get("blend_amount", 0)), 0, 255)
 	return float(255 - amount) / 255.0

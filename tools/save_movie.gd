@@ -217,6 +217,11 @@ func _two_process(h: Harness, args: Dictionary, target: String, field_name: Stri
 	# what makes this line load-bearing rather than tidy.
 	if Args.text(args, "root", "") != "":
 		child.append_array(["--root", Args.text(args, "root", "")])
+	# And the boot movie with it: a pinned root plus the config's own boot movie
+	# is a container that does not exist under that root, so the child opens
+	# nothing and the comparison below runs against an empty session.
+	if Args.text(args, "boot", "") != "":
+		child.append_array(["--boot", Args.text(args, "boot", "")])
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), child, out, true)
 	for line in out:

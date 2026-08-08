@@ -94,7 +94,14 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	# rather than assumed: Director's 8-bit convention puts white at index 0, and
 	# 99.9% of this corpus stores exactly that, but a sprite is free to name
 	# another colour and the ink rule is defined against whatever it names.
-	match Ink.key_for(ink):
+	#
+	# **The member goes in with the sprite, and that is load-bearing rather than
+	# tidy.** Director decides the keying from the ink, the thickness byte's blend
+	# flag and the member's bit depth together (`Channel::getMask`), so `key_for`
+	# cannot answer from an ink number: a Copy sprite carrying the blend flag is
+	# mattered, and asking with the ink alone drew `Rating`'s dialogue portraits as
+	# opaque white rectangles (`bugs.md` 50).
+	match Ink.key_for(sprite, m):
 		Ink.KEY_MATTE:
 			Ink.key_matte(image)
 		Ink.KEY_PAPER:

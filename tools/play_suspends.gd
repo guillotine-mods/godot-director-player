@@ -367,7 +367,7 @@ func _dialogue_check(h: Harness, args: Dictionary) -> void:
 	root.add_child(preview)
 	await process_frame
 	var labels = preview.get("_labels")
-	_restore_unnamed_markers(preview, labels)
+	_check_marker_index(h, preview, labels)
 
 	var speak := Args.text(args, "speak", "egozspeak1").to_lower()
 	var destination := Args.text(args, "destination", "batz2a").to_lower()
@@ -431,39 +431,45 @@ func _centre_of(preview: Node, channel: int) -> Vector2:
 	return Vector2.ZERO
 
 
-## `director/director_labels.gd` drops markers with an empty name, and Director
-## keeps them: `Score::loadLabels` inserts every entry and `getNextLabelNumber`
-## walks the lot, so `marker(1)` counts the unnamed ones. BATZEGOZ's `play done`
-## sits on frame 215, which is an unnamed marker, and without it `go(marker(1))`
-## out of the talking loop lands on the *next room* instead — so `play done` is
-## never reached, the parked handler is never resumed, and all three dialogue
-## options arrive at the first one's destination.
+## The dialogue below cannot leave its talking loop unless `marker(n)` counts the
+## way Director counts, so the marker index is a precondition of the case and is
+## asserted as one: the movie's own `VWLB` header declares how many entries it
+## has, and the reader must have kept that many.
 ##
-## Put back here rather than fixed here: the fix belongs in `director_labels.gd`
-## and this is a harness. It says so out loud when it has to do it, so that a
-## green run is not read as the other half being present. `bugs.md` carries it.
-func _restore_unnamed_markers(preview: Node, labels) -> void:
+## **This used to repair the array instead of checking it**, and that is the
+## failure this docstring exists to prevent a second time. `director_labels.gd`
+## dropped every entry with an empty name; BATZEGOZ's `play done` sits on an
+## unnamed marker between `egozspeak1` and `Batz2A`, so `go(marker(1))` counted
+## past it, `play done` never ran, the parked handler was never resumed, and all
+## three dialogue options arrived at the first one's destination. This function
+## re-parsed the chunk and put the entries back before asserting anything — with a
+## docstring conceding it and a `NOTE:` printed at runtime — so the case passed
+## against an array the player never gets, and it kept passing after commit
+## 641d1d47's fix turned out to be inert. A harness that repairs its own subject
+## reports on a movie that does not exist.
+##
+## Checking costs the same and fails instead, which is the only difference that
+## matters. `tools/label_index.gd` makes the same assertion over every container
+## in every root; this one keeps it beside the behaviour that depends on it, so a
+## regression here says *why* the dialogue broke rather than only that it did.
+func _check_marker_index(h: Harness, preview: Node, labels) -> void:
 	var container = preview.get("_movie")
 	var ids: Array = container.ids_of("VWLB")
-	if ids.is_empty():
+	if not h.check("the movie has a marker table", not ids.is_empty()):
 		return
 	var payload: PackedByteArray = container.read_chunk(ids[0])
-	var count := (payload[0] << 8) | payload[1]
-	if count == labels.markers.size():
+	if not h.check("its marker table is readable", payload.size() >= 2,
+			"%d byte(s)" % payload.size()):
 		return
-	var text_base := 2 + 4 * (count + 1)
-	var restored: Array[Dictionary] = []
-	for i in count:
-		var at := 2 + i * 4
-		var frame := ((payload[at] << 8) | payload[at + 1]) - 1
-		var from := text_base + ((payload[at + 2] << 8) | payload[at + 3])
-		var to := text_base + ((payload[at + 6] << 8) | payload[at + 7])
-		var name := ""
-		if from >= text_base and to <= payload.size() and to > from:
-			name = payload.slice(from, to).get_string_from_ascii().strip_edges()
-		restored.append({"frame": frame, "name": name})
-	labels.markers = restored
-	print("NOTE: %d of this movie's %d markers are unnamed and were dropped by" % [
-		count - (count - restored.size()) - labels.labels.size(), count])
-	print("      director_labels.gd. Restored here so the dialogue can be driven;")
-	print("      `marker(1)` cannot reach a `play done` frame without them.")
+	# Big-endian, like `DirectorLabels._u16`: `read_chunk` hands back the payload
+	# untouched, and `VWLB`'s u16s are big-endian even inside a little-endian XFIR
+	# container.
+	var declared := (payload[0] << 8) | payload[1]
+	var unnamed := 0
+	for marker in labels.markers:
+		if str(marker["name"]) == "":
+			unnamed += 1
+	h.check("`marker(n)` counts every entry the chunk declares, named or not",
+		labels.markers.size() == declared,
+		"chunk declares %d, reader kept %d, %d unnamed" % [
+			declared, labels.markers.size(), unnamed])

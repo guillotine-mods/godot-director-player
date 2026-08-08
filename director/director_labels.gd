@@ -2,20 +2,35 @@ class_name DirectorLabels
 extends RefCounted
 ## One movie's `VWLB`: the frame markers, and the name a room announces itself by.
 ##
-## Three rules, each of which the corpus punishes you for missing:
+## Four rules, each of which the corpus punishes you for missing:
 ##
 ## Frames are 1-based in the chunk and 0-based everywhere in the runtime.
 ##
-## Markers with an empty name exist — eight movies carry one to three of them —
-## and must be dropped, or every later marker's index shifts and "which room am
-## I in" answers with the wrong one.
+## **An entry is never dropped; only its name can be unreadable.** `marker(n)`
+## counts *entries*, not names, so a `continue` anywhere in `parse` renumbers
+## every marker after it. This file said the opposite for a long time — "markers
+## with an empty name … must be dropped, or every later marker's index shifts" —
+## and it is exactly backwards: dropping one is what shifts the index. Markers
+## with an empty name are not rare and not decoration, they are how an author
+## marks a frame only the score needs to reach: 2,236 of Rating's 4,220 entries,
+## and 12 of Piposh 2's 3,019. `tools/label_index.gd` is the gate that this
+## reader produces one marker per entry, because the failure is silent —
+## `bugs.md` 40 is the player-visible half, and it survived a commit that
+## rewrote the comment below without moving the guard that caused it.
+##
+## The chunk's u16s are **big-endian** even in a little-endian `XFIR` container.
+## `DirectorFile.read_chunk` hands back the payload bytes untouched, and read
+## big-endian the label frames and names come out matching the movie; read
+## little-endian BATZEGOZ's 28 entries read as 7,168.
 ##
 ## Duplicate names are common (one movie has the same name on 22 markers), and
 ## the label resolves to the *first*, which is what Director did.
 
 const Codepage := preload("res://director/director_codepage.gd")
 
-## Ordered `{frame:int, name:String}`, frame 0-based, empty names dropped.
+## Ordered `{frame:int, name:String}`, frame 0-based, one per chunk entry —
+## including the unnamed ones, whose `name` is "". This is `marker(n)`'s index
+## space, so its size is the chunk's own count and nothing may filter it.
 var markers: Array[Dictionary] = []
 ## Lowercased name -> 0-based frame, first occurrence wins.
 var labels: Dictionary = {}
@@ -43,24 +58,29 @@ func parse(payload: PackedByteArray) -> bool:
 		var frame := _u16(payload, at)
 		var start := text_base + _u16(payload, at + 2)
 		var stop := text_base + _u16(payload, at + 6)
-		if start < text_base or stop > payload.size() or stop <= start:
-			# A zero-length name is a real, empty marker; anything else is out
-			# of range and equally not a marker.
-			continue
-		# A marker name is authored text, so it goes through the title's codepage
-		# like every other authored string -- `go("<hebrew>")` has to match the
-		# label the same way `member("<hebrew>")` matches a name.
-		var name := Codepage.decode(payload.slice(start, stop)).strip_edges()
-		var zero_based := frame - 1
-		# An unnamed marker is kept, and that is not tidiness -- `marker(n)` counts
-		# *entries*, not names, so dropping one shifts every marker after it. The
-		# reference inserts one label per entry and walks all of them.
+		# The offset pair decides the *name* and never the entry's existence. The
+		# reference inserts one `Label` per entry and `getNextLabelNumber` walks the
+		# lot, so a `continue` here is a renumbering: every `marker(n)` in the movie
+		# counts to the wrong frame from this entry onward, and nothing reports it.
 		#
-		# Rating's `BATZEGOZ.dir` is the case: its `play done` sits on frame 215, an
-		# unnamed marker between `egozspeak1` and `Batz2A`. Dropped, `marker(1)`
-		# counted past it, `play done` never ran anywhere in the movie, and all three
-		# dialogue options landed on the same destination -- the speech starting and
-		# being cut off a moment later.
+		# Two reasons a name can be missing, and neither is a reason to lose the
+		# frame. `start == stop` is a real unnamed marker, which is the common case.
+		# A range outside the name blob is a decode this reader cannot honour, and an
+		# entry whose name we could not read is still an entry at a frame.
+		#
+		# Rating's `BATZEGOZ.dir` is what the drop cost: its `play done` sits on
+		# chunk frame 215, an unnamed marker between `egozspeak1` and `Batz2A`.
+		# Dropped, `go(marker(1))` out of the talking loop counted past it to
+		# `Batz2A`, `play done` never ran anywhere in the movie, the `mouseUp` parked
+		# by `play frame` was never resumed, and all three dialogue options answered
+		# with the first one's reply (`bugs.md` 40).
+		var name := ""
+		if stop > start and start >= text_base and stop <= payload.size():
+			# A marker name is authored text, so it goes through the title's codepage
+			# like every other authored string -- `go("<hebrew>")` has to match the
+			# label the same way `member("<hebrew>")` matches a name.
+			name = Codepage.decode(payload.slice(start, stop)).strip_edges()
+		var zero_based := frame - 1
 		markers.append({"frame": zero_based, "name": name})
 		if name == "":
 			continue

@@ -13,6 +13,17 @@ Resolved entries live in [`docs/bugs-closed.md`](docs/bugs-closed.md), under the
 numbers they were filed with, because source comments cite them. Entries 14, 22
 and 25 appear in both files: the fixed half is there, the remainder is here.
 
+**Three numbers are reused by unrelated entries, so a citation to one of these is
+ambiguous and needs its title to disambiguate.** Found by an audit over both
+files; recorded rather than renumbered, because source comments cite these numbers
+and renumbering breaks that contract worse than the collision does.
+
+| number | one entry | the other |
+|---|---|---|
+| 33 | here: `gate.sh`'s `editable_text` asserts nothing | closed: `go to frame X of movie Y` read its own command word |
+| 34 | here: `the visible of sprite N` on an empty channel | closed: film-loop children drew from the wrong cast |
+| 41 | here: `member (<expr>) of castLib X` drops the library | here, further down: `play_suspends` flakes about half its runs |
+
 > **Many "Reproduce:" lines below name tools that no longer exist.** The retired
 > renderer and the ~24 harnesses that drove it were deleted; every command naming
 > `smoke.gd`, `probe.gd`, `cursors.gd`, `room_names.gd`, `sprite_channels.gd`,
@@ -1853,28 +1864,65 @@ have yet, and every one is a handler that silently does not run.
 
 ## 40. Unnamed markers are dropped, so `marker(n)` cannot count to a `play done` frame
 
-**Status:** open · **Area:** `director/director_labels.gd` · found while landing
-`play`/`go` suspension, and it is the other half of the same dialogue
+**Status:** fixed in the working tree, **not yet gated** · **Area:**
+`director/director_labels.gd` · found while landing `play`/`go` suspension, and it
+is the other half of the same dialogue
 
-`DirectorLabels.parse` drops every VWLB entry whose name is empty. The reference
+**This entry was open for one commit longer than anybody believed, and that is the
+part worth keeping.** It was filed with the diagnosis correct and the fix printed
+below. Commit 641d1d47 ("labels: an unnamed marker still counts, so `marker(n)`
+stops skipping past it") landed that printed fix, said in its message that the
+dialogue was repaired, and **was inert**: it moved `markers.append` above the
+`if name == "": continue` and taught `marker_at` to prefer named markers, but left
+the range guard four lines higher —
+
+```gdscript
+if start < text_base or stop > payload.size() or stop <= start:
+    continue
+```
+
+— and `stop <= start` is true for a zero-length name, so control never reached the
+append that commit had just moved. The file then carried a comment reading "An
+unnamed marker is kept, and that is not tidiness" directly beneath a guard that
+dropped them, and a class docstring still insisting they "must be dropped, or
+every later marker's index shifts", which is exactly backwards. Two independent
+readings of the same file disagreed and nothing arbitrated.
+
+**Nothing caught it, because the only harness that could had repaired its own
+subject.** `tools/play_suspends.gd:_restore_unnamed_markers` re-parsed the VWLB
+chunk, overwrote `labels.markers` with the full list, and early-returned when the
+counts already agreed — so `--dialogue` asserted against an array the player never
+gets, passed before the fix, and passed identically after it. Its docstring
+conceded this ("Put back here rather than fixed here … `bugs.md` carries it"),
+which is honest and still useless: a green run proved nothing either way. It is
+now `_check_marker_index`, which asserts the count and fails instead of repairing.
+
+The lesson generalises past this bug: a decoder's output size is an *invariant*,
+and the only trustworthy witness to it is the container's own header. That is what
+`tools/label_index.gd` now checks over every container in every root, and it is
+what would have gone red the day 641d1d47 landed.
+
+`DirectorLabels.parse` dropped every VWLB entry whose name is empty. The reference
 keeps them: `Score::loadLabels` inserts one `Label` per entry regardless of name,
 and `getNextLabelNumber` walks the whole array — so **`marker(1)` counts unnamed
-markers and this port's does not.** An unnamed marker is not decoration. It is
-how a Director author marks a frame that only the score needs to reach.
+markers and this port's did not.** An unnamed marker is not decoration. It is
+how a Director author marks a frame that only the score needs to reach, and it is
+not rare: **2,236 of Rating's 4,220 entries**, 59 of `piposh-dream`'s 2,732, and
+12 of Piposh 2's 3,019 — so the gate's own corpus carries them too.
 
 Rating's `BATZEGOZ.dir` is the case that found it. Its VWLB has 28 entries and
 nine of them are unnamed, one at 0-based frame 214:
 
 ```
-godot --headless --path . --script tools/play_suspends.gd -- \
-    --dialogue --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+godot --headless --path . --script tools/label_index.gd -- --file BATZEGOZ.dir --list
 ```
 
-prints, before it puts them back for itself:
+lists them, and printed 19 of 28 before the fix:
 
 ```
-NOTE: 9 of this movie's 28 markers are unnamed and were dropped by
-      director_labels.gd.
+    13  frame   207  egozspeak1
+    14  frame   214  <unnamed>
+    15  frame   216  Batz2A
 ```
 
 Frame 214 is `BehaviorScript 36`, whose whole body is `on exitFrame / play done /
@@ -1901,10 +1949,16 @@ reply*, and it is one line away.
 The fix is not simply to stop dropping them, because `marker_at` is the reason
 they were dropped in the first place — a frame inside an unnamed marker's span
 must still report the last *named* one, or "which room am I in" answers blank.
-Both halves:
+**Nor is it `stop < start`**, which is the one-character version and leaves the
+sibling clause (`stop > payload.size()`) able to renumber the index space the same
+way for the next container that needs it. The rule the loop enforces is now stated
+as the rule: *an entry is never dropped; only its name can be unreadable*, so a
+bad range costs the name and never the position. Both halves:
 
 ```gdscript
-        var name := payload.slice(start, stop).get_string_from_ascii().strip_edges()
+        var name := ""
+        if stop > start and start >= text_base and stop <= payload.size():
+            name = Codepage.decode(payload.slice(start, stop)).strip_edges()
         var zero_based := frame - 1
         markers.append({"frame": zero_based, "name": name})
         if name == "":
@@ -1913,6 +1967,10 @@ Both halves:
         if not labels.has(key):
             labels[key] = zero_based
 ```
+
+The earlier revision of this entry printed that block without the guard folded
+into it, keeping the `continue` above — which is the shape that shipped inert. The
+`continue` has to go, not move.
 
 ```gdscript
 func marker_at(frame: int) -> String:
@@ -1925,11 +1983,72 @@ func marker_at(frame: int) -> String:
     return found
 ```
 
-The other readers of `markers` are `director_preview.gd:lingo_marker` (which
-wants the full list — that is the bug), `lingo_go_next`'s search for the next
-marker (Director's `gotoNext` also counts unnamed ones), and
-`tools/click_trace.gd`, `hotspots.gd`, `mouse_poll.gd`, `director_frames.gd`,
-which name markers for a human. `click_trace` already skips empty names.
+**Keeping the entries moves `marker(0)` as well as `marker(1)`, and that is the
+risk surface rather than a footnote.** A hold loop inside an unnamed marker's span
+now returns to the unnamed marker rather than to the named room. It is
+Director-correct — `Score::getCurrentLabelNumber` (`score.cpp:238`) scans every
+entry, named or not — but it is a live behaviour change at 2,236 sites in Rating
+alone. BATZEGOZ has unnamed markers at 330, 335, 336, 367 and 369 inside
+`batz2c`'s span, and members 5, 19, 80, 84 and 123 all call `go(marker(0))`.
+
+Every reader of `markers`, and what the change does to each:
+
+| reader | effect |
+|---|---|
+| `director_preview.gd:lingo_marker` | the fix. Counts entries, as Director does |
+| `lingo_go_next` / `go next` | correct now; `gotoNext` counts unnamed ones too |
+| `tools/mouse_poll.gd:133` | **more** correct — its own comment says the handlers it drives end in `go(marker(1))` |
+| `tools/click_trace.gd:_where` | already skipped empty names in advance of this |
+| `hotspots.gd`, `click_trace.gd:_target_frame` | match by name, so `""` never matches a request |
+| `tools/builtin_load.gd:277` | bounds a room's span by "the next marker", which can now be an unnamed one. In the gate — watch it |
+| `director_preview.gd:1820` (**SKIP**) | jumps to the next marker ahead, so SKIP now stops on unnamed markers as well. Left alone deliberately: SKIP is a debug affordance with no Director semantics to be correct against, it has its own open entry (32), and "an unnamed marker is not a scene" is the same argument `marker_at` already makes. Wants a decision, not a silent change |
+
+## 51. `gate.sh` pinned the root and not the boot movie, so most of the suite booted nothing and asserted over it
+
+**Status:** FIXED (tooling) · **Area:** `director/director_paths.gd:load_config`,
+`gate.sh:36-44`, and the three child-spawning harnesses · found while trying to
+verify `bugs.md` 40 and 50 against the recorded baseline, which turned out not to
+be reachable from the tracked config
+
+`gate.sh` pins the corpus so that a run against another title does not read as
+regressions that are really different movies. It passed `--root piposh2` and
+nothing else. **The boot movie still came from `director_game.cfg`**, and
+`399feaaa` pointed that at `rating`'s `mainmenu.dir` — a working config, per its
+own commit message. So every `ALL` entry that does not name its own `--file`
+resolved a `rating` container under `piposh2`, found nothing, and ran on:
+
+```
+$ godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh2
+ERROR: no such container: mainmenu.dir in res://games/piposh2
+        try --file with one of: strtgame.dir, HEZSAVE.DIR
+no score loaded
+```
+
+**They do not fail — they load no score and assert over nothing.** That is the
+dark-harness failure `gate.sh` warns about in its own EMPTY guard, arriving
+through the corpus pin rather than through an empty result set.
+
+The fix is the rule the file already argued for one question at a time: an
+override belongs in the one place the value is read, or the parts disagree about
+which title they are running. `_override_root` had that argument written out and
+`boot_movie` had no override at all, so pinning a root was half a pin.
+`_override_boot` honours `--boot`, `gate.sh` passes `GATE_BOOT` (default
+`strtgame.dir`, the boot movie of both roots the list names) alongside `--root`.
+
+**The same hole a second time, in the child processes.** `save_state`,
+`save_movie` and `text_codepage` each spawn a second Godot and each forwarded
+`--root` under a comment reading "a parent pinned to one corpus and a child told
+nothing are two different games". The boot movie has exactly that property, and
+`save_state` was the proof: its child died on `mainmenu.dir`, and the harness
+reported it as `the saving process exits cleanly (exit 1)` — 89 checks with one
+failure that named the parent. Forwarding `--boot` too takes it to 132 checks, 0
+failed. **The check count is the tell**: a harness whose child booted nothing
+still reported 89 checks, so the number to watch is not pass-versus-fail but how
+much a green run actually asserted.
+
+Reproduce (before the fix): `godot --headless --path . --script
+tools/text_and_shapes.gd -- --root piposh2` → `no score loaded`, no verdict.
+After: `--root piposh2 --boot strtgame.dir` → PASS, 10 checks.
 
 ## 41. `play_suspends` fails about half its runs on one assertion, so the gate's set is not reproducible
 
@@ -2077,3 +2196,119 @@ written: across all six titles, count the records where the two disagree, split 
 which way. A count near zero closes this; a large one in either direction means
 some channel somewhere is drawn that should not be, or the reverse, and neither
 would look like a decode bug from the player's chair.
+
+---
+
+## 50. Egoz's face draws inside a white rectangle: Copy ink with the blend flag never gets its matte
+
+**Status:** FIXED (engine) · **Area:** `director/director_ink.gd` keying predicate ·
+reported from play as "when egoz speaks his image has the white background, it
+should be ignored" · found from a snapshot, root-caused from the container bytes,
+covered by `tools/ink_blend_matte.gd`
+
+**Director does not decide a sprite's keying from its ink number.**
+`Channel::getMask` (`reference/scummvm/channel.cpp:188-226`) reads the ink, the
+thickness byte's blend flag and the member's bit depth together. `key_for` read
+the ink alone, so the one combination where those disagree fell through to "draw
+every pixel":
+
+```cpp
+// reference/scummvm/channel.cpp:206
+if (!_sprite->isQDShape() && _sprite->_ink == kInkTypeCopy && _sprite->_thickness & kTHasBlend)
+    needsMatte = true;
+```
+
+Note what that clause does *not* test: the blend **amount**. A Copy sprite with
+the flag set and an amount of 0 — fully opaque — still gets a matte, and the mask
+reaches the blit at `window.cpp:465` → `graphics.cpp:797`, where a pixel is drawn
+only where `msk && (*msk++)`.
+
+The sprite, from the score rather than from the screenshot. `BATZEGOZ.dir` frame
+209, marker `egozspeak1`, **channel 41**, `Panel.cst` member 23 — an 8-bit bitmap
+101x135, reg (50,67). Its record, and the resting member two frames earlier:
+
+```
+f205 ch41: 10 08 ff 00  00 04 00 03  00 00 00 18  01 a3 02 43  00 87 00 65  00 00 80 00
+f209 ch41: 10 00 ff 00  00 04 00 17  00 00 04 fb  01 a3 02 43  00 87 00 65  00 00 10 00
+                ^^                ^^                                            ^^
+              ink byte         member                                      thickness byte
+```
+
+Ink byte `0x00`, thickness byte `0x10` = `kTHasBlend` (`sprite.h:61`), blend
+amount `0x00`. The decoder was right about every byte; the keying rule was wrong
+about what they mean together. Channel 41 is Egoz — it draws from the shared
+`Panel.cst` while the central figure is channels 2-5 from `Batz.cst`, and it
+changes member in exactly one of the movie's 19 segments, stepping `Panel.cst`
+22-28 one frame each through `egozspeak1` and parking on member 3 at ink 8
+everywhere else.
+
+**Ink dispatch was working in the same frame**, which is what ruled out the two
+likelier-sounding causes. Frame 209 carries 4 sprites at ink 8 (channels 3, 4, 5,
+40) and 5 at ink 36 (channels 2, 45, 46, 47, 48), and all nine key correctly:
+Batz's head, eyes and mouth matte over his body, and the gold picture frame
+`4:1` mattes around its own tilted outline on the channel *behind* the portrait.
+So this was neither `backColor` resolution nor the wrong member being drawn.
+
+### Why it surfaced on the second title
+
+| root | scores | sprite records | ink 0 + `kTHasBlend` | share of that root's Copy records |
+|---|---|---|---|---|
+| `games/rating` | 81 | 847,431 | **27,914** | 18.8% of 148,747 |
+| `games/piposh2` | 61 | 816,318 | 209 | 0.2% of 88,095 |
+| `games/piposh` | 99 | 1,886,362 | 1,143 | 0.5% of 222,506 |
+
+Two orders of magnitude more common in the title the port was not built on. In
+Rating that is 883 distinct (container, member) pairs, every one a multi-bit
+bitmap. This is the general defect surfacing the first time another title loads,
+which is the failure `AGENTS.md`'s "build Director, not this game" describes.
+
+### The fix
+
+`key_for(sprite, member)` is now the reference's predicate rather than a lookup on
+the ink: all twelve `needsMatte` inks (`channel.cpp:192-203`), the blended-and-
+non-zero clause, the Copy-with-flag clause, bitmap-only, and the 1-bit exception
+(`channel.cpp:218-223` — a 1-bit member gets a matte only under Matte ink proper,
+and under Copy its blend amount is additionally forced to 0). Mask (9) moved
+*off* matte keying: `getMask`'s `else if` arm takes the next cast member as a
+separate 1-bit mask, which is a different mechanism, and the old code answering
+`KEY_MATTE` for it was wrong in kind.
+
+`texture_key` gained the has-blend flag (`sprite_geometry.gd`). Not housekeeping:
+the flag now changes which pixels survive the decode, and `BATZEGOZ.dir` holds a
+live collision — members `1:20` and `1:23` carry the flag while `1:21` and `1:22`
+do not, all four are baked lines of the same dialogue balloon, and all four are
+drawn Copy at one size.
+
+**`hits_per_pixel` deliberately still answers false for these sprites.**
+`BitmapCastMember::isWithin` (`castmember/bitmap.cpp:920-928`) tests per pixel for
+`kInkTypeMatte` and nothing else, off the ink alone, so Director mattes this
+sprite for drawing and still hits it across its whole box. Run the F1 outlines
+over Egoz's portrait and it reads as a bug — a green "whole rect" box around art
+with keyed-out corners. It is not one, and the comment at `hits_per_pixel` says
+so; routing both decisions through one predicate is the tidy-up to refuse.
+
+### Reproduce
+
+```bash
+godot --headless --path . --script tools/ink_blend_matte.gd -- --file BATZEGOZ.dir
+godot --headless --path . --script tools/matte_survey.gd -- --file BATZEGOZ.dir
+```
+
+The first steps into `egozspeak1`, finds the Copy-with-blend sprite without being
+told which channel it is on, and asserts the corners are keyed, the face is not,
+the 190 pixels of enclosed white — the whites of the eyes — survive where paper
+keying would eat them, clearing the flag brings the white rectangle back, and
+`hits_per_pixel` still answers false. The second's third census, "records ScummVM
+mattes and this port does not", reads 0.
+
+### What no data proves
+
+The ten arithmetic and Not- inks, and both halves of the 1-bit exception. Across
+all three roots the only inks that appear are 0, 1, 8, 32 and 36, and **0 records
+pair a 1-bit member with any matte-needing ink** — 0 under Matte and 0 under the
+other eleven paths. Implemented from the reference and marked unverified at each
+site. The blend-amount half of the 1-bit rule is in `blend_alpha` behind an
+optional `member` argument that **no caller passes yet**: the four sites that ask
+for an alpha (`stage_paint.gd`, `film_loop_view.gd` twice, `text_art.gd`) were
+outside this change's file set, so they still get the member-blind answer. One
+line each to wire up, and 0 corpus records reach it either way.

@@ -88,12 +88,32 @@ godot --headless --path . --script tools/preview_surface.gd
 
 `check.sh` is the fast structural gate — parses, and the reflective surface
 resolves. Seconds. `gate.sh` is the behavioural suite; it pins the corpus to
-`games/piposh2` and restores your `director_game.cfg` afterwards, because a run
-against another title reads as five regressions that are really five different
-movies.
+`games/piposh2` because a run against another title reads as five regressions
+that are really five different movies.
 
-The recorded baseline is **24 pass, 1 fail** -- `boot_state` only, whose
-`meetings` global reads null on a cold boot chain. That is a movie-globals
-question rather than a renderer one; `bugs.md` 25 and 36 carry it, and 36 is the
-player-visible half (DAY1's talk clips trap the playhead when the movie was
-opened without the global that decides which day it is).
+**It pins with flags, and no longer touches `director_game.cfg`** — read
+`gate.sh:24-45` rather than this paragraph's older claim that it rewrote and
+restored the config. Mutating a file the whole repo shares meant two concurrent
+runs swapped each other's corpus mid-run; `--root` and `--boot` are per process
+and cannot. Both flags are needed and `--root` alone was the bug: the boot movie
+still came from the config, so with the tracked config naming a `rating` container
+every harness that does not pass its own `--file` loaded no score and asserted over
+nothing. `bugs.md` 51 carries it.
+
+The recorded baseline is **45 pass, 3 fail**, and none of the three is a renderer
+question:
+
+- `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
+  keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).
+- `lingo_surface_audit` — `_score` is bound and unclaimed in
+  `docs/LINGO_SURFACE.md` §19.
+- `play_suspends` — the known flake, `bugs.md` 41. Roughly half its runs, on the
+  cross-movie `suspendhop` assertion, not the dialogue one.
+
+`boot_state`, which this file recorded as the single baseline failure, passes — and
+**not because anything here fixed it.** Measured both ways: it passes with the
+`bugs.md` 40 label fix reverted as well, and its `meetings` assertion is present
+and green either way (8 items, not an empty list asserted over), so the recorded
+failure had already gone stale before this session. The number in this paragraph
+was describing a suite of 25 entries; the list is 48 now. Re-measure it here rather
+than trusting it, which is the same instruction `bugs.md` opens with.

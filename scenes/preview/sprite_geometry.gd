@@ -148,9 +148,20 @@ static func stage_rect(sprite: Dictionary, member: Dictionary) -> Rect2:
 ## first one's colour -- and this game recolours one 60x23 shape through several
 ## colours across 48,570 sprite records, so the omission would be visible
 ## everywhere the same hotspot is drawn twice.
+##
+## **The has-blend *flag* does belong in it, which is not the same claim as the
+## amount.** The amount only scales a draw-time modulate; the flag changes which
+## pixels survive the decode, because Director mattes a Copy sprite that carries it
+## (`director_ink.gd:key_for`). Two sprites naming one member at one size, one with
+## the flag and one without, therefore want two different images out of this cache.
+## `BATZEGOZ.dir` is a live instance rather than a hypothetical: members `1:20` and
+## `1:23` carry the flag while `1:21` and `1:22` do not, all four are baked lines of
+## the same dialogue balloon, and all four are drawn Copy. Omit the flag and
+## whichever decodes first decides how the others look.
 static func texture_key(sprite: Dictionary, drawn: Vector2) -> String:
-	return "%d:%d:%d:%dx%d:%d:%d" % [
+	return "%d:%d:%d:%dx%d:%d:%d:%d" % [
 		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
 		int(drawn.x), int(drawn.y), int(sprite.get("back_color", 0)),
 		int(sprite.get("fore_color", Ink.INDEX_BLACK)),
+		1 if bool(sprite.get("has_blend", false)) else 0,
 	]

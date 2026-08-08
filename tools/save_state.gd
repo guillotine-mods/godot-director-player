@@ -456,6 +456,12 @@ func _run_child(h: Harness, args: Dictionary, extra: Array, label: String) -> in
 	# `--root`, which is what makes this load-bearing rather than tidy.
 	if Args.text(args, "root", "") != "":
 		line.append_array(["--root", Args.text(args, "root", "")])
+	# And the boot movie with it, for the same reason: `--root` alone moves the
+	# corpus and leaves the child booting whatever container the config names,
+	# which under a pinned root does not exist. The child then opens no movie and
+	# saves an empty session, which reads here as the *parent's* save failing.
+	if Args.text(args, "boot", "") != "":
+		line.append_array(["--boot", Args.text(args, "boot", "")])
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), line, out, true)
 	for entry in out:
