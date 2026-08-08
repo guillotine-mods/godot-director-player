@@ -170,7 +170,8 @@ line flags override it per run without editing the file:
 
 ```bash
 godot --headless -- --root rating --file MAINMENU.dir       # the player
-godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+godot --headless --script tools/channel_report.gd -- --save saves/piposh2/x.json  # every sprite on the frame with its rect, its cursor and why it is clickable — reports, never asserts
 ```
 
 **Both go after `--`.** Godot consumes every argument it recognises and hands the
