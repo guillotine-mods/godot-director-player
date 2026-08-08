@@ -84,10 +84,13 @@ var key_char := ""
 ##
 ## It lives on the host because the builtins that write it are answered here,
 ## and because a flag on the interpreter would belong to whichever agent owns
-## `lingo/`. The dispatcher that reads it is
-## `director_preview.gd:_dispatch_key` / `_dispatch_key_up`; the mouse tiers do
-## not consult it yet, so writing it from a mouse handler is inert rather than
-## wrong.
+## `lingo/`. **Every chain reads it now**, mouse and keyboard alike:
+## `scenes/preview/event_chain.gd` is the runner, and it is handed a queue that
+## `director_preview.gd` built before the first element ran. The mouse half used
+## to be inert -- the tiers stopped at the first handler that answered, so a
+## `pass` had nothing to continue into -- and `ISLAND2/External/BehaviorScript
+## 325`, whose entire body is `on mouseUp / pass() / end`, was a dead zone for as
+## long as that was true.
 ##
 ## `dontPassEvent` was bound inert until now, alongside `pass`, on the reasoning
 ## that "this dispatcher stops at the first handler that answers, so there is
@@ -203,14 +206,13 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# it. `stopEvent` is Director's older spelling of `dontPassEvent` and
 			# means the same thing.
 			#
-			# Not a no-op any more. The dispatcher sets the flag to the running
-			# tier's default before that tier runs, so a handler that says
+			# Not a no-op any more. The chain runner sets the flag to the running
+			# element's default before that element runs, so a handler that says
 			# nothing keeps the default: a primary handler passes, everything
-			# else consumes. Only the key chain reads it so far -- the mouse
-			# tiers still stop at the first handler that answers -- so a write
-			# from a mouse handler is inert rather than wrong, and that is worth
-			# saying out loud because the flag being *set* is not evidence
-			# anything acted on it.
+			# else consumes. Both chains read it -- `preview/event_chain.gd` runs
+			# the mouse and the keyboard from one queue -- so a `pass` in a
+			# sprite behaviour reaches the member's cast script, the frame script
+			# and the movie scripts behind it.
 			pass_event = low == "pass"
 			return 0
 		"savemovie":

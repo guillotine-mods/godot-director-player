@@ -228,6 +228,51 @@ func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Va
 	return value
 
 
+## Run `name` in exactly `script`, and nowhere else. True when a handler ran.
+##
+## `call_handler` resolves two tiers at once -- the given script, then any movie
+## script -- which is the right shape when the caller has one recipient in mind
+## and wants Director's fallback behind it. It is the wrong shape for a **queued**
+## chain (§6.3): there the script tier and the movie tier are separate elements
+## with their own pass flags, and folding them together would run the movie
+## script even where the element before it consumed the event.
+##
+## Same `_running`/`_park` discipline as `call_handler`, because a handler
+## reached this way can `play` or `go` exactly like any other.
+func call_in_script(name: String, script: Dictionary) -> bool:
+	var key := name.to_lower()
+	for value in script.get("handlers", []):
+		var handler: Dictionary = value
+		if str(handler.get("name", "")).to_lower() != key:
+			continue
+		_running += 1
+		_invoke(handler, [], script)
+		_running -= 1
+		if _running == 0:
+			_park()
+		return true
+	return false
+
+
+## Run `name` in the first movie script that declares it. True when one ran.
+##
+## The other half of the split above, and the last element of every queued
+## chain. Director searches the movie scripts in cast-window order and stops at
+## the first match; `_movie_handlers` is that search done once at load time.
+func call_movie_handler(name: String) -> bool:
+	var key := name.to_lower()
+	if not _movie_handlers.has(key):
+		return false
+	var entry: Dictionary = _movie_handlers[key]
+	var owner := find_script(str(entry.get("cast", "")), str(entry.get("script", "")))
+	_running += 1
+	_invoke(entry["handler"], [], owner)
+	_running -= 1
+	if _running == 0:
+		_park()
+	return true
+
+
 func _resolve_and_call(name: String, args: Array, script: Dictionary) -> Variant:
 	## Resolution order is Director's, narrowed to what this port needs: the
 	## script that owns the event first, then any movie script.

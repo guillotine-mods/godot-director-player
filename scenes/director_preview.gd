@@ -53,6 +53,7 @@ const PaletteView := preload("res://scenes/preview/palette_view.gd")
 const StagePaint := preload("res://scenes/preview/stage_paint.gd")
 const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Scripts := preload("res://scenes/preview/scripts.gd")
+const EventChain := preload("res://scenes/preview/event_chain.gd")
 const Members := preload("res://scenes/preview/members.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
@@ -290,6 +291,29 @@ var _click_script: Dictionary = {}
 ## not carry: `mouseUp` goes out only when the button came up inside this sprite,
 ## and `mouseUpOutSide` when it came up anywhere else (§8.1).
 var _press_channel := 0
+## `{"lib":, "id":}` for the member the press landed on, latched at the *start*
+## of the mouse-down chain and held until the next press.
+##
+## §15, and it is the one piece of the click model that a handler can invalidate
+## while the click is still running. The reference keeps `_currentMouseDownCastID`
+## for exactly this and resolves the mouse-up's cast element against it, so a
+## `mouseDown` handler that swaps the member leaves the **old** member's cast
+## script answering the `mouseUp` and the swapped-in one never sees the release.
+## Reading the channel again at release time would give the new member, which is
+## the answer Director had already decided against.
+var _press_member: Dictionary = {}
+## The queued chain for the mouse message in flight, or `{}`.
+##
+## §6.3: Director settles the whole list of recipients before it runs the first
+## one, so the list is built in `_press_click` / `_release_click` /
+## `route_right_button` -- *before* `preview/interaction.gd` sends the message --
+## and `_dispatch` runs it rather than resolving a tier at a time.
+##
+## It is latched on the node rather than passed as an argument because
+## `interaction.gd` owns the call site and this file owns the click model's
+## state; the two facts meet at `_dispatch`, which is the only reader.
+## `{"event": <lowercased handler>, "elements": Array}`.
+var _chain: Dictionary = {}
 ## Was the mouse button down at any point since the last score step?
 ##
 ## **`the mouseDown` cannot be answered from the live button alone**, and this is
@@ -664,7 +688,23 @@ func _sprite_script(channel: int, frame_index: int) -> Dictionary:
 	return Scripts.for_sprite(self, _score, channel, frame_index)
 
 
+## Send one message.
+##
+## **A mouse message is not one message, it is a queue** (§6.3), and the queue
+## was decided before `preview/interaction.gd` reached this call -- see `_chain`.
+## Everything else is still one message to one script with Director's movie
+## fallback behind it, which is what `preview/scripts.gd:dispatch` is.
+##
+## The `script` argument is ignored on the chain path. It is the tier
+## `interaction.gd:script_for_click` resolved, and that function still runs --
+## `the clickOn`, the snapshot record and the click log all read it -- but it
+## answers "which tier is first", where the queue answers "which tiers there
+## are". Taking the first tier from one and the rest from the other is how the
+## two would come to disagree.
 func _dispatch(handler: String, script: Dictionary) -> void:
+	if str(_chain.get("event", "")) == handler.to_lower():
+		EventChain.run(self, _interpreter, handler, _chain["elements"])
+		return
 	Scripts.dispatch(self, _interpreter, handler, script)
 
 
@@ -884,10 +924,23 @@ func _dispatch_key_event(handler: String, primary_name: String) -> bool:
 			_tally(_sent, "%s:ch%d" % [handler, focus_channel])
 		# A sprite-level handler that ran is Director's "handled, do not type it"
 		# -- the documented way a field validates its own input. With no focused
-		# sprite the message starts at the frame script, and `Scripts.dispatch`
-		# carries it on to the movie scripts.
-		_host.pass_event = false
-		_dispatch(handler, owner if _typed_away else _frame_script(_index))
+		# sprite the message starts at the frame script and carries on to the
+		# movie scripts.
+		#
+		# **The same queue the mouse uses** (§6.3): the reference builds a key
+		# event's chain from the same `case kEventKeyUp: case kEventKeyDown:` arm
+		# that falls through to sprite -> cast -> frame -> movie, so a keypress
+		# reaching a focused field gets the member's cast script too, and a
+		# handler that says `pass` below the primary tier is honoured here as
+		# well. It used to stop at the first script that answered, so a frame
+		# script's `pass` never reached a movie script.
+		#
+		# The flag starts at true because `pass_on` is the primary tier's verdict
+		# and it has already been taken; `EventChain.run` sets each element's own
+		# default from there.
+		_host.pass_event = true
+		EventChain.run(self, _interpreter, handler,
+			EventChain.build(self, focus_channel, EventChain.member_on(self, focus_channel)))
 		claimed = claimed or _typed_away
 	return claimed
 
@@ -1475,12 +1528,49 @@ func _begin_drag(at: Vector2) -> void:
 ## The two halves of a click, delegated to `preview/interaction.gd`. They used to
 ## be one `_click` that dispatched `mouseDown` and `mouseUp` back to back on the
 ## press; the module's `press` doc comment has why that broke every drop.
+##
+## **The chain is built here, before the message goes out**, which is the whole
+## of §6.3's "Director decides the recipients before it runs any of them". The
+## hit test is repeated rather than taken from `Interaction.press`, because
+## `press` runs the primary handler and dispatches in the same call and the queue
+## has to exist before either: a `mouseDown` handler that swaps the member under
+## the pointer must not be able to change what the rest of its own chain
+## resolves to. It is the same descent with the same argument, so it answers the
+## same channel, and one extra hit test per press is what buys the ordering.
 func _press_click(at: Vector2) -> void:
+	var channel: int = _channel_at(at)
+	# §15: latched for the *release* as much as for this press. See `_press_member`.
+	_press_member = EventChain.member_on(self, channel)
+	_chain = {
+		"event": "mousedown",
+		"elements": EventChain.build(self, channel, _press_member),
+	}
+	# §8.2: the primary element's default. `Interaction.press` runs
+	# `when mouseDown then` and `the mouseDownScript` before it dispatches, and
+	# `EventChain.run` reads what they left behind -- so the flag has to start at
+	# the primary tier's default rather than at whatever the last event left.
+	if _host != null:
+		_host.pass_event = true
 	Interaction.press(self, at)
+	_chain = {}
 
 
 func _release_click(at: Vector2) -> void:
+	# The channel the press latched, not the one under the pointer: this port
+	# delivers `mouseUp` to the sprite that took the `mouseDown` and
+	# `mouseUpOutSide` to anything else (`interaction.gd:release` has the corpus
+	# evidence for that divergence), so the chain has to name the same sprite the
+	# message is about. `_press_member` is §15's other half -- the member the
+	# mouse-DOWN chain started on, which is what the cast element resolves to
+	# even if a `mouseDown` handler has swapped it since.
+	_chain = {
+		"event": "mouseup",
+		"elements": EventChain.build(self, _press_channel, _press_member),
+	}
+	if _host != null:
+		_host.pass_event = true
 	Interaction.release(self, at)
+	_chain = {}
 
 
 ## Where the pointer is, for `the rollOver` and the D5/D6 hover messages.
@@ -1504,8 +1594,29 @@ func track_rollover(at: Vector2) -> void:
 
 
 ## `rightMouseDown` / `rightMouseUp`, delegated to `preview/interaction.gd`.
+##
+## Queued exactly like the left button, because §6.3 puts `rightMouseDown` and
+## `rightMouseUp` in the same list and sends them down the same five tiers.
+##
+## **What it deliberately does not do is latch.** The member for the cast element
+## is read under the pointer for the release as well as for the press, where the
+## reference would use the one the right-mouse-DOWN chain started on. That is the
+## `A right click latches nothing` entry in `docs/ENGINE_TODO.md`, which is
+## explicit that its five latches go in as one block or not at all: taking §15's
+## member latch alone would give a right click the power to rewrite what a left
+## drag's release resolves to, which is the half-a-rule the entry exists to
+## refuse. 0 `rightMouseDown` / `rightMouseUp` handlers exist in either corpus,
+## so this is unexercised as well as unfixed.
 func route_right_button(at: Vector2, pressed: bool) -> void:
+	var channel: int = _channel_at(at)
+	_chain = {
+		"event": "rightmousedown" if pressed else "rightmouseup",
+		"elements": EventChain.build(self, channel, EventChain.member_on(self, channel)),
+	}
+	if _host != null:
+		_host.pass_event = true
 	Interaction.right_button(self, at, pressed)
+	_chain = {}
 
 
 ## `the rollOver` with no argument: the channel the pointer is over, not a
