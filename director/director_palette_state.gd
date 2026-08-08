@@ -97,6 +97,52 @@ func reset(movie_default: int = Palette.SYSTEM_MAC) -> void:
 	table = _load(movie_default)
 
 
+## The four ids and the cycling offsets, for a save state.
+##
+## **The running effect is not here, and that is the one judgement call in this
+## file's half of a save.** A cycle or a fade is a *frame transition* (§11): it
+## is armed by entering a frame and it runs to completion inside that frame's
+## hold, so it is at most one frame long and the frame it belongs to is being
+## re-entered by the restore anyway -- `save_state.gd` forces `_entered_index`
+## apart from `_index` precisely so the frame arms itself again. Writing down
+## `_elapsed` and `_before` would reproduce the *middle* of an effect that the
+## restore then re-arms from the start, which is worse than not carrying it.
+##
+## The offsets do carry, because they outlive the effect on purpose: a cycle
+## re-armed on the same palette resumes from where the last one stopped, and that
+## is the behaviour a save has to preserve or a room's colours come back one
+## rotation out.
+func state() -> Dictionary:
+	var offsets: Dictionary = {}
+	for id in _offset:
+		offsets[str(id)] = int(_offset[id])
+	return {
+		"current": current_id,
+		"default": default_id,
+		"cached": cached_id,
+		"puppet": puppet_id,
+		"offsets": offsets,
+	}
+
+
+func restore_state(from: Dictionary) -> void:
+	if from.is_empty():
+		return
+	default_id = int(from.get("default", default_id))
+	cached_id = int(from.get("cached", 0))
+	puppet_id = int(from.get("puppet", 0))
+	_offset.clear()
+	for id in (from.get("offsets", {}) as Dictionary):
+		_offset[int(str(id))] = int((from["offsets"] as Dictionary)[id])
+	_effect.clear()
+	_elapsed = 0.0
+	_before = PackedByteArray()
+	# Through `_apply` rather than by assigning `current_id`, so the table is
+	# actually loaded: `current_id` is a claim about `table`, and setting one
+	# without the other is how a restored room draws in the previous palette.
+	_apply(int(from.get("current", current_id)))
+
+
 ## `puppetPalette <id>` — or 0 to hand the palette back to the score. Returns
 ## true when the table changed, which is the caller's signal to rebuild anything
 ## it baked against the old one.

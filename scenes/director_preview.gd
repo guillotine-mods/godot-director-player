@@ -57,6 +57,9 @@ const EventChain := preload("res://scenes/preview/event_chain.gd")
 const Members := preload("res://scenes/preview/members.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
+const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const SaveState := preload("res://scenes/preview/save_state.gd")
+const SaveFiles := preload("res://scenes/preview/save_files.gd")
 const DebugReport := preload("res://scenes/preview/debug_report.gd")
 const Boot := preload("res://scenes/preview/boot.gd")
 const Shape := preload("res://director/director_shape.gd")
@@ -229,10 +232,16 @@ var _loop_stats: Dictionary = {}
 ## Channel under the cursor, 0 for none. Recomputed on motion rather than per
 ## draw, because `rollOver` asks for it many times a tick.
 var _hover_channel := 0
-## Outline every sprite, brighter for the one under the cursor. On by default:
-## in a preview with no cursor art and no hotspot feedback, "nothing happens" and
-## "nothing is there" look the same.
-var _show_boxes := true
+## Outline every sprite, brighter for the one under the cursor.
+##
+## **Off by default, and it used to be on.** The argument for on was that in a
+## preview with no cursor art and no hotspot feedback, "nothing happens" and
+## "nothing is there" look the same — which is true while you are debugging the
+## hit test and false the rest of the time: every other session, and every person
+## the build is handed to, gets a game with white rectangles drawn over the art.
+## It is one keypress away (`[debug] boxes`), and a debug affordance that is
+## opt-in is one that cannot ship by accident.
+var _show_boxes := false
 ## The channels this movie has asked `intersects` or `within` about, and the
 ## overlay that outlines them. **The collision zones, which the hotspot overlay
 ## cannot show**, because they are not hotspots: nothing clicks them, no script is
@@ -394,6 +403,11 @@ var _global_cursor: Variant = 0
 var _cursor_applied: String = "?none"
 ## Kept so a `go to movie` can resolve the next file the way the first was found.
 var _paths = null
+## The save file this session last *loaded*, "" until one has been. Quick-load
+## resumes it, which is what makes that key "whatever I was last working with"
+## rather than "the quick slot": saving does not move it, so a quick-save while
+## iterating on `beach_bug.json` does not silently switch the quick-load target.
+var _last_save := ""
 
 # ------------------------------------------------------ Movie-In-A-Window (§14)
 #
@@ -979,7 +993,9 @@ func _report() -> void:
 
 
 func _exit_tree() -> void:
-	if _lingo_on:
+	# The report is ours, not the player's: a shipped build must not dump the
+	# dispatch tallies and the interpreter's errors on the way out.
+	if _lingo_on and DebugKeys.enabled():
 		_report()
 	# A window's container and cast table are closed here rather than in
 	# `lingo_forget_window`, because every `forget` in this corpus is a window
@@ -1356,7 +1372,13 @@ func _input(event: InputEvent) -> void:
 		if event is InputEventMouseButton:
 			var button := event as InputEventMouseButton
 			if button.button_index == MOUSE_BUTTON_LEFT:
-				InputRouter.mouse_button(self, button, at, SKIP_RECT)
+				# An empty rect contains no point, so a build with the debug layer
+				# off has no SKIP hotspot either — the control is not drawn and the
+				# corner it used to occupy goes back to the movie. Passed rather
+				# than tested inside the router, because the router's job is where
+				# a click goes and this is whether the affordance exists.
+				InputRouter.mouse_button(self, button, at,
+					SKIP_RECT if DebugKeys.enabled() else Rect2())
 			elif button.button_index == MOUSE_BUTTON_RIGHT:
 				InputRouter.right_mouse_button(self, button, at)
 			return
@@ -1421,6 +1443,12 @@ func _draw() -> void:
 	# the frames that actually have a focused widget on them.
 	if _focus_channel > 0:
 		queue_redraw()
+	# Everything below this line exists for us and not for the movie, so it is all
+	# behind the one switch (`preview/debug_keys.gd:enabled`). A shipped build
+	# draws the movie and nothing else: no outlines over the artwork, no SKIP
+	# button, no HUD, no toast, no picker.
+	if not DebugKeys.enabled():
+		return
 	if _show_boxes:
 		_draw_hotspots(frame)
 	if _show_collisions:

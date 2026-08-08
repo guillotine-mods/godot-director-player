@@ -37,6 +37,21 @@ extends SceneTree
 ## character", which is the property that actually protects the player, so that
 ## is what is asserted; PageDown satisfies it exactly as F5 does. The half that
 ## caught F10 is the measured sweep, and it is unchanged.
+##
+## **The chords are measured the same way rather than assumed to inherit.** Five
+## commands sit on Shift+F-keys. A Mac key code carries no modifier, so Shift+F1
+## has F1's code and the sweep below reaches the same verdict about it -- but
+## reaching it by measurement is the whole point of this file, and "it obviously
+## inherits" is the shape of the reasoning that put the pause on F10. The chord
+## half that is *not* inherited is the dispatch: a preview matching on the bare
+## keycode would run `step_back` on Shift+F5 and never reach the chord at all,
+## which is asserted here as "the two are different commands".
+##
+## **And then the whole layer got a switch.** `[debug] enabled` turns every
+## binding, every overlay and the report at exit off in one place, so a shipped
+## build is a Director player and nothing else. Off is asserted as *no keycode is
+## claimed by the preview at all* -- strictly stronger than the band test, since
+## a key nothing is bound to cannot collide with anything.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
@@ -51,12 +66,25 @@ const InputRouter := preload("res://scenes/preview/input_router.gd")
 ## letter on the keyboard, and a check asking "does this binding type a character
 ## the game tests" would pass for `L` by measuring nothing. Godot's letter
 ## keycodes are their uppercase ASCII; unshifted, a key types the lowercase.
+## A keypress carrying whatever modifiers the *name* of the binding asked for.
+##
+## `OS.find_keycode_from_string("Shift+F5")` answers `KEY_MASK_SHIFT | KEY_F5`,
+## and that number is not a keycode: assigning it to `event.keycode` makes
+## `director_keys.gd` look up a Mac code for a value no key has and answer -1, so
+## every measurement about a chord would quietly pass by measuring nothing. The
+## mask is therefore split back out into the event's own modifier flags and the
+## bare key goes in `keycode`, which is what the OS delivers.
 func _key(code: Key) -> InputEventKey:
 	var event := InputEventKey.new()
-	event.keycode = code
+	event.keycode = (code & KEY_CODE_MASK) as Key
+	event.shift_pressed = (code & KEY_MASK_SHIFT) != 0
+	event.ctrl_pressed = (code & KEY_MASK_CTRL) != 0
+	event.alt_pressed = (code & KEY_MASK_ALT) != 0
+	event.meta_pressed = (code & KEY_MASK_META) != 0
 	event.pressed = true
-	if code >= 32 and code <= 126:
-		event.unicode = String.chr(code).to_lower().unicode_at(0)
+	var bare := int(event.keycode)
+	if bare >= 32 and bare <= 126:
+		event.unicode = String.chr(bare).to_lower().unicode_at(0)
 	return event
 
 
@@ -130,6 +158,35 @@ func _init() -> void:
 	# Named one by one rather than derived, because each of these is a key some
 	# title was measured to be using while the preview held it. A regression here
 	# is a specific key going dark again, and it should say which.
+	# The chords, as a dispatch question rather than a collision one. The sweep
+	# above has already measured them against every title -- they are in `bound`
+	# like everything else -- so what is left is the half that was actually broken:
+	# a chord and its bare key are two bindings, and a router that matches on
+	# `event.keycode` collapses them into one.
+	h.begin("a chord is a different binding from the key underneath it")
+	var chords := 0
+	for command in bound:
+		var name := str(bound[command])
+		if not name.contains("+"):
+			continue
+		chords += 1
+		var chord := OS.find_keycode_from_string(name)
+		h.check("%s: %s round-trips through the parser" % [command, name],
+			OS.get_keycode_string(chord) == name, OS.get_keycode_string(chord))
+		h.check("%s: the chord resolves to it" % name,
+			DebugKeys.command_for(chord) == command, DebugKeys.command_for(chord))
+		var bare := chord & KEY_CODE_MASK
+		h.check("%s: and does not answer for plain %s"
+			% [name, OS.get_keycode_string(bare)],
+			DebugKeys.command_for(bare) != command, DebugKeys.command_for(bare))
+		# The event's own view of itself, which is what `input_router.gd` matches
+		# on. If these two numbers ever disagree the map is unreachable.
+		h.check("%s: an event of it reports the same code" % name,
+			_key(chord).get_keycode_with_modifiers() == chord,
+			str(_key(chord).get_keycode_with_modifiers()))
+	h.check("there are chords to check (%d)" % chords, chords > 0)
+	h.complete("a chord is a different binding from the key underneath it")
+
 	h.begin("the keys the game lost are the game's again")
 	for code in [KEY_LEFT, KEY_RIGHT, KEY_R, KEY_B, KEY_M, KEY_L, KEY_F,
 			KEY_ESCAPE, KEY_F10, KEY_SPACE]:
@@ -177,8 +234,61 @@ func _init() -> void:
 		"%.1f" % DebugKeys.number("fast_forward_fps"))
 	h.complete("the config decides, not the defaults")
 
+	# The master switch. Off has to mean *nothing is claimed*, which is a stronger
+	# statement than anything above it: a key no command sits on cannot collide
+	# with a title, cannot eat a character, and cannot be a hotspot outline drawn
+	# over somebody's game. This is what a shipped build looks like.
+	cfg.clear()
+	cfg.set_value("debug", "enabled", "false")
+	cfg.save(written)
+
+	h.begin("with the layer off the preview claims no key at all")
+	DebugKeys.load_config(written)
+	h.check("`enabled` reads false", not DebugKeys.enabled())
+	h.check("no binding is reported", DebugKeys.bindings().is_empty(),
+		JSON.stringify(DebugKeys.bindings()))
+	var claimed: Array[String] = []
+	# Every key the map could possibly hold, plus the chords: the twelve F-keys
+	# with and without shift, and the one binding outside the band.
+	for code in [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8,
+			KEY_F9, KEY_F10, KEY_F11, KEY_F12, KEY_PAGEDOWN, KEY_PAGEUP]:
+		for chord in [int(code), KEY_MASK_SHIFT | int(code)]:
+			if DebugKeys.command_for(chord) != "":
+				claimed.append("%s -> %s" % [
+					OS.get_keycode_string(chord), DebugKeys.command_for(chord)])
+	h.check("and none of the keys it ships on runs anything",
+		claimed.is_empty(), ", ".join(claimed))
+	h.check("naming a command still reports it as unbound",
+		DebugKeys.key_name("quick_save") == "", DebugKeys.key_name("quick_save"))
+	h.complete("with the layer off the preview claims no key at all")
+
+	# ...and back on, deliberately, because a QA build shipped *with* the tools is
+	# a thing the switch has to be able to say. A one-way switch would be half a
+	# feature.
+	cfg.set_value("debug", "enabled", "true")
+	cfg.save(written)
+	h.begin("and `true` turns it back on, which is what a QA build asks for")
+	DebugKeys.load_config(written)
+	h.check("`enabled` reads true", DebugKeys.enabled())
+	h.check("the bindings are back", DebugKeys.bindings().size() == DebugKeys.DEFAULTS.size(),
+		"%d of %d" % [DebugKeys.bindings().size(), DebugKeys.DEFAULTS.size()])
+	h.complete("and `true` turns it back on, which is what a QA build asks for")
+
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(written))
 	DebugKeys.load_config()
+	h.begin("the shipped config leaves the choice to the build")
+	# `auto` in the tracked file is the design and not an accident: this file is
+	# what an export ships, so a `true` here would put the debug layer in every
+	# build unless somebody remembered to edit it.
+	var shipped := ConfigFile.new()
+	shipped.load(DebugKeys.CONFIG_PATH)
+	h.check("director_game.cfg says `auto`",
+		str(shipped.get_value("debug", "enabled", "")).to_lower() == DebugKeys.AUTO,
+		str(shipped.get_value("debug", "enabled", "<missing>")))
+	# And running from source keeps the tools, or every harness below this line
+	# would be measuring an empty map.
+	h.check("which leaves them on when running from source", DebugKeys.enabled())
+	h.complete("the shipped config leaves the choice to the build")
 
 	# The keys have to actually fire, and for most of this game they did not. A
 	# `keyDownScript` is installed once and then receives every key, and

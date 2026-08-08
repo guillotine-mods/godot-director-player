@@ -32,6 +32,35 @@ the Godot lifecycle; the modules own the rules.
 | a key goes to the wrong movie, or a debug binding eats a game key | `input_router.gd` |
 | the movie doesn't start, or globals are empty at boot | `boot.gd` |
 | the `L` report is missing something | `debug_report.gd` |
+| a save state comes back missing something, or a field isn't carried | `save_state.gd` |
+| a save goes to the wrong place, or a stale save loads silently | `save_files.gd` |
+| a debug key, outline or overlay shows up in a build | `debug_keys.gd` (`enabled`) |
+
+## The save state
+
+`save_state.gd` writes the whole session to JSON and reads it back — the movie,
+the frame, the Lingo globals, the puppets, the clock, the palette, the windows.
+Two rules make it trustworthy rather than merely present:
+
+**`ACCOUNTED` names every `_` field on the node**, as saved, rebuilt or
+excluded-and-why, and `tools/save_state.gd` reads the node's own property list
+and fails when the two disagree in either direction. A field added here and not
+classified goes red the first time anybody runs the gate. That is the same
+argument `preview_surface.gd` makes: the dangerous failure is the silent one.
+
+**The gate is two processes.** One saves and exits, a second boots from
+`--save <file>` alone, and a third compares the two records key by key. A
+single-process test cannot tell "persisted" from "still in memory".
+
+## The debug layer has one switch
+
+`[debug] enabled` in `director_game.cfg` — `true`, `false` or `auto` (on from
+source or a debug export, off in a release export; the default, and what the
+tracked config carries). Everything that exists for us and not for the movie
+asks `DebugKeys.enabled()`: every key binding, the hotspot outlines, the SKIP
+button, the HUD, the toast, the container picker and the report at exit. Adding
+another affordance means adding it to that list, and `tools/debug_bindings.gd`
+asserts that with the switch off no keycode is claimed at all.
 
 ## Two conventions
 

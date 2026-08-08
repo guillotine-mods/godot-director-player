@@ -37,11 +37,16 @@ const RECEIVERS := ["preview", "p", "node", "w"]
 ## `__sentinel` is excluded deliberately: `tools/globals_survive.gd` *writes* it
 ## into the interpreter's globals as a probe and it does not exist until then.
 const FIELDS := [
-	"_channel_cursors", "_clip_rect", "_clock", "_cursor_now", "_hit_images",
-	"_host", "_index", "_interpreter", "_labels", "_overrides", "_palette",
-	"_paused", "_pending_enter", "_preloader", "_ran", "_score", "_sent",
-	"_table", "_text_drawn", "_textures", "_trail_image", "_window_type",
-	"_windows",
+	"_channel_constraints", "_channel_cursors", "_clip_rect", "_clock",
+	"_cursor_now", "_fast_forward_fps", "_field_text", "_focus_channel",
+	"_focus_member", "_global_cursor", "_hit_images", "_hit_pixels", "_host",
+	"_index", "_interpreter", "_labels", "_last_click", "_last_member",
+	"_last_save", "_loop_start", "_loop_stats", "_member_editable",
+	"_overrides", "_palette", "_palette_state", "_paused", "_pending_enter",
+	"_play_stack", "_preloader", "_ran", "_score", "_score_sound", "_sel_end",
+	"_sel_start", "_sent", "_show_boxes", "_skip_sent", "_table", "_text_drawn",
+	"_textures", "_ticks", "_traced", "_trail_image", "_transitions_played",
+	"_window_type", "_windows",
 ]
 
 ## Fields a harness is allowed to find empty or zero, because they are only
@@ -50,6 +55,14 @@ const FIELDS := [
 const MAY_BE_EMPTY := [
 	"_clip_rect", "_pending_enter", "_text_drawn", "_trail_image", "_windows",
 	"_channel_cursors", "_overrides",
+	# The save state's half of the surface: `tools/save_state.gd` reads all of
+	# these, and every one of them is legitimately empty on a cold boot -- no
+	# script has puppeted a cursor, claimed a sound channel or pushed a `play`
+	# yet. Their *presence* is still asserted, which is the point: a field moved
+	# off the node makes the save silently stop carrying it.
+	"_channel_constraints", "_field_text", "_last_click", "_last_member",
+	"_last_save", "_loop_start", "_loop_stats", "_member_editable",
+	"_play_stack", "_skip_sent", "_traced",
 ]
 
 

@@ -39,6 +39,11 @@ reference/scummvm/
 # ours to redistribute — the same reason `games/` is ignored below.
 .snapshots/
 
+# Save states, and the PNG written beside each one. Somebody's session again —
+# and a save is a pile of member numbers only meaningful against the game it was
+# taken in, so there is nothing here another checkout could use.
+saves/
+
 # Agent worktrees: full checkouts, 2.5 GB and counting. Never committed.
 .claude/worktrees/
 

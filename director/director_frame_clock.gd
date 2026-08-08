@@ -350,6 +350,42 @@ func discount(seconds: float) -> void:
 	_owed = maxf(0.0, _owed - seconds)
 
 
+## Everything a save state has to carry, and nothing derived.
+##
+## `movie_default_fps` and `movie_file_version` are deliberately absent: both are
+## read off the movie's own config chunk when it is adopted, so a restore that
+## reopened the container already has them, and writing them down would be
+## storing a second copy of the file's own bytes for the two to disagree over.
+##
+## The rest is genuinely state. A frame that armed a two-second delay and is
+## 1,400 ms into it is *holding*, and a save that dropped the hold would come
+## back on a frame that immediately stepped -- which is a different movie from
+## the one that was saved, at exactly the moment somebody is trying to reproduce
+## a timing bug.
+func state() -> Dictionary:
+	return {
+		"fps": fps,
+		"owed": _owed,
+		"hold_ms": _hold_ms,
+		"hold_reason": _hold_reason,
+		"waiting_click": _waiting_click,
+		"waiting_sound": _waiting_sound,
+		"waiting_cue": _waiting_cue,
+	}
+
+
+func restore_state(from: Dictionary) -> void:
+	if from.is_empty():
+		return
+	fps = float(from.get("fps", fps))
+	_owed = float(from.get("owed", 0.0))
+	_hold_ms = float(from.get("hold_ms", 0.0))
+	_hold_reason = str(from.get("hold_reason", ""))
+	_waiting_click = bool(from.get("waiting_click", false))
+	_waiting_sound = int(from.get("waiting_sound", 0))
+	_waiting_cue = int(from.get("waiting_cue", 0))
+
+
 ## One line for a HUD: the rate, and what is stopping the playhead if anything.
 func status() -> String:
 	if not playhead_held():

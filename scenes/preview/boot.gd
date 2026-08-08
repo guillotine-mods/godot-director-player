@@ -24,10 +24,23 @@ const ContainerName := preload("res://director/director_container.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
+const SaveState := preload("res://scenes/preview/save_state.gd")
+const SaveFiles := preload("res://scenes/preview/save_files.gd")
 
 
 ## The stage: resolve the boot movie from the config and the command line, load
 ## it, and enter its first frame the way any other frame is entered.
+##
+## **`--save` replaces `--file`**, and mostly replaces the rest of the line too:
+## a save carries the game it was taken in, the container that was playing and
+## the frame it was on, so
+##
+##     godot --path . -- --save saves/piposh2/beach_bug.json
+##
+## is a complete instruction. The *root* half of that is resolved a layer down,
+## in `DirectorPaths.load_config`, so that every reader of the root -- the sound
+## index included -- sees the same game; only the movie, the frame and the state
+## are resolved here, because they are the preview's business and nothing else's.
 static func stage(host) -> void:
 	var args := Args.parse()
 	var paths := Paths.new()
@@ -42,7 +55,44 @@ static func stage(host) -> void:
 	# silent and nothing said why.
 	print("game root: %s" % paths.root)
 
+	# The save, if there is one, before the movie: it names the container to open.
+	# Resolved against `paths` because a bare `--save beach_bug` means this game's
+	# saves folder, and that folder is named after the root.
+	host._paths = paths
+	var save: Dictionary = {}
+	var save_path := Args.text(args, "save")
+	if save_path != "":
+		var found := SaveFiles.resolve(host, save_path)
+		if found == "":
+			host._fail("no save at %s (looked in %s)" % [
+				save_path, SaveFiles.directory(host)])
+			return
+		var got: Dictionary = SaveFiles.read(found)
+		if str(got["error"]) != "":
+			host._fail(str(got["error"]))
+			return
+		save = got["data"]
+		var verdict: Dictionary = SaveFiles.check(host, save)
+		if str(verdict["refuse"]) != "":
+			host._fail("save refused: %s" % str(verdict["refuse"]))
+			return
+		if str(verdict["warn"]) != "":
+			push_warning("save: %s" % str(verdict["warn"]))
+			print("save WARNING: %s" % str(verdict["warn"]))
+		host._last_save = found
+		print("save: %s  (%s, commit %s)" % [found,
+			str((save.get("stamp", {}) as Dictionary).get("at", "?")),
+			str((save.get("stamp", {}) as Dictionary).get("commit", "?")).substr(0, 12)])
+
 	var wanted := Args.text(args, "file", paths.boot_movie)
+	# The save decides the container, and `--file` beside it is a contradiction
+	# rather than a refinement -- so the save wins and says so, instead of opening
+	# a movie the state does not describe.
+	if not save.is_empty():
+		if args.has("file") and str(save.get("movie", "")).to_lower() != wanted.to_lower():
+			print("save: ignoring --file %s; the save names %s"
+				% [wanted, str(save.get("movie", ""))])
+		wanted = str(save.get("movie", wanted))
 	var path: String = paths.resolve(wanted)
 	if path == "":
 		# Name what is actually there. Not every title boots `strtgame.dir` --
@@ -79,7 +129,6 @@ static func stage(host) -> void:
 		host._fail("no such container: %s in %s%s" % [wanted, paths.root, hint])
 		return
 
-	host._paths = paths
 	if not host._load_container(path):
 		return
 
@@ -122,6 +171,23 @@ static func stage(host) -> void:
 		host._dispatch("prepareMovie", {})
 		host._dispatch("startMovie", {})
 		host._enter_frame_or_defer(host._frame_script(host._index))
+
+	# **After `startMovie`, not before.** A movie's own opening handlers write the
+	# globals the port carries -- `SAVELOAD` sets `nof`, `newsyz` and the rest --
+	# so a state installed ahead of them would be overwritten by the very movie it
+	# is meant to be reproducing. Restoring afterwards is also what makes a
+	# `--save` boot and an in-session Shift+F6 land on the same state: both arrive
+	# through a complete, ordinary movie start and then have the record put on top.
+	if not save.is_empty():
+		var failed: String = SaveState.restore(host, save)
+		if failed != "":
+			host._fail("save: %s" % failed)
+			return
+		SaveState.restore_windows(host, save)
+		# No `_sync_frame_entry` here on purpose. The record says whether the frame
+		# had been entered, and re-entering would re-arm its tempo and restart its
+		# sound — see `save_state.gd:restore` on `_entered_index`.
+		print("save: restored %s frame %d" % [host.movie_name(), host._index])
 
 	host.get_window().title = "%s  -  %d frames" % [
 		path.get_file(), host._score.frame_count]

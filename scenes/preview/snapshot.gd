@@ -101,20 +101,34 @@ static func _game_root(host) -> String:
 	return str(host._paths.root)
 
 
-static func _save_image(host, path: String) -> bool:
+## What was last presented, as an Image, or null when nothing has been.
+##
+## Split out from `_save_image` because the save state needs the *picture* at one
+## moment and the *filename* at another: `save_as` opens a dialog, and by the
+## time a name has been typed the framebuffer holds a different frame. Grabbing
+## and writing therefore have to be two calls. `preview/save_files.gd` is the
+## other caller.
+static func grab(host) -> Image:
 	# Annotated rather than inferred: a call through `host` is untyped, so `:=`
 	# has nothing to infer from. See `preview/README.md`.
 	var viewport: Viewport = host.get_viewport()
 	if viewport == null:
-		return false
+		return null
 	var texture: ViewportTexture = viewport.get_texture()
 	if texture == null:
-		return false
+		return null
 	var image: Image = texture.get_image()
 	if image == null or image.is_empty():
 		# Headless Godot never paints, so there is nothing to save and saying so
 		# is better than writing a black rectangle that looks like a rendering
 		# bug the next time somebody opens it.
+		return null
+	return image
+
+
+static func _save_image(host, path: String) -> bool:
+	var image: Image = grab(host)
+	if image == null:
 		push_warning("snapshot: nothing has been rendered to capture")
 		return false
 	if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(DIRECTORY)):

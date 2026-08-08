@@ -64,23 +64,74 @@ func load_config(config_path: String = CONFIG_PATH) -> bool:
 ## given, so a title stored elsewhere works too. A name that does not exist is
 ## left to the caller to report -- `resolve` will find nothing and say so with
 ## the path in hand, which is a better message than one from down here.
+##
+## **`--save` supplies a root too**, and it is honoured here for exactly the same
+## reason `--root` is. A save state carries the game it was taken in, so
+##
+##     godot --path . -- --save saves/piposh2/beach_bug.json
+##
+## is meant to be sufficient on its own; if that root were applied in
+## `preview/boot.gd` instead, `AudioDirector` -- which calls `load_config()`
+## itself -- would index its sounds against whatever the config still said and
+## the title would run silent. `--root` beats it, so a save can be forced open
+## against another corpus deliberately.
 static func _override_root(from_config: String) -> String:
+	var wanted := _flag("--root")
+	if wanted == "":
+		var save := _flag("--save")
+		if save != "":
+			wanted = _root_from_save(save)
+	if wanted == "":
+		return from_config
+	if wanted.begins_with("res://"):
+		return wanted
+	return "res://games/".path_join(wanted)
+
+
+## `--name value` or `--name=value` from the user args, "" when absent.
+static func _flag(name: String) -> String:
 	var wanted := ""
 	var expecting := false
 	for arg in OS.get_cmdline_user_args():
 		if expecting:
 			wanted = arg
 			expecting = false
-		elif arg.begins_with("--root="):
-			wanted = arg.substr(7)
-		elif arg == "--root":
+		elif arg.begins_with(name + "="):
+			wanted = arg.substr(name.length() + 1)
+		elif arg == name:
 			expecting = true
-	wanted = wanted.strip_edges()
-	if wanted == "":
-		return from_config
-	if wanted.begins_with("res://"):
-		return wanted
-	return "res://games/".path_join(wanted)
+	return wanted.strip_edges()
+
+
+## The game root stamped into a save file.
+##
+## Read here, by hand, rather than through `scenes/preview/save_files.gd`, which
+## is the file that *writes* these two keys. That is a layering choice with a
+## cost, and the cost is named so it stays paid: `director/` is the engine and
+## must not depend on the preview -- this function is reached from
+## `AudioDirector`'s own `load_config()`, before any preview exists -- so the two
+## key names `stamp` and `root` are the one thing duplicated across the boundary.
+## `tools/save_state.gd` asserts that what this reads out of a real save is what
+## `SaveFiles.stamp()` wrote into it, so the pair cannot drift silently; it then
+## boots a second process on `--save` alone and checks that a *fresh* `Paths`
+## there sees the save's root, which is the question `AudioDirector` asks.
+##
+## A save that cannot be read answers "", which leaves the configured root in
+## place; `preview/boot.gd` is where the unreadable file is reported, with the
+## path in hand.
+static func _root_from_save(path: String) -> String:
+	var resolved := path
+	if not FileAccess.file_exists(resolved):
+		resolved = ProjectSettings.globalize_path("res://").path_join(path)
+	if not FileAccess.file_exists(resolved):
+		return ""
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(resolved))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return ""
+	var stamped: Variant = (parsed as Dictionary).get("stamp", {})
+	if typeof(stamped) != TYPE_DICTIONARY:
+		return ""
+	return str((stamped as Dictionary).get("root", ""))
 
 
 ## Absolute path of the movie the game starts from, or "" if it is not there.

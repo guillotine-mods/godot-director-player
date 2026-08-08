@@ -37,6 +37,8 @@ const Interaction := preload("res://scenes/preview/interaction.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
+const SaveState := preload("res://scenes/preview/save_state.gd")
+const SaveFiles := preload("res://scenes/preview/save_files.gd")
 
 
 ## A keypress, in the order the three claimants get to see it.
@@ -105,7 +107,14 @@ static func key_event(host, event: InputEventKey) -> void:
 	# because the band is chosen not to collide: every binding is an F-key, no
 	# title in either corpus tests one, and a title that did has `[debug]` to move
 	# it out of the way.
-	debug_key(host, event.keycode)
+	#
+	# **With the modifiers, not without.** `event.keycode` drops them, so a chord
+	# binding could never have matched and `Shift+F5` ran whatever plain `F5` is
+	# on -- which, with the save keys added, would have been "step the playhead
+	# back" every time somebody tried to quick-save. `get_keycode_with_modifiers`
+	# is the same number `OS.find_keycode_from_string("Shift+F5")` produces, which
+	# is what `debug_keys.gd` built the map out of.
+	debug_key(host, event.get_keycode_with_modifiers())
 
 
 ## The movie a keypress belongs to.
@@ -357,6 +366,34 @@ static func debug_key(host, code: int) -> void:
 		"containers":
 			host._picker = ContainerPicker.open(host)
 			host.queue_redraw()
+		"globals":
+			# Printed rather than drawn: a globals dump is dozens of lines and the
+			# stage is 640x480. It goes where the rest of the diagnostics go.
+			print(SaveState.globals_text(host))
+			_say(host, "globals printed to the log")
+		"quick_save":
+			_say(host, _saved_text(SaveFiles.save(host, SaveFiles.quick_path(host))))
+		"quick_load":
+			# "Whatever you were last working with": the last save this session
+			# *loaded*, falling back to the quick-save. Saving does not move it, so
+			# a quick-save followed by a quick-load reloads the named file you were
+			# iterating on rather than silently switching you to the quick slot.
+			var wanted := str(host._last_save)
+			_say(host, load_save(host,
+				wanted if wanted != "" else SaveFiles.quick_path(host)))
+		"save_as":
+			# Captured **now**, before the dialog, state and picture both. What
+			# should be written is what the key was pressed on; the score keeps
+			# running while somebody types a filename, and by the time they press
+			# Save the movie is several frames past the thing they wanted to record.
+			var record: Dictionary = SaveState.capture(host)
+			var shot: Image = Snapshot.grab(host)
+			SaveFiles.ask_where_to_save(host, func(path: String) -> void:
+				_say(host, _saved_text(
+					SaveFiles.write_record(host, path, record, shot))))
+		"load_file":
+			SaveFiles.ask_what_to_load(host, func(path: String) -> void:
+				_say(host, load_save(host, path)))
 		"fullscreen":
 			var window: Window = host.get_window()
 			window.mode = (
@@ -365,3 +402,62 @@ static func debug_key(host, code: int) -> void:
 			)
 		"quit":
 			host.get_tree().quit()
+
+
+## Read a save and put it back onto this preview. Returns the line to show.
+##
+## **The movie is re-entered even when it is the one already playing.** That is
+## not laziness: `lingo_go_movie` is the engine's own arrival, so a movie reached
+## by a load has run `prepareMovie` and `startMovie` and had its per-movie state
+## dropped by `movie_session.gd:forget_previous` exactly as it would arriving any
+## other way. Restoring on top of a movie that had merely been *running* would
+## leave whatever the session had accumulated underneath the record — and it
+## would make an in-session load and a `--save` boot produce two different
+## states, which is the one thing this feature cannot afford.
+static func load_save(host, path: String) -> String:
+	var got: Dictionary = SaveFiles.read(path)
+	if str(got["error"]) != "":
+		push_warning("load: %s" % str(got["error"]))
+		return str(got["error"])
+	var data: Dictionary = got["data"]
+	var verdict: Dictionary = SaveFiles.check(host, data)
+	if str(verdict["refuse"]) != "":
+		# Refused rather than loaded wrong. A save of another game is a pile of
+		# member and channel numbers that all resolve against this one — to real
+		# members showing the wrong thing, which reads as corruption.
+		push_error("load refused: %s" % str(verdict["refuse"]))
+		print("load refused: %s" % str(verdict["refuse"]))
+		return "load refused — see the log"
+	if str(verdict["warn"]) != "":
+		push_warning("load: %s" % str(verdict["warn"]))
+		print("load WARNING: %s" % str(verdict["warn"]))
+	host.lingo_go_movie(str(data.get("movie", "")), null)
+	var failed: String = SaveState.restore(host, data)
+	if failed != "":
+		push_warning("load: %s" % failed)
+		return failed
+	SaveState.restore_windows(host, data)
+	host._last_save = path
+	host.queue_redraw()
+	return "loaded %s  %s frame %d" % [
+		path.get_file(), host.movie_name(), int(host._index)]
+
+
+static func _saved_text(report: Dictionary) -> String:
+	if str(report["error"]) != "":
+		push_warning("save: %s" % str(report["error"]))
+		print("save failed: %s" % str(report["error"]))
+		return "save failed — see the log"
+	print("saved %s%s" % [str(report["path"]),
+		("  + %s" % str(report["png"]).get_file()) if str(report["png"]) != "" else ""])
+	return "saved %s" % str(report["path"]).get_file()
+
+
+## The toast is the whole confirmation for these: writing a file is invisible, so
+## without one a save key is indistinguishable from a key that is not bound. Same
+## argument as the snapshot's.
+static func _say(host, text: String) -> void:
+	var said: Array = Toast.show(text)
+	host._toast = str(said[0])
+	host._toast_until = int(said[1])
+	host.queue_redraw()
