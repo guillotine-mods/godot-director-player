@@ -3,7 +3,7 @@
 # which over the 42 entries in ALL is 40 pass / 1 fail / 1 flaky, measured on
 # 4.7.1 at the commit this line was written:
 #
-#   boot_state      FAIL, long-standing
+#   boot_state:--file@PIP2DATA/EXODUS.DIR      FAIL, long-standing
 #   play_suspends   PASS or FAIL, about half and half, on one assertion that
 #                   waits a fixed six frames for a movie to load (bugs.md 41)
 #
@@ -63,7 +63,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
+ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that
