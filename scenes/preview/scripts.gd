@@ -72,6 +72,14 @@ static func dispatch(host, interpreter, handler: String, script: Dictionary) -> 
 	#
 	# Whether it ran, not what it returned: a void handler answers null, so a
 	# `!= null` test scores every successful dispatch as a miss.
+	# A fresh step budget per event. `MAX_STEPS` exists to stop a runaway loop
+	# inside *one* dispatch, but `reset_steps()` had no callers anywhere, so the
+	# count accumulated for the life of the session against a fixed ceiling --
+	# meaning a long enough session would start aborting every handler with
+	# "step budget exhausted", and the failure would look like the movie breaking
+	# rather than like a counter. Resetting here can only ever give a handler more
+	# budget, never less, so it cannot mask a real runaway.
+	interpreter.reset_steps()
 	var key := handler.to_lower()
 	var owns: bool = interpreter.call("_script_has_handler", script, key)
 	if owns or interpreter.has_handler(key):
