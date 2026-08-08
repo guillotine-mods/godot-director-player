@@ -49,6 +49,31 @@ const INK_MASK := 0x3F
 ## blend amount looks like that; and offset 22 carries the tweened bit on 70.3%
 ## and 73.6% of the two corpora respectively.
 const SPRITE_LIST_IDX_AT := 8
+## The same layout as `[offset, size]` pairs, so `writes_between` can ask which
+## *fields* a delta's byte range covers rather than only which channel.
+##
+## Written out beside the prose above rather than derived from `_snapshot`,
+## because `_snapshot` reads fields and this describes them: the two are the same
+## table read in opposite directions, and only one of them can be a loop. A field
+## missing here is a field whose auto-puppet the score can never release, so the
+## list is the whole record and not only the parts something currently consumes.
+const FIELD_BYTES := {
+	"sprite_type": [0, 1],
+	"ink": [1, 1],
+	"fore_color": [2, 1],
+	"back_color": [3, 1],
+	"cast_lib": [4, 2],
+	"cast_id": [6, 2],
+	"sprite_list_idx": [8, 4],
+	"loc_v": [12, 2],
+	"loc_h": [14, 2],
+	"height": [16, 2],
+	"width": [18, 2],
+	"color_code": [20, 1],
+	"blend_amount": [21, 1],
+	"thickness": [22, 1],
+	"sprite_flags": [23, 1],
+}
 const COLOR_CODE_AT := 20
 const BLEND_AMOUNT_AT := 21
 const THICKNESS_AT := 22
@@ -309,6 +334,84 @@ func _apply(stream: PackedByteArray, at: int, buffer: PackedByteArray) -> bool:
 			buffer[offset + k] = stream[cursor + k]
 		cursor += chunk_size
 	return true
+
+
+## Which fields of which channels the **score itself writes** moving the playhead
+## from frame `from` to frame `to`: `{channel: {field: true}}`, in the field names
+## `_snapshot` decodes to.
+##
+## This is the delta stream answering a question only a delta stream can answer,
+## and it is a different question from "did the value change". Director keeps one
+## live sprite per channel and patches it from the frame's delta; the auto-puppet
+## a script leaves on a property is released **when the score writes that
+## property**, whatever it writes (§5.3, reference `Sprite::releaseAutoPuppet`,
+## driven by the frame sprite's `_copyBackMask` — the set of fields the frame's
+## own delta touched). A score that rewrites a channel with the member it already
+## had still writes it, and still releases.
+##
+## Nothing that reads `frame()` can see that: `frame()` is the accumulated buffer,
+## so it answers what a channel *holds* and never what was written to get there.
+## That is why a port built on it has to approximate the release by comparing
+## values, and why the approximation is wrong in exactly the case where a clip
+## and the room it was entered from happen to put the same member on a channel
+## (`bugs.md` 47).
+##
+## The three cases are the reference's, from `Score::loadFrame`:
+##
+## - `from < 0` — no frame has been entered yet, so nothing has been written
+##   *since* one. There is no live channel state for the score to have moved.
+## - `to <= from` — Director cannot walk a delta stream backwards, so it rebuilds
+##   the frame from the start of the movie, and every field of every channel is
+##   written on the way. `loadFrame` says so directly: on a rewind it sets the
+##   copy-back mask to all-ones rather than accumulating it.
+## - `to > from` — the deltas of frames `from + 1 .. to`, unioned. A `go` that
+##   skips a thousand frames replays all thousand, so all thousand write.
+func writes_between(from: int, to: int) -> Dictionary:
+	var out: Dictionary = {}
+	if from < 0 or to < 0 or to >= _frame_at.size():
+		return out
+	if to <= from:
+		for channel in range(1, channels_displayed + 1):
+			var all: Dictionary = {}
+			for field in FIELD_BYTES:
+				all[field] = true
+			out[channel] = all
+		return out
+	for index in range(from + 1, to + 1):
+		_writes_into(index, out)
+	return out
+
+
+## One frame's own delta, as `{channel: {field: true}}`, merged into `out`.
+##
+## The chunks are byte ranges over the flat channel buffer and a single chunk
+## routinely spans several 48-byte records, so this intersects each range with
+## each field's extent rather than assuming a chunk is a channel — the same thing
+## `_apply`'s header warns about, asked at field granularity.
+func _writes_into(index: int, out: Dictionary) -> void:
+	var at: int = _frame_at[index]
+	if at + 2 > _stream.size():
+		return
+	var frame_end: int = at + _u16(_stream, at)
+	var cursor := at + 2
+	while cursor + 4 <= frame_end and cursor + 4 <= _stream.size():
+		var chunk_size := _u16(_stream, cursor)
+		var offset := _u16(_stream, cursor + 2)
+		cursor += 4 + chunk_size
+		if chunk_size <= 0:
+			continue
+		var first := maxi(1, (offset - SPRITE_RECORD_SIZE * CHANNEL_BIAS) / SPRITE_RECORD_SIZE + 1)
+		var last := (offset + chunk_size - 1 - SPRITE_RECORD_SIZE * CHANNEL_BIAS) / SPRITE_RECORD_SIZE + 1
+		for channel in range(first, mini(last, channels_displayed) + 1):
+			var base := SPRITE_RECORD_SIZE * (channel + CHANNEL_BIAS)
+			var fields: Dictionary = out.get(channel, {})
+			for field in FIELD_BYTES:
+				var extent: Array = FIELD_BYTES[field]
+				var start: int = base + int(extent[0])
+				if offset < start + int(extent[1]) and offset + chunk_size > start:
+					fields[field] = true
+			if not fields.is_empty():
+				out[channel] = fields
 
 
 ## Frame N, decoded on demand. Replays from the nearest snapshot at or before it,

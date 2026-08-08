@@ -18,6 +18,16 @@ extends RefCounted
 ## walks its characters entirely by member swap, so that would be every character
 ## in it.
 ##
+## **"The score writes that property" is an event and not a value**, and the
+## distinction is not academic: a score that rewrites a channel with the member it
+## already had has still written it. `release_auto_puppets` is that event, driven
+## by `director_score.writes_between`, and it is the only thing here that takes a
+## puppet away. The release used to be inferred by comparing the member an
+## override was taken against with the one the score now holds, which is the same
+## answer on every frame where the two differ and silence on every frame where
+## they do not -- `bugs.md` 47, a mouth that never stopped because a clip and the
+## room it was entered from put the same member on the channel.
+##
 ## `puppetSprite N, TRUE` claims the *whole sprite* (§5.2). The score is not
 ## applied to that channel at all, so nothing on it can go stale and nothing on
 ## it is released -- including the channel's very existence: a puppeted sprite
@@ -43,84 +53,27 @@ const Members := preload("res://scenes/preview/members.gd")
 ## only clickable where its two states happened to overlap, and moving the mouse
 ## made it flicker in and out of reach.
 ##
-## `overrides` is mutated here, not just read: a puppet the score has moved out
-## from under is discarded at the moment that is noticed.
+## **A pure read.** Releasing an auto-puppet is `release_auto_puppets` below, on
+## the one event that can cause it — the playhead moving to another frame — and
+## not a side effect of somebody asking what a sprite looks like. It was the side
+## effect, and a read that mutates cannot be asked speculatively: the preloader
+## walks 24 frames ahead every step, so every look-ahead discarded a puppet the
+## *current* frame was still using and a script's member swap survived exactly one
+## tick. That needed a `peek` flag to suppress, which is a second code path
+## through the same rule, which is the shape this module exists to avoid.
 ##
-## **`ignore_visible` is for the one caller that must not honour the hide**, and
-## it is a flag rather than a second merge path because the stale-puppet discard
-## below mutates `overrides`: two paths would drift apart in behaviour, not
-## merely in code. Director asks two different rect questions and only one of
+## **`ignore_visible` is for the one caller that must not honour the hide.**
+## Director asks two different rect questions and only one of
 ## them consults visibility -- `channel.cpp:isMouseIn` reads `_visible` and is
 ## the only thing in that file that does; `c_within` and `c_intersects` read
 ## `getBbox()`. See `director_preview.lingo_sprite_rect`, which also records why
 ## that was briefly reverted and why the revert was wrong.
 static func effective(
-	sprite: Dictionary, overrides: Dictionary, table, ignore_visible: bool = false,
-	peek: bool = false
+	sprite: Dictionary, overrides: Dictionary, table, ignore_visible: bool = false
 ) -> Dictionary:
 	var channel := int(sprite["channel"])
 	var over: Dictionary = overrides.get(channel, {})
 	if over.is_empty():
-		return sprite
-	# The distinction between per-field and per-sprite matters when the score
-	# changes the member underneath: a script that pinned `locV` once should keep
-	# that and still follow the score's member swaps.
-	#
-	# **Unless the channel is a whole-sprite puppet**, which is a different thing
-	# from the per-field auto-puppet below and the one Director's own
-	# `replaceFrom` short-circuits on (§5.2): with `_puppet` set it copies the
-	# script attachment and returns, so *nothing* the score says about this
-	# channel is applied and nothing here can be stale. Without the distinction
-	# there is only one kind of puppet, and it has to be either too sticky or not
-	# sticky enough -- `bugs.md` 36 is both halves of that at once.
-	if not bool(over.get("_puppet", false)) \
-			and int(over.get("_member", -1)) != int(sprite["cast_id"]):
-		# The score moved this channel to a different member, so every auto-puppet
-		# on it is released (§5.3: released when the score itself writes that
-		# property, and §5.4: a cast-id write releases the size as well).
-		# Geometry belongs to the new member, so positional overrides taken
-		# against the old one are stale -- **and so is the member a script
-		# wrote.** That last clause used to read `and not over.has("membernum")`,
-		# which made a script's member swap outlive the score's for the rest of
-		# the movie: click Tofi on the veranda and `BehaviorScript 291` puts
-		# `btofspk1` -- his *talking* loop -- on channel 18, the clip finishes and
-		# returns to `veranda` where the score says `atoflop1`, and the mouth kept
-		# moving for ever because the swap was never released. Nine `clicktalk`
-		# clips and six `<room>talk` clips do the same thing.
-		#
-		# `visible` is not geometry and does not go with them. It is channel
-		# state, like `the cursor of sprite`: Director does not un-hide a sprite
-		# because the score moved that channel to another member, and a port that
-		# does gets a very specific bug -- a room hides something during its
-		# initialisation and it reappears later, looking like a rendering fault.
-		#
-		# DAY1 is the case that found this. Its `init all` runs as the frame
-		# script on frame 0 and does `sprite(6).visible = 0`, but channel 6 is
-		# *empty* on frame 0, so no member was ever recorded against the
-		# override. The moment channel 6 acquires a member -- at the beach, 37
-		# frames later -- the test below fires and the sprite is un-hidden. The
-		# hide was guaranteed to be discarded before it could ever apply.
-		var kept: Dictionary = {"_member": int(sprite["cast_id"])}
-		if over.has("visible"):
-			kept["visible"] = over["visible"]
-		# **A look-ahead may not release anything.** `peek` asks the same question
-		# about a frame the playhead has not reached, and the release is keyed on
-		# "the score has moved this channel" -- which is true of *every* later
-		# frame that holds a different member, whether or not the movie ever plays
-		# it. Recording it there discards a puppet the current frame is still
-		# using: `director_preloader.gd` walks 24 frames ahead every step, so on
-		# DAY1 the frame after a talk clip alone was releasing channel 18's
-		# override once per step, and the write a script had just made survived
-		# exactly one tick. The answer is the same either way; only the record is
-		# withheld.
-		if not peek:
-			if kept.has("visible"):
-				overrides[channel] = kept
-			else:
-				overrides.erase(channel)
-		over = kept
-		if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
-			return {}
 		return sprite
 	if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 		return {}
@@ -224,6 +177,90 @@ static func effective(
 	return out
 
 
+## Which override keys the score writing a given record field takes back.
+##
+## The reference's table, `Sprite::releaseAutoPuppet`, transcribed into this
+## port's two vocabularies — the score record's field names on the left, the
+## override keys `effective` merges on the right. Eight entries there, and the
+## only rewriting is where one of the two spellings splits a field the other
+## keeps whole: the reference has one `startPoint` where the record has `loc_h`
+## and `loc_v`, and one `moveable` bit inside the colour-code byte.
+##
+## §5.4 is the entry worth reading twice: a **cast-id** write releases the width
+## and the height as well, because in Director a member swap is what re-derives a
+## sprite's size, so a size taken against the old member cannot survive one.
+##
+## **What is deliberately not here.** The reference releases nothing for blend,
+## editability, thickness (which carries the flips) or the sprite's rect, though
+## it auto-puppets all four on a write. So a script that sets `the blend of
+## sprite` holds it against the score until something un-puppets the channel.
+## That asymmetry is the reference's, it is not an omission here, and inventing
+## the missing rows would be inventing Director.
+##
+## `visible` is absent for a different reason: it is not a sprite property at all.
+## Director keeps it on the *channel* (`Channel::_visible`), which `replaceFrom`
+## never touches, so no score write can release it. DAY1 is what made that
+## concrete — `init all` runs `sprite(6).visible = 0` on frame 0 where channel 6
+## is empty, and the hide has to survive until the beach 37 frames later gives
+## that channel a member.
+const RELEASED_BY := {
+	"ink": ["ink", "trails"],
+	"fore_color": ["forecolor"],
+	"back_color": ["backcolor"],
+	"cast_lib": ["membernum", "castnum", "castlibnum", "width", "height"],
+	"cast_id": ["membernum", "castnum", "castlibnum", "width", "height"],
+	"loc_h": ["loch", "locv"],
+	"loc_v": ["loch", "locv"],
+	"width": ["width"],
+	"height": ["height"],
+	"color_code": ["moveable"],
+}
+
+
+## The playhead has moved to another frame, and the score wrote `writes`
+## (`{channel: {field: true}}`, from `director_score.writes_between`). Hand every
+## auto-puppet the score wrote over back to it.
+##
+## **This is an event, not a comparison**, and that is the whole correction. A
+## per-field auto-puppet is released when the score *writes* that property (§5.3),
+## which the reference implements by handing `releaseAutoPuppet` the set of fields
+## the frame's own delta touched. This port had no access to that set — it reads
+## the accumulated buffer, where a field written with the value it already held is
+## indistinguishable from a field nobody wrote — so it approximated the rule as
+## "the member under the override is not the one it was taken against".
+##
+## The approximation is right whenever the score's member changes and wrong
+## whenever it does not, and `bugs.md` 47 is the second case in the field: click
+## the dwarf at `exitforest3` and `BehaviorScript 281` writes his talking loop
+## onto channel 18, but the score puts `adnzlop1` on channel 18 both in the room
+## and inside `dnzclicktalk`. Same member, so the comparison never fired, so the
+## write was never released and the mouth kept moving for the rest of the movie —
+## the identical symptom to the `tofclicktalk` one that removing `membernum` from
+## this release fixed, arriving through the one gap that fix could not close.
+##
+## A **whole-sprite** puppet is skipped entirely, and not as an optimisation: the
+## reference's `setAutoPuppet` returns without doing anything while `_puppet` is
+## set, so a `puppetSprite N, TRUE` channel cannot be released by the score any
+## more than it can be written by it (§5.2).
+static func release_auto_puppets(writes: Dictionary, overrides: Dictionary) -> void:
+	for channel in writes:
+		var over: Dictionary = overrides.get(channel, {})
+		if over.is_empty() or bool(over.get("_puppet", false)):
+			continue
+		for field in (writes[channel] as Dictionary):
+			for key in RELEASED_BY.get(field, []):
+				over.erase(key)
+		# An entry holding nothing but bookkeeping is not a puppet, and leaving it
+		# behind would make `effective` duplicate the record for no merge and
+		# `hilite.gd` believe a script is composing something on this channel.
+		# `_member` is counted as bookkeeping because it *was* bookkeeping: states
+		# saved before the release became an event carry it, nothing reads it now,
+		# and a restored session would otherwise keep an entry alive for ever on
+		# the strength of a key that no longer means anything.
+		if over.is_empty() or over.keys() == ["_member"]:
+			overrides.erase(channel)
+
+
 ## The frame's sprites, plus the channels a whole-sprite puppet keeps alive that
 ## this frame's score does not carry.
 ##
@@ -315,11 +352,14 @@ const EMPTY_CHANNEL := {
 
 ## `the <prop> of sprite N`, read back.
 ##
-## Known divergence, preserved by this move rather than introduced by it: this
-## consults `overrides` and then the raw score record, where every other reader
-## goes through `effective`. A script that reads a property back on a channel
-## whose puppet the score has invalidated gets the stale answer here and the
-## fresh one everywhere else.
+## This consults `overrides` and then the raw score record, where every other
+## reader goes through `effective`. That used to be a divergence — a script could
+## read back a puppet the score had invalidated and get the stale answer here and
+## the fresh one everywhere else — and it stopped being one when the release
+## became an event: `release_auto_puppets` takes the override out of the table on
+## the frame change, so there is no invalidated entry left for either reader to
+## disagree about. It is now the same two-layer lookup `effective` does, minus the
+## merges that only the screen cares about.
 static func read_prop(channel: int, prop: String, overrides: Dictionary,
 		sprites: Array) -> Variant:
 	var over: Dictionary = overrides.get(channel, {})
@@ -411,18 +451,20 @@ static func set_puppet(channel: int, on: bool, overrides: Dictionary) -> void:
 
 ## `set the <prop> of sprite N`.
 ##
+## The write *is* the auto-puppet: Director puppets the one property on the write
+## and releases it when the score writes that property back (§5.3), which is
+## `release_auto_puppets`. There is nothing to record about the member the write
+## was taken against — that was this port's proxy for the release event, and it
+## answered the wrong question whenever a clip and the room it was entered from
+## put the same member on a channel (`bugs.md` 47). `sprites` stays in the
+## signature because `sprite_props.gd` passes it through one seam for both
+## directions and a read genuinely needs it.
+##
 ## `the cursor of sprite` does not come here -- it is channel state rather than
 ## a puppeted score field, and the node routes it to the cursor path before
 ## calling this.
 static func write_prop(channel: int, prop: String, value: Variant,
-		overrides: Dictionary, sprites: Array) -> void:
+		overrides: Dictionary, _sprites: Array) -> void:
 	if not overrides.has(channel):
 		overrides[channel] = {}
-	var over: Dictionary = overrides[channel]
-	over[prop] = value
-	# Which member the override was taken against, so `effective` can tell a
-	# still-valid puppet from one the score has moved out from under.
-	for sprite in sprites:
-		if int(sprite["channel"]) == channel:
-			over["_member"] = int(sprite["cast_id"])
-			break
+	(overrides[channel] as Dictionary)[prop] = value

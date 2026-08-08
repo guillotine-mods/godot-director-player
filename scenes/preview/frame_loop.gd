@@ -26,13 +26,27 @@ const FrameClock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
 
 
-## The playhead has landed somewhere this tick has not accounted for yet: take
-## the frame's tempo, arm whatever it waits for, and start any transition it
-## carries.
+## The playhead has landed somewhere this tick has not accounted for yet: release
+## the auto-puppets the score wrote on the way, take the frame's tempo, arm
+## whatever it waits for, and start any transition it carries.
+##
+## **The release is first, and it is here rather than in `advance`** because this
+## is the port's "the frame number changed" event and there is exactly one of it:
+## `advance` is not the only thing that moves the playhead -- `go`, `play`, `play
+## done`, the debug arrows and a restored save all write `_index` and leave this
+## to notice -- and Director hangs the same call on the same event, inside the
+## `if (_curFrameNumber != nextFrameNumberToLoad)` that this function's own early
+## return mirrors.
+##
+## First within the function, too. A frame's scripts run after this returns, so a
+## release ordered after them would take back the write the frame just made
+## instead of the one the frame before it left behind.
 static func sync_frame_entry(host) -> void:
 	if host._index == host._entered_index or host._score == null:
 		return
+	var came_from: int = host._entered_index
 	host._entered_index = host._index
+	host._release_auto_puppets(came_from, host._index)
 	var frame: Dictionary = host._score.frame(host._index)
 	if frame.is_empty():
 		return

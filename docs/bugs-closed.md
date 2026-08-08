@@ -15,6 +15,81 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 47. The dwarf's mouth never stops, because the release of an auto-puppet was inferred from a value instead of an event
+
+**Status:** FIXED · **Area:** `scenes/preview/sprite_state.gd`,
+`director/director_score.gd` · reported from play as "his mouth keeps moving,
+like we had with tofi", from `saves/piposh2/dwarf_speaking.json`
+
+Same symptom as the Tofi half of entry 36, same channel, a sibling script — and
+it survived that fix, because it arrives through the one gap that fix could not
+close.
+
+**The trace.** DAY1 `exitforest3`, frame 1551. Clicking (384,224) hits channel 18
+and `WONDER/External/BehaviorScript 642`, whose whole body is `go("dnzclicktalk")`.
+The clip's preamble, `DAY1/wonder/BehaviorScript 281`, does
+`set the memberNum of sprite rin to the number of member (xxx & who) of castLib
+"wonder"` with `rin` = 18 and `xxx` = "b" — the talking loop. The clip plays its
+line and returns with `go(lastmark)`. Channel 18 kept showing the script's member
+for the rest of the movie.
+
+**Why the entry 36 fix does not cover it.** That fix removed `membernum` from the
+release exemption, so a script's member swap is given back when the score moves
+the channel. The score does not move this one. Measured off the delta stream:
+
+| where | score, channel 18 |
+|---|---|
+| `exitforest3` 1546-1556 | `5:596` `adnzlop1` |
+| `dnzclicktalk` 2613-2614 | `5:596` `adnzlop1` |
+
+Same member on both sides, so the port's release test — "the member the override
+was taken against is not the one the score now holds" — was false every frame and
+the write was never taken back.
+
+**The rule it was standing in for.** Director releases an auto-puppet **when the
+score writes that property**, whatever value it writes. The reference does this
+with `Sprite::releaseAutoPuppet`, called once per frame change from `Score::update`
+and handed `_copyBackMask` — the set of fields *the frame's own delta touched*.
+Value never enters it. Frame 2613's delta writes channel 18's whole record and
+frame 1548's writes it again, so in Director the release fires twice on this
+journey; the port could see neither, because it reads the accumulated channel
+buffer, where a field rewritten with the value it already held is indistinguishable
+from a field nobody wrote.
+
+**The fix, in three parts.**
+
+- `director_score.writes_between(from, to)` answers which fields of which channels
+  the score writes moving the playhead between two frames, from the delta byte
+  ranges. Three cases, all the reference's `Score::loadFrame`: nothing before the
+  first frame is entered; the union of the deltas of `from+1 .. to` going forward;
+  and *everything on every channel* going backwards, because Director cannot walk
+  a delta stream in reverse and rebuilds the frame from the start of the movie.
+- `sprite_state.release_auto_puppets` is `Sprite::releaseAutoPuppet` transcribed
+  into this port's two vocabularies. A whole-sprite puppet is skipped, exactly as
+  `setAutoPuppet` does nothing while `_puppet` is set; `visible` is untouched,
+  because in Director it is channel state and no score write can reach it.
+- It is called from `frame_loop.sync_frame_entry`, which is this port's "the frame
+  number changed" event and mirrors the `if (_curFrameNumber != nextFrameNumberToLoad)`
+  the reference hangs the same call on. Every path that moves the playhead goes
+  through it, and it runs before the new frame's scripts.
+
+`effective()` is a pure read again as a result, and the `peek` flag entry 36 had to
+add — a second code path through one rule, because the preloader could not be
+allowed to ask a question that mutated — is gone with it. So is `_member`, the
+bookkeeping the value comparison needed.
+
+Attributed by disabling the release call alone and rerunning the harness: channel
+18 ends showing 597 where the score says 596. With it, 596. `bugs.md` 36's
+`tofclicktalk` case still passes on its own terms (`score 196, showing 196`) —
+that one changes the member, so both the old rule and the new one fire.
+
+`tools/puppet_persists.gd` covers it, and the check that covers it is the one that
+used to print "the score never moved channel 18, so this room does not test the
+release" over the room the bug was in. It now asks whether the score *wrote* the
+channel, so `exitforest3` is a live case rather than an excused one.
+
+---
+
 ## 42. SKIP moved the playhead and left the voice playing, so in piposh it did nothing at all
 
 **Status:** FIXED · **Area:** preview, `skip_to_end` · **not the mis-landing of

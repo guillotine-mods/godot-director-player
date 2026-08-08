@@ -913,14 +913,22 @@ So: it preserves *everything visual* and re-reads only *script attachment*. That
 is not an accident; it is how a puppeted sprite still picks up per-frame
 behaviour from the score.
 
-*This port:* `scenes/preview/sprite_state.gd`. `effective` skips the staleness
-release for a channel carrying `_puppet`, and `with_puppets` is the other half —
+*This port:* `scenes/preview/sprite_state.gd`. `release_auto_puppets` skips a
+channel carrying `_puppet`, and `with_puppets` is the other half —
 **a puppeted channel stays on the frame when the score's record for it is
 empty**, which is what "the reconcile is skipped" means for a port that draws
 from the score's per-frame sprite list rather than from a live channel table. It
 still skips the script-id copy; add it if frame-scoped sprite scripts ever
 matter. (`director/sprite_channel.gd`, cited here before, was the retired
 renderer and is gone.)
+
+**The visible consequence, which reads as a layering bug and is not one.** A
+channel is emptied by the score *writing* an empty record into it, and that write
+is exactly what `_puppet` blocks — there is no separate "clear the channel" path
+in `Score::updateSprites` for it to reach by. So a clip that drops both a
+foreground layer and the puppeted player standing behind it drops one of them:
+the layer goes, the player stays, and the player is drawn unoccluded. Reported
+twice from play against DAY1's `dwarfs`; measured, authentic, `bugs.md` 48.
 
 ### 5.3 Per-field auto-puppet (D6+)
 
@@ -932,19 +940,30 @@ width released by a *cast id* write as well as by an explicit size write.
 Inert below D6, but the shape matters: it is the same "block the score per field"
 idea that whole-sprite puppet does coarsely.
 
-*This port:* `scenes/preview/sprite_state.gd:effective` implements per-field
-overrides with a staleness reset keyed on the cast id — D6 auto-puppet, and the
-release covers the *member* a script wrote as well as the geometry, because
-"released when the score writes that property" includes the cast id. It used to
-exempt `membernum`, which is bugs.md 36: a talk clip's mouth animation outlived
-the score's own member for the rest of the movie. `visible` is deliberately not
+**"The score writes that property" is an event, not a value.** The mask is the
+set of fields *this frame's delta touched*; a score that rewrites a channel with
+the member it already had has still written it, and still releases. Nothing
+anywhere compares the old value with the new one.
+
+*This port:* `scenes/preview/sprite_state.gd:release_auto_puppets`, driven by
+`director/director_score.gd:writes_between` — which answers the same question the
+mask does, out of the same delta byte ranges, for the walk between two frames.
+`scenes/preview/frame_loop.gd:sync_frame_entry` calls it, once per frame change,
+before the new frame's scripts run; that is the port's equivalent of the
+`if (_curFrameNumber != nextFrameNumberToLoad)` the reference hangs it on, and
+every path that moves the playhead goes through it. `visible` is deliberately not
 released; it is channel state, not a score field.
 
-The release is **recorded only for the frame the playhead is on**. `effective`'s
-`peek` answers the same question without writing it back, and
-`director_preloader.gd` — which walks 24 frames ahead every step — asks that
-form: a look-ahead that records the release discards a puppet the current frame
-is still using, and it did.
+It was a **value comparison** — "the member the override was taken against is not
+the one the score now holds" — until bugs.md 47, and that is right whenever a
+clip changes the member and silent whenever it does not: click the dwarf at
+`exitforest3` and both the room and `dnzclicktalk` put `adnzlop1` on channel 18,
+so the mouth kept moving for the rest of the movie. bugs.md 36's `membernum`
+exemption was the other half of the same rule and is also gone.
+
+The release being an event rather than a read also retires `effective`'s `peek`
+flag: a pure read can be asked about a frame the playhead has not reached, which
+is what `director_preloader.gd` does 24 frames ahead every step.
 
 ### 5.4 Hand-written persistence rules
 

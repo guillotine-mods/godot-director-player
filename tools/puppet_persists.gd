@@ -24,20 +24,31 @@ extends SceneTree
 ## §5.3, it is released the moment the score writes that property, and §5.4, a
 ## cast-id write releases the size with it.
 ##
-## So the two assertions are one rule read from both ends:
+## So the assertions are one rule read from three ends:
 ##
 ## 1. a channel a script has `puppetSprite N, TRUE`'d is **still on the frame**
 ##    every tick, including frames whose score record for it is empty. Not "still
 ##    visible" -- a script may legitimately hide it -- but still *there*, because
 ##    a channel the score has dropped can never come back.
-## 2. a channel it has *not* puppeted is back on **the score's** member once the
-##    score has moved that channel, however recently a script wrote one -- and
-##    the member the script wrote lasted longer than the tick it was written on.
+## 2. **and a channel the score dropped that nothing puppets is gone**, which is
+##    what makes (1) a rule rather than a leak. The frame holds the score's
+##    channels plus the flagged puppets and nothing else. A clip that drops a
+##    foreground layer and the player behind it drops two records and only one may
+##    survive, so the player is drawn unoccluded -- authentic, measured, and
+##    `bugs.md` 48.
+## 3. a channel it has *not* puppeted is back on **the score's** member once the
+##    score has **written** that channel, however recently a script wrote one --
+##    and the member the script wrote lasted longer than the tick it was written
+##    on. Written, not changed: `bugs.md` 47 is a clip whose score puts the same
+##    member on the channel as the room it was entered from, so every check
+##    phrased as a change reports that it proved nothing, in the one room where
+##    there was something to prove.
 ##
-## Each room says which of the two it actually proved. `exitforest3` into
-## `dnzclicktalk` is where the score drops the puppeted channel; `veranda` into
-## `tofclicktalk` is where it moves the un-puppeted one; neither exercises the
-## other, and a check that proved nothing prints so rather than passing quietly.
+## Each room says which of the three it actually proved. `exitforest3` into
+## `dnzclicktalk` is where the score drops the puppeted channel and rewrites the
+## un-puppeted one in place; `veranda` into `tofclicktalk` is where it moves the
+## un-puppeted one outright; neither exercises everything, and a check that proved
+## nothing prints so rather than passing quietly.
 ##
 ## ## Why it goes through a save at all
 ##
@@ -206,6 +217,12 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 		return false
 
 	var before := int(preview.get("_index"))
+	# Every channel the score carries on the frame the click is made from, so the
+	# watch below can tell "the score let this one go" from "the score never had
+	# it". Read before the click, because the click is what moves the playhead.
+	var entry_channels: Array[int] = []
+	for value in (preview.get("_score").frame(before).get("sprites", []) as Array):
+		entry_channels.append(int((value as Dictionary)["channel"]))
 	preview.call("route_press", centre)
 	preview.call("route_release", centre)
 	if not h.check("the click was answered", int(preview.get("_index")) != before,
@@ -217,14 +234,18 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	# for ever and a talk clip never ends (AGENTS.md, bugs.md 22).
 	var dropped: Dictionary = {}
 	var abandoned: Dictionary = {}
+	var stowaways: Dictionary = {}
+	var left_with_the_score: Dictionary = {}
 	var swapped_away := false
 	var score_moved := false
+	var score_wrote := false
 	var returned := false
 	var held := 0
 	var run := 0
 	var began := int(preview.get("_ticks"))
 	var start := Time.get_ticks_msec()
 	var last := -1
+	var was_at := int(preview.get("_index"))
 	while int(preview.get("_ticks")) - began < Args.number(args, "ticks", 400) \
 			and Time.get_ticks_msec() - start < 240000:
 		await process_frame
@@ -232,6 +253,39 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 		if now == last:
 			continue
 		last = now
+		# Did the score *write* the clicked channel's member on the way here?
+		#
+		# Not "did the member change", which is what `score_moved` below asks and
+		# what the release used to be inferred from. A score that rewrites a
+		# channel with the member it already had has still written it, and Director
+		# releases on the write (§5.3). The two questions have the same answer in
+		# every room where a clip changes the member and different answers in the
+		# room that found `bugs.md` 47 — so asking only the easy one is how a check
+		# passes over the case it was meant to cover.
+		var here := int(preview.get("_index"))
+		if here != was_at:
+			var writes: Dictionary = preview.get("_score").writes_between(was_at, here)
+			for field in (writes.get(channel, {}) as Dictionary):
+				if field == "cast_id" or field == "cast_lib":
+					score_wrote = true
+			was_at = here
+		# `with_puppets`' whole contract, from the other side: the frame holds the
+		# score's channels **plus the flagged puppets and nothing else**. The half
+		# above proves a puppet is not dropped; this proves nothing else is kept.
+		#
+		# It is the rule the player sees as depth. A clip that drops a foreground
+		# layer *and* the player standing behind it drops both records, and only
+		# the puppeted one may survive — so the player is drawn unoccluded, which
+		# looks like a layering bug and is the movie's own doing (`bugs.md` 48).
+		# A port that carried the un-puppeted channel too would hide the fault by
+		# reproducing the occlusion for the wrong reason, and this is what says so.
+		for value in (preview.call("frame_sprites") as Array):
+			var ch := int((value as Dictionary)["channel"])
+			if _score_member(preview, ch) > 0:
+				continue
+			if bool((overrides.get(ch, {}) as Dictionary).get("_puppet", false)):
+				continue
+			stowaways[ch] = here
 		for ch in on_screen:
 			# A script may un-puppet a channel, and then the score owns it again
 			# and dropping it is correct. Only a channel that is *still* claimed
@@ -244,6 +298,13 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 				abandoned[ch] = int(preview.get("_index"))
 			if not _channel_shown(preview, ch):
 				dropped[ch] = int(preview.get("_index"))
+		# And the channels the score dropped that *nothing* puppets, which is the
+		# comparison that makes the check above mean anything: "a puppet survived"
+		# proves the rule only beside "an un-puppeted neighbour did not".
+		for ch in entry_channels:
+			if _score_member(preview, ch) <= 0 \
+					and not bool((overrides.get(ch, {}) as Dictionary).get("_puppet", false)):
+				left_with_the_score[ch] = here
 		# How long the clip's own member *lasted*, not merely that it appeared.
 		# One tick is the signature of something releasing the write behind the
 		# movie's back -- `director_preloader.gd` asking `_effective` about frames
@@ -274,24 +335,42 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	h.check("every channel still claimed by `puppetSprite` stayed on the frame",
 		dropped.is_empty(),
 		"dropped: %s" % str(dropped) if not dropped.is_empty() else "")
+	h.check("and no channel the score dropped stayed without one",
+		stowaways.is_empty(),
+		"carried unpuppeted: %s" % str(stowaways) if not stowaways.is_empty() else "")
 	h.check("the clip wrote its own member over channel %d" % channel, swapped_away)
 	h.check("and it lasted longer than the tick it was written on",
 		not swapped_away or held > 1, "held for %d score tick(s)" % held)
 	h.check("the clip returned to the frame it was entered from", returned,
 		"stopped on f%d" % int(preview.get("_index")))
-	# Both halves say when they proved nothing rather than passing on a vacuous
+	# Every branch says when it proved nothing rather than passing on a vacuous
 	# truth. `porting-fidelity-verification`: a green check nobody can attribute
 	# is the shape that lets a fix look verified when it was never exercised.
-	if returned and score_moved:
+	#
+	# The release is asked on the **write** and not on the change. Those were one
+	# question here, worded as the change, and `bugs.md` 47 is the gap between
+	# them: at `exitforest3` the score puts `adnzlop1` on channel 18 both in the
+	# room and inside `dnzclicktalk`, so the member never moves, so this branch
+	# used to print "does not test the release" over the room that had the bug in
+	# it. Now it tests it, and only a score that never touches the channel at all
+	# is excused.
+	if returned and score_wrote:
 		h.check("channel %d is back on the score's member" % channel,
 			_shown_member(preview, channel) == score_member,
-			"score %d, showing %d" % [score_member, _shown_member(preview, channel)])
+			"score %d, showing %d%s" % [score_member, _shown_member(preview, channel),
+				"" if score_moved else "; the score rewrote the member it already had"])
 	elif returned:
-		print("   the score never moved channel %d, so the write standing is" % channel
-			+ " correct and this room does not test the release")
+		print("   the score never wrote channel %d's member, so the write standing"
+			% channel + " is correct and this room does not test the release")
 	if abandoned.is_empty():
 		print("   the score carried every puppeted channel throughout, so this"
 			+ " room does not test the persistence")
+	elif left_with_the_score.is_empty():
+		print("   the score dropped only puppeted channels here, so this room does"
+			+ " not test that an un-puppeted one goes")
+	else:
+		print("   the score dropped %s and kept the puppeted ones; %s went with it"
+			% [str(abandoned.keys()), str(left_with_the_score.keys())])
 	return true
 
 

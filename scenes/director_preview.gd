@@ -2842,17 +2842,35 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 
 ## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
 ## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
-func _effective(sprite: Dictionary, ignore_visible: bool = false,
-		peek: bool = false) -> Dictionary:
-	return SpriteState.effective(sprite, _overrides, _table, ignore_visible, peek)
+func _effective(sprite: Dictionary, ignore_visible: bool = false) -> Dictionary:
+	return SpriteState.effective(sprite, _overrides, _table, ignore_visible)
 
 
 ## `_effective` for a caller that is only *looking* -- the preloader, walking
-## frames the playhead has not reached. Same answer, no release of live puppet
-## state; see `sprite_state.gd:effective` on `peek` for what asking the mutating
-## form about a future frame cost.
+## frames the playhead has not reached.
+##
+## The same call now, and kept as its own name rather than folded away: it used to
+## need a flag that suppressed the release, because `_effective` released puppets
+## as a side effect of being asked and the preloader asks about 24 frames it may
+## never play. The release is `sync_frame_entry`'s now and `_effective` is a pure
+## read, so the distinction has no code left -- but the *caller* still is the one
+## that must never be able to change live state, and a name that says so is what
+## makes reintroducing the fault visible in a diff.
 func _effective_ahead(sprite: Dictionary) -> Dictionary:
-	return _effective(sprite, false, true)
+	return _effective(sprite)
+
+
+## Director's `Sprite::releaseAutoPuppet`, on the event that drives it: the
+## playhead has moved from frame `from` to frame `to`, so every property the
+## score wrote on the way is handed back to it (§5.3, §5.4).
+##
+## On the node rather than inside `frame_loop.gd` because both halves it needs
+## live here -- the score and the override table -- and because it is the kind of
+## thing a harness wants to be able to drive directly.
+func _release_auto_puppets(from: int, to: int) -> void:
+	if _score == null:
+		return
+	SpriteState.release_auto_puppets(_score.writes_between(from, to), _overrides)
 
 
 func _note_member(channel: int, cast_id: int) -> void:

@@ -1981,3 +1981,70 @@ difference to whatever it changed in between.
 Not caused by the corpus pinning moving from `director_game.cfg` to `--root`:
 both mechanisms resolve the same root, and the 26-check count is identical
 either way.
+
+---
+
+## 48. Hezi is drawn in front of the foreground layer that hides him, and the original does this too
+
+**Status:** **not a bug — measured, and closed as authentic.** Written down so it
+is not reported a third time. · **Area:** whole-sprite puppets vs. score
+occupancy · reported from play against `saves/piposh2/shlomit_hezi_gone.json`
+with "it might be from the original but i really don't think so"
+
+**The report.** In `dwarfs` the player character stands behind a foreground
+layer that covers him from the knee down. Click through to the clip and he is
+drawn in front of it instead.
+
+**What the score holds.** In the room (DAY1 frames 1485-1487) channel 30 carries
+Hezi (`1:30 standleft9`) and channel 31 carries a 613x158 foreground band
+(`4:99`, rect `0,243 613x158`). 31 is the higher channel, so it paints over him.
+At the clip the playhead reaches — 2514 onward — **both records are zero**:
+`type=0 0:0 0x0` on each, which is `kInactiveSprite` and an empty member. So the
+movie did not merely stop mentioning those channels, it **wrote them empty** —
+the score is a delta stream, `director_score.gd:writes_between` is what says
+which frame wrote what, and both channels are written to zero on the way in.
+
+DAY1's `init all` does `puppetSprite` on `[93, 30, 23, 15, 33, 6, 100, 17,
+103-110]`. **31 is not in that list.** So the clear reaches channel 31 and is
+blocked on channel 30, and the layer goes while Hezi stays.
+
+**The engine is right, and this is which function says so.** The question is
+whether Director skips the *whole* channel update for a puppet — leaving what it
+held, drawn — or only the property copy, with occupancy still following the
+score. It is the whole update, along a chain with no branch in it:
+
+- `Score::updateSprites` is the only thing that reconciles a live channel from
+  the score, and it has **no clear path**: the single write is
+  `channel->setClean(nextSprite)`, where `nextSprite` is the frame's decoded
+  record and "empty" is expressed as a zero member inside it.
+- `Channel::setClean` takes the `_sprite->_puppet || _sprite->_autoPuppet` branch
+  and copies **only** the script id. `replaceSprite` is not called.
+- `Sprite::replaceFrom` returns immediately while `_puppet` is set, after copying
+  the script id, the behaviours and the sprite-list index.
+- Occupancy lives in the *live* sprite's `_spriteType`/`_castId`, and the only
+  code that ever changes them is inside the region `_puppet` returns before.
+  `Channel::isEmpty()` — the render loop's own test — reads `_spriteType` off
+  that live sprite, never off the frame record.
+
+So a clear cannot reach a puppeted channel, in the reference or in Director. The
+rule is applied identically to all 48 channels here; **the asymmetry is the
+movie's**, and 1997 drew this frame the same way. `tools/puppet_persists.gd`
+holds both halves of it at `exitforest3`: the score drops `[30]` and keeps it,
+and `[2, 8, 9, 12, 13, 15, 31]` go with the score.
+
+**What would make this a real report.** Not "he is in front of the tree" — that
+follows from the data. It would have to be that the *clip* is not the frame the
+game means to be on, i.e. that the click should never have got there. Nothing in
+the trace suggests that: the clip runs, plays its line and returns.
+
+Reproduce, and read the line beginning "the score dropped", which prints both
+halves side by side:
+
+```bash
+godot --headless --path . --script tools/puppet_persists.gd -- \
+    --root piposh2 --label exitforest3
+```
+
+That check is in `gate.sh` deliberately. A survey nobody runs rots, and "an
+un-puppeted channel the score dropped is gone" is the invariant that would break
+first if somebody tried to answer this report by making the puppet carry more.
