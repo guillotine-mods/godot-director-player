@@ -296,11 +296,21 @@ integers.
 | `pictureP` | 1 | Whether a value is a picture. |
 
 `member(n)` and `member(n, castLib)` collapse a `(library, slot)` pair into one
-value. `lingo/lingo_host.gd` documents how this port packs the pair into a
-single integer and why the packing does not need to match Director's: all 18
-`castNum` sites in the corpus are one line that produces and consumes the
+value. `scenes/preview/members.gd` documents how this port packs the pair into a
+single integer (`LIB_STRIDE`, `pack_ref`) and why the packing does not need to
+match Director's: every `castNum` site in the corpus produces and consumes the
 integer inside a single expression. That reasoning is worth reading before
 reusing this port's encoding anywhere the integer might be stored or compared.
+
+**This paragraph described the packing for a long time before the packing
+existed.** It pointed at `lingo/lingo_host.gd`, a file that no longer exists, and
+`sprite_state.read_prop` answered `the castNum of sprite` with the bare member
+number the whole time — so the library was dropped on the one property whose
+whole job is to carry it, and Piposh 1's ship map lost its walking figure and
+every destination on it. `tools/member_ref_round_trip.gd` is the guard, and it
+chains the two modules rather than testing either, because each was defensible
+alone. A design note is not an implementation, and this one outlived the file it
+cited.
 
 ## 1.7 Sound
 

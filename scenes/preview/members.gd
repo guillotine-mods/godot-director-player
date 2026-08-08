@@ -21,6 +21,42 @@ extends RefCounted
 ## 125-144 ms before, 65-81 ms after, over three runs each.
 
 
+## How far apart two libraries sit when a `(library, slot)` pair is carried as
+## one integer.
+##
+## `the castNum of sprite` has to survive being handed straight back to
+## `member()`, and a bare member number cannot: numbers are per library, so the
+## library has to travel with it. This port packs rather than reproducing
+## Director's own encoding, which it is free to do because **every castNum site
+## in the corpus produces and consumes the integer inside a single expression**
+## and none stores, compares or does arithmetic on it. Measured across all six
+## roots: five titles have the read idiom only, in one shape --
+## `member(the castNum of sprite 1).name`, or Piposh 1's
+## `the name of member the castNum of sprite 1` -- and `rating` has the write
+## idiom only, `set the castNum of sprite 18 to the number of member ...`, whose
+## right-hand side is a bare number. So nothing in this corpus can observe the
+## encoding, and reusing it anywhere the integer might be *stored* would need
+## that claim re-measured.
+##
+## 0x20000 is far above any member number this corpus reaches (the largest cast
+## holds a few thousand), so a packed value can never be mistaken for a bare one
+## and rating's small-integer writes stay on the unpacked path.
+const LIB_STRIDE := 0x20000
+
+
+## Carry `(library, slot)` in one integer.
+##
+## Library 1 packs to the bare member number, so the overwhelmingly common case
+## is byte-identical to what this returned before packing existed and no existing
+## behaviour moves. A library of 0 -- which `castlibnum` answers for a sprite
+## record that never decoded one -- means the same thing, because `(0 - 1)` times
+## a stride is a negative address and not a library.
+static func pack_ref(lib: int, member: int) -> int:
+	if lib <= 1:
+		return member
+	return (lib - 1) * LIB_STRIDE + member
+
+
 ## `[cast library, member number]` for a Lingo member reference.
 ##
 ## An unnamed cast means the movie's own, which is how Director resolves a bare
@@ -30,6 +66,15 @@ extends RefCounted
 static func resolve_ref(which: Variant, cast: String, table) -> Array:
 	if table == null:
 		return [1, 0]
+	# A packed reference carries its library by construction, so it is decoded
+	# before anything else looks at the `cast` argument and it wins outright.
+	# Letting a named library override it would discard the one piece of
+	# information packing exists to preserve -- which is the bug packing was
+	# added for. No site in this corpus passes both.
+	if typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT:
+		var packed := int(which)
+		if packed >= LIB_STRIDE:
+			return [packed / LIB_STRIDE + 1, packed % LIB_STRIDE]
 	var lib := 1
 	var wanted := cast.strip_edges().to_lower()
 	var found_lib := false

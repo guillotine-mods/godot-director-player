@@ -16,6 +16,7 @@ extends RefCounted
 ## swap, so that is every character in it.
 
 const LingoValue := preload("res://lingo/lingo_value.gd")
+const Members := preload("res://scenes/preview/members.gd")
 
 
 ## A sprite as it currently stands: the score's record with whatever a script
@@ -215,8 +216,32 @@ static func read_prop(channel: int, prop: String, overrides: Dictionary,
 		if int(sprite["channel"]) != channel:
 			continue
 		match prop:
-			"membernum", "castnum":
+			"membernum":
 				return int(sprite["cast_id"])
+			"castnum":
+				# **Not the same answer as `membernum`, and that is the whole
+				# point of the two spellings.** A member number is per library, so
+				# a bare one is only an address if the library is already known.
+				# `the memberNum of sprite` is that bare number and every site
+				# that does arithmetic on it wants exactly that -- INVENTOR's
+				# `set the memberNum of sprite 4 to the number of member
+				# ("money" & y)` would break the moment it carried anything else.
+				# `the castNum of sprite` is the reference, and it has to survive
+				# being handed straight back to `member()`.
+				#
+				# These were one arm, and Piposh 1's ship map is what that cost.
+				# Every deck movie opens with
+				# `set nof to the name of member the castNum of sprite 1` -- the
+				# backdrop on channel 1 is named for the deck position, and that
+				# line is how the game learns where the player is standing.
+				# Channel 1 is `2:1` in DAY1, so a bare `1` came back, resolved in
+				# library 1, and `nof` became `"walkright1"` instead of `"dl1"`.
+				# The map's `enterFrame` hides the walking Piposh for any `nof` of
+				# four characters or more and every one of its `mouseUp` handlers
+				# is gated on `the visible of sprite 20 = 1`, so one wrong library
+				# removed the figure *and* every destination on the menu.
+				return Members.pack_ref(
+					int(sprite.get("cast_lib", 1)), int(sprite["cast_id"]))
 			"loch":
 				return int(sprite["loc_h"])
 			"locv":

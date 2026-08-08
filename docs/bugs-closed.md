@@ -1108,6 +1108,62 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
 
 ## Closed
 
+- **`the castNum of sprite` dropped its cast library, and Piposh 1's ship map lost
+  both the walking Piposh and every destination on it.** Reported from play: the
+  figure does not appear on the ship and no screen can be reached from the menu.
+  One cause, both halves.
+
+  Every deck movie opens with
+  `set nof to the name of member the castNum of sprite 1` — channel 1 is the
+  backdrop, its member is *named* for the deck position, and that line is how the
+  game learns where the player is standing. In `DAY1` channel 1 is `2:1`.
+  `sprite_state.read_prop` answered `castNum` with the bare `cast_id`, so `1` came
+  back; `members.resolve_ref` resolves a bare number in library 1, which is right
+  because a bare number is all Director gives it; and member 1 of library 1 is
+  `walkright1`. So `nof` became `"walkright1"` instead of `"dl1"`.
+
+  `MAINMENU.dir`'s `enterFrame` reads `if the number of chars in nof < 4` and takes
+  the `else` — `set the visible of sprite 20 to 0` — for anything longer. Ten
+  characters, so the figure was hidden. And **every one of the map's destination
+  handlers is `on mouseUp … if the visible of sprite 20 = 1 then … walkonby2()`**,
+  so the same wrong library that removed the character also swallowed every click
+  that would have moved him. Two symptoms, one missing library.
+
+  Neither module was wrong alone, which is why nothing caught it: the fix is to
+  stop them disagreeing. `castNum` is now split from `memberNum` and returns the
+  `(library, slot)` pair packed into one integer (`members.pack_ref`,
+  `LIB_STRIDE` 0x20000), which `resolve_ref` decodes. Library 1 packs to the bare
+  number, so the common case is byte-identical. `memberNum` stays bare, because
+  every `set the memberNum of sprite N to the number of member (…)` in the corpus
+  does arithmetic on a plain number — INVENTOR's money gauge among them.
+
+  The encoding need not match Director's, and that is measured rather than
+  assumed: across all six roots every `castNum` site produces and consumes the
+  integer inside a single expression. Five titles have only the read idiom
+  (`member(the castNum of sprite 1).name`, or Piposh 1's `the name of member …`)
+  and `rating` only the write idiom, `set the castNum of sprite 18 to the number of
+  member …`, whose right-hand side is a bare number and which stays on the
+  unpacked path. Nothing stores, compares or does arithmetic on a read `castNum`.
+
+  Verified end to end through the path the game actually uses, not just the value:
+  with the fix, `nof` is `"dl1"` on the stage and `"dl1"` inside the MIAW
+  (`_share_movie_state_with` shares the globals dictionary, so it crosses the
+  window boundary), channel 20 holds `stand`, `enterFrame` places it at (450, 117),
+  `the visible of sprite 20` reads 1, and a synthesised click at (300, 117) runs a
+  destination handler — `nof` → `"dr3"`, `egozh` → 300, `stopornot` → `"notok,b,5"`
+  — with sprite 20 then walking, locH 450 → 410 and its member swapped into the
+  walk cycle. A/B'd with the change stashed: `nof` `"walkright1"`, override
+  `{"visible": 0}`, `the visible of sprite 20` → 0.
+
+  `docs/LINGO_SURFACE.md` §1.6 had described this packing for a long time before it
+  existed, citing `lingo/lingo_host.gd`, a file that no longer exists. A design
+  note is not an implementation.
+
+  Reproduce: `godot --headless --script tools/member_ref_round_trip.gd`, which
+  chains `read_prop` into `resolve_ref` against the member the score actually put
+  on the channel — 701 of Piposh 1's 1,513 distinct sprite members are outside
+  library 1, and every one of them failed before this.
+
 - **A field was laid out in the score's box instead of its member's, so Piposh 1's
   money was never centred.** Reported from play: the amount in the top bar sits
   off-centre. `GlobalMoney` is a 102x19 field with `text_align` 1, and every room's
