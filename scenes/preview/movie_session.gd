@@ -95,6 +95,8 @@ static func forget_previous(host, previous_path: String) -> void:
 	host._forget_field_text_of(previous_path)
 	host._loops.clear()
 	host._overrides.clear()
+	# Which channels the *previous* movie measured says nothing about this one.
+	host._collision_channels.clear()
 	# Channel cursors survive frame changes and cast swaps but not a new movie,
 	# which is one of the points Director forces a recompute at. The stored value
 	# is a pair of member *numbers*, and those are local to the cast that was open

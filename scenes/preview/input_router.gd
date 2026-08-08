@@ -329,6 +329,16 @@ static func debug_key(host, code: int) -> void:
 		"boxes":
 			host._show_boxes = not host._show_boxes
 			host.queue_redraw()
+		"collisions":
+			# Reported rather than silent, because an empty overlay is the
+			# expected state in most rooms -- nothing in them uses the operators
+			# -- and is indistinguishable from a key that did nothing.
+			host._show_collisions = not host._show_collisions
+			print("collision zones: %s (%d channel(s) measured so far)" % [
+				"on" if host._show_collisions else "off",
+				host._collision_channels.size(),
+			])
+			host.queue_redraw()
 		"hit_test":
 			host._hit_pixels = not host._hit_pixels
 			print("hit test: %s" % ("artwork" if host._hit_pixels else "full rectangle"))

@@ -343,6 +343,11 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# script has hidden, because the reference does. See that function.
 			if preview == null or args.size() < 2:
 				return 0
+			# Both operands are noted for the collision overlay before either is
+			# measured, so a zone appears the first time a script asks about it
+			# even when the answer is 0.
+			preview.note_collision_channel(LingoValue.to_int(args[0]))
+			preview.note_collision_channel(LingoValue.to_int(args[1]))
 			var first: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[0]))
 			var second: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[1]))
 			if first.size == Vector2.ZERO or second.size == Vector2.ZERO:

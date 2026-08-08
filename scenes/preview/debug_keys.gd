@@ -99,6 +99,14 @@ const DEFAULTS := {
 	# The one binding outside the F-key band, because the band is full and F10 is
 	# Rating's. See the header for the measurement that chose it.
 	"fast_forward": "PageDown",
+	# The second binding outside the F-key band, and for the same reason the
+	# first one is: twelve F-keys, F10 is Rating's, the other eleven are spoken
+	# for. PageUp is Mac code 116, which is in none of the tested sets over all
+	# six roots, types no character, and is not one of the keys a focused
+	# editable field takes (Up, Down, Home, End, Delete, Tab). Its sibling
+	# PageDown was chosen the same way. `tools/debug_bindings.gd` asserts that
+	# against the games rather than against this comment.
+	"collisions": "PageUp",
 }
 
 ## Godot keycode -> command name. Built once; the config does not change while a

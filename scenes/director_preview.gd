@@ -233,6 +233,25 @@ var _hover_channel := 0
 ## in a preview with no cursor art and no hotspot feedback, "nothing happens" and
 ## "nothing is there" look the same.
 var _show_boxes := true
+## The channels this movie has asked `intersects` or `within` about, and the
+## overlay that outlines them. **The collision zones, which the hotspot overlay
+## cannot show**, because they are not hotspots: nothing clicks them, no script is
+## attached to them, and most of them are deliberately invisible. `_show_boxes`
+## draws what the *mouse* can reach; this draws what the *movie* is measuring.
+##
+## Title-agnostic, and that is the whole design. The alternative on offer was to
+## outline Piposh 1's channels 17-22 -- the shapes fencing the cannon game's
+## ships -- which is a per-title mapping in engine code and exactly what
+## `AGENTS.md` forbids. Recording the operands the movie's own scripts pass to
+## the operators needs no table and lights up every title that uses them: the
+## cannon's fences, `SHUFFLE`'s ten drop targets, `ARCADE`'s gates, the ship
+## map's fourteen deck zones.
+##
+## Populated at the moment a script asks, not by scanning, so a zone appears the
+## first time it is tested and the overlay reflects what this playthrough has
+## actually consulted. Cleared with the rest of the per-movie state.
+var _collision_channels: Dictionary = {}
+var _show_collisions := false
 ## Hit-test mode. True tests the artwork within the rect, false takes the whole
 ## rect. `M` toggles; the HUD says which is live.
 var _hit_pixels := true
@@ -1404,6 +1423,8 @@ func _draw() -> void:
 		queue_redraw()
 	if _show_boxes:
 		_draw_hotspots(frame)
+	if _show_collisions:
+		_draw_collision_zones()
 	if _window_key != "":
 		return
 	StagePaint.draw_overlays(self, frame, STAGE, SKIP_RECT)
@@ -1511,6 +1532,25 @@ func _declares_mouse_handler(script: Dictionary) -> bool:
 
 func _draw_hotspots(frame: Dictionary) -> void:
 	Interaction.draw_hotspots(self, frame, _hover_channel, _hit_pixels, _table)
+
+
+## Outline every channel the movie has measured with `intersects` or `within`.
+##
+## Drawn through `lingo_sprite_rect`, so what appears is the rect the *operator*
+## sees rather than a second opinion about it. That is the point: if a zone is
+## outlined somewhere the artwork is not, the operator and the picture disagree
+## and the overlay has found the bug rather than illustrated the geometry.
+##
+## Hidden channels are included, and are most of what this is for -- a collision
+## zone is usually an invisible shape, and the cannon game's shell probe is a
+## hidden 1x1 dot. An empty channel is skipped: it has no rect and outlining the
+## origin would draw a dot in the corner for every channel the score has emptied.
+func _draw_collision_zones() -> void:
+	for channel in _collision_channels:
+		var rect: Rect2 = lingo_sprite_rect(int(channel))
+		if rect.size == Vector2.ZERO:
+			continue
+		draw_rect(rect, Color(1.0, 0.15, 0.15, 0.9), false, 1.0)
 
 
 ## A mouse-down over a moveable sprite starts a drag: Director records the
@@ -1833,6 +1873,15 @@ func lingo_rollover(channel: int) -> bool:
 ## `tools/sprite_collision.gd` asserts the rule and that the mouse still honours
 ## visibility; `tools/cannon_hit.gd` plays the cannon round; neither covers the
 ## map, which is the gap that made this look like a trade.
+## Record that a script has asked a geometric question about this channel, so
+## the collision overlay can outline it. Called from the operators' host arm
+## rather than from `lingo_sprite_rect`, because `tools/` calls that function
+## directly and a harness must not populate a debug overlay as a side effect.
+func note_collision_channel(channel: int) -> void:
+	if channel > 0:
+		_collision_channels[channel] = true
+
+
 func lingo_sprite_rect(channel: int) -> Rect2:
 	if _score == null or channel <= 0:
 		return Rect2()
