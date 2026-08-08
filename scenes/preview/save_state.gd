@@ -344,6 +344,21 @@ static func _hooks_of(host) -> Dictionary:
 		"click_sprite": int(host._host.click_sprite),
 		"click_loc": [host._host.click_loc.x, host._host.click_loc.y],
 		"double_click": bool(host._host.double_click),
+		# The movie-wide properties a script can set and then be restored into the
+		# middle of.
+		#
+		# `the timer` is deliberately *not* here, and it is the one field on the
+		# host that is excluded rather than saved. It is a live clock read off the
+		# engine's millisecond counter, so its origin means nothing in a second
+		# process and its elapsed value has already moved by the time anything
+		# compares two records -- which is what it did: three of this file's
+		# byte-exact comparisons failed by the eight ticks the restore took.
+		# `_restore_hooks` starts it fresh instead, which is what a movie that had
+		# just called `startTimer` sees, and the only cost is that the next
+		# `if the timer > clockspeed` in a restored session waits a full period.
+		"search_path": (host._host.search_path as Array).duplicate(),
+		"exit_lock": bool(host._host.exit_lock),
+		"playback_paused": bool(host._host.playback_paused),
 	}
 
 
@@ -510,6 +525,14 @@ static func _restore_hooks(host, hooks: Dictionary) -> void:
 	var at: Array = hooks.get("click_loc", [0, 0])
 	host._host.click_loc = Vector2(float(at[0]), float(at[1])) if at.size() >= 2 else Vector2.ZERO
 	host._host.double_click = bool(hooks.get("double_click", false))
+	# Through `set_system_prop` rather than onto the fields, so the restore takes
+	# the same coercion and the same side effects the write takes -- the search
+	# path reaches the audio resolver rather than only the host.
+	host._host.set_system_prop("searchpath", hooks.get("search_path", [""]))
+	host._host.set_system_prop("exitlock", 1 if bool(hooks.get("exit_lock", false)) else 0)
+	host._host.playback_paused = bool(hooks.get("playback_paused", false))
+	# Not restored, started. See `_hooks_of`.
+	host._host.timer_reset_ms = Time.get_ticks_msec()
 
 
 static func _restore_window_props(host, props: Dictionary) -> void:

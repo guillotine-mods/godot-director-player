@@ -558,6 +558,34 @@ func _ready() -> void:
 		Boot.as_window(self)
 	else:
 		Boot.stage(self)
+	# `the exitLock` needs the close request to arrive here rather than be
+	# actioned before anything can refuse it, and that is a tree-wide switch. Set
+	# only when this preview *is* the application: a harness adds the scene to its
+	# own root, and changing how that process answers a window close would be this
+	# file reaching outside the movie it is running.
+	if get_tree() != null and get_tree().current_scene == self:
+		get_tree().set_auto_accept_quit(false)
+
+
+## `the exitLock` — the one thing it does.
+##
+## Director disables the quit *key* while it is set: the command `quit` still
+## quits, and so does anything the engine's own operator does. Five sites set it
+## and none clears it, so a title that sets it means "not by accident from here
+## on"; the reference answers a close request with a confirm dialog rather than
+## refusing outright, and the equivalent here is the debug layer's own quit key,
+## which is deliberately not gated on this.
+##
+## A window is never the application, so this only ever fires on the stage.
+func _notification(what: int) -> void:
+	if what != NOTIFICATION_WM_CLOSE_REQUEST:
+		return
+	if get_tree() == null or get_tree().current_scene != self:
+		return
+	if _host != null and _host.exit_lock:
+		_trace("f%d close refused: the exitLock is set" % _index)
+		return
+	get_tree().quit()
 
 
 func _ready_as_window() -> void:
@@ -1203,6 +1231,12 @@ func _palette_libs() -> Array:
 func _process(delta: float) -> void:
 	if _score == null or _paused:
 		return
+	# `quit` and `halt` stop the movie (§1.4). The reference sets the score's play
+	# state and lets the projector's loop fall out of the bottom; here the loop is
+	# `_process` and this is where it falls out. A Movie-In-A-Window that quits
+	# stops itself and leaves the stage running, which is what a window is.
+	if _host != null and _host.stopped:
+		return
 	if _score.frame(_index).is_empty():
 		return
 	# §6.3 step 10 caches the rollover as part of resolving the frame, so it is
@@ -1270,6 +1304,18 @@ func _begin_transition(frame: Dictionary) -> bool:
 
 
 func _advance() -> Dictionary:
+	# Director's `pause`, and the whole of what it suspends: no `exitFrame`, no
+	# playhead move, no `prepareFrame`, no `enterFrame`. The reference guards each
+	# of those five separately against `_playbackPaused`; one guard here is the
+	# same set, because this port has exactly one place a step happens.
+	#
+	# Deliberately *not* in `_process`: a paused movie in Director stays drawn,
+	# keeps its rollover current and keeps taking clicks -- which is the only way
+	# the frames that pause (`mainmenu.dir` 92, `hezsave.dir` 8) are ever left.
+	# `_paused`, the debug key's flag, is the other thing entirely and stops the
+	# tick outright.
+	if _host != null and _host.playback_paused:
+		return {"exited": -1, "frame": _index}
 	_enter_frame_froze = false
 	var stepped: Dictionary = FrameLoop.advance(self)
 	# §6.1 step 18. The step has entered its frame, run `prepareFrame` and
@@ -2020,6 +2066,124 @@ func mouse_button_down() -> bool:
 
 func lingo_hold() -> void:
 	_held = true
+
+
+## `quit` and `halt` — the application half. The movie half is the host's
+## `stopped`, which `_process` reads above.
+##
+## **Gated on being the application**, and that gate is the reason this can be
+## bound at all. Fourteen harnesses instantiate this scene and add it to their
+## own root, so `get_tree().current_scene` is not this node in any of them; the
+## movie stops, the harness keeps its process, and the assertions after the call
+## still run. When the game is the running main scene the tree quits, which is
+## what a projector does. A Movie-In-A-Window never quits the application either,
+## for the same test — it is not the scene, the stage is.
+##
+## `the exitLock` is deliberately not consulted: Director locks the quit *key*
+## and leaves the command alone (`the exitLock`, and `_notification` below).
+func lingo_quit() -> void:
+	_trace("f%d quit" % _index)
+	set_process(false)
+	if get_tree() != null and get_tree().current_scene == self:
+		get_tree().quit()
+
+
+## `beep` and `beep <count>` — the system alert sound, `count` times.
+##
+## Director spaces repeats 400 ms apart and blocks for the gap; the whole run is
+## rendered into one stream here instead, so a `beep 3` is three beeps 400 ms
+## apart without the handler that asked for them stopping. Nothing in the corpus
+## passes a count, so the gap is unverified and the single beep is not.
+##
+## Off the numbered sound channels on purpose. Director's beep is the machine's,
+## not the movie's, and putting it on channel 1 would make `soundBusy(1)` answer
+## true for it — which is the guard every line of speech in this corpus waits on.
+func lingo_beep(count: int = 1) -> void:
+	if _audio != null:
+		_audio.call("system_beep", maxi(count, 1))
+	_trace("f%d beep x%d" % [_index, maxi(count, 1)])
+
+
+## The dialog `alert` raises, found by name rather than held in a field, so that
+## a modal the movie put up costs the node no state to save and `ACCOUNTED` no
+## entry.
+const ALERT_NODE := "LingoAlert"
+
+
+## `alert "text"` — a modal box with an OK button, and the movie stopped behind
+## it until the player dismisses it.
+##
+## Two sites, one real: `strtgame.dir` 405 tells the player in Hebrew that the
+## game runs from the CD only. The player has never seen it.
+##
+## **Not `OS.alert`, and the reason is measured.** The host platform's own box is
+## the obvious choice — it is modal against the whole application exactly as
+## Director's is — but on Windows it blocks the calling thread whatever the
+## display driver is: `OS.alert` under `--headless` never returned, and a gate
+## run that met one would sit there until the ceiling killed it. Every harness in
+## `gate.sh` boots a real movie, so a title's `alert` would be a hang nobody
+## could attribute.
+##
+## An engine dialog instead, which is both closer and safer. The player sees a
+## box with an OK button; the movie stops behind it, because `_paused` is what
+## Director's modal amounts to from the movie's side — no frames, no events, no
+## clicks reaching the score; and the engine keeps running, so nothing hangs. The
+## divergence from Director is that the *handler* that called `alert` runs on
+## instead of blocking inside the call. Recorded rather than hidden: this port
+## has no way to block a handler that is not a `go` or a `play`, and blocking the
+## process is the thing that cannot be done here at all.
+##
+## Director also stops recording mouse and key events while the box is up, so
+## that the click on OK is not delivered to the movie underneath. `_mouse_down_seen`
+## is this port's half of that, and `_paused` is the rest.
+func lingo_alert(text: String) -> void:
+	_trace("f%d alert %s" % [_index, text])
+	_mouse_down_seen = false
+	var box: AcceptDialog = get_node_or_null(NodePath(ALERT_NODE)) as AcceptDialog
+	if box == null:
+		box = AcceptDialog.new()
+		box.name = ALERT_NODE
+		box.exclusive = true
+		box.unresizable = false
+		add_child(box)
+		# Whatever the movie was doing before the box went up, it goes back to.
+		# A player who had paused with the debug key and then triggered an alert
+		# must not be un-paused by dismissing it.
+		box.confirmed.connect(func() -> void: _paused = bool(box.get_meta("was_paused", false)))
+		box.canceled.connect(func() -> void: _paused = bool(box.get_meta("was_paused", false)))
+	box.set_meta("was_paused", _paused)
+	box.title = movie_name()
+	box.dialog_text = text
+	box.popup_centered()
+	_paused = true
+
+
+## `delay <ticks>` — hold the playhead for that many 60ths of a second.
+##
+## The tempo channel's own delay is the same hold with the same reason, so a
+## script delay and a score delay cannot disagree about what holding means, and
+## the HUD names it the same way. Unverified: 0 sites in either corpus.
+func lingo_delay(ticks: int) -> void:
+	if ticks <= 0:
+		return
+	# Through `FrameLoop`'s own preload rather than a second one here, so the two
+	# cannot come to name different scripts.
+	_clock.hold(ticks * 1000.0 / 60.0, FrameLoop.FrameClock.REASON_DELAY)
+	_trace("f%d delay %d ticks" % [_index, ticks])
+
+
+## `set the searchPath to [...]` — the folders to try when a name does not
+## resolve beside the movie that named it.
+##
+## Handed to the audio resolver, which is the only thing in this port that
+## resolves a name to a file at runtime. Absolute paths on a drive that is not
+## there simply fail, and that is the answer Piposh 1's CD scan is asking for:
+## it writes `d:`, `e:`, `f:` and `b:` in turn and keeps the one whose sounds
+## load.
+func lingo_search_path(paths: Array) -> void:
+	if _audio != null:
+		_audio.call("set_search_path", paths)
+	_trace("f%d searchPath %s" % [_index, str(paths)])
 
 
 ## `puppetTransition <type>[, <chunkSize>, <duration in quarter-seconds>, <area>]`.

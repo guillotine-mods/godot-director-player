@@ -789,9 +789,24 @@ func _consumed_keys() -> Array[String]:
 	var out: Array[String] = ["cursor", "constraint", "puppet"]
 	var text := FileAccess.get_file_as_string(SPRITE_STATE_SRC)
 	var body := text.substr(maxi(text.find("func effective"), 0))
-	body = body.substr(0, maxi(body.find("\nstatic func note_member"), 0))
+	# **`effective` and nothing after it.** The end anchor named a function three
+	# further down, so the slice covered `release_auto_puppets` and `with_puppets`
+	# as well -- and `with_puppets` keys the score's own record into the override
+	# entry as `over["_score"]`, which this then reported as a sprite property the
+	# engine binds and §19 does not record. A named anchor also rots the moment
+	# somebody reorders the file; the next `static func` cannot.
+	var after := body.find("\nstatic func ", 1)
+	body = body.substr(0, after) if after > 0 else body
 	var re := RegEx.new()
-	re.compile("over\\.has\\(\"([a-z_]+)\"\\)")
+	# `has` **and** `get`. A key consulted with a default -- `over.get("visible",
+	# 1)`, which is the hide every script in every title writes -- is merged just
+	# as surely as one behind an `over.has`, and reading only the one shape
+	# reported `the visible of sprite` as inert at 12,548 sites. That is this
+	# file's own highest-severity verdict, produced against a property that works,
+	# which is the one failure mode a gate has no defence against: the next
+	# session spends its day on a bug that is not there, or learns to discount the
+	# red.
+	re.compile("over\\.(?:has|get)\\(\"([a-z_]+)\"")
 	for hit in re.search_all(body):
 		out.append(hit.get_string(1))
 	# `membernum` and `castnum` are merged by a loop rather than by an `over.has`,

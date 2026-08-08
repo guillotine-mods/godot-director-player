@@ -77,6 +77,74 @@ var mouse_up_script := ""
 var key_code := -1
 var key_char := ""
 
+## `the searchPath` — the folders Director looks in when a name does not resolve
+## beside the movie that named it.
+##
+## **A list with one empty element, not an empty list.** Piposh 1 scans for its
+## CD in all three language builds by writing one drive letter at a time and
+## reading it straight back — `the searchPath = ["d:\sounds\strtgame\"]` then
+## `x = getAt(the searchPath, 1)`, 326 sites — so a read that falls off the end
+## is the difference between "no disc in D:" and a VOID the loop cannot compare.
+## The retired host seeded it the same way and the reason was never written down.
+##
+## It is consulted as well as stored: `lingo_search_path` hands it to the audio
+## resolver, which tries each entry before giving up on a sound. On a machine
+## with no D: drive every one of those lookups fails, which is the right answer
+## and not the same as never having asked.
+var search_path: Array = [""]
+
+## `the exitLock` — while true, the window manager's quit is refused.
+##
+## Five sites, all writes, all `set the exitLock to 1` or `to true`: Piposh 1's
+## `master.cst` and `day1.dir`, and Piposh 2's `strtgame.dir`. Director disables
+## the quit *key* with it and leaves the `quit` command alone, so this gates
+## `NOTIFICATION_WM_CLOSE_REQUEST` and nothing else. The debug layer's own quit
+## key stays unconditional — it exists for us rather than for the movie, and a
+## movie must not be able to take away the way out.
+var exit_lock := false
+
+## When `the timer` was last set to zero, in engine milliseconds.
+##
+## Director's `the timer` is **ticks since the last reset**, not a wall clock,
+## and both `startTimer` and `set the timer to N` move the origin. This host
+## answered `Time.get_ticks_msec()` for it — milliseconds since the process
+## started — which is wrong twice over, by a factor of 60 and by an origin.
+##
+## 91 sites, and the idiom is always the same pair: `if the timer > clockspeed
+## then ... set the timer to 0`. Against a number that only ever grows and starts
+## in the thousands, every one of those tests was true on every frame, so Piposh
+## 1's in-game clock advanced once per frame instead of once per `clockspeed`
+## ticks. The write half did not exist at all, so nothing could ever reset it.
+##
+## Seeded to now rather than to 0, because the host is built when the movie is
+## adopted and that is where the reference sets its own origin — a movie that
+## never touches the timer should read a few ticks, not the age of the process.
+var timer_reset_ms := Time.get_ticks_msec()
+
+## Director's `pause` / `continue` pair (§1.4): the playhead stops where it is
+## and the movie stays drawn, interactive and audible.
+##
+## Per *window*, as the reference has it — each Movie-In-A-Window is its own
+## preview node with its own host, so this lands where Director puts it.
+##
+## **`exitFrame` does not fire while it is set**, which is what keeps the pause
+## from cancelling itself: every room holds itself with `go to the frame`, and a
+## `go` of any form clears the pause as its first act. So a paused movie is
+## released by `continue`, or by a `go` from a handler that still runs — a
+## click, a key, a sprite behaviour — and by nothing else. `mainmenu.dir` and
+## `hezsave.dir` each have a frame whose whole `exitFrame` handler is `pause`,
+## and that is the shape it is for.
+var playback_paused := false
+
+## `quit` and `halt`: the movie has stopped.
+##
+## The reference sets the score's play state to stopped and lets the projector
+## fall out of its loop; the loop ending is what quits the application. Split the
+## same way here — this is the movie half, and it is what a Movie-In-A-Window or
+## a harness sees. The application half is `lingo_quit`'s, and it fires only when
+## this preview *is* the application.
+var stopped := false
+
 ## §8.2's one propagation flag, as Director has it: `pass` sets it true,
 ## `dontPassEvent` sets it false, and the dispatcher sets it to the *default for
 ## the tier about to run* before running it — true for a primary handler, false
@@ -114,9 +182,9 @@ var _suspend_request := ""
 
 ## Bound to something real.
 const HANDLED := [
-	"go", "sound", "puppetsound", "puppetsprite", "updatestage", "cursor",
-	"nothing", "beep", "delay", "preloadmember", "preload",
-	"unloadmember", "unload", "set", "alert", "halt", "quit",
+	"go", "sound", "puppetsound", "puppetsprite", "cursor",
+	"beep", "delay", "starttimer",
+	"set", "alert", "halt", "quit", "pause", "continue",
 	"window", "open", "close", "forget", "savemovie",
 	"pass", "dontpassevent", "stopevent",
 ]
@@ -124,10 +192,32 @@ const HANDLED := [
 ## has no state to implement, and letting them report as unbound would drown the
 ## ones that genuinely are.
 const IGNORED := [
-	"updatestage", "beep", "delay", "preloadmember",
-	"preload", "unloadmember", "unload", "alert", "cursor", "nothing",
-	"puppetsprite", "halt", "quit", "starttimer",
-	# `cursor` is NOT here any more — see the match above.
+	"updatestage", "preloadmember",
+	"preload", "unloadmember", "unload", "nothing",
+	# `updateStage` is the one name in this list whose absence a player *can*
+	# notice, and it is here after the alternative was measured rather than
+	# assumed. Director redraws the stage inside the call and returns, so a
+	# `repeat` loop that moves a sprite and calls this animates; 3,717 sites.
+	#
+	# Godot cannot present synchronously from inside a handler. `queue_redraw()`
+	# marks the canvas item dirty and pushes `NOTIFICATION_DRAW` onto the message
+	# queue, which is flushed at the end of the process frame, and GDScript has
+	# no way to flush it. `RenderingServer.force_draw()` is the obvious candidate
+	# and does not help: it redraws the *viewports* from whatever commands the
+	# canvas items already hold, and it does not re-run `_draw`. Measured on
+	# 4.7.1, headless and windowed alike -- `queue_redraw()` followed by
+	# `force_draw()` and by `force_draw(false)` left a Node2D's `draw` signal
+	# emission count unchanged, at one, from the frame before.
+	#
+	# So a real arm would have to paint through `RenderingServer`'s immediate
+	# API instead of through `_draw`, which is the whole of `stage_paint.gd`,
+	# `sprite_art.gd`, `text_art.gd`, `film_loop_view.gd` and `trails.gd`. Until
+	# that exists there is nothing to bind: `queue_redraw()` is already called
+	# from forty sites across the player, including once per score step and once
+	# per click, so an arm that only requested a redraw would change nothing a
+	# movie can see while reading as implemented from every direction. That is
+	# the `intersects` shape and it is worse than this row staying red.
+	#
 	# Bound deliberately inert rather than left unbound. An unbound name is
 	# reported as a gap every time it is reached, which buries the ones that
 	# matter; these are real Director builtins this preview has no state to
@@ -145,10 +235,15 @@ const IGNORED := [
 	# table and nothing ever reached the disk, so the save survived exactly as
 	# long as the process did -- which looks like a working save right up until
 	# the player restarts. It is bound for real now, at `_save_movie` below.
+	#
+	# `beep`, `alert`, `quit`, `halt`, `continue`, `delay` and `startTimer` were
+	# here too, and every one of them is bound for real below. `continue` is the
+	# one worth naming: `pause` was live and its other half was not, so a movie
+	# that paused could never be resumed and the pair had to land together.
 	"printfrom", "unloadmovie",
 	"clearglobals", "showglobals", "showlocals",
 	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
-	"shutdown", "abort", "continue", "installmenu", "setcallback",
+	"shutdown", "abort", "installmenu", "setcallback",
 ]
 
 
@@ -246,8 +341,71 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"pause":
 			# Halts the playhead where it is. The room stays drawn and its
 			# scripts keep running, which is what distinguishes it from `halt`.
+			#
+			# It used to hold for a *single step* (`lingo_hold`), which looked
+			# right because the frame's own `go to the frame` re-armed the hold on
+			# the next tick -- but only for a frame whose `exitFrame` also holds.
+			# The frames that actually call this are `on exitFrame / pause` and
+			# nothing else (`mainmenu.dir` 92, `hezsave.dir` 8, `psyday1.dir` 200),
+			# so the pause was being kept alive by the very handler Director stops
+			# dispatching. See `playback_paused`.
+			playback_paused = true
+			return 0
+		"continue":
+			# The other half, and it had to land with `pause` rather than after
+			# it: a movie that paused with only half the pair bound never resumes.
+			# `exchange.dir` 33 and `docroom.dir` 301 are the shape -- an
+			# `exitFrame` that either `continue`s or jumps, so "carry on" and "go
+			# elsewhere" are the two arms of one decision.
+			playback_paused = false
+			return 0
+		"quit", "halt":
+			# The reference makes these one function: `b_halt` calls `b_quit` and
+			# adds a log line. Both stop the movie; the projector quits because
+			# its play loop ended, not because the builtin exited the process.
+			#
+			# Split the same way here, and the split is what makes this safe to
+			# bind at all: `stopped` is the movie half and every caller sees it,
+			# while the application half is `lingo_quit`'s and fires only when this
+			# preview is the running main scene. A harness instantiates the preview
+			# as a child of its own root, so a movie cannot take a gate run down
+			# with it -- and `the exitLock` does not enter into it, because
+			# Director locks the quit *key* and not the command.
+			stopped = true
 			if preview != null:
-				preview.lingo_hold()
+				preview.lingo_quit()
+			return 0
+		"beep":
+			# `beep` and `beep <count>`: the system alert sound, repeated with
+			# Director's own 400 ms between repeats. 154 sites, every one of them
+			# `beep()` with no argument, and all of them silent until now.
+			if preview != null:
+				preview.lingo_beep(
+					LingoValue.to_int(args[0]) if not args.is_empty() else 1)
+			return 0
+		"alert":
+			# A modal box with an OK button, and the movie stopped behind it.
+			# Director also stops recording mouse and key events while it is up,
+			# so that the click on OK is not delivered to the movie underneath;
+			# `lingo_alert` is where that half lives.
+			if preview != null:
+				preview.lingo_alert(
+					LingoValue.to_str(args[0]) if not args.is_empty() else "")
+			return 0
+		"delay":
+			# `delay <ticks>` -- hold the playhead for that many 60ths of a
+			# second. The same channel the tempo cell's delay uses, so a script
+			# delay and a score delay cannot disagree about what holding means.
+			# 0 sites in this corpus; bound because Director has it.
+			if preview != null:
+				preview.lingo_delay(
+					LingoValue.to_int(args[0]) if not args.is_empty() else 0)
+			return 0
+		"starttimer":
+			# Move `the timer`'s origin to now. 0 sites -- this corpus resets it
+			# with `set the timer to 0` instead, which is the same act through the
+			# property (§3) and reaches `set_system_prop` below.
+			timer_reset_ms = Time.get_ticks_msec()
 			return 0
 		"play":
 			# `play frame X` pushes the playhead and `play done` pops it back.
@@ -488,6 +646,18 @@ func _save_movie(args: Array) -> Variant:
 func _go(args: Array) -> Variant:
 	if preview == null:
 		return 0
+	# **Every form of `go` releases a pause, before anything else happens.** The
+	# reference does it on the first line of `func_goto` and again in each of
+	# `func_gotoloop`, `func_gotonext` and `func_gotoprevious`, which is all four
+	# spellings this function covers.
+	#
+	# It is what makes `pause` safe rather than a trap: the frame that paused
+	# stops receiving `exitFrame`, so its own `go to the frame` cannot cancel the
+	# pause, and any *other* handler that still runs -- a click, a key, a sprite
+	# behaviour -- releases it by navigating. Without this line a movie that
+	# paused could only be resumed by an explicit `continue`, and the corpus's
+	# paused frames are escaped by their buttons rather than by one.
+	playback_paused = false
 	var words: Array = []
 	for a in args:
 		words.append(str(a).to_lower() if typeof(a) == TYPE_STRING else a)
@@ -808,15 +978,31 @@ func get_system_prop(prop: String) -> Variant:
 			return preview.lingo_sprite_prop(rolled, "membernum")
 		"ticks":
 			return int(Time.get_ticks_msec() * 60.0 / 1000.0)
-		"milliseconds", "timer":
+		"milliseconds":
+			# Since the machine started, and the one elapsed-time property in the
+			# language that is *not* relative to anything a script can move.
 			return Time.get_ticks_msec()
+		"timer":
+			# Ticks since the last reset, not since boot, and ticks rather than
+			# milliseconds. See `timer_reset_ms` for what the old answer cost.
+			return _ticks_since(timer_reset_ms)
+		"searchpath":
+			# Answers the list itself. Piposh 1 reads element 1 straight back out
+			# of it with `getAt`, so this must never be VOID and never be empty.
+			return search_path
+		"exitlock":
+			return 1 if exit_lock else 0
 		"machinetype":
 			return 256
-		"moviename":
+		"moviename", "movie":
 			# The file as it is actually named on disk. Deliberately not
 			# rewritten to the `.dxr` spelling the scripts were authored
 			# against: `LingoValue.same_container` makes the comparison succeed
 			# either way, so this can stay honest about what is loaded.
+			#
+			# `the movie` is Director's older spelling of the same property and
+			# answers here rather than in a row of its own, so the two cannot
+			# drift: 41 sites read it and every one of them got VOID.
 			return preview.movie_name()
 		"moviepath":
 			# The folder the movie was opened from, with its trailing separator.
@@ -945,6 +1131,32 @@ func set_system_prop(prop: String, value: Variant) -> void:
 		"soundlevel":
 			if preview != null:
 				preview.lingo_set_sound_level(LingoValue.to_int(value))
+		"timer":
+			# `set the timer to 0` is how this corpus resets it -- 91 sites, always
+			# paired with the `if the timer > clockspeed` above it. Director stores
+			# the *origin* rather than the value, so writing N means "pretend N
+			# ticks have passed", which is what `the timer` then answers.
+			timer_reset_ms = Time.get_ticks_msec() \
+				- int(LingoValue.to_int(value) * 1000.0 / 60.0)
+		"searchpath":
+			# Director takes a list; a bare string is one path and is wrapped, and
+			# anything else empties the search back to its one-empty-element rest
+			# state rather than to nothing (see `search_path`).
+			if typeof(value) == TYPE_ARRAY:
+				search_path = (value as Array).duplicate()
+			elif typeof(value) == TYPE_STRING:
+				search_path = [str(value)]
+			else:
+				search_path = [""]
+			if search_path.is_empty():
+				search_path = [""]
+			if preview != null:
+				preview.lingo_search_path(search_path)
+		"exitlock":
+			# The write is the whole of the corpus's use of it: five sites, all
+			# setting it, none reading it back. What it *does* is refuse the window
+			# manager's quit; `director_preview.gd:_notification` is the consumer.
+			exit_lock = LingoValue.to_int(value) != 0
 		"centerstage", "windowtype", "modal", "title", "titlevisible", \
 		"rect", "drawrect", "filename":
 			# `tell window("map.dxr") / set the centerStage to 1 / end tell` — the

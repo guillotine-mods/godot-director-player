@@ -223,7 +223,121 @@ func _resolve_normalised(raw: String) -> String:
 				% [raw, tail]
 			)
 		return str(_tail_index[tail])
+	return _search_path_hit(raw)
+
+
+## `the searchPath` — where Director looks once the indexed tree has said no.
+##
+## Set from Lingo (`preview_lingo_host.gd:search_path`) and empty otherwise, so
+## the ordinary lookup above is unchanged for every title that never writes it.
+## The entries are absolute paths outside the game root — Piposh 1 writes `d:`,
+## `e:`, `f:` and `b:` in turn, looking for the CD — so they are tried directly
+## against the filesystem rather than through the index, which only knows what is
+## under the game folder.
+##
+## The request's own leading segments are dropped one at a time here too, for the
+## same reason `_resolve_normalised` drops them: a request carries a prefix from
+## the authoring machine and the search path supplies the real one.
+func _search_path_hit(raw: String) -> String:
+	if search_path.is_empty():
+		return ""
+	var wanted := raw.replace("\\", "/").replace(":", "/").trim_prefix("/")
+	var parts := wanted.split("/", false)
+	for entry in search_path:
+		var base := str(entry).replace("\\", "/").replace(":", "/")
+		if base.strip_edges() == "":
+			continue
+		if not base.ends_with("/"):
+			base += "/"
+		for start in parts.size():
+			var tail := "/".join(Array(parts).slice(start))
+			for candidate in [base + tail, base + tail + ".aif", base + tail + ".wav"]:
+				if FileAccess.file_exists(candidate):
+					return candidate
 	return ""
+
+
+## `the searchPath`, as the movie last set it. Paths outside the game root, so
+## they are never indexed and are only ever tried on demand — see
+## `_search_path_hit`. Empty until a movie writes one, which is 326 sites in
+## Piposh 1 and none anywhere else.
+var search_path: Array = []
+
+
+func set_search_path(paths: Array) -> void:
+	search_path = paths.duplicate()
+
+
+## Director's `beep`: the machine's alert sound, `repeats` times, 400 ms apart.
+##
+## Synthesised rather than shipped. There is no beep on the disc — it is the
+## Mac's own system alert, which this port has no copy of and no licence to — so
+## what is played is a short tone with a fast attack and a decay, which is what a
+## 1997 Mac's simple beep was. The whole run including its gaps is rendered into
+## one buffer, so `beep 3` does not stop the handler that asked for it.
+##
+## Its own player, deliberately off the numbered channels: `soundBusy(1)` is what
+## every line of speech in this corpus waits on, and a beep that claimed a
+## channel would make a room wait for it.
+func system_beep(repeats: int = 1) -> void:
+	var player := _beep_player()
+	if player == null:
+		return
+	player.stream = _beep_stream(maxi(repeats, 1))
+	# Full on its own player; `the soundLevel` is the master bus and still
+	# applies, which is right — the system volume turns the beep down too.
+	player.volume_db = _volume_db(VOLUME_MAX)
+	player.play()
+
+
+var _beep: AudioStreamPlayer = null
+## One rendered beep run per repeat count. There is exactly one count in the
+## corpus (all 154 sites are the bare `beep`), so this caches one entry in
+## practice and exists so that a beep in a loop does not resynthesise.
+var _beep_cache: Dictionary = {}
+
+const BEEP_RATE := 22050
+const BEEP_HZ := 1000.0
+const BEEP_MS := 120
+## Director's own spacing between repeats.
+const BEEP_GAP_MS := 400
+
+
+func _beep_player() -> AudioStreamPlayer:
+	if _beep != null:
+		return _beep
+	_beep = AudioStreamPlayer.new()
+	_beep.name = "SystemBeep"
+	_beep.bus = "Master"
+	add_child(_beep)
+	return _beep
+
+
+func _beep_stream(repeats: int) -> AudioStreamWAV:
+	if _beep_cache.has(repeats):
+		return _beep_cache[repeats]
+	var tone := int(BEEP_RATE * BEEP_MS / 1000.0)
+	var gap := int(BEEP_RATE * BEEP_GAP_MS / 1000.0)
+	var frames := tone * repeats + gap * maxi(repeats - 1, 0)
+	var data := PackedByteArray()
+	data.resize(frames * 2)
+	for r in repeats:
+		var at := r * (tone + gap)
+		for i in tone:
+			# A quick attack and a long decay, so the tone starts without a click
+			# and ends without one either -- a raw square gate reads as two clicks
+			# with a whistle between them rather than as a beep.
+			var envelope := minf(float(i) / (BEEP_RATE * 0.004), 1.0) \
+				* (1.0 - float(i) / tone)
+			var sample := int(sin(TAU * BEEP_HZ * i / BEEP_RATE) * envelope * 20000.0)
+			data.encode_s16((at + i) * 2, sample)
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = BEEP_RATE
+	stream.stereo = false
+	stream.data = data
+	_beep_cache[repeats] = stream
+	return stream
 
 
 ## Lowercased, **all three separators** folded to `/`, extension dropped.
