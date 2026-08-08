@@ -314,6 +314,7 @@ godot --headless --script tools/audio_index.gd      # the sounds the game names 
 godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail
 godot --headless --script tools/score_sound_check.gd # score sound channels, cue points, fades and sound members, on synthesised fixtures, pass/fail
 godot --headless --script tools/sound_wait.gd       # every way a `playFile` fails still leaves `soundBusy` answerable, and the folder in a request decides the take, pass/fail
+godot --headless --script tools/music_requests.gd -- --root piposh --movie PIPDATA/DAY1.dir  # what a room asks its music channel for and whether it arrives — not pass/fail, this is the "why is it silent" probe
 godot --headless --script tools/palette_cycle.gd -- --file strtgame.dir  # palette tables, CLUT, cycling, fades, resolution order, pass/fail
 godot --script tools/stage_clip.gd -- --file strtgame.dir  # sprites are cut at the stage edge, pass/fail — NOT --headless
 godot --script tools/trails.gd -- --file PIP2DATA/DAY1.dir  # a trails sprite is not erased between frames, pass/fail — NOT --headless

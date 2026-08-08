@@ -68,6 +68,115 @@ today.
 
 ---
 
+## 46. Piposh 1's ship is silent because `games/piposh` has no `PIPDATA/FX` tree at all
+
+**Status:** OPEN, and **not an engine fault** — the port composes the request
+correctly and plays it the moment the file exists. Reported from play as "the
+background music on the ship doesn't work". · **Area:** the `games/piposh`
+submodule's contents, not this repo's code.
+
+Every deck room's `exitFrame` is the same handler (`PIPDATA/DAY1.dir`, and
+DAY2-DAY5 identically):
+
+```lingo
+on exitFrame
+  global effectspath2, whichmus
+  whatodoeveryframe()
+  if not soundBusy(2) then
+    set the mouseDownScript to EMPTY
+    sound playFile 2, effectspath2 & whichmus
+  end if
+```
+
+`effectspath2` is `the moviePath & "fx" & y & "fxmus" & y` (`MASTER.CST`), so the
+music is a per-frame re-request against `PIPDATA/FX/FXMUS/`. **That folder does
+not exist under `games/piposh`**, nor does its parent `PIPDATA/FX`. Neither does
+it under `games/piposh-ru`. `games/piposh-en` has both: 126 files, 35 of them the
+music.
+
+Measured, same movie both ways, on real frames:
+
+```
+godot --headless --path . --script tools/music_requests.gd -- --root piposh    --movie PIPDATA/DAY1.dir
+godot --headless --path . --script tools/music_requests.gd -- --root piposh-en --movie pipdata/DAY1.dir
+```
+
+```
+piposh     SILENT  res://games/piposh/pipdata/fx\fxmus\dbsndlow.aif
+                   resolves to <nothing on disc>        channel 2 audible on   0 of 400 frames
+piposh-en  PLAYS   res://games/piposh-en/pipdata/fx\fxmus\dbsndlow.aif
+                   resolves to .../FX/FXMUS/DBSNDLOW.AIF  channel 2 audible on 371 of 400 frames
+```
+
+Both roots reach the deck with identical globals — `whichmus = dbsndlow.aif`,
+`effectspath = <root>/PIPDATA/fx\` — so the only variable is whether the file is
+on disc. Confirmed in the other direction too: dropping the single file
+`DBSNDLOW.AIF` into `games/piposh/PIPDATA/FX/FXMUS/` takes the Hebrew deck from
+0/400 to **372/400** audible frames. (Copied for the measurement and removed
+again; the submodule is untouched.)
+
+**The scope is far wider than the music.** `effectspath` is the same tree one
+level up, and the Hebrew containers ask it for **116 distinct filenames** — door
+handles, footsteps, locks, hits — of which **110 exist in `piposh-en`'s `FX/`**.
+So every sound effect on the ship is silent for the same reason, and the 18
+background tracks (`arcade arcade2 bath dbsnd dbsndlow downdeck foodroom justeng
+loby lolo lowdeck movie stimoff stimon stopstim strtstim topdeck ware`) are the
+audible half of one gap. The six the English disc does not hold either
+(`boing detective dream pipaaa robot shirt`) are a separate question.
+
+**What is not settled: whose gap it is.** The Hebrew movie *composes* the path, so
+the folder existed when the game was authored — that was the argument for calling
+it an extraction defect in the `guillotine-mods/piposh` submodule. Against it:
+`piposh-ru` composes the identical path (`master.cst`:
+`put the moviepath & "fx" & y & "fxmus" & y into effectspath2`, nine containers
+naming `fxmus`, `pipdata/Day1.dir` running the same `playFile 2, effectspath2 &
+whichmus` loop over the same `bath/justeng/lolo/ware/stimon/stimoff` names) and is
+missing the tree too. Two of three localisations losing the same folder while
+asking for it is as consistent with one faulty extraction pipeline as with a disc
+that shipped without it. `games/piposh` holds no installer archive to re-extract
+from, so settling this needs the original media.
+
+**Do not "fix" this in engine code.** A fallback that reaches into another root
+for a missing file would make every future data gap invisible, which is the state
+`audio_director.gd`'s `Audio miss` logging exists to prevent. The two honest repairs are re-extracting the disc, or copying
+`piposh-en/pipdata/FX` into the Hebrew and Russian roots as a deliberate,
+recorded substitution. If the substitution is taken, the files have to be
+listened to first: nothing here has been played back. `LOLO.AIF` is 5.6 MB and
+shares its name with a character who has her own cast and three day-movies, which
+is not the size or the naming of a wordless loop, so at least some of the 35 are
+likely to carry English voice.
+
+**The same probe on the other roots.**
+
+```
+godot --headless --path . --script tools/music_requests.gd -- --root piposh-dream --movie Hquest.dir
+```
+
+`piposh-dream` has the identical shape at a much smaller scale: `Hquest.dir` runs
+`if not soundBusy(2) or (whichsnd <> "sea") then sound playFile 2, effectspath &
+"sea.aif"`, and no `sea.aif` exists anywhere under `games/piposh-dream` — 0 of 400
+frames audible. (That run entered `Hquest.dir` cold, so `effectspath` was still
+empty and the request went out as the bare name; it fails the same way either
+way, because `resolve_path` tail-matches a filename under any folder and there is
+no `sea.aif` under any.) Across that root, 19 of the 116 filenames its containers ask
+`effectspath` for have no file: `1234 bish crash drill findjoke handle jaquasi jmp
+kick machak move nofound openbag sea sissy soja stage water yanki`. Some of those
+are near-miss spellings rather than absences — the disc holds `JAQAUSI.AIF` for a
+request of `jaquasi.aif`, and `DRILL.WAV` for a request of `drill.aif` — and
+separating the two is the work that entry has not had.
+
+**Why the log says it dozens of times.** `audio_director.gd:321` short-circuits a
+repeat request only when the previous request matches *and* the channel is
+actually playing. A failed request writes `_channel_file` but starts nothing, so
+the guard falls through on every re-entry and `_fail` logs unconditionally. The
+count measures how long the room held the playhead, not how many distinct faults
+there were. `_fail` stopping the channel is load-bearing for `soundBusy` and must
+not be touched; the cheap quieting fix is to log once per `(channel, request)`
+until the request changes. Not done — it would hide this entry's symptom while
+the data is still absent.
+
+---
+
 ## 45. A hit on a Piposh 1 submarine lifts it 122px, so after two it is clipped off the top of the stage
 
 **Status:** OPEN · **Area:** `PIPDATA/CANON.dir` game6, `allshipscounter` ·
