@@ -2048,3 +2048,32 @@ godot --headless --path . --script tools/puppet_persists.gd -- \
 That check is in `gate.sh` deliberately. A survey nobody runs rots, and "an
 un-puppeted channel the score dropped is gone" is the invariant that would break
 first if somebody tried to answer this report by making the puppet carry more.
+
+---
+
+## 49. The port's "is this channel occupied" test is not the reference's, and nobody has measured where they disagree
+
+**Status:** open, **unmeasured** · **Area:** `director/director_score.gd:_snapshot`
+· found while answering entry 48, not the cause of it
+
+`_snapshot` treats a channel as occupied when `cast_id > 0 and width > 0 and
+height > 0`, with a comment recording why: hundreds of thousands of records carry
+a sprite-type byte and no member.
+
+The reference asks a different question. `Channel::isEmpty()` is
+`_spriteType == kInactiveSprite` — offset 0 of the record, and *only* that byte —
+and it is what the render loop tests (`Window`'s two `!channel->isEmpty()`
+guards). A record with a live sprite type, a member and a zero rect is a sprite
+there and is not one here; a record with a type of 0 and a nonzero member is the
+reverse.
+
+**Not the cause of entry 48**, and that is measured rather than assumed: at DAY1
+2510-2520 the two channels in question read `type=0 0:0 0x0`, so both tests agree
+that they are empty and the answer there does not turn on this.
+
+It is worth measuring before it is worth changing, because the port's test was
+chosen against the corpus and the reference's was not. The survey nobody has
+written: across all six titles, count the records where the two disagree, split by
+which way. A count near zero closes this; a large one in either direction means
+some channel somewhere is drawn that should not be, or the reverse, and neither
+would look like a decode bug from the player's chair.
