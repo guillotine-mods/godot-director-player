@@ -308,6 +308,7 @@ godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  
 godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail
 godot --script tools/save_state.gd                  # a save state reproduces the session: every field on the node is saved, rebuilt or excluded-and-why; saved in one process and reloaded from `--save` in another; the Shift chords driven as real keys, pass/fail — run windowed for the keys
+godot --headless --script tools/text_codepage.gd    # which single-byte codepage the corpus was authored in, measured against the candidates; the decode/encode round trip over every authored string; a Hebrew name written by one process and read by another, pass/fail (`--all` for every root)
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail

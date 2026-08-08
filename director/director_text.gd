@@ -51,6 +51,40 @@ const ALIGN_LEFT := 0
 const ALIGN_CENTRE := 1
 const ALIGN_RIGHT := -1
 
+## Godot's built-in fallback face carries Latin, and this port now hands it text
+## that is not: `director/director_codepage.gd` decodes a title's bytes into real
+## Unicode, so a Hebrew field arrives as Hebrew rather than as the Latin-1
+## mojibake it used to be, and a player typing into an editable field can produce
+## any script the keyboard has. A face with no glyph for a code point draws a
+## blank box, which would read as "the encoding fix made it worse".
+##
+## So the built-in face is kept as the *base* -- every metric this port has ever
+## measured is its, and swapping it wholesale would move every wrapped line -- and
+## the platform's own fonts are hung off it as fallbacks. A code point the base
+## has draws exactly as before; one it does not comes from the system. Built once
+## and cached, because a `SystemFont` resolves through the OS.
+static var _font: Font = null
+
+
+static func face() -> Font:
+	if _font != null:
+		return _font
+	_font = ThemeDB.fallback_font
+	if _font == null:
+		return _font
+	var system := SystemFont.new()
+	# Generic families rather than face names: naming a face is naming a
+	# platform, and every desktop resolves at least one of these to something
+	# with wide coverage.
+	system.font_names = PackedStringArray(["sans-serif", "Arial", "Segoe UI",
+		"Helvetica", "DejaVu Sans", "Noto Sans"])
+	system.allow_system_fallback = true
+	var variation := FontVariation.new()
+	variation.base_font = _font
+	variation.fallbacks = [system]
+	_font = variation
+	return _font
+
 
 ## The style a field draws in: its point size, colour, slant and alignment,
 ## resolved from the member with a usable answer for every missing piece.
@@ -96,7 +130,7 @@ static func style_of(member: Dictionary) -> Dictionary:
 ## clips to the box and a caret cannot be placed where no glyph was drawn.
 static func layout(rect: Rect2, text: String, style: Dictionary) -> Array:
 	var out: Array = []
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = face()
 	if font == null or rect.size.x <= 0.0 or rect.size.y <= 0.0:
 		return out
 	var size := int(style.get("font_size", 12))
@@ -146,7 +180,7 @@ static func draw(canvas: CanvasItem, rect: Rect2, text: String, style: Dictionar
 		alpha: float = 1.0) -> int:
 	if text == "" or rect.size.x <= 0.0 or rect.size.y <= 0.0:
 		return 0
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = face()
 	if font == null:
 		return 0
 	var size := int(style.get("font_size", 12))
@@ -178,7 +212,7 @@ static func h_alignment(style: Dictionary) -> int:
 ## alignment itself, so a caret that assumed the left edge would sit under the
 ## wrong character in all 13 of this corpus's centred fields.
 static func line_origin_x(rect: Rect2, line: String, style: Dictionary) -> float:
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = face()
 	if font == null:
 		return rect.position.x
 	var size := int(style.get("font_size", 12))
@@ -215,7 +249,7 @@ static func caret_rect(rect: Rect2, text: String, style: Dictionary, index: int)
 			chosen = line
 			column = maxi(0, want - start)
 			break
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = face()
 	var size := int(style.get("font_size", 12))
 	var before: String = str(chosen["text"]).substr(0, column)
 	var x: float = line_origin_x(rect, str(chosen["text"]), style)
@@ -239,7 +273,7 @@ static func index_at(rect: Rect2, text: String, style: Dictionary, at: Vector2) 
 		var line: Dictionary = line_value
 		if at.y >= float(line["top"]):
 			chosen = line
-	var font: Font = ThemeDB.fallback_font
+	var font: Font = face()
 	var body: String = str(chosen["text"])
 	if font == null:
 		return int(chosen["start"])

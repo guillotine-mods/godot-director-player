@@ -17,6 +17,7 @@ extends RefCounted
 ## repair.
 
 const Transition := preload("res://director/director_transition.gd")
+const Codepage := preload("res://director/director_codepage.gd")
 
 ## `director_cast_types.py`'s spelling, kept so tooling and this agree.
 const TYPE_NAMES := {
@@ -561,11 +562,17 @@ func _owner_of(section_id: int) -> int:
 
 # ------------------------------------------------------------------ bytes
 
-## Director stores text as Mac-Roman. Bytes above 127 are left as-is rather than
-## mapped, which is correct for every member name in this corpus and wrong for
-## accented text; a real mapping belongs here when a title needs one.
+## Every authored string in a cast -- a member's name, its Lingo source, a field
+## member's text -- through the title's codepage, then Lingo's line separator
+## through Godot's.
+##
+## Bytes above 127 used to be left as-is, a Latin-1 pass-through that was
+## reversible and wrong: reversible because `director_writer.gd` wrote the same
+## way back, wrong because nothing typed on a real keyboard survived it. What
+## decides now is `director/director_codepage.gd`, and the same module is the
+## writer's other half -- one table, both directions, or the round trip corrupts.
 func _text(raw: PackedByteArray) -> String:
-	return raw.get_string_from_ascii().replace("\r\n", "\n").replace("\r", "\n")
+	return Codepage.decode(raw).replace("\r\n", "\n").replace("\r", "\n")
 
 
 static func _be_u16(d: PackedByteArray, o: int) -> int:

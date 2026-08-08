@@ -13,6 +13,8 @@ extends RefCounted
 ## Duplicate names are common (one movie has the same name on 22 markers), and
 ## the label resolves to the *first*, which is what Director did.
 
+const Codepage := preload("res://director/director_codepage.gd")
+
 ## Ordered `{frame:int, name:String}`, frame 0-based, empty names dropped.
 var markers: Array[Dictionary] = []
 ## Lowercased name -> 0-based frame, first occurrence wins.
@@ -45,7 +47,10 @@ func parse(payload: PackedByteArray) -> bool:
 			# A zero-length name is a real, empty marker; anything else is out
 			# of range and equally not a marker.
 			continue
-		var name := payload.slice(start, stop).get_string_from_ascii().strip_edges()
+		# A marker name is authored text, so it goes through the title's codepage
+		# like every other authored string -- `go("<hebrew>")` has to match the
+		# label the same way `member("<hebrew>")` matches a name.
+		var name := Codepage.decode(payload.slice(start, stop)).strip_edges()
 		var zero_based := frame - 1
 		# An unnamed marker is kept, and that is not tidiness -- `marker(n)` counts
 		# *entries*, not names, so dropping one shifts every marker after it. The

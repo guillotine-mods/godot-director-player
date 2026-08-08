@@ -197,6 +197,14 @@ static func read_cast_list(payload: PackedByteArray) -> PackedStringArray:
 			var stop: int = start + 1 + payload[start]
 			if stop > payload.size():
 				break
+			# Read as bytes and not through `director_codepage.gd`, unlike every
+			# other authored string. The decode is not what this loop is doing:
+			# it is *probing* for the right table base, and being ASCII is the
+			# test it probes with. A codepage that maps high bytes back onto
+			# printable ASCII -- Mac OS Hebrew maps 0xB0-0xB9 to the digits --
+			# would make a wrong base look right, and a wrong base names the
+			# wrong casts and draws a stranger's bitmap. A `ccl ` entry is a
+			# cast's file name, and none in any title here is non-ASCII.
 			var name := payload.slice(start + 1, stop).get_string_from_ascii()
 			if not _printable(name):
 				break

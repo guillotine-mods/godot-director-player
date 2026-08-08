@@ -19,6 +19,7 @@ extends RefCounted
 const Cast := preload("res://director/director_cast.gd")
 const ContainerFile := preload("res://director/director_file.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
+const Codepage := preload("res://director/director_codepage.gd")
 
 ## lib number -> {name, path, min, max, id, resolved_path, embedded}
 var cast_libs: Dictionary = {}
@@ -256,13 +257,16 @@ func close() -> void:
 	_cast_lists.clear()
 
 
+## A cast library's name and its file path, both authored strings, so both go
+## through the title's codepage. A path a person typed on a Hebrew Mac is exactly
+## as likely to carry high bytes as a member name is.
 static func _pascal(raw: PackedByteArray) -> String:
 	if raw.size() < 1:
 		return ""
 	var length: int = raw[0]
 	if length + 1 > raw.size():
 		return ""
-	return raw.slice(1, 1 + length).get_string_from_ascii()
+	return Codepage.decode(raw.slice(1, 1 + length))
 
 
 static func _be_u16(d: PackedByteArray, o: int) -> int:

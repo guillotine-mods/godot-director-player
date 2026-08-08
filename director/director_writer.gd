@@ -38,6 +38,7 @@ extends RefCounted
 
 const ContainerFile := preload("res://director/director_file.gd")
 const Cast := preload("res://director/director_cast.gd")
+const Codepage := preload("res://director/director_codepage.gd")
 
 
 ## Re-emit `source` with `replacements` (chunk id -> new payload) applied, at
@@ -246,19 +247,19 @@ static func stxt_with_text(old: PackedByteArray, text: String) -> PackedByteArra
 ## Lingo's line separator is the Mac carriage return, and `director_cast.gd`
 ## turns it into `\n` on the way in. This is the other half of that.
 ##
-## One byte per character, because that is how the text was read: Director wrote
-## these fields in a single-byte Mac codepage -- this game's are Hebrew -- and
-## `get_string_from_ascii` maps each byte to the code point of the same value.
-## Writing them back the same way is exactly lossless for anything that came out
-## of a container. A character that could not have come from one is written as
-## `?` rather than as a multi-byte sequence the reader would split.
+## One byte per character, because that is how the text is read: Director wrote
+## these fields in the authoring machine's single-byte script system, and
+## `director/director_codepage.gd` is the table for it in both directions. Using
+## the same module as the reader is the whole of the correctness argument -- two
+## tables that could disagree is exactly one table too many.
+##
+## This used to be its own inverse of `get_string_from_ascii`, one byte per
+## character with anything at or above 256 written as `0x3f`. That is lossless
+## for text that came out of a container and destroys anything else, so a player
+## typing a Hebrew save name got a row of `?` -- see the codepage module for the
+## save in this corpus that carries five of them.
 static func _to_bytes(text: String) -> PackedByteArray:
-	var flat := text.replace("\r\n", "\r").replace("\n", "\r")
-	var out := PackedByteArray()
-	for i in flat.length():
-		var c := flat.unicode_at(i)
-		out.append(c if c < 256 else 0x3f)
-	return out
+	return Codepage.encode(text.replace("\r\n", "\r").replace("\n", "\r"))
 
 
 static func _be(value: int) -> PackedByteArray:

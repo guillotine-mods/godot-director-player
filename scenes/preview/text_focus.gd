@@ -380,6 +380,12 @@ static func key(host, event: InputEventKey) -> bool:
 		KEY_ENTER, KEY_KP_ENTER:
 			_replace(host, member, text, start, end, "\n")
 			return true
+	# Any printable code point the keyboard produced, not just Latin. A player on
+	# a Hebrew keyboard types U+05D0, and the field has to hold it: what the
+	# codepage can carry is `director/director_codepage.gd`'s question and it is
+	# asked on the way to disc, not here. Filtering it out at the keystroke would
+	# be the same bug one layer earlier -- the character would be gone before
+	# anything could decide what to do with it.
 	var unicode := event.unicode
 	if unicode >= 32 and unicode != 127:
 		_replace(host, member, text, start, end, char(unicode))
