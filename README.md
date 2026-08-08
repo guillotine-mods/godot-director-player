@@ -217,10 +217,12 @@ There is no test suite.
 
 **`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
 actually run against the live player and are expected to pass. Measured over all
-42 entries on 4.7.1: **40 pass, 1 fail, 1 flaky.** `boot_state` is the
-long-standing red; `play_suspends` passes about half its runs on one assertion
-that waits a fixed number of frames for a movie to load (`bugs.md` 41), so the
-set is not reproducible until that is fixed. Anything below that is *not* in `ALL` is a survey
+51 entries on 4.7.1 by a whole-suite run: **49 pass, 2 fail.** `debug_bindings` is
+config rather than code -- `snapshot = "F10"` in the tracked `director_game.cfg`
+collides with a keyCode `rating` tests at 48 sites (`399feaaa`). `play_suspends`
+passes about half its runs on one assertion that waits a fixed number of frames
+for a movie to load (`bugs.md` 41), so the set is not reproducible until that is
+fixed. `boot_state`, the long-standing red this line used to name, passes. Anything below that is *not* in `ALL` is a survey
 or a one-off — useful, but nothing runs it, so nothing notices when it rots. A
 long run of tools listed here rotted exactly that way and was deleted; see
 "Retired" at the end of this section.
@@ -306,6 +308,8 @@ godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped s
 godot --headless --script tools/sprite_collision.gd  # `intersects`/`within` measure a hidden sprite, the mouse does not, pass/fail
 godot --headless --script tools/cannon_hit.gd -- --root piposh  # the same rule played: piposh 1's cannon round sinks a ship, pass/fail
 godot --headless --script tools/pause_holds.gd -- --file PIP2DATA/SAVELOAD.dir --label savegame2 --hotspot  # `pause` holds the frame that paused, keeps its hotspots, and `continue` does not re-run the handler that paused, pass/fail
+godot --headless --script tools/idle_clock.gd -- --root rating --boot NAVIGATE.dir  # `idle` is sent once per step to the movie, and the title's clock advances because of it, pass/fail
+godot --headless --script tools/new_game_reset.gd -- --root rating --boot NAVIGATE.dir  # a New Game resets the tables rating schedules its story from, pass/fail
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
 godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail

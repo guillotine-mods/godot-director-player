@@ -117,6 +117,43 @@ on blockit
 end
 """
 
+## The **command spelling** of the same three verbs, which is the only spelling
+## `rating` uses and which no case above reaches: every handler in this file
+## calls `window("x")` first, so the window always exists before anything else
+## touches it and the name is always carried by a handle.
+##
+## `Panel.cst` member 35 — the bag on the panel in every room — is spelled
+## entirely without that call:
+##
+##     set the windowType of window "inventor.dir" to 2
+##     open window "inventor.dir"
+##
+## Split into three handlers because the two halves failed for *different*
+## reasons and either alone is fatal, so one combined check could not say which
+## broke (`bugs.md` 55). Naming the window is what creates it, and the name has
+## to survive as far as the resolver: `window_key_of` is `get_basename()`, so a
+## key made too early reached `resolve` as `inventor` and matched nothing.
+##
+## `joke.dxr` rather than `inventor.dir` on purpose — this is an engine rule, and
+## asserting it on the corpus the gate pins to is what makes it one.
+const COMMAND_NAME_ONLY := """
+on nameit
+  set the windowType of window "joke.dxr" to 2
+end
+"""
+
+const COMMAND_OPEN := """
+on openit
+  open window "joke.dxr"
+end
+"""
+
+const COMMAND_FORGET := """
+on shutit
+  forget window "joke.dxr"
+end
+"""
+
 ## `MASTER/External/MovieScript 12 - jokes funk`. `jokes.dxr` is named at 36
 ## sites and is not on this disc, and nothing calls `runjokes` either — so this
 ## is the dead branch, and the point of running it is that a `tell` at a window
@@ -380,5 +417,61 @@ func _init() -> void:
 			int(ran.get("exitFrame", 0)) > 0, JSON.stringify(ran))
 		preview.call("lingo_forget_window", "saveload.dxr", true)
 	h.complete("the save screen runs its own frame loop as a window")
+
+	# ------------------------------------------ the command spelling of the same
+	#
+	# The player-visible statement: a script that never calls `window(...)` still
+	# gets a window, and it gets the one it named. Both halves are asserted apart
+	# because they broke apart.
+	h.begin("`open window \"x\"` opens the window a designator already named")
+	h.check("the naming handler ran",
+		_run(preview, COMMAND_NAME_ONLY, "nameit", "harness command name"))
+	# Naming it is what makes it exist (§14). Before this, the designator's bare
+	# string failed an `is_window_ref` guard, the write went nowhere, and nothing
+	# was created for the `open` on the next line to find.
+	var named: Dictionary = preview.get("_windows")
+	h.check("naming the window in a designator created it",
+		named.has("joke"), JSON.stringify(named.keys()))
+	if not named.has("joke"):
+		h.complete("`open window \"x\"` opens the window a designator already named")
+		quit(h.finish("Movie-In-A-Window in the container-reading preview"))
+		return
+	var commanded: Node = named["joke"]
+	h.check("it resolved to the movie the script named, extension and all",
+		str(commanded.call("movie_name")).to_lower().contains("joke"),
+		str(commanded.call("movie_name")))
+	h.check("`the windowType` the designator set landed on it",
+		int(commanded.get("_window_type")) == 2,
+		"windowType %d" % int(commanded.get("_window_type")))
+	# Named is not shown: `open` is a separate verb, and 21 corpus sites depend on
+	# being able to dress a window before showing it.
+	h.check("naming it did not show it", not bool(commanded.get("_window_shown")))
+	h.check("nothing is over the stage yet",
+		preview.call("window_at", Vector2(320, 240)) == null)
+
+	h.check("the opening handler ran",
+		_run(preview, COMMAND_OPEN, "openit", "harness command open"))
+	h.check("the command form opened the window it named",
+		preview.call("window_at", Vector2(320, 240)) == commanded,
+		"" if commanded == null else str(commanded.call("movie_name")))
+	h.check("it is showing", bool(commanded.get("_window_shown")))
+	h.check("it brought its own score", int(commanded.get("_score").frame_count) > 0,
+		"%d frames" % int(commanded.get("_score").frame_count))
+	h.check("it is still windowType 2 after opening",
+		int(commanded.get("_window_type")) == 2,
+		"windowType %d" % int(commanded.get("_window_type")))
+	h.check("a click in it goes to it, not to the stage",
+		preview.call("route_click", Vector2(320, 240)) == commanded)
+
+	# `forget` shares the path and is 52 of `rating`'s 64 window sites, so the
+	# teardown is worth the same spelling.
+	h.check("the closing handler ran",
+		_run(preview, COMMAND_FORGET, "shutit", "harness command forget"))
+	await process_frame
+	h.check("`forget window \"x\"` closed it",
+		preview.call("window_at", Vector2(320, 240)) == null)
+	h.check("the click goes back to the stage",
+		preview.call("route_click", Vector2(320, 240)) == preview)
+	h.complete("`open window \"x\"` opens the window a designator already named")
 
 	quit(h.finish("Movie-In-A-Window in the container-reading preview"))

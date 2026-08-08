@@ -197,6 +197,34 @@ static func advance(host) -> Dictionary:
 		var owed: Dictionary = host._pending_enter
 		host._pending_enter = null
 		host._dispatch("enterFrame", owed)
+
+	# `idle` — the gap between two frames, which is where Director spends most of
+	# its time and where a title puts anything that has to happen on a clock
+	# rather than on a frame. `score.cpp:336-338` sends it once per step from the
+	# interactivity block, and `lingo-events.cpp:552` queues it as a **movie**
+	# handler, so it goes to the movie script rather than to the sprite.
+	#
+	# Guarded on "no jump is pending", which is the reference's own `hasJump`: a
+	# step that already knows where it is going is not idle. A `go` from inside
+	# the handler is fine and is picked up two lines below, which is how
+	# `ClockScript`'s `go to movie "karioki.dir"` is supposed to fire.
+	#
+	# **Sent before the pause check on purpose.** `pause` stops the playhead and
+	# leaves the movie live — that is the whole point of it — and the reference's
+	# idle sits in the interactivity block a pause does not suspend.
+	#
+	# This was missing entirely, and it cost `rating` its whole clock. Its
+	# `NAVIGATE.dir`, `BLAEGOZ.dir`, `BATZEGOZ.dir` and `HEZSAVE.dir` each carry
+	# `on idle / ClockScript() / end`, and `Panel.cst`'s `ClockScript` is what
+	# advances `GlobalSecond` and `GlobalHour`, fires the seventeen timed story
+	# events in its `case h&s of`, and calls `checkroom` — which steps
+	# `TIMEKEEPER` and reads `line TIMEKEEPER of field "timebasebackup"` to decide
+	# where the player is sent and who is where. With no `idle` none of that ever
+	# ran: the player's own save records `timekeeper = 2`, `globalhour = 8` and
+	# `globalsecond = 0`, the init values, beside an `itemkeeper` of 14 and four
+	# items collected. Hours of play, and the clock had never ticked once.
+	if not host._jump_queued:
+		host._dispatch("idle", host._frame_script(host._index))
 	# A `go to` queued from outside the step loop has already moved the playhead,
 	# and Director sends no `exitFrame` for a frame it is leaving that way. The
 	# step still runs: it renders and enters the frame the jump landed on, and

@@ -581,7 +581,7 @@ func call_builtin(name: String, args: Array) -> Variant:
 			## with <application>` — is a desktop verb and appears nowhere here.
 			if preview == null or args.is_empty():
 				return 0
-			var to_open := _first_window_key(args)
+			var to_open := _first_window_name(args)
 			if to_open != "":
 				preview.lingo_open_window(to_open)
 			return 0
@@ -592,7 +592,7 @@ func call_builtin(name: String, args: Array) -> Variant:
 			## JOKE's wait-for-click frame.
 			if preview == null or args.is_empty():
 				return 0
-			var to_shut := _first_window_key(args)
+			var to_shut := _first_window_name(args)
 			if to_shut != "":
 				preview.lingo_forget_window(to_shut, low == "forget")
 			return 0
@@ -829,7 +829,22 @@ static func stage_handle() -> Dictionary:
 ## `builtins reached` -- the window existed, and it was never shown. Scanning for
 ## the first argument that yields a key makes the binding indifferent to how the
 ## call was spelled.
-static func _first_window_key(args: Array) -> String:
+## **It answers the name, not the key**, and that distinction is the whole of
+## `bugs.md` 55. `window_key_of` is `get_basename()`, so it throws the extension
+## away — and the two calls below hand their answer to `lingo_open_window` /
+## `lingo_forget_window`, which take a *name*: they key it themselves, and on a
+## miss they call `_create_window`, which resolves the name against the disc.
+## Keyed first, `open window "inventor.dir"` reached the resolver as `inventor`,
+## and `ContainerName.spellings` refuses to try container extensions on a bare
+## stem on purpose (`director/director_container.gd:73-75`, "`day1` is not
+## `day1.dxr`"), so it resolved to nothing. Every one of `rating`'s twelve opens
+## failed that way, including the bag on the panel in every room.
+##
+## A handle carries no name — only the key it was made with — but a handle only
+## exists because `window(...)` already created the window, so the key hits
+## `_windows` and never reaches the resolver. `window_key` is idempotent, so
+## passing one back as a name is a no-op.
+static func _first_window_name(args: Array) -> String:
 	# A handle is unambiguous, so it wins wherever it sits.
 	for value in args:
 		if is_window_ref(value):
@@ -841,12 +856,12 @@ static func _first_window_key(args: Array) -> String:
 	# and the call silently does nothing at all.
 	for value in args:
 		if typeof(value) == TYPE_STRING and ContainerName.is_container(str(value)):
-			return window_key_of(value)
+			return str(value)
 	# Nothing recognisable: fall back to the last string, which is where a name
 	# sits when a command word precedes it, rather than the first.
 	for i in range(args.size() - 1, -1, -1):
 		if typeof(args[i]) == TYPE_STRING and str(args[i]).strip_edges() != "":
-			return window_key_of(args[i])
+			return str(args[i])
 	return ""
 
 
@@ -881,16 +896,46 @@ func tell_target(value: Variant) -> Object:
 	return preview.window_interpreter(window_key_of(value))
 
 
+## The window a property designator named, brought into existence by being named.
+##
+## `set the windowType of window "inventor.dir" to 2` arrives here with a bare
+## String: the designator spelling contains no `window(...)` call, so nothing has
+## created the window yet. Director does not require one — naming a window is
+## what makes it exist (§14), which is the rule `lingo_window` implements and
+## which `director_preview.gd:2400` states in as many words. Requiring a handle
+## instead silently dropped every designator write: `rating` sets `the
+## windowType` twelve times and spells all twelve this way, so the window that
+## the next line's `open` looks for had never been made.
+##
+## Returning "" rather than the stage's key for an unnamed window matters —
+## `lingo_set_window_prop` treats "" as the stage, and a write meant for a window
+## must not land there. That was the defect the window-property change fixed
+## once already.
+func _named_window_key(which: Variant) -> String:
+	if is_window_ref(which):
+		return window_key_of(which)
+	if typeof(which) == TYPE_STRING and str(which).strip_edges() != "":
+		var handle: Dictionary = preview.lingo_window(str(which))
+		return str(handle.get(WINDOW_HANDLE, ""))
+	return ""
+
+
 func get_window_prop(which: Variant, prop: String) -> Variant:
-	if preview == null or not is_window_ref(which):
+	if preview == null:
 		return 0
-	return preview.lingo_window_prop(window_key_of(which), prop)
+	var key := _named_window_key(which)
+	if key == "":
+		return 0
+	return preview.lingo_window_prop(key, prop)
 
 
 func set_window_prop(which: Variant, prop: String, value: Variant) -> void:
-	if preview == null or not is_window_ref(which):
+	if preview == null:
 		return
-	preview.lingo_set_window_prop(window_key_of(which), prop, value)
+	var key := _named_window_key(which)
+	if key == "":
+		return
+	preview.lingo_set_window_prop(key, prop, value)
 
 
 # ------------------------------------------------------------------ properties

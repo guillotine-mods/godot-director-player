@@ -1,11 +1,16 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 42 entries in ALL is 40 pass / 1 fail / 1 flaky, measured on
-# 4.7.1 at the commit this line was written:
+# which over the 51 entries in ALL is 49 pass / 2 fail, measured on 4.7.1 by a
+# whole-suite run at the commit this line was written:
 #
-#   boot_state:--file@PIP2DATA/EXODUS.DIR      FAIL, long-standing
+#   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
+#                   director_game.cfg collides with a keyCode rating tests at 48
+#                   sites (399feaaa)
 #   play_suspends   PASS or FAIL, about half and half, on one assertion that
-#                   waits a fixed six frames for a movie to load (bugs.md 41)
+#                   waits a fixed six frames for a movie to load (bugs.md 41).
+#                   Re-run three times over here: FAIL, PASS, FAIL.
+#
+# `boot_state` was the long-standing red in the line this replaces and passes now.
 #
 # The previous version of this comment said 11 pass / 2 fail with cursor_preview
 # red, and none of those three numbers survived being measured. A recorded set
@@ -71,7 +76,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_system_builtins click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh"
+ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_system_builtins click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir"
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
 # one place in six titles where the whole chain from `the keyDownScript` to
@@ -81,6 +86,13 @@ ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_p
 #
 # Neither covers the ship map, and that gap is what made the rule look like a
 # trade for half a day -- see `bugs.md` 44.
+#
+# `idle_clock` runs bare, on `GATE_ROOT`: `idle` is an engine event and both
+# roots must dispatch it, but only a title with an `on idle` handler can be
+# asked what it did with it, so the harness asserts the dispatch everywhere and
+# the clock only where there is one. `new_game_reset` names `rating` for the
+# opposite reason -- the tables it checks are that title's, and there is nothing
+# in `piposh2` for it to measure.
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that

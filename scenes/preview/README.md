@@ -101,24 +101,27 @@ still came from the config, so with the tracked config naming a `rating` contain
 every harness that does not pass its own `--file` loaded no score and asserted over
 nothing. `bugs.md` 51 carries it.
 
-The recorded baseline is **47 pass, 2 fail** over a list that is **49 entries**
-since `pause_holds` joined it, and neither failure is a renderer question:
+The baseline is **49 pass, 2 fail** over a list that is **51 entries** since
+`idle_clock` and `new_game_reset` joined it, and neither failure is a renderer
+question:
 
 - `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
   keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).
 - `play_suspends` — the known flake, `bugs.md` 41. Roughly half its runs, on the
-  cross-movie `suspendhop` assertion, not the dialogue one.
+  cross-movie `suspendhop` assertion, not the dialogue one. Re-measured three
+  times over: FAIL, PASS, FAIL.
 
-`lingo_surface_audit` was the third and passes now. The 47/2 is the count that was
-recorded on the commit before `pause_holds` existed; the entry passes on both
-`piposh2` and `rating` when run alone, so the expected total is 48/2 — but **that
-sum has not been measured by a whole-suite run** and this line is a prediction until
-somebody replaces it with one, which is the same warning the paragraph below carries.
+`lingo_surface_audit` was the third and passes now. **This line is a measurement,
+not a prediction** — the paragraph it replaces said 47/2 over 49, admitted that
+48/2 was "a prediction until somebody replaces it with one", and asked for a
+whole-suite run. That run happened: `bash gate.sh`, one process, 51 entries, no
+TIMEOUT and no EMPTY, and the failing *set* is exactly the two above. Replace this
+sum the same way — by running the thing — rather than by adding to it.
 
 `boot_state`, which this file recorded as the single baseline failure, passes — and
 **not because anything here fixed it.** Measured both ways: it passes with the
 `bugs.md` 40 label fix reverted as well, and its `meetings` assertion is present
 and green either way (8 items, not an empty list asserted over), so the recorded
 failure had already gone stale before this session. The number in this paragraph
-was describing a suite of 25 entries; the list is 48 now. Re-measure it here rather
+was describing a suite of 25 entries; the list is 51 now. Re-measure it here rather
 than trusting it, which is the same instruction `bugs.md` opens with.

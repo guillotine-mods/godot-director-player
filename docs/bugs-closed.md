@@ -15,6 +15,244 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 54. Rating's `inventorylist` is reset after all, and the reset is a literal inside `initDemo`
+
+**Status:** CLOSED, no defect · **Area:** data / `rating`
+
+Filed as "the shipped `Panel.cst` already has the first item collected, something
+must reset it on New Game, and it was not found". It was not found because it is
+not where the entry looked. The search was for an `inventorylistinit` member
+beside the `TimeBaseinit`/`TimeBaseBackup` and `GuestBaseinit`/`GuestBaseBackup`
+pairs. There is no such member. The reset is a **literal**, inside
+`NAVIGATE.dir`'s `on initDemo`, on the same line-2 write the entry was looking
+for:
+
+```
+put "0,0,0,0,...,0" into line 2 of field "inventorylist" of castLib "panel.cst"
+```
+
+`initDemo` is Rating's whole New Game reset — it also does the two field-to-field
+copies the entry named — and it is reached in real play by `MAINMENU.dir` script
+10, `go(1, "ARRIVEL.DXR")`, then `ARRIVEL.dir`'s `go(1, "navigate.dir")`, then
+frame 1's `exitFrame`. The entry searched `NAVIGATE.dir` only as a container of
+gating logic and never as the container that resets the game.
+
+**Measured, not reasoned.** `tools/new_game_reset.gd`, in `gate.sh`'s `ALL`, boots
+`--root rating --boot NAVIGATE.dir`, awaits real frames, and reads the live
+fields: 6 checks, 0 failed. Both init->backup copies come back byte-identical
+(4,069 and 1,223 chars), and line 2 of `inventorylist` reads 39 items, all `0`.
+The check can fail — `od -c` on the extracted member shows the shipped line 2
+beginning `1,` — so "all zeros" is the reset having happened and not the file
+having been clean.
+
+Of the entry's three candidate outcomes it is the first: the reset was in one of
+the containers not searched.
+
+**A data point for entry 53, which stays open.** A whole-field `put ... into field
+"x" of castLib "panel.cst"` does land on the right member here. That is one
+observation on one name in one cast, and 53's defect is that the library the
+script named is discarded and the first cast to answer wins — which this cannot
+rule out, because the name happens to be unique across the casts `NAVIGATE.dir`
+loads. Same luck the original entry noted.
+
+---
+
+## 56. Director's `idle` event was never dispatched, so Rating's clock — and the story schedule that gates the game — never ran
+
+**Status:** FIXED · **Area:** `scenes/preview/frame_loop.gd` · reported from play
+as "most screens should not be accessible to the player until after they pass
+Bila and the reception guy"
+
+`grep -rni idle --include='*.gd'` over `scenes/ lingo/ director/ autoload/` found
+two comments and **no dispatch site**. The port sent `idle` nowhere, and had
+never sent it.
+
+That is invisible to everything the gate measures. Nothing draws differently, no
+handler errors, no `go` goes astray — the `lingo dispatched` tally simply has no
+row for `idle`, and a missing row looks like a movie that has no such handler.
+
+**What it cost.** `rating` hangs its entire story schedule off it. `NAVIGATE.dir`,
+`BLAEGOZ.dir`, `BATZEGOZ.dir` and `HEZSAVE.dir` each carry the same handler:
+
+```
+on idle
+  ClockScript()
+end
+```
+
+and `Panel.cst`'s `ClockScript` (member 31, with a trailing comment that says in
+as many words "the clockscript is being called from idle") is the clock:
+
+- it advances `GlobalSecond` past a `the timer > clockspeed` guard, rolls
+  `GlobalHour` at 60, and writes `h & ":" & s` into `field "GlobalTime"`, the
+  clock the player can see;
+- it fires seventeen timed story events out of a `case h&s of` — `opentimeout`,
+  `explainsave`, `menacall`;
+- at 30 and 60 seconds it calls `checkroom`, which does `put TIMEKEEPER + 1 into
+  TIMEKEEPER` and reads `item ITEMKEEPER of line TIMEKEEPER of field
+  "timebasebackup"` to decide **where the player is sent and which people are
+  where**;
+- and `if globalhour >= "19" and whichday = 1 then go to movie "karioki.dir"` is
+  how day one ends.
+
+None of it had ever run. **The player's own save is the proof:**
+`saves/rating/quicksave.json` reads `timekeeper = 2`, `globalhour = 8`,
+`globalsecond = 0` — the exact values `NAVIGATE.dir`'s `initDemo` and script 13
+set at New Game — beside `itemkeeper = 14` and four items collected in
+`objectsfound`. Hours of play, real progress, and the clock had not ticked once.
+
+**The fix.** `frame_loop.gd:advance` now sends it once per step, guarded on no
+pending jump. Both facts are the reference's: `score.cpp:336-338` sends it from
+the interactivity block once per `Score::update`, gated on `!hasJump`, and
+`lingo-events.cpp:552` queues it as a `kMovieHandler`, so it goes to the movie
+script rather than to a sprite. It is sent *before* the pause check, because
+`pause` stops the playhead and leaves the movie live, and the reference's idle
+sits in a block a pause does not suspend.
+
+**Blast radius.** `piposh2`'s only `on idle` is `HEZSAVE/master/MovieScript 209`,
+whose entire body is `dontPassEvent()` — so the title the port was built on could
+never have revealed this, and turning the event on cannot disturb it. That is the
+same shape as entry 55: a path the reference title does not exercise, dead in the
+port, and load-bearing in another title.
+
+**Covered by** `tools/idle_clock.gd`, in `gate.sh`'s `ALL`. It asserts the event
+is dispatched once per step on whichever root it is given — measured against
+`prepareFrame`, the other once-per-step event, rather than against the harness's
+own loop count, because the frame clock takes steps of its own while a harness
+awaits real frames. Where the movie has an `on idle` it then asserts the *clock*,
+on the globals the game reads: `GlobalSecond` advances, `GlobalHour` does not roll
+early, and `field "GlobalTime"` is written. On `rating` that is 7 checks; on
+`piposh2` it asserts the dispatch, says so, and stops rather than inventing a
+clock the title does not have.
+
+With the change reverted the harness reports `idle is dispatched at all (0 -> 0)`,
+2 checks, 2 failed.
+
+**What this does not claim.** That every screen the player reached was reachable
+*because* of this. The eight hotel-map hotspots on `NAVIGATE.dir` channels 30-37
+carry behaviours (`hotel2.cst` 242-249) that are bare `on mouseUp / go("flush1") /
+end` with no gate inside them, so those are ungated in the original too. What was
+broken is the schedule that moves the player and changes who is where, which is
+the mechanism this title gates with.
+
+**Measured and found correct along the way**, so nobody re-derives it: the New
+Game reset works. `NAVIGATE.dir`'s `initDemo` copies `timebaseinit` ->
+`timebasebackup` and `Guestbaseinit` -> `Guestbasebackup` and zeroes
+`inventorylist`; it is reached in real play by `MAINMENU.dir` -> `go(1,
+"ARRIVEL.DXR")` -> `go(1, "navigate.dir")` -> frame 1's `exitFrame`. Returns from
+rooms come back through `backfrommovie`, which *writes* to `timebasebackup` rather
+than resetting it, so re-entry does not wipe progress. `tools/new_game_reset.gd`
+asserts all of it. `PERSONFOUND = "1,0"` at the start is set deliberately by
+script 13 alongside thirteen zeros in `OBJECTSFOUND` — Bila first with everything
+else locked, which is what the player expected.
+
+**Unexplained, not chased.** `MAINMENU.dir` script 4 is `on exitFrame / go(1,
+"startmov.dir") / end`, and no `startmov` exists in `games/rating` under any
+extension. It is not on the New Game path — script 10's `go(1, "ARRIVEL.DXR")` is
+— so nothing observed depends on it, but a frame script pointing at a movie that
+is not on the disc is either a data gap or a dead branch and it has not been
+established which.
+
+---
+
+## 55. The command spelling of `window` never created a window, and `open` lost the filename's extension before the resolver saw it
+
+**Status:** FIXED · **Area:** `scenes/preview_lingo_host.gd` · reported from play
+as "the suitcase of Egoz isn't opening in any screen during the entire game"
+
+Egoz's suitcase is the bag on `rating`'s shared bottom panel, drawn in every
+room. It is `Panel.cst` member 35 (the closed-bag bitmap, 115x102) on channel 45,
+and the handler is that **member's cast script**, not a sprite behaviour:
+
+```
+on mouseUp
+  global soundspath,effectspath
+  sound playfile 2, effectspath & "openbag.aif"
+  set the membernum of sprite 45 to the number of member "bagopen" of castlib "panel.cst"
+  updatestage
+  ...
+  set the windowType of window "inventor.dir" to 2
+  open window "inventor.dir"
+end
+```
+
+**Two independent defects, either one fatal.** Both are in the same place: the
+port handled `window(...)` — the *call* spelling — and not `window "x"`, the
+*designator* and *command* spelling. Every one of Piposh 2's 54 opening sites uses
+the call spelling, and every one of Rating's 12 uses the command spelling, so a
+path exercised 54 times by the title the port was built on was never reached once
+by the title it was being played on.
+
+**A. Naming a window in a designator created nothing.** `set the windowType of
+window "inventor.dir" to 2` parses to a bare String, and `set_window_prop` /
+`get_window_prop` guarded on `is_window_ref(which)`, which requires a Dictionary
+handle. A String failed the guard, the write was dropped, and — the part that
+mattered — *no window was created*, so the `open` on the next line had nothing to
+find. That contradicted the port's own rule, written at
+`scenes/director_preview.gd:2400`: "Director makes the window object exist as soon
+as it is named, which is what lets a script set properties on it and `tell` it
+before `open`."
+
+**B. `open window "x"` reached the resolver with the extension gone.**
+`_first_window_key` returned `window_key_of(...)`, which is `get_basename()`, so
+`"inventor.dir"` became `"inventor"`. Its two callers hand that to
+`lingo_open_window` / `lingo_forget_window`, which take a **name**: they key it
+themselves, and on a miss call `_create_window`, which resolves the name against
+the disc. `DirectorPaths._index` is keyed by full filename, and
+`ContainerName.spellings` refuses to try container extensions on a bare stem *on
+purpose* (`director/director_container.gd:73-75`, "`day1` is not `day1.dxr`"), so
+`resolve("inventor")` answered `""`.
+
+The fix is not in `resolve` or `spellings` — the extension must not be discarded
+upstream in the first place. `_first_window_key` became `_first_window_name` and
+answers the most specific spelling it has: the raw string for a string argument,
+the key only for a handle, where no name exists and the window is already in
+`_windows` so the resolver is never reached. `window_key` is idempotent, so a key
+passed back as a name is a no-op.
+
+**Why this is one bug and not one room's.** `tools/window_survey.gd -- --root
+rating --all`: 12 `open`, 52 `forget`, 56 `window`, 12 `windowType` writes, and
+**all 12 opens were broken** — the bag in every room, plus all three `timeout`
+interstitials. `Panel.cst` script 176 opens the inventory and then `tell`s it; the
+`tell` parses as a call, so it *did* create the window, after the failed `open` —
+`INVENTOR.dir` loaded there and was never shown, invisible rather than an
+artifact.
+
+**Reproduce, before and after:**
+
+```bash
+godot --headless --path . --script tools/click_trace.gd -- \
+    --root rating --boot NAVIGATE.dir --movie NAVIGATE.dir --frame 1241 --channel 45
+```
+
+Before: `window inventor -> not found` / `open window inventor -> no such movie`.
+After: `window INVENTOR.dir: 125 frames` and the window runs its own movie. The
+same two failure lines are recorded inside `saves/rating/quicksave.json`, the
+player's own session.
+
+**Covered by** `tools/window_preview.gd`, which had 44 checks and now has 58: the
+three command-form spellings are asserted apart, because the two halves failed for
+different reasons and one combined check could not say which broke. It is asserted
+on `joke.dxr` under `--root piposh2` rather than on `inventor.dir`, because this is
+an engine rule and asserting it on the corpus the gate pins to is what makes it
+one. With the engine change reverted and the harness kept, the run is 45 checks, 1
+failed, on `naming the window in a designator created it`.
+
+**Ruled out along the way.** Attachment (`mouseUp@cast x1` ran, channel 45, lib 6,
+member 35). Dispatch (`clickable because member script declares mouseDown/mouseUp`).
+The handler body — `openbag.aif` played and the sprite-45 write landed on `bagopen`
+at its extracted 121x102. Filename case: `resolve` is index-based and
+case-insensitive, and `resolve("inventor.dir")` answers `INVENTOR.dir` in the same
+process that `resolve("inventor")` answers `""`. The extension was gone before case
+could matter.
+
+**`bugs.md` 16 was dodged here, not avoided.** `the number of member "bagopen" of
+castlib "panel.cst"` returns a bare int and the sprite keeps its existing library.
+Channel 45 was already on lib 6, so `36` landed on `bagopen`. In a room where
+channel 45 starts empty the same line resolves into the movie's own cast.
+
+---
+
 ## 52. `pause` parked the playhead one frame past the frame that paused, so a hotspot scoped to that frame could never be clicked
 
 **Status:** FIXED · **Area:** `scenes/preview/frame_loop.gd`,

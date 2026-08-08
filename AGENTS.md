@@ -107,10 +107,12 @@ the opposite and had been available from the first minute. Read
 ## Environment
 
 - **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
-  harnesses that run and are expected to pass — measured over all 42 entries on
-  4.7.1, 40 pass, 1 fail (`boot_state`), 1 flaky (`play_suspends`, which passes
-  about half its runs; `bugs.md` 41). This said 23 pass / 1 fail, which does not
-  sum to the list, for as long as nobody ran the whole thing and counted.
+  harnesses that run and are expected to pass — measured over all 51 entries on
+  4.7.1 by a whole-suite run, 49 pass, 2 fail: `debug_bindings` (config, not code)
+  and `play_suspends` (the flake, about half its runs; `bugs.md` 41). This said 23
+  pass / 1 fail, and later 40 pass / 1 fail naming a `boot_state` that passes now,
+  neither of which summed to the list, for as long as nobody ran the whole thing
+  and counted.
   `README.md` lists more tools than that; the ones outside `ALL` are surveys and
   one-offs, and are the ones that rot, because nothing runs them. Everything that
   is not pass/fail prints a number that is not higher-is-better, which is why
