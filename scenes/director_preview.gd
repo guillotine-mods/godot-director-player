@@ -1,4 +1,4 @@
-﻿extends Node2D
+extends Node2D
 ## Plays a Director movie straight from its container, on the stage, in a window.
 ##
 ##   godot --path . res://scenes/director_preview.tscn
@@ -1657,11 +1657,11 @@ func _sprite_rect(sprite: Dictionary) -> Rect2:
 
 ## Jump to the last frame of the movie currently playing.
 ##
-## Deliberately blunt: it moves the playhead and nothing else. Whatever the room
-## was holding for â€” a line of speech, a walk â€” is abandoned rather than
-## unwound, so the last frame is entered with whatever state the skipped frames
-## never got to set. That is fine for looking at a movie's end and would not be
-## fine in the game.
+## Deliberately blunt: it cuts the voice, drops whatever the frame is waiting on
+## and moves the playhead. Whatever the room was holding for â€” a line of speech,
+## a walk â€” is abandoned rather than unwound, so the frame is entered with
+## whatever state the skipped frames never got to set. That is fine for looking at
+## a movie's end and would not be fine in the game.
 func skip_to_end() -> void:
 	if _score == null or _score.frame_count <= 0:
 		return
@@ -1699,6 +1699,40 @@ func skip_to_end() -> void:
 	# consumed by one step and the playhead is held again before anything is
 	# drawn. That was MURDER1. So releasing is paired with a move rather than
 	# tried first and returned on.
+	#
+	# **And what holds the frame is not always the clock.** Piposh 1 gates every
+	# line of speech on the sound rather than on a wait, which `_clock.release()`
+	# cannot reach:
+	#
+	#     on exitFrame
+	#       if not soundBusy(1) then go(marker(1)) else go(marker(0) + 1)
+	#
+	# The `else` is the hold -- the segment loops on itself until the voice
+	# finishes -- so the release had nothing to release and the jump landed on a
+	# segment that ran the same test against the same still-playing sound and
+	# waited it out again. The playhead moved and the player heard the identical
+	# line to its end, which is why this reads as "SKIP does nothing, ever" rather
+	# than as the mis-landings entries 32 and 37 describe. Measured in BRJDAY1
+	# from a settled talk, on the movie's own clock: untouched, the segment is left
+	# after 1334 ms when the voice ends; jumping alone leaves it in 18 ms **with
+	# the voice still playing**, so the next segment re-waits; stopping the channel
+	# leaves it in 35 ms with the voice cut, by the movie's own `go(marker(1))`.
+	#
+	# So the stop is *added* to the release and the jump rather than replacing
+	# them, because the corpus needs both levers and neither covers the other.
+	# EXODUS is the proof that the jump has to stay: it is not gated on a sound at
+	# all, and stopping the channel there moves it 7649 ms against a 7793 ms
+	# baseline -- nothing. Both together are what leaves either movie promptly and
+	# quietly, 50 ms in EXODUS and 17 ms in BRJDAY1.
+	#
+	# **Channel 1 only.** 1 is the voice and 2 is the score's background song
+	# (`songs\strtgame\songa.aif`), which these movies stop themselves when they
+	# mean to -- `sound stop 2` appears in DAY1 six times. Counted over the piposh
+	# scripts the gate is `soundBusy(1)` 28 times to `soundBusy(2)` once in
+	# STRTGAME and 4 to 0 in BRJDAY1, so stopping 2 as well would silence the music
+	# for the rest of the movie to release a wait that is almost never on it. A
+	# scene that does wait on 2 still has the jump behind it.
+	lingo_stop_sound(1)
 	_clock.release()
 	var target := -1
 	if _labels != null:
@@ -2962,4 +2996,3 @@ func lingo_focus_channel() -> int:
 
 func lingo_member_number(which: Variant, cast: String) -> Variant:
 	return _resolve_member(which, cast)
-

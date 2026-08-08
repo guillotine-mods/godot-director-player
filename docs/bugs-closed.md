@@ -15,6 +15,86 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 42. SKIP moved the playhead and left the voice playing, so in piposh it did nothing at all
+
+**Status:** FIXED · **Area:** preview, `skip_to_end` · **not the mis-landing of
+32 and 37** · reported from play as "the skip button doesn't work in piposh",
+with "nothing at all, ever, from the first press"
+
+Entries 32 and 37 are both about *where* SKIP lands. This is about what it fails
+to let go of, and it is why the same button that misbehaves visibly in piposh2
+and rating looks completely dead in piposh 1.
+
+**What holds a piposh frame is a sound, not the clock.** Every line of speech in
+this title is gated on the voice channel:
+
+```lingo
+on exitFrame
+  if not soundBusy(1) then go(marker(1)) else go(marker(0) + 1)
+end if
+```
+
+The `else` is the hold — the segment loops on itself until the voice finishes.
+`skip_to_end` released `_clock` (which was holding nothing) and jumped to the
+next marker, but never stopped the sound, so the *destination* segment ran the
+same test against the same still-playing voice and waited it out again. The
+playhead moved and the player heard the identical line to its end. That is the
+whole report.
+
+`soundBusy(1)` is the gate 28 times to `soundBusy(2)`'s once in STRTGAME, and 4
+to 0 in BRJDAY1; channel 2 is the background song (`songs\strtgame\songa.aif`),
+which these movies stop themselves — `sound stop 2` appears in DAY1 six times.
+So the fix stops channel 1 and leaves 2 alone.
+
+**The measurement needed the movie's own clock, and the first one that did not
+proved nothing.** Driven by `_advance` in a tight loop, score time compresses to
+zero while the audio runs on wall-clock, so "jump" and "stop the sound" came out
+identical — f105, 28 distinct frames, both — and the comparison decided nothing.
+Run in real time from a settled talk in BRJDAY1, the levers separate cleanly:
+
+| lever | leaves the segment | voice still playing |
+|---|---|---|
+| untouched | 1334 ms | no, it ended |
+| jump only (before) | 18 ms | **yes** — so the next segment re-waits |
+| stop channel 1 | 35 ms | no, by the movie's own `go(marker(1))` |
+| both (after) | 17 ms | no |
+
+**The stop is added to the release and the jump, not put in their place.** Entry
+32 argues for dropping the jump entirely; piposh2's EXODUS is why that is still
+wrong. It is not gated on a sound at all, and stopping the channel there moves it
+7649 ms against a 7793 ms baseline — nothing. The jump alone carries EXODUS, the
+stop alone carries BRJDAY1, and neither covers the other.
+
+Reproduce, windowed, with the three-lever probe in the commit that added this:
+
+```
+$ godot --path . --script <probe> -- --file PIPDATA/BRJDAY1.dir
+  skip   f73  busy=true  -> segment end f82  left after 8 ms  voice still playing: false
+```
+
+**One measured side effect, and it is the sweep rather than the engine.**
+`tools/skip_state.gd --all` on this root goes from 4 failures to 7: LOLODAY1,
+LOLODAY3 and ONBOARD now park. All three end their talk with `if not
+soundBusy(1) then play done`, so cutting the voice fires `play done` — and the
+sweep enters every movie with `lingo_go_movie`, leaving `_play_stack` empty, so
+there is nothing to return to. That is entry 32's DAY1 mechanism, reached sooner.
+A player does not reach them that way: DAY1 names `loloday1` and `stimday1` next
+to `play frame`, which pushes a return address. Entered as the hub enters them,
+all three **return to DAY1** rather than parking, which is what SKIP on an
+interlude should do:
+
+```
+in the clip  : LOLODAY1.dir f32   play stack depth 1
+after SKIP   : LOLODAY1.dir f32 -> DAY1.dir f38   visited 61 distinct place(s)
+```
+
+The baseline's pass on those three was the harness compressing score time so the
+voice never finished; the park was already there, one second later. Worth fixing
+in `skip_state` rather than in `skip_to_end`: the sweep should enter a `play`
+clip with a return address, or skip clips it can only open cold.
+
+---
+
 ## 34. Film-loop children drew out of the wrong cast file, so Goldolin was Tofi
 
 **Status:** FIXED · **Area:** container decode / film loops ·

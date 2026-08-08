@@ -1197,6 +1197,10 @@ it exactly the kind of change that wants its own before-and-after measurement.
 ## 32. The SKIP button parks the playhead on a frame the movie can never leave, and that is the cursor "never coming back"
 
 **Status:** open · **Area:** preview, `skip_to_end` · **not the cursor path** ·
+**see also `docs/bugs-closed.md` 42**, which is the same button failing for a
+third reason — it left the voice playing, so piposh's `soundBusy(1)` talk gate
+re-armed at the destination. That half is fixed; the mis-landing below is not,
+and 42's fix does not change where SKIP lands ·
 reported from play as "after MURDER1 the cursor reverts to the arrow and never
 returns"; reproduced once the missing step arrived — **the player presses SKIP**
 
