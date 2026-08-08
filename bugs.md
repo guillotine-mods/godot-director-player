@@ -1628,3 +1628,54 @@ wants the full list — that is the bug), `lingo_go_next`'s search for the next
 marker (Director's `gotoNext` also counts unnamed ones), and
 `tools/click_trace.gd`, `hotspots.gd`, `mouse_poll.gd`, `director_frames.gd`,
 which name markers for a human. `click_trace` already skips empty names.
+
+## 41. `play_suspends` fails about half its runs on one assertion, so the gate's set is not reproducible
+
+**Status:** open · **Area:** `tools/play_suspends.gd:351` · found by the first
+full-suite run on macOS, which is also the first one anybody diffed run-to-run
+
+`bash gate.sh play_suspends` twice in a row, same binary, same corpus, prints
+PASS then FAIL. Four bare runs:
+
+```
+for i in 1 2 3 4; do
+  godot --headless --path . --script tools/play_suspends.gd -- --root piposh2 \
+    2>&1 | grep -E '^(PASS|FAIL)' | tail -1
+done
+```
+
+```
+FAIL  ... (26 checks, 1 failed)
+FAIL  ... (26 checks, 1 failed)
+PASS  ... (26 checks, 0 failed)
+PASS  ... (26 checks, 0 failed)
+```
+
+26 checks every time, so this is not a harness that lost its subject and not a
+corpus that resolved differently. One assertion moves: **"and the rest of the
+handler still ran"**, which reports `before` when it fails and `after` when it
+passes.
+
+The case is `a handler frozen by 'go to movie' outlives the interpreter`. It
+calls `suspendhop`, whose body hops to another movie mid-handler, and then waits
+
+```gdscript
+	for i in 6:
+		await process_frame
+```
+
+before asserting that the trailing `put "after" into gsuspendhop` ran. Six
+frames is a fixed budget spent waiting for a *container to load off disk* and
+the suspended handler to be resumed on the new interpreter. When the load takes
+longer than six frames the assertion reads the global before the resume writes
+it, and the harness reports the engine as broken.
+
+So the fix is in the harness, not the engine: wait for the condition — the
+interpreter to have resumed, with a frame ceiling that fails loudly — instead of
+counting frames and hoping. Until then the gate's recorded set is not
+reproducible, and a session that runs the suite twice will attribute the
+difference to whatever it changed in between.
+
+Not caused by the corpus pinning moving from `director_game.cfg` to `--root`:
+both mechanisms resolve the same root, and the 26-check count is identical
+either way.
