@@ -62,8 +62,8 @@ func _clickable_point(preview: Node) -> Vector2:
 ## not round-trip in a `--script` run.
 func _clipboard_round_trips() -> bool:
 	var was := DisplayServer.clipboard_get()
-	DisplayServer.clipboard_set("piposh2-godot clipboard probe")
-	var ok := DisplayServer.clipboard_get() == "piposh2-godot clipboard probe"
+	DisplayServer.clipboard_set("godot-director-player clipboard probe")
+	var ok := DisplayServer.clipboard_get() == "godot-director-player clipboard probe"
 	DisplayServer.clipboard_set(was)
 	return ok
 

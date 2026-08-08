@@ -17,7 +17,10 @@ enum UpscaleMode {
 	X2_SMOOTH, ## Test path for enhanced / upscaled art
 }
 
-const CONFIG_PATH := "user://piposh2_settings.cfg"
+## Named for the player, not for a title: `user://` is already per-project, so
+## putting a game's name in the filename bought nothing and made the engine's
+## own settings look like one title's.
+const CONFIG_PATH := "user://player_settings.cfg"
 
 var aspect_mode: AspectMode = AspectMode.WIDE_16_9
 var upscale_mode: UpscaleMode = UpscaleMode.X2_NEAREST

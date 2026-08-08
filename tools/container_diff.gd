@@ -2,8 +2,8 @@ extends SceneTree
 ## What a .dxr/.cxt lost on its way to becoming a .dir/.cst.
 ##
 ##   godot --headless --script tools/container_diff.gd -- \
-##       --a C:/Data/Work/Piposh/Piposh2/PIP2DATA/DAY1.DXR \
-##       --b C:/Data/Work/Piposh/piposh2-godot/games/piposh2/PIP2DATA/DAY1.DIR
+##       --a <originals>/PIP2DATA/DAY1.DXR \
+##       --b <checkout>/games/piposh2/PIP2DATA/DAY1.DIR
 ##
 ## Both paths are absolute and read directly, so this can reach outside the
 ## configured game root — the point is to compare a converted file against an
