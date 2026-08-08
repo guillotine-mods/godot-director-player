@@ -2382,11 +2382,18 @@ the editable of member` were listed while `set_member_prop` was a bare `pass`;
 all. Each was found by accident, after real debugging, and each was found
 *despite* this document rather than through it.
 
-So this section is a table and nothing else, because a table can be read by a
-machine. **`tools/lingo_surface_audit.gd` parses it** and fails if any row
+So the claim itself is a table and nothing else, because a table can be read by
+a machine. **`tools/lingo_surface_audit.gd` parses it** and fails if any row
 disagrees with the running engine, if a name the engine binds has no row, or if
 a name any of the six titles calls has no row. It is the normative statement of
 this port's Lingo surface; everything above is the language it is a surface of.
+
+    godot --headless --path . --script tools/lingo_surface_audit.gd
+    godot --headless --path . --script tools/lingo_surface_audit.gd -- --survey
+    godot --headless --path . --script tools/lingo_surface_audit.gd -- --name flipH
+
+The prose between here and the table is the gap list it produces, which is the
+one thing a table is bad at: an ordering with a reason attached to each place.
 
 ## How to read a row
 
@@ -2412,6 +2419,17 @@ this port's Lingo surface; everything above is the language it is a surface of.
   unbound *property* — `LingoDiagnostics.SPRITE_PROP`, `MOVIE_PROP` and
   `MEMBER_PROP` are declared and never emitted — which is why the property half
   of this table had to be built by reading the code rather than by running it.
+
+A fourth value, **`noop`**, may be *recorded* and cannot be *observed*: it reads
+as `inert` to the harness and means that Director's own semantics for the name
+are "nothing a movie can see happens here". `nothing`, `printFrom`, the
+`preLoad`/`unLoad` memory hints, `restart`, `shutDown`, `showGlobals`,
+`showLocals` and the window's `picture` are the whole of it, and each carries its
+reason in its note. It is a suppression channel and it is meant to be an
+uncomfortable one — per name, written here rather than in the harness, and
+excluded from the reachable-gap count below. Anything whose absence a player
+could notice is `inert` and is a gap: `beep`, `alert`, `quit`, `continue` and
+`updateStage` are all bound to nothing and all of them are in the list.
 
 A row absent from this table is a Director name no title reaches and this engine
 does not bind; §9.2 is where that remainder is described. Adding a binding means
