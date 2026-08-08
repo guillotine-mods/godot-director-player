@@ -4,7 +4,11 @@
 #
 # No corpus pinning on purpose: this asks whether the project loads and whether
 # the preview's surface still resolves, and neither question is about a title.
-# Point director_game.cfg wherever, or pass `-- --root <name>` through.
+# It does boot the configured game, though, so a director_game.cfg pointing at a
+# root that is not there fails here as six null fields rather than as "no such
+# game". Arguments are forwarded, so name one when the config is mid-edit:
+#
+#   bash check.sh --root piposh2
 cd "$(dirname "$0")" || exit 1
 . ./gate_env.sh
 G=$(gate_find_godot) || exit 1
