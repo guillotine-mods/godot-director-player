@@ -127,6 +127,15 @@ static func tick(host, delta: float) -> void:
 	if due <= 0:
 		return
 	for _i in due:
+		# Director's `pause` freezes the film loops with the playhead and a *hold*
+		# does not: `Score::incrementFilmLoops` returns early on `_playbackPaused`
+		# and runs straight through a wait-for-click. So this is tested ahead of the
+		# tick count rather than beside the hold below -- `host._ticks` is the film
+		# loops' clock, and a paused room whose characters keep talking is what
+		# skipping it looks like. The rest of what `pause` suspends is one guard in
+		# `director_preview.gd:_advance`.
+		if host._host != null and host._host.playback_paused:
+			continue
 		# Counted before the hold is tested, not after: a wait-for-click frame
 		# with a character talking on it must not freeze the character.
 		host._ticks += 1

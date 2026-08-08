@@ -2508,7 +2508,7 @@ That inflates a rank and never invents one.
 
 ## What is still open, in the order a movie meets it
 
-> **Reachable gaps recorded here: 17.** `tools/lingo_surface_audit.gd` counts the
+> **Reachable gaps recorded here: 10.** `tools/lingo_surface_audit.gd` counts the
 > rows that are not `live` and that at least one of the six titles calls, and
 > fails if the number moves. It can only move two ways and both deserve a red
 > gate: a gap closed and this number not brought down with it, or a name some
@@ -2525,21 +2525,14 @@ doing anything is a gap, including the ones that look harmless.
 | 1,453 | `the member of sprite N` | **live** | Piposh Dream reads it (`member(the member of sprite xxx).name`). Aliased to `membernum` in `sprite_props.gd`: Director's member *reference* and its integer are two properties, and one here, because this port packs `(library, slot)` into a single integer `member()` accepts either way (§1.6). Wrong only for a title that compares a member reference against something that is not an integer. |
 | 450 | `the flipH of sprite N` | **live** | Piposh Dream's `fritz1.dir` both reads and writes it (`sprite(getAt(ppl, 1)).flipH = 1`). Aliased to the record's `flip_h`, answered from the score's own bit by `read_prop` and merged by `effective`; `sprite_art.gd` has drawn from that name since before the bit was decoded and mirrors the hit test with it, so a flipped sprite is clickable where it is drawn. `the flipV` (6 sites) is the same entry. |
 | 361 | `the loc of sprite N` | **live** | Same file swaps two sprites' positions with it. Split in `director_preview.gd`'s two entry points rather than aliased: the read composes `locH`/`locV` into the two-element list this port represents a point with, and the write splits one back onto `_write_position`, so the constraint stays applied in exactly one place (§7.6). **`tools/lingo_surface_audit.gd` still counts this row as a gap** -- it reads bindings out of the host and the property tables and cannot see a name the node routes before either -- so the count above is one higher than the truth until the audit learns to look there. |
-| 326 | `the searchPath` | absent | Piposh 1's CD-drive scan, in all three language builds: `set the searchPath to ["d:\sounds\strtgame\"]` then `x = getAt(the searchPath, 1)`. Unbound, the read answers VOID, `getAt` answers VOID, and the loop cannot find the disc. The retired host kept it as a **list with one empty element** precisely so the read answered `""` rather than falling off the end (§3). |
-| 154 | `beep` | inert | Audible in the original, silent here. |
-| 150 | `continue` | inert | The other half of `pause`, which *is* live: a movie that pauses and calls `continue` never resumes. Bound as a pair or not at all. |
-| 102 | `quit` | inert | Every "quit game" path in every title does nothing. |
-| 41 | `the movie` | absent | The older spelling of `the movieName`, which is bound. |
 | 39 | `the hilite of member M` | absent | Rating, `set the hilite of member "rectang" to 1`, once per room. `lingo_set_member_prop` knows `editable` and `text` and drops everything else **without reporting it**, which is the `set_member_prop` shape again in a narrower place. |
 | 20 | `the rect of sprite N` | inert | Readable in Director and derived from loc, registration point and member size. |
 | 12 | `the currentSpriteNum` | absent | Piposh Dream's hex board reads it to know which channel is running the behaviour. §7.1 says it is synthesised rather than stored. |
 | 6 | `the flipV of sprite N` | inert | As `flipH`. |
-| 5 | `the exitLock` | absent | Writes only, dropped. Disables the quit key in the original. |
 | 4 | `xtra` | absent | Xtra reference by name. No Xtra is implemented, so absent is the honest state and §7.3's `respondsTo` probe is the shape to answer if one ever is. |
 | 4 | `the top of sprite N` | inert | With `left`, `right` and `bottom`: read-only in Director and *derived*, which is why §4 leaves them out of the writable set. Answering 0 is a wrong answer, not a missing one. |
 | 3 | `the textSize of member M` | absent | A member write with no arm, as `hilite`. |
 | 3 | `the castLibNum of sprite N` | inert | The library half of `the member of sprite`. |
-| 2 | `alert` | inert | A modal box the player never sees. |
 | 2 | `the volume of sprite N` | inert | The sprite spelling of a digital-video property. `the volume of sound N` is a different property and is live. |
 
 Two shapes account for most of that list, and neither is a missing name:
@@ -2603,7 +2596,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `forget` | builtin | live | 389 sites; host arm |
 | `nothing` | builtin | noop | 376 sites; host IGNORED; Director's own explicit no-op; there is nothing to do |
 | `loc` | sprite | inert | 361 sites; stored in _overrides, consumed by nothing |
-| `searchpath` | system | absent | 326 sites |
+| `searchpath` | system | live | 326 sites; read+write |
 | `constraint` | sprite | live | 316 sites; merged by effective() |
 | `volume` | sound | live | 314 sites; read and write |
 | `frame` | system | live | 302 sites; read only |
@@ -2615,24 +2608,24 @@ Two shapes account for most of that list, and neither is a missing name:
 | `keyupscript` | system | live | 205 sites; read+write |
 | `return` | builtin | live | 195 sites; lingo_builtins.gd |
 | `pass` | builtin | live | 174 sites; host arm |
-| `beep` | builtin | inert | 154 sites; host IGNORED |
-| `continue` | builtin | inert | 150 sites; host IGNORED |
+| `beep` | builtin | live | 154 sites; host arm |
+| `continue` | builtin | live | 150 sites; host arm |
 | `pause` | builtin | live | 146 sites; host arm |
 | `abs` | builtin | live | 138 sites; lingo_builtins.gd |
 | `deleteat` | builtin | live | 134 sites; lingo_builtins.gd |
 | `open` | builtin | live | 133 sites; host arm |
 | `castnum` | sprite | live | 123 sites; merged by effective() |
 | `machinetype` | system | live | 123 sites; read only |
-| `quit` | builtin | inert | 102 sites; host IGNORED |
+| `quit` | builtin | live | 102 sites; host arm |
 | `moviename` | system | live | 94 sites; read only |
-| `timer` | system | live | 91 sites; read only |
+| `timer` | system | live | 91 sites; read+write |
 | `soundlevel` | system | live | 70 sites; read+write |
 | `point` | builtin | live | 59 sites; lingo_builtins.gd |
 | `editable` | member | live | 58 sites; director_preview.gd, read and write |
 | `printfrom` | builtin | noop | 56 sites; host IGNORED; printing; no printer, and §9.1 already calls this correctly inert |
 | `centerstage` | system | live | 55 sites; read+write |
 | `windowtype` | window | live | 54 sites; windows.gd read+write |
-| `movie` | system | absent | 41 sites |
+| `movie` | system | live | 41 sites; read only |
 | `hilite` | member | absent | 39 sites |
 | `mousedown` | system | live | 39 sites; read only |
 | `moveablesprite` | sprite | live | 33 sites; merged by effective() as `moveable` |
@@ -2652,13 +2645,13 @@ Two shapes account for most of that list, and neither is a missing name:
 | `flipv` | sprite | live | 6 sites; aliased to the record's `flip_v`, merged by effective, drawn and hit-tested by sprite_art.gd |
 | `integer` | builtin | live | 5 sites; lingo_builtins.gd |
 | `map` | builtin | live | 5 sites; lingo_builtins.gd |
-| `exitlock` | system | absent | 5 sites |
+| `exitlock` | system | live | 5 sites; read+write |
 | `xtra` | builtin | absent | 4 sites |
 | `top` | sprite | inert | 4 sites; stored in _overrides, consumed by nothing |
 | `findpos` | builtin | live | 3 sites; lingo_builtins.gd |
 | `textsize` | member | absent | 3 sites |
 | `castlibnum` | sprite | inert | 3 sites; stored in _overrides, consumed by nothing |
-| `alert` | builtin | inert | 2 sites; host IGNORED |
+| `alert` | builtin | live | 2 sites; host arm |
 | `stopevent` | builtin | live | 2 sites; host arm |
 | `unloadmovie` | builtin | noop | 2 sites; host IGNORED; memory hint (§1.4), inverse |
 | `volume` | sprite | inert | 2 sites; stored in _overrides, consumed by nothing |
@@ -2675,7 +2668,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `close` | builtin | live | 0 sites; host arm |
 | `cos` | builtin | live | 0 sites; lingo_builtins.gd |
 | `cursor` | builtin | live | 0 sites; host arm |
-| `delay` | builtin | inert | 0 sites; host IGNORED |
+| `delay` | builtin | live | 0 sites; host arm |
 | `deleteone` | builtin | live | 0 sites; lingo_builtins.gd |
 | `deleteprop` | builtin | live | 0 sites; lingo_builtins.gd |
 | `empty` | builtin | live | 0 sites; lingo_builtins.gd |
@@ -2692,7 +2685,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `getpos` | builtin | live | 0 sites; lingo_builtins.gd |
 | `getprop` | builtin | live | 0 sites; lingo_builtins.gd |
 | `getpropat` | builtin | live | 0 sites; lingo_builtins.gd |
-| `halt` | builtin | inert | 0 sites; host IGNORED |
+| `halt` | builtin | live | 0 sites; host arm |
 | `hmstoframes` | builtin | live | 0 sites; lingo_builtins.gd |
 | `ilk` | builtin | live | 0 sites; lingo_builtins.gd |
 | `inflate` | builtin | live | 0 sites; lingo_builtins.gd |
@@ -2735,7 +2728,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `shutdown` | builtin | noop | 0 sites; host IGNORED; shuts the machine down; likewise |
 | `sin` | builtin | live | 0 sites; lingo_builtins.gd |
 | `sqrt` | builtin | live | 0 sites; lingo_builtins.gd |
-| `starttimer` | builtin | inert | 0 sites; host IGNORED |
+| `starttimer` | builtin | live | 0 sites; host arm |
 | `string` | builtin | live | 0 sites; lingo_builtins.gd |
 | `stringp` | builtin | live | 0 sites; lingo_builtins.gd |
 | `symbolp` | builtin | live | 0 sites; lingo_builtins.gd |
