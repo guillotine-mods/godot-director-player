@@ -48,3 +48,7 @@ reference/scummvm/
 # Serialises concurrent `gate.sh` runs. Two at once swap each other's corpus
 # mid-run and report another title's movies as this one's regressions.
 .gate.lock/
+
+# Agent scratch probes. Not ignored once, and a whole-file `git add` swept
+# another agent's untracked work into an unrelated commit.
+tools/scratch/
