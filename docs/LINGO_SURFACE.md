@@ -174,7 +174,7 @@ identically and one of them is testing a number.
 | `go` | 1..2 | Move the playhead: to a frame number, a marker label, or a frame/marker in another movie. |
 | `play` | 0..2 | Like `go`, but pushes the current position; `play done` pops it. |
 | `playAccel` | … | `play` without the return-position push. |
-| `marker` | 1 | Frame number of the marker *relative to the playhead*: 0 = the marker at or before it, +n = n markers forward, -n = n back. |
+| `marker` | 1 | With a **number**, the frame of the marker *relative to the playhead*: 0 = the marker at or before it, +n forward, -n back. With a **string**, the frame of the marker of that name (same lookup as `label`). |
 | `label` | 1 | Frame number of a named marker. |
 | `pause` | 0 | Halt the playhead on the current frame. |
 | `continue` | 0 | Resume after `pause`. |
@@ -194,14 +194,37 @@ identically and one of them is testing a number.
 | `frameReady` | 0..2 | Whether a frame's media has loaded. |
 | `ramNeeded` | 2 | Bytes needed for a frame range. |
 
-`marker` is **playhead-relative and position-indexed, not name-indexed.** This
-is the single most dangerous item in the whole catalogue for a port, and this
-one already got it wrong once: `lingo/lingo_host.gd` carries a comment
-recording that a name-based lookup collapsed all 49 of `strtgame`'s markers
-(only 32 of them distinctly named — Director calls an unnamed one "New Marker")
-onto the first, so `go(marker(0) + 1)` jumped to the same frame from everywhere
-and a cinematic looped for ever. `marker(0)` must be resolved by scanning
-sorted marker frame numbers against the current playhead.
+`marker` **takes two argument types and answers two different questions.** A
+*number* is playhead-relative and position-indexed; a *string* is a marker name.
+This is the single most dangerous item in the whole catalogue for a port, and
+this one has now got it wrong in both directions.
+
+**A number must not be looked up as a name.** `lingo/lingo_host.gd` carried a
+comment recording that a name-based lookup collapsed all 49 of `strtgame`'s
+markers (only 32 of them distinctly named — Director calls an unnamed one "New
+Marker") onto the first, so `go(marker(0) + 1)` jumped to the same frame from
+everywhere and a cinematic looped for ever. `marker(0)` must be resolved by
+scanning sorted marker frame numbers against the current playhead.
+
+**And a name must not be coerced to a number.** This paragraph used to end at
+"not name-indexed", which reads as *never resolve by name* — and that is how the
+binding was written, so every string argument became `to_int(...)` = 0, i.e.
+"the marker at or before the playhead". The corpus contradicts it in literals
+rather than by inference: `marker("mainroom")` appears **11 times** in Piposh 1
+beside `marker("doc6")`, `marker("dars6")` and `marker("all6")`, and Piposh 2 has
+eight more — `marker("stg1go")` through `marker("stg5go")`, `marker("hezanswer")`,
+`marker("rinclicktalk")`, `marker("patclicktalk")`, `marker("hezfldclicktalk")`.
+Nobody writes the same string literal eleven times expecting 0.
+
+What it cost: Piposh 1's ship map hands the player back with `go(marker(nof))`,
+`nof` being a deck code like `"dl1"`, so choosing a spot on the map returned the
+player to wherever the playhead was parked — measured, `DAY1` → `ROULLETE.dir`.
+A numeric string (`marker("0")`) is still a number; only a name that cannot be
+read as one is a name. Rating's three `marker(x)` sites are all
+`set x to the clickOn` then `x - 7`, so they are integers and stay
+playhead-relative. `tools/frame_events.gd` asserts both halves against a name
+taken from the loaded movie's own label table, deliberately excluding frame 0
+because an unknown name answers 0 and the check has to be able to fail.
 
 **`play` and `go` suspend the handler that called them.** This is the second
 most dangerous item here, and unlike `marker` it does not announce itself: a
@@ -962,9 +985,10 @@ game-shaped decision and is documented as such at the call site.
 Collected from the sections above, because each of these produces a running
 game that is wrong rather than an error.
 
-1. **`marker(n)` is playhead-relative and resolved by position.** Not by name.
-   Unnamed markers exist and share a name. Already cost this port a hanging
-   cinematic.
+1. **`marker(n)` is playhead-relative and resolved by position; `marker("name")`
+   is resolved by name.** Both halves have cost this port a bug: resolving a
+   *number* by name hung a cinematic, and coercing a *name* to a number sent
+   Piposh 1's ship map to the wrong room. Unnamed markers exist and share a name.
 2. **A navigation call is queued, not immediate.** `go` sets a target the score
    loop consumes on its next advance; the rest of the current handler still
    runs, and so do the event tiers already queued below it. A `go` implemented

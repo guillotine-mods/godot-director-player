@@ -230,6 +230,64 @@ func _init() -> void:
 		int(sent.get("prepareFrame", 0)) == STEPS, str(sent))
 	h.complete("exitFrame runs at the top of the step that leaves the frame")
 
+	# `marker()` takes two argument types and answers two different questions,
+	# and only one of them used to work.
+	#
+	# A **number** is playhead-relative and `LINGO_SURFACE.md` §1.5 is emphatic
+	# about it, because a port that resolved every `marker()` by name collapsed
+	# `strtgame`'s 49 markers onto the first. A **string** is a marker name, and
+	# the corpus says so in literals rather than by inference: `marker("mainroom")`
+	# 11 times in Piposh 1, plus `marker("doc6")`, `marker("dars6")`,
+	# `marker("all6")`, and eight more in Piposh 2 from `marker("stg1go")` to
+	# `marker("hezanswer")`. Coerced to 0 they all became "the marker at or before
+	# the playhead", which is wherever the movie happened to be parked.
+	#
+	# What that cost: the ship map hands the player back with `go(marker(nof))`,
+	# `nof` being a deck code like "dl1", so choosing a spot on the map returned
+	# the player to an unrelated room -- measured, DAY1 -> ROULLETE.dir.
+	#
+	# Title-agnostic: the name comes out of the movie's own label table, and a
+	# marker that is *not* the one the playhead is sitting on is chosen on
+	# purpose, because against the current marker both readings agree and the
+	# check would pass while broken.
+	h.begin("marker() resolves a name by name and a number by position")
+	var labels = preview.get("_labels")
+	var host_for_marker = preview.get("_host")
+	var named := ""
+	var named_frame := 0
+	if labels != null and host_for_marker != null:
+		var here: int = int(preview.call("lingo_marker", 0))
+		for key in (labels.labels as Dictionary):
+			var frame_of := int((labels.labels as Dictionary)[key])
+			# Frame 0 is excluded, and not for tidiness: an unknown name answers
+			# 0 too, so a marker sitting on frame 0 makes the check pass whether
+			# the lookup worked or not. The assertion has to be able to fail.
+			if frame_of > 0 and frame_of != here and str(key).strip_edges() != "":
+				named = str(key)
+				named_frame = frame_of
+				break
+	if named == "":
+		print("   no marker away from the playhead in this movie; nothing to ask")
+	else:
+		h.check("a marker name answers that marker's frame",
+			int(host_for_marker.call_builtin("marker", [named])) == named_frame,
+			"marker(%s) -> %s, label says %d" % [
+				JSON.stringify(named),
+				str(host_for_marker.call_builtin("marker", [named])), named_frame])
+		# The other half, and the one §1.5 warns about: a number must stay
+		# playhead-relative rather than being looked up as a name.
+		h.check("a number stays playhead-relative",
+			int(host_for_marker.call_builtin("marker", [0]))
+				== int(preview.call("lingo_marker", 0)),
+			"marker(0) -> %s" % str(host_for_marker.call_builtin("marker", [0])))
+		# A numeric string is a number, not a name, or every `marker(x)` a script
+		# built by concatenation would change meaning.
+		h.check("a numeric string is read as a number",
+			int(host_for_marker.call_builtin("marker", ["0"]))
+				== int(preview.call("lingo_marker", 0)),
+			"marker(\"0\") -> %s" % str(host_for_marker.call_builtin("marker", ["0"])))
+	h.complete("marker() resolves a name by name and a number by position")
+
 	# Corpus-specific, and skipped rather than guessed at for any other movie.
 	var movie := str(preview.call("movie_name")).to_upper()
 	if movie.begins_with("DAY1"):

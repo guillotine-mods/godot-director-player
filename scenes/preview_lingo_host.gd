@@ -363,9 +363,44 @@ func call_builtin(name: String, args: Array) -> Variant:
 				return 0
 			return preview.lingo_label(args[0])
 		"marker":
+			# **Two argument types, two different questions.** A *number* is
+			# playhead-relative -- 0 is the marker at or before the playhead, +n
+			# counts forward -- and `LINGO_SURFACE.md` §1.5 is emphatic about it
+			# because a port that resolved every `marker()` by name collapsed all
+			# 49 of `strtgame`'s markers onto the first and looped a cinematic for
+			# ever. That warning is about numbers, and it was read here as "never
+			# resolve by name", which is the other half of the same mistake.
+			#
+			# A *string* is a marker name, and the corpus says so plainly rather
+			# than by inference: `marker("mainroom")` appears 11 times in Piposh 1
+			# alongside `marker("doc6")`, `marker("dars6")` and `marker("all6")`,
+			# and Piposh 2 has eight more -- `marker("stg1go")` through
+			# `marker("stg5go")`, `marker("hezanswer")`, `marker("rinclicktalk")`,
+			# `marker("patclicktalk")`, `marker("hezfldclicktalk")`. Nobody writes
+			# the same string literal 11 times expecting 0.
+			#
+			# Coerced to 0, every one of those went to "the marker at or before
+			# the playhead", and the ship map is where it showed: `outofthisa`
+			# hands the player back with `go(marker(nof))`, `nof` being a deck code
+			# like "dl1", so the destination was always wherever the playhead
+			# already happened to be. Piposh walked to a spot on the map and the
+			# game returned him to the frame it was parked on.
+			#
+			# The numeric path is unchanged and still covers `marker(x)` where a
+			# script computed `x` -- Rating's three sites are all
+			# `set x to the clickOn` then `x - 7`, so they are integers and stay
+			# playhead-relative.
 			if preview == null or args.is_empty():
 				return 0
-			return preview.lingo_marker(LingoValue.to_int(args[0]))
+			var where: Variant = args[0]
+			# A numeric string is a number: Lingo does not distinguish, and only a
+			# name that cannot be read as one is a name.
+			if typeof(where) == TYPE_STRING and not str(where).strip_edges().is_valid_int():
+				# Through `label`, which is the same lookup under the other
+				# spelling, so the two cannot answer differently for one name.
+				# An unknown name answers 0 there and answers 0 here.
+				return preview.lingo_label(str(where))
+			return preview.lingo_marker(LingoValue.to_int(where))
 		"window":
 			## `window("joke.dxr")` — Movie-In-A-Window (§14). Naming a window is
 			## what brings it into existence in Director, so this loads the movie if
