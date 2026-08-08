@@ -24,6 +24,14 @@ ends with the gap analysis it makes possible.
 > `scenes/preview_lingo_host.gd`, and its `unbound` tally is the only honest
 > answer to "does the engine have this?"
 >
+> **§19 is now that answer, per name, and a harness holds it.** Every claim about
+> what *this port* binds belongs there; `tools/lingo_surface_audit.gd` fails if a
+> row disagrees with the running engine, if the engine binds a name with no row,
+> or if any of the six titles calls a name with no row. Where a paragraph below
+> and §19 disagree, §19 is the one that was checked this morning. The prose in
+> §9.3 is kept for what it explains — *why* a binding is shaped the way it is —
+> and not as a statement of what exists.
+>
 > The *language* half of this document — §1 through §8, the grammar, the
 > precedence table, the chunk rules — is about Director and is unaffected.
 
@@ -993,9 +1001,27 @@ often the game reaches for it rather than by how many files mention it.
 
 ## 9.1 (a) In ScummVM, used by this game, not implemented here — the priority list
 
-**The property surface is closed.** Every sprite, member and system property
-the corpus reads or writes is bound, with one apparent exception that is a
+**The property surface is closed.** ~~Every sprite, member and system property
+the corpus reads or writes is bound~~, with one apparent exception that is a
 false positive:
+
+> **That claim is wrong twice over, and §19 measures both.** It was made against
+> the retired host's tables, and it was made against *this game* — but "the
+> corpus" is six titles, and the two facts compound. Of the property names the
+> six titles reach, **eleven are not live in the running engine**: `the searchPath`
+> (326 sites, Piposh 1's disc scan), `the member of sprite` (1,453), `the flipH`
+> and `the flipV of sprite` (456, Piposh Dream), `the loc of sprite` (361), `the
+> hilite of member` (39, Rating), `the rect` and `the top of sprite`, `the
+> castLibNum of sprite`, `the volume of sprite`, `the currentSpriteNum`, `the
+> exitLock`, `the movie` and `the textSize of member`. Seven of those are the
+> *same mechanism*: a sprite-property write is stored in the override table and
+> `sprite_state.effective` merges only the keys it knows, so the write round-trips
+> through a read and reaches nothing — which is what `the moveableSprite of
+> sprite` and `the editableText of sprite` each did before they were found.
+>
+> The sentence below — "that is a genuinely strong position" — was true of one
+> title's builtins and was never true of the property surface across the engine's
+> six. §19 carries the list and the routing.
 
 | Name | Uses | Verdict |
 |---|---|---|
@@ -1203,6 +1229,12 @@ sites in this corpus — all in `SAVELOAD.dir`, choosing which save slot is
 typeable — and `text` had none; `put x into field "y"` is a different path and
 always worked (`set_field`).
 
+**The four lists below are the deleted host's and are kept only as a record of
+its shape.** §19 is the live set, and the two differ in both directions — the
+live engine binds `flipH` nowhere and `the volume of sound N` in two places, and
+answers `bottom`, `castLibNum` and `constraint` from tables this paragraph never
+described.
+
 Sprite reads: `bottom`, `castLibNum`, `castNum`, `constraint`,
 `cursor`, `height`, `ink`, `left`, `locH`, `locV`, `member`, `memberNum`,
 `moveableSprite`, `puppet`, `right`, `top`, `visible`, `width`. Sprite writes:
@@ -1256,13 +1288,25 @@ one to a name, which is why the shortcut holds. `when <event> then` installs a
 real tier-1 handler for `mouseDown`, `mouseUp`, `rightMouseDown`, `rightMouseUp`
 and `keyDown`, and it passes by default as Director's does.
 
-**The preview host** (`scenes/preview_lingo_host.gd`) is a deliberately smaller
-surface for the room preview: `go`, `sound`, `puppetSound`, `soundBusy`,
-`label`, `marker`, `rollOver`, `intersects`/`within`, and an ignore-list of
-`puppetTransition`, `updateStage`, `beep`, `delay`, `preLoadMember`, `preLoad`,
-`unLoadMember`, `unLoad`, `alert`, `cursor`, `nothing`, `dontPassEvent`,
-`puppetSprite`, `halt`, `quit`, `startTimer`. It counts what it reaches and what
-it does not, which is the same discipline as the real host at a tenth the size.
+**The preview host** (`scenes/preview_lingo_host.gd`) is no longer "a
+deliberately smaller surface for the room preview" — it is the only host there
+is, and the paragraph that used to enumerate it here listed `puppetTransition`,
+`cursor`, `dontPassEvent` and `puppetSprite` among the ignored long after each
+had a real arm, and listed `saveMovie` nowhere at all. **The enumeration has
+moved to §19**, where a harness keeps it true. What is worth keeping from it is
+the discipline it describes: the host counts what it reaches and what it does
+not, and the difference between "answered VOID" and "no such builtin" is the
+whole of `unbound`.
+
+That discipline stops at the builtins. **Property reads and writes have no
+`unbound` tally at all** — `LingoDiagnostics` declares `SPRITE_PROP`,
+`MOVIE_PROP` and `MEMBER_PROP` and nothing ever emits them, and a host method
+that answers VOID for a name it does not know is indistinguishable from one that
+handled the call. That is why every property gap in §19 had to be found by
+reading the code. Rebuilding the retired host's third category — "the port
+refuses this" against "the port never heard of this" — is still the single most
+valuable thing anyone could do to this document's honesty, and it is now a
+statement about property dispatch rather than about builtins.
 
 Its system props are the whole of §6's mouse list — `mouseH`, `mouseV`,
 `clickOn`, `clickLoc`, `mouseDown`, `mouseUp`, `stillDown`, `doubleClick`,
@@ -2266,6 +2310,28 @@ One claim is refined rather than corrected: §9.1 lists `when keyDown then …` 
 a single lexical token whose tail is captured raw — and §16.3 names the one script
 that contains it.
 
+Three further corrections, from the audit that produced §19:
+
+- **§9.1 said the property surface is closed. It is not.** Eleven property names
+  the six titles reach are not live, seven of them by one mechanism — a sprite
+  write stored in the override table that nothing merges. The claim was measured
+  against one title and against a host that has been deleted, and both halves of
+  that were load-bearing. Corrected in place at §9.1 and enumerated in §19.
+- **§9.3's enumeration of the preview host was stale in five places** and is
+  replaced by §19, which a harness holds true. It listed `puppetTransition`,
+  `cursor`, `dontPassEvent` and `puppetSprite` as ignored when each has a real
+  arm, and did not mention `saveMovie` at all.
+- **§9.2's usage counts are Piposh 2's, and the engine runs six titles.** Its
+  list group says "only `getAt` and `count` are used here"; across the six,
+  **`setAt` has 2,758 sites**, `deleteAt` 134, `addAt` 18, `addProp` and `sort`
+  6 each, `duplicate` 12 and `findPos` 3 — none of them in Piposh 2. Its geometry
+  group calls `point` and `map` unused; they have 59 and 5. The section's
+  *conclusion* is untouched, and is in fact vindicated: every one of those was
+  built because Director has it, which is exactly what `AGENTS.md` asks for, and
+  `setAt` alone would have been the second-biggest hole in the language surface
+  if the measurement had been allowed to govern scope. Read "0 uses" anywhere in
+  §9 as "0 uses in one title of six".
+
 ---
 
 # 18. Not verified (part two)
@@ -2303,3 +2369,390 @@ that contains it.
 - **The D7 keyword list in ScummVM's `docs/` includes `{`, `}` and `..`**, none of
   which appear in the grammar or the lexer. Whether they are real Lingo syntax
   somewhere, or artefacts of how that list was compiled, was not chased.
+
+---
+
+# 19. The claim table — what this engine actually binds
+
+Every section above this one is prose, and prose is what let four documented
+capabilities turn out not to exist. `intersects` was listed as implemented on
+the strength of a host that had been deleted; `set the text of member` and `set
+the editable of member` were listed while `set_member_prop` was a bare `pass`;
+`saveMovie` was described as correctly inert while the game could not save at
+all. Each was found by accident, after real debugging, and each was found
+*despite* this document rather than through it.
+
+So this section is a table and nothing else, because a table can be read by a
+machine. **`tools/lingo_surface_audit.gd` parses it** and fails if any row
+disagrees with the running engine, if a name the engine binds has no row, or if
+a name any of the six titles calls has no row. It is the normative statement of
+this port's Lingo surface; everything above is the language it is a surface of.
+
+## How to read a row
+
+| column | meaning |
+|---|---|
+| name | the Lingo spelling, lower-cased — Lingo is case-insensitive (§11.2) |
+| kind | `builtin`, or the entity a property hangs off: `system` (`the X`), `sprite`, `member`, `window`, `sound` |
+| state | `live`, `inert` or `absent` — see below |
+| note | corpus sites across **all six** roots under `games/`, then where the binding lives |
+
+**Three states, never two.** That distinction is the whole point:
+
+- **`live`** — bound, and the effect reaches something a movie can observe.
+- **`inert`** — bound, answers cleanly, counted as reached, and *does nothing*.
+  This is the dangerous state and the one that hides. A name in the host's
+  `IGNORED` list, an arm whose body is `return 0`, a sprite property stored in
+  the override table that `sprite_state.effective` never merges, and a member
+  write with no arm all look identical to a caller. `intersects` was this shape
+  in the retired host's documentation; `the flipH of sprite` is this shape
+  today, at 450 sites.
+- **`absent`** — not bound. The honest state: the interpreter reports an unbound
+  *builtin* by name, so a log says so. Note that it does **not** report an
+  unbound *property* — `LingoDiagnostics.SPRITE_PROP`, `MOVIE_PROP` and
+  `MEMBER_PROP` are declared and never emitted — which is why the property half
+  of this table had to be built by reading the code rather than by running it.
+
+A row absent from this table is a Director name no title reaches and this engine
+does not bind; §9.2 is where that remainder is described. Adding a binding means
+adding its row, and the harness enforces it.
+
+## Counting
+
+Counts are call and property sites in the **authored** Lingo held in the `CASt`
+records of every container under every root in `games/`, not in
+`reference/lingo/`. Two reasons, and the second is the one that bites: that tree
+is Piposh 2 alone, where the engine runs six titles, and it is ProjectorRays'
+decompilation, which renders bare `pass` as `pass()` and `dontPassEvent` as
+`dont(pass)` — so a token grep for either answers 0 where the real count is 6.
+Where a count here disagrees with one quoted elsewhere in this document, this
+one is the authored source and the other is the decompiled tree.
+
+The three language builds of Piposh 1 (`piposh`, `piposh-en`, `piposh-ru`) ship
+near-identical scripts, so a name only they use is counted about three times.
+That inflates a rank and never invents one.
+
+## What is still open, in the order a movie meets it
+
+> **Reachable gaps recorded here: 20.** `tools/lingo_surface_audit.gd` counts the
+> rows that are not `live` and that at least one of the six titles calls, and
+> fails if the number moves. It can only move two ways and both deserve a red
+> gate: a gap closed and this number not brought down with it, or a name some
+> title calls newly bound to something that does nothing.
+
+`noop` rows are excluded from that count and only those: `nothing`, `printFrom`,
+the `preLoad`/`unLoad` memory hints, `restart`, `shutDown`, `showGlobals`,
+`showLocals` and the window's `picture`. Everything else that answers without
+doing anything is a gap, including the ones that look harmless.
+
+| sites | name | state | what a movie sees, and where the fix goes |
+|---|---|---|---|
+| 3,717 | `updateStage` | inert | Director redraws *now*, mid-handler. Every `repeat` loop that animates by moving a sprite and calling this draws nothing until the loop ends. Host `IGNORED` -> a real arm calling the preview's redraw. |
+| 1,453 | `the member of sprite N` | inert | Piposh Dream reads it (`member(the member of sprite xxx).name`). `sprite_state.read_prop` has no arm, so it answers `EMPTY_CHANNEL`'s 0 and the lookup lands on member 0. Needs an arm beside `membernum`. |
+| 450 | `the flipH of sprite N` | inert | Piposh Dream's `fritz1.dir` both reads and writes it (`sprite(getAt(ppl, 1)).flipH = 1`). The write is stored in the override table and `sprite_state.effective` never merges it, so nothing on screen turns round; the read answers 0 before the first write, whatever the score's own flip bit says. |
+| 361 | `the loc of sprite N` | inert | Same file swaps two sprites' positions with it. Read answers 0, write reaches nothing. It is `locH`/`locV` as one point (§7.6), so both directions belong on the existing position path. |
+| 326 | `the searchPath` | absent | Piposh 1's CD-drive scan, in all three language builds: `set the searchPath to ["d:\sounds\strtgame\"]` then `x = getAt(the searchPath, 1)`. Unbound, the read answers VOID, `getAt` answers VOID, and the loop cannot find the disc. The retired host kept it as a **list with one empty element** precisely so the read answered `""` rather than falling off the end (§3). |
+| 154 | `beep` | inert | Audible in the original, silent here. |
+| 150 | `continue` | inert | The other half of `pause`, which *is* live: a movie that pauses and calls `continue` never resumes. Bound as a pair or not at all. |
+| 102 | `quit` | inert | Every "quit game" path in every title does nothing. |
+| 41 | `the movie` | absent | The older spelling of `the movieName`, which is bound. |
+| 39 | `the hilite of member M` | absent | Rating, `set the hilite of member "rectang" to 1`, once per room. `lingo_set_member_prop` knows `editable` and `text` and drops everything else **without reporting it**, which is the `set_member_prop` shape again in a narrower place. |
+| 20 | `the rect of sprite N` | inert | Readable in Director and derived from loc, registration point and member size. |
+| 12 | `the currentSpriteNum` | absent | Piposh Dream's hex board reads it to know which channel is running the behaviour. §7.1 says it is synthesised rather than stored. |
+| 6 | `the flipV of sprite N` | inert | As `flipH`. |
+| 5 | `the exitLock` | absent | Writes only, dropped. Disables the quit key in the original. |
+| 4 | `xtra` | absent | Xtra reference by name. No Xtra is implemented, so absent is the honest state and §7.3's `respondsTo` probe is the shape to answer if one ever is. |
+| 4 | `the top of sprite N` | inert | With `left`, `right` and `bottom`: read-only in Director and *derived*, which is why §4 leaves them out of the writable set. Answering 0 is a wrong answer, not a missing one. |
+| 3 | `the textSize of member M` | absent | A member write with no arm, as `hilite`. |
+| 3 | `the castLibNum of sprite N` | inert | The library half of `the member of sprite`. |
+| 2 | `alert` | inert | A modal box the player never sees. |
+| 2 | `the volume of sprite N` | inert | The sprite spelling of a digital-video property. `the volume of sound N` is a different property and is live. |
+
+Two shapes account for most of that list, and neither is a missing name:
+
+- **A sprite property write is stored and never consumed.** `sprite_state.write_prop`
+  puts *any* key in the override table, so every write round-trips through
+  `read_prop` and looks implemented, while only the keys `sprite_state.effective`
+  merges reach the screen. `the moveableSprite of sprite`, `the editableText of
+  sprite` and `the constraint of sprite` were each exactly this and were each
+  found the hard way; `flipH`, `flipV`, `loc`, `rect`, `member`, `castLibNum` and
+  `volume` are the same thing today, and `ink` is it with 0 sites.
+- **A property with no binding is not reported.** `LingoDiagnostics` declares
+  `SPRITE_PROP`, `MOVIE_PROP` and `MEMBER_PROP` and the interpreter emits none of
+  the three. `_host_call` reports a missing host *method* -- which is what closed
+  `set the volume of sound N` (§16.4) -- and a bound method that answers VOID for
+  a name it does not know is indistinguishable from one that had nothing to say.
+  So the whole property surface has no `unbound` tally, which is why this table
+  had to be built by reading the code rather than by running the game and
+  counting complaints.
+
+## The table
+
+| name | kind | state | corpus sites; where the binding lives |
+|---|---|---|---|
+| `sound` | builtin | live | 58490 sites; host arm |
+| `go` | builtin | live | 32158 sites; host arm |
+| `visible` | sprite | live | 12548 sites; merged by effective() |
+| `locv` | sprite | live | 11239 sites; merged by effective() |
+| `put` | builtin | live | 9363 sites; grammar: a parser keyword (§11.3), never dispatched |
+| `sprite` | builtin | live | 9015 sites; grammar: a parser keyword (§11.3), never dispatched |
+| `loch` | sprite | live | 6952 sites; merged by effective() |
+| `membernum` | sprite | live | 6260 sites; merged by effective() |
+| `puppetsprite` | builtin | live | 5328 sites; host arm |
+| `play` | builtin | live | 5286 sites; host arm |
+| `getat` | builtin | live | 5071 sites; lingo_builtins.gd |
+| `number` | member | live | 4702 sites; members.gd read_prop |
+| `member` | builtin | live | 4015 sites; grammar: a parser keyword (§11.3), never dispatched |
+| `value` | builtin | live | 3948 sites; lingo_builtins.gd |
+| `updatestage` | builtin | inert | 3717 sites; host IGNORED |
+| `membernum` | member | live | 2992 sites; members.gd read_prop |
+| `cursor` | sprite | live | 2910 sites; merged by effective() |
+| `marker` | builtin | live | 2845 sites; host arm |
+| `setat` | builtin | live | 2758 sites; lingo_builtins.gd |
+| `rollover` | builtin | live | 2444 sites; host arm |
+| `soundbusy` | builtin | live | 2080 sites; host arm |
+| `member` | sprite | inert | 1453 sites; stored in _overrides, consumed by nothing |
+| `random` | builtin | live | 1378 sites; lingo_builtins.gd |
+| `text` | member | live | 1322 sites; members.gd read_prop |
+| `keycode` | system | live | 1172 sites; read only |
+| `clickon` | system | live | 1006 sites; read only |
+| `name` | member | live | 756 sites; members.gd read_prop |
+| `keydownscript` | system | live | 747 sites; read+write |
+| `moviepath` | system | live | 746 sites; read only |
+| `field` | builtin | live | 682 sites; grammar: a parser keyword (§11.3), never dispatched |
+| `label` | builtin | live | 516 sites; host arm |
+| `mouseh` | system | live | 486 sites; read only |
+| `mousedownscript` | system | live | 477 sites; read+write |
+| `fliph` | sprite | inert | 450 sites; stored in _overrides, consumed by nothing |
+| `forget` | builtin | live | 389 sites; host arm |
+| `nothing` | builtin | noop | 376 sites; host IGNORED; Director's own explicit no-op; there is nothing to do |
+| `loc` | sprite | inert | 361 sites; stored in _overrides, consumed by nothing |
+| `searchpath` | system | absent | 326 sites |
+| `constraint` | sprite | live | 316 sites; merged by effective() |
+| `volume` | sound | live | 314 sites; read and write |
+| `frame` | system | live | 302 sites; read only |
+| `mousev` | system | live | 300 sites; read only |
+| `count` | builtin | live | 275 sites; lingo_builtins.gd |
+| `dontpassevent` | builtin | live | 262 sites; host arm |
+| `stage` | system | live | 253 sites; read only |
+| `window` | builtin | live | 205 sites; host arm |
+| `keyupscript` | system | live | 205 sites; read+write |
+| `return` | builtin | live | 195 sites; lingo_builtins.gd |
+| `pass` | builtin | live | 174 sites; host arm |
+| `beep` | builtin | inert | 154 sites; host IGNORED |
+| `continue` | builtin | inert | 150 sites; host IGNORED |
+| `pause` | builtin | live | 146 sites; host arm |
+| `abs` | builtin | live | 138 sites; lingo_builtins.gd |
+| `deleteat` | builtin | live | 134 sites; lingo_builtins.gd |
+| `open` | builtin | live | 133 sites; host arm |
+| `castnum` | sprite | live | 123 sites; merged by effective() |
+| `machinetype` | system | live | 123 sites; read only |
+| `quit` | builtin | inert | 102 sites; host IGNORED |
+| `moviename` | system | live | 94 sites; read only |
+| `timer` | system | live | 91 sites; read only |
+| `soundlevel` | system | live | 70 sites; read+write |
+| `point` | builtin | live | 59 sites; lingo_builtins.gd |
+| `editable` | member | live | 58 sites; director_preview.gd, read and write |
+| `printfrom` | builtin | noop | 56 sites; host IGNORED; printing; no printer, and §9.1 already calls this correctly inert |
+| `centerstage` | system | live | 55 sites; read+write |
+| `windowtype` | window | live | 54 sites; windows.gd read+write |
+| `movie` | system | absent | 41 sites |
+| `hilite` | member | absent | 39 sites |
+| `mousedown` | system | live | 39 sites; read only |
+| `moveablesprite` | sprite | live | 33 sites; merged by effective() as `moveable` |
+| `intersects` | builtin | live | 23 sites; host arm |
+| `rect` | sprite | inert | 20 sites; stored in _overrides, consumed by nothing |
+| `key` | system | live | 20 sites; read only |
+| `addat` | builtin | live | 18 sites; lingo_builtins.gd |
+| `unload` | builtin | noop | 16 sites; host IGNORED; memory hint (§1.4), inverse |
+| `duplicate` | builtin | live | 12 sites; lingo_builtins.gd |
+| `within` | builtin | live | 12 sites; host arm |
+| `puppet` | sprite | live | 12 sites; merged by effective() |
+| `currentspritenum` | system | absent | 12 sites |
+| `savemovie` | builtin | live | 11 sites; host arm |
+| `editabletext` | sprite | live | 11 sites; merged by effective() as `editable` |
+| `addprop` | builtin | live | 6 sites; lingo_builtins.gd |
+| `sort` | builtin | live | 6 sites; lingo_builtins.gd |
+| `flipv` | sprite | inert | 6 sites; stored in _overrides, consumed by nothing |
+| `integer` | builtin | live | 5 sites; lingo_builtins.gd |
+| `map` | builtin | live | 5 sites; lingo_builtins.gd |
+| `exitlock` | system | absent | 5 sites |
+| `xtra` | builtin | absent | 4 sites |
+| `top` | sprite | inert | 4 sites; stored in _overrides, consumed by nothing |
+| `findpos` | builtin | live | 3 sites; lingo_builtins.gd |
+| `textsize` | member | absent | 3 sites |
+| `castlibnum` | sprite | inert | 3 sites; stored in _overrides, consumed by nothing |
+| `alert` | builtin | inert | 2 sites; host IGNORED |
+| `stopevent` | builtin | live | 2 sites; host arm |
+| `unloadmovie` | builtin | noop | 2 sites; host IGNORED; memory hint (§1.4), inverse |
+| `volume` | sprite | inert | 2 sites; stored in _overrides, consumed by nothing |
+| `freeblock` | system | live | 2 sites; read only |
+| `abort` | builtin | inert | 0 sites; host IGNORED |
+| `add` | builtin | live | 0 sites; lingo_builtins.gd |
+| `append` | builtin | live | 0 sites; lingo_builtins.gd |
+| `atan` | builtin | live | 0 sites; lingo_builtins.gd |
+| `backspace` | builtin | live | 0 sites; lingo_builtins.gd |
+| `castlib` | builtin | live | 0 sites; grammar: a parser keyword (§11.3), never dispatched |
+| `chars` | builtin | live | 0 sites; lingo_builtins.gd |
+| `chartonum` | builtin | live | 0 sites; lingo_builtins.gd |
+| `clearglobals` | builtin | inert | 0 sites; host IGNORED |
+| `close` | builtin | live | 0 sites; host arm |
+| `cos` | builtin | live | 0 sites; lingo_builtins.gd |
+| `cursor` | builtin | live | 0 sites; host arm |
+| `delay` | builtin | inert | 0 sites; host IGNORED |
+| `deleteone` | builtin | live | 0 sites; lingo_builtins.gd |
+| `deleteprop` | builtin | live | 0 sites; lingo_builtins.gd |
+| `empty` | builtin | live | 0 sites; lingo_builtins.gd |
+| `enter` | builtin | live | 0 sites; lingo_builtins.gd |
+| `exp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `false` | builtin | live | 0 sites; lingo_builtins.gd |
+| `findposnear` | builtin | live | 0 sites; lingo_builtins.gd |
+| `float` | builtin | live | 0 sites; lingo_builtins.gd |
+| `floatp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `framestohms` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getaprop` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getlast` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getone` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getpos` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getprop` | builtin | live | 0 sites; lingo_builtins.gd |
+| `getpropat` | builtin | live | 0 sites; lingo_builtins.gd |
+| `halt` | builtin | inert | 0 sites; host IGNORED |
+| `hmstoframes` | builtin | live | 0 sites; lingo_builtins.gd |
+| `ilk` | builtin | live | 0 sites; lingo_builtins.gd |
+| `inflate` | builtin | live | 0 sites; lingo_builtins.gd |
+| `inside` | builtin | live | 0 sites; lingo_builtins.gd |
+| `installmenu` | builtin | inert | 0 sites; host IGNORED |
+| `integerp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `intersect` | builtin | live | 0 sites; lingo_builtins.gd |
+| `length` | builtin | live | 0 sites; lingo_builtins.gd |
+| `list` | builtin | live | 0 sites; lingo_builtins.gd |
+| `listp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `log` | builtin | live | 0 sites; lingo_builtins.gd |
+| `max` | builtin | live | 0 sites; lingo_builtins.gd |
+| `min` | builtin | live | 0 sites; lingo_builtins.gd |
+| `numberofchars` | builtin | live | 0 sites; lingo_builtins.gd |
+| `numberofitems` | builtin | live | 0 sites; lingo_builtins.gd |
+| `numberoflines` | builtin | live | 0 sites; lingo_builtins.gd |
+| `numberofwords` | builtin | live | 0 sites; lingo_builtins.gd |
+| `numtochar` | builtin | live | 0 sites; lingo_builtins.gd |
+| `objectp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `offset` | builtin | live | 0 sites; lingo_builtins.gd |
+| `pi` | builtin | live | 0 sites; lingo_builtins.gd |
+| `picturep` | builtin | live | 0 sites; lingo_builtins.gd |
+| `power` | builtin | live | 0 sites; lingo_builtins.gd |
+| `preload` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4); nothing a movie can observe |
+| `preloadcast` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
+| `preloadmember` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
+| `preloadmovie` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
+| `puppetpalette` | builtin | live | 0 sites; host arm |
+| `puppetsound` | builtin | live | 0 sites; host arm |
+| `puppettempo` | builtin | inert | 0 sites; host IGNORED |
+| `puppettransition` | builtin | live | 0 sites; host arm |
+| `quote` | builtin | live | 0 sites; lingo_builtins.gd |
+| `rect` | builtin | live | 0 sites; lingo_builtins.gd |
+| `restart` | builtin | noop | 0 sites; host IGNORED; restarts the machine; §1.4 calls it inert everywhere sane |
+| `setaprop` | builtin | live | 0 sites; lingo_builtins.gd |
+| `setcallback` | builtin | inert | 0 sites; host IGNORED |
+| `setprop` | builtin | live | 0 sites; lingo_builtins.gd |
+| `showglobals` | builtin | noop | 0 sites; host IGNORED; dumps to the message window, which does not exist here |
+| `showlocals` | builtin | noop | 0 sites; host IGNORED; dumps to the message window, which does not exist here |
+| `shutdown` | builtin | noop | 0 sites; host IGNORED; shuts the machine down; likewise |
+| `sin` | builtin | live | 0 sites; lingo_builtins.gd |
+| `sqrt` | builtin | live | 0 sites; lingo_builtins.gd |
+| `starttimer` | builtin | inert | 0 sites; host IGNORED |
+| `string` | builtin | live | 0 sites; lingo_builtins.gd |
+| `stringp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `symbolp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `tab` | builtin | live | 0 sites; lingo_builtins.gd |
+| `tan` | builtin | live | 0 sites; lingo_builtins.gd |
+| `true` | builtin | live | 0 sites; lingo_builtins.gd |
+| `union` | builtin | live | 0 sites; lingo_builtins.gd |
+| `unloadcast` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4), inverse |
+| `unloadmember` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4), inverse |
+| `void` | builtin | live | 0 sites; lingo_builtins.gd |
+| `voidp` | builtin | live | 0 sites; lingo_builtins.gd |
+| `castnum` | member | live | 0 sites; members.gd read_prop |
+| `height` | member | live | 0 sites; members.gd read_prop |
+| `width` | member | live | 0 sites; members.gd read_prop |
+| `cuepointnames` | sound | live | 0 sites; sound.gd read |
+| `loop` | sound | inert | 0 sites; sound.gd read  (no effect) |
+| `looping` | sound | inert | 0 sites; sound.gd read  (no effect) |
+| `backcolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `blend` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `bottom` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `currenttime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `editable` | sprite | live | 0 sites; merged by effective() |
+| `forecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `height` | sprite | live | 0 sites; merged by effective() |
+| `immediate` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `ink` | sprite | inert | 0 sites; read from the score record; a write reaches nothing |
+| `left` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `linesize` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `mostrecentcuepoint` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `moveable` | sprite | live | 0 sites; merged by effective() |
+| `movierate` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `movietime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `name` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `pattern` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `right` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `scorecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `scriptinstancelist` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `scriptnum` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `settrackenabled` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `starttime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `stoptime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `stretch` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `trackenabled` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `tracknextkeytime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `tracknextsampletime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `trackpreviouskeytime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `trackprevioussampletime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `tracktext` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `trails` | sprite | live | 0 sites; merged by effective() |
+| `tweened` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `type` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `visibility` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `width` | sprite | live | 0 sites; merged by effective() |
+| `activewindow` | system | live | 0 sites; read only |
+| `clickloc` | system | live | 0 sites; read only |
+| `commanddown` | system | live | 0 sites; read only |
+| `controldown` | system | live | 0 sites; read only |
+| `doubleclick` | system | live | 0 sites; read only |
+| `drawrect` | system | live | 0 sites; read+write |
+| `filename` | system | live | 0 sites; write only |
+| `frontwindow` | system | live | 0 sites; read only |
+| `lastclick` | system | live | 0 sites; read only |
+| `lastevent` | system | live | 0 sites; read only |
+| `lastroll` | system | live | 0 sites; read only |
+| `milliseconds` | system | live | 0 sites; read only |
+| `modal` | system | live | 0 sites; read+write |
+| `mousecast` | system | live | 0 sites; read only |
+| `mousemember` | system | live | 0 sites; read only |
+| `mouseup` | system | live | 0 sites; read only |
+| `mouseupscript` | system | live | 0 sites; read+write |
+| `optiondown` | system | live | 0 sites; read only |
+| `rect` | system | live | 0 sites; read+write |
+| `rightmousedown` | system | live | 0 sites; read only |
+| `rightmouseup` | system | live | 0 sites; read only |
+| `selend` | system | live | 0 sites; read+write |
+| `selstart` | system | live | 0 sites; read+write |
+| `shiftdown` | system | live | 0 sites; read only |
+| `sourcerect` | system | live | 0 sites; read only |
+| `stilldown` | system | live | 0 sites; read only |
+| `ticks` | system | live | 0 sites; read only |
+| `title` | system | live | 0 sites; read+write |
+| `titlevisible` | system | live | 0 sites; read+write |
+| `windowlist` | system | live | 0 sites; read only |
+| `windowtype` | system | live | 0 sites; read+write |
+| `centerstage` | window | live | 0 sites; windows.gd read+write |
+| `drawrect` | window | live | 0 sites; windows.gd read+write |
+| `filename` | window | live | 0 sites; windows.gd read+write |
+| `modal` | window | live | 0 sites; windows.gd read+write |
+| `moviename` | window | live | 0 sites; windows.gd read |
+| `name` | window | live | 0 sites; windows.gd read+write |
+| `picture` | window | noop | 0 sites; windows.gd read  (no effect); deliberately unimplemented: this renderer holds no surface to read back, and VOID is the honest answer rather than a wrong image |
+| `rect` | window | live | 0 sites; windows.gd read+write |
+| `sourcerect` | window | live | 0 sites; windows.gd read |
+| `title` | window | live | 0 sites; windows.gd read+write |
+| `titlevisible` | window | live | 0 sites; windows.gd read+write |
+| `visible` | window | live | 0 sites; windows.gd read+write |
