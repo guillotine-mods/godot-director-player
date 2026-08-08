@@ -568,6 +568,23 @@ against its transparency mask, not its bounding box. A bounding-box-only
 implementation is *more* permissive, so hotspots become larger than they were,
 which reads as sloppy hit detection rather than as a bug.
 
+The ink-awareness is narrower than it sounds, and the reference is precise about
+when it applies. `c_within` compares mattes only when **both** operands are
+non-QD-shape with `kInkTypeMatte`, and otherwise takes
+`getBbox().contains(getBbox())`; `c_intersects` has a third case, box-on-matte,
+when only the second operand qualifies. A shape is never a matte however it is
+inked, so a bitmap tested against a shape is always plain rects.
+
+**Neither operator consults `the visible of sprite`,** and that is the difference
+between them and the mouse rather than an omission. `channel.cpp:isMouseIn` opens
+with `if (!_visible) return kCollisionNo` and is the only site in that file that
+reads `_visible` at all; both operators go straight to `getBbox()`. Scripts rely
+on it: the idiom is to park a 1x1 hidden member where a geometric question needs
+asking and ask it there, which is how Piposh 1's cannon decides whether a shell
+hit a ship. A port that answers "no rect" for a hidden sprite answers *no* to
+every such question — see `docs/bugs-closed.md` 43, and
+`tools/sprite_collision.gd`, which asserts both halves.
+
 ## 2.8 Coercion summary
 
 | From | In arithmetic | In string context | In a condition |

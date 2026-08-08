@@ -1799,15 +1799,29 @@ func lingo_rollover(channel: int) -> bool:
 ## feeds back here: `intersects` is asked about a sprite the player is dragging,
 ## and where the player has dragged it to is the entire question.
 ##
-## An empty answer for a hidden sprite rather than its last rect, because
-## `_effective` treats `visible` as "not drawn and not measured" -- the same rule
-## the hit test uses -- and a sprite nobody can see should not be droppable onto.
+## **A hidden sprite still has one**, and this used to say the opposite: that
+## `_effective` treats `visible` as "not drawn and not measured", the same rule
+## the hit test uses, and that a sprite nobody can see should not be droppable
+## onto. The reference does not agree. `channel.cpp:isMouseIn` opens with `if
+## (!_visible) return kCollisionNo` and is the **only** site in that file that
+## reads `_visible` at all; `c_within` and `c_intersects` go straight to
+## `getBbox()` (ScummVM `lingo/lingo-code.cpp` @ `reference/scummvm/REVISION`).
+## The mouse cannot reach what nobody can see; the operators measure it anyway.
+##
+## The difference is a whole mechanic, not a nicety, because "invisible" is how
+## the idiom *works*: a script parks a 1x1 member where it wants to ask a
+## question and asks it. Piposh 1's cannon game is the clearest instance --
+## `CANON.dir` member 496 hides channel 48, puppets it to where the shell lands
+## and runs `repeat with i = 17 to 22 / if sprite 48 within i` over the shapes
+## fencing the ships. Measuring the probe as empty answers "no" to every shot in
+## the game: the shell lands on a ship and the ship does not sink.
+## `tools/sprite_collision.gd` asserts both halves.
 func lingo_sprite_rect(channel: int) -> Rect2:
 	if _score == null or channel <= 0:
 		return Rect2()
 	for sprite in _score.frame(_index).get("sprites", []):
 		if int(sprite["channel"]) == channel:
-			var live: Dictionary = _effective(sprite)
+			var live: Dictionary = _effective(sprite, true)
 			return Rect2() if live.is_empty() else _sprite_rect(live)
 	return Rect2()
 
@@ -2700,8 +2714,8 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 
 ## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
 ## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
-func _effective(sprite: Dictionary) -> Dictionary:
-	return SpriteState.effective(sprite, _overrides, _table)
+func _effective(sprite: Dictionary, ignore_visible: bool = false) -> Dictionary:
+	return SpriteState.effective(sprite, _overrides, _table, ignore_visible)
 
 
 func _note_member(channel: int, cast_id: int) -> void:

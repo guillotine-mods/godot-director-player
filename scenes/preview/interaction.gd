@@ -488,9 +488,15 @@ static func constrain(host, channel: int, to: Vector2) -> Vector2:
 ## dragged sprite onto (0, 0) -- a sprite that teleports into the top-left corner
 ## the instant the player touches it. No author can have meant that, nothing in
 ## the corpus would exercise it, and the failure it produces looks like a
-## rendering fault rather than a constraint. The same answer covers a hidden
-## constraint channel, since `lingo_sprite_rect` treats `visible` as "not drawn
-## and not measured" throughout the port.
+## rendering fault rather than a constraint.
+##
+## **A *hidden* constraint channel still constrains**, and used to fall into that
+## same answer because `lingo_sprite_rect` treated `visible` as "not drawn and
+## not measured". It does not any more, and the reference is why: line 698 of
+## `channel.cpp` reaches the constraint through `getRollOverBbox()`, which is
+## `getBbox()`, and `_visible` is read at exactly one site in that file --
+## `isMouseIn`. An empty channel and a hidden one are different things. Only the
+## first has no box.
 ##
 ## Measured through `lingo_sprite_rect`, so the constraint follows a constraint
 ## channel a script has moved or swapped. Deliberately *not* `rollover_channel`'s
@@ -746,9 +752,11 @@ static func _run_primary_script(host, name: String, tally: String) -> void:
 ## Did the button come up inside the sprite that took the press?
 ##
 ## True when the channel is no longer on the frame at all, which is the "the
-## score moved, not the player" case `release` documents: `lingo_sprite_rect`
-## cannot tell an absent channel from a hidden one, so the frame is searched
-## directly rather than inferred from an empty rect.
+## score moved, not the player" case `release` documents. The frame is searched
+## directly rather than inferred from a rect, because this is a question about
+## the *mouse* and the two rect questions differ: `lingo_sprite_rect` answers for
+## a hidden sprite, on purpose, and a sprite a `mouseDown` handler hid is not
+## something the pointer can be inside of.
 static func _release_inside(host, at: Vector2, channel: int) -> bool:
 	for sprite in host._score.frame(host._index).get("sprites", []):
 		if int(sprite["channel"]) != channel:

@@ -30,7 +30,19 @@ const Members := preload("res://scenes/preview/members.gd")
 ##
 ## `overrides` is mutated here, not just read: a puppet the score has moved out
 ## from under is discarded at the moment that is noticed.
-static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dictionary:
+##
+## **`ignore_visible` is for the one caller that must not honour the hide**, and
+## it is a flag rather than a second merge path because the stale-puppet discard
+## below mutates `overrides`: two paths would drift apart in behaviour, not
+## merely in code.
+## Director asks two different rect questions and only one of them consults
+## visibility. `channel.cpp:isMouseIn` opens with `if (!_visible) return
+## kCollisionNo`; `c_within` and `c_intersects` (`lingo/lingo-code.cpp`) go
+## straight to `getBbox()`, and `_visible` occurs at exactly one site in the whole
+## of `channel.cpp` — that one. See `director_preview.lingo_sprite_rect`.
+static func effective(
+	sprite: Dictionary, overrides: Dictionary, table, ignore_visible: bool = false
+) -> Dictionary:
 	var channel := int(sprite["channel"])
 	var over: Dictionary = overrides.get(channel, {})
 	if over.is_empty():
@@ -62,10 +74,10 @@ static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dicti
 		else:
 			overrides.erase(channel)
 		over = kept
-		if int(LingoValue.to_int(over.get("visible", 1))) == 0:
+		if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 			return {}
 		return sprite
-	if int(LingoValue.to_int(over.get("visible", 1))) == 0:
+	if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 		return {}
 	var out := sprite.duplicate()
 	for key in ["membernum", "castnum"]:
