@@ -174,6 +174,18 @@ static func note_member(channel: int, cast_id: int, last_member: Dictionary,
 		return
 	last_member[channel] = cast_id
 	loop_start[channel] = ticks
+## What a property reads as on a channel that holds no sprite this frame.
+##
+## Only the ones with a meaningful default are listed; everything else answers 0,
+## which is what "nothing here" means for a member number or a position. `visible`
+## is the one that matters and the one that was wrong -- see `read_prop`.
+const EMPTY_CHANNEL := {
+	"visible": 1,
+	"ink": 0,
+	"blend": 100,
+}
+
+
 
 
 ## `the <prop> of sprite N`, read back.
@@ -211,7 +223,19 @@ static func read_prop(channel: int, prop: String, overrides: Dictionary,
 				# a movie that reads the property back before setting it gets what
 				# the author put there rather than a default.
 				return 1 if bool(sprite.get("trails", false)) else 0
-	return 0
+	# The channel holds no sprite on this frame. **An empty channel is not a
+	# zeroed sprite** -- in Director these are properties *of the channel*, and a
+	# channel with nothing in it is a visible channel that happens to be empty.
+	# Answering 0 for everything conflates "no sprite here" with "a script set
+	# this to 0", and the two are different questions.
+	#
+	# `strtgame.dir`'s Load button is what this cost. Its whole body sits inside
+	# `if sprite(30).visible = 1 then` -- a guard copied from the in-game menus,
+	# where channel 30 is the walking player and the test means "not mid-cutscene".
+	# On the main menu there is no player: channel 30 is occupied in 0 of 1,375
+	# frames. The guard passed in 1997 and failed here, so clicking Load did
+	# nothing at all and looked like "there is no save to load" (bugs.md 34).
+	return EMPTY_CHANNEL.get(prop, 0)
 
 
 ## `puppetSprite N, FALSE` returns the channel to the score, which means
