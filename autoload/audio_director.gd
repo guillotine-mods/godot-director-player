@@ -675,7 +675,11 @@ func _cue_points_of(path: String) -> Array:
 	if _cue_cache.has(path):
 		return _cue_cache[path]
 	var cues: Array = []
-	if path.get_extension().to_lower() == "aif":
+	# The tag, for `_load_stream`'s reason. Gating this on the extension instead
+	# was the quieter half of the same bug: an AIFF named `.wav` would play once
+	# the loader was fixed and then silently carry no cue points, so a tempo of
+	# −2 waiting on one would wait forever with nothing to say why.
+	if _container_tag(path) == "FORM":
 		cues = AiffLoader.cue_points(FileAccess.get_file_as_bytes(path))
 	_cue_cache[path] = cues
 	return cues
@@ -800,23 +804,68 @@ func _load_stream(path: String) -> AudioStream:
 	if _stream_cache.has(path):
 		return _stream_cache[path]
 	var stream: AudioStream = null
-	if ResourceLoader.exists(path):
+	# The **container tag**, not the extension. A disc's filenames are as much a
+	# guess as its paths are: `FX/DRILL.WAV` is an AIFF and `FX/BIRDS.AIF` is a
+	# RIFF, in the same folder, in a game that ships 187 sounds. Choosing the
+	# decoder by name sent each of those to the one that would refuse it, and a
+	# sound that will not load is silent with the channel taken -- the exact state
+	# `tools/sound_wait.gd` exists to prove impossible.
+	#
+	# `director/director_sound.gd:decode` had this right from the start, because a
+	# *cast member* has no filename to be wrong about, so it had to read the tag.
+	# This is the same dispatcher for the same formats, and it should never have
+	# been the odd one out.
+	var tag := _container_tag(path)
+	# Never ask the importer about a container this port decodes itself. That is
+	# already what happens on a clean checkout -- game data ships no `.import`
+	# stubs, so `exists()` is false for all 12,794 sounds -- and `.gitignore` says
+	# as much in as many words: "BMPs/WAVs load at runtime from source files".
+	#
+	# It stops being a no-op the moment the editor scans the project, which writes
+	# a stub next to every `.wav` it finds. For a file whose name lies the import
+	# then fails, leaving a stub pointing at a `.sample` that was never written --
+	# so `exists()` answers true, `load()` fails, and four ERROR lines are printed
+	# for a sound the next three lines go on to decode perfectly. The importer is
+	# kept only for a container this port has no decoder for; no root holds one
+	# today (0 ogg, 0 mp3 across all six), which is exactly why it must not be
+	# consulted about the ones it does.
+	if stream == null and not tag in ["RIFF", "FORM"] and ResourceLoader.exists(path):
 		var res: Variant = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE)
 		if res is AudioStream:
 			stream = res
-	var extension := path.get_extension().to_lower()
-	if stream == null and extension == "wav":
+	if stream == null and tag == "RIFF":
 		stream = _load_wav_runtime(path)
 	# Godot recognises neither AIFF nor AIFF-C, so a title whose sounds ship as
 	# `.aif` is silent with nothing logged. See `autoload/aiff_loader.gd`.
-	if stream == null and extension == "aif":
+	if stream == null and tag == "FORM":
 		var error: Array = []
 		stream = AiffLoader.load_from_buffer(FileAccess.get_file_as_bytes(path), error)
 		if stream == null and not error.is_empty():
 			GameState.emit_log("aiff %s: %s" % [path.get_file(), "; ".join(error)], "warn")
+	# Neither tag, and `ResourceLoader` did not know it either: `ogg` and `mp3`
+	# arrive that way and are fine, but so does a container this port cannot read,
+	# and that one used to be indistinguishable from silence. `tools/sound_format_check.gd`
+	# names the two the corpus holds.
+	if stream == null and not tag in ["RIFF", "FORM"]:
+		GameState.emit_log("sound %s: %s is no container this port decodes"
+			% [path.get_file(), JSON.stringify(tag)], "warn")
 	if stream != null:
 		_stream_cache[path] = stream
 	return stream
+
+
+## A sound file's first four bytes, or `""` when it is empty or unreadable.
+##
+## Cheap enough to be unconditional: `_load_stream` and `_cue_points_of` each
+## cache by path, so this opens a given file once per run.
+func _container_tag(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var head := file.get_buffer(4)
+	if head.size() < 4:
+		return ""
+	return head.get_string_from_ascii()
 
 
 func _load_wav_runtime(path: String) -> AudioStreamWAV:

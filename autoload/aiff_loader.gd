@@ -8,9 +8,16 @@ extends RefCounted
 ## a chunk walk producing a stream directly — with IFF's rules instead of RIFF's:
 ## big-endian, and every chunk padded to an even length.
 ##
-## This game's 3,142 files are unusually easy, surveyed across all of them: every
-## one is plain `AIFF` rather than AIFF-C, with an 18-byte `COMM`, so there is no
-## compression field to honour. 3,140 are mono and 3,099 are 8-bit.
+## Surveyed across all six roots the engine runs — 12,790 AIFF files, not the
+## 3,142 of piposh2 this was first written against. Every one is plain `AIFF`
+## rather than AIFF-C; 12,756 are mono and 12,628 are 8-bit.
+##
+## The 18-byte `COMM` this used to claim was universal is not: **11 files carry
+## 22 bytes**, and reading the extra four as AIFF-C's compression field is what
+## silenced them. Only AIFF-C has that field — see the gate below. One file
+## (`piposh/SOUNDS/STIMDAY1/PIP21.AIF`) declares zero sample frames and is empty
+## in the original; it is refused here, and `tools/sound_format_check.gd` scores
+## it as the disc's rather than this decoder's.
 ##
 ## The one piece of luck worth naming: **8-bit AIFF samples are signed, and so is
 ## `AudioStreamWAV.FORMAT_8_BITS`**, so those files transfer verbatim. It is 8-bit
@@ -60,10 +67,23 @@ static func load_from_buffer(data: PackedByteArray, error: Array = []) -> AudioS
 				frames = _be_u32(data, body + 2)
 				bits = _be_u16(data, body + 6)
 				rate = _extended_to_int(data, body + 8)
-				# AIFF-C names a codec in the two words after the rate. None of
-				# this game's files are AIFF-C; anything that is gets refused
-				# rather than decoded as if it were PCM.
-				if size >= 22:
+				# AIFF-C names a codec in the two words after the rate — and
+				# **only** AIFF-C does. A `FORM AIFF` declares `COMM` to be
+				# exactly 18 bytes with no compression field at all, so bytes
+				# past 18 in one are the authoring tool's leftovers and mean
+				# nothing. Reading them anyway is how 11 files across two of the
+				# six roots went silent: `piposh` and `piposh-ru` ship a 22-byte
+				# `COMM` whose trailer reads `Wave`, which is not a codec, does
+				# not equal `NONE`, and so was refused as a compression that was
+				# never there. All 11 are mono 8-bit 22050 PCM whose `SSND`
+				# length matches their frame count exactly, and they play.
+				#
+				# Gated on the FORM type rather than on the string, because the
+				# rule is the spec's and `Wave` is only this disc's spelling of
+				# breaking it. Surveyed across all six roots: 12,790 FORM files
+				# and not one AIFC, so nothing here is measured against a real
+				# codec — the branch stays for the first disc that ships one.
+				if form == "AIFC" and size >= 22:
 					var codec := data.slice(body + 18, body + 22).get_string_from_ascii()
 					compressed = codec != "NONE" and codec != "sowt"
 			"SSND":
