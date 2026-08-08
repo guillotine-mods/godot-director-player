@@ -1018,7 +1018,25 @@ func _parse_the() -> Dictionary:
 			if _at_op("("):
 				var args := _parse_call_args()
 				mwhich = args[0] if args.size() > 0 else {"node": "num", "value": 0}
-				mcast = args[1] if args.size() > 1 else null
+				# The fourth site of the same omission, and the one that was still
+				# open: `:752`, `:777` and `:975` all reach for the trailing
+				# `of castLib` after a parenthesised designator and this one did
+				# not. It does not error -- the clause is simply left on the
+				# floor, and what is left compiles: a bare `of`, a call to
+				# `castlib("…")` and a call to `into(x)`, so the assignment in
+				#
+				#     put the name of member (the memberNum of sprite 1) ¬
+				#         of castLib "decks" into x
+				#
+				# never happens and every later mention of `x` becomes a call to
+				# a handler of that name returning VOID. `MASTER.CST` member 31
+				# is `jokesfunk` and `cardsfunk`, run on every room entry in all
+				# three Piposh 1 localisations, and both fall to their final
+				# `else` because of it -- a collected joke's sprite stays hidden
+				# for the rest of the movie. `tools/parse_residue.gd` finds the
+				# leftovers; a dropped designator clause has now cost four
+				# player-visible bugs (bugs.md 16 is one of them).
+				mcast = args[1] if args.size() > 1 else _parse_optional_castlib()
 			else:
 				mwhich = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 				mcast = _parse_optional_castlib()
