@@ -145,6 +145,17 @@ static func run(host, interpreter, handler: String, elements: Array) -> int:
 	if host._host != null and not bool(host._host.pass_event):
 		return 0
 	var key := handler.to_lower()
+	# A fresh step budget per event, for the reason `preview/scripts.gd:dispatch`
+	# gives at its own call: `MAX_STEPS` exists to stop a runaway loop inside one
+	# dispatch, and a count that accumulates for the life of the session against a
+	# fixed ceiling eventually aborts every handler with "step budget exhausted".
+	# Once per *chain* rather than once per element -- the chain is the event, and
+	# a per-element reset would hand a four-element queue four budgets.
+	#
+	# The line is here as well as there because this path replaced `dispatch` for
+	# the mouse and the keyboard; without it those two would keep the bug the
+	# other call site fixed, which is worse than the duplication.
+	interpreter.reset_steps()
 	host._tally(host._sent, handler)
 	var ran := 0
 	for value in elements:
