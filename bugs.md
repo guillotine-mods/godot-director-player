@@ -68,6 +68,97 @@ today.
 
 ---
 
+## 41. `member (<expr>) of castLib X` drops the library, and with it every joke and every collectable card in Piposh 1
+
+**Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · **the fourth
+instance of one shape**, and the first three each cost a player bug too ·
+reported from play as *"the binoculars vanish when the deck chair collapses"*
+
+Reproduce, on the tree as it stands:
+
+```
+godot --headless --path . --script tools/parse_residue.gd -- --root piposh
+```
+
+`FAIL  piposh: no compiled statement calls a clause keyword (12 in 8754 script(s))`,
+all twelve on `MASTER.CST` member 31, lines 4 and 75 — `jokesfunk` and
+`cardsfunk`, the two handlers Piposh 1 runs on **every** room entry. Both
+localisations report the same two lines; Piposh 2 has the identical line in its
+own `MASTER.CST` member 12 and is clean only because it is commented out.
+
+**The mechanism.** `_parse_the`'s `member` arm has two branches and only one of
+them looks for the trailing clause:
+
+```gdscript
+if _at_op("("):
+    var args := _parse_call_args()
+    mwhich = args[0] if args.size() > 0 else {"node": "num", "value": 0}
+    mcast = args[1] if args.size() > 1 else null        # <-- no fallback
+else:
+    mwhich = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+    mcast = _parse_optional_castlib()
+```
+
+The other three sites that parse the same designator —
+`lingo_parser.gd:752` (`field (…)`), `:777` (`member (…)` as a reference) and
+`:975` (`the number of member (…)`) — all read
+`args[1] if args.size() > 1 else _parse_optional_castlib()`, and each of those
+lines was added by a bug report. This one was missed. **The fix is that same
+expression, on the `mcast` line of the `the <prop> of member (…)` arm.**
+
+**Why nothing reports it.** The expression is still valid without the clause, so
+the statement compiles; the words left over become statements of their own. From
+`tools/scratch`, the AST of
+
+```
+put the name of member (the membernum of sprite 1) of castlib "decks" into x
+```
+
+is a `put_echo` with no target, then a bare `of`, then `castlib("decks")`, then
+`into(x)`. `x` is therefore never assigned, and the four later mentions of `x` in
+`jokesfunk` compile to calls to a handler named `x` that answers VOID. So `y` is
+VOID, `char y of x` is empty, `value("")` is 0, `item 0 of globaljokes` matches
+neither `"0"` nor `"on"`, and the handler falls into its final `else`:
+`set the visible of sprite 17 to 0`. Every time. `script_compile_check.gd` sees
+a script that compiled and says so.
+
+**The player-visible half.** Piposh 1's rooms each hide one gag on channel 17 and
+one collectable card on channel 19, revealed by `globaljokes` / `globalcards` and
+restored on entry by `jokesfunk` / `cardsfunk`. In DAY1's `dl1` — the deck
+outside the cabin door, and the room the report names — channel 17 is member
+`1:156`, a pair of binoculars. Clicking the deck chair runs `dl1chair` (frames
+66-80), whose frame script at 70 (`BehaviorScript 158`) plays the chair
+collapsing, sets `item 1 of globaljokes` to `"on"` and animates the binoculars
+falling onto the deck on channel 16. Measured over the whole clip: `globaljokes`
+does become `on,0,0,0,0` and channel 16 does draw members 150→156, so the gag
+runs. Then the playhead returns to `dl1` (frame 3), `BehaviorScript 21` calls
+`jokesfunk()`, the branch above fires, and **channel 17's override stays
+`{"visible": 0}` for the rest of the movie.** The binoculars are gone.
+
+`BehaviorScript 158` gets the same value out of the same cast because it spells
+the designator *without* the parentheses — `the name of member the memberNum of
+sprite 1 of castLib "decks"` — which is why the gag can fire at all and only its
+restoration is lost.
+
+Proof that the parse is the whole of it, at `dl1go` with
+`globaljokes = "on,0,0,0,0"`:
+
+| handler called | channel 17 after |
+|---|---|
+| `jokesfunk`, as authored | `{"_member": 156, "visible": 0}` |
+| the same body with the parentheses removed | `{"_member": 156, "visible": 1}` |
+
+**Scope.** Every joke and every collectable card in Piposh 1, Piposh 1 English
+and Piposh 1 Russian, in every room, on every day — 5 jokes and 5 cards per day
+by `globaljokes`/`globalcards`, none of which can ever be seen a second time.
+`piposh2`, `piposh-dream` and `rating` report 0.
+
+**Not the same fault as the up-staircase** reported alongside it from the same
+room, which was `preview/interaction.gd:script_for_click` handing the click to a
+behaviour that declares no mouse handler. Two reports, one room, two causes.
+
+---
+
 ## 36. Every one of DAY1's nine talk clips is an inescapable two-frame loop when the movie was entered without `globalday`
 
 **Status:** open · **Area:** movie entry / cold globals · **not the film loop and

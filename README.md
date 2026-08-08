@@ -243,6 +243,7 @@ checked against `docs/LINGO_SURFACE.md`:
 
 ```
 godot --headless --script tools/script_compile_check.gd     # every script in the whole game compiles, and no command keyword parsed as a call
+godot --headless --script tools/parse_residue.gd            # no designator's trailing clause was dropped into a statement of its own, pass/fail (`--all` for every root)
 godot --headless --script tools/lingo_parse.gd -- --file PIP2DATA/DAY1.DIR   # every script in a container compiles
 godot --headless --script tools/lingo_compile_check.gd -- --file PIP2DATA/DAY1.DIR  # ASTs against the committed ones
 godot --headless --script tools/lingo_builtins_check.gd     # the engine-free builtins, §1
