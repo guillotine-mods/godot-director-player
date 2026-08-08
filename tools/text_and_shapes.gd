@@ -280,12 +280,30 @@ func _init() -> void:
 			# lines legitimately, so the assertion is against members that have text.
 			if str(laid["text"]) != "" and int(laid["lines"]) <= 0:
 				blank.append("ch%d %s has text and drew no lines" % [channel, str(laid["name"])])
-			# The box is the score's, through the single placement rule. A field has
-			# no registration point, so its top-left is its own start point.
-			if int(rect.size.x) != int(entry["sprite"]["width"]) \
-					or int(rect.size.y) != int(entry["sprite"]["height"]):
-				wrong_box.append("ch%d %s is %s, score says %dx%d" % [
-					channel, str(laid["name"]), str(rect.size),
+			# The box is the **member's**, not the score's, through the single
+			# placement rule. A field has no registration point, so its top-left is
+			# its own start point, and its size is the one the widget lays out at:
+			# a fixed field clamps to its `initialRect` and an expanding one pushes
+			# the laid-out size back onto the sprite (DIRECTOR_ENGINE.md 1.2), so
+			# the score's stored rect is residue on both paths. A stretched sprite
+			# is the author saying otherwise and keeps what the score gave it.
+			#
+			# This assertion used to read the other way, and `GlobalMoney` is what
+			# it was missing: Piposh 1's money is a 102-wide centred member that
+			# every room's score records as 68 wide — the same 68x32 residue three
+			# of its neighbours on the top bar carry — so the amount was centred in
+			# a box 34px too narrow and sat 17px left of where Director puts it, in
+			# 33,686 of the game's 82,323 field sprite records.
+			var natural := Vector2(int(entry["member"].get("width", 0)),
+				int(entry["member"].get("height", 0)))
+			var want: Vector2 = natural
+			if bool(entry["sprite"].get("stretch", false)) \
+					or natural.x <= 0.0 or natural.y <= 0.0:
+				want = Vector2(int(entry["sprite"]["width"]), int(entry["sprite"]["height"]))
+			if int(rect.size.x) != int(want.x) or int(rect.size.y) != int(want.y):
+				wrong_box.append("ch%d %s is %s, wanted %dx%d (member %dx%d, score %dx%d)" % [
+					channel, str(laid["name"]), str(rect.size), int(want.x), int(want.y),
+					int(natural.x), int(natural.y),
 					int(entry["sprite"]["width"]), int(entry["sprite"]["height"])])
 			if rect.position.x > STAGE.x or rect.position.y > STAGE.y \
 					or rect.position.x + rect.size.x < 0.0 \
@@ -298,7 +316,7 @@ func _init() -> void:
 			checked, field_frames.size()])
 		h.check("every field with text drew at least one line", blank.is_empty(),
 			", ".join(PackedStringArray(blank)))
-		h.check("every field's box is the size the score gave the sprite",
+		h.check("every field's box is its member's, not the score's residue",
 			wrong_box.is_empty(), ", ".join(PackedStringArray(wrong_box)))
 		h.check("no field was laid out off the stage", offstage.is_empty(),
 			", ".join(PackedStringArray(offstage)))

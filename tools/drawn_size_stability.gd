@@ -36,11 +36,17 @@ extends SceneTree
 ## A run is exempt when any of its records sets the stretch flag: the flag is the
 ## author saying "I resized this deliberately", and a deliberate resize across a
 ## span -- a zoom, a perspective walk -- is exactly what it is for. So is a run
-## whose member is a shape or a text field, the two types the reference excepts
-## from the dimension reset (`sprite_geometry.KEEPS_ITS_OWN_SIZE`): their rect is
-## the sprite's by design, so a score that changes it is the author changing it.
-## `PIPDATA/DAY5.dir` channel 38 is the only one in either corpus, and it moves a
-## caption by two pixels.
+## whose member is a shape (`sprite_geometry.KEEPS_ITS_OWN_SIZE`): a shape has no
+## natural size, its rect *is* the sprite's by design, so a score that changes it
+## is the author changing it.
+##
+## **Text fields used to be exempt here too, and are not any more.** They were
+## exempt because `sprite_geometry` excepted them from the dimension reset, and
+## that turned out to be half a rule -- the reference goes on to push the widget's
+## laid-out size back onto the sprite, so a field's box is its member's and the
+## score's is residue like anybody else's. Dropping the exemption took the exempt
+## count from 153 runs to 8 and left the unstable count at 0, which is the useful
+## half of the answer: none of the field runs this now measures pulses.
 ##
 ## The measurement is reported beside the verdict: how many records the score's
 ## rect and the member's natural size disagree on, split by the flag, so the same
@@ -223,7 +229,7 @@ func _init() -> void:
 			"set" if stretched else "clear", s, d, s + d,
 		])
 	print("")
-	print("runs of one member at one place: %d, %d author-stretched, %d a shape or a field"
+	print("runs of one member at one place: %d, %d author-stretched, %d a shape"
 		% [runs, runs_exempt, runs_own_size])
 	print("unstable runs (drawn size changes with nothing else changing): %d"
 		% unstable.size())

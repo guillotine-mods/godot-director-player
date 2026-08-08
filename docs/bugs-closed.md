@@ -1108,6 +1108,50 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
 
 ## Closed
 
+- **A field was laid out in the score's box instead of its member's, so Piposh 1's
+  money was never centred.** Reported from play: the amount in the top bar sits
+  off-centre. `GlobalMoney` is a 102x19 field with `text_align` 1, and every room's
+  score records its sprite as 68x32 — the same 68x32 that three of its neighbours
+  on that bar carry, which is what identifies it as residue rather than a size
+  somebody authored. `director_text.draw` centres inside the rect it is handed, so
+  the amount was centred in a box 34px too narrow and drew 17px left of where
+  Director puts it, in **33,686 of that game's 82,323 field sprite records**.
+  `GlobalTime` next to it was always right, and that is the tell: its member is 68
+  wide, so the residue agreed with it by accident.
+
+  The cause is one entry in `scenes/preview/sprite_geometry.gd`. `KEEPS_ITS_OWN_SIZE`
+  held `[3, 8]` — field and shape — on the grounds that `sprite.cpp:setCast` excepts
+  both from the dimension reset. It does, but that list is not "types whose score
+  rect wins": for text the widget lays out and pushes its size **back onto the
+  sprite** (DIRECTOR_ENGINE.md 1.2), clamped to `initialRect` for a fixed field and
+  grown for an expanding one. Taking the exception without the push left the score's
+  stored rect standing, which is the one value neither clause produces. A shape
+  genuinely belongs there — it has no natural size — so the constant is now `[8]`
+  and a field resolves to its member's `initialRect` unless stretched or resized by
+  a script.
+
+  Measured over all six roots before the change, honouring the stretch flag:
+  switching a field's box from the score's to the member's drops a laid-out line in
+  **11 sprite records** in the whole corpus, over 4 (member, box) pairs naming just
+  two members. One is `save2`, where the line lost is a trailing empty one and
+  nothing is visible either way. The other is `CAPROOM.dir`'s `memo21`, whose other
+  records carry the stretch flag and keep their authored box.
+  `tools/drawn_size_stability.gd` went from 153 exempt runs
+  to 8 with the unstable count still 0, so no field run this newly measures pulses.
+  The widened rect also feeds the hit test, and that is inert here: `tools/hotspots.gd`
+  reports `ch59` as "no behaviour, member script declares none", so it never absorbed
+  a click at 68 wide and does not at 102.
+
+  What is **not** fixed is the expanding half of §1.2: a field still clamps to
+  `initialRect` and never grows to its laid-out height, so text that overflows its
+  authored box clips instead of pushing the box open. The 9 records above are the
+  whole cost of that in this corpus.
+
+  Reproduce: `godot --headless --script tools/text_and_shapes.gd -- --file
+  PIPDATA/DAY1.dir` with `--root piposh`. The check is "every field's box is its
+  member's, not the score's residue"; before the change it asserted the opposite and
+  passed.
+
 - **A movie's chunk dump was looked for under the wrong directory name** (part of
   14). `generate_sprite_stretch.py` built its path as `<root>/<movie>/<movie>/
   chunks`, but a dump's outer and inner directory names are not always the same:

@@ -114,6 +114,15 @@ renderer. That renderer and that loader are deleted; the live engine reads the
 rect from the score record and treats it as residue unless the author stretched
 it (`tools/drawn_size_stability.gd`).
 
+**Text was excepted from that for a while, and should not have been.** The
+exception list in `sprite.cpp:setCast` is not a list of types whose score rect
+wins — it is a list of types the *reset* skips, and for text the widget then
+overwrites the size anyway. A port that takes the first half without the second
+lands on the score's stored rect, which is the one value the two clauses above
+agree Director never shows. `scenes/preview/sprite_geometry.gd`'s
+`KEEPS_ITS_OWN_SIZE` is shape-only for that reason; a field resolves to its
+member's `initialRect` unless stretched or resized by a script.
+
 ### 1.3 What the stretch flag actually changes
 
 The stretch flag is **bit 0x80 of the ink byte** in the D4 sprite record
@@ -1702,12 +1711,21 @@ blitted. Scrollbars are the only producer of the hit-test Hole (§4.2).
 *This port:* the preview draws fields — `director/director_text.gd`, called from
 `scenes/director_preview.gd:_draw_text`, with the member's own point size,
 colour, slant and alignment out of its `STXT` style run and its box out of the
-score. **Legible text in roughly the right place at roughly the right size, and
-not period-accurate glyph rendering**: the font id is carried and unresolved (no
-font table here), so the typeface and therefore the advance widths are Godot's
-fallback and a caption does not land pixel-for-pixel where Director put it. No
-character-box/glyph mask distinction, no scrolling, and no push of the laid-out
-size back onto the sprite (§1.2) — the score's size is used as authored. Editing
+**member**. **Legible text in roughly the right place at roughly the right size,
+and not period-accurate glyph rendering**: the font id is carried and unresolved
+(no font table here), so the typeface and therefore the advance widths are
+Godot's fallback and a caption does not land pixel-for-pixel where Director put
+it. No character-box/glyph mask distinction and no scrolling. The box was the
+*score's* until Piposh 1's money was found 17px left of centre in every room:
+`GlobalMoney` is a 102×19 centred member the score records as 68×32, the same
+residue three of its neighbours on the top bar carry, so the amount was centred
+in a box 34px too narrow across 33,686 of that game's 82,323 field sprite
+records. §1.2 has the rule and `scenes/preview/sprite_geometry.gd:drawn_size` the
+change. What is still missing is the *expanding* half: a field clamps to its
+`initialRect` and never grows to the laid-out height, so text that overflows its
+authored box clips instead of pushing the box open. Measured over all six roots,
+that costs a laid-out line in 11 sprite records naming two members, and on one of
+those two the line lost is a trailing empty one. Editing
 *is* now there (§8.4, `scenes/preview/text_focus.gd`): caret, selection,
 `the selStart`/`selEnd`, click-to-caret and focus arbitration, with the caret and
 the selection painted by `preview/text_art.gd` and the character-to-pixel mapping

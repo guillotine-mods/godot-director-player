@@ -17,11 +17,15 @@ const Ink := preload("res://director/director_ink.gd")
 
 ## Cast types whose sprite keeps its own width and height on a member swap.
 ## `sprite.cpp:Sprite::setCast` resets the sprite's dimensions to the member's
-## `initialRect` for every type except these two: a shape *is* its rect, and a
-## text member's laid-out size is pushed back onto the sprite rather than read
-## from it (DIRECTOR_ENGINE.md 1.2). Rich text is not here because the reference
-## does not except it either -- it takes the default branch.
-const KEEPS_ITS_OWN_SIZE := [3, 8]  # field, shape
+## `initialRect` for every type except shape and text -- but only one of those
+## two belongs here, and reading the exception list as though it were one rule is
+## what put Piposh 1's money in the wrong place (see `drawn_size`).
+##
+## A **shape** *is* its rect. It has no natural size to fall back to: the member
+## says "rounded rectangle", the sprite says how big, and the score's stored rect
+## is the only answer there is. Rich text is not here because the reference does
+## not except it either -- it takes the default branch.
+const KEEPS_ITS_OWN_SIZE := [8]  # shape
 
 
 ## How big the sprite is drawn.
@@ -58,7 +62,34 @@ const KEEPS_ITS_OWN_SIZE := [3, 8]  # field, shape
 ## Three things keep their stated size: a sprite whose stretch flag is set, a
 ## sprite a script has resized (`sprite_state.effective` marks it, because
 ## Director's `setWidth` makes the size stick without touching the flag), and a
-## shape or text member, which the reference excepts by type.
+## shape, which has no natural size to reset to.
+##
+## **A field is not one of them, and used to be.** `setCast` does except text
+## from the dimension reset, but that is only the first half of what the
+## reference does: the widget then lays the text out and pushes its size *back
+## onto the sprite* -- clamped to the member's `initialRect` for a fixed field,
+## grown for an expanding one (DIRECTOR_ENGINE.md 1.2). Excepting text from the
+## reset without implementing the push left the score's stored rect standing, and
+## that is the one value Director never shows: it is residue, the same residue
+## the doc above describes for bitmaps.
+##
+## Piposh 1's top bar is what this looked like. `GlobalMoney` is a 102x19 centred
+## member, and every room's score records its sprite as 68x32 -- the same 68x32
+## three of its neighbours on that bar carry, which is how you can tell it is
+## residue and not a size anyone authored. Centring 14pt text in a box 34px too
+## narrow put the amount 17px left of where Director puts it, in 33,686 of that
+## game's 82,323 field sprite records. `GlobalTime` beside it was never wrong,
+## because its member is 68 wide and the residue agrees with it by accident.
+##
+## Measured before the change, over all six roots and honouring the stretch flag:
+## switching a field's box from the score's rect to the member's drops a laid-out
+## line in **11 sprite records** in the whole corpus, over 4 (member, box) pairs
+## naming just two members -- `save2`, where the line lost is a trailing empty
+## one, and `memo21`. What it does not do is the other half of §1.2: a field whose
+## text overflows its `initialRect` still clips instead of growing, because the
+## laid-out height is not pushed back. `CAPROOM.dir`'s memos are the members that
+## would want it, and most of their records carry the stretch flag, so they keep
+## their authored box anyway.
 static func drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 	var w := int(sprite.get("width", 0))
 	var h := int(sprite.get("height", 0))
