@@ -210,6 +210,13 @@ func _two_process(h: Harness, args: Dictionary, target: String, field_name: Stri
 	]
 	if Args.text(args, "aspect", "") != "":
 		child.append_array(["--aspect", Args.text(args, "aspect", "")])
+	# The child reads `director_game.cfg` for itself, so a parent pinned to one
+	# corpus and a child told nothing are two different games -- and the check
+	# below then compares a save from one against a movie from the other.
+	# `gate.sh` pins with `--root` rather than by rewriting the config, which is
+	# what makes this line load-bearing rather than tidy.
+	if Args.text(args, "root", "") != "":
+		child.append_array(["--root", Args.text(args, "root", "")])
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), child, out, true)
 	for line in out:

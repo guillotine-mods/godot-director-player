@@ -46,6 +46,7 @@ Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVEL
 | `openspec/` | Spec-driven change artifacts for in-flight work (`openspec/changes/`) |
 | `.claude/`, `.codex/` | Skills and slash commands, kept in sync so both agents see the same thing |
 | `bugs.md` | Open defects with reproductions. Closed ones in `docs/bugs-closed.md` |
+| `gate.sh`, `check.sh`, `gate_env.sh` | The verification gates, and the one copy of what they need to know about the machine |
 
 Not committed, but present after a real run: `.godot/` (editor cache, see below),
 `.traces/` (ScummVM trace logs from `tools/capture_scummvm_trace.sh`),
@@ -159,14 +160,66 @@ On a fresh checkout, **open the editor once before running anything headless.**
 `.godot/` is gitignored, and `global_script_class_cache.cfg` inside it is what
 makes `class_name` scripts resolvable. Without it, `godot --headless --script`
 fails with `Could not find type "DirectorContainer"` in a file you did not touch.
+On a machine with no display, or in a script, `godot --headless --editor --quit`
+does the same job: it imports the project, writes the cache and exits 0.
+
+## Running a specific game
+
+`director_game.cfg` is the persistent answer to which title runs, and two command
+line flags override it per run without editing the file:
+
+```bash
+godot --headless -- --root rating --file MAINMENU.dir       # the player
+godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
+```
+
+**Both go after `--`.** Godot consumes every argument it recognises and hands the
+rest to the movie through `OS.get_cmdline_user_args()`, which is what `--`
+separates. Without it the flags never reach the engine, and the run uses the
+configured game instead: Godot accepts the unknown parameters and ignores them,
+so there is no error to notice. The `game root:` line the player prints on the
+way up is what tells you which one you actually got.
+
+`--root` takes a bare name, meaning that folder under `games/`, or a full
+`res://` path for a title stored elsewhere. It is applied in
+`DirectorPaths.load_config()` rather than at any one call site, because
+`AudioDirector` loads the config itself to build its sound index: an override
+applied only in `scenes/preview/boot.gd` once moved the movies and left the
+sounds indexed against the config, and the game ran silent with nothing saying
+why. One root, one place, or the parts disagree.
+
+**`--root` on its own only works where the configured boot movie also exists in
+the new root**, since `boot_movie` is not overridden along with it. The five
+piposh roots all ship `strtgame.dir`, in two different spellings, so switching
+between those needs nothing else and the case does not matter. `rating` boots
+`MAINMENU.dir`, so `--root rating` alone dead-ends on a movie that title does
+not have. The failure names what is actually there, entry-point-looking movies
+first:
+
+```
+no such container: strtgame.dir in res://games/rating
+  try --file with one of: MAINMENU-old.dir, MAINMENU.dir, ARCADE1.dir, ... (73 more)
+```
+
+`--file` is the second half of the pair, and takes a path relative to the root or
+a bare filename, matched case-insensitively.
+
+Two things headless does not give you. The player has no reason to exit, so a
+`godot --headless --` run of the *game* runs until it is killed; it is useful for
+boot-level output and not much else. And headless Godot paints nothing, so any
+check that reads the framebuffer back has to run windowed. See the note under
+"Verification tools" for which those are.
 
 ## Verification tools
 
 There is no test suite.
 
 **`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
-actually run against the live player and are expected to pass: **23 pass, 1 fail**
-(`boot_state`, long-standing). Anything below that is *not* in `ALL` is a survey
+actually run against the live player and are expected to pass. Measured over all
+40 entries on 4.7.1: **38 pass, 1 fail, 1 flaky.** `boot_state` is the
+long-standing red; `play_suspends` passes about half its runs on one assertion
+that waits a fixed number of frames for a movie to load (`bugs.md` 41), so the
+set is not reproducible until that is fixed. Anything below that is *not* in `ALL` is a survey
 or a one-off — useful, but nothing runs it, so nothing notices when it rots. A
 long run of tools listed here rotted exactly that way and was deleted; see
 "Retired" at the end of this section.
@@ -176,6 +229,52 @@ bash gate.sh                                        # the whole suite, ~10 min
 bash gate.sh hotspots trails                        # named harnesses only
 bash check.sh                                       # fast structural gate: parses, surface resolves
 ```
+
+Both run on macOS and on Windows git-bash, from wherever the checkout is. What
+each needs to know about the machine is in **`gate_env.sh`**, sourced by both,
+so there is one copy of it rather than one per script:
+
+| Function | What it settles |
+|------|------|
+| `gate_find_godot` | `$GODOT` if set, else `godot`/`godot4` on `PATH`, else the usual macOS and Windows install locations. Windows prefers a *console* build, because the plain one detaches and `$(...)` then captures nothing |
+| `gate_announce_godot` | prints `godot: <path> (<version>)` every run, and warns off 4.7.x rather than refusing |
+| `gate_run_capped` | the per-harness ceiling, through `timeout` or `gtimeout` where they exist and a bash shim where they do not. macOS ships neither |
+
+Set `GODOT` when the binary is somewhere unusual, or when trying another
+version against the port:
+
+```bash
+GODOT=/Applications/Godot.app/Contents/MacOS/Godot bash gate.sh
+```
+
+A harness that hits the ceiling now prints `TIMEOUT` rather than `ERROR`. The
+two are not the same finding, and collapsing them is how `movie_churn` was once
+called flaky. An open editor contending over `.godot/` is the usual cause.
+
+`GATE_ROOT` (default `piposh2`) pins the corpus for the run, passed to each
+harness as `--root`. A gate is only meaningful against the game its baseline was
+recorded on: point it at another title and five different movies read as five
+regressions. It is passed before each entry's own arguments, so an `ALL` entry
+naming its own root still wins.
+
+The lock is still there, and no longer for the corpus. `--root` is per process,
+where the previous mechanism rewrote the `root` line in `director_game.cfg` and
+restored it on exit: two runs at once, which happens the moment more than one
+agent is working, had each other's corpus swapped out mid-run, and one run
+measured six regressions that way of which none was real. What remains is
+`.godot/`, which concurrent Godot runs contend over badly enough to hang.
+
+To run one harness by hand, expand its `ALL` entry the way `gate.sh` does, with
+`@` standing in for the spaces and the `--` in place:
+
+```
+ALL entry   mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1
+by hand     godot --headless --script tools/mouse_poll.gd -- --file PIP2DATA/CHESS.dir --label ches1
+```
+
+Dropping the `--` there is the trap from the section above: the harness runs
+against the boot movie instead of its subject, and reports FAIL for a reason
+that is not in the harness. That is what the argument-carrying entries exist for.
 
 The surveys and one-offs, each printing a number rather than a verdict:
 
@@ -231,6 +330,13 @@ caught a renderer change that every headless check passed over: the stage clip
 was armed once at startup and Godot reset it on the next repaint, and the trail
 layer was painted underneath the frame's sprites, where any backdrop hides it. If
 you write a renderer harness, assume the headless half is not enough.
+
+All four announce the skip when the renderer is missing rather than passing
+quietly, each in its own words, which matters because `gate.sh` runs every
+harness with `--headless`, `trails` and `editable_text` among them. Their pixel
+cases therefore never run under the gate, and the two PASS lines it prints for
+them cover the rules and not the wiring. Run those two by hand, windowed, after
+touching the renderer or the text widget.
 
 `palette_cycle.gd`, `sprite_flip.gd` and much of `trails.gd` are **synthetic on
 purpose**, and say so: Piposh 2 switches colour cycling on 0 times in 61,371

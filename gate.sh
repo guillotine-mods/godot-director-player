@@ -1,27 +1,49 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which is 11 pass / 2 fail -- boot_state and cursor_preview were already red at
-# the commit the split started from.
-cd /c/Data/Work/Piposh/piposh2-godot || exit 1
-G="/c/Program Files/Godot_v4.7.1/Godot_v4.7.1-stable_mono_win64_console.exe"
+# which over the 40 entries in ALL is 38 pass / 1 fail / 1 flaky, measured on
+# 4.7.1 at the commit this line was written:
+#
+#   boot_state      FAIL, long-standing
+#   play_suspends   PASS or FAIL, about half and half, on one assertion that
+#                   waits a fixed six frames for a movie to load (bugs.md 41)
+#
+# The previous version of this comment said 11 pass / 2 fail with cursor_preview
+# red, and none of those three numbers survived being measured. A recorded set
+# is the thing the gate exists to compare against, so it is worth more than the
+# other comments here: re-measure it when it moves rather than leaving it.
+#
+# Runs wherever the checkout is, on macOS and on Windows git-bash. Where Godot
+# is and what to do without a `timeout` are in gate_env.sh, once, rather than
+# in a line here and a second copy of it in check.sh.
+cd "$(dirname "$0")" || exit 1
+. ./gate_env.sh
+G=$(gate_find_godot) || exit 1
+gate_announce_godot "$G"
 
 # Pin the corpus. A gate is only meaningful against the game its baseline was
 # recorded on, and the config is a working file that gets pointed at whichever
 # title is being looked at -- a run against another game reads as five
-# regressions that are really five different movies. Restored on exit.
+# regressions that are really five different movies.
+#
+# Passed per harness with `--root`, which every reader honours because
+# `DirectorPaths.load_config` applies it. This used to rewrite the `root` line
+# in director_game.cfg and restore it on exit, which pinned the corpus by
+# mutating a file the whole repo shares: two runs at once, which happens the
+# moment more than one agent is working, had each other's corpus swapped out
+# mid-run and reported the other title's movies as this title's regressions.
+# One run measured six that way and none was real. A flag on the command line
+# cannot do that to anybody.
 ROOT="${GATE_ROOT:-piposh2}"
 
 # Per-harness ceiling. Raised from 300s because several harnesses now sweep the
 # whole corpus, and with a handful of agents running Godot at once a sweep that
-# takes 40s alone can exceed five minutes. A timeout reports as ERROR, which
-# reads as a regression and is not one -- `movie_churn` was called flaky on
-# exactly this. Override with GATE_TIMEOUT.
+# takes 40s alone can exceed five minutes. Override with GATE_TIMEOUT.
 
-# Serialise concurrent runs. Pinning the corpus means writing a file the whole
-# repo shares, so two gates running at once -- which happens the moment more
-# than one agent is working -- have each other's corpus swapped out from under
-# them mid-run. That does not fail loudly: it reports the other title's movies
-# as this title's regressions. One run measured six that way and none was real.
+# Serialise concurrent runs. Not for the corpus any more -- `--root` is per
+# process and no longer touches a shared file -- but for .godot/, which
+# concurrent Godot runs contend over badly enough to hang indefinitely rather
+# than fail (AGENTS.md). A hang is what the ceiling below turns into a TIMEOUT
+# line, and a suite of them is 40 minutes of nothing.
 LOCK=".gate.lock"
 HELD=""
 for _ in $(seq 1 900); do
@@ -30,9 +52,9 @@ for _ in $(seq 1 900); do
 done
 # Refuse rather than proceed. The first version fell through the wait and ran
 # anyway, and its EXIT trap then removed *whoever's* lock was there -- so a long
-# run lost its lock to a later one, two gates pinned the corpus against each
-# other, and the results of both were fiction. Releasing only a lock we took is
-# the other half: without it the trap is a lock-breaker with extra steps.
+# run lost its lock to a later one, two gates ran against each other, and the
+# results of both were fiction. Releasing only a lock we took is the other half:
+# without it the trap is a lock-breaker with extra steps.
 if [ -z "$HELD" ]; then
   echo "gate: another run has held $LOCK for 15 minutes; not starting a second one." >&2
   echo "gate: if nothing is running, remove $LOCK by hand." >&2
@@ -40,15 +62,6 @@ if [ -z "$HELD" ]; then
 fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
-BEFORE=$(grep '^root' director_game.cfg)
-trap 'rmdir "$LOCK" 2>/dev/null; python -c "
-import sys,re
-s=open(\"director_game.cfg\").read()
-open(\"director_game.cfg\",\"w\").write(re.sub(r\"^root.*\", sys.argv[1], s, count=1, flags=re.M))" "$BEFORE"' EXIT
-python -c "
-import sys,re
-s=open('director_game.cfg').read()
-open('director_game.cfg','w').write(re.sub(r'^root.*', 'root = \"res://games/%s\"' % sys.argv[1], s, count=1, flags=re.M))" "$ROOT"
 echo "corpus: $ROOT"
 ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
 # A name given on the command line picks up the arguments its ALL entry carries.
@@ -71,7 +84,17 @@ done
 for t in ${WANTED:-$ALL}; do
   extra=""
   case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
-  out=$(timeout ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- $extra 2>&1)
+  # `--root` first, so an ALL entry that names its own wins: the override takes
+  # the last one on the line.
+  out=$(gate_run_capped ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- --root "$ROOT" $extra 2>&1)
+  status=$?
+  # A hang and a crash are not the same finding, and printing both as ERROR is
+  # how `movie_churn` got called flaky. 124 is the ceiling, from `timeout` or
+  # from the shim that stands in for it.
+  if [ "$status" -eq 124 ]; then
+    printf '%-26s TIMEOUT  (%ss ceiling; raise GATE_TIMEOUT or close the editor)\n' "$t" "${GATE_TIMEOUT:-900}"
+    continue
+  fi
   r=$(printf '%s' "$out" | grep -E "^(PASS|FAIL)" | tail -1)
   # A harness that asserted nothing is not passing, it is dark. Four harnesses
   # today reported success over an empty set -- `cursors` printed "every pair
