@@ -134,6 +134,21 @@ life of a session against `MAX_STEPS`, so a long enough session eventually abort
 every handler with "step budget exhausted". Pre-existing; nothing has run long
 enough to hit it.
 
+**The property surface reports nothing when it drops a write.**
+`LingoDiagnostics` declares `SPRITE_PROP`, `MOVIE_PROP` and `MEMBER_PROP`;
+**nothing ever emitted one of the three.** `_host_call` reports a missing host
+*method*, but a bound method answering VOID for a name it does not know is
+silent -- which is why the builtin surface's gaps get found and the property
+surface's do not, and why the same class has now bitten five times
+(`moveableSprite`, which killed dragging outright, then `editableText`,
+`constraint`, `the member of sprite`, and flip).
+
+`SPRITE_PROP` is now emitted from `director_preview.gd:_note_sprite_prop`
+against `sprite_props.gd:CONSUMED`, derived from `read_prop`'s arms and
+`effective`'s merges rather than hand-listed. **`MOVIE_PROP` and `MEMBER_PROP`
+still have no equivalent**, so a movie or member property that is stored and
+never consumed is still silent.
+
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
 **Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
@@ -259,53 +274,40 @@ beepOn`** makes a mouse-down on empty stage beep, and is not implemented; and
 *any* button, the button under the mouse-up inverts its hilite — is not either.
 `preview/hilite.gd` implements the press-and-hold inversion and not this.
 
-**Eligibility is the D4/D5 rule and every movie in both titles is D7.** §4.3.
-`respondsToMouse` tests its clauses in order and the **D6+ clause comes before
-the handler search**: from D6 on, a sprite with any behaviour attached is a click
-target whatever that behaviour declares. `Interaction.responds_to_mouse`
-implements moveable, button, and a search for `mouseDown`/`mouseUp` in the
-behaviour and in the member's cast script, so on this corpus it is *narrower*
-than the reference by exactly "every sprite whose behaviour declares no mouse
-handler". Two further clauses are missing as well: a **movie** cast member with
-scripts enabled, and the D3-style **generic** (scopeless) score script.
+**D6+ click eligibility -- done, with the attachment list still narrow.** §4.3.
+`preview/interaction.gd:eligibility_reason` implements all six clauses in the
+reference's order and answers *which* one fired; `responds_to_mouse` is that
+returning non-empty, so the descent and every debugging overlay cannot drift
+apart -- which they did once already over `hits_per_pixel`'s arguments.
 
-Visible in Rating, and it is the dialogue itself:
+Measured before and after over every frame of every movie, because widening
+eligibility is how a backdrop starts swallowing clicks: piposh2 2 frames changed
+and 8 sprites newly eligible, piposh 543 / 28, rating 2,534 / 50. **Nothing lost
+eligibility anywhere**, and no newly-eligible sprite is a full-stage backdrop.
 
-    godot --headless --script tools/hotspots.gd -- \
-        --root rating --file BATZEGOZ.dir --marker Egoz1
+**The literal reading of the reference was wrong here, and the sweep is how that
+was found.** Clause 4 tests the *attachment*, and taking it literally made 188
+pairs eligible -- including a 640x400 Copy-ink backdrop over the whole stage on
+144 frames of `AIR1.dir`, on the strength of an attachment naming a **bitmap**.
+`director_score.gd:_read_interval` pairs a span's info entry with the next
+non-empty 8-byte `VWSC` entry rather than indexing by the `sprite_list_idx` the
+sprite record already carries, so **279 / 654 / 500 of the decoded intervals name
+a bitmap, film loop or shape**. Requiring the script lookup to succeed drops 118
+of the 188 and four of the five backdrops; it also drops 45 that name a real
+script member this port cannot resolve, which is narrower than Director in
+§4.2's own default direction. Both halves are score-decode work.
 
-    11  1:20  (194,388) 250x28   no   behaviour declares no mouse handler
-    12  1:21  (235,423) 211x30   no   behaviour declares no mouse handler
-    13  1:22  (221,463) 225x12   no   behaviour declares no mouse handler
-    2 of 16 sprites can answer a click
+Clause 3 (movie member) and clause 5's generic-script arm are implemented and
+unexercised: **0 of the 51,350 members across all three corpora is of type
+`movie` or `button`**, so clause 2 has never fired on any title either.
 
-Those three are the three dialogue options. In D7 all three answer the mouse;
-here none of them does, and the click reaches them only because
-`script_for_click` falls back to the frame script. The version is settled
-evidence, not a guess — `openspec/changes/director-playback-machine/
-director-version.md` measures config version `0x57E` on every movie played.
-
-*What has to change with it.* **This is a hit-test change and is the highest-risk
-item in this file.** Widening eligibility makes previously transparent sprites
-absorb clicks, and §4.2 is explicit that an ineligible sprite does not block what
-is under it — so a room backdrop that happens to carry an `exitFrame` behaviour
-would start eating every click on the stage. Three things move together: the
-eligibility predicate, a **corpus measurement taken before and after** with
-`tools/hotspots.gd` over every frame of both titles compared row by row (not by
-total — see `porting-fidelity-verification`), and the D6+ multi-behaviour entry
-below, because "has behaviours" and "has *a* behaviour" are the same question
-asked of two different data structures.
-
-**D6+ sprites carry a list of behaviours; this port resolves one.** §8.2. From D6
-a channel holds `_scriptInstanceList`, and `queueEvent` pushes one sprite-tier
-element **per behaviour**, passing through for all but the last so every one gets
-a chance at the event. `Scripts.for_sprite` answers a single script per channel,
-chosen by the narrowest covering interval. A sprite carrying a rollover behaviour
-and a click behaviour therefore loses one of them, which is the likeliest reason
-Rating's option sprites above report a behaviour that declares no mouse handler.
-Pairs with the eligibility entry: the D6+ arm of `respondsToMouse` is a test on
-this same list, so implementing either alone leaves the two disagreeing about
-what a sprite's behaviours are.
+**D6+ sprites carry a list of behaviours; the decode still caps it at one.**
+§8.2. `behaviour_intervals` returns a list, so the eligibility clause is already
+a test on the list -- but a **16-byte behaviour entry matches neither of
+`director_score.gd:_read_interval`'s tests and is dropped whole**, so a sprite
+with several behaviours arrives carrying one. Piposh 2 has exactly 2 such spans
+of 145,624, which is why nothing has missed it. Score-decode work, and the same
+function as the attachment-list problem above.
 
 **`mouseEnter` / `mouseLeave` / `mouseWithin` are driven off the wrong channel
 and stop one tier too early.** §4.5, §8.2. The reference raises all three from

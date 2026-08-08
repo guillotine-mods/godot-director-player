@@ -755,14 +755,56 @@ script whose Lingo is bare statements rather than an `on <event>` block. It
 counts as a mouse handler for eligibility, and §8.2 says when it actually runs
 (mouse-down if the sprite is immediate, mouse-up otherwise).
 
-*This port:* `preview/interaction.gd:responds_to_mouse` implements moveable,
-button, and the handler search over the sprite's behaviour and the member's cast
-script. It does **not** implement the D6+ behaviours clause, the movie-member
-clause, or the generic-handler clause — so on this D7 corpus it is *narrower*
-than the reference by exactly "every sprite whose behaviour declares no mouse
-handler". Widening it changes the hit test, which is the thing that took longest
-to get right; `ENGINE_TODO.md` carries the entry and what has to be measured
-before and after.
+*This port:* `preview/interaction.gd:eligibility_reason` implements all six
+clauses in the reference's order and answers **which one fired**;
+`responds_to_mouse` is that function returning non-empty. One implementation
+for the predicate and the explanation, because the hit test filters on the
+first and every debugging tool prints the second, and this module has already
+watched the overlay and the descent diverge once over `hits_per_pixel`'s
+arguments.
+
+The D6+ arm is gated on the **movie's own** config version against
+`kFileVer600` (`0x4C2`). The reference asks a global — the engine is told once
+which Director it is emulating — and per-movie is the closer answer available
+here, because a title can mix formats: Piposh 1 ships `STRTGAME.dir` with
+48-byte sprite records and 94 room movies with 24-byte ones. A movie with no
+config chunk reads 0 and takes the narrower arm.
+
+**The D6+ arm tests the behaviour list after resolution, and that is a
+deliberate divergence.** The reference tests `_behaviors.size()` — the
+attachment — and taken literally here it is a false positive of exactly the
+kind §4.2 warns about, because this port's attachment list is not clean.
+`director_score.gd:_read_interval` pairs a span's info entry with the next
+non-empty 8-byte `VWSC` entry rather than indexing by the `sprite_list_idx`
+the sprite record already carries and the reference indexes by, so a span whose
+own behaviour entry is empty can be handed one belonging to something else.
+Measured by `tools/click_eligibility.gd`: 279 of 2,678 sprite intervals in
+Piposh 2, 654 of 6,197 in Piposh 1 and 500 of 5,365 in Rating fail to resolve,
+and all but 45 of those name a bitmap, a film loop or a shape — none of which
+can be a behaviour. Taken literally the clause made `AIR1.dir` channel 1, a
+640x400 Copy-ink backdrop over the whole stage, a click target on 144 frames on
+the strength of an attachment naming a bitmap. Requiring the lookup drops 118
+of the 188 (movie, channel) pairs and four of the five over 640x400. It also
+drops the 45 that name a real script member this port cannot resolve or
+compile, which is narrower than Director and errs toward letting the click fall
+through — §4.2's own default.
+
+Two clauses are implemented and **unexercised**: a movie member with scripts
+enabled (`director_cast.gd` does not decode the flag, so it reads enabled), and
+the generic scopeless score script (the parser keeps its bare statements in
+`body`). 0 of the 51,350 members across the three corpora is of type `movie`,
+and 0 is of type `button` either — so clause 2 has never fired on any title
+this engine has been pointed at.
+
+**Widening eligibility is what makes a sprite absorb a click, not merely answer
+one**, so `preview/interaction.gd:script_for_click` now skips a tier whose
+script cannot answer the message being sent. Every sprite the D6+ clause newly
+makes eligible carries a behaviour declaring no mouse handler *by construction*,
+and this port dispatches to one script with a movie fallback behind it — so
+without that rule each one would have become a dead patch of stage, the
+complaint this clause exists to fix arriving from the other side. It is not
+§6.3's queue: `pass` and `dontPassEvent` are still unbound, and a behaviour
+declaring `mouseDown` and not `mouseUp` still takes both messages.
 
 `isActive()` is the looser D3 rule: moveable, or a button, or a score script
 *exists*, or a cast script *exists* — presence only, no handler inspection.
