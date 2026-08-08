@@ -583,13 +583,12 @@ on it: the idiom is to park a 1x1 hidden member where a geometric question needs
 asking and ask it there, which is how Piposh 1's cannon decides whether a shell
 hit a ship.
 
-**This port does not implement that, knowingly.** A hidden sprite answers no rect
-to both operators, so the cannon cannot be won. Implementing the reference's rule
-was tried and reverted, because it breaks the ship map in `MAINMENU.dir` by the
-same mechanism running the other way. `bugs.md` 44 has both measurements and the
-position question that has to be settled before either can be right;
-`tools/sprite_collision.gd` and `tools/cannon_hit.gd` are the harnesses, kept out
-of the gate because they assert what the engine deliberately does not do.
+A port that answers "no rect" for a hidden sprite answers *no* to every such
+question -- see `docs/bugs-closed.md` 43, and `tools/sprite_collision.gd`, which
+asserts both halves. The ship map in `MAINMENU.dir` is the other consumer and it
+wants the same rule: `on outofthisa` reads a *hidden* sprite 20 against fourteen
+deck zones to learn where the player is standing, and without this it matches
+none of them.
 
 ## 2.8 Coercion summary
 

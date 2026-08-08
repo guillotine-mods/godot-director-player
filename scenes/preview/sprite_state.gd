@@ -31,16 +31,17 @@ const Members := preload("res://scenes/preview/members.gd")
 ## `overrides` is mutated here, not just read: a puppet the score has moved out
 ## from under is discarded at the moment that is noticed.
 ##
-## **`{}` for a hidden sprite is the rule for every caller, including the two
-## rect operators, and that last part is a known divergence** -- Director's
-## `c_within`/`c_intersects` read `getBbox()` and never consult `_visible`. An
-## `ignore_visible` flag for `lingo_sprite_rect` was added and reverted the same
-## day; `director_preview.lingo_sprite_rect` carries the measurement that
-## reverted it and `bugs.md` 44 carries what it leaves broken. If it comes back,
-## it belongs here as a flag rather than as a second merge path, because the
-## stale-puppet discard below mutates `overrides` and two paths would drift apart
-## in behaviour and not merely in code.
-static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dictionary:
+## **`ignore_visible` is for the one caller that must not honour the hide**, and
+## it is a flag rather than a second merge path because the stale-puppet discard
+## below mutates `overrides`: two paths would drift apart in behaviour, not
+## merely in code. Director asks two different rect questions and only one of
+## them consults visibility -- `channel.cpp:isMouseIn` reads `_visible` and is
+## the only thing in that file that does; `c_within` and `c_intersects` read
+## `getBbox()`. See `director_preview.lingo_sprite_rect`, which also records why
+## that was briefly reverted and why the revert was wrong.
+static func effective(
+	sprite: Dictionary, overrides: Dictionary, table, ignore_visible: bool = false
+) -> Dictionary:
 	var channel := int(sprite["channel"])
 	var over: Dictionary = overrides.get(channel, {})
 	if over.is_empty():
@@ -72,10 +73,10 @@ static func effective(sprite: Dictionary, overrides: Dictionary, table) -> Dicti
 		else:
 			overrides.erase(channel)
 		over = kept
-		if int(LingoValue.to_int(over.get("visible", 1))) == 0:
+		if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 			return {}
 		return sprite
-	if int(LingoValue.to_int(over.get("visible", 1))) == 0:
+	if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 		return {}
 	var out := sprite.duplicate()
 	for key in ["membernum", "castnum"]:
