@@ -36,23 +36,13 @@ extends SceneTree
 ## sprite on it big enough to enclose a point — so the rule is checked against
 ## whichever game is configured rather than against the one it was found in.
 ##
-## `--cannon` adds the corpus witness, and it is opt-in because it names one
-## game's channels. It plays Piposh 1's cannon round for real — arms it, walks
-## the barrel, raises the angle, fires — and asserts a ship takes the hit. That
-## is the only case here that crosses the whole chain, `the keyDownScript` ->
-## `movecannon` -> the puppet write -> `within` -> `allships`, and the rule above
-## can be green with any link in it broken.
+## What it does **not** cover is the chain a script actually runs through these
+## operators. `tools/cannon_hit.gd` is that witness: it plays Piposh 1's cannon
+## round and asserts a ship takes the hit. The rule here can be green with any
+## other link in that chain broken.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
-
-## `movecannon`'s own keys, as Mac key codes: left, right, down, space.
-const CANNON_KEYS := {"left": 123, "right": 124, "down": 125, "fire": 49}
-## The channels that round uses: the shell probe, the fences the ships sit
-## behind, and the barrel the shell leaves from.
-const CANNON_SHELL := 48
-const CANNON_FENCES := [17, 18, 19, 20, 21, 22]
-const CANNON_BARREL := 45
 
 
 func _init() -> void:
@@ -61,10 +51,6 @@ func _init() -> void:
 	var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
 	root.add_child(preview)
 	await process_frame
-
-	if Args.flag(args, "cannon"):
-		quit(await _cannon(preview, h, args))
-		return
 
 	var movie := Args.text(args, "movie", "")
 	if movie != "":
@@ -80,12 +66,6 @@ func _init() -> void:
 	preview.set("_paused", true)
 
 	var subject: int = await _subject(preview)
-	if subject <= 0:
-		print("no frame in %s carries a sprite with a rect to measure" % str(
-			preview.call("movie_name")))
-		quit(1)
-		return
-
 	var name := "%s frame %d channel %d" % [
 		str(preview.call("movie_name")), int(preview.call("current_frame")), subject]
 	print("")
@@ -93,13 +73,34 @@ func _init() -> void:
 	print("")
 
 	h.begin(name)
+	# The two possible ways to have no subject are different findings and were one
+	# message: a root whose boot movie this config does not name loads nothing at
+	# all, and reads identically to a movie whose frames carry nothing clickable.
+	var loaded: bool = preview.get("_score") != null
+	if not h.check("a sprite the mouse can reach", subject > 0,
+			"channel %d" % subject if subject > 0
+			else ("no movie loaded -- does %s name a boot movie this root has?"
+				% Args.text(args, "root", "the config"))
+			if not loaded
+			else "no frame of %s carries one" % str(preview.call("movie_name"))):
+		h.complete(name)
+		quit(h.finish("no subject: the two halves below cannot be told apart"))
+		return
 
 	var visible_rect: Rect2 = preview.call("lingo_sprite_rect", subject)
 	h.check("the sprite has a rect while it is visible", visible_rect.size != Vector2.ZERO,
 		str(visible_rect))
 
+	# **Asserted, not recorded.** This was `var reachable := ...` and the two
+	# mouse checks below then compared against whatever it happened to be -- so on
+	# a subject the mouse could never reach they read `false == false` and passed
+	# over a deleted visibility rule. `_subject` now insists on an eligible sprite
+	# and this insists it is reachable where it is aimed at, because a harness
+	# that only ever confirms its own starting value is the failure it exists to
+	# catch (`aiff_check.gd`, `text_and_shapes.gd`, both of them twice).
+	h.check("the mouse reaches the sprite before it is hidden", _hit(preview, subject))
+
 	# The mouse and the operators part company here, and only here.
-	var reachable := bool(preview.call("lingo_rollover", subject)) or _hit(preview, subject)
 	preview.call("lingo_set_sprite_prop", subject, "visible", 0)
 	await process_frame
 
@@ -121,106 +122,10 @@ func _init() -> void:
 
 	preview.call("lingo_set_sprite_prop", subject, "visible", 1)
 	await process_frame
-	h.check("un-hiding restores the sprite to the mouse",
-		_hit(preview, subject) == reachable,
-		"was %s before the hide" % ("reachable" if reachable else "unreachable"))
+	h.check("un-hiding restores the sprite to the mouse", _hit(preview, subject))
 
 	h.complete(name)
 	quit(h.finish("the collision operators measure a hidden sprite; the mouse does not"))
-
-
-## The corpus witness: Piposh 1's cannon round, played.
-##
-## `CANON.dir` member 496 is `on movecannon`, installed as `the keyDownScript` by
-## the round's own `enterFrame`. It walks the barrel 15px a press, adds 3 to the
-## field `zavit` per down press, and on the space bar drops the shell at
-## `316 - zavit * 3` under the barrel and asks `sprite 48 within i` over the six
-## fences. Channel 48's member is `dot`, 1x1, and the same `enterFrame` hides it.
-##
-## Aimed from the rects it reads rather than from constants, because the round
-## deals the ships at random (`set x to random(5)` picks one of five layouts) and
-## a hardcoded aim would hit in some runs and miss in others -- which is the worst
-## possible failure mode for a regression test, and indistinguishable from the
-## bug it guards.
-func _cannon(preview: Node, h: Harness, args: Dictionary) -> int:
-	var movie := Args.text(args, "movie", "PIPDATA/CANON.dir")
-	preview.call("lingo_go_movie", movie, null)
-	for i in 12:
-		await process_frame
-	preview.call("lingo_go_label", Args.text(args, "label", "game1"))
-
-	var interp = preview.get("_interpreter")
-	# Waited on rather than counted in ticks. `enterFrame` is what arms the round,
-	# and a fixed tick count raced it: the same probe read the globals unset on one
-	# run and armed on the next.
-	for i in 600:
-		if _global(interp, "shotready") == "ready":
-			break
-		await process_frame
-
-	var name := "%s: a shell that lands on a ship sinks it" % str(preview.call("movie_name"))
-	h.begin(name)
-	print("")
-
-	if not h.check("the round arms itself", _global(interp, "shotready") == "ready",
-		"shotready is %s" % _global(interp, "shotready")):
-		h.complete(name)
-		return h.finish("the cannon round never started")
-
-	# The widest fence, so the aim has the most room to be right in.
-	var target := Rect2()
-	var target_channel := 0
-	for ch in CANNON_FENCES:
-		var r: Rect2 = preview.call("lingo_sprite_rect", ch)
-		if r.get_area() > target.get_area():
-			target = r
-			target_channel = ch
-	h.check("the ships are fenced by sprites with rects", target_channel > 0, str(target))
-
-	var aim := target.get_center()
-	var steps := int(round((_barrel(preview) - aim.x) / 15.0))
-	for i in absi(steps):
-		_press(preview, CANNON_KEYS["left"] if steps > 0 else CANNON_KEYS["right"])
-	# Three per press, and `316 - zavit * 3` per unit, so nine pixels a press.
-	for i in int(round((316.0 - aim.y) / 9.0)):
-		_press(preview, CANNON_KEYS["down"])
-
-	var before := _global(interp, "allships")
-	_press(preview, CANNON_KEYS["fire"])
-	var shell: Rect2 = preview.call("lingo_sprite_rect", CANNON_SHELL)
-
-	print("  fence     : channel %d %s" % [target_channel, str(target)])
-	print("  shell     : %s" % str(shell))
-	print("  allships  : %s -> %s" % [before, _global(interp, "allships")])
-	print("")
-
-	h.check("the hidden shell has a rect at all", shell.size != Vector2.ZERO,
-		"channel %d %s" % [CANNON_SHELL, str(shell)])
-	h.check("the shell landed inside the fence it was aimed at",
-		shell.size != Vector2.ZERO and target.encloses(shell),
-		"channel %d %s" % [target_channel, str(target)])
-	h.check("the ship the shell landed on took it",
-		_global(interp, "allships") != before, _global(interp, "allships"))
-	h.complete(name)
-	return h.finish("a shell that lands on a ship sinks it")
-
-
-## The barrel's `locH`, recovered from its rect: `_stage_rect` places a sprite at
-## `loc - reg`, and what is to hand here is the rect.
-func _barrel(preview: Node) -> int:
-	return int((preview.call("lingo_sprite_rect", CANNON_BARREL) as Rect2).get_center().x)
-
-
-## One key, through `the keyDownScript`'s own handler. Not through `_input`:
-## headless Godot has no keyboard focus, and `tools/key_chain.gd` is the harness
-## that owns the wiring question.
-func _press(preview: Node, mac_code: int) -> void:
-	preview.get("_host").set("key_code", mac_code)
-	preview.get("_interpreter").call("call_handler", "movecannon", [])
-
-
-func _global(interp, name: String) -> String:
-	return str((interp.get("globals") as Dictionary).get(name, ""))
 
 
 ## Whether the hit test places this channel under the centre of its own rect.
@@ -228,8 +133,9 @@ func _global(interp, name: String) -> String:
 func _hit(preview: Node, channel: int) -> bool:
 	var rect: Rect2 = preview.call("lingo_sprite_rect", channel)
 	if rect.size == Vector2.ZERO:
-		# A hidden sprite has no rect to aim at from here, so aim at the one it
-		# had. The caller holds it; recovering it is the score's business.
+		# Only an *absent* channel reaches here now: a hidden sprite keeps its
+		# rect, which is the rule this file asserts. Kept so that the aim survives
+		# a channel the score has emptied, rather than reading as no hit.
 		for sprite in _frame_sprites(preview):
 			if int(sprite["channel"]) == channel:
 				rect = preview.call("_stage_rect", sprite)
@@ -239,30 +145,54 @@ func _hit(preview: Node, channel: int) -> bool:
 	return int(preview.call("_channel_at", rect.get_center())) == channel
 
 
-## The busiest frame's topmost sprite whose rect is big enough to be aimed at.
+## The busiest frame's topmost sprite the mouse can actually reach.
+##
 ## Walks the score rather than trusting the frame the movie happened to stop on:
 ## a boot movie can settle on a frame carrying nothing measurable.
+##
+## **Eligibility is the load-bearing half of that sentence.** "Topmost with a
+## rect" is not enough and picked exactly the wrong sprite: on piposh2 it chose
+## channel 21 of `strtgame.dir` frame 122, the 640x485 backdrop that
+## `interaction.gd`'s own header names as carrying no behaviour, no member script
+## and no moveable bit -- so `_channel_at` can never answer it, and the two mouse
+## checks compared "unreachable" against "unreachable" and passed on a port with
+## the visibility rule torn out. Returns 0 when the frame has nothing eligible,
+## which the caller reports as a failure rather than skipping.
 func _subject(preview: Node) -> int:
 	var score = preview.get("_score")
 	if score == null:
 		return 0
-	var best_frame := 0
-	var best_count := 0
+	# Busiest first, but *not* busiest only: the frame with the most sprites is
+	# not the frame with a clickable one, and on all three roots it turned out to
+	# carry none at all. Every frame that has sprites is a candidate, tried in
+	# descending order so the first hit is usually the first frame tried.
+	var order: Array[Vector2i] = []
 	for index in range(1, int(score.get("frame_count")) + 1):
 		var count: int = (score.call("frame", index).get("sprites", []) as Array).size()
-		if count > best_count:
-			best_count = count
-			best_frame = index
-	if best_frame == 0:
-		return 0
-	preview.set("_index", best_frame)
-	await process_frame
-	var chosen := 0
-	for sprite in _frame_sprites(preview):
-		var rect: Rect2 = preview.call("_stage_rect", sprite)
-		if rect.size.x >= 4.0 and rect.size.y >= 4.0:
-			chosen = int(sprite["channel"])
-	return chosen
+		if count > 0:
+			order.append(Vector2i(count, index))
+	order.sort_custom(func(a, b): return a.x > b.x)
+
+	for candidate in order:
+		preview.set("_index", candidate.y)
+		await process_frame
+		# Highest channel last, so the last one that qualifies is the topmost --
+		# nothing above it can eat the click aimed at its centre.
+		var chosen := 0
+		for sprite in _frame_sprites(preview):
+			var rect: Rect2 = preview.call("_stage_rect", sprite)
+			if rect.size.x < 4.0 or rect.size.y < 4.0:
+				continue
+			var channel := int(sprite["channel"])
+			# Eligible *and* actually answered where it will be aimed at. The
+			# second is not implied by the first: a sprite can respond to the
+			# mouse and still be covered at its own centre, or be hit-tested per
+			# pixel and be transparent there.
+			if int(preview.call("_channel_at", rect.get_center())) == channel:
+				chosen = channel
+		if chosen > 0:
+			return chosen
+	return 0
 
 
 func _frame_sprites(preview: Node) -> Array:

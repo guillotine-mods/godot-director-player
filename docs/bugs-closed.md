@@ -91,18 +91,28 @@ constraint through `getRollOverBbox()`, which is `getBbox()`. An *empty* channel
 is still unconstrained, and that divergence (the reference would clamp onto the
 origin) is unchanged.
 
-**Guarded by `tools/sprite_collision.gd`**, in two halves, because a port that
-fixes the operators by deleting the visibility rule outright breaks the mouse and
-no other harness would say so:
+**Guarded by two harnesses**, because a port that fixes the operators by deleting
+the visibility rule outright breaks the mouse and no other harness would say so:
 
-- the engine rule, title-agnostic, against whatever `GATE_ROOT` names — a hidden
-  sprite keeps the rect the operators measure **and** stays out of the mouse's
-  reach;
-- `--cannon`, the corpus witness, which plays the round for real (arms it, walks
-  the barrel, raises the angle, fires) and asserts a ship takes the hit. It aims
-  from the rects it reads, because the round deals the ships at random
-  (`set x to random(5)`) and a hardcoded aim would pass on some runs and fail on
-  others.
+- `tools/sprite_collision.gd`, the engine rule, title-agnostic, against whatever
+  `GATE_ROOT` names — a hidden sprite keeps the rect the operators measure **and**
+  stays out of the mouse's reach.
+- `tools/cannon_hit.gd`, the corpus witness, which plays the round for real (arms
+  it, walks the barrel, raises the angle, fires) and asserts a ship takes the
+  hit. It aims from the rects it reads, because the round deals the ships at
+  random (`set x to random(5)`) and a hardcoded aim would pass on some runs and
+  fail on others. 26 runs, all five layouts seen, 26 PASS.
+
+**The first draft of the rule harness was itself vacuous**, which is worth
+recording because it is the third instance of the same pattern in this repo. It
+picked its subject as "topmost sprite with a rect ≥ 4x4", which on piposh2 is
+`strtgame.dir` frame 122 channel 21 — the 640x485 backdrop `interaction.gd`'s
+header names as click-ineligible. Both mouse checks therefore compared
+"unreachable" against "unreachable" and passed green on a port with the
+visibility rule torn out of `channel_at`. It now requires a subject the hit test
+actually answers for, scans frames in descending busyness until it finds one, and
+fails outright if none exists. Verified by tearing the rule out on purpose: the
+harness goes red, where before it did not.
 
 Before and after, same harness:
 
