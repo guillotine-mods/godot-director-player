@@ -337,4 +337,4 @@ func remember_location(movie: String, label: String, frame: int) -> void:
 
 func emit_log(message: String, level: String = "info") -> void:
 	log_message.emit(message, level)
-	print("[piposh2:%s] %s" % [level, message])
+	print("[player:%s] %s" % [level, message])

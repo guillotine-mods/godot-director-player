@@ -2,8 +2,8 @@
 
 ## Status
 
-- Debug APK: `build/Piposh2.apk` (~84 MB, day-1 movie subset)
-- Package: `com.piposh.piposh2`
+- Debug APK: `build/GodotDirectorPlayer.apk` (~84 MB, day-1 movie subset)
+- Package: `com.guillotinemods.godotdirectorplayer`
 - Full render_model (~1 GB / 85 movies) lives in the project for desktop; the APK ships a playable subset so export finishes in reasonable time.
 
 ## One-shot install
@@ -33,7 +33,7 @@ You want `device` (not `unauthorized` / empty).
 
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot'
-godot_console --path E:\development\piposh_2_godot --headless --export-debug Android E:\development\piposh_2_godot\build\Piposh2.apk
+godot_console --path <checkout> --headless --export-debug Android <checkout>\build\GodotDirectorPlayer.apk
 ```
 
 ## Notes

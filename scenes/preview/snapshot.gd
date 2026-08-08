@@ -64,7 +64,7 @@ static func take(host) -> String:
 	var image_path := "%s/%s.png" % [DIRECTORY, stamp]
 	var saved := _save_image(host, image_path)
 	var lines := [
-		"piposh2-godot snapshot  %s" % stamp,
+		"godot-director-player snapshot  %s" % stamp,
 		"game      : %s" % _game_root(host),
 		"container : %s" % _container(host),
 		"frame     : %s" % _frame(host),
