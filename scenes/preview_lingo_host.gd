@@ -337,10 +337,10 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# any title. That is not a missing nicety: it is the answer to the
 			# question the whole mechanic asks, hardcoded to "nothing".
 			#
-			# A zero-size rect is an *empty* channel -- one the score puts nothing
-			# on -- and answers 0 rather than overlapping everything at the
-			# origin. Not a hidden one: `lingo_sprite_rect` measures a sprite a
-			# script has hidden, because the reference does. See that function.
+			# A zero-size rect is an empty or hidden channel, and answers 0 rather
+			# than overlapping everything at the origin. The hidden half is a
+			# known divergence from the reference, reverted rather than kept --
+			# see `director_preview.lingo_sprite_rect` and `bugs.md` 44.
 			if preview == null or args.size() < 2:
 				return 0
 			var first: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[0]))

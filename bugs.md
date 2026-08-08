@@ -68,6 +68,82 @@ today.
 
 ---
 
+## 44. `intersects` and `within` ignore visibility in Director and honour it here, so Piposh 1's cannon game cannot be won
+
+**Status:** OPEN, and it is a **trade rather than a plain gap** — the faithful
+behaviour was implemented, shipped, and reverted the same day because it broke
+something worse. Both sides are measured; neither is speculative.
+
+**What the reference does.** `channel.cpp:isMouseIn` opens with `if (!_visible)
+return kCollisionNo` and is the **only** site in that whole file that reads
+`_visible`. `c_within` and `c_intersects` (`lingo/lingo-code.cpp`) go straight to
+`getBbox()`. So Director has two rect questions and only the mouse's consults
+visibility. (ScummVM @ `reference/scummvm/REVISION`; fetch with
+`tools/fetch_scummvm_reference.sh`.)
+
+**What this port does.** `lingo_sprite_rect` goes through
+`sprite_state.effective`, which answers `{}` for a hidden sprite, so both
+operands measure empty and the host's zero-size guard answers 0. A hidden sprite
+is invisible to both operators.
+
+**Side one — what honouring visibility costs.** Piposh 1's cannon game decides
+every shot with a *deliberately* hidden probe. `PIPDATA/CANON.dir` member 496
+(and 574, 598, 642 — one per round) drops the 1x1 member `dot` on channel 48 at
+`316 - zavit * 3` under the barrel and runs `repeat with i = 17 to 22 / if sprite
+48 within i` over the shapes fencing the ships; the round's own `enterFrame` does
+`set the visible of sprite 48 to 0`. Every shot therefore misses. The splash the
+miss branch paints uses the shell's own `locV`, so it lands *on* the ship —
+reported from play as "I see the mark on the ships and it doesn't kill them".
+`krupnikhits` reaching 9 means the round can only ever be lost.
+
+    tools/cannon_hit.gd -- --root piposh     FAILs on this engine, PASSes with the rule removed
+    before   shell [P: (0,0), S: (0,0)]      allships live,live,live,live,live,live
+    after    shell [P: (260,180), S: (1,1)]  allships live,live,live,live,live,hit
+
+**Side two — what removing it costs, and why it was reverted.**
+`PIPDATA/MAINMENU.dir` member 287, `on outofthisa`, decides which deck the player
+is standing on with `repeat while i < 54 / if sprite 20 intersects i` over
+channels 40-53, then `go(marker(nof))`. Sprite 20 is the walking Piposh, and it
+is **hidden** on that map. Swept over all 430 frames of MAINMENU, with everything
+else identical:
+
+| | frames where `sprite 20 intersects 40..53` |
+|---|---|
+| visibility honoured (today) | **0** |
+| visibility ignored (the reference's rule) | **85** — frames 173-257, all channel 44 |
+
+Channel 44 is `set nof to "dl1"`, and the handler has no `exit repeat`, so a
+spurious match wins outright and the map sends the player to the wrong room.
+Reported from play as the figure on the ship menu breaking. That is the whole
+reason the faithful version came back out.
+
+**The question that actually decides it is not "does visibility count".** The
+reference has answered that. It is **why a hidden sprite 20 sits over channel 44
+at all**, on 85 consecutive frames, when the map is not asking about it. That is
+a *position* question, and the suspect is `sprite_state.effective`'s stale-puppet
+discard: a hidden sprite is never drawn, the score keeps cycling members on its
+channel, and each cycle with no `membernum` override erases the positional
+overrides — so a hidden sprite falls back to wherever the score's own record puts
+it. Settle that first; the operators are downstream of it.
+
+Also downstream, and reverted with it: `interaction.constraint_box` reads the
+same rect, so `the constraint of sprite` does not clamp against a hidden
+constraint channel either, where `channel.cpp:698` (`getRollOverBbox()` →
+`getBbox()`) says it should.
+
+**Reproduce, both sides:**
+
+```
+godot --headless --script tools/cannon_hit.gd -- --root piposh   # FAIL today
+godot --headless --script tools/sprite_collision.gd              # FAIL today
+```
+
+Both are kept out of `gate.sh` on purpose — see the comment there. They assert
+the reference's rule, which this engine deliberately does not implement, and they
+are the evidence for both sides of the trade.
+
+---
+
 ## 41. `member (<expr>) of castLib X` drops the library, and with it every joke and every collectable card in Piposh 1
 
 **Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · **the fourth

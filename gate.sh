@@ -63,15 +63,15 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision cannon_hit:--root@piposh"
-# `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is,
-# which is where the regression surface is -- the corpus's drag-and-drop idiom
-# asks the same operators. `cannon_hit` names its own root because it plays
-# Piposh 1's cannon round, the one place in any of the six titles where the whole
-# chain from `the keyDownScript` to `allships` hangs off a single keypress. Two
-# tools rather than one with a flag: an entry that shares a name with another is
-# one the matcher below resolves to whichever comes first, which is the trap the
-# next comment is about.
+ALL="preview_surface boot_state frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1"
+# `sprite_collision` and `cannon_hit` are deliberately NOT here. Both assert the
+# reference's rule -- that `intersects`/`within` measure a sprite a script has
+# hidden -- and this port does not implement it, because doing so breaks the ship
+# map (`bugs.md` 44, and the measurement in
+# `director_preview.lingo_sprite_rect`). They are kept and are run by hand,
+# because they are the evidence for both sides of that trade and re-deriving it
+# costs a session. A harness that asserts what the engine deliberately does not
+# do belongs outside the gate, not deleted and not silently inverted.
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that

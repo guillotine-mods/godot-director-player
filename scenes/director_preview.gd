@@ -1799,29 +1799,41 @@ func lingo_rollover(channel: int) -> bool:
 ## feeds back here: `intersects` is asked about a sprite the player is dragging,
 ## and where the player has dragged it to is the entire question.
 ##
-## **A hidden sprite still has one**, and this used to say the opposite: that
-## `_effective` treats `visible` as "not drawn and not measured", the same rule
-## the hit test uses, and that a sprite nobody can see should not be droppable
-## onto. The reference does not agree. `channel.cpp:isMouseIn` opens with `if
-## (!_visible) return kCollisionNo` and is the **only** site in that file that
-## reads `_visible` at all; `c_within` and `c_intersects` go straight to
-## `getBbox()` (ScummVM `lingo/lingo-code.cpp` @ `reference/scummvm/REVISION`).
-## The mouse cannot reach what nobody can see; the operators measure it anyway.
+## An empty answer for a hidden sprite rather than its last rect, because
+## `_effective` treats `visible` as "not drawn and not measured" -- the same rule
+## the hit test uses.
 ##
-## The difference is a whole mechanic, not a nicety, because "invisible" is how
-## the idiom *works*: a script parks a 1x1 member where it wants to ask a
-## question and asks it. Piposh 1's cannon game is the clearest instance --
-## `CANON.dir` member 496 hides channel 48, puppets it to where the shell lands
-## and runs `repeat with i = 17 to 22 / if sprite 48 within i` over the shapes
-## fencing the ships. Measuring the probe as empty answers "no" to every shot in
-## the game: the shell lands on a ship and the ship does not sink.
-## `tools/sprite_collision.gd` asserts both halves.
+## **That is knowingly not what the reference does, and the reason it stands is
+## measured rather than argued.** `channel.cpp:isMouseIn` opens with `if
+## (!_visible) return kCollisionNo` and is the only site in that file reading
+## `_visible`; `c_within` and `c_intersects` go straight to `getBbox()` (ScummVM
+## `lingo/lingo-code.cpp` @ `reference/scummvm/REVISION`). So Director measures a
+## hidden sprite here and this does not.
+##
+## Answering the reference's way was tried and reverted the same day, because it
+## breaks the ship map. `PIPDATA/MAINMENU.dir` member 287, `on outofthisa`, walks
+## `repeat while i < 54 / if sprite 20 intersects i` over channels 40-53 to decide
+## which deck the player is standing on, and sprite 20 -- the walking Piposh -- is
+## *hidden* on that map. Swept over all 430 frames, `sprite 20 intersects 40..53`
+## is true on **0** frames with the visibility rule and **85** without it (frames
+## 173-257, all channel 44, which is `set nof to "dl1"`). The handler has no
+## `exit repeat`, so a spurious match wins outright and the map sends the player
+## to the wrong room. Reported from play as the figure on the ship menu breaking.
+##
+## What that leaves open is `bugs.md` 44: Piposh 1's cannon game decides every
+## shot with a *deliberately* hidden 1x1 probe (`CANON.dir` member 496, `if
+## sprite 48 within i`), and under this rule every shot in it misses. Both cannot
+## be right, so the question is not "does visibility count" -- the reference has
+## already answered that -- but why a hidden sprite 20 sits over channel 44 at
+## all. That is a position question, and it is where the next attempt should
+## start. `tools/sprite_collision.gd` and `tools/cannon_hit.gd` hold the
+## measurement for both sides.
 func lingo_sprite_rect(channel: int) -> Rect2:
 	if _score == null or channel <= 0:
 		return Rect2()
 	for sprite in _score.frame(_index).get("sprites", []):
 		if int(sprite["channel"]) == channel:
-			var live: Dictionary = _effective(sprite, true)
+			var live: Dictionary = _effective(sprite)
 			return Rect2() if live.is_empty() else _sprite_rect(live)
 	return Rect2()
 
@@ -2714,8 +2726,8 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 
 ## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
 ## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
-func _effective(sprite: Dictionary, ignore_visible: bool = false) -> Dictionary:
-	return SpriteState.effective(sprite, _overrides, _table, ignore_visible)
+func _effective(sprite: Dictionary) -> Dictionary:
+	return SpriteState.effective(sprite, _overrides, _table)
 
 
 func _note_member(channel: int, cast_id: int) -> void:
