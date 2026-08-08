@@ -116,20 +116,22 @@ cannot suspend; unwinding is statement-granular, so a suspend inside a compound
 expression resumes at the statement rather than mid-expression; and reaching the
 end of a score does not thaw a parked `play`.
 
-**The event chain is resolved lazily, not queued.** §6.3/§8.2. Director decides
-the whole chain before running any of it; this resolves each tier as it reaches
-it. Two consequences: a `mouseDown` handler that swaps a member changes what the
-*next* element of the same chain resolves to, where Director had already decided;
-and `pass` / `dontPassEvent` are honoured only on the key chain -- the mouse
-tiers still stop at the first handler that answers, so writing the flag from a
-mouse handler is inert. The key half is done, including pass-by-default.
+**The event chain is queued, and two things about it are not.** §6.3/§8.2. The
+whole chain -- primary, sprite behaviour, cast script, frame script, movie script
+-- is built before any element runs (`preview/event_chain.gd`), and `pass` /
+`dontPassEvent` are honoured per element on the mouse and key chains alike. What
+is left: a right click builds its chain from the member under the pointer rather
+than latching one at the press, because "a right click latches nothing" is an
+all-or-nothing block; and a second primary element (`the mouseDownScript` after a
+`when mouseDown then`) does not get its own flag reset, which no site in either
+corpus reaches.
 
 **Modifier keys are read live, not latched.** §8.3. `the shiftDown`,
 `optionDown`, `commandDown` and `controlDown` ask the keyboard now rather than
 reporting the modifier word that came with the keystroke, so a script asking
 between events gets the wrong answer. `the timeoutKeyDown` is unbound.
 
-**`LingoInterpreter.reset_steps()` has no callers.** `_steps` accumulates for the
+**`LingoInterpreter.reset_steps()` -- fixed.** It now has two callers, `preview/scripts.gd:dispatch` and `preview/event_chain.gd:run`. Previously: `_steps` accumulates for the
 life of a session against `MAX_STEPS`, so a long enough session eventually aborts
 every handler with "step budget exhausted". Pre-existing; nothing has run long
 enough to hit it.
@@ -203,46 +205,30 @@ nothing can produce one today; §4.2 still says to write the loop with three
 results, because adding scrolling fields later silently changes click routing
 everywhere rather than in the fields.
 
-**Cast-script targeting on mouse-up.** §15. The member under the mouse at the
-*start of the mouse-down chain* holds the `mouseUp`, so a `mouseDown` handler
-that swaps the member still leaves the **old** member answering. The latching
-half is done — `director_preview.gd:_click_script` holds the script the press
-resolved, and `_press_channel` the channel — but it keys on the script, not on
-the member, so a swap that changes which member a channel displays is not
-modelled.
+**Cast-script targeting on mouse-up -- done.** §15.
+`director_preview.gd:_press_member` latches the member under the pointer at the
+start of the mouse-down chain, as the reference keeps `_currentMouseDownCastID`,
+and the mouse-up's cast element resolves against it -- so a `mouseDown` handler
+that swaps the member leaves the **old** member answering and the swapped-in one
+never sees the release. `tools/click_chain.gd` asserts it with a real press that
+swaps the member under itself.
 
-**`pass` / `dontPassEvent` propagation, and the tiers below the first.** §8.2.
-The five tiers exist and run in order, but the chain is resolved lazily and stops
-at the first handler that answers. Director queues the *whole* chain up front and
-re-resolves each element's target at execution time, which is why a `go` inside a
-`mouseUp` handler does not cancel the handlers below it — they are already queued
-and run against a score the `go` has changed.
+**`pass` / `dontPassEvent` propagation -- done.** §8.2. The five tiers are queued
+up front with `passByDefault` true for the primary element and false for the
+rest; the flag is reset to each element's default before it runs, and the chain
+stops only when an element that *found a script* left it false. A sprite
+behaviour and its member's cast script are now cumulative rather than
+alternatives, so a behaviour declaring only `mouseDown` no longer shadows a cast
+script's `mouseUp`.
 
-Two concrete costs, and neither is hypothetical:
-
-- **A sprite behaviour and its member's cast script are alternatives here and
-  cumulative in Director.** `interaction.gd:script_for_click` takes the sprite's
-  behaviour *or*, only if there is none, the member's cast script — so a
-  behaviour that exists but declares no `mouseUp` shadows a cast script that does.
-- **`pass` is dropped.** It is bound inert in `preview_lingo_host.gd`'s `IGNORED`
-  list, which was equivalent only while nothing ran after the first handler.
-  6 sites in the Piposh 2 corpus, and the decompile hides them: ProjectorRays
-  renders bare `pass` as `pass()` and `dontPassEvent` as `dont(pass)`, so a
-  token search for either finds 0. The two real `pass` sites are
-  `ISLAND2/External/BehaviorScript 325` — `on mouseUp / pass() / end`, a sprite
-  whose entire purpose is to hand the click to the tier below, and which in this
-  port is therefore a dead zone — and `SAVELOAD/Internal/BehaviorScript 20`, the
-  save-slot selector, which does real work and then falls through. The four
-  dont-pass sites (`FIGTBRJ 153`, `HEZSAVE MovieScript 209`, `AIR1 430`,
-  `FIGTAIR 60`) are accidentally correct, because this port already stops.
-
-*What has to change with it.* Queueing the chain means `pass`/`dontPassEvent`
-must set a flag the dispatcher reads, and those two builtins live in
-`preview_lingo_host.gd`; the queue itself replaces `Interaction.script_for_click`
-and `Scripts.dispatch`; and the tier defaults must be primary=pass, everything
-else=consume, which is the classic Director bug to get inverted. Landing the
-queue without the flag makes every sprite behaviour leak its event to the frame
-and movie scripts — the opposite failure, and a louder one.
+Measured over every clickable sprite occurrence in every movie
+(`tools/click_chain.gd -- --survey`): **0 of 156,227 occurrences change tier in
+Piposh 2, 310 of 337,568 in Piposh 1 and 98 of 142,066 in Rating**, all of them
+`none -> cast`; 48, 9,669 and 1,268 respectively now run more than one handler,
+traceable to 16 named scripts in Piposh 1 and 20 in Rating. The queue moves
+almost nothing and the flag moves the rest, which is the shape that says the flag
+is honoured -- had it been ignored, all 636k occurrences would run their whole
+chain.
 
 **`the mouseDownScript` / `the mouseUpScript` hold a handler name, not source.**
 §6.3 tier 1. Director's value is a *string of Lingo* compiled on assignment;
