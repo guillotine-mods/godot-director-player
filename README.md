@@ -216,7 +216,7 @@ There is no test suite.
 
 **`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
 actually run against the live player and are expected to pass. Measured over all
-40 entries on 4.7.1: **38 pass, 1 fail, 1 flaky.** `boot_state` is the
+41 entries on 4.7.1: **39 pass, 1 fail, 1 flaky.** `boot_state` is the
 long-standing red; `play_suspends` passes about half its runs on one assertion
 that waits a fixed number of frames for a movie to load (`bugs.md` 41), so the
 set is not reproducible until that is fixed. Anything below that is *not* in `ALL` is a survey

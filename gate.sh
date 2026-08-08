@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 40 entries in ALL is 38 pass / 1 fail / 1 flaky, measured on
+# which over the 41 entries in ALL is 39 pass / 1 fail / 1 flaky, measured on
 # 4.7.1 at the commit this line was written:
 #
 #   boot_state      FAIL, long-standing
