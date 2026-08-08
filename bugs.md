@@ -68,6 +68,75 @@ today.
 
 ---
 
+## 45. A hit on a Piposh 1 submarine lifts it 122px, so after two it is clipped off the top of the stage
+
+**Status:** OPEN · **Area:** `PIPDATA/CANON.dir` game6, `allshipscounter` ·
+reported from play with a snapshot: frame 373, 51 degrees, score -53, the large
+submarine jammed against the top of the stage and drawn over the HUD panels.
+
+**Newly reachable, which is why nobody has seen it before.** This path needs a
+shot to register, and until entry 43's fix landed no shot in the cannon game ever
+did. `sub1hit1`..`sub3hit4`, the sub-hiding and channel 39's shared damage
+display had never once executed in this port.
+
+**The mechanism.** game6's `exitFrame` (member 641) dives and surfaces each
+submarine in a pair that is meant to cancel:
+
+```lingo
+if value(item i - 9 of allshipscounter) = 0 then
+  ...dive:    set the locV of sprite 12 to the locV of sprite 12 + 122
+  put 14 into item i - 9 of allshipscounter
+  next repeat
+end if
+put value(item i - 9 of allshipscounter) - 1 into item i - 9 of allshipscounter
+if value(item i - 9 of allshipscounter) = 1 then
+  ...surface: set the locV of sprite 12 to the locV of sprite 12 - 122
+```
+
+`movecannon4`'s hit branch writes the **same counter** for a different purpose:
+
+```lingo
+put "hit2" into item i - 16 of allships
+put 20 into item i - 16 of allshipscounter     -- no dive ran
+```
+
+So a hit arms the countdown from 20, it ticks to 1, and the *surface* half fires
+alone -- `-122` for the big sub (sprite 12), `-164` for the two small ones
+(sprites 10 and 11) -- with no matching `+122` before it. Each hit lifts that
+submarine permanently. Two hits puts it off the top of a 480px stage.
+
+**What is confirmed:** the precondition. Driving game6 through the real key path,
+a landed shot leaves `allships = live,live,hit1` and `allshipscounter = 0,0,20`
+-- the counter armed by a *hit* rather than by a dive, with the sub hidden
+(`the visible of sprite 12` = 0, which is the hit branch's own doing).
+
+**What is not confirmed:** the `-122` actually landing at the end of that
+countdown. The probe watched 40 ticks and the counter needs ~20 `exitFrame`s to
+reach 1. That is the next step and it is mechanical: extend the tick budget and
+print `the locV of sprite 12` each frame across the whole countdown.
+
+**The question that decides the fix, and it must be answered before any code
+changes.** `allshipscounter` is doing double duty *in the movie's own script* --
+dive timer and hit timer -- so the drift may be the original's own quirk, in
+which case a faithful port reproduces it and the entry closes as "not ours".
+Check against the original before touching anything: if real Director also lifts
+the sub, this is not a bug in the engine. If it does not, something in the port
+is letting the two uses of that counter share state they should not, and the fix
+is engine-level -- **not** a patch to this game's script, per `AGENTS.md`.
+
+Reproduce:
+
+```
+godot --headless --script tools/cannon_hit.gd -- --root piposh --label game6
+# then watch `the locV of sprite 12` for 30+ ticks after the hit
+```
+
+Related: entry 43's fix is what made this reachable. `tools/cannon_hit.gd` still
+drives `movecannon` through `call_handler` rather than the keyboard, so it proves
+the Lingo and not the key path -- worth switching over while working here.
+
+---
+
 ## 44. The ship map's figure vanishes whenever `nof` is empty or four characters long
 
 **Status:** OPEN, and **not** the `intersects` question it was briefly filed as.
