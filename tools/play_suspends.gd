@@ -348,11 +348,25 @@ end
 	var after = preview.get("_interpreter")
 	h.check("the movie change did replace the interpreter", after != before,
 		"the same object came back, so this proves nothing")
-	for i in 6:
+	# **Wait for the thing, not for a number of frames.** This was six frames, and
+	# six frames is how long opening a container took on the machine the line was
+	# written on. `gate.sh` runs 61 entries and a session may have a dozen Godots
+	# up, so the same six frames became sometimes-enough: this entry has been
+	# recorded as "PASS or FAIL, about half and half" ever since, which costs more
+	# than the flake itself -- a harness nobody believes is a harness nobody reads,
+	# and this one guards the widest divergence the engine has had.
+	#
+	# The assertion is not weakened by waiting. A handler that never resumes never
+	# sets the global, and the loop runs out and fails exactly as before; all the
+	# bound does is stop a slow *load* being reported as a lost handler.
+	var resumed := false
+	for i in 600:
+		if str(after.globals.get("gsuspendhop", "")) == "after":
+			resumed = true
+			break
 		await process_frame
 	h.check("and the rest of the handler still ran",
-		str(after.globals.get("gsuspendhop", "")) == "after",
-		str(after.globals.get("gsuspendhop", "<unset>")))
+		resumed, str(after.globals.get("gsuspendhop", "<unset>")))
 	h.complete("a handler frozen by `go to movie` outlives the interpreter")
 
 
@@ -512,15 +526,53 @@ end
 		"%d entry(s) still on the stack, playhead on %d" % [
 			(preview.get("_play_stack") as Array).size(),
 			int(preview.call("current_frame"))])
-	h.check("the playhead is back where `play` was issued",
-		int(preview.call("current_frame")) == from,
-		"frame %d, `play` was issued from %d" % [int(preview.call("current_frame")), from])
+	# **Past the frame the `play` was issued from, not back onto it.**
+	# `Lingo::func_play` records the current frame and adds one when
+	# `_state->currentChannelId == 0` (`lingo-funcs.cpp:207-213`) — a frame script
+	# or a movie script, as against a sprite behaviour. This probe is a movie
+	# script called with no chain element running, so channel 0 is its case and
+	# `from + 1` is the answer.
+	#
+	# That one line is why the reference never re-enters the caller's frame, and
+	# re-entering is observable: it re-runs the frame's `on enterFrame` and re-arms
+	# its score sound, palette and transition. This assertion read `== from` while
+	# the port suppressed the re-entry's `exitFrame` with a latch instead —
+	# `bugs.md` 54, now fixed the reference's way, and the latch is gone.
+	h.check("the playhead lands past the frame `play` was issued from",
+		int(preview.call("current_frame")) == from + 1,
+		"frame %d, `play` was issued from %d, expected %d" % [
+			int(preview.call("current_frame")), from, from + 1])
 	h.check("nothing is left parked in the play buffer",
 		(preview.get("_frozen_play") as Array).is_empty(),
 		"a handler is still waiting for a `play done` that will never come")
 	h.check("and the statement after `play frame` ran",
 		str(interpreter.globals.get("gplayoffend", "")) == "after",
 		str(interpreter.globals.get("gplayoffend", "<unset>")))
+
+	# **The other half of the same line, which nothing asked before.** Channel 0 is
+	# only one arm of `currentChannelId`: a `play` from a *sprite behaviour* records
+	# the frame itself, with no increment, because the behaviour is attached to that
+	# frame's sprite and returning past it would leave the sprite behind. A harness
+	# that only drives the movie-script arm passes just as happily on an engine that
+	# increments unconditionally, which is exactly the shape that let the rule sit
+	# half-implemented -- so both arms are driven, from one `play`, differing only in
+	# what is running when it is issued.
+	preview.set("_paused", true)
+	await process_frame
+	var host = preview.get("_host")
+	var sprite_from := int(preview.call("current_frame"))
+	host.current_sprite_num = 7
+	preview.call("lingo_play_push", ["frame", sprite_from + 1])
+	host.current_sprite_num = 0
+	var recorded: Array = preview.get("_play_stack")
+	h.check("a `play` from a sprite behaviour records the frame it was issued on",
+		not recorded.is_empty()
+			and int((recorded[-1] as Dictionary)["frame"]) == sprite_from,
+		"recorded %s, issued from %d" % [
+			str((recorded[-1] as Dictionary).get("frame", "<none>")) if not recorded.is_empty()
+				else "<nothing on the stack>", sprite_from])
+	recorded.clear()
+	preview.set("_paused", false)
 	h.complete(case_name)
 
 
