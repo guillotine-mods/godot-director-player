@@ -69,6 +69,18 @@ func _opaque_pixels(image: Image) -> int:
 	return count
 
 
+## Opaque *white* pixels: the paper of a maskless cursor, and the only thing that
+## separates "the mask defaulted correctly" from "there was no mask at all".
+func _opaque_white(image: Image) -> int:
+	var count := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			var c := image.get_pixel(x, y)
+			if c.a > 0.5 and c.r > 0.5:
+				count += 1
+	return count
+
+
 func _settle(preview: Node) -> void:
 	for i in SETTLE_STEPS:
 		preview.call("_advance")
@@ -230,6 +242,44 @@ func _init() -> void:
 	h.check("no image is fully opaque", solid.is_empty(),
 		", ".join(PackedStringArray(solid)))
 	h.complete("every assigned pair composes to something the player can see")
+
+	# ------------------------------------------------------------- the empty mask
+	# A pair may name only its data member, and then the data member is its own
+	# mask: black pixels draw black, white pixels are transparent. Composing such a
+	# pair opaque instead puts the artwork's paper under the pointer, which is a
+	# white card the size of the member with the drawing on it -- the shape
+	# `docs/bugs-closed.md` 64 was reported as.
+	#
+	# Measured over the real single-element pairs *and* over every data member this
+	# movie uses with a mask, composed again without one. The second set is what
+	# keeps this from measuring nothing: a title whose every cursor carries a mask
+	# would skip the rule entirely, and the gate's corpus is such a title. Asking
+	# the same members the maskless question is legitimate because the rule is
+	# about the pair, not about the art.
+	h.begin("a pair with no mask member shows only its black pixels")
+	var maskless: Dictionary = {}
+	for key in pairs.keys():
+		maskless[int((pairs[key] as Array)[0])] = true
+	var papered: Array = []
+	var vanished: Array = []
+	for data_id in maskless.keys():
+		var composed = preview.call("_cursor_image", int(data_id), 0)
+		if composed == null:
+			# Legitimate: art that is entirely white has nothing to show once it is
+			# its own mask, and the caller falls back to the arrow rather than
+			# installing an invisible cursor. Reported, not failed.
+			vanished.append(str(data_id))
+			continue
+		var white := _opaque_white(composed["image"] as Image)
+		if white > 0:
+			papered.append("member %s: %d white pixel(s)" % [str(data_id), white])
+	h.check("some member was composed without a mask", not maskless.is_empty(),
+		"%d member(s)" % maskless.size())
+	h.check("no maskless cursor draws its own paper", papered.is_empty(),
+		", ".join(PackedStringArray(papered)))
+	print("   %d member(s) composed maskless, %d fell back to the arrow %s" % [
+		maskless.size(), vanished.size(), str(vanished)])
+	h.complete("a pair with no mask member shows only its black pixels")
 
 	# --------------------------------------------------------------- the negative
 	# `set the cursor of sprite N to [1, 1]` is the corpus's "back to the arrow",

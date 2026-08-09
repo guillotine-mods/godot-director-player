@@ -15,6 +15,80 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 64. A cursor pair that names no mask is composed opaque, so the artwork's paper is drawn as a white card under the pointer
+
+**Status:** FIXED · **Area:** `scenes/preview/cursor.gd`
+· reported from play, `rating` BLAEGOZ.dir frame 916
+· covered by `tools/cursor_preview.gd`
+
+`set the cursor of sprite 2 to [the number of member "talkcursor" of castLib 1]`
+is a **one-element** pair, and `compose` read that as "no mask", which it turned
+into "every pixel opaque". `talkcursor` is a 17x13 speech bubble drawn as a black
+outline on white, so the שיחה button at the top left of Rating's dialogue rooms
+handed the OS a white rectangle with a bubble drawn on it. The rule is that a
+missing mask member means **the data member is its own mask**: black draws black,
+white is transparent.
+
+**The reference implementation cannot be cited for this, and that is worth being
+precise about** rather than glossing. ScummVM `cursor.cpp:Cursor::readFromCast`
+composes each pixel as `(!mask || *mask) ? (*cursor ? 0 : 1) : 3` — so its
+*intent* is the opaque reading, the same one this port had. Two lines above,
+its bounds guard is `x >= cursorSurface->w || (!maskSurface || x >= maskSurface->w)`,
+which nulls **every** pixel when there is no mask surface, so what it *delivers*
+is a fully transparent cursor. Intends one wrong answer, produces a different
+wrong answer. Neither is the artwork's.
+
+**The artwork is the evidence.** Rating names one member without a mask at 31
+sites, and where it does supply a mask the mask is a filled, dilated silhouette
+whose only job is to make the drawing's white interior opaque:
+
+```
+#132 leftcursor           #166 leftcursor2 (its mask)
+|       ##       |        |       ##       |
+|      # #       |        |      ###       |
+|    #   ########|        |    ############|
+|   #  # #      #|        |   #############|
+```
+
+`WalkLeftCursor` settles it. It is a **solid black arrow**, 13x12, no outline and
+no white it wants kept — opaque composition can only render that as a white card
+with an arrow on it, and no artist ships that. `talkcursor` and `weaponCursor`
+are the same story with outline art.
+
+**Scope.** Only the *absent* mask defaults to the data. A mask that was named and
+did not resolve still falls through to the opaque path: substituting the data
+there would compose a plausible-looking cursor out of a library lookup that
+failed, which is exactly the silent shape of entry 29.
+
+| root | single-element `set the cursor` sites | of those, literal `[1]` |
+|---|---|---|
+| `rating` | 834 | 803 |
+| `piposh` / `piposh-en` / `piposh-ru` | 3 | 3 |
+| `piposh2` | 3 | 3 |
+| `piposh-dream` | 0 | — |
+
+So the visible change is Rating's 31 real ones. The `[1]` sites are the corpus's
+"back to the arrow" and are almost all unaffected: member 1 is scenery in 100 of
+Rating's 101 containers and `MAX_CURSOR_SIZE` refuses it. The one exception is
+itself a small confirmation — **`BATZBERA.dir`'s member 1 is `WalkupCursor`,
+12x13**, a real cursor that had been drawing as a white card too.
+
+Second behaviour change, small and named because it is not a colour change:
+maskless art that is entirely white now composes to nothing visible and reaches
+the existing arrow fallback instead of installing a blank white square.
+
+**The harness had the shape of this check and not the check.** `cursor_preview`
+already asserted "no image is fully opaque", which never fired: `talkcursor` is
+13 rows of a 16-row image, so the bottom three rows stay transparent and the
+white card passes a whole-image test. The new group counts opaque **white**
+pixels, and measures the maskless rule over every data member the movie uses —
+composed again without its mask — rather than only over pairs that happen to be
+single-element. Without that second set the gate's own corpus, whose every cursor
+carries a mask, would have skipped the rule entirely. Run against the unfixed
+code it fails on all seven of `AIR1.dir`'s members.
+
+---
+
 ## 63. Nine tenths of Piposh Dream's audio was never indexed, because the index asked the filename and not the file
 
 **Status:** FIXED · **Area:** `autoload/audio_director.gd`
