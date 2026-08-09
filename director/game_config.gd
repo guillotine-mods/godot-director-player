@@ -128,20 +128,28 @@ static func overlay() -> ConfigFile:
 	return cfg
 
 
-## The tracked file's own path never carries an implicit overlay unless it *is*
-## the real tracked file. `overlay_applies()` only asks whether there is a
-## display -- it has no way to tell the real `TRACKED_PATH` from a harness's own
-## scratch fixture, and `merged()` is called with both. `fast_forward.gd` and
-## `debug_bindings.gd` each write a fixture under `user://`, at a path that is
-## not `TRACKED_PATH`, and reload it with the default (implicit) overlay
-## argument -- exactly what `DebugKeys.load_config`'s frozen signature always
-## passes. Both name running windowed as how their last section is meant to be
-## exercised. Without this check, a windowed run of either would have its
-## fixture's values silently overridden by whatever this machine's real overlay
-## contains: the fixture says one thing, `[debug] enabled` or a key binding
-## reads another, and nothing in the repository explains why. An explicit
-## `overlay_path` argument is unaffected -- that is the harness seam, and it
-## applies unconditionally, headless or not, real path or not.
+## Whether the real overlay applies to `tracked_path`, given whether this
+## process consults the overlay at all.
+##
+## Two conditions, and the second is the one with no other way to be tested:
+## the overlay belongs to the *real* tracked config. A caller naming its own
+## tracked file is a harness with its own fixture -- `fast_forward.gd` and
+## `debug_bindings.gd` each write one under `user://` and reload it through
+## `DebugKeys.load_config`'s frozen one-parameter signature, which always
+## takes the implicit-overlay path -- and laying a human's settings over that
+## fixture is how a windowed run of either fails with no cause visible in the
+## repo.
+##
+## `applies` is a parameter rather than a call to `overlay_applies()` so the
+## rule can be asserted from a headless gate. Every call reachable through
+## `merged()` passes `overlay_applies()` itself, which is false under
+## `--headless`, so a headless caller of `merged()` alone can never observe
+## the path term below -- it never gets past `applies` being false. Only a
+## caller of this function directly, with `applies` forced to `true`, does.
+static func wants_overlay(tracked_path: String, applies: bool) -> bool:
+	return applies and tracked_path == TRACKED_PATH
+
+
 static func _build(tracked_path: String, overlay_path: String, key: String) -> void:
 	var base := ConfigFile.new()
 	_present[tracked_path] = base.load(tracked_path) == OK
@@ -151,7 +159,7 @@ static func _build(tracked_path: String, overlay_path: String, key: String) -> v
 	_copy(base, out)
 	var wanted := overlay_path
 	if wanted == "":
-		wanted = OVERLAY_PATH if (overlay_applies() and tracked_path == TRACKED_PATH) else ""
+		wanted = OVERLAY_PATH if wants_overlay(tracked_path, overlay_applies()) else ""
 	if wanted != "":
 		var over := ConfigFile.new()
 		# A malformed overlay is ignored, not fatal. It is a file a human edits;

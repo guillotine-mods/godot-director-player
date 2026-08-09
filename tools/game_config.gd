@@ -6,8 +6,9 @@ extends SceneTree
 ## Four sites used to load `director_game.cfg` for themselves. They ask
 ## `director/game_config.gd` now, and this is what that file promises them: the
 ## overlay wins per key, a key it does not carry falls through to the tracked
-## file, an absent or unreadable overlay changes nothing, and under `--headless`
-## the real overlay is not consulted at all.
+## file, an absent or unreadable overlay changes nothing, under `--headless`
+## the real overlay is not consulted at all, and the real overlay is never
+## offered to a tracked path other than the real one.
 ##
 ## That last one is what keeps the other 62 entries honest. The overlay is one
 ## file per machine, shared by every process on it, which is the same shape as
@@ -69,6 +70,26 @@ func _init() -> void:
 			"game", "root", "fallback")) == "fallback")
 	h.complete(case)
 
+	# `wants_overlay` is asserted directly, as its own truth table, rather than
+	# only through `merged()`. Every route through `merged()` passes
+	# `overlay_applies()` for `applies`, which is false under `--headless` --
+	# this process included -- so a check built on `merged()` alone can never
+	# observe the path term below: it never gets past `applies` being false,
+	# and the path guard could be deleted from `_build` without any such check
+	# going dark. Forcing `applies` both ways here is the only way a headless
+	# gate can catch that deletion.
+	case = "the real overlay only ever wants the real tracked config"
+	h.begin(case)
+	h.check("the real tracked path wants it, when it applies",
+		GameConfig.wants_overlay(GameConfig.TRACKED_PATH, true))
+	h.check("a scratch tracked path does not, even when it applies",
+		not GameConfig.wants_overlay(SCRATCH_TRACKED, true))
+	h.check("the real tracked path does not, when it does not apply",
+		not GameConfig.wants_overlay(GameConfig.TRACKED_PATH, false))
+	h.check("a scratch tracked path does not either",
+		not GameConfig.wants_overlay(SCRATCH_TRACKED, false))
+	h.complete(case)
+
 	# The rule the other 62 entries depend on. This process *is* headless, so
 	# asking for the real overlay must not consult it -- asserted by writing one
 	# that would be obvious if it were read. Two separate guards gate the read,
@@ -103,27 +124,27 @@ func _init() -> void:
 		str(real.get_value("game", "root", "")) == expected_root
 			and str(real.get_value("game", "root", "")) != "res://games/should-never-be-read",
 		str(real.get_value("game", "root", "<missing>")))
-	# A second guard, checked on its own: the implicit overlay is only ever
-	# offered to the real tracked file, because `overlay_applies()` cannot tell
-	# a harness's own `user://` fixture from that path -- it only knows whether
-	# there is a display. `fast_forward.gd` and `debug_bindings.gd` each merge
-	# such a fixture through the same default argument `DebugKeys.load_config`
-	# always passes, and both document running windowed as how their last
-	# section is meant to be exercised.
+	# A second guard, through the real entry point rather than `wants_overlay`
+	# directly: the implicit overlay is only ever offered to the real tracked
+	# file, because `overlay_applies()` cannot tell a harness's own `user://`
+	# fixture from that path -- it only knows whether there is a display.
+	# `fast_forward.gd` and `debug_bindings.gd` each merge such a fixture
+	# through the same default argument `DebugKeys.load_config` always passes.
 	#
-	# **This process is headless, so this check cannot fail here**:
-	# `overlay_applies()` alone already blocks the read before the path is ever
-	# compared, the same way it blocks the check above -- a change that dropped
-	# the path guard from `_build` entirely would still pass 63/0. It was
-	# verified by hand instead, with a windowed run of this same script
-	# (`godot --path . --script tools/game_config.gd`, no `--headless`): there
-	# `overlay_applies()` is true, the check above correctly flips to FAIL (the
-	# real path *should* pick up the planted overlay when windowed, and does),
-	# and this one still held -- the scratch fixture read its own
-	# `res://games/piposh2`, not the planted `should-never-be-read`, which is
-	# only possible if the path guard added to `_build` is doing the blocking.
-	# The overlay planted above is still in place, so this reuses it rather
-	# than planting a second one.
+	# This process is headless, so `overlay_applies()` alone already blocks the
+	# read before the path is ever compared -- this check cannot fail here, the
+	# same as the one above it, and covers the wiring through `merged()` rather
+	# than the rule. The rule itself -- that a change dropping the path guard
+	# from `_build` would be caught -- is what "the real overlay only ever
+	# wants the real tracked config" above asserts directly, headless, by
+	# calling `wants_overlay` with `applies` forced to `true`. A windowed run
+	# of this same script (`godot --path . --script tools/game_config.gd`, no
+	# `--headless`) corroborates both: there `overlay_applies()` is true, the
+	# check above correctly flips to FAIL (the real path *should* pick up the
+	# planted overlay when windowed, and does), and this one still holds -- the
+	# scratch fixture reads its own `res://games/piposh2`, not the planted
+	# `should-never-be-read`. The overlay planted above is still in place, so
+	# this reuses it rather than planting a second one.
 	GameConfig.invalidate()
 	var scratch := GameConfig.merged(SCRATCH_TRACKED, "")
 	h.check("a scratch tracked path never gets the implicit overlay",
