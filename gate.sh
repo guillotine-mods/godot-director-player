@@ -1,7 +1,12 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 54 entries in ALL is 52 pass / 2 fail, measured on 4.7.1 by a
+# which over the 62 entries in ALL is 60 pass / 2 fail, measured on 4.7.1 by a
 # whole-suite run at the commit this line was written:
+#
+# It said 54 entries and 52 pass for as long as nobody counted the list it was
+# describing -- the entry count had drifted by eight while the sentence stayed
+# still, which is the same failure the paragraph four lines down is about. Count
+# `ALL` when you change it.
 #
 #   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
 #                   director_game.cfg collides with a keyCode rating tests at 48

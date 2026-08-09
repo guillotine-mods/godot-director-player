@@ -107,8 +107,8 @@ the opposite and had been available from the first minute. Read
 ## Environment
 
 - **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
-  harnesses that run and are expected to pass — measured over all 54 entries on
-  4.7.1 by a whole-suite run, 52 pass, 2 fail: `debug_bindings` (config, not code)
+  harnesses that run and are expected to pass — measured over all 62 entries on
+  4.7.1 by a whole-suite run, 60 pass, 2 fail: `debug_bindings` (config, not code)
   and `play_suspends` (the flake, about half its runs; `bugs.md` 41). This said 23
   pass / 1 fail, and later 40 pass / 1 fail naming a `boot_state` that passes now,
   neither of which summed to the list, for as long as nobody ran the whole thing

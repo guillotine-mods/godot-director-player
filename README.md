@@ -217,7 +217,7 @@ There is no test suite.
 
 **`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
 actually run against the live player and are expected to pass. Measured over all
-54 entries on 4.7.1 by a whole-suite run: **52 pass, 2 fail.** `debug_bindings` is
+62 entries on 4.7.1 by a whole-suite run: **60 pass, 2 fail.** `debug_bindings` is
 config rather than code -- `snapshot = "F10"` in the tracked `director_game.cfg`
 collides with a keyCode `rating` tests at 48 sites (`399feaaa`). `play_suspends`
 passes about half its runs on one assertion that waits a fixed number of frames
