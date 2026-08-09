@@ -132,13 +132,16 @@ func _init() -> void:
 		#
 		# §4.3's D6+ clause is a test on the attachment list, so the list's
 		# quality *is* the clause's accuracy, and this port's list is not clean:
-		# `director_score.gd:_read_interval` pairs a span's info entry with the
-		# next non-empty 8-byte `VWSC` entry rather than indexing by the
-		# `sprite_list_idx` the sprite record carries, so a span whose own
-		# behaviour entry is empty can be handed somebody else's. The giveaway is
-		# the member type -- a bitmap cannot be a behaviour -- and that is what
-		# this counts. `interaction.gd:behaviour_scripts` requires the lookup to
-		# succeed for exactly this reason, and these are the numbers it cites.
+		# some attachments name a bitmap or a film loop, neither of which can be
+		# a behaviour. The giveaway is the member type, and that is what this
+		# counts. `interaction.gd:behaviour_scripts` requires the lookup to
+		# succeed because of these, and cites these numbers.
+		#
+		# This used to say the pairing handed a span somebody else's behaviour
+		# entry. It does not -- `director_score.gd:parse` carries the three
+		# measurements that killed that -- so the count below is a count of
+		# attachments Director's own data made, and the open question is what
+		# they mean rather than where they came from.
 		for interval in score.intervals():
 			if str(interval["kind"]) != "sprite":
 				continue

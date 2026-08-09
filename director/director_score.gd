@@ -158,6 +158,10 @@ const CUE_NEXT := -1
 const CUE_END := -2
 ## The score-list marker the D5+ format writes at offset 4.
 const SCORE_LIST_MARKER := -3
+## One `BehaviorElement` of a span's behaviour entry: the script's cast library
+## and member number, then the entry index of its authored parameters. See
+## `_read_interval` for how the width was settled.
+const BEHAVIOUR_ELEMENT_SIZE := 8
 ## The palette channel is the last of the six main-channel records, at 48 * 5.
 ## Its contents are decoded in `_palette_record`, where the evidence is written
 ## down; cycling and the fades are flags in it rather than separate records.
@@ -244,19 +248,26 @@ func parse(payload: PackedByteArray, movie_file_version: int = 0) -> bool:
 	if not _read_frames(entry.call(0)):
 		return false
 	# Entries 0 and 1 are the frame stream and an id table; intervals start at 2.
+	#
+	# A span is three consecutive entries — its info record, its behaviour list
+	# and a name string — and a sprite record reaches the last two by adding 1
+	# and 2 to the `sprite_list_idx` it carries (`score.cpp:2107-2121`). So the
+	# behaviour list is entry `i + 1` and can never be a later one. This used to
+	# skip empty entries looking for it, which is the same answer by luck: after
+	# an empty behaviour entry comes an empty name entry and then the next span's
+	# info record, which is not 8 bytes wide, so the search gave up. Measured
+	# over all three corpora it took a later entry **0 times** in 528,168 spans,
+	# and the interval it produced was claimed by the record occupying that
+	# channel and span **every time** — 2,680, 6,202 and 5,365 spans, 0 orphans.
+	# Said here because the opposite was written down and acted on: the port
+	# narrowed §4.3's clause 4 on the strength of attachments supposedly handed
+	# to the wrong span, and that is not what the data says. The attachments
+	# naming a bitmap are the record's own; see `preview/interaction.gd`.
 	for i in range(2, entry_count):
 		var primary: PackedByteArray = entry.call(i)
 		if primary.size() < 44:
 			continue
-		var secondary := PackedByteArray()
-		for j in range(i + 1, entry_count):
-			var next: PackedByteArray = entry.call(j)
-			if next.is_empty():
-				continue
-			if next.size() == 8:
-				secondary = next
-			break
-		_read_interval(primary, secondary)
+		_read_interval(i, primary, entry.call(i + 1))
 	return true
 
 
@@ -814,23 +825,56 @@ func _sound_channels(buffer: PackedByteArray) -> Array[Dictionary]:
 	return out
 
 
-## Sprite behaviours and frame scripts, from the interval entries.
-func _read_interval(primary: PackedByteArray, secondary: PackedByteArray) -> void:
-	if secondary.size() < 4:
-		return
-	var member := _u16(secondary, 2)
-	if member <= 0:
-		return
+## Sprite behaviours and frame scripts, from one span's info entry and the
+## behaviour entry that follows it.
+##
+## **The behaviour entry is a stream, not one element.** A D6+ sprite carries a
+## *list* of behaviours and `score.cpp:loadFrameSpriteDetails` reads it as one --
+## `while (stream->pos() < stream->size())`, pushing a `BehaviorElement` per pass
+## -- where this used to take the entry only when it was exactly one element wide
+## and drop a longer one whole. Measured over the three corpora, a span's
+## behaviour entry is 0, 8 or 16 bytes and nothing else, so the element is 8 and
+## the stride is the whole of what was missing: **2 spans of 158,001 in Piposh 2
+## and 5 of 271,872 in Piposh 1 carry two, 0 of 98,295 in Rating.** Both of
+## Piposh 2's name the *same* script twice, which Director answers by
+## instantiating two behaviour objects and running the handler twice.
+##
+## The element's second half is `initializerIndex`, an entry index holding the
+## behaviour's authored parameters, and it is **0 in all 14,903 elements of
+## Piposh 2** -- which is the corroboration that the element is 8 bytes rather
+## than 4 with padding. Nothing reads the parameters yet; a title that authors
+## them is what will need `getSpriteDetailsStream(initializerIndex)`.
+##
+## The **script channel** takes one element however long its entry is, which is
+## the reference's own asymmetry: `loadFrameSpriteDetails` comments "We can have
+## only one behavior here" and pushes a single element for the main channel while
+## looping over a sprite's.
+func _read_interval(index: int, primary: PackedByteArray, behaviours: PackedByteArray) -> void:
 	var sprite_number := _i32(primary, 16)
-	_intervals.append({
-		# Sprite number 0 is the frame-script channel, not channel -5.
-		"kind": "frame" if sprite_number == 0 else "sprite",
-		"channel": 0 if sprite_number == 0 else sprite_number - CHANNEL_BIAS,
-		"start": _i32(primary, 0) - 1,
-		"end": _i32(primary, 4) - 1,
-		"script_cast_lib": _i16(secondary, 0),
-		"script_member": member,
-	})
+	# Sprite number 0 is the frame-script channel, not channel -5.
+	var kind := "frame" if sprite_number == 0 else "sprite"
+	var at := 0
+	while at + BEHAVIOUR_ELEMENT_SIZE <= behaviours.size():
+		var member := _u16(behaviours, at + 2)
+		if member > 0:
+			_intervals.append({
+				"kind": kind,
+				"channel": 0 if sprite_number == 0 else sprite_number - CHANNEL_BIAS,
+				"start": _i32(primary, 0) - 1,
+				"end": _i32(primary, 4) - 1,
+				"script_cast_lib": _i16(behaviours, at),
+				"script_member": member,
+				# Which entry this span is, so a consumer can match a sprite
+				# record to its own behaviours exactly rather than by channel and
+				# frame range. Nothing needs it yet -- the two agree on every one
+				# of the corpus's 14,247 spans, measured -- and it is here so
+				# that the day they disagree is a lookup change and not a decode
+				# change.
+				"sprite_list_idx": index,
+			})
+		if kind == "frame":
+			return
+		at += BEHAVIOUR_ELEMENT_SIZE
 
 
 func intervals() -> Array[Dictionary]:

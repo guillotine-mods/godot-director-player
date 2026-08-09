@@ -248,16 +248,15 @@ static func is_d6_plus(host) -> bool:
 ## because the question it is asked is the eligibility one, and eligibility is
 ## a test on the list rather than on any script in it.
 ##
-## **The list is at most one entry long today, and the ceiling is the decode.**
-## `director_score.gd:parse` pairs a span's info entry with the next non-empty
-## `VWSC` entry only when that entry is exactly 8 bytes -- one `BehaviorElement`.
-## The reference reads that entry as a *stream* and pushes an element per 8
-## bytes. Measured over Piposh 2: of 145,624 spans a sprite record names, 142,900
-## carry no behaviour, 2,722 carry one, and **2 carry two** -- and those 2 are
-## currently dropped whole, because a 16-byte entry matches neither test. So the
-## multi-behaviour case costs this corpus two spans, the fix is in
-## `director/director_score.gd`, and this function is written against the list so
-## that the fix is a decode change and not a second rewrite of the hit test.
+## **The list can be longer than one, and now is.** `director_score.gd` reads a
+## span's behaviour entry as a stream in 8-byte strides, as the reference does,
+## where it used to take the entry only when it held exactly one element and drop
+## a longer one whole. The corpus barely exercises it -- 2 spans of 158,001 in
+## Piposh 2 and 5 of 271,872 in Piposh 1 carry two, and Rating carries none --
+## and both of Piposh 2's name the same script twice, so what changed there is a
+## handler running twice. This function was written against the list before the
+## decode could produce one, which is why the fix was a decode change and not a
+## second rewrite of the hit test.
 static func behaviour_intervals(host, channel: int, frame_index: int) -> Array:
 	var out: Array = []
 	if host._score == null:
@@ -277,14 +276,30 @@ static func behaviour_intervals(host, channel: int, frame_index: int) -> Array:
 ## lookup -- and taking it literally here is a false positive of exactly the kind
 ## §4.2 warns about, because this port's attachment list is not clean.
 ## `tools/click_eligibility.gd` counts it per corpus: of the sprite intervals
-## `director_score.gd` decodes, **279 of 2,678 in Piposh 2, 654 of 6,197 in
+## `director_score.gd` decodes, **279 of 2,680 in Piposh 2, 654 of 6,202 in
 ## Piposh 1 and 500 of 5,365 in Rating do not resolve**, and by the member type
-## the score names, all but 45 of those are a bitmap, a film loop or a shape --
-## none of which can be a behaviour. `_read_interval` pairs a span's info entry
-## with the next non-empty 8-byte `VWSC` entry rather than indexing by the
-## `sprite_list_idx` the sprite record already carries and the reference indexes
-## by, so a span whose own behaviour entry is empty can be handed one belonging
-## to something else.
+## the score names, all but 41 of those are a bitmap, a film loop or a shape --
+## none of which can be a behaviour.
+##
+## **They are the record's own attachments, and the decode is not what is wrong
+## with them.** This said the opposite for as long as nobody measured it: that
+## `_read_interval` paired a span with somebody else's behaviour entry because it
+## searched past an empty one. Three measurements say it does not. The search
+## took a later entry 0 times in 528,168 spans across the three corpora, because
+## the entry after an empty behaviour list is an empty name string and then the
+## next span's info record, which is too wide to match. Every interval it
+## produced was claimed by the sprite record occupying that channel over those
+## frames -- 14,247 spans, 0 orphans -- so matching by channel and frame range is
+## exactly the reference's `sprite_list_idx` lookup on this data. And the
+## unresolved ones are not a library that failed to map: no consistent offset
+## relates the library they name to one holding a script at that number, and for
+## 206, 585 and 393 of them respectively **no library in the movie has a script
+## there at all**.
+##
+## So what a bitmap-naming attachment is remains open, and it is a question about
+## Director's authored data or about the member-type decode rather than about
+## this pairing. Until it is answered the clause below stays narrow, for the
+## reason underneath rather than the one that used to be written here.
 ##
 ## The cost of taking them was immediate and was exactly the shape the whole
 ## measurement exists to catch: `AIR1.dir` channel 1 is `2:5`, a 640x400 Copy-ink
@@ -293,11 +308,11 @@ static func behaviour_intervals(host, channel: int, frame_index: int) -> Array:
 ## corpora requiring the lookup drops 118 of the 188 (movie, channel) pairs the
 ## literal reading made eligible, including four of the five over 640x400.
 ##
-## It is narrower than the reference in one honest place: the 45 intervals that
-## name a real **script** member this port fails to resolve or compile lose an
-## eligibility Director would give them. The fix for both halves is in
-## `director/director_score.gd` and in the compiler, not here, and until then
-## this errs toward letting the click fall through -- §4.2's own default, and the
+## It is narrower than the reference in one honest place: the 41 intervals that
+## name a real **script** member this port fails to resolve or compile -- 29 in
+## Rating, 12 in Piposh 1, 0 in Piposh 2 -- lose an eligibility Director would
+## give them. That half is in the compiler, not here, and until then this errs
+## toward letting the click fall through -- §4.2's own default, and the
 ## reversible direction.
 static func behaviour_scripts(host, channel: int, frame_index: int) -> Array:
 	var out: Array = []

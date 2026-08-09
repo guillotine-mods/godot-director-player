@@ -278,64 +278,6 @@ sound and preload work landed, and re-checked on 2026-08-07 after the player was
 split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
 the short list of what has no implementation at all.
 
-**`play` does not suspend the handler that called it — the widest divergence in
-this engine, and it is measured.** §8.2. `Lingo::func_play` sets `_freezePlay`
-after branching, and `Window::freezeLingoPlayState` stashes the *running* handler
-in a buffer of its own, separate from the ordinary frozen states. The rest of
-that handler does not run. It is requeued as the first frozen state when `play
-done` executes or the playhead reaches the end of the movie, and only then do its
-remaining statements run. ScummVM's own comment above `freezeLingoPlayState` says
-exactly this.
-
-This port runs the handler straight through, so the statement after `play frame`
-executes immediately — and when that statement is a `go`, it overwrites the
-branch `play` just set. The played segment never runs and the play stack is left
-holding an entry nobody will pop.
-
-Measured, in the title that reports the symptom. `BATZEGOZ.dir`'s dialogue
-options are `BehaviorScript 39`-`40` and eleven near-copies:
-
-    on mouseUp
-      sound playFile 1, soundspath & "egoz1.aif"
-      play frame "egozspeak1"      -- Director suspends the handler HERE
-      go("batz2a")                 -- ...and runs this at `play done`
-
-`egozspeak1` is the talking animation, and its own `on exitFrame` is `if not
-soundBusy(1) then go(marker(1))` — it holds until the line has finished. Reproduce:
-
-    godot --headless --script tools/click_trace.gd -- \
-        --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
-
-    f196 play ch1 egoz1.aif      the mouseUp starts the line
-    f216 play ch1 batz3.aif      Batz2A is entered next tick and replaces it
-    play stack : 1 entry(s)      the `play` branch that was thrown away
-
-The playhead goes `Egoz1+2` → `Batz2A` in one step, skipping frame 206
-(`egozspeak1`) entirely, and the next room's own line takes channel 1 about one
-frame later. That is the reported "the character starts speaking and then stops
-after something very very quick", and it is not a mouse fault: the click routes
-correctly and the right handler runs.
-
-**922 of Rating's 1,075 `play frame` sites carry Lingo after them** — 516 of
-those a `go`, 272 a `sound` — across EGOZEND, EGOZROO1/2, EGOZROOM, PHONE,
-MOVIEND, Panel, BLABOMB, NIGHT1 and 20 more. Piposh 2 has 121 of 160, 10 of them
-a `go`. The 153 sites where `play frame` is the last statement in its block are
-the ones that behave identically either way, and they are why some dialogs look
-fine.
-
-*What has to change with it.* This is **not** a `play` fix. Director suspends
-*any* handler at a `go` too — `Lingo::func_goto` sets `_freezeState` — and
-resumes it after the next frame is entered; `play` differs only in using a
-separate buffer with a different resume trigger. So the two are one mechanism and
-have to land together, or `play` grows a bespoke path that `go` contradicts.
-Doing only the first half — abandoning the handler at `play` — is worse than the
-current behaviour: the trailing `go` never runs at all, `play done` returns to
-the dialog frame, and the conversation loops. What it needs is the interpreter
-able to suspend a handler mid-block and resume it, which
-`lingo/lingo_interpreter.gd:_exec_block` cannot currently do, plus a resume point
-in `director_preview.gd:lingo_play_done` and one at frame entry. Nothing in
-`preview/interaction.gd` is involved.
-
 **Tempo: the pre-D6 numbering is implemented and cannot be exercised.** §9.1.
 Both the rate (`director_frame_clock.gd:rate_for`) and the one-shot meanings
 (`director_score.gd:tempo_waits`) branch on the movie's file version, which is
@@ -377,6 +319,31 @@ entered the destination, a `play` at `play done` **or at the end of the score**.
 What is left: a `tell` body cannot suspend; and unwinding is statement-granular, so
 a suspend inside a compound expression resumes at the statement rather than
 mid-expression.
+
+*This entry replaces the one that opened this file until 2026-08-09*, which
+called `play`-non-suspension "the widest divergence in this engine" and described
+the interpreter as unable to suspend mid-block. It had been contradicted by this
+paragraph, four files below it, for however long the two sat here together:
+`lingo_interpreter.gd` carries `_suspending`, `_take_suspend_request` and the
+innermost-first resume chain, `frame_loop.gd:advance` and
+`director_preview.gd:_return_from_play_stack` are the two resume points, and
+`tools/play_suspends.gd` is in `gate.sh`'s `ALL`. A gap list is only worth
+reading if it is true, and that entry's position at the top made it the first
+thing a session would pick up and rebuild.
+
+The measurement it carried is worth keeping, because it says how much of the
+corpus the feature covers rather than what is missing: **922 of Rating's 1,075
+`play frame` sites carry Lingo after them** -- 516 of those a `go`, 272 a
+`sound` -- across EGOZEND, EGOZROO1/2, EGOZROOM, PHONE, MOVIEND, Panel, BLABOMB,
+NIGHT1 and 20 more; Piposh 2 has 121 of 160, 10 of them a `go`. The 153 sites
+where `play frame` is the last statement in its block are the ones that behave
+identically either way. The case that drove it was `BATZEGOZ.dir`'s dialogue
+(`BehaviorScript 39`-`40` and eleven near-copies), where the `go("batz2a")` after
+`play frame "egozspeak1"` used to overwrite the branch `play` had just set and
+cut the character off mid-line:
+
+    godot --headless --script tools/click_trace.gd -- \
+        --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11
 
 The third -- *reaching the end of a score does not thaw a parked `play`* -- is
 closed. `score.cpp:462-487` pops the movie stack in the
@@ -637,11 +604,19 @@ property list and would gain a check per row.
 | `the mouseCast` / `the mouseMember` | `getSpriteIDFromPos` — the ink-aware hit test; `0` and VOID respectively for "over nothing"; `mouseMember` is a member *reference*, not a number | the rollover channel, `-1` for both, a number for both |
 | `the mouseChar` / `mouseWord` / `mouseLine` / `mouseItem` (D3) | the character, word, line or item of the text member under the pointer | unbound, read VOID |
 
-Two engine behaviours in the same class, neither of them a property: **`the
-beepOn`** makes a mouse-down on empty stage beep, and is not implemented; and
-§15's **button hilite flip** — on mouse-up, if the last mouse-*down* was inside
-*any* button, the button under the mouse-up inverts its hilite — is not either.
-`preview/hilite.gd` implements the press-and-hold inversion and not this.
+Two engine behaviours in the same class, neither of them a property, and **both
+landed with the right-button work above** — this said neither was implemented,
+which the entry four screens up already contradicted. **`the beepOn`** makes a
+mouse-down on empty stage beep: `preview/interaction.gd:719` reads it, and the
+property defaults false, which is the reference's value and not the true it had
+while it was wired to gate the `beep` builtin instead. §15's **button hilite
+flip** — on mouse-up, if the last mouse-*down* was inside *any* button, the
+button under the mouse-up inverts its hilite — is `interaction.gd:latch_release`,
+gated on the member being a button exactly as `lingo-events.cpp:213-215` gates
+it. Both are unexercised: 0 of the 51,350 members across the three corpora is of
+type `button`. The flip writes the same store `set the hilite of member` does,
+which draws for a button and nothing else (`bugs.md`/`docs/bugs-closed.md` 66),
+so on this corpus it is inert twice over.
 
 **D6+ click eligibility -- done, with the attachment list still narrow.** §4.3.
 `preview/interaction.gd:eligibility_reason` implements all six clauses in the
@@ -658,25 +633,58 @@ eligibility anywhere**, and no newly-eligible sprite is a full-stage backdrop.
 was found.** Clause 4 tests the *attachment*, and taking it literally made 188
 pairs eligible -- including a 640x400 Copy-ink backdrop over the whole stage on
 144 frames of `AIR1.dir`, on the strength of an attachment naming a **bitmap**.
-`director_score.gd:_read_interval` pairs a span's info entry with the next
-non-empty 8-byte `VWSC` entry rather than indexing by the `sprite_list_idx` the
-sprite record already carries, so **279 / 654 / 500 of the decoded intervals name
-a bitmap, film loop or shape**. Requiring the script lookup to succeed drops 118
-of the 188 and four of the five backdrops; it also drops 45 that name a real
+**279 / 654 / 500 of the decoded intervals name a bitmap, film loop or shape**,
+none of which can be a behaviour. Requiring the script lookup to succeed drops
+118 of the 188 and four of the five backdrops; it also drops 41 that name a real
 script member this port cannot resolve, which is narrower than Director in
-§4.2's own default direction. Both halves are score-decode work.
+§4.2's own default direction.
+
+**The cause given for those attachments was wrong, and the score decode is not
+where the fix is.** This entry said `_read_interval` "pairs a span's info entry
+with the next non-empty 8-byte `VWSC` entry rather than indexing by the
+`sprite_list_idx` the sprite record already carries", so a span could be handed
+somebody else's attachment. Three measurements say otherwise, all in
+`director_score.gd:parse`'s comment: the search took a later entry **0 times in
+528,168 spans** across the three corpora, because a span is three consecutive
+entries and the one after an empty behaviour list is an empty name string
+followed by the next span's info record, which is too wide to match; every
+interval it produced was claimed by the sprite record occupying that channel over
+those frames, **14,247 spans and 0 orphans**, so matching by channel and frame
+range is exactly the reference's `sprite_list_idx` lookup on this data; and the
+unresolved ones are not a mis-mapped library, since no consistent offset relates
+the library they name to one holding a script at that number and **206 / 585 /
+393 of them have no script at that number in any library of the movie**.
+
+So these are the sprite record's own attachments, correctly associated, naming a
+member that is not a script -- a question about Director's authored data or about
+the member-type decode. It is open, and the narrow clause stands on the
+measurement rather than on the pairing story. Written out at this length because
+the wrong cause was acted on: it is what a §4.3 clause was narrowed against, and
+it survived in three files.
 
 Clause 3 (movie member) and clause 5's generic-script arm are implemented and
 unexercised: **0 of the 51,350 members across all three corpora is of type
 `movie` or `button`**, so clause 2 has never fired on any title either.
 
-**D6+ sprites carry a list of behaviours; the decode still caps it at one.**
-§8.2. `behaviour_intervals` returns a list, so the eligibility clause is already
-a test on the list -- but a **16-byte behaviour entry matches neither of
-`director_score.gd:_read_interval`'s tests and is dropped whole**, so a sprite
-with several behaviours arrives carrying one. Piposh 2 has exactly 2 such spans
-of 145,624, which is why nothing has missed it. Score-decode work, and the same
-function as the attachment-list problem above.
+**~~D6+ sprites carry a list of behaviours; the decode still caps it at one.~~ --
+done.** §8.2. `director_score.gd:_read_interval` reads a span's behaviour entry
+as a stream in 8-byte strides, as `score.cpp:loadFrameSpriteDetails` does, where
+it used to take the entry only when it held exactly one element and drop a longer
+one whole. The script channel still takes one element, which is the reference's
+own asymmetry.
+
+Measured over the three corpora, a behaviour entry is 0, 8 or 16 bytes and
+nothing else, and the `initializerIndex` half of every one of Piposh 2's 14,903
+elements is 0 -- which is what settled the element at 8 bytes rather than 4 with
+padding. **2 spans of 158,001 in Piposh 2 carry two behaviours, 5 of 271,872 in
+Piposh 1, 0 of 98,295 in Rating**, and both of Piposh 2's name the same script
+twice, which Director answers by instantiating two objects and running the
+handler twice. Before and after over every frame of every movie
+(`tools/click_eligibility.gd`): **nothing lost eligibility anywhere**, 72 frames
+gained a channel across the three titles, and the largest newly-eligible sprite
+is 55x258 -- no backdrop. Nothing reads a behaviour's authored parameters yet;
+that needs the entry `initializerIndex` names, and no title in the corpus writes
+one.
 
 **`mouseEnter` / `mouseLeave` / `mouseWithin` are driven off the wrong channel
 and stop one tier too early.** §4.5, §8.2. The reference raises all three from
@@ -728,19 +736,6 @@ not maintain; and moving `rollOver(n)` to live geometry means moving
 `rollover_channel` with it, or `rollOver()` and `rollOver(n)` answer about
 different rectangles — which the module's own comment argues is worse than either
 being wrong on its own.
-
-**`saveMovie` writes fields and nothing else.** `saveMovie` is implemented
-(`director/director_writer.gd`) and writes a real container this engine reopens,
-but the only chunks it re-emits are the `STXT` payloads of field members whose
-text a script changed. Director saved the whole movie. Three specific holes, in
-the order they will be missed: a member's cast entry is not updated when its
-text changes, so cached metrics go stale; a rewritten chunk that grew leaves its
-old bytes unreferenced rather than adding them to the container's `free` list,
-so a repeatedly-saved file grows; and `save castLib` is not bound at all, so a
-movie that keeps state in a *linked* cast cannot persist it. The corpus here
-needs none of the three — `HEZSAVE.DIR` stores everything in its own internal
-cast — which is a reason to have built the rest first and not a reason to close
-this.
 
 **`saveMovie` writes fields and nothing else.** `saveMovie` is implemented
 (`director/director_writer.gd`) and writes a real container this engine reopens,
