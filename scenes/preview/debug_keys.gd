@@ -90,6 +90,7 @@ extends RefCounted
 ## this switch asks `enabled()` and gets the same answer.
 
 const CONFIG_PATH := "res://director_game.cfg"
+const GameConfig := preload("res://director/game_config.gd")
 const SECTION := "debug"
 
 ## The `[debug] enabled` values, and what each means. See the header.
@@ -253,8 +254,12 @@ static func load_config(config_path: String = CONFIG_PATH) -> void:
 	_loaded = true
 	_map = {}
 	_numbers = {}
-	var cfg := ConfigFile.new()
-	var has_file := cfg.load(config_path) == OK
+	# This function's own promise, above, predates `GameConfig`: a harness that
+	# rewrites `config_path` and calls this again must see the new file, not the
+	# merge point's cached answer for the same path.
+	GameConfig.invalidate()
+	var cfg := GameConfig.merged(config_path)
+	var has_file := GameConfig.exists(config_path)
 	_switch = _resolve_switch(cfg, has_file)
 	for setting in SETTINGS:
 		var value: Variant = SETTINGS[setting]

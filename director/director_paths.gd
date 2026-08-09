@@ -15,6 +15,7 @@ extends RefCounted
 
 const CONFIG_PATH := "res://director_game.cfg"
 const ContainerName := preload("res://director/director_container.gd")
+const GameConfig := preload("res://director/game_config.gd")
 
 ## Every extension that names a Director container. The list, and the rule that
 ## `.dxr` and `.dir` are one movie, belong to `director_container.gd` -- this
@@ -41,9 +42,9 @@ var _indexed := false
 ## a built-in fallback would be one title's name living in the engine, and would
 ## turn "the config is missing" into "the wrong game silently loaded".
 func load_config(config_path: String = CONFIG_PATH) -> bool:
-	var cfg := ConfigFile.new()
-	if cfg.load(config_path) != OK:
+	if not GameConfig.exists(config_path):
 		return false
+	var cfg := GameConfig.merged(config_path)
 	root = str(cfg.get_value("game", "root", ""))
 	boot_movie = str(cfg.get_value("game", "boot_movie", ""))
 	root = _override_root(root)

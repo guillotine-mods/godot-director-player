@@ -26,6 +26,7 @@ const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const SaveState := preload("res://scenes/preview/save_state.gd")
 const SaveFiles := preload("res://scenes/preview/save_files.gd")
+const GameConfig := preload("res://director/game_config.gd")
 
 
 ## The stage: resolve the boot movie from the config and the command line, load
@@ -143,9 +144,8 @@ static func stage(host) -> void:
 	# rather than as the scaling being wrong.
 	host.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	RenderingServer.set_default_clear_color(Color.BLACK)
-	var cfg := ConfigFile.new()
-	if cfg.load(Paths.CONFIG_PATH) == OK:
-		host._aspect = str(cfg.get_value("display", "aspect", host._aspect)).to_lower()
+	host._aspect = str(GameConfig.merged(Paths.CONFIG_PATH).get_value(
+		"display", "aspect", host._aspect)).to_lower()
 	host._aspect = Args.text(args, "aspect", host._aspect).to_lower()
 	# Only the stage fits itself to the OS window. A Movie-In-A-Window is a child
 	# of the stage and already inherits its scale, so running this on one scales
