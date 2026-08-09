@@ -26,6 +26,11 @@ extends RefCounted
 ## is written down. Preloaded rather than reached by `class_name`, for the reason
 ## `lingo_interpreter.gd` records at its own `preload`.
 const LingoValue := preload("res://lingo/lingo_value.gd")
+## The one place a field's style is assembled -- the member's authored run with
+## whatever Lingo has written over it. Read through rather than around, or `set
+## the textSize of member` would read back the authored size and the write would
+## be a lie the caller cannot detect.
+const TextArt := preload("res://scenes/preview/text_art.gd")
 
 
 ## How far apart two libraries sit when a `(library, slot)` pair is carried as
@@ -254,7 +259,12 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 		# writes both. Splitting them is how one would come to answer a value the
 		# other could not read back.
 		"textsize", "fontsize":
-			return int((m.get("text_style", {}) as Dictionary).get("font_size", 0))
+			# Through the override the renderer reads, not the authored run alone.
+			# A write that reads back as the authored value is a lie the caller
+			# cannot detect, which is the shape `preview/sprite_props.gd` was
+			# written to make impossible one entity along.
+			return int(TextArt.style_for(host, {
+				"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["font_size"])
 		"textstyle", "fontstyle":
 			# Director's style is a word list -- "plain", "bold italic". The slant
 			# byte carries the two this corpus uses.
@@ -266,14 +276,14 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 				words.append("italic")
 			return "plain" if words.is_empty() else " ".join(words)
 		"textheight", "lineheight":
-			var styled: Dictionary = m.get("text_style", {})
-			var height := int(styled.get("line_height", 0))
-			return height if height > 0 else int(m.get("text_height", 0))
+			return int(TextArt.style_for(host, {
+				"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["line_height"])
 		"textalign", "alignment":
 			# 0 left, 1 centre, -1 right. `the textAlign` is a string and `the
 			# alignment` a symbol; both name the same cell.
 			var word := "left"
-			match int(m.get("text_align", 0)):
+			match int(TextArt.style_for(host, {
+					"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["align"]):
 				1: word = "center"
 				-1: word = "right"
 			return word if prop == "textalign" else StringName(word)

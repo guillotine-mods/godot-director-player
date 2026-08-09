@@ -226,6 +226,18 @@ var _member_editable: Dictionary = {}
 ## Same keys as `_field_text`, for the same reason: a member is `(container,
 ## library, number)` and two movies can hold the same number.
 var _member_hilite: Dictionary = {}
+## `set the textSize of member "x" to 24` and the rest of §5's writable text
+## style, as `<field key> -> {style name: value}`.
+##
+## A member record is parsed out of a read-only container, so a property write has
+## nowhere to land unless the node keeps one -- the same reason `_field_text` and
+## `_member_editable` exist, and they are keyed the same way.
+## `preview/text_art.gd:style_for` merges this over the authored run, and
+## `preview/members.gd:read_prop` reads through it, so a write reads back as
+## itself. Names this cannot merge are **reported and not stored**: a write that
+## round-trips through a dictionary nothing paints from is the `moveableSprite`
+## shape, and half the point of this table is that the boundary is somewhere.
+var _member_style: Dictionary = {}
 var _interpreter = null
 var _host = null
 var _audio: Node = null
@@ -759,6 +771,7 @@ func _share_movie_state_with(other: Node) -> void:
 	# of them go on believing a field is typeable after the other turned it off.
 	_member_editable = other._member_editable
 	_member_hilite = other._member_hilite
+	_member_style = other._member_style
 
 
 func root_node(name: String) -> Node:
@@ -3390,6 +3403,30 @@ func lingo_set_member_prop(which: Variant, cast: String, prop: String,
 				return
 			_member_hilite[_field_key(int(where[0]), int(where[1]))] = \
 				LingoValue.to_int(value) != 0
+			queue_redraw()
+		"textsize", "fontsize", "textheight", "lineheight", "textalign", "alignment":
+			# §5's writable text style. Written into the node's own override and
+			# merged by `preview/text_art.gd:style_for`, which is the only place a
+			# field's style is assembled -- so the write reaches the screen and
+			# `the textSize of member` reads back what was set rather than what was
+			# authored.
+			#
+			# All three of this corpus's `textSize` sites are writes and none is a
+			# read (`set the textSize of field "globalmoney" to 24`, Piposh 1's slot
+			# machine in three language builds), which is why a read-only binding
+			# would have closed the row in §19 and served none of them.
+			if int(where[1]) <= 0:
+				return
+			var key := _field_key(int(where[0]), int(where[1]))
+			var over: Dictionary = _member_style.get(key, {})
+			match prop:
+				"textalign", "alignment":
+					over["align"] = LingoValue.to_int(value)
+				"textheight", "lineheight":
+					over["line_height"] = LingoValue.to_int(value)
+				_:
+					over["font_size"] = maxi(LingoValue.to_int(value), 1)
+			_member_style[key] = over
 			queue_redraw()
 		_:
 			# **Reported rather than dropped.** This match knew two names and

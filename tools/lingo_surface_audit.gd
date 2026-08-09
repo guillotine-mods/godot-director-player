@@ -868,18 +868,26 @@ func _bound() -> Dictionary:
 	# reported `absent` while it read, wrote and was consumed by three chunk
 	# functions.
 	var interp_src := FileAccess.get_file_as_string(INTERPRETER_SRC)
-	for spec in [
-		[_guarded_names(interp_src, "func _assign", "func _assign_chunk"), "interpreter, write"],
-		[_guarded_names(interp_src, "func _eval", "func _binary"), "interpreter, read"],
-	]:
-		var pair: Array = spec
-		var routed: Dictionary = pair[0]
-		for name in routed:
-			var key := _key("system", str(name))
-			if state.get(key, "") == LIVE:
-				continue
-			state[key] = INERT if _arm_is_inert(str(routed[name])) else LIVE
-			detail[key] = str(pair[1])
+	var interp_reads := _guarded_names(interp_src, "func _eval", "func _binary")
+	var interp_writes := _guarded_names(interp_src, "func _assign", "func _assign_chunk")
+	for name in interp_reads:
+		var key := _key("system", str(name))
+		if state.get(key, "") == LIVE:
+			continue
+		state[key] = INERT if _arm_is_inert(str(interp_reads[name])) else LIVE
+		# **A guard in the write path is not always a write.** `the result` and
+		# `the paramCount` are read-only in Director, and their arm in `_assign`
+		# exists to *drop* the write rather than to carry it -- so the arm's body
+		# decides the label, exactly as it decides `live` against `inert`.
+		var writable := interp_writes.has(name) \
+			and not _arm_is_inert(str(interp_writes[name]))
+		detail[key] = "interpreter, read" + ("+write" if writable else " only")
+	for name in interp_writes:
+		var key := _key("system", str(name))
+		if state.has(key):
+			continue
+		state[key] = INERT if _arm_is_inert(str(interp_writes[name])) else LIVE
+		detail[key] = "interpreter, write only"
 
 	# --- sprite properties ---------------------------------------------------
 	#
@@ -1169,7 +1177,14 @@ static func _arm_is_inert(body: String) -> bool:
 	if meat.contains("preview.") or meat.contains("preview\n") or meat.contains("="):
 		return false
 	var re := RegEx.new()
-	re.compile("^(return (0|null|\\{\\}|\\[\\]|-1);)+$")
+	# A bare `return` is in the list because **dropping a write is doing nothing**,
+	# which is the definition this function serves. It is how a read-only property
+	# refuses one -- `the result` and `the paramCount` are written by returning
+	# from a handler and by calling one, and their arm in the interpreter's assign
+	# path exists to swallow the statement. Without it here, the refusal read as a
+	# live write and the row said `read+write` for two properties Director does
+	# not let a movie write at all.
+	re.compile("^(return( (0|null|\\{\\}|\\[\\]|-1))?;)+$")
 	return re.search(meat) != null
 
 

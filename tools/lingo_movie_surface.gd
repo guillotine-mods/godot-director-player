@@ -24,6 +24,9 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 const Diagnostics := preload("res://lingo/lingo_diagnostics.gd")
+## For the check that a `textSize` write reaches the paint path and not only the
+## table it was stored in.
+const TextArt := preload("res://scenes/preview/text_art.gd")
 
 var _preview: Node = null
 var _host = null
@@ -297,6 +300,27 @@ func _member_checks(h) -> void:
 			"`the fontSize` is the same property by D5's spelling",
 			int(_value("the fontSize of member %d" % field_number))
 				== int(_value("the textSize of member %d" % field_number)))
+		# **All three of this corpus's `textSize` sites are writes.** A read-only
+		# binding would have closed the row in §19 and served none of them, which
+		# is the half-a-property shape §19's own summary is about.
+		_run("set the textSize of member %d to 24" % field_number)
+		h.check(
+			"a `textSize` write reads back as itself",
+			int(_value("the textSize of member %d" % field_number)) == 24,
+			"a write that reads back the authored size is a lie the caller cannot "
+			+ "detect")
+		h.check(
+			"and reaches the style the renderer paints from",
+			int(TextArt.style_for(_preview, {"cast_lib": 1, "cast_id": field_number},
+				m)["font_size"]) == 24,
+			"the override table and the paint path have to be the same one")
+		h.check(
+			"and the line height follows the point size",
+			int(_value("the textHeight of member %d" % field_number)) > 24,
+			"Director re-derives it on a `textSize` write; the authored height "
+			+ "behind a doubled point size overlaps every line with the next")
+		_run("set the textSize of member %d to %d"
+			% [field_number, int(styled.get("font_size", 12))])
 		h.check(
 			"`the lineCount of member %d` counts the lines of its text" % field_number,
 			int(_value("the lineCount of member %d" % field_number))

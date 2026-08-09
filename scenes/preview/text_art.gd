@@ -125,10 +125,42 @@ const SELECTION_TINT := Color(0.25, 0.45, 0.95, 0.45)
 ## `focus` is `{}` for every field that does not hold the active widget, which is
 ## all of them in most movies -- so the editable path costs one dictionary test
 ## on the 11,525 field sprite records that are not being typed into.
+## The style a field is drawn in: the member's authored run, with whatever Lingo
+## has written over it.
+##
+## **A member property write had nowhere to land until this existed.** `set the
+## textSize of member "x" to 24` is three sites in this corpus -- all three
+## writes, none of them a read -- and the member record is parsed from the
+## container and cannot be written back. So the node keeps an override per
+## member, exactly as it already does for a field's *text* and its editability,
+## and this is the one place the two are combined. `preview/members.gd:read_prop`
+## reads through the same table, so a write reads back as itself rather than as
+## the authored value, which is the round-trip that makes the property real.
+##
+## Only what `director_text.gd:style_of` produces is overridable, which is the
+## honest boundary: a name this cannot merge is a name nothing draws from, and
+## `director_preview.gd:lingo_set_member_prop` reports one rather than storing it.
+static func style_for(host, sprite: Dictionary, member: Dictionary) -> Dictionary:
+	var style: Dictionary = Text.style_of(member)
+	if host == null or not (host.get("_member_style") is Dictionary):
+		return style
+	var over: Dictionary = host._member_style.get(
+		key_for(int(sprite.get("cast_lib", 1)), int(sprite.get("cast_id", 0)), host._table), {})
+	for name in over:
+		style[name] = over[name]
+	# The line height follows the point size unless a script set one of its own.
+	# Director re-derives it on a `textSize` write, and leaving the authored
+	# height behind a doubled point size overlaps every line with the next.
+	if over.has("font_size") and not over.has("line_height"):
+		style["line_height"] = int(round(int(style["font_size"]) * Text.LINE_HEIGHT_RATIO))
+		style["ascent"] = int(round(int(style["line_height"]) * 0.75))
+	return style
+
+
 static func paint(canvas: CanvasItem, sprite: Dictionary, member: Dictionary,
 		rect: Rect2, text: String, editable: bool = false,
 		focus: Dictionary = {}) -> Dictionary:
-	var style: Dictionary = Text.style_of(member)
+	var style: Dictionary = style_for(canvas, sprite, member)
 	var caret := Rect2()
 	if not focus.is_empty():
 		var start := int(focus.get("sel_start", 0))
