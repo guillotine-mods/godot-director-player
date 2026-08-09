@@ -339,12 +339,22 @@ static func load_config(config_path: String = CONFIG_PATH) -> void:
 ## An unrecognised value falls back to `auto` with a warning rather than to
 ## "off", because a typo that silently strips the whole debug layer reads as the
 ## build being broken.
-static func resolve_switch(cfg: ConfigFile, has_file: bool) -> String:
+##
+## `args` defaults to the process's own argv and exists so a caller can hand in
+## a different one. The two accepted spellings, `--debug-ui=on` and
+## `--debug-ui on`, are the documented way back from a Developer tab that has
+## been switched off (`director_game.cfg:145`), and a process cannot change its
+## own argv mid-run -- `OS.get_cmdline_user_args()` answers the same thing for
+## the life of it -- so the only way for a gate to see that both spellings
+## agree is to hand them in rather than rely on however this process happened
+## to be launched.
+static func resolve_switch(cfg: ConfigFile, has_file: bool,
+		args := OS.get_cmdline_user_args()) -> String:
 	var wanted := AUTO
 	if has_file:
 		wanted = str(cfg.get_value(SECTION, "enabled", AUTO)).strip_edges().to_lower()
 	var expecting := false
-	for arg in OS.get_cmdline_user_args():
+	for arg in args:
 		if expecting:
 			wanted = str(arg).strip_edges().to_lower()
 			expecting = false
