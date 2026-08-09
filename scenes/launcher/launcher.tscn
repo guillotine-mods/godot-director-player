@@ -121,3 +121,39 @@ autowrap_mode = 2
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
+
+[node name="QolHeading" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Quality of life — stored, not yet wired"
+
+[node name="HotspotHints" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hotspot hints"
+
+[node name="MinigameSkip" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Allow minigame skip"
+
+[node name="EdgeHotspots" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Expand edge hotspots"
+
+[node name="EnhancedGraphics" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Enhanced graphics"
+
+[node name="CursorSpeedLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Controller cursor speed"
+
+[node name="CursorSpeed" type="HSlider" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+min_value = 60.0
+max_value = 1200.0
+step = 10.0

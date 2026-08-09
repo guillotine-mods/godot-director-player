@@ -142,6 +142,11 @@ func _fill_developer() -> void:
 		%Debug.add_item(name)
 	%Debug.selected = maxi(DEBUG_VALUES.find(
 		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
+	%HotspotHints.button_pressed = bool(cfg.get_value("qol", "hotspot_hints", false))
+	%MinigameSkip.button_pressed = bool(cfg.get_value("qol", "minigame_skip", true))
+	%EdgeHotspots.button_pressed = bool(cfg.get_value("qol", "expand_edge_hotspots", true))
+	%EnhancedGraphics.button_pressed = bool(cfg.get_value("qol", "enhanced_graphics", false))
+	%CursorSpeed.value = float(cfg.get_value("qol", "cursor_speed", 420.0))
 
 
 func _on_bindings_pressed() -> void:
@@ -300,6 +305,11 @@ func _on_play() -> void:
 		for command in _binding_fields:
 			overlay.set_value("debug", str(command),
 				str((_binding_fields[command] as LineEdit).text).strip_edges())
+		overlay.set_value("qol", "hotspot_hints", %HotspotHints.button_pressed)
+		overlay.set_value("qol", "minigame_skip", %MinigameSkip.button_pressed)
+		overlay.set_value("qol", "expand_edge_hotspots", %EdgeHotspots.button_pressed)
+		overlay.set_value("qol", "enhanced_graphics", %EnhancedGraphics.button_pressed)
+		overlay.set_value("qol", "cursor_speed", float(%CursorSpeed.value))
 	GameConfig.write_overlay(overlay)
 	_redrive_autoloads()
 	_launch()
@@ -318,13 +328,11 @@ func _on_play() -> void:
 ## the index to the first `resolve_path`, which is after the preview has loaded
 ## -- but that is an implementation detail of one file and `_indexed` is a
 ## one-shot latch, so anything that touches audio before Play would poison it.
-## `AppSettings.load_settings()` fixes nothing today: it reads
-## `user://player_settings.cfg`, which has nothing to do with `director_game.cfg`
-## or the overlay this screen writes. It is redriven anyway because that stops
-## being true the day `AppSettings` is rewritten to read through `GameConfig` --
-## this call is what keeps that later change from silently leaving the autoload
-## holding a pre-launcher value, rather than a bug nobody notices until it
-## matters.
+## `AppSettings.load_settings()` now reads through `GameConfig` too -- its
+## `cursor_speed` is the one field in that node with a live consumer
+## (`input_router.gd`) -- so without this call it would hold whatever the
+## config said at process start, before the player touched the Developer tab
+## at all.
 ##
 ## So both are re-driven explicitly rather than each being left to its own
 ## luck: one call closes a gap that is real today, the other holds the line
