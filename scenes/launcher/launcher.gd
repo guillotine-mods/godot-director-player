@@ -13,6 +13,7 @@ extends Control
 
 const GameConfig := preload("res://director/game_config.gd")
 const TitleList := preload("res://scenes/launcher/title_list.gd")
+const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 
 const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
 
@@ -25,6 +26,9 @@ const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
 const EMOJI_FONTS := ["Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"]
 
 const ASPECTS := ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]
+
+const CODEPAGES := ["", "mac_hebrew", "windows_1255"]
+const DEBUG_VALUES := [DebugKeys.AUTO, DebugKeys.ON, DebugKeys.OFF]
 
 @onready var _games: OptionButton = %Games
 @onready var _flags: HBoxContainer = %Flags
@@ -43,6 +47,19 @@ func _ready() -> void:
 	_entries = TitleList.build()
 	_fill_games()
 	_fill_aspect()
+	var tabs := %Tabs as TabContainer
+	var developer := %Developer as Control
+	var show_developer := _developer_visible()
+	# Not `developer.visible = show_developer`: a `TabContainer` watches every
+	# child's `visibility_changed` signal and jumps `current_tab` to whichever
+	# one just turned visible, so setting it directly here would open the
+	# launcher on the Developer tab instead of Player. `set_tab_hidden` alone
+	# adds or removes the tab from the bar without touching which one is
+	# current; the child's own `visible` stays under the container's control
+	# and only changes when a click -- or this same signal, later -- picks it.
+	tabs.set_tab_hidden(developer.get_index(), not show_developer)
+	if show_developer:
+		_fill_developer()
 	_games.item_selected.connect(_on_game_selected)
 	_play.pressed.connect(_on_play)
 	if _entries.size() > 0:
@@ -76,6 +93,49 @@ func _fill_aspect() -> void:
 		_aspect.add_item(str(name).replace("_", " "))
 	var current := str(GameConfig.merged().get_value("display", "aspect", "native_4_3"))
 	_aspect.selected = maxi(ASPECTS.find(current), 0)
+
+
+## Whether the developer tab is there at all.
+##
+## **From the tracked file, never from the merged value**, and that is a
+## deliberate exception to `debug_keys.gd`'s one-answer-per-process rule. The
+## tab contains the control that sets `[debug] enabled`, so a tab whose
+## visibility read the overlay would close the door behind itself: set it false
+## and the control that would set it back is gone. `--debug-ui on` recovers that
+## on a desktop; Android has no command line and is the only export preset, so
+## there the only way back would be clearing the app's data.
+##
+## The overlay may still turn the debug *layer* off -- the bindings, the boxes,
+## the HUD. It just cannot hide its own door.
+func _developer_visible() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		var text := str(arg)
+		if text.begins_with("--debug-ui="):
+			return text.substr(11).strip_edges().to_lower() in ["on", "true", "1", "yes"]
+	var wanted := str(GameConfig.tracked().get_value("debug", "enabled", DebugKeys.AUTO))
+	match wanted.strip_edges().to_lower():
+		DebugKeys.OFF, "off", "0", "no":
+			return false
+		DebugKeys.ON, "on", "1", "yes":
+			return true
+	return OS.is_debug_build()
+
+
+## Seeds the developer tab's controls from the merged config, because these are
+## what the run will actually use.
+func _fill_developer() -> void:
+	var cfg := GameConfig.merged()
+	%Boot.text = str(cfg.get_value("game", "boot_movie", ""))
+	%Boot.placeholder_text = "empty: whatever the chosen game boots"
+	%Codepage.clear()
+	for name in CODEPAGES:
+		%Codepage.add_item("engine default (bytes as code points)" if name == "" else name)
+	%Codepage.selected = maxi(CODEPAGES.find(str(cfg.get_value("game", "codepage", ""))), 0)
+	%Debug.clear()
+	for name in DEBUG_VALUES:
+		%Debug.add_item(name)
+	%Debug.selected = maxi(DEBUG_VALUES.find(
+		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
 
 
 func _on_game_selected(index: int) -> void:
@@ -150,6 +210,20 @@ func _on_play() -> void:
 	overlay.set_value("game", "root", _root)
 	overlay.set_value("game", "boot_movie", _boot)
 	overlay.set_value("display", "aspect", ASPECTS[maxi(_aspect.selected, 0)])
+	if _developer_visible():
+		# An empty boot override means "whatever the chosen game boots", which is
+		# a different statement from the empty string: the key is removed rather
+		# than written blank, or `DirectorPaths.load_config` reads "" and reports
+		# no game configured.
+		var override := str(%Boot.text).strip_edges()
+		if override != "":
+			overlay.set_value("game", "boot_movie", override)
+		var codepage := str(CODEPAGES[maxi(%Codepage.selected, 0)])
+		if codepage != "":
+			overlay.set_value("game", "codepage", codepage)
+		elif overlay.has_section_key("game", "codepage"):
+			overlay.erase_section_key("game", "codepage")
+		overlay.set_value("debug", "enabled", DEBUG_VALUES[maxi(%Debug.selected, 0)])
 	GameConfig.write_overlay(overlay)
 	_redrive_autoloads()
 	_launch()
