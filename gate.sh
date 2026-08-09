@@ -1,19 +1,27 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 62 entries in ALL is 60 pass / 2 fail, measured on 4.7.1 by a
-# whole-suite run at the commit this line was written:
+# which over the 62 entries in ALL is **62 pass / 0 fail**, measured on 4.7.1 by
+# a whole-suite run at the commit this line was written. There is no expected
+# failure any more, so any red is a regression and needs no triage against a
+# list of excuses.
 #
-# It said 54 entries and 52 pass for as long as nobody counted the list it was
-# describing -- the entry count had drifted by eight while the sentence stayed
-# still, which is the same failure the paragraph four lines down is about. Count
-# `ALL` when you change it.
+# The two this line used to carry were not the standing costs they read as:
 #
-#   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
-#                   director_game.cfg collides with a keyCode rating tests at 48
-#                   sites (399feaaa)
-#   play_suspends   PASS or FAIL, about half and half, on one assertion that
-#                   waits a fixed six frames for a movie to load (bugs.md 41).
-#                   Re-run three times over here: FAIL, PASS, FAIL.
+#   debug_bindings  was "config not code": `snapshot = "F10"` in the tracked
+#                   director_game.cfg, colliding with a keyCode rating tests at
+#                   48 sites, while the code default had already moved to F11.
+#                   One word.
+#   play_suspends   was "PASS or FAIL, about half and half" on an assertion that
+#                   waited a fixed six frames for a movie to load. Waiting on the
+#                   condition instead made it deterministic -- and it then failed
+#                   every time, because the flake had been hiding a real red
+#                   (bugs.md 54). A flake is not noise; it is a result nobody has
+#                   to explain.
+#
+# 62 rather than 61 because `cursor_cross_cast` joined the list. Count `ALL` when
+# you change it: this line said 54 entries for as long as it took the list to
+# reach 61, which is the failure the paragraph below is about, one paragraph
+# above where it happened.
 #
 # `boot_state` was the long-standing red in the line this replaces and passes now.
 #

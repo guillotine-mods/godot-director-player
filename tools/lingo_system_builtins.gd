@@ -95,12 +95,29 @@ func _timer_checks(h) -> void:
 		"the write half did not exist; `set the timer to 0` reached nothing and "
 		+ "the read answered the age of the process")
 	# Real elapsed time, not frames: the unit under test is a clock.
+	#
+	# **Against the time that actually passed, not against the time asked for.**
+	# This read "half a second later it reads about 30 ticks", 20..45, which is a
+	# statement about the scheduler as much as about `the timer`: under a full
+	# `gate.sh` run the 0.5 s sleep has been measured at 1.3 s, the tick count
+	# followed it to about 78, and the entry went red while the property was
+	# perfectly correct. A harness that fails when the machine is busy is one
+	# people learn to re-run rather than read.
+	#
+	# The band is still narrow enough to catch every way this was wrong before:
+	# milliseconds would read ~60x high, and an origin that never moved would read
+	# the age of the process. Both are orders of magnitude outside it.
+	var before_ms := Time.get_ticks_msec()
 	await create_timer(0.5).timeout
 	var later := int(_value("the timer"))
+	var elapsed_ms := Time.get_ticks_msec() - before_ms
+	var expected := elapsed_ms * 60.0 / 1000.0
 	h.check(
-		"half a second later it reads about 30 ticks (got %d)" % later,
-		later >= 20 and later <= 45,
-		"60ths of a second, not milliseconds -- 500 would be the old answer's unit")
+		"it counts 60ths of a second of real time (got %d, %d ms elapsed is ~%.0f)"
+			% [later, elapsed_ms, expected],
+		later >= expected * 0.6 - 4 and later <= expected * 1.4 + 4,
+		"60ths of a second, not milliseconds -- %d would be the old answer's unit"
+			% elapsed_ms)
 	h.check(
 		"it is not the millisecond clock (timer %d < milliseconds %d)"
 			% [later, int(_value("the milliseconds"))],
