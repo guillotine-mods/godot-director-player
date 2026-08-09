@@ -288,6 +288,23 @@ func _init() -> void:
 	# And running from source keeps the tools, or every harness below this line
 	# would be measuring an empty map.
 	h.check("which leaves them on when running from source", DebugKeys.enabled())
+	# `enabled_for()` is `launcher.gd`'s door onto this same resolution, called
+	# with the tracked config directly instead of through `load_config`'s
+	# cached `_switch`. `auto` is exactly the case two independent parsers
+	# answered differently before this fix -- `launcher.gd` had its own copy
+	# that never asked `OS.has_feature("editor")` -- so `auto` is where a
+	# regression would show again.
+	#
+	# What this cannot check: whether the two argv forms, `--debug-ui=on` and
+	# `--debug-ui on`, actually agree, because `OS.get_cmdline_user_args()` is
+	# fixed for this process and no flag is on it here. `resolve_switch()`'s own
+	# loop parses both into the same `wanted` string by construction (see its
+	# body), so this instead checks the half that *is* reachable: that
+	# `enabled_for()` and `enabled()` are one resolution rather than two, by
+	# requiring them to agree on the one config both are looking at right now.
+	h.check("and `enabled_for()` on the tracked config agrees with `enabled()`",
+		DebugKeys.enabled_for(shipped) == DebugKeys.enabled(),
+		"enabled_for=%s enabled=%s" % [DebugKeys.enabled_for(shipped), DebugKeys.enabled()])
 	h.complete("the shipped config leaves the choice to the build")
 
 	# The keys have to actually fire, and for most of this game they did not. A

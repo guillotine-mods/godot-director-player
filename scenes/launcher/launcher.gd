@@ -38,6 +38,11 @@ const DEBUG_VALUES := [DebugKeys.AUTO, DebugKeys.ON, DebugKeys.OFF]
 var _entries: Array[Dictionary] = []
 var _root := ""
 var _boot := ""
+## Set once in `_ready`. `_on_play` reads this rather than calling
+## `_developer_visible()` again, for the reason `_refresh_play`'s own comment
+## gives about a second reason to disable Play: two call sites computing the
+## same answer is two chances for them to compute it differently.
+var _show_developer := false
 
 
 func _ready() -> void:
@@ -49,16 +54,16 @@ func _ready() -> void:
 	_fill_aspect()
 	var tabs := %Tabs as TabContainer
 	var developer := %Developer as Control
-	var show_developer := _developer_visible()
-	# Not `developer.visible = show_developer`: a `TabContainer` watches every
+	_show_developer = _developer_visible()
+	# Not `developer.visible = _show_developer`: a `TabContainer` watches every
 	# child's `visibility_changed` signal and jumps `current_tab` to whichever
 	# one just turned visible, so setting it directly here would open the
 	# launcher on the Developer tab instead of Player. `set_tab_hidden` alone
 	# adds or removes the tab from the bar without touching which one is
 	# current; the child's own `visible` stays under the container's control
 	# and only changes when a click -- or this same signal, later -- picks it.
-	tabs.set_tab_hidden(developer.get_index(), not show_developer)
-	if show_developer:
+	tabs.set_tab_hidden(developer.get_index(), not _show_developer)
+	if _show_developer:
 		_fill_developer()
 	_games.item_selected.connect(_on_game_selected)
 	_play.pressed.connect(_on_play)
@@ -107,18 +112,16 @@ func _fill_aspect() -> void:
 ##
 ## The overlay may still turn the debug *layer* off -- the bindings, the boxes,
 ## the HUD. It just cannot hide its own door.
+##
+## The parsing itself lives in `DebugKeys`, not here. It used to be copied --
+## matching `--debug-ui=on` only, and missing the documented `--debug-ui on`
+## space form that `DebugKeys.resolve_switch` already accepted -- which meant
+## the one command-line recovery this comment promises did not exist in code.
+## `DebugKeys.enabled_for()` is the same resolution `enabled()` uses, asked of a
+## caller-supplied config instead of the merged one, so this and the debug
+## layer itself can never disagree about what a flag or a value means.
 func _developer_visible() -> bool:
-	for arg in OS.get_cmdline_user_args():
-		var text := str(arg)
-		if text.begins_with("--debug-ui="):
-			return text.substr(11).strip_edges().to_lower() in ["on", "true", "1", "yes"]
-	var wanted := str(GameConfig.tracked().get_value("debug", "enabled", DebugKeys.AUTO))
-	match wanted.strip_edges().to_lower():
-		DebugKeys.OFF, "off", "0", "no":
-			return false
-		DebugKeys.ON, "on", "1", "yes":
-			return true
-	return OS.is_debug_build()
+	return DebugKeys.enabled_for(GameConfig.tracked())
 
 
 ## Seeds the developer tab's controls from the merged config, because these are
@@ -210,7 +213,7 @@ func _on_play() -> void:
 	overlay.set_value("game", "root", _root)
 	overlay.set_value("game", "boot_movie", _boot)
 	overlay.set_value("display", "aspect", ASPECTS[maxi(_aspect.selected, 0)])
-	if _developer_visible():
+	if _show_developer:
 		# An empty boot override means "whatever the chosen game boots", which is
 		# a different statement from the empty string: the key is removed rather
 		# than written blank, or `DirectorPaths.load_config` reads "" and reports
