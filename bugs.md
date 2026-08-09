@@ -79,6 +79,147 @@ today.
 
 ---
 
+## 57. A whole-sprite puppet does not stop the score, so CHESS's second wheel plays one name and shows another
+
+**Status:** OPEN in the tree, **root cause found and the fix measured**; the one
+hunk that closes it is in a file two other sessions were live in tonight and is
+written out below rather than applied. · **Area:**
+`scenes/preview/sprite_state.gd:with_puppets`. · Reported from play as *"the
+wheel, when I press it, plays the wrong sound on what lands there — the first
+spin is right, the second is wrong, every time I tried."*
+
+**Reproduce:**
+
+```bash
+godot --headless --path . --script tools/puppet_freeze.gd -- --root piposh2 --boot strtgame.dir
+```
+
+### The rule
+
+`docs/DIRECTOR_ENGINE.md` §5.2. `Sprite::replaceFrom` copies the script
+attachment and **returns** while `_puppet` is set, so from the claim onward the
+score never writes that channel again — not its member, not its position, not its
+size, and not its emptiness.
+
+This port implements the *emptiness* half and only that half. `with_puppets`
+carries a puppeted channel through frames whose score record for it is empty, and
+on every frame where the score *does* carry a record it takes it:
+
+```gdscript
+		if not here.is_empty():
+			channel.note_score(here)
+			continue
+```
+
+So a puppeted channel is frozen exactly where the score was going to leave it
+alone anyway, and follows the score everywhere else — which is the opposite of the
+rule. `tools/puppet_persists.gd` is green throughout, because the only frames it
+looks at are the frames where the score has let go.
+
+### What the player hears
+
+CHESS spins a name-wheel twice. Both runs are the same seven members on channel 8
+put there by the score, and the same frame script over them
+(`reference/lingo/CHESS/master/BehaviorScript 82.ls`, and 81, 86, 87):
+
+```lingo
+on exitFrame
+  global soundspath, ches1
+  if the mouseDown then
+    repeat with i = 8 to 15
+      puppetSprite(i, 1)
+    end repeat
+    sound playFile 1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif"
+    ches1 = member(the memberNum of sprite 8).name
+    go(marker(1))
+  end if
+end
+```
+
+The click freezes the wheel and names the sound from the member it froze, so **the
+sound and the picture are one claim read twice**. Frames 138-144 are the first run
+and 175-181 the second, identical but for where `marker(1)` lands: 145 carries no
+channel 8 in the score, and 182 carries `jos`.
+
+Every landing of both runs, clicked one frame at a time:
+
+```
+   f138: click froze pat    stage kept pat    sound artpat.aif
+   ...                                                                  7 of 7 agree
+   f175: click froze pat    stage kept jos    sound artpat.aif   <-- DIVERGED
+   f176: click froze suz    stage kept jos    sound artsuz.aif   <-- DIVERGED
+   f177: click froze map    stage kept jos    sound artmap.aif   <-- DIVERGED
+   f178: click froze mrf    stage kept jos    sound artmrf.aif   <-- DIVERGED
+   f179: click froze rin    stage kept jos    sound artrin.aif   <-- DIVERGED
+   f180: click froze hez    stage kept jos    sound arthez.aif   <-- DIVERGED
+   f181: click froze jos    stage kept jos    sound artjos.aif           1 of 7 agree
+```
+
+Six of the second run's seven landings show `jos` whatever was clicked, and the
+seventh agrees only because `jos` is what the score writes. `the memberNum of
+sprite 8` diverges with the stage, so `ches2` — which places the piece on the
+board and picks its info card at `strtgame` — is the *sound's* answer while the
+player saw the other one.
+
+The timer, `random()`, the sound channels and marker arithmetic were all ruled out
+by this trace: the `playFile` request is correct on every landing of both runs.
+
+### The fix, measured but not applied
+
+Two hunks, and **neither works without the other** — measured both ways. The claim
+side is in `scenes/director_preview.gd:lingo_puppet_sprite` and is in the tree: it
+takes a copy of the channel as the puppet claims it, because a port that rebuilds
+channels from the score has nothing else to freeze. The score side is
+`with_puppets`, below, and drops the score's record for a claimed channel instead
+of adopting it.
+
+```gdscript
+static func with_puppets(sprites: Array, overrides: Dictionary) -> Array:
+	var frozen: Dictionary = {}
+	for number in overrides:
+		var channel: Channel = Channel.at(int(number), overrides)
+		if channel.is_puppet():
+			frozen[channel.number] = channel.carried()
+	if frozen.is_empty():
+		return sprites
+	# Channel order is depth order, and every caller relies on it: the hit test
+	# descends from the end of this array and the painter walks it forwards.
+	var out: Array[Dictionary] = []
+	for value in sprites:
+		var sprite: Dictionary = value
+		if not frozen.has(int(sprite["channel"])):
+			out.append(sprite)
+	for number in frozen:
+		var kept: Dictionary = frozen[number]
+		if not kept.is_empty():
+			out.append(kept)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a["channel"]) < int(b["channel"]))
+	return out
+```
+
+`Channel.note_score` has no caller left afterwards; the key it writes is written
+once, at the claim.
+
+With both hunks in, `tools/puppet_freeze.gd` is 14 of 14 landings green, and
+`check.sh` plus `sound_wait sound_paths movie_tempo frame_events play_suspends
+playhead_escape mouse_poll puppet_persists hilite trails sprite_drag
+click_eligibility click_chain hotspots skip_state` are 15 of 15 PASS, unchanged
+from the same list measured before it. `save_state` fails either way on an
+unrelated unclassified field (`_member_hilite`).
+
+### What this leaves
+
+`docs/DIRECTOR_ENGINE.md` §5.2 still says the port's half-rule *is* the rule —
+"a puppeted channel stays on the frame when the score's record for it is empty,
+which is what the reconcile is skipped means for a port that draws from the
+score's per-frame sprite list". It is not what it means, and that sentence is why
+the other half was never written. Correct it with the hunk.
+
+`tools/puppet_freeze.gd` is not in `gate.sh`'s `ALL`; add it when the hunk lands.
+
+---
+
 ## 46. Piposh 1's ship is silent because `games/piposh` has no `PIPDATA/FX` tree at all
 
 **Status:** OPEN, and **not an engine fault** — the port composes the request

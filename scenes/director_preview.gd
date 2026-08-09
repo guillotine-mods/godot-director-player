@@ -3112,7 +3112,35 @@ func lingo_sprite_constraint(channel: int) -> int:
 	return int(_channel_constraints.get(channel, 0))
 
 
+## `puppetSprite N, TRUE/FALSE`.
+##
+## **The claim takes a copy of the channel as it stands**, and that copy is the
+## whole of what §5.2 means for a port shaped like this one. Director keeps a live
+## `Sprite` per channel and the puppet freezes *that object* -- `replaceFrom`
+## copies the script attachment and returns, so the score never writes the channel
+## again. This port has no live sprite: it rebuilds every channel from the score's
+## per-frame list on every draw, hit test and property read. So there is nothing
+## for the flag alone to freeze, and the record has to be taken here, at the
+## moment of the claim, or `with_puppets` has only the score to answer from and
+## answers with it.
+##
+## An **empty** copy is a claim too. A channel puppeted on a frame whose score
+## carries no record for it stays empty for as long as the puppet lasts, because
+## the score cannot write it any more -- the same rule, read at the other end.
+##
+## `frame_sprites()` rather than the raw score record, so a channel puppeted twice
+## re-claims what it is already carrying instead of falling back to the score.
 func lingo_puppet_sprite(channel: int, on: bool) -> void:
+	if on:
+		var live = SpriteState.Channel.claim(channel, _overrides)
+		if not live.is_puppet():
+			var here: Dictionary = {}
+			for value in frame_sprites():
+				var sprite: Dictionary = value
+				if int(sprite["channel"]) == channel:
+					here = sprite.duplicate()
+					break
+			live.note_score(here)
 	SpriteState.set_puppet(channel, on, _overrides)
 
 
