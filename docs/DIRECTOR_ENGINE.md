@@ -916,13 +916,20 @@ behaviour from the score.
 *This port:* `scenes/preview/channel.gd` is the `Channel`/`Sprite` pair, and
 `scenes/preview/sprite_state.gd` is the six questions the player node asks it.
 `Channel.release` skips a channel carrying `_puppet`, and `with_puppets` is the
-other half —
-**a puppeted channel stays on the frame when the score's record for it is
-empty**, which is what "the reconcile is skipped" means for a port that draws
-from the score's per-frame sprite list rather than from a live channel table. It
-still skips the script-id copy; add it if frame-scoped sprite scripts ever
-matter. (`director/sprite_channel.gd`, cited here before, was the retired
-renderer and is gone.)
+other half: for a port that draws from the score's per-frame sprite list rather
+than from a live channel table, "the reconcile is skipped" has to mean **the
+channel keeps what it was frozen with and the score's record for it is dropped —
+whether or not there is one**. It still skips the script-id copy; add it if
+frame-scoped sprite scripts ever matter. (`director/sprite_channel.gd`, cited
+here before, was the retired renderer and is gone.)
+
+This paragraph asserted only the empty-record half until CHESS's name wheel found
+the other one, and the omission is worth keeping written down because of how well
+it hides. A puppet is frozen exactly on the frames the score was not going to
+write anyway, so every test of the rule passes while half of it is missing; the
+wheel's two spins differ only in whether the frame they land on happens to carry
+a record for the puppeted channel. `tools/puppet_freeze.gd` is the harness that
+asks the other question, because `puppet_persists` structurally cannot.
 
 **The visible consequence, which reads as a layering bug and is not one.** A
 channel is emptied by the score *writing* an empty record into it, and that write
