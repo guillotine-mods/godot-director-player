@@ -15,6 +15,83 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 66. `set the hilite of member` inverted the artwork of every member type; the reference draws it for a button and nothing else
+
+**Status:** FIXED · **Area:** `scenes/preview/hilite.gd`
+· reported from play, `rating` NAVIGATE.dir marker `thepool`
+· covered by `tools/hilite.gd`, group "the script-set flag draws on a button and
+nothing else", which fails against the code before the fix
+
+Zehava swam in reverse video: green hair, dark blue skin, the whole 77x84 sprite
+photographically negative while everything else on the stage was right. `HOTEL.cst`
+does it to her on purpose, in an ordinary `on exitFrame`:
+
+```lingo
+set the hilite of member "hotelrectang" of castLib 2 to 1
+set the hilite of member 196 of castLib 1 to 1
+set the hilite of member 197 of castLib 1 to 1
+set the hilite of member 198 of castLib 1 to 1
+```
+
+196, 197 and 198 of castLib 1 are `NAVIGATE.dir`'s three frames of her.
+
+**The reference stores this flag for every member type and draws it for one.**
+`castmember.cpp:CastMember::setField(kTheHilite)` sets `_hilite` on the base class
+whatever the type and never refuses, and `getField` answers from it — so the write
+is legal on a bitmap and `the hilite of member` reads back what was written. There
+is exactly one consumer: `text.cpp:355`, inside `case kCastButton:`, where it
+becomes `MacButton::setHilite`. `bitmap.cpp` and `shape.cpp` do not contain the
+string `_hilite`. So on anything that is not a button, Director stores the value
+and draws the authored picture.
+
+`hilite.gd:artwork` consumed the store with no type test, so every one of those
+writes reached `Ink.invert`.
+
+**Scope, measured rather than inferred from the one room.** `set the hilite of
+member` appears at **39 sites across 21 containers** in `rating`, and at **0
+sites** in `piposh`, `piposh-en`, `piposh-ru`, `piposh2` and `piposh-dream` — which
+is why this survived: the corpus the port was built against never writes it.
+
+**All 39 must draw nothing, and the number that settles it is not the sites but the
+members.** *Rating* has **0 button cast members across all 19,074** it ships
+(13,278 bitmaps, 5,338 scripts, 178 shapes, 158 fields, 93 film loops, 28
+transitions); so do `piposh` (0 of 972), `piposh2` (0 of 897) and `piposh-dream`
+(0 of 15,095). No site in any corpus can name a button because no corpus has one.
+Most of the 39 name a hotspot rectangle (`rectang`, `hotelrectang`, `ribua`,
+`recu` — shape members) and were being inverted unnoticed, because an invisible
+rectangle looks the same either way; Zehava is the one the eye catches.
+
+The fix is a type test — `hilite.gd:is_button`, the same `type_name == "button"`
+question `interaction.gd:_is_button` asks — on the *drawing* path only. Gating the
+**write** instead would have been wrong for a reason the file next door states:
+`the hilite of member 196` would then read back 0 after being set to 1, which is
+the round-tripping lie `preview/sprite_props.gd` exists to prevent. The harness
+asserts both halves separately for that reason.
+
+**The button arm is an approximation and is unverified.** ScummVM hilites a
+`MacButton` widget — a Mac control redrawing itself inverted — not `Ink.invert`
+over authored artwork, and this port draws no button widget. There is no button
+member in any of the three corpora to check it against (0 of 51,350, measured by
+`interaction.gd:latch_release`), so the harness reaches the arm by stamping
+`type_name` on the cached member dictionary, which is the lever `auto_hilite`
+already uses in the same file.
+
+Two things this did **not** turn out to be, both measured before the artwork was
+suspected, and worth keeping because they are the expensive half of the search:
+
+- **The palette.** `MANAEGOZ.dir`'s config declares default palette `castLib -1,
+  member 0`, which is `kClutSystemMac` by `cast.cpp:loadConfig`'s own `member -= 1`
+  rule; no `CLUT` chunk, no palette member and no frame naming a palette exists in
+  the container; and the port's *generated* system Mac table is byte-identical to
+  ScummVM's `macPalette[768]` on all 256 entries. Nothing on that stage is
+  recoloured by a palette choice.
+- **The decode.** `tools/director_render.gd` draws the same member from the same
+  bytes the right way up. That is what localised the defect to the preview's draw
+  path and made the one-line minimal test — clear `_member_hilite`, repaint, look —
+  worth running.
+
+---
+
 ## 65. `the number of member X of castLib Y` drops the library, so a cursor pair resolves into whatever cast happens to have a bitmap at that number
 
 **Status:** FIXED · **Area:** `scenes/director_preview.gd`, `scenes/preview/members.gd`, `scenes/preview/cursor.gd`

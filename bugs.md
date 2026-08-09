@@ -2730,3 +2730,61 @@ alternation and the precedence over the sprite cursor (§7.4).
 
 **Reproduce:** read `reference/scummvm/score.cpp:400-424` and `:1444-1458` beside
 `scenes/preview/cursor.gd`.
+
+---
+
+## 67. A bitmap member's palette is read from the D4 offset, so every clut id in the corpus is measured as the field next to it
+
+**Status:** open · **Area:** `director/director_cast.gd:356`, `tools/palette_survey.gd`,
+`scenes/preview/members.gd:243` · found while ruling the palette out of
+`docs/bugs-closed.md` 66
+
+`_parse_specific` reads a bitmap's palette from the specific block at **offset 24**:
+
+```gdscript
+out["palette_id"] = _be_i16(spec, 24) if spec.size() >= 26 else -1
+```
+
+That is the D4 layout. `castmember/bitmap.cpp` puts a second field in front of the
+id from D5 on:
+
+```cpp
+int clutCastLib = -1;
+if (version >= kFileVer500) {
+    clutCastLib = stream.readSint16();   // offset 24
+}
+int clutId = stream.readSint16();        // offset 26 on D5+, 24 on D4
+if (clutId <= 0)                         // builtin palette
+    _clut = CastMemberID(clutId - 1, -1);
+```
+
+Every container in both corpora is D5 or later — `rating`'s config word is `0x073a`
+— so the port has been reading `clutCastLib`. Measured over `MANAEGOZ.dir`,
+`MANAGER.cst`, `HOTEL.cst`, `HOTEL2.cst` and `Panel.cst`, offset 24 is `-1` in all
+941 bitmap members with a 28-byte specific block and offset 26 is `0` in all 941.
+
+**Two errors, and they cancel.** The offset is wrong, and the `clutId - 1`
+adjustment the reference applies is missing — Director stores the first built-in at
+0 and counts down, while a *frame's* palette channel uses 0 for "no change" and
+starts the built-ins at -1. Read correctly, `0` at offset 26 becomes
+`kClutSystemMac`; read as it is now, `-1` at offset 24 is *labelled* system Mac by
+`BUILTIN_NAMES` and happens to be the same answer. So the port draws the right
+palette for the wrong reason, and would keep drawing it for a title that named a
+different one.
+
+**What this invalidates.** `tools/palette_survey.gd` reports "0 members name a
+palette other than system Mac" across 86 containers and 11,520 bitmaps, and
+`director/director_palette.gd`'s header cites that number as the reason system Mac
+is the only verified table. The *conclusion* survives — offset 26 also reads system
+Mac everywhere it was checked — but the measurement behind it does not, and the
+sweep has to be re-run against the corrected offset before the header can go on
+claiming it. `the palette of member` (`preview/members.gd:243`) answers from the
+same field and is wrong by the same two steps.
+
+Nothing in either corpus renders differently once this is fixed, which is exactly
+why it is filed rather than folded into another change: it is a decode bug with no
+symptom, and the first title that ships a Windows or custom palette is where it
+stops being free.
+
+**Reproduce:** for any bitmap member, slice the `CASt` specific block and print the
+`i16` at 24 and at 26 beside `castmember/bitmap.cpp`'s D5 branch.

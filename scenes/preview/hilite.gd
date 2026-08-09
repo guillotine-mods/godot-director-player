@@ -83,11 +83,35 @@ static func artwork(canvas: CanvasItem, texture: Texture2D,
 	# **`set the hilite of member` is the other hilite, and it comes first.**
 	#
 	# Everything below this is *auto*-hilite: the movie asks for none of it, the
-	# press decides, and it lasts as long as the button is held. Director also has
-	# a flag a script sets and the movie leaves set (§4.6), and that is how a
-	# Director title draws a selection -- Rating sets it on one shape member per
-	# room. It was accepted and dropped for as long as `lingo_set_member_prop`
-	# knew only `editable` and `text`.
+	# press decides, and it lasts as long as the button is held. This is the other
+	# mechanism: a flag a script sets and the movie leaves set (§4.6).
+	#
+	# **It reaches the screen for a button member and for nothing else.** The
+	# reference stores the flag on the cast member base class for every type --
+	# `castmember.cpp:CastMember::setField(kTheHilite)` accepts it and never
+	# refuses -- and reads it back in exactly one place: `text.cpp:355`, under
+	# `case kCastButton:`, where it becomes `MacButton::setHilite`. `bitmap.cpp`
+	# and `shape.cpp` never mention `_hilite` at all. So a script may set it on a
+	# bitmap, and Director stores the value, answers `the hilite of member` with
+	# it, and draws nothing differently.
+	#
+	# Without that test this inverted Rating's artwork wherever the movie made the
+	# write, which it does at **39 sites across 21 containers** -- naming hotspot
+	# rectangles, bitmaps and film loops. Every one of them must draw nothing,
+	# because *Rating* has **0 button members in all 19,074 of them**. The visible
+	# one was Zehava at the pool: `HOTEL.cst`'s `on exitFrame` sets the hilite of
+	# members 196, 197 and 198 of castLib 1, `NAVIGATE.dir`'s three 77x84 frames of
+	# her, and she swam in reverse video (`docs/bugs-closed.md` 66). Piposh 1, 2 and
+	# Dream have 0 sites, which is why this survived: the corpus the port was built
+	# against never writes it.
+	#
+	# The button arm is an **approximation and unverified**. The reference hilites
+	# a `MacButton` *widget*, which is a Mac control drawing itself inverted, not
+	# `Ink.invert` over authored artwork; this port draws no button widget, and
+	# there is no button member in any of the three corpora to check it against
+	# (`interaction.gd:latch_release` measures 0 of 51,350). Inverting the picture
+	# is the nearest thing the port has and is what the auto-hilite path below
+	# already does.
 	#
 	# Substituted here rather than painted as a second pass, for the reason the
 	# block below this function gives: the inverted copy carries the same alpha,
@@ -96,7 +120,7 @@ static func artwork(canvas: CanvasItem, texture: Texture2D,
 	if sprite.has("cast_lib") and not host._member_hilite.is_empty():
 		var key: String = host._field_key(
 			int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		if bool(host._member_hilite.get(key, false)):
+		if bool(host._member_hilite.get(key, false)) and is_button(host, sprite):
 			var set_by_script := _inverted(host, sprite)
 			if set_by_script != null:
 				return set_by_script
@@ -118,6 +142,29 @@ static func artwork(canvas: CanvasItem, texture: Texture2D,
 		return texture
 	var inverted := _inverted(host, sprite)
 	return inverted if inverted != null else texture
+
+
+## Does this sprite display a **button** cast member?
+##
+## The whole of `set the hilite of member`'s reach on the screen, and the reason
+## `artwork` asks: the reference's only consumer of the flag is the `kCastButton`
+## arm of `text.cpp:createWidget`. Every other type stores the flag and draws
+## itself unchanged.
+##
+## Public because the gate harness asserts the same rule from the outside, and a
+## check that re-derives the type test rather than calling it would keep passing
+## if this one drifted.
+##
+## A sprite with no member, or a host with no cast table, is not a button. False
+## is the answer that draws the authored picture, which is the safe half: a
+## missed button is a control that does not flash, a false positive is artwork in
+## reverse video, and the second is what this function exists to stop.
+static func is_button(host, sprite: Dictionary) -> bool:
+	if host == null or host._table == null or not sprite.has("cast_lib"):
+		return false
+	var member: Dictionary = host._table.get_member(
+		int(sprite["cast_lib"]), int(sprite.get("cast_id", 0)))
+	return str(member.get("type_name", "")) == "button"
 
 
 ## §4.6's predicate, clause for clause against `sprite.cpp:Sprite::shouldHilite`.

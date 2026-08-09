@@ -20,6 +20,7 @@ the Godot lifecycle; the modules own the rules.
 | typing does nothing, the caret is in the wrong field or the wrong place | `text_focus.gd` |
 | an animation plays in the wrong place, or with the wrong pictures | `film_loop_view.gd` |
 | a click goes to the wrong sprite, or nothing answers it | `interaction.gd` |
+| a sprite draws in reverse video, or a click flashes the wrong thing | `hilite.gd` |
 | no hand cursor where there should be one, or a corrupt one | `cursor.gd` |
 | a Movie-In-A-Window is the wrong size, won't close, or eats clicks | `windows.gd` |
 | a trails sprite leaves no stroke, or leaves one it shouldn't | `trails.gd` |

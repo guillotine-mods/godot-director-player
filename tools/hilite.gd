@@ -412,6 +412,49 @@ func _init() -> void:
 		Hilite.artwork(preview, plain, sprite) == plain)
 	h.complete("%s: it is on while held and off otherwise" % movie)
 
+	# ------------------------------- `set the hilite of member`, the other one
+	#
+	# **The flag is stored for every member type and drawn for one.** The
+	# reference keeps `_hilite` on the cast member base class -- `CastMember::
+	# setField(kTheHilite)` accepts it whatever the type and never refuses -- and
+	# reads it back in exactly one place, `text.cpp:355` under `case kCastButton:`,
+	# where it becomes `MacButton::setHilite`. `bitmap.cpp` and `shape.cpp` never
+	# mention it. So the two halves have to be asserted separately, and asserting
+	# only the drawing half would let a fix that gates the *write* through: `the
+	# hilite of member` would then read back 0 after being set to 1, which is the
+	# round-tripping lie `preview/sprite_props.gd` exists to prevent.
+	#
+	# Driven through `lingo_set_member_prop`/`lingo_member_prop` rather than by
+	# poking `_member_hilite`, so what is measured is the path a script takes.
+	#
+	# **This fails against the code before the fix**, which had no type test at
+	# all: Rating writes this flag at 39 sites across 21 containers, naming 26
+	# shapes, 5 bitmaps and 3 film loops and not one button, and every one of them
+	# drew in reverse video. Zehava in `thepool` was the visible one.
+	h.begin("%s: the script-set flag draws on a button and nothing else" % movie)
+	var lib_arg := str(int(sprite["cast_lib"]))
+	var id_arg := int(sprite["cast_id"])
+	preview.call("lingo_set_member_prop", id_arg, lib_arg, "hilite", 1)
+	h.check("the write round-trips, whatever the member type is",
+		int(preview.call("lingo_member_prop", id_arg, lib_arg, "hilite")) == 1)
+	h.check("but a bitmap member with the flag set draws its own artwork",
+		Hilite.artwork(preview, plain, sprite) == plain,
+		"%s:%d" % [lib_arg, id_arg])
+
+	# The same member seen as a button, through the cached dictionary the table
+	# copies from -- the lever `auto_hilite` above already uses, and the only one
+	# short of a button member this corpus does not have.
+	var saved_name := str(member.get("type_name", ""))
+	member["type_name"] = "button"
+	h.check("a button member with the flag set draws the inverted copy",
+		Hilite.artwork(preview, plain, sprite) != plain)
+	member["type_name"] = saved_name
+
+	preview.call("lingo_set_member_prop", id_arg, lib_arg, "hilite", 0)
+	h.check("clearing it puts the artwork back",
+		Hilite.artwork(preview, plain, sprite) == plain)
+	h.complete("%s: the script-set flag draws on a button and nothing else" % movie)
+
 	if not windowed:
 		print("")
 		print("NOTE: run without --headless for the pixel case -- headless Godot")
