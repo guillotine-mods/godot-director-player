@@ -39,14 +39,16 @@ const RECEIVERS := ["preview", "p", "node", "w"]
 const FIELDS := [
 	"_channel_constraints", "_channel_cursors", "_clip_rect", "_clock",
 	"_cursor_now", "_fast_forward_fps", "_field_text", "_focus_channel",
-	"_focus_member", "_global_cursor", "_hit_images", "_hit_pixels", "_host",
+	"_focus_member", "_frozen_lingo", "_global_cursor", "_hit_images",
+	"_hit_pixels", "_host",
 	"_index", "_interpreter", "_labels", "_last_click", "_last_member",
 	"_last_save", "_loop_start", "_loop_stats", "_member_editable",
 	"_overrides", "_palette", "_palette_state", "_paused", "_pending_enter",
-	"_play_stack", "_preloader", "_ran", "_score", "_score_sound", "_sel_end",
+	"_play_stack", "_preloader", "_puppet_transition", "_ran", "_repaints",
+	"_score", "_score_sound", "_sel_end",
 	"_sel_start", "_sent", "_show_boxes", "_skip_sent", "_table", "_text_drawn",
 	"_textures", "_ticks", "_traced", "_trail_image", "_transitions_played",
-	"_window_type", "_windows",
+	"_update_stage_calls", "_window_type", "_windows",
 ]
 
 ## Fields a harness is allowed to find empty or zero, because they are only

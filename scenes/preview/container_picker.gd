@@ -29,6 +29,7 @@ extends RefCounted
 const Paths := preload("res://director/director_paths.gd")
 const ContainerName := preload("res://director/director_container.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 ## How many matches are on screen at once. Enough to see that a filter is working
 ## without covering the movie it is being chosen from.
@@ -143,18 +144,18 @@ static func draw(host, state: Dictionary) -> void:
 	if not bool(state.get("open", false)):
 		return
 	var font := ThemeDB.fallback_font
-	host.draw_rect(PANEL, Color(0, 0, 0, 0.85), true)
-	host.draw_rect(PANEL, Color(1, 1, 1, 0.6), false, 1.0)
+	Paint.rect(host, PANEL, Color(0, 0, 0, 0.85), true)
+	Paint.rect(host, PANEL, Color(1, 1, 1, 0.6), false, 1.0)
 	var at := PANEL.position + Vector2(10, 18)
 	var shown: Array = state.get("shown", [])
-	host.draw_string(font, at, "go to movie:  %s_" % str(state.get("query", "")),
+	Paint.text(host, font, at, "go to movie:  %s_" % str(state.get("query", "")),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 0.6, 0.95))
-	host.draw_string(font, at + Vector2(PANEL.size.x - 90, 0),
+	Paint.text(host, font, at + Vector2(PANEL.size.x - 90, 0),
 		"%d/%d" % [shown.size(), (state.get("all", []) as Array).size()],
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.5))
 	at.y += 20
 	if shown.is_empty():
-		host.draw_string(font, at,
+		Paint.text(host, font, at,
 			"no containers match" if not (state["all"] as Array).is_empty()
 			else "no game configured",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 0.6, 0.6, 0.9))
@@ -167,7 +168,7 @@ static func draw(host, state: Dictionary) -> void:
 		var entry := str(shown[first + row])
 		var line := at + Vector2(0, row * ROW_HEIGHT)
 		if first + row == index:
-			host.draw_rect(Rect2(line - Vector2(6, 11),
+			Paint.rect(host, Rect2(line - Vector2(6, 11),
 				Vector2(PANEL.size.x - 20, ROW_HEIGHT)), Color(0.2, 0.5, 1.0, 0.5), true)
 		# Casts are listed and dimmed rather than hidden: they are containers, and
 		# "which cast is that member in" is a real question -- but they have no
@@ -175,14 +176,14 @@ static func draw(host, state: Dictionary) -> void:
 		# key cannot keep.
 		var playable := not ContainerName.CAST.has(entry.get_extension())
 		var shade := 0.95 if first + row == index else 0.7
-		host.draw_string(font, line, entry, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+		Paint.text(host, font, line, entry, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 			Color(1, 1, 1, shade) if playable else Color(0.75, 0.7, 0.6, shade * 0.8))
 	var footer := PANEL.position + Vector2(10, PANEL.size.y - 8)
 	var note := str(state.get("note", ""))
 	if note != "":
-		host.draw_string(font, footer - Vector2(0, 14), note,
+		Paint.text(host, font, footer - Vector2(0, 14), note,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 0.7, 0.5, 0.95))
-	host.draw_string(font, footer,
+	Paint.text(host, font, footer,
 		"type to filter    up/down select    enter play    esc close    (%s)"
 			% DebugKeys.key_name("containers"),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.45))

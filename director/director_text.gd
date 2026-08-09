@@ -46,6 +46,11 @@ extends RefCounted
 ## size is the ratio the runs that *do* carry one show (16 for a 12pt run).
 const LINE_HEIGHT_RATIO := 4.0 / 3.0
 
+## Glyphs go to the canvas item rather than through `CanvasItem.draw_string`, so
+## that a field repaints from `updateStage` as well as from `_draw`. See
+## `director_paint.gd`.
+const Paint := preload("res://director/director_paint.gd")
+
 ## Director's alignment codes, from the member's specific block.
 const ALIGN_LEFT := 0
 const ALIGN_CENTRE := 1
@@ -191,7 +196,7 @@ static func draw(canvas: CanvasItem, rect: Rect2, text: String, style: Dictionar
 	var drawn := 0
 	for line_value in layout(rect, text, style):
 		var line: Dictionary = line_value
-		canvas.draw_string(font, Vector2(rect.position.x, float(line["baseline"])),
+		Paint.text(canvas, font, Vector2(rect.position.x, float(line["baseline"])),
 			str(line["text"]), h_align, rect.size.x, size, colour)
 		drawn += 1
 	return drawn

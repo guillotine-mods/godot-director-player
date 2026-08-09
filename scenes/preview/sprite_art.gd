@@ -29,6 +29,7 @@ const Shape := preload("res://director/director_shape.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const Hilite := preload("res://scenes/preview/hilite.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 
 ## Decoded once per (member, ink, size, colours) and kept. A member costs
@@ -157,7 +158,7 @@ static func draw(canvas: CanvasItem, texture: Texture2D, at: Vector2,
 	var flip_h := bool(sprite.get("flip_h", false))
 	var flip_v := bool(sprite.get("flip_v", false))
 	if not flip_h and not flip_v:
-		canvas.draw_texture(texture, at, modulate)
+		Paint.texture(canvas, texture, at, modulate)
 		return
 	# A negative extent asks Godot to mirror. It negates the size and keeps the
 	# position, so the rectangle covered is the same one the unflipped draw would
@@ -170,7 +171,7 @@ static func draw(canvas: CanvasItem, texture: Texture2D, at: Vector2,
 		rect.size.x = -size.x
 	if flip_v:
 		rect.size.y = -size.y
-	canvas.draw_texture_rect(texture, rect, false, modulate)
+	Paint.texture_rect(canvas, texture, rect, false, modulate)
 
 
 ## Is there a visible pixel of `image` under a stage point?

@@ -39,6 +39,7 @@ extends RefCounted
 ## reference could not do.
 
 const LingoValue := preload("res://lingo/lingo_value.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 
 ## Does anything in this frame ask for trails, from the score or from a script?
@@ -96,7 +97,7 @@ static func settle(host, placed_now: Dictionary,
 	if host._trail_dirty:
 		host._trail_dirty = false
 		host._trail_layer.update(host._trail_image)
-	host.draw_texture(host._trail_layer, Vector2.ZERO)
+	Paint.texture(host, host._trail_layer, Vector2.ZERO)
 
 
 ## Clear a rectangle of the trail layer: the region was repainted, so whatever a

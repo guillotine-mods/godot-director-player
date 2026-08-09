@@ -17,6 +17,7 @@ extends RefCounted
 ## How long a message stays up. Long enough to read a filename, short enough that
 ## it is gone before it covers anything the player is looking at.
 const SECONDS := 2.5
+const Paint := preload("res://director/director_paint.gd")
 
 ## Where it sits: bottom-left, one line above the HUD, so the two do not overlap
 ## at any stage size.
@@ -49,8 +50,8 @@ static func draw(host, text: String, until: int, stage: Vector2i) -> bool:
 	var alpha := clampf(left / 0.5, 0.0, 1.0)
 	var at := Vector2(MARGIN.x, float(stage.y) - MARGIN.y)
 	var box := Rect2(at - Vector2(5, 13), Vector2(width + 10, 18))
-	host.draw_rect(box, Color(0, 0, 0, 0.7 * alpha), true)
-	host.draw_rect(box, Color(1, 1, 1, 0.5 * alpha), false, 1.0)
-	host.draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size,
+	Paint.rect(host, box, Color(0, 0, 0, 0.7 * alpha), true)
+	Paint.rect(host, box, Color(1, 1, 1, 0.5 * alpha), false, 1.0)
+	Paint.text(host, font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size,
 		Color(1, 1, 1, 0.95 * alpha))
 	return true

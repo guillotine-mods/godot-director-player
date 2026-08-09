@@ -15,6 +15,7 @@ extends RefCounted
 ## blocking and the drawRect scaling are built because Director has them.
 
 const LingoValue := preload("res://lingo/lingo_value.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 const NO_BORDER := -1
 const DOCUMENT := 0
@@ -101,22 +102,22 @@ static func draw_chrome(host, size: Vector2, window_type: int,
 	if window_type == PLAIN_SHADOW:
 		# The shadow is under the window and offset, so it is drawn first and
 		# outside the frame on the far two sides.
-		host.draw_rect(Rect2(Vector2(4, 4), size + Vector2(edge, edge)),
+		Paint.rect(host, Rect2(Vector2(4, 4), size + Vector2(edge, edge)),
 			Color(0, 0, 0, 0.4), true)
 	if has_title_bar(window_type, title_visible):
 		var bar := Rect2(Vector2(-edge, -edge - TITLE_BAR),
 			Vector2(size.x + edge * 2.0, TITLE_BAR))
-		host.draw_rect(bar, Color(0.82, 0.82, 0.82), true)
-		host.draw_rect(bar, Color(0.25, 0.25, 0.25), false, 1.0)
+		Paint.rect(host, bar, Color(0.82, 0.82, 0.82), true)
+		Paint.rect(host, bar, Color(0.25, 0.25, 0.25), false, 1.0)
 		if title != "":
-			host.draw_string(
-				ThemeDB.fallback_font, bar.position + Vector2(6, TITLE_BAR - 5),
+			Paint.text(
+				host, ThemeDB.fallback_font, bar.position + Vector2(6, TITLE_BAR - 5),
 				title, HORIZONTAL_ALIGNMENT_LEFT, bar.size.x - 12, 12,
 				Color(0.1, 0.1, 0.1)
 			)
 	if edge > 0.0:
 		var inset := chrome_inset(window_type, title_visible)
-		host.draw_rect(Rect2(-inset, size + inset + Vector2(edge, edge)),
+		Paint.rect(host, Rect2(-inset, size + inset + Vector2(edge, edge)),
 			Color(0.25, 0.25, 0.25), false, edge)
 
 

@@ -16,6 +16,7 @@ extends RefCounted
 const Ink := preload("res://director/director_ink.gd")
 const Trails := preload("res://scenes/preview/trails.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 
 ## Arm the clip rectangle. Returns the rect it set, for the node to record.
@@ -139,10 +140,10 @@ static func draw_overlays(host, frame: Dictionary, stage: Vector2i,
 		skip_rect: Rect2) -> void:
 	# Drawn last so it sits above the stage, and in stage coordinates so it
 	# scales with everything else.
-	host.draw_rect(skip_rect, Color(0, 0, 0, 0.55), true)
-	host.draw_rect(skip_rect, Color(1, 1, 1, 0.65), false, 1.0)
-	host.draw_string(
-		ThemeDB.fallback_font, skip_rect.position + Vector2(11, 16), "SKIP",
+	Paint.rect(host, skip_rect, Color(0, 0, 0, 0.55), true)
+	Paint.rect(host, skip_rect, Color(1, 1, 1, 0.65), false, 1.0)
+	Paint.text(
+		host, ThemeDB.fallback_font, skip_rect.position + Vector2(11, 16), "SKIP",
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.9)
 	)
 	var marker: String = host._labels.marker_at(host._index) if host._labels != null else ""
@@ -158,5 +159,5 @@ static func draw_overlays(host, frame: Dictionary, stage: Vector2i,
 		"art" if host._hit_pixels else "rect", host._cursor_now,
 		"  PAUSED" if host._paused else "",
 	]
-	host.draw_string(ThemeDB.fallback_font, Vector2(8, stage.y - 8), hud,
+	Paint.text(host, ThemeDB.fallback_font, Vector2(8, stage.y - 8), hud,
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.75))

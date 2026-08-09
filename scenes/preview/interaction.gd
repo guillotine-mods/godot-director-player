@@ -24,6 +24,7 @@ const Snapshot := preload("res://scenes/preview/snapshot.gd")
 ## member latched for the mouse-up's cast element (§15), and tier 1's
 ## `*Script` runner, which the mouse and the keyboard share.
 const EventChain := preload("res://scenes/preview/event_chain.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 ## How close two presses have to be to make `the doubleClick` true.
 ##
@@ -1032,11 +1033,11 @@ static func draw_hotspots(host, hover_channel: int, hit_pixels: bool,
 		var hovered := channel == hover_channel
 		var tint := Color(1.0, 0.75, 0.2) if per_pixel else Color(0.2, 1.0, 0.4)
 		if hovered:
-			host.draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.18), true)
-		host.draw_rect(rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.45),
+			Paint.rect(host, rect, Color(tint.r, tint.g, tint.b, 0.18), true)
+		Paint.rect(host, rect, Color(tint.r, tint.g, tint.b, 0.95 if hovered else 0.45),
 			false, 2.0 if hovered else 1.0)
 		if hovered:
-			host.draw_string(font, rect.position + Vector2(2, -3),
+			Paint.text(host, font, rect.position + Vector2(2, -3),
 				"ch%d  %d:%d  %s" % [
 					channel, int(sprite["cast_lib"]), int(sprite["cast_id"]),
 					"artwork only" if per_pixel else "whole rect",

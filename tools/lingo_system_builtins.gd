@@ -26,8 +26,8 @@ extends SceneTree
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
-## For `IGNORED`, which is the whole of the `updateStage` assertion. Read off the
-## host's own constant rather than restated, so the check cannot go stale by
+## For `IGNORED` and `HANDLED`, which the `updateStage` section reads. Off the
+## host's own constants rather than restated, so the check cannot go stale by
 ## agreeing with a copy.
 const Host := preload("res://scenes/preview_lingo_host.gd")
 
@@ -406,31 +406,31 @@ func _quit_checks(h) -> void:
 
 # ------------------------------------------------------------- updateStage
 
-## The gap this file does **not** close, asserted so that it cannot be closed by
-## accident.
+## `updateStage` is bound, and the measurement that used to say it could not be.
 ##
-## Director redraws the stage inside the call and returns, so a `repeat` loop
-## that moves a sprite and calls this animates. Godot cannot present
-## synchronously from inside a handler: `queue_redraw()` pushes
-## `NOTIFICATION_DRAW` onto the message queue, which is flushed at the end of the
-## process frame, and GDScript cannot flush it. `RenderingServer.force_draw()`
-## redraws the viewports from the commands the canvas items already hold and does
-## not re-run `_draw` -- measured on 4.7.1, headless and windowed alike, a
-## `queue_redraw()` followed by `force_draw()` left a Node2D's `draw` emission
-## count unchanged.
+## The old version of this section asserted the *gap*: that `updatestage` was in
+## the host's `IGNORED` list, and that `queue_redraw()` followed by
+## `RenderingServer.force_draw()` left a Node2D's `draw` emission count unmoved.
+## The second half is still true and is still measured below -- it is why the
+## paint cannot go through `_draw` -- but the conclusion drawn from it, that
+## Godot cannot present from inside a handler, was wrong. `force_draw()` presents
+## the commands the canvas items *already hold*, so the answer is to write the
+## commands directly (`director/director_paint.gd`) rather than to wait for a
+## `NOTIFICATION_DRAW` that never arrives.
 ##
-## So the honest state is the one it is in: bound to nothing, recorded as a gap,
-## and *not* given an arm that requests a redraw. `queue_redraw()` is already
-## called from forty sites across the player, so such an arm would change nothing
-## a movie can see while reading as implemented from every direction -- which is
-## the `intersects` shape, and worse than the row staying red.
+## The behaviour this replaces the gap assertion with is in `tools/update_stage.gd`,
+## which drives the real player. What is left here is the pair of facts that
+## decide the *mechanism*, kept as a pair so that neither can be quietly dropped.
 func _update_stage_checks(h) -> void:
-	h.begin("`updateStage` is still a gap, and still says so")
+	h.begin("`updateStage` is bound, and the mechanism it is bound through")
 	h.check(
-		"it is in the host's IGNORED list rather than bound to a redraw request",
-		(Host.IGNORED as Array).has("updatestage"),
-		"a partial that only queued a redraw would read as live to the audit and "
-		+ "do nothing for the 3,717 sites that want a synchronous draw")
+		"it is out of the host's IGNORED list",
+		not (Host.IGNORED as Array).has("updatestage"),
+		"3,717 sites across six titles; a name in IGNORED answers cleanly and "
+		+ "does nothing, which is the state this closed")
+	h.check(
+		"and in HANDLED, which is what the file claims about itself",
+		(Host.HANDLED as Array).has("updatestage"))
 	var ci := Node2D.new()
 	root.add_child(ci)
 	var draws := [0]
@@ -440,15 +440,27 @@ func _update_stage_checks(h) -> void:
 	ci.queue_redraw()
 	RenderingServer.force_draw()
 	h.check(
-		"and `RenderingServer.force_draw` still does not re-run `_draw` (%d -> %d)"
+		"`force_draw` still does not run a pending `_draw` (%d -> %d)"
 			% [settled, draws[0]],
 		draws[0] == settled,
-		"the measurement the decision rests on, re-taken every run: if this ever "
-		+ "starts failing, a synchronous `updateStage` has become possible and "
-		+ "this row can be closed")
+		"the reason the synchronous paint issues its own commands instead of "
+		+ "asking for a redraw: the redraw callback is on the message queue and "
+		+ "GDScript cannot flush it")
+	# The other half, and the one the old note was missing: commands appended
+	# from outside `_draw` *are* what `force_draw` presents.
+	var item: RID = ci.get_canvas_item()
+	RenderingServer.canvas_item_clear(item)
+	RenderingServer.canvas_item_add_rect(item, Rect2(0, 0, 8, 8), Color.GREEN)
+	RenderingServer.force_draw()
+	h.check(
+		"but commands written straight to the canvas item are presented, with "
+		+ "`_draw` still unrun (%d)" % draws[0],
+		draws[0] == settled,
+		"if this ever fails, the paint reached `_draw` after all and "
+		+ "`repaint_now` is doing something other than what it says")
 	ci.queue_free()
 	await process_frame
-	h.complete("`updateStage` is still a gap, and still says so")
+	h.complete("`updateStage` is bound, and the mechanism it is bound through")
 
 
 # ------------------------------------------------------------------ driving

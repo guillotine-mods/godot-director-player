@@ -22,6 +22,7 @@ extends RefCounted
 
 const Ink := preload("res://director/director_ink.gd")
 const Text := preload("res://director/director_text.gd")
+const Paint := preload("res://director/director_paint.gd")
 
 
 ## What a field member currently holds: what a script last put there, or failing
@@ -171,7 +172,7 @@ static func paint(canvas: CanvasItem, sprite: Dictionary, member: Dictionary,
 		caret = Text.caret_rect(rect, text, style, end)
 	var lines: int = Text.draw(canvas, rect, text, style, Ink.blend_alpha(sprite))
 	if not focus.is_empty() and bool(focus.get("caret_on", false)) and caret.size.y > 0.0:
-		canvas.draw_rect(caret, style["color"], true)
+		Paint.rect(canvas, caret, style["color"], true)
 	return {
 		"member": int(sprite["cast_id"]), "name": str(member.get("name", "")),
 		"text": text, "lines": lines, "rect": rect,
@@ -201,6 +202,6 @@ static func _mark_selection(canvas: CanvasItem, rect: Rect2, text: String,
 			continue
 		var left: Rect2 = Text.caret_rect(rect, text, style, lo)
 		var right: Rect2 = Text.caret_rect(rect, text, style, hi)
-		canvas.draw_rect(Rect2(left.position,
+		Paint.rect(canvas, Rect2(left.position,
 			Vector2(maxf(1.0, right.position.x - left.position.x), left.size.y)),
 			SELECTION_TINT, true)
