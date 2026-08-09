@@ -446,6 +446,17 @@ func _two_process(h: Harness, args: Dictionary) -> void:
 	# the same thing, so the next one copied from here inherits the whole pin.
 	if Args.text(args, "boot", "") != "":
 		child.append_array(["--boot", Args.text(args, "boot", "")])
+	# The child's whole job is to write a container and exit, so it needs the
+	# opt-in a headless process does not get by default (`preview/movie_save.gd`
+	# `writes_allowed`). `tools/save_movie.gd:230` appends the same flag to its own
+	# child for the same reason; this one did not, so the moment writes started
+	# being refused the child exited 1 and this harness went red on `the saving
+	# process exits cleanly` while everything it measures was intact.
+	#
+	# Unconditional, not forwarded from `args`: it is a property of what the child
+	# does, not of how the parent was invoked, and forwarding it would mean the
+	# gate entry had to carry a flag to keep a harness honest.
+	child.append("--allow-writes")
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), child, out, true)
 	for line in out:

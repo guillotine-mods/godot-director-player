@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 51 entries in ALL is 49 pass / 2 fail, measured on 4.7.1 by a
+# which over the 54 entries in ALL is 52 pass / 2 fail, measured on 4.7.1 by a
 # whole-suite run at the commit this line was written:
 #
 #   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked

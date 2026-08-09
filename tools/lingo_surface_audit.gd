@@ -104,8 +104,29 @@ const TODO := "res://docs/ENGINE_TODO.md"
 ## file, and that is the point rather than an optimisation: what is taken from
 ## `reference/scummvm/` is the *knowledge that a name exists*, and a copy of the
 ## table here would be a copy of the table. See `_reference()`.
-const REF_BUILTINS := "res://reference/scummvm/lingo-builtins.cpp"
-const REF_THE := "res://reference/scummvm/lingo-the.cpp"
+## Two layouts, because two exist. `tools/fetch_scummvm_reference.sh` writes the
+## upstream paths verbatim, so its tables land under `lingo/`; a tree fetched
+## before that, or flattened by hand, has them at the top. Resolved at runtime
+## against both rather than pinned to one -- the alternative is this harness
+## going red on whichever layout it was not written against, and its own guard
+## below reporting "the vendored tree moved" when the tree is fine and the
+## constant is stale. Measured: with the `lingo/` copy present and the constant
+## naming the flat path, `_reference()` read 0 builtins and 0 entities and the
+## audit failed two checks while every capability it grades was intact.
+const REF_DIRS: Array[String] = [
+	"res://reference/scummvm/lingo/", "res://reference/scummvm/",
+]
+const REF_BUILTINS_FILE := "lingo-builtins.cpp"
+const REF_THE_FILE := "lingo-the.cpp"
+
+
+## The first layout that actually has the file, or the preferred path so the
+## failure names something a reader can go and look at.
+static func _ref_path(file_name: String) -> String:
+	for dir in REF_DIRS:
+		if FileAccess.file_exists(dir + file_name):
+			return dir + file_name
+	return REF_DIRS[0] + file_name
 const HOST_SRC := "res://scenes/preview_lingo_host.gd"
 const INTERPRETER_SRC := "res://lingo/lingo_interpreter.gd"
 const PREVIEW_SRC := "res://scenes/director_preview.gd"
@@ -227,7 +248,7 @@ func _init() -> void:
 			and int(reference["entities"]) >= MIN_REF_ENTITIES
 			and int(reference["fields"]) >= MIN_REF_FIELDS,
 		"read from %s and %s; if these are 0 the vendored tree moved and every "
-			% [REF_BUILTINS.get_file(), REF_THE.get_file()]
+			% [REF_BUILTINS_FILE, REF_THE_FILE]
 			+ "unbuilt capability would report as built")
 	h.complete("the audit has four non-empty sources")
 
@@ -475,7 +496,7 @@ func _reference() -> Dictionary:
 	builtin_re.compile(
 		"\\{\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*,\\s*LB::\\w+\\s*,"
 		+ "\\s*-?\\d+\\s*,\\s*-?\\d+\\s*,\\s*(\\d+)\\s*,\\s*(\\w+)")
-	for hit in builtin_re.search_all(FileAccess.get_file_as_string(REF_BUILTINS)):
+	for hit in builtin_re.search_all(FileAccess.get_file_as_string(_ref_path(REF_BUILTINS_FILE))):
 		var name := hit.get_string(1)
 		if _reference_excluded(name):
 			continue
@@ -483,7 +504,7 @@ func _reference() -> Dictionary:
 		names[_key("builtin", name.to_lower())] = {
 			"ver": int(hit.get_string(2)), "where": hit.get_string(3).to_lower()}
 
-	var the_src := FileAccess.get_file_as_string(REF_THE)
+	var the_src := FileAccess.get_file_as_string(_ref_path(REF_THE_FILE))
 
 	# `{ kTheName, "name", hasId, version, isFunction },`
 	var entity_re := RegEx.new()
