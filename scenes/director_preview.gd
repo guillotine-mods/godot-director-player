@@ -3825,5 +3825,20 @@ func lingo_focus_channel() -> int:
 	return TextFocus.arbitrate(self)
 
 
+## `the number of member "x" of castLib "y"`.
+##
+## Packed, not the bare slot. This and `preview/members.gd:read_prop` are two
+## spellings of one question -- the parser gives `the number of member` its own
+## node and routes `member("x").memberNum` through the member-property path -- and
+## only fixing one of them fixes nothing, because the corpus's cross-cast cursor
+## pairs are written in this one.
+##
+## A member number is per library, so a number handed back without the library it
+## was looked up in is not an answer. `the number of member "cutcursor" of castLib
+## "panel.cst"` returned a bare 166; 166 is `leftcursor2` in the movie's own cast,
+## so Rating's שיחה button drew a silhouette out of the wrong file and masked it
+## with an unrelated bitmap out of a third (docs/bugs-closed.md 65). Library 1
+## packs to the bare number, so every same-cast site is unchanged.
 func lingo_member_number(which: Variant, cast: String) -> Variant:
-	return _resolve_member(which, cast)
+	var where := _resolve_member_ref(which, cast)
+	return Members.pack_ref(int(where[0]), int(where[1]))

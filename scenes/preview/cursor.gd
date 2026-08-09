@@ -14,6 +14,7 @@ extends RefCounted
 ## until something moves.
 
 const Bitmap := preload("res://director/director_bitmap.gd")
+const Members := preload("res://scenes/preview/members.gd")
 
 ## Fixed 16x16, cropped from the members' top-left: larger members are cropped,
 ## smaller ones padded transparent.
@@ -113,14 +114,32 @@ static func for_stage(image: Image, hotspot: Vector2, stage_scale: float) -> Dic
 	return {"image": grown, "hotspot": hotspot * float(factor)}
 
 
-## Which library holds cursor art at this member number, or -1.
+## `[library, slot]` for one half of a cursor pair.
 ##
-## A cursor pair carries member *numbers* and nothing else -- the library is not
-## part of the value and cannot be, because `member("able1").memberNum` has
-## already dropped the library the name was found in. So the number is resolved
-## the way Director resolves a bare `member(N)`: the movie's own cast first, then
-## the other libraries the movie can address, in library order. Library numbers
-## start at 1 and 1 is always the movie's own, so an ascending walk is that rule.
+## A pair may carry either spelling of a member number and they are answered
+## differently, which is the whole of this function. A **packed** reference --
+## `Members.pack_ref`, what `the number of member "cutcursor" of castLib
+## "panel.cst"` produces -- names its library outright, and that library wins with
+## no search at all. A **bare** number named no library, so it is resolved the way
+## Director resolves a bare `member(N)` and `library_of` walks for it.
+##
+## Guessing at a number that was never ambiguous is what drew the white card. The
+## pair on Rating's שיחה button is Panel.cst's `cutcursor`/`cutcursor2`, library 7,
+## and asking `library_of` for 166 and 167 answered library 1 (`leftcursor2`) and
+## library 2 (`aa`) -- a silhouette from one cast masked by an unrelated bitmap
+## from another. Both halves of one authored pair, resolved into two different
+## wrong casts.
+static func where(value: int, table) -> Array:
+	if value >= Members.LIB_STRIDE:
+		return [value / Members.LIB_STRIDE + 1, value % Members.LIB_STRIDE]
+	return [library_of(value, table), value]
+
+
+## Which library holds cursor art at this bare member number, or -1.
+##
+## Only for a number that named no library. The movie's own cast first, then the
+## other libraries the movie can address, in library order; library numbers start
+## at 1 and 1 is always the movie's own, so an ascending walk is that rule.
 ##
 ## This used to be hard-coded to 1, which meant a cursor member living in a
 ## linked cast was never found -- it composed to nothing and read as the arrow,
@@ -198,8 +217,10 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 	# member as the picture. Resolving twice would let a data member found in a
 	# linked cast take its registration point from an unrelated member of the
 	# movie's own cast that happens to share the number.
-	var data_lib := library_of(data_id, table)
-	var data := image_in(data_lib, data_id, table, palette)
+	var data_at: Array = where(data_id, table)
+	var data_lib := int(data_at[0])
+	var data_slot := int(data_at[1])
+	var data := image_in(data_lib, data_slot, table, palette)
 	if data == null:
 		return null
 	if data.get_width() > MAX_CURSOR_SIZE or data.get_height() > MAX_CURSOR_SIZE:
@@ -208,7 +229,10 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 	# resolve keeps falling through to the opaque path: substituting the data there
 	# would compose a plausible cursor out of a library lookup that failed, which is
 	# the silent shape `docs/bugs-closed.md` 29 was.
-	var mask := member_image(mask_id, table, palette) if mask_id > 0 else data
+	var mask := data
+	if mask_id > 0:
+		var mask_at: Array = where(mask_id, table)
+		mask = image_in(int(mask_at[0]), int(mask_at[1]), table, palette)
 	var out := Image.create(CURSOR_SIZE, CURSOR_SIZE, false, Image.FORMAT_RGBA8)
 	out.fill(Color(0, 0, 0, 0))
 	var visible := 0
@@ -232,7 +256,7 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 	# The hotspot is the data member's registration point, and it is recentred
 	# when it falls outside the 16x16 crop -- an out-of-range hotspot would put
 	# the click somewhere the cursor is not drawn.
-	var m: Dictionary = table.get_member(data_lib, data_id)
+	var m: Dictionary = table.get_member(data_lib, data_slot)
 	var hotspot := Vector2i(
 		int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))
 	)
@@ -260,7 +284,15 @@ static func install(value: Variant, table, palette: PackedByteArray,
 					ImageTexture.create_from_image(scaled["image"]),
 					Input.CURSOR_ARROW, scaled["hotspot"]
 				)
-				return "custom %s/%s" % [str(pair[0]), str(mask_id)]
+				# Reported as `library:slot`, not as the raw pair. The raw pair is
+				# what the HUD showed when this file resolved 166 and 167 into two
+				# different wrong casts, and `custom 166/167` looked entirely
+				# reasonable -- the library is the half that was wrong, so the
+				# library is the half worth printing.
+				var at: Array = where(int(pair[0]), table)
+				var mask_at: Array = where(mask_id, table) if mask_id > 0 else [0, 0]
+				return "custom %s:%s/%s:%s" % [
+					str(at[0]), str(at[1]), str(mask_at[0]), str(mask_at[1])]
 		# A pair that composes to nothing visible would hand Godot a fully
 		# transparent image, and the cursor disappears rather than falling back.
 		# An invisible cursor and a broken one look the same to the player.

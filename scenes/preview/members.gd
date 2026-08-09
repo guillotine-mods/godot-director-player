@@ -175,7 +175,18 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			# showed the current value.
 			return host._field_text_of(m)
 		"number", "membernum", "castnum":
-			return int(where[1])
+			# Packed, for the same reason `the castNum of sprite` is: the number is
+			# per library, so a number that dropped the library it was looked up in
+			# is not an answer, it is a coincidence waiting to resolve somewhere
+			# else. `the number of member "cutcursor" of castLib "panel.cst"`
+			# returned a bare 166, and 166 is `leftcursor2` in the movie's own cast
+			# -- so Rating's שיחה button drew a silhouette out of the wrong file
+			# (docs/bugs-closed.md 65).
+			#
+			# Library 1 packs to the bare number, so every same-cast site in the
+			# corpus is byte-identical and only cross-library reads move -- and
+			# those were reading a different member than the script named.
+			return pack_ref(int(where[0]), int(where[1]))
 		"castlibnum":
 			# The library half of the reference, and the one a script needs to hand
 			# a member number back to `member()` in the cast it came from.

@@ -15,19 +15,87 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 65. `the number of member X of castLib Y` drops the library, so a cursor pair resolves into whatever cast happens to have a bitmap at that number
+
+**Status:** FIXED · **Area:** `scenes/director_preview.gd`, `scenes/preview/members.gd`, `scenes/preview/cursor.gd`
+· reported from play, `rating` BLAEGOZ.dir, the שיחה button
+· covered by `tools/cursor_cross_cast.gd`
+
+```
+set x to the number of member "cutcursor" of castLib "panel.cst"
+set y to the number of member "cutcursor2" of castLib "panel.cst"
+set the cursor of sprite 46 to [x, y]
+```
+
+`lingo_member_number` answered `_resolve_member(which, cast)`, which is
+`_resolve_member_ref(...)[1]` — **the slot, with the library thrown away**. The
+lookup had just found `cutcursor` in library 7 and then returned a bare `166`.
+Member numbers are per library, so a number without its library is not an answer.
+
+`Cursor.library_of` then guessed, as it is designed to for a number that genuinely
+named no library: walk the libraries ascending, take the first with a bitmap at
+that slot. In a movie with seven casts that always finds something.
+
+| | the script named | the port resolved |
+|---|---|---|
+| data `166` | `cutcursor`, Panel.cst, **lib 7** | `leftcursor2`, **lib 1** |
+| mask `167` | `cutcursor2`, **lib 7** | `aa`, Hotel.cst, **lib 2** |
+
+One authored pair, two different wrong casts: a filled arrow silhouette from the
+movie's own cast, masked by an unrelated bitmap from another, composed onto
+opaque white. That is the white card under the pointer on the שיחה button.
+
+**Every cheap check passed while this was broken**, and that is the part worth
+keeping. Both members resolved. Both were named. Both were 1-bit bitmaps that
+decoded. The image was 16x16 with something visible in it. `cursor_preview`
+asserted all four and was green. The only observable that disagreed was the HUD's
+`cur:custom 166/167`, and only because a player looked at it.
+
+**The fix is a mechanism the port already had and this path was not using.**
+`Members.pack_ref` carries `(library, slot)` in one integer — `the castNum of
+sprite` has needed it since it must survive being handed back to `member()` — and
+library 1 packs to the bare number, so every same-cast site in all six titles is
+byte-identical and only cross-library reads move. Both spellings now pack:
+`lingo_member_number` for `the number of member`, which has its own AST node, and
+`members.gd:read_prop` for `member("x").memberNum`. Fixing one and not the other
+fixes nothing, because the corpus writes its cursor pairs in the first.
+`Cursor.where` decodes: a packed reference names its library outright, a bare
+number still goes to `library_of`. That fallback is kept deliberately — it is what
+closes entry 29, a cursor member living in a linked cast addressed by a bare
+number.
+
+**Latent, beyond cursors.** `set the castNum of sprite 18 to the number of member
+"flameFire" of castLib "weapons.cst"` had the same hole and would have drawn
+whatever library 1 holds at that slot.
+
+**Coverage.** `cursor_preview`'s new "data and mask share one library" check is
+red on the unfixed code — `[166, 167]: data lib 1 (leftcursor2), mask lib 2 (aa)`
+— but only when pointed at Rating. Piposh 2 puts every cursor in the movie's own
+cast, so on the gate's pinned corpus that check cannot fail whatever the resolver
+does. `tools/cursor_cross_cast.gd` exists for that: it finds a cross-cast pair
+rather than naming one, and **fails when the corpus has none** instead of passing
+over an empty set.
+
+---
+
 ## 64. A cursor pair that names no mask is composed opaque, so the artwork's paper is drawn as a white card under the pointer
 
 **Status:** FIXED · **Area:** `scenes/preview/cursor.gd`
-· reported from play, `rating` BLAEGOZ.dir frame 916
+· found while investigating 65
 · covered by `tools/cursor_preview.gd`
+
+**This entry originally claimed Rating's שיחה button as its reproduction. That was
+wrong and the claim was pushed before it was checked** — the שיחה button is
+channel 46, its pair is `[166, 167]`, and it is entry 65. The two defects are
+independent, look identical from the player's chair, and the first fix shipped
+against the second one's symptom. Both are real; only one of them was the report.
 
 `set the cursor of sprite 2 to [the number of member "talkcursor" of castLib 1]`
 is a **one-element** pair, and `compose` read that as "no mask", which it turned
 into "every pixel opaque". `talkcursor` is a 17x13 speech bubble drawn as a black
-outline on white, so the שיחה button at the top left of Rating's dialogue rooms
-handed the OS a white rectangle with a bubble drawn on it. The rule is that a
-missing mask member means **the data member is its own mask**: black draws black,
-white is transparent.
+outline on white, so any sprite carrying it handed the OS a white rectangle with a
+bubble drawn on it. The rule is that a missing mask member means **the data member
+is its own mask**: black draws black, white is transparent.
 
 **The reference implementation cannot be cited for this, and that is worth being
 precise about** rather than glossing. ScummVM `cursor.cpp:Cursor::readFromCast`

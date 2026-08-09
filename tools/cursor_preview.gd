@@ -204,8 +204,13 @@ func _init() -> void:
 		# library the cursor path itself resolved the number in, or a member found
 		# in a linked cast would be reported by whatever shares its number in the
 		# movie's own.
-		var lib := Cursor.library_of(data_id, table)
-		var member: Dictionary = table.get_member(lib, data_id) if lib > 0 else {}
+		# Through `Cursor.where`, which is what the engine resolves with, rather
+		# than through `library_of` directly: a packed reference carries its own
+		# library and `library_of` would search for a number that is not a slot,
+		# find nothing, and report the member as unnamed.
+		var at: Array = Cursor.where(data_id, table)
+		var lib := int(at[0])
+		var member: Dictionary = table.get_member(lib, int(at[1])) if lib > 0 else {}
 		if str(member.get("name", "")) == "":
 			unnamed.append("%s -> member %d" % [key, data_id])
 		var composed = preview.call("_cursor_image", data_id, mask_id)
@@ -243,12 +248,54 @@ func _init() -> void:
 		", ".join(PackedStringArray(solid)))
 	h.complete("every assigned pair composes to something the player can see")
 
+	# ---------------------------------------------------------------- one cast
+	# A data/mask pair is authored together, in one cast, as one drawing and its
+	# silhouette. So the two halves resolving into two different libraries is not a
+	# tolerance, it is proof the numbers were resolved by guesswork -- and the
+	# guess is invisible, because every library in a corpus this size has *a*
+	# bitmap at any small number.
+	#
+	# Rating's שיחה button is the case: `[the number of member "cutcursor" of
+	# castLib "panel.cst", ...]` reached here as a bare `[166, 167]`, and 166 is
+	# `leftcursor2` in the movie's own cast while 167 is `aa` in Hotel.cst. One
+	# authored pair, two wrong casts, and a composed image that looked like a
+	# cursor. Named members and a 16x16 image are exactly what it had.
+	h.begin("a pair's two halves come from one cast")
+	var split: Array = []
+	var unresolved: Array = []
+	for key in pairs.keys():
+		var pair: Array = pairs[key]
+		var mask_id: int = int(pair[1]) if pair.size() > 1 else 0
+		var at: Array = Cursor.where(int(pair[0]), table)
+		if int(at[0]) < 1:
+			unresolved.append("%s: data resolves to no library" % key)
+			continue
+		if mask_id <= 0:
+			continue
+		var mask_at: Array = Cursor.where(mask_id, table)
+		if int(mask_at[0]) < 1:
+			unresolved.append("%s: mask resolves to no library" % key)
+			continue
+		if int(mask_at[0]) != int(at[0]):
+			var dm: Dictionary = table.get_member(int(at[0]), int(at[1]))
+			var mm: Dictionary = table.get_member(int(mask_at[0]), int(mask_at[1]))
+			split.append("%s: data lib %s (%s), mask lib %s (%s)" % [key,
+				str(at[0]), str(dm.get("name", "<unnamed>")),
+				str(mask_at[0]), str(mm.get("name", "<unnamed>"))])
+	h.check("every half resolves to a library", unresolved.is_empty(),
+		", ".join(PackedStringArray(unresolved)))
+	h.check("data and mask share one library", split.is_empty(),
+		", ".join(PackedStringArray(split)))
+	h.complete("a pair's two halves come from one cast")
+
 	# ------------------------------------------------------------- the empty mask
 	# A pair may name only its data member, and then the data member is its own
 	# mask: black pixels draw black, white pixels are transparent. Composing such a
 	# pair opaque instead puts the artwork's paper under the pointer, which is a
-	# white card the size of the member with the drawing on it -- the shape
-	# `docs/bugs-closed.md` 64 was reported as.
+	# white card the size of the member with the drawing on it, which is
+	# `docs/bugs-closed.md` 64. Not the reported bug -- that was 65, the same card
+	# by a different route -- and the two are worth keeping apart, because a fix
+	# for either one leaves the other drawing it.
 	#
 	# Measured over the real single-element pairs *and* over every data member this
 	# movie uses with a mask, composed again without one. The second set is what
