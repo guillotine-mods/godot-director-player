@@ -78,12 +78,6 @@ const ACCOUNTED := {
 	# so the first step after the load re-sends that `exitFrame`, re-pauses, and the
 	# restored session can never be resumed — a load that looks like a hang.
 	"_exit_frame_called": "saved",
-	# Saved for that same reason, one step finer: it is only ever true between a
-	# `play done` and the frame entry it returns through. Dropped, that entry
-	# clears the latch, the caller's `exitFrame` runs a second time, and a handler
-	# whose `play` is what parked it plays again -- the loop this flag exists to
-	# break, re-armed by the load.
-	"_returning_from_play": "saved",
 	"_skip_sent": "saved",
 	"_overrides": "saved",
 	"_field_text": "saved",
@@ -258,7 +252,6 @@ static func capture(host) -> Dictionary:
 		"held": bool(host._held),
 		"jump_queued": bool(host._jump_queued),
 		"exit_frame_called": bool(host._exit_frame_called),
-		"returning_from_play": bool(host._returning_from_play),
 		"pending_enter": host._pending_enter != null,
 		"interpreter_globals": encode(
 			host._interpreter.globals if host._interpreter != null else {}),
@@ -511,7 +504,6 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	host._held = bool(data.get("held", false))
 	host._jump_queued = bool(data.get("jump_queued", false))
 	host._exit_frame_called = bool(data.get("exit_frame_called", false))
-	host._returning_from_play = bool(data.get("returning_from_play", false))
 	host._entered_index = int(data.get("entered_index", -1))
 	host._pending_enter = (host.call("_frame_script", host._index)
 		if bool(data.get("pending_enter", false)) else null)

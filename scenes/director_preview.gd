@@ -153,10 +153,6 @@ var _in_exit_frame := false
 ## `soundBusy` from `exitFrame` on every step of exactly such a hold, and a
 ## once-per-frame-number latch would answer that poll once and then go deaf.
 var _exit_frame_called := false
-## True for the single frame entry that a `play done` returns through, so that
-## entry keeps `_exit_frame_called` raised instead of clearing it. Set and
-## cleared in the same pair of calls; nothing else reads it.
-var _returning_from_play := false
 ## The frame script whose `enterFrame` is waiting for a transition to finish.
 ## §6.2 plays the transition inside `renderFrame`, which is after `prepareFrame`
 ## and before `enterFrame`, so a handler that runs on entry runs when the new
@@ -1487,14 +1483,7 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 	# cleared *before* the transition check rather than after: a frame that defers
 	# its `enterFrame` has still been entered, and it is the entry that makes the
 	# next `exitFrame` due.
-	#
-	# Except on the entry that a `play done` returns through: that frame sent its
-	# `exitFrame` before the `play`, and the handler is parked inside it rather
-	# than finished. See `lingo_play_done`.
-	if _returning_from_play:
-		_returning_from_play = false
-	else:
-		_exit_frame_called = false
+	_exit_frame_called = false
 	if _clock.holding_transition():
 		_pending_enter = script
 		return
@@ -2048,7 +2037,7 @@ func skip_to_end() -> void:
 	# for the rest of the movie to release a wait that is almost never on it. A
 	# scene that does wait on 2 still has the jump behind it.
 	lingo_stop_sound(1)
-	_clock.release()
+	_clock.release_all()
 	var target := -1
 	if _labels != null:
 		for marker in _labels.markers:
@@ -2505,10 +2494,14 @@ func lingo_go_frame(frame: int) -> void:
 	_held = true
 	var target := clampi(frame, 0, maxi(_score.frame_count - 1, 0))
 	_index = target
-	# A pending `go to` cancels every wait — sound, click and delay alike (§9.2).
-	# It is how a script escapes a wait-for-click frame without a click, and
-	# without it a room reached by `go` would serve out the wait the frame it left
-	# had armed.
+	# A pending `go to` cancels the waits that are waiting on something — the sound
+	# channel, the click, the video — and **not** the frame clock. It is how a
+	# script escapes a wait-for-click frame without a click, and without it a room
+	# reached by `go` would serve out a wait for a sound the frame it left had
+	# queued and it will never hear. The tempo delay is not that: it is how long
+	# the frame lasts, the reference's fourth wait arm is the one that does not
+	# consult a pending jump, and cutting it short makes the movie play faster than
+	# Director did. `FrameClock.release` carries the reference citation.
 	_clock.release()
 	if not _in_exit_frame:
 		# Anywhere but `exitFrame` — a mouse handler, a key handler, `enterFrame`
@@ -2966,8 +2959,30 @@ func route_release(at: Vector2) -> Node:
 ## Director keeps a stack, so a cut scene can be entered from anywhere and
 ## return to its caller. Without it `play done` has nowhere to go and the movie
 ## reads as having simply stopped at the end of the interlude.
+## **Where it comes back to depends on what called it.** `Lingo::func_play`
+## records the current frame and then, when `_state->currentChannelId == 0`, adds
+## one (`lingo-funcs.cpp:207-213`). Channel zero is "this script is not attached
+## to a sprite" — a frame script or a movie script — so a `play` written in a
+## frame's `on exitFrame` returns the playhead *past* that frame, and only a
+## `play` from a sprite behaviour returns to the frame itself.
+##
+## That one line is why the reference never re-enters the caller's frame, and it
+## is the mechanism this port was missing. `play done` used to land back on the
+## caller and suppress its `exitFrame` with a latch, which stopped the interlude
+## restarting its caller and reached the same outcome by different means — but the
+## difference is observable: landing on the frame re-runs its `on enterFrame` and
+## re-arms its score sound, palette and transition, then leaves it without the
+## `exitFrame` a room does its exit work in. Landing past it does none of that,
+## and the frame it lands on is an ordinary entry that keeps its own events.
+##
+## `current_sprite_num` is the channel of the chain element running now, which is
+## exactly `currentChannelId`; it exists because `the currentSpriteNum` was bound.
 func lingo_play_push(args: Array) -> void:
-	_play_stack.append({"movie": str(_movie.path), "frame": _index})
+	var from_sprite: bool = _host != null and int(_host.current_sprite_num) > 0
+	_play_stack.append({
+		"movie": str(_movie.path),
+		"frame": _index if from_sprite else _index + 1,
+	})
 	var movie := ""
 	var where: Variant = null
 	for a in args:
@@ -3049,35 +3064,23 @@ func _pop_play_stack() -> void:
 	if str(back["movie"]) != str(_movie.path):
 		lingo_go_movie(str(back["movie"]).get_file(), null)
 	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
-	# **The frame being returned to has already sent its `exitFrame`, and must not
-	# send another.** That handler is the one that called `play`; it is parked
-	# mid-statement and about to be resumed, so re-entering the frame and
-	# dispatching it again does not repeat a side effect, it *restarts the caller*
-	# -- which reaches the same `play` a second time and never comes back.
+	# **Nothing is suppressed here, because there is nothing to suppress.**
+	# `lingo_play_push` recorded the frame *after* the caller's when the `play`
+	# came from a frame or movie script, so the entry this return lands on is an
+	# ordinary one that has never sent an `exitFrame` and is owed its own.
 	#
-	# The reference guards this with a third condition on the `exitFrame` send
-	# that this port had no equivalent for: `score.cpp:672` refuses it while
-	# `_skipFrameAdvance` is set, and `func_goto` sets that flag for every jump
-	# including the one `play done` itself performs ("exitFrame is not called in
-	# this case", `score.cpp:669-671`). Here the latch already exists and says the
-	# same thing, so the return keeps it raised across the entry instead.
-	#
-	# Piposh Dream's save screen is what this costs. `ques.dir` frame 803 is the
-	# panel, and its `exitFrame` is `play frame "fillnames" of movie ...saves.dir`
-	# -- a two-frame errand that reads six save names out of that movie's fields
-	# and returns. `Saves.dir` has no artwork on those frames, so each restart
-	# painted an empty stage: the screen alternated between the panel and black
-	# for as long as it was open, and never advanced far enough to be clicked.
-	_exit_frame_called = true
-	# **Unconditionally, and not under the `_jump_queued` arm below.** `play done`
-	# is nearly always reached from inside an `exitFrame` -- it is how an interlude
-	# ends, and `Saves.dir` frame 27 is exactly that shape -- so `_in_exit_frame`
-	# is set and that arm never runs. The frame entry still happens, because the
-	# playhead has just been moved to another frame and something has to enter it;
-	# it simply is not this call that queues it. Guarding the flag on the arm
-	# restored the loop it exists to break, which is the measurement that settled
-	# where it goes.
-	_returning_from_play = true
+	# This used to raise `_exit_frame_called` across the entry instead, which
+	# stopped the caller's `exitFrame` re-running and re-reaching its own `play`
+	# -- the loop that made Piposh Dream's save screen alternate with black
+	# (`ques.dir` 803 plays a two-frame errand into `saves.dir`, which has no
+	# artwork on those frames). It worked, and it was the wrong mechanism: the
+	# reference lands past the frame rather than suppressing an event on it, and
+	# the two differ where it shows -- landing on the frame re-runs its
+	# `on enterFrame` and re-arms its score sound, palette and transition, then
+	# leaves without the `exitFrame` a room does its exit work in. Taking
+	# `frameI++` means taking it *instead of* the latch: with both, the entry one
+	# frame along would swallow an `exitFrame` that is genuinely owed. See
+	# `bugs.md` 54.
 	# Returning from an interlude cancels the wait its last frame armed (§9.2).
 	# Whether the destination is entered by this call or by the next step is the
 	# caller's question and not this one's: `play done` runs from inside a handler

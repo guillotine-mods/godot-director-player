@@ -2491,7 +2491,7 @@ this is a hole with an unknown blast radius rather than a known wrong answer.
 
 ## 54. `play done` returns to the frame the `play` was on; the reference returns to the one after it when the `play` came from a frame script
 
-**Status:** open · **Area:** `scenes/director_preview.gd`, `lingo-funcs.cpp:207-213`
+**Status:** fixed · `lingo_play_push` records `_index + 1` when `current_sprite_num` is 0 -- the channel of the running chain element, which is the reference's `currentChannelId`. The latch it replaces is gone: taking `frameI++` means taking it instead of, not beside. Re-measured on the screen the latch was measured on (`piposh-dream` `fritz_room.json`, click 25,12): no ping-pong, 23 sprites, all six save slots clickable, and the panel reached one step sooner, which is what landing past the caller's frame looks like.
 
 `Lingo::func_play` records where to come back to as
 
@@ -2541,9 +2541,18 @@ godot --headless --path . --script tools/liveness_sweep.gd -- \
 `--click` presses every eligible sprite of the frame the watch ended on and
 watches where each one leads, and the sweep's `ping-pong` verdict is that exact
 symptom: two containers trading places, nothing on the clock, one of them drawing
-nothing. So a change to `lingo_play_push` can be measured against the screen the
-current behaviour was measured on rather than reasoned about. Read the sweep's
-own header for what a `--click` run does not reach — one click deep, no keys.
+nothing. So a change to `lingo_play_push` has a detector to be measured with
+rather than only reasoned about.
+
+**It is a detector and not yet the reproduction, and the difference is measured
+rather than assumed.** Run as written, the sweep opens `ques.dir` at its start,
+the watch settles around frame 13, and the click phase never reaches 803 — 20
+states, no finding, one click deep from wherever the opening left it. Frame 803
+is a save panel several steps into the movie, so getting there wants a marker
+jump or a click chain the sweep does not have. What the command above *does* give
+is a rule that fires on the shape the moment a run reaches it, and
+`tools/liveness_sweep.gd:_assert_rules` asserts that on a synthetic
+`ques.dir:803(4) <-> Saves.dir:27(0)` window every time it runs.
 
 Whoever picks this up: the port also has
 no `currentChannelId`, and `exitFrame` is dispatched only to the frame script
@@ -2557,7 +2566,7 @@ sound in its score sound channels.
 
 ## 55. A queued `go` cancels the tempo wait as well; the reference cancels only the sound, click and video waits
 
-**Status:** open · **Area:** `director/director_frame_clock.gd`, `score.cpp:400-441`
+**Status:** fixed · `FrameClock.release` now clears the sound, click and video waits and leaves the clock alone; `release_all` is the everything version and `skip_to_end` is its one caller, because the SKIP button is a player abandoning the scene rather than a script navigating inside it. §9.2 and `tools/frame_events.gd` both asserted the old reading and are corrected.
 
 `Score::isWaitingForNextFrame` computes `goingTo = _nextFrame && _nextFrame !=
 _curFrameNumber` and consults it in **three** of its four arms:

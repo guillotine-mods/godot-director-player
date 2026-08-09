@@ -1600,9 +1600,23 @@ authors a 17 ms pause.
 
 ### 9.2 Waits are a state, not a sleep
 
-`isWaitingForNextFrame` is polled every tick. A pending **`go to` cancels every
-wait** — sound, click and video waits all release if a jump is queued, which is
-how a script escapes a wait-for-click frame. During a wait, **video keeps playing
+`isWaitingForNextFrame` is polled every tick. It has **four** arms and a pending
+`go to` cancels **three** of them: the sound-channel wait, the wait-for-click and
+the wait-for-video all release if a jump is queued, which is how a script escapes
+a wait-for-click frame. The fourth arm is `millis < _nextFrameTime` — the tempo
+channel's frame rate and its `256 - tempo` seconds delay — and it does not
+consult the jump at all (`score.cpp:400-441`); `the delay`'s own timer is the
+same (`score.cpp:681-692`).
+
+The three that yield are waiting on something that may never arrive — a sound
+never queued, a click nobody makes, a video with no decoder — so the jump is
+their escape hatch. The clock is not waiting on anything: it is how long the
+frame *lasts*, and a movie that jumps out of it early plays faster than Director
+did. This port read the rule as all four for a while, and `bugs.md` 55 records
+what that cost: a click during any of this corpus's thirty-six tempo delays, 74
+seconds of them, cut the delay short.
+
+During a wait, **video keeps playing
 and the window keeps rendering**. Wait-for-click also drives the alternating
 cursor and is cleared by the mouse-down handler, not by the score.
 

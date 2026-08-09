@@ -481,16 +481,45 @@ func clicked() -> void:
 	_waiting_click = false
 
 
-## A queued `go to` cancels every wait (§9.2) — sound waits included, which is
-## how a script escapes a frame whose sound was never going to arrive.
+## A queued `go to` cancels the waits that are *waiting for something*, and does
+## not shorten the clock.
+##
+## `Score::isWaitingForNextFrame` computes `goingTo` once and consults it in three
+## of its four arms (`score.cpp:400-441`): the sound-channel wait, the
+## wait-for-click and the wait-for-video all end early when a jump is pending, and
+## each clears its own channel on the way out. The fourth arm is
+## `millis < _nextFrameTime` — the tempo channel's frame rate and its
+## `256 - tempo` seconds delay — and it does not mention `goingTo` at all. `the
+## delay`'s own timer is the same (`score.cpp:681-692`): a pending jump skips the
+## frozen-script processing inside the delay branch and does not end the delay.
+##
+## The distinction is not arbitrary. The three that yield are waiting on something
+## that may never come — a sound that was never queued, a click nobody makes, a
+## video with no decoder — so a jump is the escape hatch, and this port's own
+## comment about "how a script escapes a frame whose sound was never going to
+## arrive" is right about them. The clock is not waiting on anything: it is how
+## long the frame *lasts*, and a movie that jumps out of it early plays faster
+## than Director did.
+##
+## Reachable only from a `go` issued outside the step loop — a click, a key, an
+## `idle` — because a `go` from `exitFrame` runs after the wait has expired. This
+## corpus spends 74.0 s in tempo delays across thirty-six frames, so clicking
+## through one is an ordinary thing for a player to do. `bugs.md` 55.
 func release() -> void:
-	_hold_ms = 0.0
-	_transition_ms = 0.0
-	_hold_reason = ""
 	_waiting_click = false
 	_waiting_sound = 0
 	_waiting_cue = 0
 	_waiting_video = 0
+
+
+## Every hold, the clock included. A movie change, not a jump within one: the
+## frame the old movie was timing does not exist any more, so there is nothing
+## left for its delay to be the length of.
+func release_all() -> void:
+	release()
+	_hold_ms = 0.0
+	_transition_ms = 0.0
+	_hold_reason = ""
 
 
 ## Drop one timed hold by name, and leave every other reason to hold alone.

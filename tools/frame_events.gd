@@ -79,15 +79,28 @@ func _clock_cases(h) -> void:
 	h.check("a click does", not waiting.playhead_held(), waiting.status())
 	h.complete("a wait-for-click holds until a click and not until a timer")
 
-	# §9.2. Without this a script that navigates out of a waiting frame is made to
-	# serve the rest of the wait on the frame it has already left.
-	h.begin("a queued `go to` cancels every wait")
+	# §9.2, and the half of it that was asserted backwards. `isWaitingForNextFrame`
+	# consults a pending jump in three of its four arms and not in the fourth
+	# (`score.cpp:400-441`): the sound, click and video waits end early because
+	# each is waiting on something that may never arrive, and the frame clock does
+	# not, because it is how long the frame lasts. This used to assert that a jump
+	# cleared all four, so a click during one of this corpus's thirty-six tempo
+	# delays -- 74 seconds of them -- cut the delay short and the movie ran faster
+	# than Director. `bugs.md` 55.
+	h.begin("a queued `go to` cancels the waits and not the clock")
 	var jumped = Clock.new()
 	jumped.enter_frame({"fps": 15.0, "delay_ms": 3000, "wait_click": true})
 	h.check("both a delay and a click wait are armed", jumped.playhead_held())
 	jumped.release()
-	h.check("the jump clears them", not jumped.playhead_held(), jumped.status())
-	h.complete("a queued `go to` cancels every wait")
+	h.check("the click wait is cleared", not jumped.waiting_click())
+	h.check("the delay still holds the playhead", jumped.playhead_held(),
+		jumped.status())
+	# The SKIP button is the one that does drop everything: the player is
+	# abandoning the scene, not navigating inside it.
+	jumped.release_all()
+	h.check("release_all drops the delay too", not jumped.playhead_held(),
+		jumped.status())
+	h.complete("a queued `go to` cancels the waits and not the clock")
 
 	# The movie's clock and the playhead's are not the same clock: a character
 	# talking on a wait-for-click frame must keep animating while the frame waits.
