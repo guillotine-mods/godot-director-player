@@ -34,12 +34,41 @@ const Ink := preload("res://director/director_ink.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 
 
+## Is this process allowed to rewrite a container on disk?
+##
+## **Yes while a person is playing, no for a script that is only looking.** The
+## distinction is not fussiness about side effects: `saveMovie` writes the
+## original 1997 file in place, those files are the corpus every measurement in
+## `tools/` is taken against, and `games/` is six git submodules whose contents
+## nothing here is supposed to change.
+##
+## What makes it a trap rather than a hazard is that no tool has to *ask* for a
+## save to cause one. A movie calls `savemovie` from its own Lingo, and some call
+## it from the frame they open on -- `piposh-dream/Saves.dir` frame 3 is
+## `on exitFrame / dosave / end`, and `dosave` ends in `savemovie`. Booting that
+## container to read its scripts rewrote it, which is how this guard came to be
+## written: a diagnostic that only meant to print six handlers modified the game.
+##
+## Headless is the test because it is exactly the set of runs that are looking:
+## every harness in `tools/`, every `gate.sh` pass, every probe. A real session
+## has a display and saves normally. `--allow-writes` is the opt-in for the one
+## harness whose subject *is* the save (`tools/save_movie.gd`, which writes a
+## real container and puts it back).
+static func writes_allowed() -> bool:
+	if DisplayServer.get_name() != "headless":
+		return true
+	return OS.get_cmdline_user_args().has("--allow-writes")
+
+
 ## Write the movie now playing to `requested`. Returns a report rather than a
 ## bool, because a save that half-happened has to be able to say so: `written`
 ## is how many field members reached the file, and `error` is empty only when
 ## the container was replaced and reopened cleanly.
 static func save(host, requested: String) -> Dictionary:
 	var report := {"path": "", "written": 0, "error": ""}
+	if not writes_allowed():
+		report["error"] = "container writes are off (headless without --allow-writes)"
+		return report
 	if host._movie == null:
 		report["error"] = "no movie is playing"
 		return report

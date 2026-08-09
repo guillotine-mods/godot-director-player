@@ -222,6 +222,12 @@ func _two_process(h: Harness, args: Dictionary, target: String, field_name: Stri
 	# nothing and the comparison below runs against an empty session.
 	if Args.text(args, "boot", "") != "":
 		child.append_array(["--boot", Args.text(args, "boot", "")])
+	# The child is the process that actually calls `saveMovie`, and container
+	# writes are refused in a headless process that has not asked for them
+	# (`movie_save.gd:writes_allowed`). A command-line opt-in is not inherited the
+	# way an environment variable would be, so this harness -- the one whose
+	# subject *is* the save -- has to hand it on explicitly.
+	child.append("--allow-writes")
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(), child, out, true)
 	for line in out:
