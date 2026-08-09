@@ -104,3 +104,20 @@ text = "Debug layer"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
+
+[node name="BindingsButton" type="Button" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "Edit preview keys…"
+
+[node name="BindingsStatus" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+
+[node name="Bindings" type="VBoxContainer" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2

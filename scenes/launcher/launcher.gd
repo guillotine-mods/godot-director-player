@@ -14,6 +14,7 @@ extends Control
 const GameConfig := preload("res://director/game_config.gd")
 const TitleList := preload("res://scenes/launcher/title_list.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const BindingRules := preload("res://scenes/launcher/binding_rules.gd")
 
 const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
 
@@ -38,6 +39,7 @@ const DEBUG_VALUES := [DebugKeys.AUTO, DebugKeys.ON, DebugKeys.OFF]
 var _entries: Array[Dictionary] = []
 var _root := ""
 var _boot := ""
+var _binding_fields: Dictionary = {}
 ## Set once in `_ready`. `_on_play` reads this rather than calling
 ## `_developer_visible()` again, for the reason `_refresh_play`'s own comment
 ## gives about a second reason to disable Play: two call sites computing the
@@ -65,6 +67,7 @@ func _ready() -> void:
 	tabs.set_tab_hidden(developer.get_index(), not _show_developer)
 	if _show_developer:
 		_fill_developer()
+		%BindingsButton.pressed.connect(_on_bindings_pressed)
 	_games.item_selected.connect(_on_game_selected)
 	_play.pressed.connect(_on_play)
 	if _entries.size() > 0:
@@ -141,6 +144,68 @@ func _fill_developer() -> void:
 		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
 
 
+func _on_bindings_pressed() -> void:
+	if %Bindings.visible:
+		return
+	# The third check reads every title's scripts, which is seconds. Say so
+	# before doing it rather than freezing a button with no explanation.
+	%BindingsStatus.text = "Reading what the games test…"
+	await get_tree().process_frame
+	BindingRules.measure()
+	%BindingsStatus.text = ""
+	_build_bindings()
+	%Bindings.visible = true
+	%BindingsButton.disabled = true
+
+
+func _build_bindings() -> void:
+	var cfg := GameConfig.merged()
+	for command in DebugKeys.DEFAULTS:
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.text = str(command)
+		label.custom_minimum_size = Vector2(220, 0)
+		var field := LineEdit.new()
+		field.text = str(cfg.get_value("debug", command, DebugKeys.DEFAULTS[command]))
+		field.custom_minimum_size = Vector2(180, 56)
+		field.placeholder_text = "empty: unbound"
+		field.text_changed.connect(_on_binding_changed.bind(str(command)))
+		row.add_child(label)
+		row.add_child(field)
+		_binding_fields[str(command)] = field
+		%Bindings.add_child(row)
+
+
+## The three checks, in the order that gives the most useful message: a name
+## that is not a key first, then the key that is already taken, then the key a
+## game wants.
+func _on_binding_changed(_text: String, command: String) -> void:
+	var field := _binding_fields[command] as LineEdit
+	var name := str(field.text).strip_edges()
+	var problem := ""
+	if name == "":
+		problem = ""  # Unbinding is legal, and is how a game gets a key back.
+	elif BindingRules.named(name) == KEY_NONE:
+		problem = "'%s' is not a key name" % name
+	else:
+		var current: Dictionary = {}
+		for other in _binding_fields:
+			current[other] = str((_binding_fields[other] as LineEdit).text).strip_edges()
+		var clash := BindingRules.collision(current, command, name)
+		if clash != "":
+			problem = "%s is already on %s" % [clash, name]
+		else:
+			var claimed := BindingRules.claimed_by(name)
+			var typed := BindingRules.typed_in(name)
+			if not claimed.is_empty():
+				problem = "%s is a keyCode %s tests" % [name, ", ".join(claimed)]
+			elif not typed.is_empty():
+				problem = "%s types a character %s tests" % [name, ", ".join(typed)]
+	field.modulate = Color.WHITE if problem == "" else Color(1.0, 0.55, 0.55)
+	%BindingsStatus.text = problem
+	_refresh_play()
+
+
 func _on_game_selected(index: int) -> void:
 	if index < 0 or index >= _entries.size():
 		return
@@ -196,6 +261,11 @@ func _select_root(row: Dictionary) -> void:
 ## whichever ran last decides. That is the same fault `debug_keys.gd` reports
 ## for two commands on one key, in a place nothing would report it.
 func _refresh_play() -> void:
+	for command in _binding_fields:
+		if (_binding_fields[command] as LineEdit).modulate != Color.WHITE:
+			_play.disabled = true
+			_play.text = "Fix the highlighted key first"
+			return
 	if _root == "":
 		_play.disabled = true
 		_play.text = "No game selected"
@@ -227,6 +297,9 @@ func _on_play() -> void:
 		elif overlay.has_section_key("game", "codepage"):
 			overlay.erase_section_key("game", "codepage")
 		overlay.set_value("debug", "enabled", DEBUG_VALUES[maxi(%Debug.selected, 0)])
+		for command in _binding_fields:
+			overlay.set_value("debug", str(command),
+				str((_binding_fields[command] as LineEdit).text).strip_edges())
 	GameConfig.write_overlay(overlay)
 	_redrive_autoloads()
 	_launch()
