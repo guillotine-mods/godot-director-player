@@ -2788,3 +2788,104 @@ stops being free.
 
 **Reproduce:** for any bitmap member, slice the `CASt` specific block and print the
 `i16` at 24 and at 26 beside `castmember/bitmap.cpp`'s D5 branch.
+
+
+## 68. Three sounds Rating asks for are not in the shipped tree, so the arcade, the Bonds game and the break-in open silent
+
+**Status:** open, data · **Area:** `games/rating/SOUNDS/` · found by
+`tools/qa_walk.gd --sweep` over all 81 movies
+
+`AudioDirector._fail` logs `Audio miss` at `warn` and nothing collects it, which
+`autoload/audio_director.gd:167` says in as many words -- "the movies asking for
+it got `Audio miss: dream2\1` in a log nobody reads". Sweeping the corpus with
+the warnings collected, Rating asks for three files it does not ship:
+
+| request | folder that resolved | what is in it |
+|---|---|---|
+| `sounds\arcade1\startmus.aif` | `SOUNDS/ARCADE1/` | 20 files incl. `GAMEMUS.AIF`, no `STARTMUS` |
+| `sounds\bonds\midgame.aif` | `SOUNDS/BONDS/` | 20 files incl. `BONDMUS.AIF`, no `MIDGAME` |
+| `sounds\brakein\brakemus.aif` | `SOUNDS/BRAKEIN/` | 14 files incl. `BRAKEIN.AIF`, no `BRAKEMUS` |
+
+**The folder resolved and the file is not in it**, which is what separates this
+from a resolver bug: the sibling files in each of those three directories load
+and play. `find games/rating -iname "*startmus*"` and the same for the other two
+return nothing at all, so they are absent from the tree under any name or case,
+not merely missed by the search path.
+
+Same class as entry 46 (`games/piposh` shipping no `PIPDATA/FX` tree at all) and
+the `piposh-ru` note beside it: a gap in the data this repository was given, not
+a fault in the engine reading it.
+
+**What no data here proves:** whether the original CD shipped these three. There
+is one copy of Rating under `games/`, so unlike Piposh there is no second
+localisation to difference against, and that is the measurement that would settle
+it.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
+```
+
+## 69. `liveness_sweep` withholds its blank verdict under an open window but not its trap verdict, so a room idling behind the inventory reads as a trap
+
+**Status:** open · **Area:** `tools/liveness_sweep.gd`
+
+`--strict` over all 81 of Rating's movies returns exactly one finding:
+
+```
+trap  sachroom.dir  after clicking ch5 at (218,310): confined to 4 state(s)
+      for 60 tick(s) with no hold: SACHROOM.dir:25(7) <-> :26(7) <-> :27(7) <-> :28(9)
+```
+
+Re-reached with `click_trace`, the click that produces it lands on channel 45 and
+**opens `INVENTOR.dir` as a Movie-In-A-Window**. The stage underneath goes on
+running its own idle loop -- four drawn states, no hold -- which is precisely the
+`trap` shape, and the playhead the player is actually waiting on is the window's.
+
+The file already argues the exemption for the other half:
+
+> **A blank verdict is withheld while a Movie-In-A-Window is open**, because the
+> window is a separate node with its own playhead and the stage underneath it is
+> legitimately bare.
+
+The same sentence covers `trap`, and `sound-park` for the same reason. Until it
+does, `--strict` cannot be run over a corpus whose rooms have an inventory --
+which is all of them here -- without a finding that is not one.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/liveness_sweep.gd -- --root rating --only SACHROOM --click --strict --verbose
+godot --headless --path . --script tools/click_trace.gd -- --root rating --movie SACHROOM.dir --frame 25
+```
+
+## 70. `MAINMENU-old.dir` parks blank at `option1`, and nothing in Rating can reach it
+
+**Status:** not a bug, recorded so the next sweep does not chase it ·
+**Area:** `games/rating/MAINMENU-old.dir`
+
+`tools/qa_walk.gd --sweep` reports one stage that stays empty once transient
+opening frames are excluded: `MAINMENU-old.dir` frame 651-652, inside marker
+`option1`, nothing drawn and no hold to explain it, for as long as it is watched.
+
+It is unreachable. Rating boots `MAINMENU.dir`; a byte search for the string
+`mainmenu-old` over every `.dir` and `.cst` in `games/rating` -- the Lingo source
+lives in the `CASt` records, so a `go to movie` naming it would be found -- has
+**no hits**. Nothing navigates to this container, and `DirectorPaths.containers()`
+only lists it because it is a file in the folder.
+
+So it is authoring residue shipped beside the movie that replaced it, and its
+dead region is not a state a player can be in.
+
+**Why this is written down rather than dropped:** `AGENTS.md` requires more
+evidence for "not a bug" than for a bug, because it is the verdict that stops
+work -- and this one will be re-reported by every future `--sweep` of Rating.
+Without the entry the next session re-runs the same investigation.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
+for f in games/rating/*.dir games/rating/*.cst; do LC_ALL=C grep -qai "mainmenu-old" "$f" && echo "$f"; done
+```
