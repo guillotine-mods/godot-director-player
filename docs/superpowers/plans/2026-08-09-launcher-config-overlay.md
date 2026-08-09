@@ -17,7 +17,7 @@
 - A harness that asserts nothing is a failure, not a pass. `gate.sh` reports `EMPTY` for a run with 0 checks. Every harness must first assert its subject exists.
 - CLI flags beat the overlay, which beats the tracked file. `gate.sh` pins with `--root piposh2 --boot strtgame.dir` and that must keep winning.
 - Push directly to `main`. No branches, no PRs. `bash gate.sh` is the only gate.
-- The recorded gate set is **62 pass / 0 fail** today. This plan adds three entries; the final recorded set is **65 pass / 0 fail** and `gate.sh`'s header comment must say so.
+- The recorded gate set is **62 pass / 0 fail** today. This plan adds four entries — `game_config` (Task 1), `title_mapping` (Task 3), `title_list` (Task 4), `launcher_keys` (Task 6) — so the final recorded set is **66 pass / 0 fail**, and `gate.sh`'s header comment must be moved in the same commit as each `ALL` edit. Its own text warns the line "said 54 entries for as long as it took the list to reach 61".
 - Never write `res://director_game.cfg` from code. It is edited by hand, by whoever changes a shipped default.
 
 ---
@@ -98,7 +98,7 @@ func _init() -> void:
 		str(GameConfig.tracked(SCRATCH_TRACKED).get_value("game", "root", "<missing>")))
 	h.complete(case)
 
-	case := "an absent or unreadable overlay changes nothing"
+	case = "an absent or unreadable overlay changes nothing"
 	h.begin(case)
 	GameConfig.invalidate()
 	var none := GameConfig.merged(SCRATCH_TRACKED, "user://gate_game_config_absent.cfg")
@@ -120,7 +120,7 @@ func _init() -> void:
 	# The rule the other 62 entries depend on. This process *is* headless, so
 	# asking for the real overlay must not consult it -- asserted by writing one
 	# that would be obvious if it were read.
-	case := "under --headless the real overlay is not consulted"
+	case = "under --headless the real overlay is not consulted"
 	h.begin(case)
 	h.check("this run is headless", DisplayServer.get_name() == "headless",
 		DisplayServer.get_name())
@@ -333,7 +333,7 @@ static func _copy(from: ConfigFile, to: ConfigFile) -> void:
 
 Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --headless --path . --script tools/game_config.gd`
 
-Expected: `PASS` with 13 checks and no `FAIL` lines. Then confirm by hand that your own overlay survived, if you had one: `ls -l "$(godot --headless --path . --script /dev/null 2>/dev/null; echo)"` is not the way — just check the file is still there and unchanged after the run, which is what the last assertion also claims.
+Expected: `PASS` with 12 checks and no `FAIL` lines. Then confirm by hand that your own overlay survived, if you had one — the file still there and unchanged after the run, which is what the last assertion also claims.
 
 - [ ] **Step 5: Add it to the gate and correct the recorded count**
 
@@ -594,7 +594,7 @@ func _init() -> void:
 	# the row needs exactly one flag preselected. Zero leaves the launcher
 	# picking arbitrarily; two make the choice depend on iteration order, which
 	# is the same fault `debug_keys.gd` reports for two commands on one key.
-	case := "a title spanning several roots has exactly one default"
+	case = "a title spanning several roots has exactly one default"
 	h.begin(case)
 	var grouped := 0
 	var bad_defaults: Array[String] = []
@@ -1074,7 +1074,144 @@ Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --path . -- --root piposh2
 
 Expected: no menu. Piposh 2 boots directly.
 
-- [ ] **Step 9: Verify the overlay was written and the gate is untouched**
+- [ ] **Step 9: Cover the two things this task made testable**
+
+The launcher itself needs a display and is not gate material. Two things underneath it are, and both are gaps this task closes rather than creates.
+
+**`GameConfig.write_overlay` has had no test since it was written.** Task 1 declared it and nothing called it; this task is its first caller. Add a case to the existing `tools/game_config.gd` — no new gate entry, it joins the harness that is already there:
+
+```gdscript
+	case = "an overlay written by the launcher reads back as it was written"
+	h.begin(case)
+	# The real path again, and the same save/restore as the case above: this is
+	# the function the launcher calls, and a round trip through a scratch path
+	# would not exercise the path it actually writes.
+	var had_written := FileAccess.file_exists(GameConfig.OVERLAY_PATH)
+	var saved_written := FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) if had_written else ""
+	var writing := ConfigFile.new()
+	writing.set_value("game", "root", "res://games/piposh-ru")
+	writing.set_value("display", "aspect", "wide_16_9")
+	h.check("write_overlay reports success", GameConfig.write_overlay(writing))
+	var back := GameConfig.overlay()
+	h.check("the root comes back", str(back.get_value("game", "root", "")) == "res://games/piposh-ru",
+		str(back.get_value("game", "root", "<missing>")))
+	h.check("and so does a key in another section",
+		str(back.get_value("display", "aspect", "")) == "wide_16_9",
+		str(back.get_value("display", "aspect", "<missing>")))
+	# write_overlay invalidates, or the launcher would write a file the rest of
+	# the process could not see. Asserted through the real tracked path, which is
+	# the only one the implicit overlay applies to.
+	h.check("and the merged view sees it without an explicit invalidate",
+		str(GameConfig.merged(GameConfig.TRACKED_PATH, GameConfig.OVERLAY_PATH)
+			.get_value("game", "root", "")) == "res://games/piposh-ru")
+	if had_written:
+		_write(GameConfig.OVERLAY_PATH, saved_written)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	h.check("the overlay this machine had is back as it was",
+		FileAccess.file_exists(GameConfig.OVERLAY_PATH) == had_written
+			and (not had_written or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved_written))
+	h.complete(case)
+```
+
+**`TitleList.build` is the launcher's one piece of real logic** — it turns six roots on disc into four entries, one of them carrying three. That is measurable without a window. New `tools/title_list.gd`, a gate entry:
+
+```gdscript
+extends SceneTree
+## Six roots on disc become four entries, and one of them carries three.
+##
+##   godot --headless --path . --script tools/title_list.gd
+##
+## `tools/title_mapping.gd` asserts the *config* agrees with the disc. This
+## asserts what the launcher builds out of it: the grouping, the preselected
+## root, and the flag composition. The scene turns these rows into buttons and
+## does nothing else, which is why the rows are the part worth a gate.
+##
+## Title-agnostic in its rules and not in its numbers: it asserts that a title
+## covering several roots groups and preselects, without naming which title that
+## is, so a corpus that gains a localisation does not fail here.
+
+const Harness := preload("res://tools/lib/harness.gd")
+const TitleList := preload("res://scenes/launcher/title_list.gd")
+const KeySites := preload("res://tools/lib/key_sites.gd")
+
+
+func _init() -> void:
+	var h := Harness.new()
+	var entries := TitleList.build()
+	var roots := KeySites.roots()
+
+	var case := "every root on disc appears exactly once"
+	h.begin(case)
+	if not h.check("there are roots and entries to check",
+			not roots.is_empty() and not entries.is_empty(),
+			"%d root(s), %d entry(s)" % [roots.size(), entries.size()]):
+		h.complete(case)
+		quit(h.finish("the launcher's game list"))
+		return
+	var seen: Array[String] = []
+	for entry in entries:
+		for row in entry["roots"]:
+			seen.append(str((row as Dictionary)["root"]))
+	h.check("no root is lost or duplicated", seen.size() == roots.size(),
+		"%d listed for %d on disc" % [seen.size(), roots.size()])
+	var missing: Array[String] = []
+	for root in roots:
+		if not seen.has(str(root)):
+			missing.append(str(root))
+	h.check("and every one of them is a root that exists",
+		missing.is_empty(), ", ".join(missing))
+	h.check("there are fewer entries than roots, so something grouped",
+		entries.size() < roots.size(),
+		"%d entry(s) for %d root(s)" % [entries.size(), roots.size()])
+	h.complete(case)
+
+	case = "a title covering several roots preselects exactly one"
+	h.begin(case)
+	var grouped := 0
+	var wrong: Array[String] = []
+	for entry in entries:
+		var members: Array = entry["roots"]
+		if members.size() < 2:
+			continue
+		grouped += 1
+		var chosen: Dictionary = TitleList.default_root(entry)
+		if not bool(chosen.get("default", false)):
+			wrong.append("%s: default_root picked %s, which is not the default"
+				% [str(entry["title"]), str(chosen.get("name", "?"))])
+		for row in members:
+			if TitleList.flag_emoji(str((row as Dictionary).get("flag", ""))) == "":
+				wrong.append("%s: %s has no usable flag"
+					% [str(entry["title"]), str((row as Dictionary).get("name", "?"))])
+	h.check("there is a grouped title to check", grouped > 0,
+		"%d grouped title(s)" % grouped)
+	h.check("each preselects its default and every member composes a flag",
+		wrong.is_empty(), "; ".join(wrong))
+	h.complete(case)
+
+	case = "a country code becomes a flag, and nothing else does"
+	h.begin(case)
+	h.check("il composes two code points", TitleList.flag_emoji("il").length() == 2,
+		TitleList.flag_emoji("il"))
+	h.check("and is not the letters themselves", TitleList.flag_emoji("il") != "il")
+	h.check("case does not matter", TitleList.flag_emoji("IL") == TitleList.flag_emoji("il"))
+	h.check("a one-letter code composes nothing", TitleList.flag_emoji("i") == "")
+	h.check("a three-letter code composes nothing", TitleList.flag_emoji("isr") == "")
+	h.check("a digit composes nothing", TitleList.flag_emoji("i1") == "")
+	h.complete(case)
+
+	print("")
+	for entry in entries:
+		var names: Array[String] = []
+		for row in entry["roots"]:
+			names.append(str((row as Dictionary)["name"]))
+		print("  %-16s %s" % [str(entry["title"]), ", ".join(names)])
+	quit(h.finish("the launcher's game list"))
+```
+
+Add `title_list` to `ALL` in `gate.sh` after `title_mapping`, and move the header's recorded set from 64 to **65**.
+
+- [ ] **Step 10: Verify the overlay was written and the gate is untouched**
 
 Run: `cat "$(. ./gate_env.sh; echo)$HOME/Library/Application Support/Godot/app_userdata/Godot Director Player/director_game.local.cfg"` — or on any platform, print `OS.get_user_data_dir()` from the running game.
 
@@ -1082,12 +1219,13 @@ Expected: a `[game]` section naming whichever root you pressed Play on, and a `[
 
 Run: `bash gate.sh`
 
-Expected: 64 `PASS`, 0 `FAIL` — unchanged, because every harness is headless and skips the overlay you just wrote.
+Expected: **65** `PASS`, 0 `FAIL` — 64 plus the new `title_list` entry, and the overlay you just wrote is invisible to every one of them, because they are headless.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add scenes/launcher project.godot autoload/audio_director.gd
+git add scenes/launcher project.godot autoload/audio_director.gd \
+        tools/title_list.gd tools/game_config.gd gate.sh
 git commit -m "launcher: a main screen that picks the game, writing the overlay
 
 Four titles for six roots -- Piposh's three localisations collapse into one
@@ -1233,7 +1371,7 @@ Expected: the Developer tab is **still there** — its visibility came from the 
 
 Run: `bash gate.sh`
 
-Expected: 64 `PASS`, 0 `FAIL`. The `debug_bindings` entry in particular must still pass — it re-reads `DebugKeys.CONFIG_PATH` with its own `ConfigFile` to assert the shipped value is `auto`, and the overlay you wrote is invisible to it twice over.
+Expected: 65 `PASS`, 0 `FAIL`. The `debug_bindings` entry in particular must still pass — it re-reads `DebugKeys.CONFIG_PATH` with its own `ConfigFile` to assert the shipped value is `auto`, and the overlay you wrote is invisible to it twice over.
 
 - [ ] **Step 6: Commit**
 
@@ -1312,7 +1450,7 @@ func _init() -> void:
 	h.check("'' is not", BindingRules.named("") == KEY_NONE)
 	h.complete(case)
 
-	case := "two commands on one key is refused"
+	case = "two commands on one key is refused"
 	h.begin(case)
 	var bindings := {"step_back": "F5", "step_forward": "F6"}
 	h.check("F6 collides with step_forward",
@@ -1326,7 +1464,7 @@ func _init() -> void:
 		BindingRules.collision(bindings, "step_back", "F5") == "")
 	h.complete(case)
 
-	case := "a key some title's scripts test is refused"
+	case = "a key some title's scripts test is refused"
 	h.begin(case)
 	var tested := BindingRules.tested_codes()
 	if not h.check("the corpus yields tested key codes", not tested.is_empty(),
@@ -1348,7 +1486,7 @@ func _init() -> void:
 	# "types no character *and* is a key no title is measured to test", and
 	# `tools/debug_bindings.gd` asserts both per binding. A launcher checking
 	# only the keyCode accepts a plain letter.
-	case := "a key that types a character some title tests is refused"
+	case = "a key that types a character some title tests is refused"
 	h.begin(case)
 	var chars := BindingRules.tested_chars()
 	if not h.check("the corpus yields tested characters", not chars.is_empty(),
@@ -1369,7 +1507,7 @@ func _init() -> void:
 
 	# And the shipped map has to survive both halves, or the launcher would
 	# refuse to store the bindings the port ships with.
-	case := "every shipped binding passes the rules the launcher enforces"
+	case = "every shipped binding passes the rules the launcher enforces"
 	h.begin(case)
 	var refused: Array[String] = []
 	for command in DebugKeys.DEFAULTS:
@@ -1647,11 +1785,11 @@ Expected: **Edit preview keys…** shows the status line, then fifteen rows. Typ
 
 - [ ] **Step 7: Add to the gate, correct the count, run it**
 
-Add `launcher_keys` to `ALL` in `gate.sh:93`, and change the recorded set from 64 to 65.
+Add `launcher_keys` to `ALL` in `gate.sh:93`, and change the recorded set from 65 to 66.
 
 Run: `bash gate.sh`
 
-Expected: 65 `PASS`, 0 `FAIL`.
+Expected: 66 `PASS`, 0 `FAIL`.
 
 - [ ] **Step 8: Commit**
 
@@ -1862,7 +2000,7 @@ Then verify the value actually reaches its consumer **after** a launcher change,
 
 Run: `bash gate.sh`
 
-Expected: 65 `PASS`, 0 `FAIL`.
+Expected: 66 `PASS`, 0 `FAIL`.
 
 - [ ] **Step 8: Commit**
 
@@ -1898,7 +2036,9 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 Two smaller ones folded in without ceremony: `_launch` defers `change_scene_to_file`, since the bypass path reaches it from inside `_ready`; and `_refresh_play` is the single owner of the Play button's state, because Task 6 adds a second reason to refuse it and two writers on one property means whichever ran last decides.
 
-**Counts.** The gate's recorded set moves 62 → 63 (Task 1) → 64 (Task 3) → 65 (Task 6), and each of those tasks updates the header comment in the same commit as the `ALL` edit.
+**Counts.** The gate's recorded set moves 62 → 63 (Task 1) → 64 (Task 3) → 65 (Task 4) → 66 (Task 6), and each of those tasks updates the header comment in the same commit as its `ALL` edit.
+
+**Coverage added during execution.** Task 4 grew two assertions that were not in the first draft, both closing gaps rather than adding scope. `GameConfig.write_overlay` was declared in Task 1 and had no caller and no test until Task 4 became its first; it now round-trips through the real `user://` path, with the same save-and-restore the neighbouring case uses. And `TitleList.build` — the one piece of real logic under a launcher that otherwise needs a display — gets `tools/title_list.gd`, which asserts the grouping, the preselection and the flag composition without a window.
 
 **Placeholder scan.** None remain. The one that survived the first draft — a guessed `DirectorKeys.mac_code` — was replaced with the real `Keys.code_for` / `Keys.char_for` pair after reading `director/director_keys.gd:71,91` and `tools/debug_bindings.gd:77-85`. Every scene-tree layout, config section and code block in this plan is literal.
 

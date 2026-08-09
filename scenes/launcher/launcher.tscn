@@ -1,0 +1,159 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/launcher/launcher.gd" id="1_launcher"]
+
+[node name="Launcher" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_launcher")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 32
+
+[node name="Tabs" type="TabContainer" parent="Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Player" type="VBoxContainer" parent="Margin/Tabs"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="GamesLabel" type="Label" parent="Margin/Tabs/Player"]
+layout_mode = 2
+text = "Game"
+
+[node name="Games" type="OptionButton" parent="Margin/Tabs/Player"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="Flags" type="HBoxContainer" parent="Margin/Tabs/Player"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="AspectLabel" type="Label" parent="Margin/Tabs/Player"]
+layout_mode = 2
+text = "Aspect"
+
+[node name="Aspect" type="OptionButton" parent="Margin/Tabs/Player"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="Margin/Tabs/Player"]
+layout_mode = 2
+size_flags_vertical = 2
+
+[node name="Play" type="Button" parent="Margin/Tabs/Player"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+text = "Play"
+
+[node name="Developer" type="VBoxContainer" parent="Margin/Tabs"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/Tabs/Developer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Fields" type="VBoxContainer" parent="Margin/Tabs/Developer/Scroll"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="BootLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Boot movie override"
+
+[node name="Boot" type="LineEdit" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="CodepageLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Codepage"
+
+[node name="Codepage" type="OptionButton" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="DebugLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Debug layer"
+
+[node name="Debug" type="OptionButton" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="BindingsButton" type="Button" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "Edit preview keys…"
+
+[node name="BindingsStatus" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+autowrap_mode = 2
+
+[node name="Bindings" type="VBoxContainer" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="QolHeading" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Quality of life — stored, not yet wired"
+
+[node name="HotspotHints" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Hotspot hints"
+
+[node name="MinigameSkip" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Allow minigame skip"
+
+[node name="EdgeHotspots" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Expand edge hotspots"
+
+[node name="EnhancedGraphics" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Enhanced graphics"
+
+[node name="CursorSpeedLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+layout_mode = 2
+text = "Controller cursor speed"
+
+[node name="CursorSpeed" type="HSlider" parent="Margin/Tabs/Developer/Scroll/Fields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+min_value = 60.0
+max_value = 1200.0
+step = 10.0

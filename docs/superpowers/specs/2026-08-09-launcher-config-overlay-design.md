@@ -367,13 +367,20 @@ must pass their paths explicitly:
   `user://` path is not consulted.
 * **`title_mapping.gd`** — the `[root.*]` sections against what is on disk, as
   described above. Joins `ALL` in `gate.sh`.
+* **`title_list.gd`** — what the launcher builds out of the mapping, as opposed
+  to the mapping itself: six roots on disc become four entries, one carrying
+  three; a grouped title preselects exactly one root; and a country code
+  composes to a flag while a malformed one composes to nothing. The scene turns
+  these rows into buttons and does nothing else, which is why the rows are the
+  part worth a gate. Its rules are title-agnostic even though its corpus is not,
+  so a title that gains a localisation does not fail here.
 * **`launcher_keys.gd`** — the three validators, as predicates rather than
   through the UI: a bad key name is refused, a duplicate is refused, and a code
   in `KeySites.for_root` over every root under `games/` is refused. The third
   shares its source of truth with `tools/debug_bindings.gd`, so a change to the
   corpus moves both.
 
-Three new entries join `ALL`, so **the recorded set becomes 65 pass / 0 fail and
+Four new entries join `ALL`, so **the recorded set becomes 66 pass / 0 fail and
 `gate.sh`'s header has to say so.** That header already carries the warning:
 "Count `ALL` when you change it: this line said 54 entries for as long as it took
 the list to reach 61". Not updating it is the same defect it describes.

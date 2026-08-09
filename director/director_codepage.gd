@@ -73,6 +73,7 @@ const IDENTITY := "latin1"
 ## it. The same file `director_paths.gd` reads the root from, and for the same
 ## reason: one per-title settings file, not two.
 const CONFIG_PATH := "res://director_game.cfg"
+const GameConfig := preload("res://director/game_config.gd")
 
 ## Code point for each byte 0x80..0xFF. Bytes 0x00..0x7F are ASCII in every one
 ## of these and are never table-driven.
@@ -371,10 +372,7 @@ static func _configured() -> String:
 	var override := _from_command_line()
 	if override != "":
 		return override
-	var cfg := ConfigFile.new()
-	if cfg.load(CONFIG_PATH) != OK:
-		return ""
-	return str(cfg.get_value("game", "codepage", ""))
+	return str(GameConfig.merged(CONFIG_PATH).get_value("game", "codepage", ""))
 
 
 static func _from_command_line() -> String:

@@ -88,8 +88,17 @@ extends RefCounted
 ## because `AudioDirector` calls it too, and one applied at the single call site
 ## that wanted it moved the movies and left the sounds behind. Every reader of
 ## this switch asks `enabled()` and gets the same answer.
+##
+## `enabled()` is not the only public entry point. `launcher.gd`'s Developer-tab
+## visibility has to ask the same question of the *tracked* config alone, never
+## the merged one -- see its own comment for why -- and `enabled_for(cfg)`
+## exists for exactly that caller. Both `enabled()` and `enabled_for()` route
+## through `resolve_switch()` for the flag parsing and `_switch_to_bool()` for
+## the `auto` rule, so there is still one resolution, read by two doors instead
+## of one.
 
 const CONFIG_PATH := "res://director_game.cfg"
+const GameConfig := preload("res://director/game_config.gd")
 const SECTION := "debug"
 
 ## The `[debug] enabled` values, and what each means. See the header.
@@ -189,14 +198,35 @@ static var _switch := AUTO
 static func enabled() -> bool:
 	if not _loaded:
 		load_config()
-	match _switch:
+	return _switch_to_bool(_switch)
+
+
+## Whether the debug layer would be on for `cfg`, resolving `[debug] enabled`
+## and `--debug-ui` exactly as `enabled()` does, but against a caller-supplied
+## config instead of the process-wide merged one.
+##
+## `cfg` is trusted to already be "the config that exists": a `ConfigFile` with
+## nothing in `[debug]` reads as `auto` whether that is because the backing
+## file is missing or because the section just is not there, so this always
+## reads `cfg` and never asks `GameConfig.exists()` itself. That is true of
+## `GameConfig.tracked()`, the one caller today -- see `launcher.gd`'s
+## `_developer_visible` for why it must be the tracked config and not the
+## merged one.
+static func enabled_for(cfg: ConfigFile) -> bool:
+	return _switch_to_bool(resolve_switch(cfg, true))
+
+
+## The `auto` rule `enabled()` and `enabled_for()` share: on for a run from
+## source or a debug export, because losing the tools silently while
+## developing is the other way to get this wrong; off in a release export.
+## Factored out so the two cannot answer differently by accident -- see the
+## header for why that once happened between here and `launcher.gd`.
+static func _switch_to_bool(switch: String) -> bool:
+	match switch:
 		ON:
 			return true
 		OFF:
 			return false
-	# `auto`. Running from source or from a debug export keeps the tools, because
-	# losing them silently while developing is the other way to get this wrong.
-	# A release export answers false.
 	return OS.has_feature("editor") or OS.is_debug_build()
 
 
@@ -253,9 +283,13 @@ static func load_config(config_path: String = CONFIG_PATH) -> void:
 	_loaded = true
 	_map = {}
 	_numbers = {}
-	var cfg := ConfigFile.new()
-	var has_file := cfg.load(config_path) == OK
-	_switch = _resolve_switch(cfg, has_file)
+	# This function's own promise, above, predates `GameConfig`: a harness that
+	# rewrites `config_path` and calls this again must see the new file, not the
+	# merge point's cached answer for the same path.
+	GameConfig.invalidate()
+	var cfg := GameConfig.merged(config_path)
+	var has_file := GameConfig.exists(config_path)
+	_switch = resolve_switch(cfg, has_file)
 	for setting in SETTINGS:
 		var value: Variant = SETTINGS[setting]
 		if has_file:
@@ -298,15 +332,29 @@ static func load_config(config_path: String = CONFIG_PATH) -> void:
 ## the other readers disagree with. Everything asks `enabled()`, `enabled()` asks
 ## this once, and there is one answer per process.
 ##
+## Public, and not just for `load_config()`: `enabled_for()` calls it directly
+## on a caller-supplied config, which is the whole reason it accepts `cfg` and
+## `has_file` as parameters rather than closing over the static state.
+##
 ## An unrecognised value falls back to `auto` with a warning rather than to
 ## "off", because a typo that silently strips the whole debug layer reads as the
 ## build being broken.
-static func _resolve_switch(cfg: ConfigFile, has_file: bool) -> String:
+##
+## `args` defaults to the process's own argv and exists so a caller can hand in
+## a different one. The two accepted spellings, `--debug-ui=on` and
+## `--debug-ui on`, are the documented way back from a Developer tab that has
+## been switched off (`director_game.cfg:145`), and a process cannot change its
+## own argv mid-run -- `OS.get_cmdline_user_args()` answers the same thing for
+## the life of it -- so the only way for a gate to see that both spellings
+## agree is to hand them in rather than rely on however this process happened
+## to be launched.
+static func resolve_switch(cfg: ConfigFile, has_file: bool,
+		args := OS.get_cmdline_user_args()) -> String:
 	var wanted := AUTO
 	if has_file:
 		wanted = str(cfg.get_value(SECTION, "enabled", AUTO)).strip_edges().to_lower()
 	var expecting := false
-	for arg in OS.get_cmdline_user_args():
+	for arg in args:
 		if expecting:
 			wanted = str(arg).strip_edges().to_lower()
 			expecting = false

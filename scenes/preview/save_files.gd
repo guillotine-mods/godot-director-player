@@ -143,9 +143,10 @@ static func stamp(host) -> Dictionary:
 ## The engine commit, read out of `.git` rather than shelled out for.
 ##
 ## `git rev-parse HEAD` would need a subprocess, which is one more thing to fail
-## on a machine without git on PATH — and the answer is three files away. A
-## worktree's `.git` is a file naming the real directory, which is worth handling
-## here because this repo's own agents work in worktrees.
+## on a machine without git on PATH — and the answer is three files away. `HEAD`
+## is per-worktree; `refs/heads/*` and `packed-refs` are common to all of a
+## repository's worktrees, which is why the lookup below reads `HEAD` from
+## `_git_dir()` but resolves the ref itself through `_common_dir()`.
 ##
 ## "unknown" when there is no repository, which is every exported build. That is
 ## an honest answer: the stamp then says nothing rather than saying something
@@ -160,15 +161,41 @@ static func engine_commit() -> String:
 	if not head.begins_with("ref:"):
 		return head.substr(0, 40)
 	var ref := head.substr(4).strip_edges()
-	var direct := FileAccess.get_file_as_string(git.path_join(ref)).strip_edges()
-	if direct != "":
-		return direct.substr(0, 40)
-	# A ref that has been packed has no file of its own.
-	for line in FileAccess.get_file_as_string(git.path_join("packed-refs")).split("\n"):
-		var row := str(line).strip_edges()
-		if row.ends_with(" " + ref):
-			return row.substr(0, 40)
+	# The per-worktree directory first, then the common one. Git keeps `HEAD` and
+	# a handful of refs (`refs/bisect/*`, `refs/worktree/*`) per worktree and
+	# everything else — including `refs/heads/*` — in the common directory, so
+	# asking in that order answers both without having to know which kind this is.
+	for at in [git, _common_dir(git)]:
+		var direct := FileAccess.get_file_as_string(str(at).path_join(ref)).strip_edges()
+		if direct != "":
+			return direct.substr(0, 40)
+	# A ref that has been packed has no file of its own. `packed-refs` is common
+	# only; reading both costs nothing and keeps the two loops the same shape.
+	for at in [git, _common_dir(git)]:
+		for line in FileAccess.get_file_as_string(str(at).path_join("packed-refs")).split("\n"):
+			var row := str(line).strip_edges()
+			if row.ends_with(" " + ref):
+				return row.substr(0, 40)
 	return "unknown"
+
+
+## Where refs live, which is not where `HEAD` lives once there is a worktree.
+##
+## A linked worktree's gitdir holds `HEAD` and a `commondir` file naming the real
+## repository directory, usually relative to the gitdir (`../..`). `refs/heads/*`
+## and `packed-refs` are only ever there. Without this the ref lookup above
+## searched an empty `refs/` and every save taken in a worktree was stamped
+## "unknown" — the one state the mismatch warning at the top of this file cannot
+## report.
+##
+## Returns `git` unchanged for an ordinary checkout, which has no `commondir`.
+static func _common_dir(git: String) -> String:
+	var pointer := FileAccess.get_file_as_string(git.path_join("commondir")).strip_edges()
+	if pointer == "":
+		return git
+	if pointer.begins_with("/"):
+		return pointer
+	return git.path_join(pointer).simplify_path()
 
 
 static func _git_dir() -> String:

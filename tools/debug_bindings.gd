@@ -288,6 +288,44 @@ func _init() -> void:
 	# And running from source keeps the tools, or every harness below this line
 	# would be measuring an empty map.
 	h.check("which leaves them on when running from source", DebugKeys.enabled())
+	# `enabled_for()` is `launcher.gd`'s door onto this same resolution, called
+	# with the tracked config directly instead of through `load_config`'s
+	# cached `_switch`. `auto` is exactly the case two independent parsers
+	# answered differently before this fix -- `launcher.gd` had its own copy
+	# that never asked `OS.has_feature("editor")` -- so `auto` is where a
+	# regression would show again.
+	h.check("and `enabled_for()` on the tracked config agrees with `enabled()`",
+		DebugKeys.enabled_for(shipped) == DebugKeys.enabled(),
+		"enabled_for=%s enabled=%s" % [DebugKeys.enabled_for(shipped), DebugKeys.enabled()])
+	# The two argv spellings, `--debug-ui=on` and `--debug-ui on`, are the
+	# escape hatch out of a Developer tab that `[debug] enabled` has switched
+	# off -- so it is not enough for `resolve_switch()`'s loop to look, by
+	# reading, like it treats them alike; a gate has to see them actually
+	# agree. `OS.get_cmdline_user_args()` cannot be changed mid-process, so
+	# `resolve_switch()` takes the args it reads as a defaulted parameter, and
+	# this hands both spellings in directly rather than relying on however
+	# this process happened to be launched.
+	var off_cfg := ConfigFile.new()
+	off_cfg.set_value("debug", "enabled", "false")
+	for word in ["on", "off"]:
+		var space_form := DebugKeys.resolve_switch(off_cfg, true, ["--debug-ui", word])
+		var equals_form := DebugKeys.resolve_switch(off_cfg, true, ["--debug-ui=%s" % word])
+		var wanted: String = DebugKeys.ON if word == "on" else DebugKeys.OFF
+		h.check("`--debug-ui %s` and `--debug-ui=%s` agree" % [word, word],
+			space_form == wanted and equals_form == wanted,
+			"space=%s equals=%s wanted=%s" % [space_form, equals_form, wanted])
+	# With no flag at all, the config's own `false` must be what answers --
+	# otherwise the checks above could be passing because the config already
+	# agrees with the flag, not because the flag is doing anything.
+	h.check("and with no flag the config alone decides",
+		DebugKeys.resolve_switch(off_cfg, true, []) == DebugKeys.OFF,
+		DebugKeys.resolve_switch(off_cfg, true, []))
+	# An unrecognised flag value must not silently strip the debug layer, same
+	# as an unrecognised config value -- it falls back to `auto` rather than
+	# `off`.
+	h.check("and a flag value nobody recognises falls back to `auto`",
+		DebugKeys.resolve_switch(off_cfg, true, ["--debug-ui=sideways"]) == DebugKeys.AUTO,
+		DebugKeys.resolve_switch(off_cfg, true, ["--debug-ui=sideways"]))
 	h.complete("the shipped config leaves the choice to the build")
 
 	# The keys have to actually fire, and for most of this game they did not. A
