@@ -135,13 +135,8 @@ still came from the config, so with the tracked config naming a `rating` contain
 every harness that does not pass its own `--file` loaded no score and asserted over
 nothing. `bugs.md` 51 carries it.
 
-The baseline is **49 pass, 2 fail** over a list that is **51 entries** since
-`idle_clock` and `new_game_reset` joined it, and neither failure is a renderer
-question. `primary_scripts` has since joined it and makes 52; its own result is
-measured (PASS) and the other 51 are *carried forward from the run below rather
-than re-measured*, so "50 pass, 2 fail over 52" is arithmetic and not a
-measurement until somebody runs the whole thing again. Which is the same warning
-the paragraph two below this one is about — do not let it become a sum:
+The baseline is **52 pass, 2 fail** over a list that is **54 entries**, and
+neither failure is a renderer question:
 
 - `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
   keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).
@@ -152,8 +147,9 @@ the paragraph two below this one is about — do not let it become a sum:
 `lingo_surface_audit` was the third and passes now. **This line is a measurement,
 not a prediction** — the paragraph it replaces said 47/2 over 49, admitted that
 48/2 was "a prediction until somebody replaces it with one", and asked for a
-whole-suite run. That run happened: `bash gate.sh`, one process, 51 entries, no
-TIMEOUT and no EMPTY, and the failing *set* is exactly the two above. Replace this
+whole-suite run. That run happened, and has been repeated since: `bash gate.sh`,
+one process, 54 entries, no TIMEOUT and no EMPTY, and the failing *set* is exactly
+the two above. Replace this
 sum the same way — by running the thing — rather than by adding to it.
 
 `boot_state`, which this file recorded as the single baseline failure, passes — and

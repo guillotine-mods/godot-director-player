@@ -1,12 +1,7 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 51 entries in ALL was 49 pass / 2 fail, measured on 4.7.1 by a
-# whole-suite run at the commit that line was written. `property_surface` is the
-# 52nd and has not been in a whole-suite run yet; it passes on its own here, so
-# the expected set is 50 pass / 2 fail and the *measured* one is still the 49/2
-# above. Said rather than quietly incremented, because a number nobody measured
-# reads exactly like one somebody did -- which is what the paragraph four lines
-# down is about.
+# which over the 54 entries in ALL is 52 pass / 2 fail, measured on 4.7.1 by a
+# whole-suite run at the commit this line was written:
 #
 #   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
 #                   director_game.cfg collides with a keyCode rating tests at 48
