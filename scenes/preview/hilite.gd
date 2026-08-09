@@ -78,8 +78,30 @@ const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 static func artwork(canvas: CanvasItem, texture: Texture2D,
 		sprite: Dictionary) -> Texture2D:
 	var host = canvas
+	if texture == null:
+		return texture
+	# **`set the hilite of member` is the other hilite, and it comes first.**
+	#
+	# Everything below this is *auto*-hilite: the movie asks for none of it, the
+	# press decides, and it lasts as long as the button is held. Director also has
+	# a flag a script sets and the movie leaves set (§4.6), and that is how a
+	# Director title draws a selection -- Rating sets it on one shape member per
+	# room. It was accepted and dropped for as long as `lingo_set_member_prop`
+	# knew only `editable` and `text`.
+	#
+	# Substituted here rather than painted as a second pass, for the reason the
+	# block below this function gives: the inverted copy carries the same alpha,
+	# so flip, blend and the clip apply to it exactly as they do to the plain
+	# picture and there is no second copy of any of them.
+	if sprite.has("cast_lib") and not host._member_hilite.is_empty():
+		var key: String = host._field_key(
+			int(sprite["cast_lib"]), int(sprite["cast_id"]))
+		if bool(host._member_hilite.get(key, false)):
+			var set_by_script := _inverted(host, sprite)
+			if set_by_script != null:
+				return set_by_script
 	var pressed := int(host._press_channel)
-	if pressed <= 0 or texture == null:
+	if pressed <= 0:
 		return texture
 	# A film loop's children arrive here carrying their *own* mini-score channel
 	# numbers, which collide with the stage's: a loop with an internal channel 3

@@ -214,6 +214,18 @@ var _text_drag := false
 ## Same keys as `_field_text`: `member("x").editable = <n>` from Lingo, overriding
 ## the member's own authored flag.
 var _member_editable: Dictionary = {}
+## `set the hilite of member "x" to 1` -- §4.6's *other* hilite, and a different
+## mechanism from the one `preview/hilite.gd` is named for.
+##
+## That one is auto-hilite: a press inverts the sprite while the button is held,
+## and nothing in the movie asks for it. This is a **flag a script sets and the
+## movie leaves set**, which is how Director draws a selection -- Rating does
+## `set the hilite of member "rectang" to 1` once per room, on a shape member it
+## moves to mark the chosen option.
+##
+## Same keys as `_field_text`, for the same reason: a member is `(container,
+## library, number)` and two movies can hold the same number.
+var _member_hilite: Dictionary = {}
 var _interpreter = null
 var _host = null
 var _audio: Node = null
@@ -746,6 +758,7 @@ func _share_movie_state_with(other: Node) -> void:
 	# two movies name the same entry, and a copy rather than a share would let one
 	# of them go on believing a field is typeable after the other turned it off.
 	_member_editable = other._member_editable
+	_member_hilite = other._member_hilite
 
 
 func root_node(name: String) -> Node:
@@ -3291,6 +3304,13 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 	if prop == "editable":
 		return 1 if TextFocus.member_editable(
 			self, _table.get_member(int(where[0]), int(where[1]))) else 0
+	if prop == "hilite":
+		# Answered here rather than in `preview/members.gd` for the reason
+		# `editable` is: the value is whatever Lingo last wrote and the override
+		# store is the node's. A member has no *authored* hilite -- Director's flag
+		# starts clear -- so the store is the whole of it.
+		return 1 if bool(_member_hilite.get(
+			_field_key(int(where[0]), int(where[1])), false)) else 0
 	return Members.read_prop(self, where, prop, _table)
 
 
@@ -3331,6 +3351,27 @@ func lingo_set_member_prop(which: Variant, cast: String, prop: String,
 			_field_text[_field_key(int(where[0]), int(where[1]))] = \
 				LingoValue.to_str(value)
 			queue_redraw()
+		"hilite":
+			# §19's 39-site gap. Its shape was this match knowing `editable` and
+			# `text` and dropping everything else, and the consumer is
+			# `preview/hilite.gd:artwork` -- already the one place a hilited
+			# picture is substituted for the plain one, so the script-set flag and
+			# the press-and-hold inversion end up as one substitution rather than
+			# two passes that could disagree about flip, blend and the clip.
+			if int(where[1]) <= 0:
+				return
+			_member_hilite[_field_key(int(where[0]), int(where[1]))] = \
+				LingoValue.to_int(value) != 0
+			queue_redraw()
+		_:
+			# **Reported rather than dropped.** This match knew two names and
+			# silently discarded every other member write, which is the one gap
+			# shape with no symptom at all: the statement returns, the read answers
+			# the authored value, and nothing anywhere says it did nothing.
+			# `LingoDiagnostics.MEMBER_PROP` was declared for exactly this and had
+			# never once been emitted (§19).
+			if _interpreter != null:
+				_interpreter.report(LingoDiagnostics.MEMBER_PROP, prop)
 
 
 ## `the selStart` / `the selEnd` — **movie properties, not field ones** (§8.4).

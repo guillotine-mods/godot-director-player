@@ -53,6 +53,7 @@ func _init() -> void:
 	_label_checks(h)
 	_call_frame_checks(h)
 	_item_delimiter_checks(h)
+	_member_checks(h)
 	_machine_checks(h)
 	_memory_hint_checks(h)
 	_trace_checks(h)
@@ -228,6 +229,151 @@ func _item_delimiter_checks(h) -> void:
 		str(_value("item 1 of \"a,b\"")) == "a,b")
 	_run("set the itemDelimiter to \",\"")
 	h.complete("`the itemDelimiter` separates items (§2.6)")
+
+
+# --------------------------------------------------------------- the members
+
+
+## What a member can be asked about itself.
+##
+## Every check picks its subject out of the *booted movie's own cast* rather than
+## naming one, so this runs against whichever title the config points at. The
+## comparisons are against `director_cast.gd`'s decode of the same member, which
+## is the only way to tell "answered" from "answered zero".
+func _member_checks(h) -> void:
+	h.begin("a member answers for itself (§5)")
+	var table = _preview.get("_table")
+	var cast = table.cast_for(1) if table != null else null
+	h.check("the movie's own cast opened", cast != null)
+	if cast == null:
+		h.complete("a member answers for itself (§5)")
+		return
+	# The first member of each kind this movie happens to have. A title with no
+	# field or no shape simply skips those rows rather than failing them.
+	var of_kind: Dictionary = {}
+	for number in cast.member_numbers():
+		var m: Dictionary = cast.member(int(number))
+		var kind := str(m.get("type_name", ""))
+		if not of_kind.has(kind):
+			of_kind[kind] = int(number)
+	h.check(
+		"the cast holds members of %d kind(s): %s"
+			% [of_kind.size(), ", ".join(PackedStringArray(of_kind.keys()))],
+		not of_kind.is_empty())
+	for kind in of_kind:
+		var number: int = of_kind[kind]
+		var m: Dictionary = cast.member(number)
+		h.check(
+			"`the type of member %d` is #%s" % [number, kind],
+			_value("the type of member %d" % number) == StringName(str(kind)),
+			"a **symbol**, not a number: `if the type of member x = #field` is how "
+			+ "a script tests it and an integer compares equal to nothing")
+		h.check(
+			"`the rect of member %d` matches the member's own rectangle" % number,
+			_rect_of(m) == _value("the rect of member %d" % number),
+			"want %s, got %s" % [str(_rect_of(m)), str(_value("the rect of member %d" % number))])
+		h.check(
+			"`the regPoint of member %d` is its registration offset" % number,
+			_value("the regPoint of member %d" % number)
+				== [int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))])
+		h.check(
+			"`the castLibNum of member %d` is the movie's own library" % number,
+			int(_value("the castLibNum of member %d" % number)) == 1)
+	# A text member, where the properties that were `absent` with sites live.
+	if of_kind.has("field"):
+		var field_number: int = of_kind["field"]
+		var m: Dictionary = cast.member(field_number)
+		var styled: Dictionary = m.get("text_style", {})
+		h.check(
+			"`the textSize of member %d` is the member's own point size (%d)"
+				% [field_number, int(styled.get("font_size", 0))],
+			int(_value("the textSize of member %d" % field_number))
+				== int(styled.get("font_size", 0))
+				and int(styled.get("font_size", 0)) > 0,
+			"§19 lists this absent at 3 sites; 0 would mean the style run did not "
+			+ "decode, which is a different fault from the property not existing")
+		h.check(
+			"`the fontSize` is the same property by D5's spelling",
+			int(_value("the fontSize of member %d" % field_number))
+				== int(_value("the textSize of member %d" % field_number)))
+		h.check(
+			"`the lineCount of member %d` counts the lines of its text" % field_number,
+			int(_value("the lineCount of member %d" % field_number))
+				== int(_value("the number of lines in the text of member %d" % field_number)),
+			"the same rule as `count(..., #line)`, which drops a trailing empty "
+			+ "line -- two implementations of that would disagree on every field "
+			+ "that ends in a newline")
+		h.check(
+			"`the wordWrap of member %d` is a flag, not VOID" % field_number,
+			[0, 1].has(int(_value("the wordWrap of member %d" % field_number))))
+	# `the size of member` and `the scriptText of member`, on whatever carries them.
+	var sized := 0
+	var scripted := 0
+	for number in cast.member_numbers():
+		var m: Dictionary = cast.member(int(number))
+		if int(m.get("data_chunk_id", -1)) >= 0 and sized == 0:
+			sized = int(number)
+		if str(m.get("source", "")).strip_edges() != "" and scripted == 0:
+			scripted = int(number)
+	if sized > 0:
+		h.check(
+			"`the size of member %d` is its payload's byte count (%d)"
+				% [sized, table.member_payload_size(1, sized)],
+			int(_value("the size of member %d" % sized))
+				== table.member_payload_size(1, sized)
+				and table.member_payload_size(1, sized) > 0)
+	if scripted > 0:
+		h.check(
+			"`the scriptText of member %d` is the Lingo the author typed" % scripted,
+			str(_value("the scriptText of member %d" % scripted))
+				== str(cast.member(scripted).get("source", "")),
+			"the whole corpus is compiled from this text and no movie could ask "
+			+ "for it")
+	h.check(
+		"`the fileName of member 1` is the container it lives in",
+		str(_value("the fileName of member 1")) == table.container_path_of(1)
+			and table.container_path_of(1) != "")
+	# `the hilite of member` — §19's 39-site gap, and a *write* rather than a read.
+	# The store is the node's and the consumer is `preview/hilite.gd:artwork`.
+	var subject: int = int(of_kind.values()[0])
+	h.check(
+		"`the hilite of member %d` starts clear" % subject,
+		int(_value("the hilite of member %d" % subject)) == 0)
+	_run("set the hilite of member %d to 1" % subject)
+	h.check(
+		"a write reads back",
+		int(_value("the hilite of member %d" % subject)) == 1,
+		"`lingo_set_member_prop` knew `editable` and `text` and dropped the rest "
+		+ "without reporting it")
+	h.check(
+		"and reaches the store the painter reads",
+		bool(_preview.get("_member_hilite").get(
+			_preview.call("_field_key", 1, subject), false)),
+		"a member write that round-trips through a dictionary nothing paints from "
+		+ "is the `moveableSprite` shape")
+	_run("set the hilite of member %d to 0" % subject)
+	h.check("and clears again", int(_value("the hilite of member %d" % subject)) == 0)
+	# The other half of that fix: a member write with no arm is now *reported*.
+	# `LingoDiagnostics.MEMBER_PROP` was declared and had never been emitted.
+	var before: int = _interp.diagnostics.names_in("member_prop").size()
+	_run("set the noSuchMemberProperty of member %d to 1" % subject)
+	h.check(
+		"a member write with no arm is reported rather than dropped",
+		int(_interp.diagnostics.names_in("member_prop").size()) > before,
+		"this is the one gap shape with no symptom: the statement returns, the "
+		+ "read answers the authored value, and nothing says it did nothing")
+	h.complete("a member answers for itself (§5)")
+
+
+## A member's own rectangle in Director's [left, top, right, bottom] order,
+## derived the way `preview/members.gd` derives it so the check is on the
+## property and not on a second copy of the rule.
+func _rect_of(m: Dictionary) -> Array:
+	var box: Dictionary = m.get("initial_rect", {})
+	if box.is_empty():
+		return [0, 0, int(m.get("width", 0)), int(m.get("height", 0))]
+	return [int(box.get("left", 0)), int(box.get("top", 0)),
+		int(box.get("right", 0)), int(box.get("bottom", 0))]
 
 
 # --------------------------------------------------------------- the machine

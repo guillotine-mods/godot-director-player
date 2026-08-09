@@ -171,6 +171,36 @@ func file_for(cast_lib: int):
 	return _movie if cast_lib == 1 else null
 
 
+## `the size of member` — bytes of the member's own payload chunk.
+##
+## Director reports what a member costs in memory, and the payload is that cost:
+## the bitmap's bits, the field's styled text, a palette's colour table. Read
+## from the container rather than remembered, because nothing here caches a
+## member's decoded size and a chunk length is one seek.
+##
+## 0 for a member with no payload of its own — a script member carries its source
+## in the info block and owns no chunk — which is what Director answers for one.
+func member_payload_size(cast_lib: int, cast_id: int) -> int:
+	var m: Dictionary = get_member(cast_lib, cast_id)
+	var chunk := int(m.get("data_chunk_id", -1))
+	if chunk < 0:
+		return 0
+	var f = file_for(cast_lib)
+	if f == null:
+		return 0
+	return f.read_chunk(chunk).size()
+
+
+## `the fileName of member` — the container the member's library lives in.
+##
+## Director answers the external file for a *linked* member. Every member in this
+## corpus is internal to some container, and the container is then the honest
+## answer to the question the property asks.
+func container_path_of(cast_lib: int) -> String:
+	var f = file_for(cast_lib)
+	return str(f.path) if f != null else ""
+
+
 ## The `ccl ` list of the container library `cast_lib` lives in: the ordered
 ## external casts *that file's* film loops index into.
 ##

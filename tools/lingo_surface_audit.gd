@@ -950,8 +950,15 @@ func _bound() -> Dictionary:
 		detail[_key("sound", "volume")] = "read and write"
 
 	# --- member properties ---------------------------------------------------
+	# To the next top-level function rather than to a named line, for the reason
+	# `_consumed_keys` records at its own end anchor: an anchor that names a
+	# *statement* stops wherever that statement first appears. This one was
+	# `"return 0"`, which was `read_prop`'s fall-through when it had five arms and
+	# became the body of `the mediaBusy of member` when it had fifty -- so the
+	# thirty arms after that one were invisible and reported `absent`, including
+	# the three-site `the textSize of member` §19 lists as a gap.
 	var member_reads := _match_arms(
-		FileAccess.get_file_as_string(MEMBERS_SRC), "func read_prop", "return 0")
+		FileAccess.get_file_as_string(MEMBERS_SRC), "func read_prop", "\nstatic func ")
 	var member_writes := _match_arms(
 		preview_src, "func lingo_set_member_prop", "func lingo_sel_start")
 	for name in member_reads:
