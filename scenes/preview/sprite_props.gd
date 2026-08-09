@@ -78,61 +78,40 @@ const ALIASES := {
 	"member": "membernum",
 	"fliph": "flip_h",
 	"flipv": "flip_v",
-	# An identity entry, listed rather than omitted. `castLibNum` is its own
-	# field under its own name and needs no translation -- but the reason it
-	# needs none is exactly the fact this table exists to record, and a name
-	# absent from here reads as "nobody has looked at it" rather than as
-	# "checked, and the two vocabularies agree". 3 sites.
+	# Identity entries, listed rather than omitted. Each is its own field under
+	# its own name and needs no translation -- but the reason it needs none is
+	# exactly the fact this table exists to record, and a name absent from here
+	# reads as "nobody has looked at it" rather than as "checked, and the two
+	# vocabularies agree".
 	#
-	# It is live on the **read** only. `sprite_state.read_prop` answers it from
-	# the record's `cast_lib`, and `effective` has no arm for it, so a script
-	# that *writes* `the castLibNum of sprite N` still moves nothing on screen.
-	# Same half-a-property shape as the four above, one seam further along.
+	# `castlibnum` is 3 sites, and was live on the **read** only until the channel
+	# model landed: the read answered it from the record's `cast_lib` and the merge
+	# had no arm for it, so a script that *wrote* `the castLibNum of sprite N`
+	# moved nothing on screen. Same half-a-property shape as the five above, one
+	# seam further along.
+	#
+	# `ink`, `blend`, `forecolor` and `backcolor` are **0 sites in this corpus**,
+	# and are here because Director has them (`AGENTS.md`: build Director, not this
+	# game). They were in the same half-implemented state and worse: the release
+	# table already carried rows for `ink`, `forecolor` and `backcolor`, handing
+	# back auto-puppets for a merge that did not exist. Nothing here can exercise
+	# them, so the merge is transcribed from `lingo-the.cpp` and unverified against
+	# play -- `blend`'s conversion in particular, which is the only one of the four
+	# that is not a straight copy.
 	"castlibnum": "castlibnum",
+	"ink": "ink",
+	"blend": "blend",
+	"forecolor": "forecolor",
+	"backcolor": "backcolor",
 }
 
-## Properties the *score record* carries a value for and `sprite_state.read_prop`
-## has no arm for, so a read has to fall back to the record here or answer 0 for
-## a flag the author set.
+## Canonical keys that reach the screen without being a channel field the model
+## merges: the three the node routes before `sprite_state.gd` is ever reached.
 ##
-## Both are flags rather than values, and both are half of a property whose other
-## half is a Lingo write -- which is the whole reason this file exists. Adding a
-## key here is not enough on its own to make the property *work*: a Lingo write
-## also has to be merged into the effective sprite by `sprite_state.effective`,
-## which has an arm for `moveable` and none for `editable`.
-const SCORE_FLAGS := ["moveable", "editable"]
-
-## Every canonical key something in this port actually **consumes**.
-##
-## `sprite_state.write_prop` stores any key at all, and `read_prop` answers a
-## stored key back, so *every* sprite write round-trips and every one of them
-## looks implemented. Only the keys `read_prop` has an arm for or `effective`
-## merges reach the screen. That gap is silent by construction and it has now
-## produced five separate bugs -- `moveableSprite`, `editableText`,
-## `constraint`, `the member of sprite`, `flipH`/`flipV` -- each found by a
-## player noticing something did not move, never by the engine saying so.
-##
-## `LingoDiagnostics` has had a `SPRITE_PROP` category since it was written and
-## **nothing has ever emitted one**, because the check needs a list of what is
-## consumed and there was nowhere for the list to live that was not a second
-## copy of this table. It lives here, next to the aliases, and
-## `director_preview.gd`'s two entry points report against it.
-##
-## Derived rather than invented, so it can be checked: the keys `read_prop`
-## matches on, plus `EMPTY_CHANNEL`'s, plus the keys `effective` merges, plus
-## the three the node routes before either is reached (`constraint` in `write`
-## below, `cursor` and `loc` in `director_preview.gd`). A name missing from here
-## costs one diagnostic row and no behaviour, which is the safe direction for a
-## list whose whole purpose is to be noticed when it is wrong.
-const CONSUMED := {
-	"membernum": true, "castnum": true, "castlibnum": true,
-	"loch": true, "locv": true, "loc": true,
-	"width": true, "height": true, "visible": true,
-	"ink": true, "blend": true, "trails": true,
-	"flip_h": true, "flip_v": true,
-	"moveable": true, "editable": true,
-	"constraint": true, "cursor": true,
-}
+## `constraint` is in `write` below, `cursor` and `loc` in `director_preview.gd`,
+## and `visible` is the channel's own (`channel.gd:VISIBLE_KEY`) -- honoured by
+## the painter and by the mouse test rather than merged into a sprite record.
+const ROUTED := ["constraint", "cursor", "loc", "visible"]
 
 
 ## Does anything in this port read `prop` after a script writes it?
@@ -140,8 +119,22 @@ const CONSUMED := {
 ## Takes the **Lingo** spelling and canonicalises, so a caller asks the question
 ## in the vocabulary it has. False is not "no such property in Director" -- it is
 ## "this port will store it and nothing will ever look".
+##
+## **Derived from the channel model rather than listed beside it.** This was a
+## hand-written table of eighteen keys, which is a second copy of `channel.gd`'s
+## `FIELDS` and therefore a second thing to forget: the copy claimed `ink` and
+## `blend` were consumed for as long as the merge had no arm for either, so the
+## one diagnostic that exists to catch a half-implemented property was reporting
+## that the two worst instances of it were fine. A property is consumed when it
+## has a `FIELDS` row, because the row *is* the merge, and there is now no way to
+## say otherwise here.
+##
+## `LingoDiagnostics` has had a `SPRITE_PROP` category since it was written and
+## nothing had ever emitted one, because the check needs this list and there was
+## nowhere for it to live that was not that second copy.
 static func consumed(prop: String) -> bool:
-	return CONSUMED.has(canonical(prop))
+	var key := canonical(prop)
+	return SpriteState.FIELDS.has(key) or ROUTED.has(key)
 
 
 ## The override-table key for a Lingo property name, already lower-cased by the
@@ -192,27 +185,22 @@ static func write(channel: int, prop: String, value: Variant,
 
 ## `the <prop> of sprite N`.
 ##
-## `SCORE_FLAGS` need their own score fallback where the other properties do not.
-## `read_prop` answers from the score record for everything a sprite record
-## carries, and it has no arm for either of them -- so a sprite the *author*
-## ticked Moveable or Editable on in the Score window read back as 0 until a
-## script had written the property itself. That is the same half-a-property the
-## merge fix closes, seen from the read side: the score's bit and the Lingo write
-## are one property from two sources, and both readers have to say so.
-##
-## `constraint` answers from `constraints` and never reaches `read_prop`, which
-## would answer 0 from its fall-through for a property the score record does not
-## carry -- indistinguishable from "unconstrained", and so a write that
+## `constraint` answers from `constraints` and never reaches the channel table,
+## which would answer 0 from its fall-through for a property the score record does
+## not carry -- indistinguishable from "unconstrained", and so a write that
 ## round-trips as a lie. `write` has why it lives there.
+##
+## Everything else goes straight through. There used to be a second fallback here
+## for `moveable` and `editable`, because the channel read had no arm for either
+## and a sprite the *author* ticked Moveable or Editable on in the Score window
+## read back as 0 until a script had written the property itself. That is the same
+## half-a-property this file exists to prevent, seen from the read side -- and it
+## is gone because the model reads a flag out of the score record for every
+## `FIELDS` row of that kind, so the two sources of one property are one answer
+## without a special case naming which two properties they are.
 static func read(channel: int, prop: String, overrides: Dictionary,
 		sprites: Array, constraints: Dictionary) -> Variant:
 	var key := canonical(prop)
 	if key == "constraint":
 		return int(constraints.get(channel, 0))
-	var value: Variant = SpriteState.read_prop(channel, key, overrides, sprites)
-	if not SCORE_FLAGS.has(key) or overrides.get(channel, {}).has(key):
-		return value
-	for sprite in sprites:
-		if int(sprite["channel"]) == channel:
-			return 1 if bool(sprite.get(key, false)) else 0
-	return value
+	return SpriteState.read_prop(channel, key, overrides, sprites)

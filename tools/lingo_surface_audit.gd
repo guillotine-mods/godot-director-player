@@ -109,7 +109,11 @@ const REF_THE := "res://reference/scummvm/lingo-the.cpp"
 const HOST_SRC := "res://scenes/preview_lingo_host.gd"
 const PREVIEW_SRC := "res://scenes/director_preview.gd"
 const MEMBERS_SRC := "res://scenes/preview/members.gd"
-const SPRITE_STATE_SRC := "res://scenes/preview/sprite_state.gd"
+## The channel model, read as data. It replaced the source-text scrape of
+## `sprite_state.gd` that `_consumed_keys` describes, and with it the path that
+## made this file's verdicts depend on how the engine's merge happens to be
+## *written*.
+const Channel := preload("res://scenes/preview/channel.gd")
 const WINDOWS_SRC := "res://scenes/preview/windows.gd"
 const SOUND_SRC := "res://scenes/preview/sound.gd"
 const GAMES_DIR := "res://games"
@@ -799,8 +803,7 @@ func _bound() -> Dictionary:
 	# `editableText` and `constraint` were each stored, read back correctly, and
 	# consumed by nobody -- which is why this scans the *consumer* and not the
 	# setter.
-	var sprite_reads := _match_arms(
-		FileAccess.get_file_as_string(SPRITE_STATE_SRC), "func read_prop", "# The channel holds")
+	var sprite_reads := _sprite_read_only()
 	var consumed := _consumed_keys()
 	for name in consumed:
 		var key := _key("sprite", str(name))
@@ -1003,48 +1006,50 @@ func _module_names() -> Array[String]:
 	return out
 
 
-## The override keys `sprite_state.effective` actually merges into the drawn
-## sprite, plus the two the node routes elsewhere before it gets there.
+## Every sprite property this port merges into the drawn sprite, plus the ones
+## the node routes elsewhere before the channel table is reached.
+##
+## **Read from the model, not scraped out of it.** This used to slice
+## `sprite_state.gd`'s source and regex the `over.has("...")` calls out of
+## `effective`, and every comment that grew around it is a record of that going
+## wrong: the slice ran past the end of the function and reported `_score` as a
+## sprite property; it read only `has` and reported `the visible of sprite` inert
+## at 12,548 sites; it missed the two-key loop and credited the member merge to
+## the score-record read below, which would have gone on answering after the merge
+## was deleted. Each of those is the same fault -- a check that infers what the
+## engine consumes from the *text* of the code that consumes it.
+##
+## `preview/channel.gd:FIELDS` is that list as data: one row per property, naming
+## the record field it merges into and the score writes that release it. A
+## property with a row is merged, released and readable; a property without one
+## reaches nothing. So this cannot disagree with the engine any more, because it
+## is asking the engine rather than reading over its shoulder.
 func _consumed_keys() -> Array[String]:
-	var out: Array[String] = ["cursor", "constraint", "puppet"]
-	var text := FileAccess.get_file_as_string(SPRITE_STATE_SRC)
-	var body := text.substr(maxi(text.find("func effective"), 0))
-	# **`effective` and nothing after it.** The end anchor named a function three
-	# further down, so the slice covered `release_auto_puppets` and `with_puppets`
-	# as well -- and `with_puppets` keys the score's own record into the override
-	# entry as `over["_score"]`, which this then reported as a sprite property the
-	# engine binds and §19 does not record. A named anchor also rots the moment
-	# somebody reorders the file; the next `static func` cannot.
-	var after := body.find("\nstatic func ", 1)
-	body = body.substr(0, after) if after > 0 else body
-	var re := RegEx.new()
-	# `has` **and** `get`. A key consulted with a default -- `over.get("visible",
-	# 1)`, which is the hide every script in every title writes -- is merged just
-	# as surely as one behind an `over.has`, and reading only the one shape
-	# reported `the visible of sprite` as inert at 12,548 sites. That is this
-	# file's own highest-severity verdict, produced against a property that works,
-	# which is the one failure mode a gate has no defence against: the next
-	# session spends its day on a bug that is not there, or learns to discount the
-	# red.
-	re.compile("over\\.(?:has|get)\\(\"([a-z_]+)\"")
-	for hit in re.search_all(body):
-		out.append(hit.get_string(1))
-	# `membernum` and `castnum` are merged by a loop rather than by an `over.has`,
-	# and reading only the one shape credited them to the score-record read below
-	# -- which answers the same value and would have gone on answering it after the
-	# merge was deleted.
-	var loop := RegEx.new()
-	loop.compile("for key in \\[([^\\]]*)\\]")
-	var quoted := RegEx.new()
-	quoted.compile("\"([a-z_]+)\"")
-	for hit in loop.search_all(body):
-		for name in quoted.search_all(hit.get_string(1)):
-			out.append(name.get_string(1))
-	# `loc` is written through the node's own position path, which `effective`
-	# then reads back as `loch`/`locv`.
-	for name in ["loch", "locv"]:
-		if not out.has(name):
-			out.append(name)
+	# Routed before the channel table: `cursor` and `constraint` are channel state
+	# kept in their own dictionaries on the node (§7.5, §7.6), `puppet` is the
+	# builtin's own flag, and `visible` is `Channel::_visible` -- honoured by the
+	# painter and the mouse test rather than merged into the sprite record.
+	var out: Array[String] = ["cursor", "constraint", "puppet", Channel.VISIBLE_KEY]
+	for key in Channel.FIELDS:
+		out.append(str(key))
+	return out
+
+
+## Sprite properties a script can *read* and cannot make reach the screen.
+##
+## Derived the same way and, since the channel model landed, empty by
+## construction: one `FIELDS` row is what makes a property both readable and
+## merged, so "answers from the score record and a write reaches nothing" is no
+## longer a state a property can be in. It was the state `ink` and `blend` were in
+## -- readable, stored on a write, merged by nobody -- which is why the category
+## is kept rather than deleted. Anything `Channel.read` can answer that has no row
+## is one, and a new one appearing here is the old bug coming back.
+func _sprite_read_only() -> Dictionary:
+	var out: Dictionary = {}
+	for key in Channel.EMPTY_CHANNEL:
+		var name := str(key)
+		if not Channel.FIELDS.has(name) and name != Channel.VISIBLE_KEY:
+			out[name] = "read from the score record"
 	return out
 
 
