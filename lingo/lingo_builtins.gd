@@ -265,6 +265,18 @@ static func _strings(key: String, args: Array, out: Array) -> bool:
 			out.append(_offset(args))
 		"string":
 			out.append(_s(_arg(args, 0)))
+		"symbol":
+			# `symbol("mouseUp")` is `#mouseUp` built from a string, which is how a
+			# movie turns a name it computed into the thing `sendSprite` and
+			# `getaProp` take. The inverse of `string(#x)`, and engine-free: a
+			# symbol here is a StringName (§1.9), so this is the conversion and
+			# nothing else.
+			#
+			# Case is kept. Lingo compares symbols case-insensitively and this
+			# module does not do the comparing; lower-casing here would change what
+			# `string(symbol("MouseUp"))` answers, which is a value a script can
+			# put in a field.
+			out.append(StringName(_s(_arg(args, 0))))
 		"value":
 			out.append(_value_of(_arg(args, 0)))
 		"numberofchars", "numberofitems", "numberoflines", "numberofwords":

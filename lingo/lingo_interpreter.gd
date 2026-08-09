@@ -68,6 +68,9 @@ var _result: Variant = null
 ## script and handler names beside it: a callee must not leave its caller
 ## reporting the callee's argument list.
 var _current_args: Array = []
+## `abort` is unwinding. Cleared where a dispatch begins rather than where it
+## ends, so a handler that aborts cannot leave the next one refusing to start.
+var _aborting := false
 var _depth: int = 0
 ## Where execution is, for locating a diagnostic. Statement granularity: the
 ## line of the statement being run, not of the expression inside it.
@@ -608,9 +611,99 @@ func _take_suspend_request() -> void:
 	_suspend_kind = kind
 
 
+## The builtins this object answers itself, ahead of the module and the host.
+##
+## Three, and each is here because the thing that answers it is *inside* the
+## interpreter: `do` runs a string in the caller's frame, `param` reads the
+## running call's argument list, and `abort` unwinds every frame on the stack.
+## `lingo_builtins.gd` is engine-free by definition and the host is one frame
+## further out, so neither can answer any of them -- the host had `abort` in its
+## IGNORED list, which made it `nothing` under a different name.
+##
+## **Asked from two places on purpose.** `_call` handles `do "x"` and `param(1)`;
+## a bare word with no arguments never reaches `_call` at all, because
+## `_read_var` treats an unknown identifier as a no-argument call, and that is how
+## Lingo spells `abort`. The first version guarded only `_call` and `abort` went
+## straight past it.
+##
+## `handled` distinguishes "answered VOID" from "not mine", the same way
+## `lingo_builtins.call_builtin` does and for the same reason.
+func _own_builtin(name: String, args: Array, frame: Dictionary,
+		handled: Array) -> Variant:
+	match name:
+		"do":
+			# Compile a string and run it **in this handler's frame**. That last
+			# part is the whole of the command: `do` sees the caller's locals and
+			# globals, which is how a title stores a fragment in a field and runs
+			# it. `value("...")` is the expression half of the same idea and
+			# belongs to `lingo_builtins.gd`, which parses a literal without an
+			# interpreter; this is the statement half.
+			handled.append(true)
+			return _do(LingoValue.to_str(args[0]) if not args.is_empty() else "", frame)
+		"abort":
+			# Leave every handler on the stack, not just this one. `exit` returns
+			# from the running handler and the caller carries on; `abort` stops the
+			# whole dispatch, and a movie using it as its error path ran on through
+			# the statements it was trying to escape.
+			handled.append(true)
+			_aborting = true
+			return null
+		"param":
+			# The nth argument the *running* handler was called with. The reference
+			# reads the named parameter first and falls back to the unnamed list, so
+			# `param(1)` inside a handler that has reassigned its first argument
+			# answers the assigned value rather than what was passed.
+			handled.append(true)
+			var which := LingoValue.to_int(args[0]) if args.size() > 0 else 0
+			if which < 1:
+				return null
+			var params: Array = (_current_handler.get("params", []) as Array)
+			if which <= params.size():
+				return _read_var(str(params[which - 1]), frame)
+			return _current_args[which - 1] if which <= _current_args.size() else null
+	return null
+
+
+## `do "<lingo>"`, run against the caller's own frame.
+##
+## The frame is handed straight in rather than a fresh one being built: Director's
+## `do` is a statement in the handler that wrote it, and a copy of the locals
+## would make `do "set x to 1"` write into a scope nothing else can read -- which
+## is the failure mode that makes the command look like it works.
+##
+## Compiled per call. There is no cache and there should not be one: the string is
+## usually assembled from a field or a global, so two calls with the same call
+## site rarely carry the same source.
+func _do(source: String, frame: Dictionary) -> Variant:
+	if source.strip_edges() == "":
+		return null
+	var compiler = DoCompiler.new()
+	var compiled: Dictionary = compiler.compile_source(
+		"on __do
+%s
+end
+" % source, "do")
+	if compiled.is_empty():
+		# Director reports a `do` that will not compile and carries on. Reported
+		# through the same sink as an unbound name, because "this movie asked for
+		# something this port could not run" is the one question the sink answers.
+		report(LingoDiagnostics.BUILTIN, "do: %s" % str(compiler.error))
+		return null
+	var handlers: Array = compiled.get("handlers", [])
+	if handlers.is_empty():
+		return null
+	_exec_block((handlers[0] as Dictionary).get("body", []), frame)
+	return null
+
+
 func reset_steps() -> void:
 	_steps = 0
 	errors.clear()
+	# `abort` unwound the last dispatch and must not refuse this one. Cleared
+	# where a dispatch *begins* rather than where it ends, because the ends are
+	# `preview/scripts.gd:dispatch`, `preview/event_chain.gd:run` and the thaw,
+	# and this is the one line all three already share.
+	_aborting = false
 	# Diagnostics deliberately survive: they accumulate over a session so the
 	# emitted set covers the whole run rather than the last dispatch.
 
@@ -645,6 +738,12 @@ func _exec_from(stmts: Array, frame: Dictionary, start: int) -> int:
 		if typeof(stmts[i]) != TYPE_DICTIONARY:
 			continue
 		var flow := _exec(stmts[i], frame)
+		# `abort` unwinds every frame, so it is tested here rather than carried as
+		# a Flow: the builtin is reached from inside an *expression* and an
+		# expression has no way to report a flow at all. Same shape as `_suspending`
+		# below and for the same reason.
+		if _aborting:
+			return Flow.ABORT
 		if _suspending:
 			# Tested instead of `flow == SUSPEND` so that one check covers both the
 			# ordinary case -- a nested block handed SUSPEND up -- and a `play`
@@ -1300,6 +1399,13 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 		return native if native != null else 0
 	if has_handler(key) or _script_has_handler(frame.get("script", {}), key):
 		return call_handler(key, [], frame.get("script", {}))
+	# A bare word is how Lingo spells a no-argument call, so the interpreter's own
+	# builtins have to be offered here as well as in `_call` -- `abort` is written
+	# exactly this way and never reaches `_call` at all.
+	var own: Array = []
+	var mine: Variant = _own_builtin(key, [], frame, own)
+	if not own.is_empty():
+		return mine
 	var handled: Variant = _host_call("call_builtin", [key, []])
 	if handled != null:
 		return handled
@@ -1436,14 +1542,10 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	# unnamed list, so `param(1)` inside a handler that has assigned its first
 	# argument answers the assigned value rather than what was passed. That
 	# distinction is kept: the locals hold the named ones.
-	if name == "param":
-		var which := LingoValue.to_int(args[0]) if args.size() > 0 else 0
-		if which < 1:
-			return null
-		var params: Array = (_current_handler.get("params", []) as Array)
-		if which <= params.size():
-			return _read_var(str(params[which - 1]), frame)
-		return _current_args[which - 1] if which <= _current_args.size() else null
+	var own: Array = []
+	var mine: Variant = _own_builtin(name, args, frame, own)
+	if not own.is_empty():
+		return mine
 	# The engine-free builtins — math, strings, lists, geometry, predicates.
 	# Offered after a user handler, because Director lets a script shadow a
 	# builtin, and before the host, because the host is where a title's own
@@ -1486,6 +1588,10 @@ func _host_answered_builtin() -> bool:
 ## since the last editor session fails with "not declared in the current scope"
 ## in a file nobody touched.
 const Builtins := preload("res://lingo/lingo_builtins.gd")
+## For `do`. Preloaded here rather than at the top for the same reason `Builtins`
+## is: a headless `--script` run resolves global class names out of the editor's
+## cache, which a fresh checkout has not built.
+const DoCompiler := preload("res://lingo/compile/lingo_compiler.gd")
 
 
 ## A host that does not implement a method answers null, which is

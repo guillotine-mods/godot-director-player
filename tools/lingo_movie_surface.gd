@@ -56,6 +56,7 @@ func _init() -> void:
 	_member_checks(h)
 	_machine_checks(h)
 	_memory_hint_checks(h)
+	_do_checks(h)
 	_trace_checks(h)
 
 	_preview.queue_free()
@@ -484,6 +485,76 @@ func _memory_hint_checks(h) -> void:
 		"it was in the host's IGNORED list, so a movie that reset itself did not")
 	h.complete("`clearGlobals` empties the globals (§1.11)")
 	h.complete("the preload hints report through `the result` (§1.11)")
+
+
+## `do`, `abort` and `symbol` — three commands the port answered VOID for.
+##
+## `do` is checked on the thing that makes it `do` rather than `value`: it runs in
+## the **caller's** frame, so a `do` that sets a local has to be visible to the
+## next statement of the handler that wrote it. A version that built a fresh scope
+## would pass every other test one could write for it.
+func _do_checks(h) -> void:
+	h.begin("`do`, `abort` and `symbol` (§1.11, §1.9)")
+	var script := Compiler.new().compile_source(
+		"on locals\n"
+		+ "  set x to 1\n"
+		+ "  do \"set x to 7\"\n"
+		+ "  return x\n"
+		+ "end\n"
+		+ "on globalside\n"
+		+ "  global harnessdone\n"
+		+ "  do \"set harnessdone to 9\"\n"
+		+ "  return harnessdone\n"
+		+ "end\n"
+		+ "on broken\n"
+		+ "  do \"repeat repeat repeat\"\n"
+		+ "  return 5\n"
+		+ "end\n"
+		+ "on aborts\n"
+		+ "  set marker to 1\n"
+		+ "  abort\n"
+		+ "  set marker to 2\n"
+		+ "  return marker\n"
+		+ "end\n"
+		+ "on callsaborts\n"
+		+ "  aborts()\n"
+		+ "  return 3\n"
+		+ "end\n", "DoProbe")
+	h.check("the probe script compiled", not script.is_empty())
+	if script.is_empty():
+		h.complete("`do`, `abort` and `symbol` (§1.11, §1.9)")
+		return
+	h.check(
+		"`do` runs in the caller's frame, so it can write the caller's local",
+		int(_interp.call_handler("locals", [], script)) == 7,
+		"a fresh scope would answer 1 and look like it worked from every other "
+		+ "angle; this is the whole of what makes `do` different from `value`")
+	h.check(
+		"and reaches a global the caller declared",
+		int(_interp.call_handler("globalside", [], script)) == 9)
+	h.check(
+		"a `do` string that will not compile is reported, and the handler carries on",
+		int(_interp.call_handler("broken", [], script)) == 5,
+		"Director reports it and continues; a movie that computes its Lingo must "
+		+ "not be stopped by one bad string")
+	h.check(
+		"`abort` leaves the handler that ran it",
+		_interp.call_handler("aborts", [], script) == null,
+		"`exit` returns from one handler; `abort` stops the dispatch. It was in "
+		+ "the host's IGNORED list, which made it `nothing` under another name")
+	_interp.reset_steps()
+	h.check(
+		"and the handler that called it",
+		_interp.call_handler("callsaborts", [], script) == null,
+		"a chain that carried on would run the statements the movie was escaping")
+	_interp.reset_steps()
+	h.check(
+		"`symbol(\"mouseUp\")` is #mouseUp",
+		_value("symbol(\"mouseUp\")") == &"mouseUp")
+	h.check(
+		"and round-trips through `string`",
+		str(_value("string(symbol(\"mouseUp\"))")) == "mouseUp")
+	h.complete("`do`, `abort` and `symbol` (§1.11, §1.9)")
 
 
 ## `the trace` — Director's statement trace, and the switch this port has spent

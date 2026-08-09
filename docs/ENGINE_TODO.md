@@ -20,8 +20,8 @@ by how visible the absence is.
 
 ## The reference map
 
-**Reference names not live here: 287.** `tools/lingo_surface_audit.gd` reads
-Director's own name tables out of `reference/scummvm/` -- 511 capabilities this
+**Reference names not live here: 173.** `tools/lingo_surface_audit.gd` reads
+Director's own name tables out of `reference/scummvm/` -- 506 capabilities this
 port can reach -- and pins how many of them are live. §19 measures the gaps a
 *title in this corpus calls*; this measures the gaps against Director itself,
 which is the wider and the more honest number. A name no Piposh or Rating
@@ -30,6 +30,162 @@ script happens to use is invisible to §19 and counted here.
 The number is pinned so it cannot drift: if it falls, say which names landed;
 if it rises, a binding stopped being live or the reference tree gained a name,
 and neither should pass silently.
+
+### What moved, and where the denominator went
+
+It was **287 of 511** and is 173 of 506. The five names that left the
+denominator are named in `tools/lingo_surface_audit.gd:INAPPLICABLE`, with the
+reason per name: `openDA`, `closeDA`, `openResFile`, `closeResFile` and
+`showResFile` address classic Mac OS system services -- desk accessories and the
+resource fork -- which exist on no platform this engine runs on, so no
+implementation could be written and the rows would be red for ever. That is the
+only content exclusion there is, and the bar for it is deliberately *not* "we
+have not built it": everything unbuilt is still counted.
+
+Of the 109 that went live, a third were never missing. A property read is a
+**chain** -- interpreter, then host, then the preview node, then the property
+tables -- and the audit read only the last stage, so six sprite properties the
+host and the node answer first (`the loc`, `the rect`, `left`, `top`, `right`,
+`bottom`) were reported "stored in _overrides, consumed by nothing", and `the
+itemDelimiter` was reported `absent` while three chunk functions consumed it.
+§19's own `loc` row says the count was "one higher than the truth"; it was six.
+Two scan anchors were wrong in the same way -- the member scan stopped at the
+first `return 0` in `read_prop`, which hid thirty arms once that function grew
+one -- and the probe reported `getPref`, the one arm whose correct answer is
+VOID, as the one arm that is not there.
+
+The rest were real, and mostly the same shape: a fact the engine already held
+with no spelling to ask for it. See the two commits, `lingo: 45 Director names
+this port could already answer` and `members: 46 properties a member could
+answer about itself`.
+
+## What the remaining 173 are waiting for
+
+Grouped by the subsystem each needs, because they are not 173 independent
+tasks -- half of them land together or not at all. Counts are from the audit's
+own grouping, and it prints the names.
+
+**Digital video (about 40 names).** `member` 13 (`the controller`,
+`directToStage`, `video`, `crop`, `center`, `scale`, `frameRate`,
+`pausedAtStart`, `digitalVideoType`, `timeScale`, `cuePointNames`,
+`cuePointTimes`, `media`), `sprite` 13 (`the movieRate`, `movieTime`,
+`startTime`, `stopTime`, `volume`, `currentTime`, `mostRecentCuePoint`, and the
+six `track*`), `builtin` 5 (`trackCount`, `trackType`, `trackStartTime`,
+`trackStopTime`, `isPastCuePoint`), `system` 1 (`the digitalVideoTimeScale`).
+*What it would take:* a `#digitalVideo` cast member type in
+`director/director_cast.gd` (none is decoded), a decoder for whatever the
+container carries -- QuickTime or AVI, neither of which Godot reads natively --
+a video sprite that draws into the channel, and the tempo channel's video waits,
+which `director_score.gd` already decodes into `wait_video_channel` and nothing
+consumes. **No member in any of the six titles is a digital video**, which is why
+this is last rather than first.
+
+**Score recording (8 builtins).** `beginRecording`, `endRecording`,
+`updateFrame`, `insertFrame`, `deleteFrame`, `duplicateFrame`, `clearFrame`, and
+the write half of the eight frame properties `the frameScript`, `the frameLabel`,
+`the frameTempo`, `the framePalette`, `the frameTransition`, `the frameSound1`/`2`
+now read (Director makes those writable inside a recording session and read-only
+outside one, which is what they are here). *What it would take:* a mutable score.
+`director_score.gd` decodes a delta stream into a per-frame snapshot and there is
+no path back; recording needs the snapshot to be the authority and the stream to
+be re-derived from it, or a per-frame override layer the frame loop merges the
+way `preview/channel.gd` merges a sprite's.
+
+**Xtras and XObjects (`xtra`, `openXlib`, `closeXlib`, `showXlib`,
+`xFactoryList`, `factory`, `the interface of member`).** §7.3. *What it would
+take:* a registry of native objects the interpreter can instantiate and send
+messages to, plus `new`/`mNew` dispatch and `respondsTo`. 4 corpus sites, all
+`xtra`. `factory` and `xFactoryList` are D3's version of the same idea and would
+share the object model with §7.2's parent scripts.
+
+**Menus (`installMenu`, `menu`, `menuItem`, `the name of menu`, and menuItem's
+`checkMark`, `enabled`, `name`, `script`).** *What it would take:* a menu bar.
+Director's `installMenu` reads a **field member** whose text is the menu
+definition, so the parsing is small; what does not exist is anywhere to put the
+result. No title in this corpus installs one.
+
+**Cast authoring (`erase`, `move`, `findEmpty`, `importFileInto`, `script`,
+`save`, `copyToClipBoard`, `pasteClipBoardInto`, and `castLib`'s five
+properties).** *What it would take:* a mutable cast. `director_cast.gd` parses a
+container read-only and `director_writer.gd` writes one back from the playing
+movie's field overrides; between them there is no in-memory member a script can
+create, erase or move. `the name of castLib` and its four neighbours need the
+same object, which is why they are here rather than with the reads that landed.
+
+**Text metrics (`charPosToLoc`, `locToCharPos`, `linePosToLocV`,
+`locVToLinePos`, `lineHeight`, `scrollByLine`, `scrollByPage`, and the nine
+`chunk` properties -- `the textFont of word 3 of field "x"`).** *What it would
+take:* `preview/text_art.gd` to expose the laid-out glyph boxes it already
+computes, and the parser to carry a chunk expression as a *property target*
+rather than as a value (§11.8). The chunk properties additionally need STXT's
+style **runs**; `director_cast.gd:_read_stxt_style` reads the first run only,
+which is what `the textSize of member` answers from.
+
+**The idle-load queue (`cancelIdleLoad`, `finishIdleLoad`, `idleLoadDone`, and
+`the idleLoadMode`, `idleLoadPeriod`, `idleLoadTag`, `idleReadChunkSize`,
+`idleHandlerPeriod`).** `director/director_preloader.gd` already walks ahead of
+the playhead on a millisecond budget, which is the mechanism; what it has no
+notion of is a *tagged* queue a script can add to, cancel and ask about.
+
+**The timeout family (`the timeoutLength`, `timeoutLapsed`, `timeoutScript`,
+`timeoutMouse`, `timeoutKeyDown`, `timeoutPlay`) and `the actorList` / `the
+perFrameHook`.** All three are the same missing thing: a per-frame callout the
+frame loop makes. `AGENTS.md` names `timeout` and `stepFrame` among the calls
+already made the wrong way. *What it would take:* `preview/frame_loop.gd` to run
+a timeout check and a `stepFrame` sweep once per tick, and the interpreter to
+send a message to an arbitrary object rather than to a script.
+
+**`updateStage` (3,717 sites) and `the updateLock`.** The long-form reason is in
+`scenes/preview_lingo_host.gd`'s `IGNORED` list and it has not changed: Godot
+cannot present synchronously from inside a handler. `queue_redraw()` marks the
+canvas dirty and `RenderingServer.force_draw()` does not re-run `_draw`
+(measured on 4.7.1, headless and windowed). A real arm has to paint through the
+immediate `RenderingServer` API, which is the whole of `stage_paint.gd`,
+`sprite_art.gd`, `text_art.gd`, `film_loop_view.gd` and `trails.gd`. Until then
+an arm that only requested a redraw would read as implemented from every
+direction and change nothing -- which is worse than the row staying red.
+
+**`the currentSpriteNum` (12 sites).** The smallest one left and the only
+remaining §19 gap with a corpus count worth the name. Director synthesises it
+from the sprite whose behaviour is running (§7.1); this port's chain elements
+(`preview/event_chain.gd:element`) carry a tier and a script and **not the
+channel they came from**, so there is nothing to answer with. *What it would
+take:* the channel added to the element at `for_mouse`/`for_key`, and `run`
+setting it on the host around each element.
+
+**Object messaging (`send`, `call`, `sendAncestor`, `callAncestor`).** §7.1.
+Needs script objects with an ancestor chain; `sendSprite` and `sendAllSprites`
+landed because a sprite's behaviour is a *script* and this port resolves those.
+
+**Named individually, each its own small thing:** `mci`/`mciWait` (the Windows
+MCI string interface -- CD audio and video, a real capability this port could
+talk to), `zoomBox` (an animated rectangle between two sprite rects),
+`puppetTempo` (§9.1 gives it precedence over the score's tempo; the consumer is
+`director/director_frame_clock.gd`), `playAccel` (undocumented D2),
+`setCallback`, `the score` and `the scoreSelection` (the score as binary data,
+and an authoring-only selection), `the stageColor`, `the buttonStyle`, `the
+checkBoxAccess`/`checkBoxType`, `the searchCurrentFolder`, `the
+emulateMultiButtonMouse`, `the paletteMapping`, `the alertHook`, `the
+soundDevice`/`soundKeepDevice`, `the mouseChar`/`mouseWord`/`mouseItem`/
+`mouseLine` (which want the text metrics above), and the memory and CPU budgets
+`the preLoadRAM`, `the preLoadEventAbort`, `the cpuHogTicks`, `the
+netThrottleTicks`, `the fixStageSize`, `the fullColorPermit`, `the imageDirect`,
+`the switchColorDepth`, `the updateMovieEnabled`, `the traceLoad`.
+
+**Every one of the last group is deliberately unbound rather than stored.** A
+movie property this host keeps and nothing consults is the `moveableSprite`
+shape one level up: it round-trips perfectly, reads as implemented from every
+direction, and does nothing. Each of them is waiting for its consumer and not
+for its setter.
+
+**The write half of the member properties** is the other honest gap in what did
+land. 46 of them are readable and only `text`, `editable` and `hilite` can be
+written, because a write to `the textSize of member` has to reach
+`preview/text_art.gd` and a write to `the pattern of member` has to reach
+`sprite_art.gd`, and neither consults an override table today. A member write
+with no arm is now *reported* (`LingoDiagnostics.MEMBER_PROP`, which had never
+once been emitted), so the next session can see which ones a title actually
+reaches instead of guessing.
 
 ## What is genuinely still missing
 

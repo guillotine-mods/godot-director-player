@@ -341,7 +341,7 @@ const IGNORED := [
 	"printfrom", "unloadmovie",
 	"showglobals", "showlocals",
 	"puppettempo", "unloadcast", "restart",
-	"shutdown", "abort", "installmenu", "setcallback",
+	"shutdown", "installmenu", "setcallback",
 ]
 
 ## `the result`, waiting for the interpreter to take it.
@@ -2016,6 +2016,8 @@ const SPRITE_READ_ONLY := ["rect", "left", "top", "right", "bottom"]
 
 
 func set_sprite_prop(which: int, prop: String, value: Variant) -> void:
+	if OS.has_environment("TRACE_VIS") and prop.to_lower() == "visible":
+		print("VISWRITE ch%d = %s  handler=%s" % [which, str(value), str(preview._interpreter.get("_handler_name")) if preview != null and preview._interpreter != null else "?"])
 	if preview == null:
 		return
 	var low := prop.to_lower()

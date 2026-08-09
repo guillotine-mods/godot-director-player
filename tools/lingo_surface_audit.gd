@@ -532,9 +532,42 @@ func _reference() -> Dictionary:
 	}
 
 
-## The reference's own scaffolding, which is not Lingo. See the block comment.
+## Names that cannot mean anything in this port, by *platform* rather than by
+## effort — the denominator's only content exclusion, and it is kept here, in one
+## place, with a reason per name.
+##
+## The bar is deliberately not "we have not built it": everything not built is
+## still counted, because `AGENTS.md` is explicit that a measured zero is a reason
+## to build something last and never a reason to skip it. The bar is that the
+## thing the name addresses **does not exist on any platform this engine runs
+## on**, so no implementation could be written and a permanently-unreachable row
+## makes the number mean less rather than more.
+##
+## Five names clear it, and all five are classic Mac OS system services that
+## Director for Windows already answered with nothing:
+##
+##   `openDA`, `closeDA`      Desk accessories, opened by resource id out of the
+##                            Apple menu. There is no Apple menu, and a DA is a
+##                            System 6 code resource.
+##   `openResFile`,           The Macintosh **resource fork**. This engine reads
+##   `closeResFile`,          RIFF containers out of a data fork; a resource fork
+##   `showResFile`            is a filesystem feature of a filesystem nobody here
+##                            has.
+##
+## `openXlib` and `showXlib` are deliberately *not* here. An XObject library is a
+## real capability with a real (large) implementation behind it, and it is
+## recorded in `docs/ENGINE_TODO.md` as unbuilt. So are `mci` and `mciWait`: the
+## Windows MCI string interface is a thing this port could talk to.
+const INAPPLICABLE := ["openda", "closeda", "openresfile", "closeresfile",
+	"showresfile"]
+
+
+## The reference's own scaffolding, which is not Lingo, plus the five names above.
+## See the two block comments.
 static func _reference_excluded(name: String) -> bool:
 	var low := name.to_lower()
+	if INAPPLICABLE.has(low):
+		return true
 	return low.begins_with("scummvm") or low == "chunk" \
 		or low == "castlibs" or low == "castmembers" or low == "menuitems"
 
@@ -747,23 +780,28 @@ func _bound() -> Dictionary:
 
 	# --- builtins the interpreter answers before either -----------------------
 	#
-	# Two names, and both have to be there rather than on the host: `param(n)` is
+	# Three names, and each has to be there rather than on the host: `param(n)` is
 	# a question about the *running call frame*, which the host is one frame
-	# further out from and would answer wrongly rather than not at all, and
-	# `clearGlobals` has to reach the dictionary the globals actually live in.
+	# further out from and would answer wrongly rather than not at all, `do` runs a
+	# string in the frame that wrote it, and `abort` unwinds every frame there is.
+
 	#
 	# Read out of `_call`'s own guards for the reason the sprite route below is:
 	# the dispatch has stages, and a stage that answers is a binding wherever it
 	# sits. A scan that knows only about the host reports a name it never sees as
 	# `absent`, which is the same false verdict in the other direction from the
 	# one this file exists to catch.
-	for name in _guarded_names(
-			FileAccess.get_file_as_string(INTERPRETER_SRC), "func _call", "const Builtins"):
+	var own_builtins := _match_arms(
+		FileAccess.get_file_as_string(INTERPRETER_SRC),
+		"func _own_builtin", "## `do \"<lingo>\"`, run against")
+	for name in own_builtins:
 		var key := _key("builtin", str(name))
+		var inert := _arm_is_inert(str(own_builtins[name]))
 		if state.get(key, ABSENT) == LIVE:
 			continue
-		state[key] = LIVE
-		detail[key] = "lingo_interpreter.gd, before the module and the host"
+		state[key] = INERT if inert else LIVE
+		detail[key] = "lingo_interpreter.gd, before the module and the host" \
+			+ ("  (no effect)" if inert else "")
 
 	# --- builtins answered by the title-agnostic module ---------------------
 	#
