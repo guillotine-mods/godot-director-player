@@ -2803,14 +2803,22 @@ the warnings collected, Rating asks for three files it does not ship:
 | request | folder that resolved | what is in it |
 |---|---|---|
 | `sounds\arcade1\startmus.aif` | `SOUNDS/ARCADE1/` | 20 files incl. `GAMEMUS.AIF`, no `STARTMUS` |
-| `sounds\bonds\midgame.aif` | `SOUNDS/BONDS/` | 20 files incl. `BONDMUS.AIF`, no `MIDGAME` |
-| `sounds\brakein\brakemus.aif` | `SOUNDS/BRAKEIN/` | 14 files incl. `BRAKEIN.AIF`, no `BRAKEMUS` |
+| `sounds\bonds\midgame.aif` | `SOUNDS/BONDS/` | 22 files incl. `BONDMUS.AIF`, no `MIDGAME` |
+| `sounds\brakein\brakemus.aif` | `SOUNDS/BRAKEIN/` | 23 files incl. `BRAKEIN.AIF`, no `BRAKEMUS` |
 
 **The folder resolved and the file is not in it**, which is what separates this
 from a resolver bug: the sibling files in each of those three directories load
-and play. `find games/rating -iname "*startmus*"` and the same for the other two
-return nothing at all, so they are absent from the tree under any name or case,
-not merely missed by the search path.
+and play. No `.aif` anywhere under `games/rating` carries any of the three
+basenames, in any case, so they are absent from the tree rather than missed by
+the search path.
+
+**One name is not as absent as this entry first said**, and the correction is
+the interesting part. `find games/rating -iname "*midgame*"` does not return
+nothing: it returns `MIDGAME.dir` and a whole `SOUNDS/MIDGAME/` directory of
+nine `.aif` files. Neither is a file named `MIDGAME.AIF`, so the conclusion
+stands, but a request for `sounds\bonds\midgame.aif` sitting next to a
+`SOUNDS/MIDGAME/` folder is worth one look at whether the movie meant a folder
+before this is written off as missing data.
 
 Same class as entry 46 (`games/piposh` shipping no `PIPDATA/FX` tree at all) and
 the `piposh-ru` note beside it: a gap in the data this repository was given, not
@@ -2825,39 +2833,6 @@ Reproduce:
 
 ```
 godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
-```
-
-## 69. `liveness_sweep` withholds its blank verdict under an open window but not its trap verdict, so a room idling behind the inventory reads as a trap
-
-**Status:** open · **Area:** `tools/liveness_sweep.gd`
-
-`--strict` over all 81 of Rating's movies returns exactly one finding:
-
-```
-trap  sachroom.dir  after clicking ch5 at (218,310): confined to 4 state(s)
-      for 60 tick(s) with no hold: SACHROOM.dir:25(7) <-> :26(7) <-> :27(7) <-> :28(9)
-```
-
-Re-reached with `click_trace`, the click that produces it lands on channel 45 and
-**opens `INVENTOR.dir` as a Movie-In-A-Window**. The stage underneath goes on
-running its own idle loop -- four drawn states, no hold -- which is precisely the
-`trap` shape, and the playhead the player is actually waiting on is the window's.
-
-The file already argues the exemption for the other half:
-
-> **A blank verdict is withheld while a Movie-In-A-Window is open**, because the
-> window is a separate node with its own playhead and the stage underneath it is
-> legitimately bare.
-
-The same sentence covers `trap`, and `sound-park` for the same reason. Until it
-does, `--strict` cannot be run over a corpus whose rooms have an inventory --
-which is all of them here -- without a finding that is not one.
-
-Reproduce:
-
-```
-godot --headless --path . --script tools/liveness_sweep.gd -- --root rating --only SACHROOM --click --strict --verbose
-godot --headless --path . --script tools/click_trace.gd -- --root rating --movie SACHROOM.dir --frame 25
 ```
 
 ## 70. `MAINMENU-old.dir` parks blank at `option1`, and nothing in Rating can reach it

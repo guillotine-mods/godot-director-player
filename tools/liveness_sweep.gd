@@ -78,12 +78,17 @@ extends SceneTree
 ##   `blank-park`  the same, with **nothing drawn**. A black stage the playhead
 ##                 will not leave and no hold explains. There is no legitimate
 ##                 form of this.
-##   `ping-pong`   two to four distinct states spanning **two or more movies**.
+## The three cycle verdicts below additionally require that the playhead **came
+## back** to a state it had already left. A window holding two to four states is
+## also what a playhead walking through those frames and parking on the last of
+## them looks like, and that walk is not a finding; see `_read_window`.
+##
+##   `ping-pong`   two to four revisited states spanning **two or more movies**.
 ##                 The reported bug exactly. Two containers cannot be trading
 ##                 places for a reason the player is waiting on.
-##   `blank-cycle` two to four distinct states in one movie, at least one of which
+##   `blank-cycle` two to four revisited states in one movie, at least one of which
 ##                 draws nothing. The screen alternating with black.
-##   `trap`        two to four distinct states in one movie, all of them drawn. The
+##   `trap`        two to four revisited states in one movie, all of them drawn. The
 ##                 `playhead_escape` shape (DAY1's `<character>clicktalk` pair).
 ##                 **Low confidence and not a failure unless `--strict`**: a
 ##                 two-frame animation loop that a room holds itself in is the
@@ -203,8 +208,15 @@ const Paths := preload("res://director/director_paths.gd")
 const ContainerName := preload("res://director/director_container.gd")
 
 ## Score ticks watched per container, and the length of the window a verdict is
-## read over. `WATCH` is two windows, so a trap has to be entered and *stayed in*
-## rather than passed through on the way somewhere.
+## read over. `WATCH` is two windows so that a movie has room to settle and still
+## be judged over a full one afterwards.
+##
+## **This length is not what keeps a walk from reading as a trap**, and saying so
+## here was wrong for as long as the claim stood: `_judge` slides the window one
+## sample at a time and keeps the *worst* position, so a single window straddling
+## a four-frame walk is enough to produce a finding however long the watch is.
+## What separates passing through from being stuck is the arrivals rule in
+## `_read_window`, and nothing else.
 ##
 ## `WINDOW` at 60 is 7.5 s of an 8 fps movie -- longer than any gap between two
 ## lines of speech in this corpus, and long enough that a room's own idle loop
@@ -517,6 +529,21 @@ func _assert_rules(h: Harness) -> void:
 	h.check("a playhead visiting more than %d state(s) is not a trap" % CYCLE_MAX,
 		_read_window(roaming).is_empty(),
 		str(_read_window(roaming).get("verdict", "")))
+
+	# `SACHROOM.dir`'s reported trap, which was not one. A playhead that walks
+	# through `CYCLE_MAX` frames and then parks on the last of them fills the one
+	# window straddling the walk with four states, and a *set* of states cannot
+	# tell that apart from a cycle -- so the movie was reported as "confined to 4
+	# state(s) for 60 tick(s)" while it spent 57 of those 60 parked on one. What
+	# makes a cycle a cycle is that a state is **returned to**, which is a fact
+	# about the order of the samples and is lost the moment they become a set.
+	var walked: Array = []
+	for i in WINDOW:
+		walked.append({"movie": "a.dir", "frame": mini(25 + i, 25 + CYCLE_MAX - 1),
+			"drawn": 7, "hold": "", "stride": 1, "windowed": false})
+	h.check("a playhead that walks through %d state(s) and parks is not a trap" % CYCLE_MAX,
+		_read_window(walked).is_empty(),
+		str(_read_window(walked).get("verdict", "")))
 
 	# And the whole of the "do not cry wolf" property in one assertion: the same
 	# two-frame ping-pong, with a hold on every tick, must produce no finding at
@@ -957,6 +984,12 @@ static func _read_window(w: Array) -> Dictionary:
 	var movies: Dictionary = {}
 	var blank: Dictionary = {}
 	var windowed := false
+	# How many times the playhead *arrived* somewhere, counting a stay as one
+	# arrival. Compared against the number of distinct states below, this is the
+	# difference between a cycle and a walk; see the guard for why a set cannot
+	# answer it.
+	var arrivals := 0
+	var previous := ""
 	for sample_value in w:
 		var sample: Dictionary = sample_value
 		var key := "%s:%d" % [str(sample["movie"]).get_file(), int(sample["frame"])]
@@ -966,6 +999,9 @@ static func _read_window(w: Array) -> Dictionary:
 			blank[key] = true
 		if bool(sample["windowed"]):
 			windowed = true
+		if key != previous:
+			arrivals += 1
+			previous = key
 	var where := _states(states)
 	# The one exemption. A Movie-In-A-Window has its own playhead and paints over
 	# the stage, so a bare stage underneath one is not a black screen.
@@ -979,6 +1015,34 @@ static func _read_window(w: Array) -> Dictionary:
 			"detail": "parked on %s for %d tick(s) with nothing drawn and no hold"
 				% [where, w.size()]}
 	if states.size() > CYCLE_MAX:
+		return {}
+	# **A walk is not a cycle.** Every rule below is about a playhead that keeps
+	# coming back, and the three of them used to be asked as a question about a
+	# *set*: "are there two to four states here". A playhead that steps through
+	# four frames and then parks on the fourth answers that identically, and one
+	# window position out of the whole watch straddles the walk -- which `_judge`
+	# then keeps, because it keeps the worst. That is the entire content of the
+	# `SACHROOM.dir` finding: 24 -> 25 -> 26 -> 27 -> 28 and then 116 ticks
+	# parked, reported as a confinement to four states.
+	#
+	# A state that is returned to produces a second arrival at the same key, so a
+	# cycle has strictly more arrivals than states and a walk has exactly as many
+	# as it has states. Nothing is lost by declining the walk: if the frame it
+	# parks on is a genuine dead end, the windows *after* the walk hold that one
+	# state alone and `blank-park` reads them, and if it is genuinely confined it
+	# comes back round and there is a second arrival to see.
+	#
+	# The guard sits above `ping-pong` deliberately, so it covers that verdict as
+	# well: one `play` into a second movie that then parks there is two states and
+	# two arrivals, which is a walk across a movie boundary and not two containers
+	# trading places. The bug this file was written from alternates for as long as
+	# the screen is open, so it has sixty arrivals and still reads.
+	#
+	# `sound-park` is left alone on purpose. It runs off `_judge`'s own path and
+	# never reaches here, and its claim is not about cycling at all -- it reports
+	# that the `soundBusy` excuse covered *every* watched tick, which is true of a
+	# walk-then-park too and is worth saying either way.
+	if arrivals <= states.size():
 		return {}
 	if movies.size() >= 2:
 		return {"verdict": "ping-pong",

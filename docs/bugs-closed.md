@@ -2342,3 +2342,78 @@ Channel 30 is not affected: it routes to `PuppetController.visible` instead.
   and `enterFrame` (33), and all four are dispatched. `keyDown` works through
   `the keyDownScript`, which `LingoHost` honours and `DirectorRuntime` routes
   keypresses into. Nothing to do; the doc line was stale.
+
+## 69. `liveness_sweep` read a window of states as a set, so a playhead walking through four frames and parking read as a trap
+
+**Status:** fixed · **Area:** `tools/liveness_sweep.gd`
+
+Filed as "the blank exemption should cover `trap` too, because a room idling
+behind an open inventory reads as one". **That diagnosis was wrong**, and the
+measurements that killed it are worth keeping, because both mistakes in it are
+easy to repeat.
+
+`--strict` over Rating's 81 movies returned one finding:
+
+```
+trap  sachroom.dir  after clicking ch5 at (218,310): confined to 4 state(s)
+      for 60 tick(s) with no hold: SACHROOM.dir:25(7) <-> :26(7) <-> :27(7) <-> :28(9)
+```
+
+**First: the Movie-In-A-Window exemption was never involved.** Applying the
+proposed fix -- returning `{}` from the `trap` arm when the window flag is set --
+did not move the finding. Instrumenting the flag per click shows why, and shows
+the flag itself is sound:
+
+```
+ch4  (119,383)   0/119 windowed -> healthy, 19 states
+ch5  (218,310)   0/120 windowed -> trap
+ch45   (7,393) 117/117 windowed -> healthy, parked at f28
+```
+
+The finding's own detail line named ch5 all along. `click_trace`, run afterwards
+to "re-reach" it, picks its own hotspot and picked ch45 -- so the entry explained
+one tool's finding with a different tool's click. `_poke` returns on the first
+click that yields a verdict, so the sweep never reached ch45 at all.
+
+**Second: it is not a trap.** The playhead sequence for that click is
+
+```
+24 x1  25 x1  26 x1  27 x1  28 x116
+```
+
+a walk of four frames and then 116 ticks parked on frame 28, which is exactly
+what that frame's behaviour asks for (`set the cursor of sprite 42 ... go(the
+frame)`). It spent 57 of the 60 reported ticks on one state.
+
+**Root cause.** `_read_window` asked "how many distinct states are in this
+window", and a *set* cannot tell a cycle from a walk that ends in a park. One
+sliding position out of the whole watch straddles the walk, and `_judge` keeps
+the worst position, so the transition alone is enough. The header made this worse
+by claiming `WATCH` being two windows meant a trap "has to be entered and stayed
+in rather than passed through"; the sliding-worst rule means window length has
+never had that property.
+
+**Fix.** `_read_window` counts *arrivals* -- transitions into a state, a stay
+counting once -- and the three cycle verdicts require strictly more arrivals than
+states, which is what it means for the playhead to have come back to something.
+A walk has exactly as many arrivals as states. Nothing is lost: a walk into a
+genuine dead end is read by the later windows, which hold that one state alone
+and reach `blank-park`, and anything genuinely confined comes round again.
+
+Covered by a rule test in `_assert_rules` (a walk through `CYCLE_MAX` frames that
+parks on the last must read healthy), alongside the existing ones that each
+verdict still fires on the shape it is for.
+
+The rule gates all three cycle verdicts, `ping-pong` included: one `play` into a
+second movie that parks there is two states and two arrivals, and that is a walk
+across a movie boundary rather than two containers trading places. The
+`ques.dir` <-> `Saves.dir` bug this file was written from alternates for as long
+as the screen is open, so it has a window's worth of arrivals and still reads.
+
+**`sound-park` was checked and deliberately left alone.** It is reached from
+`_judge` directly and never passes through `_read_window`, so it never sees the
+arrivals count, and its claim is not about cycling: it reports that the
+`soundBusy` excuse covered *every* watched tick, which is as true of a
+walk-then-park as of a loop and is the blind spot it exists to surface. The
+original entry named it alongside `trap` as needing the same treatment; it does
+not.
