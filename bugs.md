@@ -2635,3 +2635,89 @@ that "42 runtime faults this session" is a number a harness can assert on.
 **Reproduce:** read `lingo/lingo_interpreter.gd:698-708` (`reset_steps`) beside
 `:1634` (`_fail`) and `scenes/preview/scripts.gd:75`. Then run any movie and note
 that no tool in `tools/` can report a fault that happened two dispatches ago.
+
+## 60. A tempo delay on a self-holding frame is armed once; the reference re-arms it on every step
+
+**Status:** open · **Area:** `scenes/preview/frame_loop.gd:sync_frame_entry`, `director/director_frame_clock.gd:enter_frame`, `score.cpp:640-712`
+
+`Score::update` calls `updateCurrentFrame()` and then `updateNextFrameTime()`
+**every update cycle**, not only when the frame number changes. A room holding
+itself with `go to the frame` sets `_nextFrame` to the frame it is already on, so
+`updateCurrentFrame` takes its else-arm and does nothing -- and
+`updateNextFrameTime` still runs, reads the same tempo cell, and re-arms the same
+delay. A frame carrying a two-second delay and holding itself therefore steps
+once every two seconds, for ever, in Director.
+
+This port arms the tempo on a genuine frame *change* only: `sync_frame_entry`
+returns early when `_index == _entered_index`, so the delay is armed once, runs
+out, and the room then steps at the movie's frame rate -- 15 or 8 times a second
+against Director's once every two seconds. The frames are there: Piposh 2 carries
+36 delay frames totalling 74.0 s and 23 of them carry a frame script; *Rating*
+carries 160 totalling 439.0 s.
+
+The early return is deliberate and its comment says why -- "re-arming a two-second
+delay from there would hold it for ever rather than for two seconds" -- and that
+reasoning is wrong in a way worth recording: re-arming does not hold the frame for
+ever, it *re-delays* it, which is exactly the behaviour above. What the comment
+describes would only happen if the delay were re-armed without the playhead ever
+being allowed to step, which is not what the reference does.
+
+Not changed here because it is not a one-line move. Arming the tempo per step
+means the transition must **not** move with it (a wipe re-armed every step never
+finishes), so the two would have to be split out of `sync_frame_entry`, and
+`enter_frame` would have to become idempotent for the click and sound waits or a
+frame released by a click would re-arm its own wait on the next step. That is a
+change to the tick's shape and wants measuring against `idle_clock`,
+`pause_holds`, `playhead_escape` and `frame_events` together.
+
+**Reproduce:** read `reference/scummvm/score.cpp:640-712` beside
+`scenes/preview/frame_loop.gd:sync_frame_entry`. For the exposure,
+`godot --headless --path . --script tools/transition_survey.gd -- --root piposh2`
+prints the delay frames and their total.
+
+## 61. The click that releases a wait-for-click is delivered to the movie as well; the reference consumes it
+
+**Status:** open · **Area:** `scenes/director_preview.gd:route_press`, `scenes/preview/interaction.gd`, `events.cpp:250-262`
+
+`Movie::processEvent` handles the mouse-down in one `if`/`else`:
+
+```
+if (sc->_waitForClick) { sc->_waitForClick = false; sc->renderCursor(pos, true); }
+else                   { ...latch the press, build the chain, dispatch mouseDown... }
+```
+
+So on a wait-for-click frame the press does one thing and one thing only: it ends
+the wait. No `mouseDown` is dispatched, `the clickOn` is not rewritten, no drag
+starts, and no sprite is hilited. This port releases the wait in `route_press` and
+then carries straight on into `latch_press` and the mouse-down chain, so the click
+that ends the wait is also a click on whatever sprite was under it.
+
+Piposh 2 has 24 wait-for-click frames and *Rating* has 214, so the divergence is
+reachable; whether it is *visible* depends on whether those frames also carry a
+clickable sprite, which is not measured here.
+
+Not changed here because it is a change to the input path rather than to the
+clock, and it inverts the order two other rules depend on: §15's latch block is
+documented as running for either button and on every press, and
+`preview/interaction.gd` is where that decision lives.
+
+**Reproduce:** read `reference/scummvm/events.cpp:250-262` beside
+`scenes/director_preview.gd:route_press`.
+
+## 62. A wait-for-click frame shows no alternating cursor, so a waiting movie looks like a stopped one
+
+**Status:** open · **Area:** `scenes/preview/cursor.gd`, `director/director_frame_clock.gd:waiting_click`, `score.cpp:400-424` and `:1444-1458`
+
+§9.2: while `_waitForClick` is set, `Score::isWaitingForNextFrame` flips
+`_waitForClickCursor` once a second and re-renders the cursor, and
+`Score::renderCursor` returns the built-in mouse-up or mouse-down arrow for that
+flag *before* it consults any sprite. It is the only feedback a wait-for-click
+frame gives, and without it the movie is indistinguishable from one that has
+hung -- which is what a player sees on 24 frames of Piposh 2 and 214 of *Rating*.
+
+The clock half is there: `FrameClock.waiting_click()` answers the question and was
+added for this. What is missing is the cursor path taking it, with the 1000 ms
+alternation and the precedence over the sprite cursor (§7.4).
+
+**Reproduce:** read `reference/scummvm/score.cpp:400-424` and `:1444-1458` beside
+`scenes/preview/cursor.gd`.

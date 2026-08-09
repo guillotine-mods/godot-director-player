@@ -653,7 +653,14 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 ## taken as D6-or-later: that is what every container in both corpora here is,
 ## and it is what this decoder assumed unconditionally before the split existed,
 ## so an un-updated caller keeps exactly the behaviour it had.
-func _tempo_waits(tempo: int, operand: int) -> Dictionary:
+##
+## **Static, and the file version is a parameter**, because the score is not the
+## only thing that has to read a tempo instruction. `puppetTempo` hands the clock
+## a value that never came out of a frame at all, and the clock has to work out
+## what it stops the playhead for; a second decoder there is the collision this
+## function exists to prevent, written twice. `_tempo_waits` below is the
+## instance form, which supplies this movie's own version.
+static func tempo_waits(tempo: int, operand: int, file_version: int) -> Dictionary:
 	var out := {
 		"delay_ms": 0, "wait_click": false,
 		"wait_sound_channel": 0, "wait_cue": 0, "wait_video_channel": 0,
@@ -699,6 +706,11 @@ func _tempo_waits(tempo: int, operand: int) -> Dictionary:
 			# they are only in the format before it.
 			out["wait_video_channel"] = tempo
 	return out
+
+
+## `tempo_waits` in this movie's own convention.
+func _tempo_waits(tempo: int, operand: int) -> Dictionary:
+	return tempo_waits(tempo, operand, file_version)
 
 
 ## The palette channel, whose layout was settled by dumping the whole 48-byte

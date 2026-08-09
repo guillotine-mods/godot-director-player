@@ -111,6 +111,216 @@ func _clock_cases(h) -> void:
 		burst <= Clock.MAX_CATCHUP_STEPS, "%d steps" % burst)
 	h.complete("a long stall is not owed back all at once")
 
+	_puppet_tempo_cases(h)
+	_video_wait_cases(h)
+	_hold_arithmetic_cases(h)
+
+
+## §9.1's puppet tempo: what it overrides, and what takes the wheel back.
+##
+## Every case here is unexercised by both corpora -- no script in any of the six
+## titles calls `puppetTempo` -- so this is the whole of the rule's cover. The
+## frames are built rather than found for that reason, and they are built as the
+## score would hand them over: a `tempo` cell and its operand, decoded by the
+## clock rather than pre-digested here, or the rule would be asserted against a
+## restatement of itself.
+func _puppet_tempo_cases(h) -> void:
+	h.begin("a puppet tempo overrides the score's, and the score takes it back")
+	var clock = Clock.new()
+	clock.movie_file_version = Clock.FILE_VERSION_D6
+	clock.movie_default_fps = 8.0
+	clock.reset()
+	# A frame with no tempo of its own: the movie plays at the rate it states.
+	clock.enter_frame({"tempo": 0, "tempo_cue": 0})
+	h.check("with no tempo anywhere the movie plays at its stated rate",
+		is_equal_approx(clock.fps, 8.0), clock.status())
+
+	clock.set_puppet_tempo(30)
+	h.check("a puppet tempo takes effect at the call, not at the next frame",
+		is_equal_approx(clock.fps, 30.0), clock.status())
+	clock.enter_frame({"tempo": 0, "tempo_cue": 0})
+	clock.enter_frame({"tempo": 0, "tempo_cue": 0})
+	# The reference assigns its `_lastTempo` *after* substituting the puppet, so
+	# the frame after the one the puppet applied on finds the score's tempo
+	# different from the puppet's and cancels it. That makes every puppet tempo
+	# exactly one frame long, which is neither §9.1 nor the verb Macromedia
+	# documented. Two frames are stepped here because one would pass either way.
+	h.check("it survives frames the score writes no tempo on",
+		is_equal_approx(clock.fps, 30.0) and clock.puppet_tempo() == 30, clock.status())
+
+	# §9.1's first release condition: the score writes a tempo.
+	clock.enter_frame({"tempo": 246, "tempo_cue": 12})
+	h.check("a tempo cell cancels the puppet", clock.puppet_tempo() == 0, clock.status())
+	h.check("and the rate is the cell's, not the puppet's",
+		is_equal_approx(clock.fps, 12.0), clock.status())
+	clock.enter_frame({"tempo": 0, "tempo_cue": 0})
+	h.check("the cancelled puppet does not come back",
+		is_equal_approx(clock.fps, 12.0) and clock.puppet_tempo() == 0, clock.status())
+
+	# Handing it back is not a rate change: Director leaves the rate where it is
+	# until something names a new one.
+	clock.set_puppet_tempo(24)
+	h.check("a second puppet tempo takes hold", is_equal_approx(clock.fps, 24.0))
+	clock.set_puppet_tempo(0)
+	h.check("`puppetTempo 0` stops overriding without restoring a rate",
+		clock.puppet_tempo() == 0 and is_equal_approx(clock.fps, 24.0), clock.status())
+	h.complete("a puppet tempo overrides the score's, and the score takes it back")
+
+	# The numbering the *argument* is read in. It is not the movie's: a
+	# `puppetTempo` value never came out of a score cell, and reading a D6 movie's
+	# `puppetTempo 30` in the D6 cell numbering makes it a wait for the digital
+	# video in channel 30 -- which is what the reference does, and which leaves
+	# the verb doing nothing at all in any movie this port can open.
+	h.begin("a puppetTempo argument is read in the verb's numbering, not the file's")
+	var d6 = Clock.new()
+	d6.movie_file_version = Clock.FILE_VERSION_D6
+	d6.reset()
+	d6.set_puppet_tempo(30)
+	h.check("30 is thirty frames per second in a D6 movie",
+		is_equal_approx(d6.fps, 30.0) and d6.waiting_video() == 0, d6.status())
+	var clicky = Clock.new()
+	clicky.movie_file_version = Clock.FILE_VERSION_D6
+	clicky.reset()
+	clicky.set_puppet_tempo(128)
+	h.check("128 waits for a click, as the tempo channel's own 128 does",
+		clicky.waiting_click() and clicky.playhead_held(), clicky.status())
+	var slow = Clock.new()
+	slow.movie_file_version = Clock.FILE_VERSION_D6
+	slow.reset()
+	slow.set_puppet_tempo(254)
+	h.check("254 delays two seconds", slow.playhead_held(), slow.status())
+	var lasted := _run_until_free(slow, 4000.0)
+	h.check("and lasts about two seconds", lasted >= 2000.0 and lasted < 2040.0,
+		"%.1f ms" % lasted)
+	h.complete("a puppetTempo argument is read in the verb's numbering, not the file's")
+
+	# Setting a tempo is not a way out of a wait. The reference's
+	# `updateNextFrameTime` only ever *sets* a wait flag; the flags go down when
+	# their own condition is met, so a script raising the frame rate on a frame
+	# that is waiting for a click leaves it waiting for a click.
+	h.begin("a puppet tempo does not cancel the wait the frame is already holding")
+	var held = Clock.new()
+	held.movie_file_version = Clock.FILE_VERSION_D6
+	held.reset()
+	held.enter_frame({"tempo": 248, "tempo_cue": 0})
+	h.check("the frame waits for a click", held.waiting_click(), held.status())
+	held.set_puppet_tempo(30)
+	h.check("a puppet tempo takes the rate", is_equal_approx(held.fps, 30.0))
+	h.check("and leaves the wait standing", held.waiting_click() and held.playhead_held(),
+		held.status())
+	held.clicked()
+	h.check("the click is still what releases it", not held.playhead_held(), held.status())
+	h.complete("a puppet tempo does not cancel the wait the frame is already holding")
+
+
+## §9.1's wait-for-video, and the only two answers a port with no decoder can
+## give: hold for ever, or treat the video as already finished. The second is the
+## one Director gives for a channel holding no video, so it is also the right
+## thing to degrade to.
+func _video_wait_cases(h) -> void:
+	h.begin("a wait-for-video holds only while something says the video is playing")
+	# D6: any cell that is not one of the five codes numbers a sprite channel.
+	var clock = Clock.new()
+	clock.movie_file_version = Clock.FILE_VERSION_D6
+	clock.reset()
+	# The probe goes on **before** anything asks the clock a question, and the
+	# order is the rule rather than tidiness: every query that can report a hold
+	# also releases a video wait the probe does not vouch for, so a `status()` in
+	# a check's own detail string is enough to clear it. That is the degrade
+	# working, and it fails this case if the probe arrives second.
+	# A dictionary rather than a bool, because a GDScript lambda captures a local
+	# **by value** at the moment it is written: a captured `var playing := true`
+	# stays true however the harness reassigns it, and the case then passes the
+	# two checks that want a held playhead and fails only the release.
+	var video := {"playing": true}
+	clock.video_probe = func(_channel: int) -> bool: return bool(video["playing"])
+	clock.enter_frame({"tempo": 7, "tempo_cue": 0})
+	h.check("a D6 cell of 7 arms a wait on channel 7", clock.waiting_video() == 7,
+		clock.status())
+	h.check("it holds while the video is playing", clock.playhead_held(), clock.status())
+	h.check("and no amount of time releases it",
+		_run_until_free(clock, 3000.0) >= 3000.0, clock.status())
+	video["playing"] = false
+	h.check("the video finishing releases it", not clock.playhead_held(), clock.status())
+
+	# The degrade, which is the case this port is actually in today.
+	var bare = Clock.new()
+	bare.movie_file_version = Clock.FILE_VERSION_D6
+	bare.reset()
+	bare.enter_frame({"tempo": 7, "tempo_cue": 0})
+	h.check("with no decoder behind it the wait releases at once",
+		not bare.playhead_held(), bare.status())
+	h.check("and the channel is cleared rather than left armed",
+		bare.waiting_video() == 0, bare.status())
+
+	# Pre-D6, where the video band is 136..195 and the channel is biased by 135.
+	var old = Clock.new()
+	old.movie_file_version = Clock.FILE_VERSION_D6 - 1
+	old.reset()
+	old.enter_frame({"tempo": 138, "tempo_cue": 0})
+	h.check("a pre-D6 cell of 138 arms a wait on channel 3",
+		old.waiting_video() == 3, old.status())
+
+	# §9.2: a queued `go to` cancels every wait, and a video wait is one.
+	var jumped = Clock.new()
+	jumped.movie_file_version = Clock.FILE_VERSION_D6
+	jumped.reset()
+	jumped.video_probe = func(_channel: int) -> bool: return true
+	jumped.enter_frame({"tempo": 7, "tempo_cue": 0})
+	h.check("a video wait holds a jumping frame first", jumped.playhead_held())
+	jumped.release()
+	h.check("and a queued `go to` cancels it",
+		not jumped.playhead_held() and jumped.waiting_video() == 0, jumped.status())
+	h.complete("a wait-for-video holds only while something says the video is playing")
+
+
+## How two holds on one frame add up, and which of them `holding_transition`
+## reports. Both were wrong in the same place: one counter cannot answer both
+## "how long is the playhead held" and "is the frame still arriving".
+func _hold_arithmetic_cases(h) -> void:
+	h.begin("a transition and a tempo delay are consecutive, not concurrent")
+	var clock = Clock.new()
+	clock.enter_frame({"fps": 15.0, "delay_ms": 2000})
+	clock.hold(500.0, Clock.REASON_TRANSITION)
+	# Director plays the wipe inside the render and computes the next frame's due
+	# time when it has finished, so the delay begins where the transition ends.
+	var spent := _run_until_free(clock, 6000.0)
+	h.check("the frame is held for both of them",
+		spent >= 2500.0 and spent < 2540.0, "%.1f ms" % spent)
+	h.complete("a transition and a tempo delay are consecutive, not concurrent")
+
+	h.begin("`holding_transition` reports the transition, not the longest hold")
+	var both = Clock.new()
+	both.enter_frame({"fps": 15.0, "delay_ms": 2000})
+	both.hold(500.0, Clock.REASON_TRANSITION)
+	h.check("a wipe under a longer delay still reads as a transition",
+		both.holding_transition(), both.status())
+	# `_enter_frame_or_defer` asks this to decide whether `enterFrame` may run
+	# yet, so a wipe it cannot see is a handler running over a frame that is
+	# still arriving.
+	var wiping := 0.0
+	while both.holding_transition() and wiping < 3000.0:
+		both.tick(TICK)
+		wiping += TICK * 1000.0
+	h.check("and stops reading as one when the wipe is over, not when the hold is",
+		wiping >= 500.0 and wiping < 540.0 and both.playhead_held(),
+		"%.1f ms, %s" % [wiping, both.status()])
+	h.complete("`holding_transition` reports the transition, not the longest hold")
+
+	h.begin("aborting a colour cycle drops its hold and nothing else")
+	var mixed = Clock.new()
+	mixed.movie_file_version = Clock.FILE_VERSION_D6
+	mixed.reset()
+	# A frame waiting on sound channel 1 that is also running a palette effect.
+	mixed.enter_frame({"tempo": 255, "tempo_cue": -1})
+	mixed.hold(900.0, Clock.REASON_PALETTE)
+	mixed.release_hold(Clock.REASON_PALETTE)
+	h.check("the cycle's hold goes", int(mixed.waiting_sound()["channel"]) == 1
+		and mixed.playhead_held(), mixed.status())
+	h.check("and the wait for the sound stays",
+		mixed.hold_reason() == "wait for sound 1", mixed.hold_reason())
+	h.complete("aborting a colour cycle drops its hold and nothing else")
+
 
 func _transition_cases(h, paths) -> void:
 	# The three sources of §10, in priority order. Sources 1 and 3 are checked
