@@ -149,6 +149,13 @@ static func resolve_ref(which: Variant, cast: String, table) -> Array:
 ## in MAP stored `[0, 0]` and composed to nothing.
 static func read_prop(host, where: Array, prop: String, table) -> Variant:
 	var m: Dictionary = table.get_member(int(where[0]), int(where[1]))
+	# The reference in the shape `text_art.style_for` takes, built once. A local
+	# rather than three inline literals, and not only for the repetition: a
+	# dictionary literal wrapped onto a second line puts a **quoted key at the
+	# start of a line ending in a colon**, which is indistinguishable from a
+	# `match` arm to `tools/lingo_surface_audit.gd` -- so `align`, `cast_id` and
+	# `cast_lib` were reported as member properties this engine binds.
+	var ref := {"cast_lib": int(where[0]), "cast_id": int(where[1])}
 	match prop:
 		"name":
 			return str(m.get("name", ""))
@@ -263,8 +270,7 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			# A write that reads back as the authored value is a lie the caller
 			# cannot detect, which is the shape `preview/sprite_props.gd` was
 			# written to make impossible one entity along.
-			return int(TextArt.style_for(host, {
-				"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["font_size"])
+			return int(TextArt.style_for(host, ref, m)["font_size"])
 		"textstyle", "fontstyle":
 			# Director's style is a word list -- "plain", "bold italic". The slant
 			# byte carries the two this corpus uses.
@@ -276,14 +282,12 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 				words.append("italic")
 			return "plain" if words.is_empty() else " ".join(words)
 		"textheight", "lineheight":
-			return int(TextArt.style_for(host, {
-				"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["line_height"])
+			return int(TextArt.style_for(host, ref, m)["line_height"])
 		"textalign", "alignment":
 			# 0 left, 1 centre, -1 right. `the textAlign` is a string and `the
 			# alignment` a symbol; both name the same cell.
 			var word := "left"
-			match int(TextArt.style_for(host, {
-					"cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["align"]):
+			match int(TextArt.style_for(host, ref, m)["align"]):
 				1: word = "center"
 				-1: word = "right"
 			return word if prop == "textalign" else StringName(word)

@@ -1128,7 +1128,7 @@ func _match_arms(source: String, from: String, to: String) -> Dictionary:
 	var continuing := false
 	for raw in body.split("\n"):
 		var trimmed := str(raw).strip_edges()
-		var label := trimmed.begins_with("\"") and (trimmed.ends_with(":") or trimmed.ends_with("\\"))
+		var label := _is_arm_label(trimmed)
 		if label:
 			if not continuing:
 				for name in open:
@@ -1145,6 +1145,30 @@ func _match_arms(source: String, from: String, to: String) -> Dictionary:
 	for name in open:
 		out[name] = collected
 	return out
+
+
+## Is this line a `match` arm's label, and nothing else?
+##
+## "Starts with a quote and ends with a colon" is not enough, and the difference
+## is a class of false row rather than one. A dictionary literal wrapped onto a
+## second line starts with a quoted *key*, and
+##
+##     "cast_lib": int(where[0]), "cast_id": int(where[1])}, m)["align"]):
+##
+## ends in a colon too -- so `align`, `cast_id` and `cast_lib` were reported as
+## member properties this engine binds, from a line that is an argument list.
+##
+## A real label is quoted strings, commas and whitespace, then the colon, with an
+## optional backslash where the label runs on. Anything else in it -- a bracket, a
+## call, an identifier -- makes it something else.
+static func _is_arm_label(line: String) -> bool:
+	if not line.begins_with("\""):
+		return false
+	if not (line.ends_with(":") or line.ends_with("\\")):
+		return false
+	var re := RegEx.new()
+	re.compile("^(\"[^\"]*\"\\s*,?\\s*)+(:|\\\\)$")
+	return re.search(line) != null
 
 
 static func _quoted(line: String) -> Array[String]:
