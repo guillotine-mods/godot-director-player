@@ -10,12 +10,13 @@ extends SceneTree
 ## the real overlay is not consulted at all, and the real overlay is never
 ## offered to a tracked path other than the real one.
 ##
-## That last one is what keeps the other 62 entries honest. The overlay is one
-## file per machine, shared by every process on it, which is the same shape as
-## the failure `gate.sh` removed when it stopped rewriting the `root` line: two
-## runs at once had each other's corpus swapped out mid-run. Keying on the
-## display server means a harness cannot read a human's overlay even by
-## forgetting a flag, and neither can an ad-hoc `godot --headless --script` run.
+## That last one is what keeps every other entry in the gate honest. The
+## overlay is one file per machine, shared by every process on it, which is
+## the same shape as the failure `gate.sh` removed when it stopped rewriting
+## the `root` line: two runs at once had each other's corpus swapped out
+## mid-run. Keying on the display server means a harness cannot read a
+## human's overlay even by forgetting a flag, and neither can an ad-hoc
+## `godot --headless --script` run.
 ##
 ## Title-agnostic: it writes its own files and names no game.
 
@@ -90,13 +91,14 @@ func _init() -> void:
 		not GameConfig.wants_overlay(SCRATCH_TRACKED, false))
 	h.complete(case)
 
-	# The rule the other 62 entries depend on. This process *is* headless, so
-	# asking for the real overlay must not consult it -- asserted by writing one
-	# that would be obvious if it were read. Two separate guards gate the read,
-	# and each is checked on its own below rather than folded into one: headless
-	# alone must block it, and so must asking under a path that is not the real
-	# tracked file, because `overlay_applies()` cannot tell that path from this
-	# one -- it only knows whether there is a display.
+	# The rule every other entry in the gate depends on. This process *is*
+	# headless, so asking for the real overlay must not consult it -- asserted
+	# by writing one that would be obvious if it were read. Two separate
+	# guards gate the read, and each is checked on its own below rather than
+	# folded into one: headless alone must block it, and so must asking under
+	# a path that is not the real tracked file, because `overlay_applies()`
+	# cannot tell that path from this one -- it only knows whether there is a
+	# display.
 	case = "under --headless the real overlay is not consulted"
 	h.begin(case)
 	h.check("this run is headless", DisplayServer.get_name() == "headless",

@@ -131,8 +131,19 @@ func _ensure_index() -> void:
 ## before Play would leave the index pointing at the previous title and every
 ## lookup would miss. That is the silent game `director_paths.gd` documents,
 ## reached through a different door.
+##
+## **There are two latches, and both must go.** `_root_key` (`_root_prefix`,
+## below) is the second: it is consulted *while the index is being built* --
+## every key `_index_dir_recursive` writes goes through `_relative`/
+## `_relative_named` -> `_strip_root` -> `_root_prefix()` -- so a stale value
+## left over from the previous root does not merely answer one lookup wrong,
+## it corrupts every key the rebuild produces, because the new root's prefix
+## is never stripped from any of them. Clearing `_indexed` alone would rebuild
+## the index and still get every key wrong; the bug this function exists to
+## close would still be reachable, just one call deeper.
 func reset_index() -> void:
 	_indexed = false
+	_root_key = ""
 
 
 ## Preloaded rather than reached by `class_name`: an autoload resolves global

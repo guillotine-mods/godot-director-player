@@ -168,12 +168,19 @@ func _on_play() -> void:
 ## the index to the first `resolve_path`, which is after the preview has loaded
 ## -- but that is an implementation detail of one file and `_indexed` is a
 ## one-shot latch, so anything that touches audio before Play would poison it.
-## `AppSettings` does not survive it at all: its `_ready` calls `load_settings`
-## eagerly.
+## `AppSettings.load_settings()` fixes nothing today: it reads
+## `user://player_settings.cfg`, which has nothing to do with `director_game.cfg`
+## or the overlay this screen writes. It is redriven anyway because that stops
+## being true the day `AppSettings` is rewritten to read through `GameConfig` --
+## this call is what keeps that later change from silently leaving the autoload
+## holding a pre-launcher value, rather than a bug nobody notices until it
+## matters.
 ##
-## So both are re-driven explicitly rather than relying on which one is lazy.
-## An autoload added later that caches config belongs on this list, and the fact
-## that the list exists is what makes that a thing somebody can notice.
+## So both are re-driven explicitly rather than each being left to its own
+## luck: one call closes a gap that is real today, the other holds the line
+## against a gap that is only coming. An autoload added later that caches
+## config belongs on this list, and the fact that the list exists is what
+## makes that a thing somebody can notice.
 func _redrive_autoloads() -> void:
 	AppSettings.load_settings()
 	AudioDirector.reset_index()

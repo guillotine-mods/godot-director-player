@@ -84,7 +84,49 @@ func _initialize() -> void:
 		quit(1)
 		return
 
-	var case := "%s: every sound on the disc is reachable" % paths.root.get_file()
+	# `reset_index()` white-box, not through behaviour, and run first so the
+	# coverage case below rebuilds the index from scratch afterwards rather
+	# than reusing whatever this process already built.
+	#
+	# The scenario it really guards -- the launcher pointing the config at a
+	# *second* root while this autoload is still holding the first one's index
+	# -- cannot be built in one headless process: `AudioDirector` reads its root
+	# through `Paths.load_config()`, and nothing in this script can make that
+	# answer change mid-process the way the launcher's overlay write does. Run
+	# before the coverage case, though, this comes as close as a single process
+	# can: the coverage loop's first `resolve_path` call rebuilds the whole
+	# index from a clean latch, so all 3,000-odd resolve-to-itself assertions
+	# that follow run *through a post-reset rebuild* rather than through
+	# whatever the process happened to have cached already.
+	#
+	# `_indexed` and `_root_key` are underscore-private by convention, not by
+	# enforcement, so a harness in the same tree may read them directly; doing
+	# so here is what lets this check see past `reset_index()`'s own return
+	# value (none) to the state it is supposed to leave behind. And it has to
+	# run before anything else touches `AudioDirector` in this process -- after
+	# the coverage loop below, both latches are already populated from *that*,
+	# and checking they got set would be tautological, not evidence this call
+	# did anything.
+	var case := "reset_index clears both latches, not just the index"
+	h.begin(case)
+	# The name does not have to resolve to anything -- `resolve_path` builds the
+	# whole index (and so sets both latches) on the way to answering, whatever
+	# it is asked. A name chosen not to exist on any of the six roots avoids the
+	# unrelated "resolves only by a tail" warning a real, ambiguous filename
+	# would print here.
+	audio.call("resolve_path", "reset-index-probe-does-not-exist")
+	h.check("a lookup populates the index latch",
+		bool(audio.get("_indexed")))
+	h.check("and the root-prefix latch, which the index build itself consults",
+		str(audio.get("_root_key")) != "")
+	audio.call("reset_index")
+	h.check("reset_index clears the index latch",
+		not bool(audio.get("_indexed")))
+	h.check("reset_index clears the root-prefix latch too",
+		str(audio.get("_root_key")) == "")
+	h.complete(case)
+
+	case = "%s: every sound on the disc is reachable" % paths.root.get_file()
 	h.begin(case)
 
 	var sounds: Array[String] = []
@@ -131,6 +173,7 @@ func _initialize() -> void:
 	if Args.flag(args, "verbose"):
 		print("root: %s" % paths.root)
 	h.complete(case)
+
 	quit(h.finish("audio index coverage"))
 
 
