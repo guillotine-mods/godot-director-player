@@ -30,11 +30,6 @@ const GameConfig := preload("res://director/game_config.gd")
 const KeySites := preload("res://tools/lib/key_sites.gd")
 const Paths := preload("res://director/director_paths.gd")
 
-## `flag = "il"` becomes 🇮🇱: two ASCII letters offset into the regional
-## indicator block. Composed rather than stored so the config carries a country
-## code a person can read and not a pair of code points they cannot.
-const REGIONAL_INDICATOR_A := 0x1F1E6
-
 
 func _init() -> void:
 	var h := Harness.new()
