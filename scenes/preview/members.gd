@@ -31,6 +31,12 @@ const LingoValue := preload("res://lingo/lingo_value.gd")
 ## the textSize of member` would read back the authored size and the write would
 ## be a lie the caller cannot detect.
 const TextArt := preload("res://scenes/preview/text_art.gd")
+## The digital-video and sound property surface, which is one surface in Director
+## and is one module here. Read through rather than duplicated: `the duration`,
+## `the mediaReady` and the nine media names below all consult the same decoded
+## facts, so a member cannot answer a duration one caller can see and another
+## cannot.
+const Media := preload("res://scenes/preview/media.gd")
 
 
 ## How far apart two libraries sit when a `(library, slot)` pair is carried as
@@ -233,9 +239,42 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 		# `repeat while not the mediaReady of member x` leaves on its first test
 		# rather than never.
 		"loaded", "mediaready":
+			# **Time-based media is the exception, and it is not a caveat.** A
+			# bitmap, a field or a shape is decoded on demand and never purged, so
+			# it is loaded by the time anything can ask. A `#digitalVideo` member is
+			# not: there is no QuickTime or AVI decoder here, so its media never
+			# becomes ready and `repeat while not the mediaReady of member x` is a
+			# loop Director would not leave either. A `#sound` member answers
+			# whether its own bytes decoded. `preview/media.gd` is where both are
+			# worked out and its header is the account of why.
+			if Media.is_media(m):
+				return 1 if bool(Media.facts_of(host, where, table)["ready"]) else 0
 			return 1
 		"mediabusy":
+			# "Loading right now". Nothing here loads asynchronously -- a decode
+			# either happened inside the call that asked or never will -- so this is
+			# FALSE for every member type, including the video that will never be
+			# ready. The pair is not a negation: `mediaReady` false and `mediaBusy`
+			# false together is Director's "this will not arrive", which is exactly
+			# the state a video is in.
 			return 0
+		# ------------------------------------------------------ time-based media
+		#
+		# The property set a `#sound` and a `#digitalVideo` member share, answered
+		# by `preview/media.gd` because the two halves are one surface in Director
+		# and splitting them here would be two copies of eighteen answers. A member
+		# of any other type falls through to the report at the end, which is right:
+		# `the sampleRate of member` of a bitmap is a question with no answer,
+		# not a 0.
+		#
+		# Beside `the mediaReady` rather than at the end of the match, because they
+		# are the same subject: whether a member's media could be opened, and what
+		# it says if it could.
+		"controller", "directtostage", "video", "sound", "crop", "center", \
+		"scale", "framerate", "pausedatstart", "loop", "preload", \
+		"digitalvideotype", "timescale", "cuepointnames", "cuepointtimes", \
+		"channelcount", "samplerate", "samplesize":
+			return Media.read_member(host, where, prop, table)
 		"purgepriority":
 			# 3 is Director's "never purge". Nothing here purges, so that is the
 			# truth rather than a default.
@@ -358,6 +397,13 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 		"changearea":
 			return int(m.get("change_area", 0))
 		"duration":
+			# **One property, two member types, and the branch is Director's.** A
+			# transition member's duration is how long the frame that names it will
+			# spend; a sound or digital video member's is the length of its media.
+			# The same word, asked of two things, and a port that answered only the
+			# transition would report 0 for every sound in the language.
+			if Media.is_media(m):
+				return int(Media.facts_of(host, where, table)["duration"])
 			# Milliseconds. Director reports a transition member's duration in
 			# ticks, and this port carries it in milliseconds because that is what
 			# the clock holds it in; converted here rather than stored twice.

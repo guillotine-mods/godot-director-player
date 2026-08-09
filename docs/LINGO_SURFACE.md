@@ -2475,11 +2475,19 @@ one thing a table is bad at: an ordering with a reason attached to each place.
   write with no arm all look identical to a caller. `intersects` was this shape
   in the retired host's documentation; `the flipH of sprite` is this shape
   today, at 450 sites.
-- **`absent`** — not bound. The honest state: the interpreter reports an unbound
-  *builtin* by name, so a log says so. Note that it does **not** report an
-  unbound *property* — `LingoDiagnostics.SPRITE_PROP`, `MOVIE_PROP` and
-  `MEMBER_PROP` are declared and never emitted — which is why the property half
-  of this table had to be built by reading the code rather than by running it.
+- **`absent`** — not bound. The honest state: the name is reported when a script
+  reaches it, so a log says so. That is now true of properties as well as of
+  builtins, and it was not for most of this port's life —
+  `LingoDiagnostics.SPRITE_PROP`, `MOVIE_PROP` and `MEMBER_PROP` were declared
+  from the day the sink was written and none of the three was ever emitted,
+  which is why the property half of this table had to be built by reading the
+  code rather than by running it. All three emit now, from the fall-through of
+  the thing that consumes each kind rather than from a list beside it:
+  `director_preview.gd:_note_sprite_prop` against `sprite_props.gd:consumed`,
+  `_note_member_prop` beside it on `members.gd:read_prop`'s VOID and on
+  `lingo_set_member_prop`'s `_:`, and `preview_lingo_host.gd:_note_movie_prop`
+  on both ends of `get_system_prop` / `set_system_prop`.
+  `tools/property_surface.gd` is the harness that keeps them honest.
 
 A fourth value, **`noop`**, may be *recorded* and cannot be *observed*: it reads
 as `inert` to the harness and means that Director's own semantics for the name
@@ -2490,7 +2498,10 @@ reason in its note. It is a suppression channel and it is meant to be an
 uncomfortable one — per name, written here rather than in the harness, and
 excluded from the reachable-gap count below. Anything whose absence a player
 could notice is `inert` and is a gap: `beep`, `alert`, `quit`, `continue` and
-`updateStage` are all bound to nothing and all of them are in the list.
+`updateStage` were all bound to nothing and all of them were in the list. All
+five are live now, and `updateStage` is the one worth keeping the sentence for:
+it sat inert at 3,717 sites — the largest reachable gap this document ever
+recorded — behind a note that said the platform could not do it.
 
 A row absent from this table is a Director name no title reaches and this engine
 does not bind; §9.2 is where that remainder is described. Adding a binding means
@@ -2513,7 +2524,7 @@ That inflates a rank and never invents one.
 
 ## What is still open, in the order a movie meets it
 
-> **Reachable gaps recorded here: 4.** `tools/lingo_surface_audit.gd` counts the
+> **Reachable gaps recorded here: 0.** `tools/lingo_surface_audit.gd` counts the
 > rows that are not `live` and that at least one of the six titles calls, and
 > fails if the number moves. It can only move two ways and both deserve a red
 > gate: a gap closed and this number not brought down with it, or a name some
@@ -2532,19 +2543,19 @@ happens, and that claim was false.
 
 | sites | name | state | what a movie sees, and where the fix goes |
 |---|---|---|---|
-| 3,717 | `updateStage` | inert | Director redraws *now*, mid-handler. Every `repeat` loop that animates by moving a sprite and calling this draws nothing until the loop ends. Host `IGNORED` -> a real arm calling the preview's redraw. |
+| 3,717 | `updateStage` | **live** | Director redraws *now*, mid-handler, and every `repeat` loop that animates by moving a sprite and calling this depended on it; inert, the loop drew once when it ended and the sprite teleported. `director_preview.gd:repaint_now()` clears the node's canvas item, runs the same `_paint` the frame loop runs, and presents with `RenderingServer.force_draw()`. What made that possible was moving the player's painting off `CanvasItem.draw_*` — which asserts `drawing`, raised only inside `NOTIFICATION_DRAW` — and onto `director/director_paint.gd`, which issues the same commands through `RenderingServer` and may be called from anywhere. **The note this replaces was half right and stopped there**: `queue_redraw()` followed by `force_draw()` really does leave `_draw` unrun, because the redraw callback sits on the message queue and GDScript cannot flush it — but `force_draw` presents the commands a canvas item *already holds*, so the answer was to write the commands rather than to wait for a notification. Both halves are re-measured every run by `tools/lingo_system_builtins.gd`; the behaviour is `tools/update_stage.gd`, which asserts that a handler leaves the *paint* remembering the member it set before the call while the channel reads the one it set after. It also spends a pending `puppetTransition` and re-resolves the cursor, which are the other two things `lingo-builtins.cpp:b_updateStage` does. |
 | 1,453 | `the member of sprite N` | **live** | Piposh Dream reads it (`member(the member of sprite xxx).name`). Aliased to `membernum` in `sprite_props.gd`: Director's member *reference* and its integer are two properties, and one here, because this port packs `(library, slot)` into a single integer `member()` accepts either way (§1.6). Wrong only for a title that compares a member reference against something that is not an integer. |
 | 450 | `the flipH of sprite N` | **live** | Piposh Dream's `fritz1.dir` both reads and writes it (`sprite(getAt(ppl, 1)).flipH = 1`). Aliased to the record's `flip_h`, answered from the score's own bit by `read_prop` and merged by `effective`; `sprite_art.gd` has drawn from that name since before the bit was decoded and mirrors the hit test with it, so a flipped sprite is clickable where it is drawn. `the flipV` (6 sites) is the same entry. |
 | 361 | `the loc of sprite N` | **live** | Same file swaps two sprites' positions with it. Split in `director_preview.gd`'s two entry points rather than aliased: the read composes `locH`/`locV` into the two-element list this port represents a point with, and the write splits one back onto `_write_position`, so the constraint stays applied in exactly one place (§7.6). **`tools/lingo_surface_audit.gd` still counts this row as a gap** -- it reads bindings out of the host and the property tables and cannot see a name the node routes before either -- so the count above is one higher than the truth until the audit learns to look there. |
 | 39 | `the hilite of member M` | absent | Rating, `set the hilite of member "rectang" to 1`, once per room. `lingo_set_member_prop` knows `editable` and `text` and drops everything else **without reporting it**, which is the `set_member_prop` shape again in a narrower place. |
 | 20 | `the rect of sprite N` | inert | Readable in Director and derived from loc, registration point and member size. |
-| 12 | `the currentSpriteNum` | absent | Piposh Dream's hex board reads it to know which channel is running the behaviour. §7.1 says it is synthesised rather than stored. |
+| 12 | `the currentSpriteNum` | **live** | Piposh Dream's hex board reads it to know which channel is running the behaviour, once per tile across `hex1`/`hex2`/`hex3`. §7.1 says it is synthesised rather than stored, and it is: the host carries `current_sprite_num`, `preview/event_chain.gd` sets it around the one element of the five that is a sprite behaviour and puts back what it found, and `sendSprite`/`sendAllSprites` bracket their sends the same way so a broadcasting behaviour reads its own channel again on the way back. A cast script, a frame script and a movie script all read 0 during the same click, which is Director's answer and the reason the value is per element rather than per chain. |
 | 6 | `the flipV of sprite N` | inert | As `flipH`. |
-| 4 | `xtra` | absent | Xtra reference by name. No Xtra is implemented, so absent is the honest state and §7.3's `respondsTo` probe is the shape to answer if one ever is. |
+| 4 | `xtra` | **live** | Xtra reference by name or by 1-based index, resolved against the same registry `the xtras` reads — so the two cannot disagree about what this player has loaded — with §7.3's name normalisation applied to both sides. **The registry is empty and every lookup fails**, which is the honest state of "no Xtra is implemented"; what changed is that a failure is now *reported by name* instead of vanishing, the way an unbound builtin is. The corpus's only two sites are `xtra(#net, 2, type & "thud.aif")` in Piposh Dream's `ratA.dir`, inside a handler called `__` that nothing calls: three arguments, which is an arity error in Director too, and is now reported as one. |
 | 4 | `the top of sprite N` | inert | With `left`, `right` and `bottom`: read-only in Director and *derived*, which is why §4 leaves them out of the writable set. Answering 0 is a wrong answer, not a missing one. |
 | 3 | `the textSize of member M` | absent | A member write with no arm, as `hilite`. |
 | 3 | `the castLibNum of sprite N` | inert | The library half of `the member of sprite`. |
-| 2 | `the volume of sprite N` | inert | The sprite spelling of a digital-video property. `the volume of sound N` is a different property and is live. |
+| 2 | `the volume of sprite N` | **live** | Piposh 2's `arcade1.dir` writes it twice, `sprite(2).volume = 255` on the way out of the arcade. The sprite spelling of a **digital-video** property, and it closed with the rest of that surface: `scenes/preview/media.gd` owns a playhead per channel — rate, in and out points, volume, cue index — and the fourteen sprite names route to it from `preview_lingo_host.gd:get_sprite_prop` rather than into the channel record, because Director applies none of the score's auto-puppet release rules (§5.3) to a playhead. The value round-trips and is clamped to Director's 0-255. **Nothing plays**: there is no QuickTime or AVI decoder here, so `the mediaReady of member` is FALSE for a `#digitalVideo` and the playhead has no media to move — which is what Director answers for a video whose file is missing, and `media.gd`'s header is the full account. `the volume of sound N` is a different property and was already live. |
 
 Two shapes account for most of that list, and neither is a missing name:
 
@@ -2553,16 +2564,39 @@ Two shapes account for most of that list, and neither is a missing name:
   `read_prop` and looks implemented, while only the keys `sprite_state.effective`
   merges reach the screen. `the moveableSprite of sprite`, `the editableText of
   sprite` and `the constraint of sprite` were each exactly this and were each
-  found the hard way; `flipH`, `flipV`, `loc`, `rect`, `member`, `castLibNum` and
-  `volume` are the same thing today, and `ink` is it with 0 sites.
-- **A property with no binding is not reported.** `LingoDiagnostics` declares
-  `SPRITE_PROP`, `MOVIE_PROP` and `MEMBER_PROP` and the interpreter emits none of
-  the three. `_host_call` reports a missing host *method* -- which is what closed
-  `set the volume of sound N` (§16.4) -- and a bound method that answers VOID for
-  a name it does not know is indistinguishable from one that had nothing to say.
-  So the whole property surface has no `unbound` tally, which is why this table
-  had to be built by reading the code rather than by running the game and
-  counting complaints.
+  found the hard way; `flipH`, `flipV`, `loc`, `rect`, `member` and `castLibNum`
+  were the same thing when this paragraph was written, and `ink` is it with 0
+  sites. `the volume of sprite` is off the list: it was never a *drawn sprite*
+  property at all, and the fix was not another merge row but a second owner --
+  `preview/media.gd` holds the digital-video playhead, which the score's release
+  rules must not touch.
+- **A property with no binding was not reported.** This is the shape that made
+  the one above so expensive, and it is closed. `LingoDiagnostics` declared
+  `SPRITE_PROP`, `MOVIE_PROP` and `MEMBER_PROP` and emitted none of the three:
+  `_host_call` reports a missing host *method* -- which is what closed `set the
+  volume of sound N` (§16.4) -- while a bound method answering VOID for a name it
+  does not know is indistinguishable from one that had nothing to say. So the
+  property surface had no `unbound` tally at all, and this table had to be built
+  by reading the code rather than by running the game and counting complaints.
+
+  All three emit now, and each reports from the **fall-through of the code that
+  consumes that kind** rather than from a list kept beside it, because a list and
+  the code drift and that drift is how `ink` and `blend` came to be excused by
+  name. The member read half was the last and the best hidden: `members.gd`
+  answered **0** for every property it had no arm for, so `the frameRate of
+  member N` and `the width of member N` came back as two integers a script cannot
+  tell apart -- the same "a wrong answer, not a missing one" this list already
+  says about `the top of sprite`, over fifty names and with nothing recording it.
+  It answers VOID internally now and `director_preview.gd` reports it and hands
+  the caller the same 0 as before, so no movie's behaviour moves.
+
+  `tools/property_surface.gd` is what stops this rotting: it drives a name this
+  engine does not bind through all three categories and fails if any stays quiet,
+  drives eleven names it *does* bind and fails if any of those reports, and
+  derives from the sources that every write arm reaches a store something outside
+  the setter reads. The last of those is the one with teeth -- the audit beside it
+  scores any arm containing an `=` as live, so a property bound to a field nobody
+  reads is exactly what it cannot see.
 
 ## The table
 
@@ -2582,7 +2616,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `number` | member | live | 4702 sites; members.gd read_prop |
 | `member` | builtin | live | 4015 sites; grammar: a parser keyword (§11.3), never dispatched |
 | `value` | builtin | live | 3948 sites; lingo_builtins.gd |
-| `updatestage` | builtin | inert | 3717 sites; host IGNORED |
+| `updatestage` | builtin | live | 3717 sites; host arm -> `director_preview.gd:lingo_update_stage` |
 | `membernum` | member | live | 2992 sites; members.gd read_prop |
 | `cursor` | sprite | live | 2910 sites; merged by effective() |
 | `marker` | builtin | live | 2845 sites; host arm |
@@ -2641,14 +2675,19 @@ Two shapes account for most of that list, and neither is a missing name:
 | `mousedown` | system | live | 39 sites; read only |
 | `moveablesprite` | sprite | live | 33 sites; merged by effective() as `moveable` |
 | `intersects` | builtin | live | 23 sites; host arm |
+| `trackcount` | builtin | live | 0 sites; host arm -> media.gd; 0, a video's track table is in a file nothing here can open |
+| `tracktype` | builtin | live | 0 sites; host arm -> media.gd; VOID for a track that does not exist |
+| `trackstarttime` | builtin | live | 0 sites; host arm -> media.gd |
+| `trackstoptime` | builtin | live | 0 sites; host arm -> media.gd |
+| `ispastcuepoint` | builtin | live | 0 sites; host arm -> media.gd; computed from the playhead against the decoded cue table |
 | `rect` | sprite | live | 20 sites; stored in _overrides, consumed by nothing |
 | `key` | system | live | 20 sites; read only |
 | `addat` | builtin | live | 18 sites; lingo_builtins.gd |
 | `unload` | builtin | noop | 16 sites; host IGNORED; memory hint (§1.4), inverse |
 | `duplicate` | builtin | live | 12 sites; lingo_builtins.gd |
 | `within` | builtin | live | 12 sites; host arm |
-| `puppet` | sprite | live | 12 sites; merged by effective() |
-| `currentspritenum` | system | absent | 12 sites |
+| `puppet` | sprite | live | 12 sites; routed on the node to `lingo_puppet_sprite`, the same flag `puppetSprite` sets. It was **not** merged by effective() and this row said it was: the flag is `channel.gd:PUPPET_KEY`, the string `_puppet`, so the property spelling stored `puppet` in the override entry and reached nothing in either direction — `puppetSprite N, TRUE` then `the puppet of sprite N` answered 0, and `set the puppet of sprite N to 1` answered 1 with the channel unfrozen. Found by `tools/property_surface.gd` driving Director's own name list through the engine; the audit had it in a hand-written consumed list, which is what kept it quiet. |
+| `currentspritenum` | system | live | 12 sites; read only |
 | `savemovie` | builtin | live | 11 sites; host arm |
 | `editabletext` | sprite | live | 11 sites; merged by effective() as `editable` |
 | `addprop` | builtin | live | 6 sites; lingo_builtins.gd |
@@ -2657,7 +2696,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `integer` | builtin | live | 5 sites; lingo_builtins.gd |
 | `map` | builtin | live | 5 sites; lingo_builtins.gd |
 | `exitlock` | system | live | 5 sites; read+write |
-| `xtra` | builtin | absent | 4 sites |
+| `xtra` | builtin | live | 4 sites; host arm |
 | `top` | sprite | live | 4 sites; stored in _overrides, consumed by nothing |
 | `findpos` | builtin | live | 3 sites; lingo_builtins.gd |
 | `textsize` | member | live | 3 sites |
@@ -2665,7 +2704,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `alert` | builtin | live | 2 sites; host arm |
 | `stopevent` | builtin | live | 2 sites; host arm |
 | `unloadmovie` | builtin | noop | 2 sites; host IGNORED; memory hint (§1.4), inverse |
-| `volume` | sprite | inert | 2 sites; stored in _overrides, consumed by nothing |
+| `volume` | sprite | live | 2 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `freeblock` | system | live | 2 sites; read only |
 | `abort` | builtin | live | 0 sites; host IGNORED |
 | `add` | builtin | live | 0 sites; lingo_builtins.gd |
@@ -2726,7 +2765,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `preloadmovie` | builtin | live | 0 sites; host IGNORED; memory hint (§1.4) |
 | `puppetpalette` | builtin | live | 0 sites; host arm |
 | `puppetsound` | builtin | live | 0 sites; host arm |
-| `puppettempo` | builtin | inert | 0 sites; host IGNORED |
+| `puppettempo` | builtin | live | 0 sites; host arm -> `director_frame_clock.gd:set_puppet_tempo`; §9.1's precedence and release condition |
 | `puppettransition` | builtin | live | 0 sites; host arm |
 | `quote` | builtin | live | 0 sites; lingo_builtins.gd |
 | `rect` | builtin | live | 0 sites; lingo_builtins.gd |
@@ -2760,7 +2799,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `backcolor` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `blend` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `bottom` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
-| `currenttime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `currenttime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `editable` | sprite | live | 0 sites; merged by effective() |
 | `forecolor` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `height` | sprite | live | 0 sites; merged by effective() |
@@ -2768,26 +2807,26 @@ Two shapes account for most of that list, and neither is a missing name:
 | `ink` | sprite | live | 0 sites; read from the score record; a write reaches nothing |
 | `left` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `linesize` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `mostrecentcuepoint` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `mostrecentcuepoint` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `moveable` | sprite | live | 0 sites; merged by effective() |
-| `movierate` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `movietime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `movierate` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `movietime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `name` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `pattern` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `right` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `scorecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptinstancelist` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptnum` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `settrackenabled` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `starttime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `stoptime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `settrackenabled` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `starttime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `stoptime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `stretch` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `trackenabled` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `tracknextkeytime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `tracknextsampletime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `trackpreviouskeytime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `trackprevioussampletime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `tracktext` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `trackenabled` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `tracknextkeytime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `tracknextsampletime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `trackpreviouskeytime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `trackprevioussampletime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `tracktext` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `trails` | sprite | live | 0 sites; merged by effective() |
 | `tweened` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `type` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
@@ -2820,6 +2859,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `sourcerect` | system | live | 0 sites; read only |
 | `stilldown` | system | live | 0 sites; read only |
 | `ticks` | system | live | 0 sites; read only |
+| `timeoutkeydown` | system | live | 0 sites; read+write; §8.3's "a key event refreshes the timeout clock". Stored and read back, and **nothing consumes it**: there is no `the timeoutLength`, no `the timeoutLapsed` and no `timeout` event in this port yet, so the round-trip is the whole of its effect. `live` because the audit reads the arms and both reach state; the gap is `ENGINE_TODO.md`'s, and one line here goes live with the clock. |
 | `title` | system | live | 0 sites; read+write |
 | `titlevisible` | system | live | 0 sites; read+write |
 | `windowlist` | system | live | 0 sites; read only |
@@ -2906,6 +2946,24 @@ Two shapes account for most of that list, and neither is a missing name:
 | `depth` | member | live | 0 sites; members.gd read_prop |
 | `dropshadow` | member | live | 0 sites; members.gd read_prop |
 | `duration` | member | live | 0 sites; members.gd read_prop |
+| `controller` | member | live | 0 sites; members.gd read_prop -> media.gd; the QuickTime controller bar; Director's dialog default until a script writes it, because the digital-video specific block is not decoded |
+| `directtostage` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `video` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `sound` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller`; the member spelling, not the builtin |
+| `crop` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `center` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `scale` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller`; a two-element point |
+| `framerate` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `pausedatstart` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller` |
+| `loop` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller`; the member spelling, not `the loop of sound N` |
+| `preload` | member | live | 0 sites; members.gd read_prop -> media.gd; as `controller`; the member spelling, not the builtin |
+| `digitalvideotype` | member | live | 0 sites; members.gd read_prop -> media.gd; `#other` -- neither QuickTime nor Video for Windows can be identified without opening the file |
+| `timescale` | member | live | 0 sites; members.gd read_prop -> media.gd; the media's own clock units; Director's tick for a sound member |
+| `cuepointnames` | member | live | 0 sites; members.gd read_prop -> media.gd; decoded from a sound member's own markers; empty for a video, whose media cannot be opened |
+| `cuepointtimes` | member | live | 0 sites; members.gd read_prop -> media.gd; as `cuepointnames`, in the member's duration units |
+| `channelcount` | member | live | 0 sites; members.gd read_prop -> media.gd; decoded from a sound member's stream; 0 for a video |
+| `samplerate` | member | live | 0 sites; members.gd read_prop -> media.gd; as `channelcount` |
+| `samplesize` | member | live | 0 sites; members.gd read_prop -> media.gd; as `channelcount` |
 | `filename` | member | live | 0 sites; members.gd read_prop |
 | `filled` | member | live | 0 sites; members.gd read_prop |
 | `fontsize` | member | live | 0 sites; members.gd read_prop |
@@ -2956,8 +3014,9 @@ Two shapes account for most of that list, and neither is a missing name:
 | `productname` | system | live | read only |
 | `productversion` | system | live | read only |
 | `quicktimepresent` | system | live | read only |
+| `digitalvideotimescale` | system | live | 0 sites; read+write; 0 is Director's "each member's own scale" |
 | `result` | system | live | interpreter, read only |
-| `rollover` | system | live | read only |
+| `rollover` | system | live | read only; **answers the builtin's query, not the property's** (§4.5). Director's `the rollOver` is the ink-aware hit test with no eligibility filter; this is the pure-rect descent `rollOver(n)` uses. Bound and wrong-by-one-query rather than absent -- `ENGINE_TODO.md` has what a third channel would cost. |
 | `romanlingo` | system | live | read only |
 | `safeplayer` | system | live | read only |
 | `selection` | system | live | read only |

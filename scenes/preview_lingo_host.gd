@@ -40,6 +40,29 @@ var reached: Dictionary = {}
 var unbound: Dictionary = {}
 ## Set by the interpreter's caller before a mouse message.
 var click_sprite := 0
+
+## `the currentSpriteNum` — the channel whose **behaviour** is running, 0 when
+## nothing's is.
+##
+## §7.1 calls it synthesised rather than stored, and it is: Director has no such
+## field on the movie either, it is set as each queued sprite behaviour is
+## entered and cleared as it leaves, so the property is a read of "where am I"
+## rather than of anything the score holds. A behaviour is the *only* tier that
+## answers a channel — a cast script, a frame script and a movie script all read
+## 0 during the same click, because none of them belongs to a sprite.
+##
+## It is here rather than on `preview/event_chain.gd` because two unrelated paths
+## enter a behaviour and both have to agree: the event queue, and `sendSprite` /
+## `sendAllSprites`, which the reference brackets with a save and a restore
+## exactly so that a behaviour messaging another sprite reads its own channel
+## again afterwards. Both write this one field, and both restore what they found.
+##
+## Piposh Dream's hex board is the corpus site, 12 of them across `hex1`, `hex2`
+## and `hex3`: one behaviour is attached to every tile, and `jumpFrom = the
+## currentSpriteNum` is how the tile it is on tells itself apart from the other
+## fifty. Answering 0 there is not a missing value, it is every tile claiming to
+## be the same tile.
+var current_sprite_num := 0
 ## `the clickLoc` — the stage point of the last mouse-down.
 var click_loc := Vector2.ZERO
 ## When the last press and the last pointer move happened, in engine
@@ -107,12 +130,44 @@ var last_key_ms := 0
 # it puts the answer and the reason in one place and leaves exactly one line to
 # edit when it stops being true.
 
-## `the quickTimePresent`, `the videoForWindowsPresent`. There is no digital
-## video in this port at all -- no member type is decoded for it, no track
-## properties are bound, and `docs/ENGINE_TODO.md` records what it would take. A
-## movie that guards its video behind either of these takes the branch that does
-## not need it, which is the branch that works.
+## `the quickTimePresent`, `the videoForWindowsPresent`. **No decoder**, which is
+## a narrower statement than the one that used to stand here: the digital-video
+## *property surface* is bound now (`scenes/preview/media.gd`) and a movie can
+## drive a video sprite and read every property back, but nothing can open the
+## media behind a `#digitalVideo` member, so `the mediaReady of member` is FALSE
+## and nothing ever plays. These two are the questions a movie asks *before* it
+## commits to a video, and FALSE sends it down the branch that works.
 const HAS_DIGITAL_VIDEO := false
+
+## The digital-video and sound-member model (`docs/ENGINE_TODO.md`'s digital
+## video block). The playhead half is reached from here -- the sprite property
+## arms and the four track builtins -- and the member half through
+## `preview/members.gd`, so both sides of one surface consult one module.
+const Media := preload("res://scenes/preview/media.gd")
+
+## The digital-video state `scenes/preview/media.gd` owns, kept here because the
+## host is rebuilt per movie (`preview/boot.gd:start_lingo`) and every one of the
+## three dies with the movie it belongs to. A playhead is meaningless once the
+## score that held the sprite is gone; a decoded sound's numbers are keyed by
+## library and slot, and that pair names a different member in the next movie's
+## casts.
+##
+##   `media_channels`  channel -> the playhead: rate, time, in/out, volume, cue
+##   `media_members`   "lib:id" -> the authoring flags a script has written
+##   `media_facts`     "lib:id" -> what the member's own bytes say, decoded once
+var media_channels: Dictionary = {}
+var media_members: Dictionary = {}
+var media_facts: Dictionary = {}
+
+## `the digitalVideoTimeScale` — the units per second Director converts a video
+## sprite's `movieTime` into when a movie asks for one time scale across members
+## that disagree.
+##
+## **0 is Director's own default and means "each member's own scale"**, which is
+## why it is not seeded to 60 or to QuickTime's 600: a movie that never writes it
+## must get the member's units back, and a non-zero default would silently
+## rescale every `the movieTime` in the language.
+var digital_video_time_scale := 0
 
 ## `the safePlayer`. TRUE only inside Shockwave's sandbox, where file access and
 ## `open` are refused. This is a projector, so it is FALSE and a movie's own save
@@ -140,8 +195,20 @@ const MOVIE_FILE_SLACK := 0
 ## and the entries through one another and all three have to agree.
 var external_params: Array = []
 
-## `the xtras` -- the Xtras this player has loaded. None are implemented (§7.3),
-## and the empty list is what a movie scanning for one reads.
+## `the xtras`, and the list `xtra(...)` looks a name up in — **one list, read
+## from both sides**, so the two can never disagree about what this player has.
+##
+## Each entry is `{"name": <as registered>, "object": <the native object>}`.
+## Empty, and it will stay empty until a native Xtra is written: §7.3's object
+## surface (`new`, `dispose`, `respondsTo`, `messageList`, `perform`) is what an
+## entry has to answer, and nothing here answers it yet. That is the whole of
+## what "no Xtra is implemented" means, and it is a statement about the registry
+## rather than about the two names that read it.
+##
+## Kept as a list of records rather than as bare names because `xtra("name")`
+## returns the **object**, not the name: a registry of strings would make the
+## lookup succeed and the value it handed back useless, which is the shape §7.3
+## warns about at its own `respondsTo`.
 var xtras_loaded: Array = []
 
 
@@ -274,6 +341,9 @@ const HANDLED := [
 	"set", "alert", "halt", "quit", "pause", "continue",
 	"window", "open", "close", "forget", "savemovie",
 	"pass", "dontpassevent", "stopevent",
+	"xtra",
+	"trackcount", "tracktype", "trackstarttime", "trackstoptime",
+	"ispastcuepoint",
 	"preload", "preloadcast", "preloadmember", "preloadmovie", "clearglobals",
 	"externalparamcount", "externalparamname", "externalparamvalue",
 	"frameready", "ramneeded", "getvolumes", "version",
@@ -930,12 +1000,65 @@ func call_builtin(name: String, args: Array) -> Variant:
 				for sprite in preview.frame_sprites():
 					channels.append(int((sprite as Dictionary)["channel"]))
 			var frame_index: int = preview.current_frame() - 1
+			# §7.1: a behaviour reached this way reads its **own** channel from
+			# `the currentSpriteNum`, and the caller's is put back afterwards. The
+			# reference brackets each send with the same save and restore, and the
+			# nesting is not hypothetical -- `sendAllSprites` is how a behaviour
+			# broadcasts, so the sender is itself a behaviour with a channel of its
+			# own to go back to.
+			var outer := current_sprite_num
 			for channel in channels:
 				var script: Dictionary = preview.call(
 					"_sprite_script", int(channel), frame_index)
 				if not script.is_empty():
+					current_sprite_num = int(channel)
 					preview.call("_dispatch", handler, script)
+			current_sprite_num = outer
 			return 0
+
+		# ------------------------------------------------------------- `xtra(x)`
+		"xtra":
+			return _xtra(args)
+
+		# ------------------------------------------------- digital video's tracks
+		#
+		# `trackCount(sprite N)`, `trackType(sprite N, t)`, `trackStartTime` and
+		# `trackStopTime` the same, and `isPastCuePoint(sprite N, cue)`.
+		#
+		# **The reference and Director's own documentation disagree about the
+		# arity**, and both spellings are accepted rather than one being picked:
+		# `lingo-builtins.cpp` gives all four track functions 1..1 and stubs every
+		# body, while the language takes a track number as a second argument for
+		# three of them. A one-argument call is read as track 1, which is the only
+		# track a member with one media stream has, so the two readings agree
+		# wherever the reference's arity could have been right.
+		#
+		# What they answer is `preview/media.gd`'s, and its header is the honest
+		# account: a digital video's tracks are in a file nothing here can open, so
+		# the count is 0 and `trackType` answers VOID rather than a symbol a script
+		# would then switch on.
+		"trackcount":
+			if preview == null or args.is_empty():
+				return 0
+			return Media.track_count(
+				preview, LingoValue.to_int(args[0]), preview._table)
+		"tracktype":
+			if preview == null or args.is_empty():
+				return null
+			return Media.track_type(preview, LingoValue.to_int(args[0]),
+				LingoValue.to_int(args[1]) if args.size() > 1 else 1,
+				preview._table)
+		"trackstarttime", "trackstoptime":
+			if preview == null or args.is_empty():
+				return 0
+			return Media.track_time(preview, LingoValue.to_int(args[0]),
+				LingoValue.to_int(args[1]) if args.size() > 1 else 1,
+				"start" if low == "trackstarttime" else "stop", preview._table)
+		"ispastcuepoint":
+			if preview == null or args.size() < 2:
+				return 0
+			return Media.is_past_cue_point(
+				preview, LingoValue.to_int(args[0]), args[1], preview._table)
 	if IGNORED.has(low):
 		return 0
 	_answered_builtin = false
@@ -1171,6 +1294,79 @@ func _nth_file(args: Array) -> Variant:
 	return str(names[which - 1]) if which <= names.size() else ""
 
 
+## `xtra("name")` and `xtra(n)` — §7.3's lookup into the registry of Xtras this
+## player has loaded.
+##
+## Director takes either spelling: a **name**, matched case-insensitively, or a
+## **1-based index** into the loaded list, and it raises a script error when
+## neither finds anything. Both are here, against the one list `the xtras` reads,
+## so a movie cannot be told an Xtra exists by one name and not by the other.
+##
+## §7.3's name normalisation is applied to the lookup as well as to the entries:
+## the platform extensions (`.xlib`, `.dll`, `.x16`, `.x32`) and the Mac path
+## separators come off first, so the same library named three ways in three
+## movies resolves once. That is Director's rule and not a convenience — a movie
+## that says `xtra("FileIO.x32")` and one that says `xtra("fileio")` are asking
+## for the same object.
+##
+## **The registry is empty, so every lookup fails, and a failure is reported by
+## name.** That is the honest state and it is deliberately not silence: an
+## unbound *builtin* is reported and lands in the diagnostics, and an Xtra that
+## does not exist has to read the same way, or a movie's `xtra("net")` becomes
+## the one kind of miss this port cannot see. Director's own answer is a script
+## error; VOID plus a named diagnostic is the closest this interpreter has, and
+## it is what every "probe for an Xtra, take the branch that does not need it"
+## script wants anyway.
+##
+## The arity check is Director's: `xtra` takes exactly one argument. The corpus's
+## only two sites are `xtra(#net, 2, type & "thud.aif")` in Piposh Dream's
+## `ratA.dir`, inside a handler called `__` that nothing calls — three arguments,
+## which is an error in Director too. Reporting it is the difference between
+## "this port has no Xtras" and "this script was already broken in 1997".
+func _xtra(args: Array) -> Variant:
+	if args.size() != 1:
+		_report_xtra("xtra/%d arguments" % args.size())
+		return null
+	var wanted: Variant = args[0]
+	# The index form first, and only for a real integer: a symbol or a string is
+	# a name even when it looks like a number, because `xtra("2")` names an Xtra
+	# called "2" and `xtra(2)` is the second one loaded.
+	if typeof(wanted) == TYPE_INT or typeof(wanted) == TYPE_FLOAT:
+		var which := int(wanted)
+		if which >= 1 and which <= xtras_loaded.size():
+			return (xtras_loaded[which - 1] as Dictionary).get("object", null)
+		_report_xtra("xtra %d" % which)
+		return null
+	var name := xtra_key(LingoValue.to_str(wanted))
+	for entry in xtras_loaded:
+		if xtra_key(str((entry as Dictionary).get("name", ""))) == name:
+			return (entry as Dictionary).get("object", null)
+	_report_xtra("xtra \"%s\"" % name)
+	return null
+
+
+## §7.3's normalised form of an Xtra or XObject name: no platform extension, no
+## path in front of it, case-folded. The lookup key on both sides of the
+## registry, so registering `FileIO.x32` and asking for `fileio` is one Xtra.
+static func xtra_key(name: String) -> String:
+	var bare := name.replace(":", "/").replace("\\", "/").get_file().strip_edges()
+	for suffix in [".xlib", ".dll", ".x16", ".x32", ".xtra"]:
+		if bare.to_lower().ends_with(suffix):
+			bare = bare.substr(0, bare.length() - suffix.length())
+			break
+	return bare.to_lower()
+
+
+## A lookup that found nothing, named in the diagnostics the way an unbound
+## builtin is. Through the interpreter because that is where the script name, the
+## handler and the line live; silently dropped when there is no interpreter to
+## tell, which is only the case in a harness that built a host on its own.
+func _report_xtra(what: String) -> void:
+	if preview == null or preview._interpreter == null:
+		return
+	preview._interpreter.report(LingoDiagnostics.BUILTIN, what)
+
+
 ## `getPref(<name>)` and `setPref(<name>, <value>)` — Director's own small
 ## key/value store, and the only persistence a Shockwave movie has.
 ##
@@ -1371,6 +1567,13 @@ func get_system_prop(prop: String) -> Variant:
 			return int(preview.stage_mouse().y)
 		"clickon":
 			return click_sprite
+		"currentspritenum":
+			# Not `the clickOn` by another name, and the difference is the whole
+			# reason both exist: `the clickOn` is the channel the *player* hit and
+			# survives the click, while this is the channel whose behaviour is on
+			# the stack right now. A behaviour reached by `sendSprite`, by a key
+			# event or by a frame message has no click behind it at all.
+			return current_sprite_num
 		# ------------------------------------------------------- the mouse, live
 		#
 		# Every one of these is a *read* of hardware or of a timestamp, with no
@@ -1743,6 +1946,11 @@ func get_system_prop(prop: String) -> Variant:
 		# that does not need it -- which is the branch that works.
 		"quicktimepresent", "videoforwindowspresent":
 			return 1 if HAS_DIGITAL_VIDEO else 0
+		"digitalvideotimescale":
+			# The scale `the movieTime of sprite` is reported in when a movie wants
+			# one across members that disagree. 0 means each member's own, which is
+			# Director's default and the reason this is stored rather than fixed.
+			return digital_video_time_scale
 		"romanlingo":
 			# Whether Lingo's string functions work a byte at a time rather than
 			# in a double-byte script. They do here: `director_codepage.gd` maps a
@@ -1763,10 +1971,15 @@ func get_system_prop(prop: String) -> Variant:
 		"serialnumber":
 			return SERIAL_NUMBER
 		"xtras":
-			# The Xtras this player has loaded, as a list. None: no Xtra is
-			# implemented (§7.3), so the honest answer is the empty list and a
-			# script scanning it for one finds it absent rather than crashing.
-			return xtras_loaded
+			# The Xtras this player has loaded, as a list of their objects — the
+			# same registry `xtra(...)` resolves against, so `the number of xtras`
+			# and a lookup by name are two questions with one answer. None is
+			# registered, so this is empty and a script scanning it for one finds
+			# it absent rather than crashing.
+			var names: Array = []
+			for entry in xtras_loaded:
+				names.append((entry as Dictionary).get("object", null))
+			return names
 		"safeplayer":
 			# Shockwave's sandbox. A projector is not sandboxed and answers FALSE,
 			# which is what lets a movie's file and `open` paths run at all.
@@ -1853,6 +2066,11 @@ func _ticks_since(when_ms: int) -> int:
 
 func set_system_prop(prop: String, value: Variant) -> void:
 	match prop.to_lower():
+		"digitalvideotimescale":
+			# Negative is not a scale. Director clamps at 0, which is its own "use
+			# each member's" value, so a movie writing nonsense gets the default
+			# back rather than a divisor that would invert every time it reports.
+			digital_video_time_scale = maxi(LingoValue.to_int(value), 0)
 		"selstart", "selend":
 			# The other half of §8.4's selection round-trip. Writable, and both
 			# ends are clamped against the focused field's own length on the way
@@ -2000,6 +2218,26 @@ func get_sprite_prop(which: int, prop: String) -> Variant:
 					return int(box.end.y)
 			return [int(box.position.x), int(box.position.y),
 				int(box.end.x), int(box.end.y)]
+
+		# ---------------------------------------------- the digital-video playhead
+		#
+		# Fourteen names that are not properties of the *drawn sprite* at all --
+		# they describe the movie playing in the channel, which is why they are
+		# answered here rather than merged into `preview/channel.gd:FIELDS`.
+		# Putting them in the channel record would subject them to the score's
+		# auto-puppet release rules (§5.3), and Director applies none of those to a
+		# playhead: a video does not stop because the score rewrote the channel's
+		# position on the next frame.
+		#
+		# `scenes/preview/media.gd` is the model, and its header is the honest
+		# account of what plays here, which is nothing: the properties round-trip
+		# and there is no media that can be decoded to move.
+		"movierate", "movietime", "starttime", "stoptime", "volume", \
+		"currenttime", "mostrecentcuepoint", "tracktext", "trackenabled", \
+		"settrackenabled", "tracknextkeytime", "tracknextsampletime", \
+		"trackpreviouskeytime", "trackprevioussampletime":
+			var answer: Variant = Media.read_sprite(preview, which, low)
+			return answer if answer != null else 0
 	return preview.lingo_sprite_prop(which, low)
 
 
@@ -2020,6 +2258,12 @@ func set_sprite_prop(which: int, prop: String, value: Variant) -> void:
 		return
 	var low := prop.to_lower()
 	if SPRITE_READ_ONLY.has(low):
+		return
+	# The playhead before the sprite record, matching the read above. A write that
+	# fell through to `lingo_set_sprite_prop` would land in the channel's override
+	# table, read back from there, and be invisible to the model that owns it --
+	# which is the `moveableSprite` shape, one entity along.
+	if Media.write_sprite(preview, which, low, value):
 		return
 	preview.lingo_set_sprite_prop(which, low, value)
 

@@ -20,7 +20,7 @@ by how visible the absence is.
 
 ## The reference map
 
-**Reference names not live here: 173.** `tools/lingo_surface_audit.gd` reads
+**Reference names not live here: 130.** `tools/lingo_surface_audit.gd` reads
 Director's own name tables out of `reference/scummvm/` -- 506 capabilities this
 port can reach -- and pins how many of them are live. §19 measures the gaps a
 *title in this corpus calls*; this measures the gaps against Director itself,
@@ -33,7 +33,15 @@ and neither should pass silently.
 
 ### What moved, and where the denominator went
 
-It was **287 of 511** and is 173 of 506. The five names that left the
+It was **287 of 511**, then 173, and is 130 of 506. **40 of the 43 are the
+digital-video block below, plus `the currentSpriteNum` and `xtra`**: 18 member
+properties, 14 sprite properties that make up a video sprite's playhead, the 5
+track and cue-point builtins, `the digitalVideoTimeScale`, `xtra` and `the
+currentSpriteNum`. What that closed is the *surface*, not the playback, and the
+distinction is written out in the block itself and in
+`scenes/preview/media.gd`'s header rather than left to be inferred from a count
+going down. The other 3 landed beside them and have their own entries:
+`updateStage`, `puppetTempo` and the first of the timeout properties. The five names that left the
 denominator are named in `tools/lingo_surface_audit.gd:INAPPLICABLE`, with the
 reason per name: `openDA`, `closeDA`, `openResFile`, `closeResFile` and
 `showResFile` address classic Mac OS system services -- desk accessories and the
@@ -59,26 +67,73 @@ with no spelling to ask for it. See the two commits, `lingo: 45 Director names
 this port could already answer` and `members: 46 properties a member could
 answer about itself`.
 
-## What the remaining 173 are waiting for
+## What the remaining 130 are waiting for
 
-Grouped by the subsystem each needs, because they are not 173 independent
+Grouped by the subsystem each needs, because they are not 130 independent
 tasks -- half of them land together or not at all. Counts are from the audit's
 own grouping, and it prints the names.
 
-**Digital video (about 40 names).** `member` 13 (`the controller`,
-`directToStage`, `video`, `crop`, `center`, `scale`, `frameRate`,
-`pausedAtStart`, `digitalVideoType`, `timeScale`, `cuePointNames`,
-`cuePointTimes`, `media`), `sprite` 13 (`the movieRate`, `movieTime`,
-`startTime`, `stopTime`, `volume`, `currentTime`, `mostRecentCuePoint`, and the
-six `track*`), `builtin` 5 (`trackCount`, `trackType`, `trackStartTime`,
-`trackStopTime`, `isPastCuePoint`), `system` 1 (`the digitalVideoTimeScale`).
-*What it would take:* a `#digitalVideo` cast member type in
-`director/director_cast.gd` (none is decoded), a decoder for whatever the
-container carries -- QuickTime or AVI, neither of which Godot reads natively --
-a video sprite that draws into the channel, and the tempo channel's video waits,
-which `director_score.gd` already decodes into `wait_video_channel` and nothing
-consumes. **No member in any of the six titles is a digital video**, which is why
-this is last rather than first.
+**Digital video -- the surface landed, the playback did not.** 38 of the ~40
+names are bound (`scenes/preview/media.gd`): 18 member properties, the 14 sprite
+properties that make up the playhead, the five track and cue-point builtins, and
+`the digitalVideoTimeScale`. A movie can now drive a video sprite -- set `the
+movieRate`, the in and out points, `the volume`, read every one back, ask a
+member for its duration, its cue points, its sample rate -- and get Director's
+answers. `docs/LINGO_SURFACE.md` §19 carries the rows.
+
+**What is still missing is the media, and it is the larger half.** There is no
+QuickTime or AVI decoder in this port and Godot supplies none, so the bytes
+behind a `#digitalVideo` member cannot be opened. That is *reported* rather than
+papered over: `the mediaReady of member` answers FALSE for a video, the duration
+is 0, there are no cue points and there are no tracks -- which is exactly what
+Director answers for a video whose file is missing or whose codec is not
+installed. Nothing plays and nothing draws.
+
+Three things are open under it, each of which needs the decoder first:
+
+- **The playhead never advances.** `the movieRate` is stored and read back and
+  moves nothing, because there is no media to run. The one line that gates it is
+  `media.gd`'s `ready` flag, which is where a decoder lands.
+- **The authoring flags are Director's dialog defaults, not the member's.** `the
+  controller`, `directToStage`, `video`, `sound`, `crop`, `center`, `scale`,
+  `frameRate`, `pausedAtStart`, `loop` and `preLoad` live in the `#digitalVideo`
+  member's **specific block**, and `director/director_cast.gd:_parse_specific`
+  has no arm for type 10. It cannot get one honestly today: no member in any of
+  the six titles is a digital video, so there is no sample to measure a layout
+  against, and `reference/scummvm/` does not vendor the file that reads it. So
+  each answers its default until a script writes it -- right for a member left as
+  authored, wrong for one the author changed, and there is no way to tell which
+  from inside this port. Inventing offsets would answer with the same confidence
+  and be wrong invisibly.
+- **`the media of member`** is deliberately still absent: Director hands back a
+  duplicate of the member's media as an object assignable into another member,
+  and that needs the mutable cast below.
+
+Two smaller things sit beside it. The tempo channel's video waits are **built on
+the clock side and unwired on this one**: `director_score.gd` decodes
+`wait_video_channel` in both numberings, `director_frame_clock.gd` holds the
+playhead for it, and the wait is released by a `video_probe` callable nobody
+installs. With none installed every video wait completes on its first poll, which
+is what Director answers for a channel holding no video and is the right answer
+while there is no media. When there is, the probe is one line and its contract is
+the reference's condition -- keep waiting while the channel is an active video
+**and** its rate is non-zero, so `Media.channel_state(host, channel)["rate"] != 0.0`
+beside whatever answers "this channel is playing a video". And `trackCount(sprite N)`
+versus `trackCount(member "x")`: the parser evaluates a sprite reference to its
+channel number and a member reference to a packed `(library, slot)` integer, so
+both arrive at a builtin as a bare integer and the spelling is gone. The five
+builtins read the argument as a **sprite channel**, which is the form every one
+of Director's own examples uses; a member-side call needs the reference to
+survive the argument, which is a parser change.
+
+**The sound-member half of the same surface is real and is unexercised.** `the
+duration`, `the cuePointNames`, `the cuePointTimes`, `the sampleRate`, `the
+sampleSize`, `the channelCount` and `the mediaReady` of a `#sound` member are
+computed from the member's own bytes through `director/director_sound.gd`, which
+decodes all three shapes Director wrote. No cast in any of the six titles holds a
+sound member -- every sound these games play is an external `.aif` reached by
+`sound playFile` -- so that path is written from the decoder and confirmed by
+nothing. The first title that ships a sound member is what will check it.
 
 **Score recording (8 builtins).** `beginRecording`, `endRecording`,
 `updateFrame`, `insertFrame`, `deleteFrame`, `duplicateFrame`, `clearFrame`, and
@@ -91,12 +146,20 @@ no path back; recording needs the snapshot to be the authority and the stream to
 be re-derived from it, or a per-frame override layer the frame loop merges the
 way `preview/channel.gd` merges a sprite's.
 
-**Xtras and XObjects (`xtra`, `openXlib`, `closeXlib`, `showXlib`,
-`xFactoryList`, `factory`, `the interface of member`).** §7.3. *What it would
-take:* a registry of native objects the interpreter can instantiate and send
-messages to, plus `new`/`mNew` dispatch and `respondsTo`. 4 corpus sites, all
-`xtra`. `factory` and `xFactoryList` are D3's version of the same idea and would
-share the object model with §7.2's parent scripts.
+**Xtras and XObjects (`openXlib`, `closeXlib`, `showXlib`, `xFactoryList`,
+`factory`, `the interface of member`).** §7.3. `xtra` itself is bound: the lookup
+resolves a name or a 1-based index against the same registry `the xtras` reads,
+with §7.3's name normalisation on both sides, and **reports by name when it finds
+nothing** instead of vanishing. The registry is empty and will stay empty until
+there is something to put in it, which is what the rest of this entry is. *What
+it would take:* native objects the interpreter can instantiate and send messages
+to, plus `new`/`mNew` dispatch and `respondsTo` -- §7.3 is explicit that a
+stubbed Xtra must answer the standard set, because scripts probe with
+`respondsTo` before calling. `factory` and `xFactoryList` are D3's version of the
+same idea and would share the object model with §7.2's parent scripts. The
+corpus's only two sites are `xtra(#net, 2, ...)` in Piposh Dream's `ratA.dir`,
+inside a handler nothing calls, with three arguments where Director takes one --
+an arity error in 1997 and reported as one now.
 
 **Menus (`installMenu`, `menu`, `menuItem`, `the name of menu`, and menuItem's
 `checkMark`, `enabled`, `name`, `script`).** *What it would take:* a menu bar.
@@ -135,23 +198,44 @@ already made the wrong way. *What it would take:* `preview/frame_loop.gd` to run
 a timeout check and a `stepFrame` sweep once per tick, and the interpreter to
 send a message to an arbitrary object rather than to a script.
 
-**`updateStage` (3,717 sites) and `the updateLock`.** The long-form reason is in
-`scenes/preview_lingo_host.gd`'s `IGNORED` list and it has not changed: Godot
-cannot present synchronously from inside a handler. `queue_redraw()` marks the
-canvas dirty and `RenderingServer.force_draw()` does not re-run `_draw`
-(measured on 4.7.1, headless and windowed). A real arm has to paint through the
-immediate `RenderingServer` API, which is the whole of `stage_paint.gd`,
-`sprite_art.gd`, `text_art.gd`, `film_loop_view.gd` and `trails.gd`. Until then
-an arm that only requested a redraw would read as implemented from every
-direction and change nothing -- which is worse than the row staying red.
+**~~`updateStage` (3,717 sites)~~ -- done; `the updateLock` is what is left.**
+`updateStage` paints and presents from inside the handler
+(`director_preview.gd:repaint_now`), which the entry this replaces said was
+impossible. It was not, and the reasoning is worth keeping because the shape
+recurs: the measurement behind it -- `queue_redraw()` followed by
+`RenderingServer.force_draw()` leaves `_draw` unrun, because the redraw callback
+is on the message queue and GDScript cannot flush it -- was correct and is still
+asserted every run. The *inference*, that Godot therefore cannot present
+synchronously, was not: `force_draw` presents the commands a canvas item already
+holds, so the answer was to write those commands directly. `director/director_paint.gd`
+does, `_draw` and `repaint_now` are two entry points into one `_paint`, and the
+predicted "whole of `stage_paint.gd`, `sprite_art.gd`, `text_art.gd`,
+`film_loop_view.gd` and `trails.gd`" turned out to be about twenty call sites,
+because `Texture2D.draw`, `Texture2D.draw_rect` and `Font.draw_string` already
+take a canvas-item RID and only `draw_rect` needed writing out. Measured on
+4.7.1 with a 32-sprite frame of `SEA1.dir`: the paint costs 4.5-6 ms and the
+present 25-30 ms, the second being two vsync intervals, so a Lingo animation
+loop steps at about 30 fps -- inside the 10-30 ms per redraw the machines these
+titles shipped for managed, and the reason vsync is left alone rather than
+turned off for the duration of a call (without it the pair costs 5.3 ms).
+Idle rooms call it **zero** times in twenty seconds, in `strtgame`, `SEA1`,
+`MAP` and `DAY1` alike, so the cost is paid only where the animation is.
 
-**`the currentSpriteNum` (12 sites).** The smallest one left and the only
-remaining §19 gap with a corpus count worth the name. Director synthesises it
-from the sprite whose behaviour is running (§7.1); this port's chain elements
-(`preview/event_chain.gd:element`) carry a tier and a script and **not the
-channel they came from**, so there is nothing to answer with. *What it would
-take:* the channel added to the element at `for_mouse`/`for_key`, and `run`
-setting it on the host around each element.
+*What is left:* `the updateLock` -- TRUE suppresses stage updates until it is
+cleared. The reference declares it in `lingo-the.cpp`'s table (`kTheUpdateLock`,
+D5) and implements neither the read nor the write, so there is no behaviour to
+copy; the shape is a flag on the preview that `repaint_now` and the frame loop's
+repaint both honour. 0 sites in six titles.
+
+**`the currentSpriteNum` -- done.** The channel is on the chain element now
+(`preview/event_chain.gd:element`), `run` sets it on the host around the one tier
+of the five that is a sprite behaviour and restores what it found, and
+`sendSprite`/`sendAllSprites` bracket their sends the same way. A cast script, a
+frame script and a movie script read 0 during the same click, which is Director's
+answer. What is *not* covered is the per-frame sprite messages -- `beginSprite`,
+`endSprite`, `stepFrame` -- because this port does not send them at all yet; when
+it does, they are the second place that has to set this field, and the timeout
+entry below is where they are queued.
 
 **Object messaging (`send`, `call`, `sendAncestor`, `callAncestor`).** §7.1.
 Needs script objects with an ancestor chain; `sendSprite` and `sendAllSprites`
@@ -252,53 +336,91 @@ able to suspend a handler mid-block and resume it, which
 in `director_preview.gd:lingo_play_done` and one at frame entry. Nothing in
 `preview/interaction.gd` is involved.
 
-**Tempo: the pre-D6 numbering is implemented but unexercised.** §9.1.
-`director/director_frame_clock.gd:rate_from_tempo` reads the tempo cell under
-both conventions and chooses by the movie's file version -- but
-`director_score.gd` decodes the D6/D7 main-channel layout only, so a D4 or D5
-score does not parse and the older branch has no input. The collision is the
-reason it has to branch on version and not on value: 246/247/248 mean "set rate
-/ delay / wait-click" from D6 and "delay ten / nine / eight seconds" before it.
-`FrameClock.movie_file_version` is consequently never set to anything but its
-D6 default.
+**Tempo: the pre-D6 numbering is implemented and cannot be exercised.** §9.1.
+Both the rate (`director_frame_clock.gd:rate_for`) and the one-shot meanings
+(`director_score.gd:tempo_waits`) branch on the movie's file version, which is
+the only thing that can decide it: 246/247/248 mean "set rate / delay /
+wait-click" from D6 and "delay ten / nine / eight seconds" before it, and nothing
+in the byte says which. What cannot be covered is the *input*: the owner has
+ruled out D4/D5 container support, so `director_score.gd` decodes the D6/D7
+main-channel layout only and no real file can produce a pre-D6 cell.
+`tools/movie_tempo.gd:_check_reading` and `tools/frame_events.gd` drive both
+branches by hand instead, which is the whole of that branch's cover and is said
+here rather than left to look like corpus coverage.
 
-**Tempo: the one-shot meanings are decoded without a version.** §9.1.
-`director_score.gd` applies the D6 numbering unconditionally, so a D6 movie's
-cells 134 and 135 -- digital-video waits in the reference -- are read as
-sound-channel waits, and a pre-D6 movie's delay band (`256 - cell` seconds, taken
-from the cell itself with no operand) and its click wait at 128 are not read at
-all. No container in either corpus writes any of them.
+**Tempo: the video waits are expressed, and there is nothing to wait on.** §9.1.
+Both numberings decode -- pre-D6's `136 .. 195` biased by 135, and D6's "any
+other non-zero cell numbers a sprite channel" -- and
+`director_frame_clock.gd:_waiting_video` holds the playhead for them. What
+resolves the wait is a `video_probe` callable nothing installs yet: with none,
+every video wait reports *finished* on the first poll, which is the answer
+Director gives for a channel holding no video and the only safe default for a
+port with no decoder. Wiring the probe is one line wherever digital video lands;
+the clock side needs nothing further.
 
-**Tempo: the video waits.** §9.1. Neither pre-D6's `136 ... 135 + channelCount`
-nor D6's "any other value is a video wait" is implemented, and there is no
-digital video to wait on.
+**`puppetTempo` -- fixed.** §9.1. It is bound at
+`scenes/preview_lingo_host.gd:puppettempo` -> `director_preview.gd:lingo_puppet_tempo`
+-> `director_frame_clock.gd:set_puppet_tempo`, which holds the puppet rate and
+releases it when the score writes a tempo or its effective tempo changes.
+Previously: listed among the host's no-ops, so a script that set it changed
+nothing. Two things about the implementation are worth knowing before touching
+it, both written up in the source. The argument is read in the **pre-D6
+numbering whatever the movie's version is**, because a Lingo integer is not a
+score cell and the reference's version-based reading makes `puppetTempo 30` a
+video wait in every D6 movie. And the release condition compares the *score's*
+effective tempo across frames, not the puppet-substituted one the reference
+records, which in the reference makes every puppet tempo exactly one frame long.
 
-**`puppetTempo` is bound inert.** §9.1 gives it precedence over the score's
-tempo until the score writes one or the effective tempo changes.
-`scenes/preview_lingo_host.gd` lists `puppettempo` among the no-ops, so a script
-that sets it changes nothing and `FrameClock` has no puppet rate to hold.
-
-**`play` and `go` suspend a handler, with three residues.** §6.1/§9.4. Both now
+**`play` and `go` suspend a handler, with two residues.** §6.1/§9.4. Both now
 capture the caller's position and resume it -- a `go` at the end of the step that
-entered the destination, a `play` at `play done`. What is left: a `tell` body
-cannot suspend; unwinding is statement-granular, so a suspend inside a compound
-expression resumes at the statement rather than mid-expression; and reaching the
-end of a score does not thaw a parked `play`.
+entered the destination, a `play` at `play done` **or at the end of the score**.
+What is left: a `tell` body cannot suspend; and unwinding is statement-granular, so
+a suspend inside a compound expression resumes at the statement rather than
+mid-expression.
 
-**The event chain is queued, and two things about it are not.** §6.3/§8.2. The
-whole chain -- primary, sprite behaviour, cast script, frame script, movie script
--- is built before any element runs (`preview/event_chain.gd`), and `pass` /
-`dontPassEvent` are honoured per element on the mouse and key chains alike. What
-is left: a right click builds its chain from the member under the pointer rather
-than latching one at the press, because "a right click latches nothing" is an
-all-or-nothing block; and a second primary element (`the mouseDownScript` after a
-`when mouseDown then`) does not get its own flag reset, which no site in either
-corpus reaches.
+The third -- *reaching the end of a score does not thaw a parked `play`* -- is
+closed. `score.cpp:462-487` pops the movie stack in the
+`nextFrameNumberToLoad >= getFramesNum()` branch of `updateCurrentFrame`, ahead of
+the wrap to frame 1, and requeues the play state on the way past; that path is the
+only thing that can wake a handler parked by an interlude which simply *ends*
+rather than saying `play done`. Without it such a `play` wrapped to frame 0, played
+the interlude again from the top, and left the caller parked for ever -- the same
+hang, from the same cause, as the one that made Piposh Dream's save screen
+unusable. `frame_loop.gd:advance` and `director_preview.gd:_return_from_play_stack`
+now do it, and `tools/play_suspends.gd` asserts it: the case is built rather than
+found, because no room in either corpus reaches the last frame of its score under a
+headless drive.
 
-**Modifier keys are read live, not latched.** §8.3. `the shiftDown`,
-`optionDown`, `commandDown` and `controlDown` ask the keyboard now rather than
-reporting the modifier word that came with the keystroke, so a script asking
-between events gets the wrong answer. `the timeoutKeyDown` is unbound.
+**The event chain is queued, and both residues are gone.** §6.3/§8.2. The whole
+chain -- primary, sprite behaviour, cast script, frame script, movie script -- is
+built before any element runs (`preview/event_chain.gd`), and `pass` /
+`dontPassEvent` are honoured per element on the mouse and key chains alike. The
+two things that were left have both landed with the mouse-model work below: a
+right click now latches its member at the press like a left one
+(`director_preview.gd:_press_click` takes the button as an argument), and the
+second primary element -- `the mouseDownScript` after a `when mouseDown then`, or
+`the keyDownScript` after a `when keyDown then` -- gets its own flag reset, so it
+no longer inherits the first element's `dontPassEvent`. No site in any of the six
+titles installs two primary handlers for one event, so the second is unexercised.
+
+**Modifier keys are latched with the event -- done.** §8.3.
+`preview/input_router.gd:note_modifiers` records the word every key event carries
+into `preview_lingo_host.gd:key_flags`, in both the down and the up arm and
+nowhere else, which is where the reference writes `_keyFlags`; `the shiftDown`,
+`optionDown`, `commandDown` and `controlDown` are four reads of that one number.
+A **modifier key now returns without dispatching**, which is the other half of
+§8.3 and which the port did not have: shift, control, alt and command recorded
+nothing and ran the whole `keyDown` chain, so `fromnow` -- installed by 46
+scripts -- fired once for the shift of every shifted character. `the
+timeoutKeyDown` is bound, stored and read back; it is **inert** until there is a
+timeout clock to feed, and §19 records it as such.
+
+Previously: the four properties asked `Input.is_key_pressed` at the moment of the
+read, which is wrong in both directions. A handler runs some milliseconds after
+the event that started it, so a chord released in the gap read as never held; and
+`Input` answers for the OS keyboard rather than for the event queue, so a
+synthesised `InputEventKey` carrying `shift_pressed` could not make
+`the shiftDown` true at all -- which is why nothing tested it.
 
 **`LingoInterpreter.reset_steps()` -- fixed.** It now has two callers, `preview/scripts.gd:dispatch` and `preview/event_chain.gd:run`. Previously: `_steps` accumulates for the
 life of a session against `MAX_STEPS`, so a long enough session eventually aborts
@@ -314,16 +436,48 @@ surface's do not, and why the same class has now bitten five times
 (`moveableSprite`, which killed dragging outright, then `editableText`,
 `constraint`, `the member of sprite`, and flip).
 
-`SPRITE_PROP` is now emitted from `director_preview.gd:_note_sprite_prop`
-against `sprite_props.gd:CONSUMED`, derived from `read_prop`'s arms and
-`effective`'s merges rather than hand-listed. **`MOVIE_PROP` and `MEMBER_PROP`
-still have no equivalent**, so a movie or member property that is stored and
-never consumed is still silent.
+**Closed.** All three emit, each from the fall-through of the thing that
+consumes that kind rather than from a list beside it -- a hand-written list is
+how this stayed invisible, because the list and the code drift.
+
+    SPRITE_PROP  director_preview.gd:_note_sprite_prop, against
+                 sprite_props.gd:consumed, itself derived from
+                 sprite_state.FIELDS and ROUTED
+    MEMBER_PROP  director_preview.gd:_note_member_prop, on
+                 lingo_set_member_prop's `_:` and on members.gd:read_prop
+                 answering VOID for a name it has no arm for
+    MOVIE_PROP   preview_lingo_host.gd:_note_movie_prop, on the fall-through
+                 of get_system_prop and of set_system_prop
+
+The member **read** half was the one still hiding when the other two landed, and
+it was the worst of the three: `read_prop` answered **0** for every name it had
+no arm for, so `the frameRate of member N` was a plausible integer rather than a
+hole and a script that branched on it took a branch. It answers VOID internally
+now; the node reports it and hands the caller the same 0, so nothing a movie
+sees moves.
+
+`tools/property_surface.gd` is the gate entry that keeps this from rotting, and
+it asserts the half a harness normally forgets: that the reports stay *quiet* for
+names the engine really does consume, and -- derived from the sources -- that
+every property write arm reaches a store something outside the setter reads.
+`tools/lingo_surface_audit.gd` scores any arm containing an `=` as live, so a
+property bound to a field nobody reads is precisely what it cannot see.
+
+Two things this does **not** close. `members.gd:read_prop`'s arms are recorded
+`live` by the surface audit without an inertness test, so a member read arm whose
+body is `return 0` reads as bound -- `the mediaBusy of member` is one, correctly,
+and there is nothing to say the next one will be. And a *read-only* movie
+property now reports on a write attempt, because this port has no read-only list
+for `the X`; that is an honest over-report rather than a wrong one, and inventing
+the list is the hand-written table this whole entry argues against.
 
 **Digital video.** §13. No decoder, no sync, no `the movieRate`.
 
-**Wait-for-video tempo.** §9. The tempo cell never holds one in this corpus,
-which is a reason to build it last and not a reason to skip it.
+**Wait-for-video tempo -- the clock half is built.** §9. The tempo cell never
+holds one in this corpus, which was a reason to build it last and not a reason to
+skip it. The clock now decodes and holds for one in both numberings and releases
+it through `FrameClock.video_probe`; what is missing is a decoder to install as
+that probe, which is the digital-video entry above and not this one.
 
 **Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
 in this corpus carries it; it currently falls through to **Copy**. It used to fall
@@ -334,42 +488,77 @@ itself is still unbuilt, deliberately: with 0 records of ink 9 anywhere in the
 corpus the polarity is undecidable, and guessing it backwards makes a sprite
 invisible rather than merely wrong.
 
-**`the clickOn` on mouse-up -- deliberately NOT implemented.** §15. Director
-updates `the clickOn` again on mouse-up when the release was over a sprite; this
-port latches it on the mouse-down and leaves it there. It was implemented once
-today and reverted the same day, because taking that rule without its other half
-is worse than taking neither.
+**`the clickOn` on mouse-up, and the recipient with it -- done, both halves.**
+§15. Director rewrites `the clickOn` on the mouse-up when the release was over a
+sprite **and** delivers the mouse-up to that same sprite
+(`lingo-events.cpp:143-148`, `kSpriteHandler`, D4+). This port had neither: the
+press latched the property and the press's channel took the message. The clause
+was taken alone once and reverted the same day, because half of it makes one
+dispatch give two answers to "which sprite is this about" and the corpus's whole
+inventory idiom is written on the two agreeing:
 
-The two halves: ScummVM resets `_lastClickedSpriteId` from the sprite under the
-release **and** delivers the mouse-up to that sprite. This port delivers to the
-sprite that took the press (`mouseUp` / `mouseUpOutSide`). With only the first
-half, one dispatch gives two answers to "which sprite is this about" -- and the
-corpus's inventory drop reads `the clickOn` inside its `mouseUp`:
+    on mouseDown   objectxx = the locH of sprite the clickOn
+    on mouseUp     ... set the locH of sprite the clickOn to objectxx
 
-    set the locH of sprite the clickOn to objectxx
+Both halves are in. `director_preview.gd:_release_click` builds the mouse-up
+chain from `_channel_at(at)` -- the same eligibility-filtered, ink-aware descent
+the press used -- and `interaction.gd:release` rewrites `click_sprite` from it
+when it answered non-zero, which is the reference's own "do not override when
+clicked on Score".
 
-All eight inventory slots carry the same behaviour, so releasing one slot along
-the bar wrote the dragged item's home coordinates onto the *neighbouring* slot.
-The item stranded mid-bar and an empty marker teleported into its place. Eleven
-near-copies of that handler exist across the corpus.
+*Why the drop still works, which is the thing the revert was about.* A dragged
+sprite is under the cursor by construction (§7.6), and **every drop target in the
+corpus is a lower channel than the slot being dragged**: `MASTER/External/
+BehaviorScript 52` and its eleven near-copies test `intersects 100` (Pip's head)
+and `intersects 17` / `9` / `7` (room hotspots), while the slots are channels
+103-110. The descent answers the highest eligible sprite, so on every drop the
+game asks for, the dragged item answers for itself and the recompute names the
+same sprite the latch used to. The two readings part company only where the
+release lands on a *higher* eligible channel -- dropping one slot's item onto
+another slot along the bar -- and there Director rewrites `the clickOn` and the
+handler sends the wrong sprite home. That is the reference's answer to a gesture
+the game does not ask for, and reproducing it is the job.
 
-Closing this properly means changing mouse-up delivery too, and that is the
-thing that took longest to get right -- see the entry above.
+*What did not move.* A release **outside** the sprite that was pressed still
+raises `mouseUpOutSide` to that sprite and no `mouseUp` at all, where the
+reference raises the `mouseUp` to whatever is under the release and defers
+`mouseUpOutSide` to the *next press*. It stays coherent under the change --
+`the clickOn` is rewritten only on the arm that dispatches `mouseUp`, so the
+sprite receiving `mouseUpOutSide` is still the one `the clickOn` names while it
+runs -- and it is the only divergence left in §8.1's triple. It is also what
+Director's own documentation describes for the message; it is ScummVM that
+defers. Closing it means moving the raise to the press and letting a cancelled
+click's `mouseUp` reach the frame script, which in this corpus means activating a
+menu button the player deliberately slid off before letting go.
 
-**A right click latches nothing.** §15. The reference's mouse-down block runs at
-the primary tier for `rightMouseDown` exactly as for `mouseDown`, and it latches
-five things together: the empty-stage beep, the hilite channel, "the press was in
-*a* button", the drag channel and grab offset for a moveable sprite, and the cast
-id / script id / immediate flag the mouse-up resolves against. `the clickOn` is
+**A right click latches all five, like a left one -- done.** §15. The reference's
+mouse-down block runs at the primary tier for `rightMouseDown` exactly as for
+`mouseDown` and latches five things together: the empty-stage beep, the hilite
+channel, "the press was in *a* button", the drag channel and grab offset for a
+moveable sprite, and the cast id the mouse-up resolves against. `the clickOn` is
 written by `rightMouseDown` and `rightMouseUp` too. `Interaction.right_button`
-does none of it and says so deliberately.
+did none of it; there is no `right_button` any more. `route_right_button` calls
+the same `_press_click` / `_release_click` the left button does with the button
+as an argument, and the block itself is `interaction.gd:latch_press` /
+`latch_release`, one function each, for both buttons.
 
-*What has to change with it.* All five, or none. Taking `the clickOn` alone gives
-a right click the power to rename the sprite a left drag is in the middle of,
-with no drag of its own to justify it — the same shape of half-a-rule that the
-`the clickOn`-on-mouse-up entry above records. 0 `rightMouseDown` or
-`rightMouseUp` handlers exist in either corpus, so this is unexercised as well as
-unfixed, and it should be built as one block when it is built.
+Two of the five did not exist for **either** button before this and landed with
+it: §15's empty-stage beep (`the beepOn`, which had been wired to gate the `beep`
+builtin instead -- the reference's `LB::b_beep` never asks, and the property's
+only reader is the empty-stage click), and the button hilite flip on mouse-up
+(§15's "makes no sense and Director does it anyway" rule). `the beepOn` is now
+**false** by default, which is the reference's and the original's; it read true
+only because that was the value that made `beep()` audible while it was gating
+the wrong thing.
+
+What stays the left button's: the wait-for-click release and the palette-cycle
+abort (§9.2, §11 -- both are about the click the player uses to get on with the
+game), and `the mouseDownScript` / `the mouseUpScript`, which Director files
+under the left events and gives the right button no property to install.
+
+0 `rightMouseDown` or `rightMouseUp` handlers exist in any of the six titles, and
+0 of the 51,350 members is of type `button`, so the right pair and the flip are
+unexercised: built because Director has them.
 
 **The hit test has no Hole.** §4.2. `isMouseIn` returns three values and
 `Interaction.channel_at` models two: a miss and an ineligible sprite both
@@ -405,12 +594,31 @@ almost nothing and the flag moves the rest, which is the shape that says the fla
 is honoured -- had it been ignored, all 636k occurrences would run their whole
 chain.
 
-**`the mouseDownScript` / `the mouseUpScript` hold a handler name, not source.**
-§6.3 tier 1. Director's value is a *string of Lingo* compiled on assignment;
-this port has no runtime compile-a-string path, so it stores a name — the same
-shortcut `the keyDownScript` has always taken, and the reason it has held is that
-every site in this corpus sets that one to a name (`fromnow`, `gomenu`). Nothing
-sets either mouse property, so the divergence is unexercised as well as unfixed.
+**The four `*Script` properties hold Lingo source -- done.** §6.3 tier 1.
+Director's value is a *string of Lingo* compiled on assignment
+(`Movie::setPrimaryEventHandler` -> `replaceCode(code, kEventScript, event)`, and
+`resolveScriptEvent` then rewrites the event to `kEventGeneric`, so what runs is
+the script's scopeless part). All four now do:
+`preview_lingo_host.gd:_compile_primary` compiles in the field's **setter**, so
+it compiles once per assignment and on every path that writes the field including
+a save restore, and `preview/event_chain.gd:run_primary_script` is the one runner
+the mouse and the keyboard share.
+
+The recorded reason for the old shortcut -- "this port has no runtime
+compile-a-string path" -- stopped being true when `do` landed;
+`LingoInterpreter.compile_statements` is `_do`'s own wrapper, factored out.
+
+**A bare identifier still resolves as a name**, and that is not a leftover. In
+Director `set the keyDownScript to "fromnow"` compiles a one-statement script
+whose statement is the no-argument call `fromnow`, so naming a handler is what
+the source form *does* with a bare word. Both forms are kept on one compiled
+record and tried in that order for two reasons that are about this port: 952
+corpus sites across the six roots are that form (`fromnow`, `gomenu`,
+`normalkeysx`) and it is the path that must not move, and a name resolving to no
+handler stays silent where a compiled bare word would report an unbound builtin
+on every single keypress -- `fromnow` sees every key in the game. A source that
+will not compile installs nothing and says so on the log, as Director does for a
+bad `do`.
 
 **Seven mouse properties read something other than what the reference reads.**
 §4.5, §15. All seven are one-line changes in `scenes/preview_lingo_host.gd`'s
@@ -499,8 +707,14 @@ hover mechanism either title uses (94 sites, 28 files, 14 titles).
 **The three rollover queries are two.** §4.5. `rollOver(n)` and `rollOver()` are
 both answered by `Interaction.rollover_channel`, which is right for the builtin
 in both forms; `the rollOver` as a **property** is a different query in Director —
-the ink-aware hit test with no eligibility filter — and is unbound here, so it
-reads VOID. 0 sites, in a corpus that writes every one of its 94 rollovers as the
+the ink-aware hit test with no eligibility filter — and is answered here by the
+*same* pure-rect descent, which is the wrong one of the two. **It is not unbound
+and it does not read VOID**, which is what this entry said and what §19's `live`
+row disagreed with; the arm is `preview_lingo_host.gd:get_system_prop`'s
+`"rollover"`, and the gap is that it is aliased to the builtin's answer rather
+than absent. A reader acting on the old wording would go looking for a binding
+that has been there all along. 0 sites, in a corpus that writes every one of its
+94 rollovers as the
 function. Two further clauses: `rollOver(n)` is measured against the **score's**
 geometry rather than the live channel's, deliberately (a menu that swaps art
 because the rollover is true feeds its own answer back into the question), so a
@@ -508,7 +722,7 @@ sprite a script has *moved* rolls over at its old rectangle; and the D4-and-belo
 `getRollOverBbox` cache — a blanked channel keeps rolling over its last non-empty
 box — is absent, which no D5+ title can reach and a D4 one would.
 
-*What has to change with it.* Binding `the rollOver` means binding it to
+*What has to change with it.* Re-binding `the rollOver` means binding it to
 `_hover_channel`-without-the-filter, which is a **third** channel this port does
 not maintain; and moving `rollOver(n)` to live geometry means moving
 `rollover_channel` with it, or `rollOver()` and `rollOver(n)` answer about

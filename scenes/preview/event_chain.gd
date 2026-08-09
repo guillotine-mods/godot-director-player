@@ -50,10 +50,18 @@ extends RefCounted
 ## `movie` distinguishes the last element from the rest: a movie script is found
 ## by handler name across every loaded cast rather than by being a particular
 ## script, so it has no `script` dictionary to carry.
+##
+## `channel` is what `the currentSpriteNum` reads while this element runs, and it
+## is on the element rather than on the chain because only **one** tier of the
+## five is a sprite behaviour. Director answers the property from the sprite whose
+## *behaviour* is executing and 0 from every other tier -- so a cast script, a
+## frame script and a movie script all read 0 during the same click that a
+## behaviour read its own channel from. Carrying it on the chain would answer the
+## behaviour's channel for all four.
 static func element(tier: String, script: Dictionary, pass_by_default: bool,
-		movie := false) -> Dictionary:
+		movie := false, channel := 0) -> Dictionary:
 	return {
-		"tier": tier, "script": script,
+		"tier": tier, "script": script, "channel": channel,
 		"pass_by_default": pass_by_default, "movie": movie,
 	}
 
@@ -77,7 +85,9 @@ static func build(host, channel: int, member: Dictionary) -> Array:
 	if channel > 0:
 		var behaviour: Dictionary = host._sprite_script(channel, host._index)
 		if not behaviour.is_empty():
-			out.append(element("sprite", behaviour, false))
+			# The one element of the five that is a sprite behaviour, so the one
+			# that `the currentSpriteNum` answers a channel for.
+			out.append(element("sprite", behaviour, false, false, channel))
 	if not member.is_empty():
 		# In the member's own library, not by number alone. A member number is
 		# per cast, so a number-only search answers with a stranger and the click
@@ -174,10 +184,23 @@ static func run(host, interpreter, handler: String, elements: Array) -> int:
 		host._tally(host._ran, "%s@%s" % [handler, str(el["tier"])])
 		ran += 1
 		var parked: int = (host._frozen_lingo as Array).size()
+		# §7.1's `the currentSpriteNum`, around the one element of the five that
+		# can be a sprite behaviour. Saved and restored rather than zeroed
+		# afterwards: the reference resets it to 0 between queued elements, which
+		# is the same answer only because a chain starts from 0, and it
+		# saves/restores around `sendSprite` -- where a behaviour messages another
+		# sprite and has to read its own channel again on the way back. One rule
+		# covers both, and the nested case is the one that would be wrong.
+		var outer := 0
+		if host._host != null:
+			outer = int(host._host.current_sprite_num)
+			host._host.current_sprite_num = int(el.get("channel", 0))
 		if is_movie:
 			interpreter.call_movie_handler(handler)
 		else:
 			interpreter.call_in_script(handler, script)
+		if host._host != null:
+			host._host.current_sprite_num = outer
 		if (host._frozen_lingo as Array).size() > parked:
 			return ran
 		if host._host != null and not bool(host._host.pass_event):

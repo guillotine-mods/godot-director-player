@@ -55,6 +55,10 @@ const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Scripts := preload("res://scenes/preview/scripts.gd")
 const EventChain := preload("res://scenes/preview/event_chain.gd")
 const Members := preload("res://scenes/preview/members.gd")
+## The digital-video and sound-member property surface (§5, and
+## `docs/ENGINE_TODO.md`'s digital-video block). Here for the *write* half of the
+## member flags; the read half reaches it through `preview/members.gd`.
+const Media := preload("res://scenes/preview/media.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
@@ -3432,6 +3436,23 @@ func lingo_set_member_prop(which: Variant, cast: String, prop: String,
 			_field_text[_field_key(int(where[0]), int(where[1]))] = \
 				LingoValue.to_str(value)
 			queue_redraw()
+		"controller", "directtostage", "video", "sound", "crop", "center", \
+		"scale", "framerate", "pausedatstart", "loop", "preload":
+			# The digital-video authoring flags, stored by `preview/media.gd` so
+			# that the write and the read consult one table. Only the flags are
+			# writable: `the duration`, `the sampleRate` and the cue points are
+			# what the media itself says, and Director does not let a script argue
+			# with them either.
+			#
+			# A write to a member that is not time-based media is **reported and
+			# dropped**, the same way the fall-through below reports one with no
+			# arm at all: `the loop of member` of a bitmap is a statement about
+			# nothing, and storing it would round-trip perfectly and mean nothing.
+			# Written out here rather than delegated, because a `match` arm cannot
+			# fall through to the default that would otherwise say this.
+			if not Media.write_member(self, where, prop, value, _table) \
+					and _interpreter != null:
+				_interpreter.report(LingoDiagnostics.MEMBER_PROP, prop)
 		"hilite":
 			# §19's 39-site gap. Its shape was this match knowing `editable` and
 			# `text` and dropping everything else, and the consumer is

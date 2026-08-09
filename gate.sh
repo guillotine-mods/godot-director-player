@@ -1,7 +1,12 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 51 entries in ALL is 49 pass / 2 fail, measured on 4.7.1 by a
-# whole-suite run at the commit this line was written:
+# which over the 51 entries in ALL was 49 pass / 2 fail, measured on 4.7.1 by a
+# whole-suite run at the commit that line was written. `property_surface` is the
+# 52nd and has not been in a whole-suite run yet; it passes on its own here, so
+# the expected set is 50 pass / 2 fail and the *measured* one is still the 49/2
+# above. Said rather than quietly incremented, because a number nobody measured
+# reads exactly like one somebody did -- which is what the paragraph four lines
+# down is about.
 #
 #   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
 #                   director_game.cfg collides with a keyCode rating tests at 48
@@ -76,7 +81,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_movie_surface lingo_system_builtins click_eligibility click_chain play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir"
+ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit media_surface lingo_movie_surface property_surface lingo_system_builtins click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir"
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
 # one place in six titles where the whole chain from `the keyDownScript` to
