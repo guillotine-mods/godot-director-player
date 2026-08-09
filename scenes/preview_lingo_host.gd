@@ -97,6 +97,54 @@ var key_char := ""
 ## has seen no key reports the age of the session, which is what it is.
 var last_key_ms := 0
 
+# --------------------------------------------- what this packaging can answer
+#
+# Five facts about the *player* rather than about the movie, each named here
+# rather than written as a bare constant in its arm. That is not decoration: a
+# read arm whose whole body is `return 0` is indistinguishable from a stub, to a
+# reader and to `tools/lingo_surface_audit.gd` alike, and every one of these is a
+# real answer that a subsystem landing later has to come back and change. Naming
+# it puts the answer and the reason in one place and leaves exactly one line to
+# edit when it stops being true.
+
+## `the quickTimePresent`, `the videoForWindowsPresent`. There is no digital
+## video in this port at all -- no member type is decoded for it, no track
+## properties are bound, and `docs/ENGINE_TODO.md` records what it would take. A
+## movie that guards its video behind either of these takes the branch that does
+## not need it, which is the branch that works.
+const HAS_DIGITAL_VIDEO := false
+
+## `the safePlayer`. TRUE only inside Shockwave's sandbox, where file access and
+## `open` are refused. This is a projector, so it is FALSE and a movie's own save
+## and load paths run.
+const SAFE_PLAYER := false
+
+## `the serialNumber`. Director read the projector's registration number. There
+## is no registration, and 0 is what an unserialised player answered.
+const SERIAL_NUMBER := 0
+
+## `ramNeeded(from, to)`. Bytes that would have to be freed to preload a frame
+## range. This port decodes members on demand and purges none of them, so there
+## is never anything to make room for. A purge model would answer here.
+const RAM_NEEDED := 0
+
+## `the movieFileFreeSize`. Bytes a save would reclaim. `director_writer.gd` lays
+## a container out fresh rather than appending, so a saved movie carries no
+## slack; a writer that appended would report it here.
+const MOVIE_FILE_SLACK := 0
+
+## `the externalParamCount` and its two accessors -- the parameters a page passes
+## to an embedded Shockwave movie, as `[[name, value], ...]`. A projector is
+## handed none, so this is empty and stays empty until something embeds this
+## player; it is a list rather than a constant 0 because a movie reads the count
+## and the entries through one another and all three have to agree.
+var external_params: Array = []
+
+## `the xtras` -- the Xtras this player has loaded. None are implemented (§7.3),
+## and the empty list is what a movie scanning for one reads.
+var xtras_loaded: Array = []
+
+
 ## `the beepOn` -- while false, `beep` is silent. D2, and one of the few movie
 ## settings whose whole observable effect is on another builtin, which is why it
 ## is bound with the thing it gates rather than stored and forgotten.
@@ -226,13 +274,18 @@ const HANDLED := [
 	"set", "alert", "halt", "quit", "pause", "continue",
 	"window", "open", "close", "forget", "savemovie",
 	"pass", "dontpassevent", "stopevent",
+	"preload", "preloadcast", "preloadmember", "preloadmovie", "clearglobals",
+	"externalparamcount", "externalparamname", "externalparamvalue",
+	"frameready", "ramneeded", "getvolumes", "version",
+	"moveablesprite", "editabletext", "immediatesprite", "spritebox",
+	"sendsprite", "sendallsprites",
 ]
 ## Answer VOID rather than nothing: these are real Director builtins this host
 ## has no state to implement, and letting them report as unbound would drown the
 ## ones that genuinely are.
 const IGNORED := [
-	"updatestage", "preloadmember",
-	"preload", "unloadmember", "unload", "nothing",
+	"updatestage",
+	"unloadmember", "unload", "nothing",
 	# `updateStage` is the one name in this list whose absence a player *can*
 	# notice, and it is here after the alternative was measured rather than
 	# assumed. Director redraws the stage inside the call and returns, so a
@@ -279,11 +332,32 @@ const IGNORED := [
 	# here too, and every one of them is bound for real below. `continue` is the
 	# one worth naming: `pause` was live and its other half was not, so a movie
 	# that paused could never be resumed and the pair had to land together.
+	# `preLoad`, `preLoadCast`, `preLoadMember`, `preLoadMovie` and
+	# `clearGlobals` were here and are bound for real below. The first four are
+	# the correction worth naming: they were recorded as deliberate no-ops on the
+	# grounds that this port loads on demand, and the loading half of that is
+	# right -- but every one of them reports what it loaded through `the result`,
+	# so a movie can observe them and the `noop` channel never applied.
 	"printfrom", "unloadmovie",
-	"clearglobals", "showglobals", "showlocals",
-	"puppettempo", "unloadcast", "preloadcast", "preloadmovie", "restart",
+	"showglobals", "showlocals",
+	"puppettempo", "unloadcast", "restart",
 	"shutdown", "abort", "installmenu", "setcallback",
 ]
+
+## `the result`, waiting for the interpreter to take it.
+##
+## A one-element Array rather than a bare Variant, because VOID is a value a
+## builtin may legitimately publish and `null` cannot mean both "nothing to
+## publish" and "publish VOID". Empty means nothing happened. The same shape and
+## the same reason as `_suspend_request` above.
+var _result_request: Array = []
+
+
+## What the last builtin left for `the result`, and clear it. `[]` for nothing.
+func take_result_request() -> Array:
+	var pending := _result_request
+	_result_request = []
+	return pending
 
 
 func owns_global(name: String) -> bool:
@@ -329,9 +403,30 @@ func park_lingo_state(chain: Array, kind: String) -> void:
 		preview.call("lingo_park_state", chain, kind)
 
 
+## Whether the last `call_builtin` reached an arm.
+##
+## `call_builtin` answers null for "no such name" -- the whole of the contract in
+## `lingo_interpreter.gd`'s header -- and that spelling cannot also say "bound,
+## and the answer is VOID". `getPref` needs the second: Director answers VOID for
+## a preference that has never been written, which is how every "first run?" test
+## in the language is written, and an empty string is a *value* a movie cannot
+## tell apart from one. So did `externalParamName` and `externalParamValue`, which
+## answer VOID past the end of the list.
+##
+## Set by `call_builtin` itself rather than kept as a list beside it, because a
+## list of "names this host binds" is a second copy of the `match` below and would
+## drift from it the first time an arm was added.
+var _answered_builtin := false
+
+
+func answered_builtin() -> bool:
+	return _answered_builtin
+
+
 func call_builtin(name: String, args: Array) -> Variant:
 	var low := name.to_lower()
 	reached[low] = int(reached.get(low, 0)) + 1
+	_answered_builtin = true
 	match low:
 		"go":
 			return _go(args)
@@ -698,8 +793,152 @@ func call_builtin(name: String, args: Array) -> Variant:
 			return _nth_file(args)
 		"getpref", "setpref":
 			return _pref(low, args)
+
+		# ------------------------------------------------------ the memory hints
+		#
+		# **They are not no-ops, and recording them as such was wrong.** Every one
+		# of these reports what it loaded through `the result` -- the reference's
+		# `b_preLoad` writes `_theResult` before it returns, and `b_preLoadCast`
+		# writes 1 -- so a movie *can* observe them, which is the whole test the
+		# `noop` channel is supposed to apply.
+		#
+		# What they do not do is change when anything loads: this port opens a
+		# container and decodes members on demand, `director_preloader.gd` walks
+		# ahead of the playhead on its own budget, and there is no purge to
+		# preempt. So the loading half is genuinely nothing and the answer is
+		# genuinely something, which is the honest shape of a 1997 memory hint on
+		# a machine with 1997's whole heap to spare.
+		"preload":
+			# With no argument, Director answers the last frame of the movie: it
+			# preloaded all of them. With one or two it answers the last frame
+			# asked for.
+			if args.is_empty():
+				_result_request = [get_system_prop("lastframe")]
+			else:
+				_result_request = [args[args.size() - 1]]
+			return 0
+		"preloadcast", "preloadmember", "preloadmovie":
+			_result_request = [args[args.size() - 1] if not args.is_empty() else 1]
+			return 0
+		"clearglobals":
+			# Every global back to VOID. Director's own reset, and the one thing
+			# in this group that is not a hint: a movie that calls it and then
+			# reads a global must see nothing there.
+			#
+			# **Two tables, and clearing one is clearing none.** The globals a
+			# script reads and writes are the *interpreter's*; this host keeps a
+			# second one for the names it aliases onto engine state, and
+			# `lingo_interpreter.gd:_read_var` consults the host's first. A movie
+			# that asked for a clean slate and got half of one would read its old
+			# values back out of whichever table was missed.
+			globals.clear()
+			if preview != null and preview._interpreter != null:
+				preview._interpreter.globals.clear()
+			return 0
+
+		# --------------------------------------------------- the projector's own
+		#
+		# Questions with a real answer here rather than a stub. A Shockwave movie
+		# is handed parameters by the page that embeds it and a projector is not,
+		# so the empty answers below are Director's answers for the packaging this
+		# port is -- and a movie that loops over them takes the branch that does
+		# not need them.
+		"externalparamcount":
+			return external_params.size()
+		"externalparamname", "externalparamvalue":
+			# Director indexes them from 1 and answers VOID past the end, which is
+			# how a movie loops over them without knowing the count.
+			var which := LingoValue.to_int(args[0]) if not args.is_empty() else 0
+			if which < 1 or which > external_params.size():
+				return null
+			var pair: Array = external_params[which - 1]
+			return pair[0] if low.ends_with("name") else pair[1]
+		"frameready":
+			# "Is every member the frame needs in memory?" This port decodes on
+			# demand and blocks until it has what it draws, so by the time a
+			# script can ask, the answer is yes. TRUE is the truth and not a
+			# placeholder; the movies that poll this poll it in a `repeat` and
+			# would otherwise never leave it.
+			return 1
+		"ramneeded":
+			return RAM_NEEDED
+		"getvolumes":
+			# The mounted volumes, by name. Piposh 1 scans for its CD by writing
+			# drive letters into `the searchPath` one at a time (see `search_path`
+			# above); this is the other way Director offered to ask, and it
+			# answers the same machine.
+			var volumes: Array = []
+			for i in DirAccess.get_drive_count():
+				var drive := DirAccess.get_drive_name(i)
+				if drive != "":
+					volumes.append(drive)
+			return volumes
+		"version":
+			# `version` with no arguments -- D3's spelling, before `the
+			# productVersion` existed. The reference builds "major.minor" from the
+			# engine's version number and this port runs D6 containers.
+			return "6.0"
+
+		# ------------------------------------------------- D2's sprite commands
+		#
+		# `moveableSprite 5, TRUE` is `set the moveableSprite of sprite 5 to TRUE`
+		# written the way D2 wrote it, and the same for the other three. They are
+		# routed to the property rather than reimplemented, which is the whole
+		# reason they are cheap: one spelling reaching one setter cannot drift
+		# from the other spelling reaching the same setter.
+		"moveablesprite", "editabletext", "immediatesprite":
+			if args.size() >= 2:
+				set_sprite_prop(LingoValue.to_int(args[0]), low, args[1])
+			return 0
+		"spritebox":
+			# `spriteBox n, left, top, right, bottom` -- D2's resize-and-move, and
+			# the only command in the language that writes a sprite's rectangle.
+			# Split onto the four properties Director derives that rectangle from,
+			# so the constraint and the auto-puppet rules apply exactly once, in
+			# the place they already apply.
+			if args.size() >= 5:
+				var channel := LingoValue.to_int(args[0])
+				var l := LingoValue.to_int(args[1])
+				var t := LingoValue.to_int(args[2])
+				var r := LingoValue.to_int(args[3])
+				var b := LingoValue.to_int(args[4])
+				set_sprite_prop(channel, "width", r - l)
+				set_sprite_prop(channel, "height", b - t)
+				# The registration point is the *centre* of the box Director sets
+				# here, because `spriteBox` describes the drawn rectangle and
+				# `locH`/`locV` describe the registration point (§8.10).
+				set_sprite_prop(channel, "loch", l + int((r - l) / 2.0))
+				set_sprite_prop(channel, "locv", t + int((b - t) / 2.0))
+			return 0
+
+		# -------------------------------------------------- messages to a sprite
+		#
+		# `sendSprite(5, #mouseUp)` and `sendAllSprites(#prepareFrame)`. Director
+		# sends the message to the sprite's behaviour rather than to whatever the
+		# event chain would have chosen, so this reaches the same resolver the
+		# frame's own dispatch uses and no further -- there is no movie fallback
+		# on this path, because the caller named the recipient.
+		"sendsprite", "sendallsprites":
+			if preview == null or args.is_empty():
+				return 0
+			var handler := LingoValue.to_str(
+				args[1] if low == "sendsprite" and args.size() > 1 else args[0])
+			var channels: Array = []
+			if low == "sendsprite":
+				channels.append(LingoValue.to_int(args[0]))
+			else:
+				for sprite in preview.frame_sprites():
+					channels.append(int((sprite as Dictionary)["channel"]))
+			var frame_index: int = preview.current_frame() - 1
+			for channel in channels:
+				var script: Dictionary = preview.call(
+					"_sprite_script", int(channel), frame_index)
+				if not script.is_empty():
+					preview.call("_dispatch", handler, script)
+			return 0
 	if IGNORED.has(low):
 		return 0
+	_answered_builtin = false
 	unbound[low] = int(unbound.get(low, 0)) + 1
 	return null
 
@@ -1417,7 +1656,193 @@ func get_system_prop(prop: String) -> Variant:
 			# indistinguishable from the window code not working. Same value the
 			# other renderer's host has answered all along (`lingo_host.gd`).
 			return 16 * 1024 * 1024
+
+		# ------------------------------------------------- the score, as a movie
+		#
+		# Director exposes the main channel of the frame the playhead is on as
+		# eight ordinary properties, and a movie reads them to find out what the
+		# author put there without having to be that frame's script. Every one is
+		# already decoded -- `director_score.gd`'s frame snapshot carries the
+		# script member, the tempo cell, the palette, the transition and the two
+		# sound channels, and `director_labels.gd` carries the markers -- so these
+		# are a spelling for facts this port has had all along and nothing could
+		# ask for.
+		#
+		# Read-only here. Director makes the frame properties writable during a
+		# **score recording session** (D5+), and this port has no score recording;
+		# the write half is recorded in `docs/ENGINE_TODO.md` with what it needs.
+		"lastframe":
+			return preview._score.frame_count if preview._score != null else 0
+		"framelabel":
+			# The marker on *this* frame, and "" when the frame carries none --
+			# not the marker in force, which is what `marker(0)` answers. Director
+			# distinguishes them and a script that tests `the frameLabel = "x"`
+			# to decide it has arrived depends on the distinction.
+			return _label_on_frame(preview.current_frame())
+		"labellist":
+			# Every marker name in score order, one per line. Director separates
+			# them with CR and this port normalises CR to LF everywhere a Lingo
+			# string is split (`LingoValue.split_lines`), so `line N of the
+			# labelList` reads the same either way.
+			var names := PackedStringArray()
+			if preview._labels != null:
+				for marker in preview._labels.markers:
+					var label := str((marker as Dictionary).get("name", ""))
+					if label != "":
+						names.append(label)
+			return "\n".join(names)
+		"framescript", "frametempo", "framepalette", "frametransition", \
+		"framesound1", "framesound2":
+			return _frame_channel(prop.to_lower())
+
+		# ------------------------------------------------- what the host can see
+		#
+		# Facts the engine already holds and had no spelling for. Each is a read
+		# of live state rather than a stored setting, which is the difference
+		# between this group and the one below it.
+		"rollover":
+			# **The no-argument form.** `rollOver(n)` is a different function --
+			# "is the mouse over channel n" -- and is a builtin; this is "which
+			# channel is the mouse over", 0 for none. §8.15 records that the two
+			# spellings are separate functions and this is the half that was
+			# missing.
+			return preview.lingo_rollover_channel()
+		"selection":
+			# The text currently selected in whichever field holds focus. `the
+			# selStart` and `the selEnd` are the same range as two numbers and
+			# were already bound; this is the string between them, which is what
+			# a script copying what the player typed reads.
+			return preview.lingo_selection()
+		"keypressed":
+			# The character of the key that is **down now**, "" when none is.
+			# Distinct from `the key`, which is the last key pressed and outlives
+			# the release: `the keyPressed` is how a repeat loop polls, and
+			# reading `the key` for it never ends.
+			return key_char if Input.is_anything_pressed() and key_char != "" else ""
+		"moviefilesize":
+			return preview.movie_file_size()
+		"moviefilefreesize":
+			return MOVIE_FILE_SLACK
+		"desktoprectlist":
+			# One rect per screen, in Director's [left, top, right, bottom] list
+			# of lists. Read from the display server, so a two-monitor machine
+			# answers two entries.
+			var screens: Array = []
+			for i in DisplayServer.get_screen_count():
+				var box := DisplayServer.screen_get_usable_rect(i)
+				screens.append([int(box.position.x), int(box.position.y),
+					int(box.end.x), int(box.end.y)])
+			return screens
+
+		# ------------------------------------------- what the machine can answer
+		#
+		# 1997 capability probes. Every one of these is a real question with a
+		# real answer here, and the answer is the honest one rather than the
+		# flattering one: this port has no QuickTime and no Video for Windows, so
+		# a movie that guards its digital video behind either takes the branch
+		# that does not need it -- which is the branch that works.
+		"quicktimepresent", "videoforwindowspresent":
+			return 1 if HAS_DIGITAL_VIDEO else 0
+		"romanlingo":
+			# Whether Lingo's string functions work a byte at a time rather than
+			# in a double-byte script. They do here: `director_codepage.gd` maps a
+			# single-byte codepage onto Unicode, so `char 3 of` is a byte and
+			# TRUE is the truth.
+			return 1
+		"productname":
+			return "Director Player"
+		"productversion":
+			# What the movies were authored against, which is what a version test
+			# in a 1997 script is asking. `the fileVersion` of every container in
+			# both corpora is D6.
+			return "6.0"
+		"username", "organizationname":
+			# Director read these from the projector's own registration. There is
+			# none, and "" is what an unregistered player answered.
+			return ""
+		"serialnumber":
+			return SERIAL_NUMBER
+		"xtras":
+			# The Xtras this player has loaded, as a list. None: no Xtra is
+			# implemented (§7.3), so the honest answer is the empty list and a
+			# script scanning it for one finds it absent rather than crashing.
+			return xtras_loaded
+		"safeplayer":
+			# Shockwave's sandbox. A projector is not sandboxed and answers FALSE,
+			# which is what lets a movie's file and `open` paths run at all.
+			return 1 if SAFE_PLAYER else 0
+
+		# ----------------------------------------------------- settings, honored
+		#
+		# Stored *and consulted*, which is the only kind of setting worth binding.
+		# `the moveableSprite of sprite` round-tripped perfectly for years and
+		# moved nothing, and a movie property stored on this host and read by
+		# nobody is the same shape one level up. The rest of Director's settings
+		# -- `the buttonStyle`, `the checkBoxType`, `the searchCurrentFolder`, the
+		# preload and CPU budgets -- are deliberately *not* bound here for exactly
+		# that reason; each is recorded in `docs/ENGINE_TODO.md` with the consumer
+		# it is waiting for.
+		"trace":
+			# Director's statement trace. Honoured by `lingo/lingo_interpreter.gd`,
+			# which writes one line per statement into the diagnostics while it is
+			# on -- the thing this port has otherwise had to be rebuilt by hand
+			# with `print` every time a handler did something unexpected.
+			return 1 if LingoDiagnostics.trace else 0
+		"tracelogfile":
+			# Where that trace goes. "" is Director's own default and means the
+			# message window, which here is the diagnostics buffer; a path sends
+			# it to a file as well.
+			return LingoDiagnostics.trace_log_file
 	return null
+
+
+## The marker named on exactly this frame, or "".
+##
+## `the frameLabel` is not `marker(0)`: the second answers the label in force,
+## walking back to the last marker at or before the playhead, and the first is
+## empty on every frame that does not carry one of its own.
+func _label_on_frame(frame: int) -> String:
+	if preview == null or preview._labels == null:
+		return ""
+	for marker in preview._labels.markers:
+		var row: Dictionary = marker
+		# The port's markers are 0-based and `the frame` is 1-based.
+		if int(row.get("frame", -1)) + 1 == frame:
+			return str(row.get("name", ""))
+	return ""
+
+
+## The main channel of the frame the playhead is on, by Lingo's own spelling.
+##
+## Answers a *member number* where Director answers one, and 0 for a frame that
+## carries nothing in that cell -- which is what an unset main-channel cell is,
+## and is distinguishable from member 0 because there is no member 0.
+func _frame_channel(prop: String) -> Variant:
+	if preview == null or preview._score == null:
+		return 0
+	var record: Dictionary = preview._score.frame(preview.current_frame() - 1)
+	match prop:
+		"framescript":
+			var script_member: Variant = record.get("frame_script", null)
+			return int(script_member) if script_member != null else 0
+		"frametempo":
+			# The cell as authored. Director reports the tempo the frame *sets*,
+			# so a frame that sets none reports 0 rather than the rate in force --
+			# the same distinction `the frameLabel` makes above.
+			return int(record.get("tempo", 0))
+		"framepalette":
+			var palette: Dictionary = record.get("palette", {})
+			return int(palette.get("member", 0))
+		"frametransition":
+			return int(record.get("transition_member", 0))
+		"framesound1", "framesound2":
+			var want := 1 if prop.ends_with("1") else 2
+			for entry in (record.get("sound_channels", []) as Array):
+				var row: Dictionary = entry
+				if int(row.get("channel", 0)) == want:
+					return int(row.get("cast_id", 0))
+			return 0
+	return 0
 
 
 ## Milliseconds ago, in Director's ticks — 60ths of a second, the unit every
@@ -1511,6 +1936,22 @@ func set_system_prop(prop: String, value: Variant) -> void:
 			# setting it, none reading it back. What it *does* is refuse the window
 			# manager's quit; `director_preview.gd:_notification` is the consumer.
 			exit_lock = LingoValue.to_int(value) != 0
+		"trace":
+			# Director's statement trace, on and off from inside the movie. The
+			# consumer is `lingo_interpreter.gd:_exec`, which is the only place
+			# that can see a statement about to run.
+			LingoDiagnostics.trace = LingoValue.to_int(value) != 0
+		"tracelogfile":
+			# Where the trace goes as well as the console. `user://` rather than
+			# beside the projector, for the reason `PREFS_DIR` gives: Director's
+			# own location is not writable on a modern machine, and a movie that
+			# names a bare filename means "somewhere I can write".
+			var where := LingoValue.to_str(value).strip_edges()
+			if where == "":
+				LingoDiagnostics.trace_log_file = ""
+			else:
+				LingoDiagnostics.trace_log_file = "user://" \
+					+ where.replace("\\", "/").get_file()
 		"centerstage", "windowtype", "modal", "title", "titlevisible", \
 		"rect", "drawrect", "filename":
 			# `tell window("map.dxr") / set the centerStage to 1 / end tell` — the

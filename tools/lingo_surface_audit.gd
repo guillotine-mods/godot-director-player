@@ -107,6 +107,7 @@ const TODO := "res://docs/ENGINE_TODO.md"
 const REF_BUILTINS := "res://reference/scummvm/lingo-builtins.cpp"
 const REF_THE := "res://reference/scummvm/lingo-the.cpp"
 const HOST_SRC := "res://scenes/preview_lingo_host.gd"
+const INTERPRETER_SRC := "res://lingo/lingo_interpreter.gd"
 const PREVIEW_SRC := "res://scenes/director_preview.gd"
 const MEMBERS_SRC := "res://scenes/preview/members.gd"
 ## The channel model, read as data. It replaced the source-text scrape of
@@ -727,7 +728,13 @@ func _bound() -> Dictionary:
 		var answered: Variant = probe.call_builtin(str(name), [])
 		var body: String = str(arms[name])
 		var inert := _arm_is_inert(body)
-		state[_key("builtin", str(name))] = ABSENT if answered == null \
+		# A null answer means "no such arm" only for an arm that never returns.
+		# `getPref` answers VOID by design -- that is how Director says "this
+		# preference has never been written", and every "first run?" test in the
+		# language reads it -- so the probe alone reported the one arm whose
+		# correct answer is nothing as the one arm that is not there.
+		var absent := answered == null and not body.contains("return")
+		state[_key("builtin", str(name))] = ABSENT if absent \
 			else (INERT if inert else LIVE)
 		detail[_key("builtin", str(name))] = "host arm" + ("  (no effect)" if inert else "")
 	for name in ignored:
@@ -737,6 +744,26 @@ func _bound() -> Dictionary:
 		var answered: Variant = probe.call_builtin(str(name), [])
 		state[key] = ABSENT if answered == null else INERT
 		detail[key] = "host IGNORED"
+
+	# --- builtins the interpreter answers before either -----------------------
+	#
+	# Two names, and both have to be there rather than on the host: `param(n)` is
+	# a question about the *running call frame*, which the host is one frame
+	# further out from and would answer wrongly rather than not at all, and
+	# `clearGlobals` has to reach the dictionary the globals actually live in.
+	#
+	# Read out of `_call`'s own guards for the reason the sprite route below is:
+	# the dispatch has stages, and a stage that answers is a binding wherever it
+	# sits. A scan that knows only about the host reports a name it never sees as
+	# `absent`, which is the same false verdict in the other direction from the
+	# one this file exists to catch.
+	for name in _guarded_names(
+			FileAccess.get_file_as_string(INTERPRETER_SRC), "func _call", "const Builtins"):
+		var key := _key("builtin", str(name))
+		if state.get(key, ABSENT) == LIVE:
+			continue
+		state[key] = LIVE
+		detail[key] = "lingo_interpreter.gd, before the module and the host"
 
 	# --- builtins answered by the title-agnostic module ---------------------
 	#
@@ -793,6 +820,28 @@ func _bound() -> Dictionary:
 		# back is one a script cannot round-trip.
 		state[key] = INERT if _arm_is_inert(str(writes[name])) else LIVE
 		detail[key] = "write only"
+	# A system property the *interpreter* answers before the host ever sees it.
+	# `the itemDelimiter` is the whole of it and has to be there: it is the one
+	# movie property `line`, `item`, `word` and `char` all consult, and the
+	# interpreter is where those live -- routing it out to the host and back would
+	# put the setting one object away from every consumer of it.
+	#
+	# Read from the source for the same reason as the sprite route above. This was
+	# reported `absent` while it read, wrote and was consumed by three chunk
+	# functions.
+	var interp_src := FileAccess.get_file_as_string(INTERPRETER_SRC)
+	for spec in [
+		[_guarded_names(interp_src, "func _assign", "func _assign_chunk"), "interpreter, write"],
+		[_guarded_names(interp_src, "func _eval", "func _binary"), "interpreter, read"],
+	]:
+		var pair: Array = spec
+		var routed: Dictionary = pair[0]
+		for name in routed:
+			var key := _key("system", str(name))
+			if state.get(key, "") == LIVE:
+				continue
+			state[key] = INERT if _arm_is_inert(str(routed[name])) else LIVE
+			detail[key] = str(pair[1])
 
 	# --- sprite properties ---------------------------------------------------
 	#
@@ -805,6 +854,37 @@ func _bound() -> Dictionary:
 	# setter.
 	var sprite_reads := _sprite_read_only()
 	var consumed := _consumed_keys()
+	# **A property read is a chain, and any stage of it may answer and stop.**
+	#
+	#   interpreter -> host.get_sprite_prop -> preview.lingo_sprite_prop
+	#                                       -> sprite_props.gd -> the override table
+	#
+	# `_consumed_keys` audits the *last* stage only, so a name answered by one of
+	# the earlier ones never reaches the override table at all -- and was being
+	# reported "stored in _overrides, consumed by nothing", which is this file's
+	# own second-worst verdict, delivered against six properties that work.
+	#
+	# §19 says so itself, in the `the loc of sprite` row: "still counts this row
+	# as a gap ... so the count above is one higher than the truth". It was six
+	# rather than one: `loc` is composed and split on the node, and `rect`,
+	# `left`, `top`, `right` and `bottom` are answered from the sprite's real
+	# rectangle in the host, whose write half refuses them because Director makes
+	# them read-only.
+	#
+	# Checked by hand before it was believed, which is the rule the reverse
+	# mistake earns: `the visible of sprite` was reported claimed-and-inert at
+	# 12,548 sites by a slicing bug, and a wrong verdict a session learns to
+	# discount is worse than no verdict.
+	for spec in _routed_before_the_table():
+		var pair: Array = spec
+		var routed: Dictionary = pair[1]
+		for name in routed:
+			var key := _key("sprite", str(name))
+			var inert := _arm_is_inert(str(routed[name]))
+			if state.get(key, "") == LIVE:
+				continue
+			state[key] = INERT if inert else LIVE
+			detail[key] = str(pair[0]) + ("  (no effect)" if inert else "")
 	for name in consumed:
 		var key := _key("sprite", str(name))
 		state[key] = LIVE
@@ -908,6 +988,71 @@ func _bound() -> Dictionary:
 			state[key] = ABSENT
 			detail[key] = "arm present, read falls through"
 	preview.queue_free()
+	return out
+
+
+## The stages of the sprite-property route that answer *before* the override
+## table, as `[where it lives, name -> the body that answers]`.
+##
+## Read out of the sources rather than listed here, for the reason the whole file
+## exists: a hand-written list of "names that are really fine" is a suppression
+## list, and this has to keep failing if one of these stops answering.
+##
+## Both shapes count. The host answers `rect` and its four edges with a `match`
+## arm; the node answers `loc`, `cursor`, `locH` and `locV` with an early
+## `if prop == "..."` guard and a `return`, which is the same thing spelled the
+## way a hot path is spelled.
+func _routed_before_the_table() -> Array:
+	var host_src := FileAccess.get_file_as_string(HOST_SRC)
+	var preview_src := FileAccess.get_file_as_string(PREVIEW_SRC)
+	return [
+		["preview_lingo_host.gd, before the node",
+			_match_arms(host_src, "func get_sprite_prop", "## The five derived")],
+		["director_preview.gd, before sprite_props.gd",
+			_guarded_names(preview_src, "func lingo_sprite_prop", "func lingo_sprite_constraint")],
+		["director_preview.gd, before sprite_props.gd",
+			_guarded_names(preview_src, "func lingo_set_sprite_prop",
+				"## A sprite property nothing in this port consumes")],
+	]
+
+
+## Names a function answers with an early `if <x> == "name":` guard rather than
+## with a `match` arm, as `name -> the guarded block`.
+##
+## A guard and an arm are the same statement to a caller, and this file's job is
+## to see what a caller sees. The body is taken as the lines that follow at a
+## deeper indent, which is what `_arm_is_inert` needs and no more.
+func _guarded_names(source: String, from: String, to: String) -> Dictionary:
+	var out: Dictionary = {}
+	var start := source.find(from)
+	if start < 0:
+		return out
+	var end := source.find(to, start)
+	var body := source.substr(start, (end - start) if end > start else -1)
+	var guard := RegEx.new()
+	# `if prop == "loc":` and `if prop == "loch" or prop == "locv":` alike. The
+	# left-hand name is not pinned to `prop`, because the same shape is written
+	# with `low` and with `which` elsewhere in this tree.
+	guard.compile("(?m)^(\\s*)if\\s+[a-z_]+\\s*==\\s*\"[^\"]+\"(?:[^\\n:]*)?:")
+	var literal := RegEx.new()
+	literal.compile("\"([^\"]+)\"")
+	var lines := body.split("\n")
+	for i in lines.size():
+		var hit := guard.search(str(lines[i]))
+		if hit == null:
+			continue
+		var indent := hit.get_string(1).length()
+		var collected := ""
+		for j in range(i + 1, lines.size()):
+			var line := str(lines[j])
+			if line.strip_edges() == "":
+				continue
+			var depth := line.length() - line.lstrip("\t ").length()
+			if depth <= indent:
+				break
+			collected += line.strip_edges() + "\n"
+		for name in literal.search_all(str(lines[i])):
+			out[name.get_string(1).to_lower()] = collected
 	return out
 
 

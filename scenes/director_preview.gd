@@ -3343,6 +3343,38 @@ func lingo_sel_end() -> int:
 	return int(TextFocus.selection(self)[1])
 
 
+## `the selection` — the text between `the selStart` and `the selEnd`, in
+## whichever field holds focus.
+##
+## The same range the two numbers above describe, read out as a string. A movie
+## that wants what the player highlighted has no other way to ask: `the selStart`
+## and `the selEnd` are offsets into a field the script would otherwise have to
+## work out for itself, and the field that has focus is the engine's answer.
+func lingo_selection() -> String:
+	var text := TextFocus.focused_text(self)
+	var range_of := TextFocus.selection(self)
+	var start := int(range_of[0])
+	var stop := int(range_of[1])
+	if start < 0 or start >= text.length() or stop <= start:
+		return ""
+	return text.substr(start, mini(stop, text.length()) - start)
+
+
+## `the movieFileSize` — the size on disk of the container now playing, in bytes.
+##
+## Read from the file rather than remembered from the load, because a movie this
+## session has saved over itself is a different size than the one it opened.
+func movie_file_size() -> int:
+	if _movie == null:
+		return 0
+	var f := FileAccess.open(str(_movie.path), FileAccess.READ)
+	if f == null:
+		return 0
+	var size := int(f.get_length())
+	f.close()
+	return size
+
+
 func lingo_set_sel(prop: String, value: int) -> void:
 	if prop == "selstart":
 		TextFocus.set_selection(self, value, maxi(value, _sel_end))

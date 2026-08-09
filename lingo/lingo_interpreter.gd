@@ -51,6 +51,23 @@ var _movie_handlers: Dictionary = {}
 var _scripts: Dictionary = {}
 var _steps: int = 0
 var _return_value: Variant = null
+## `the result` -- the value the most recent handler call returned.
+##
+## Written only when the call was made as a **command**, and only when what came
+## back is not VOID: `lingo-code.cpp`'s frame pop stores the dropped return value
+## and skips a VOID one, so a handler that returns nothing leaves the previous
+## answer standing. That is why a script may call three handlers and then read
+## `the result` for the one of them that answered.
+##
+## A handful of builtins write it instead of returning -- `preLoad` and
+## `preLoadCast` report the last item they loaded through it -- and those arrive
+## from the host through `take_result_request`.
+var _result: Variant = null
+## The arguments the running handler was called with, for `param(n)` and `the
+## paramCount`. Saved and restored around a nested call by `_invoke`, like the
+## script and handler names beside it: a callee must not leave its caller
+## reporting the callee's argument list.
+var _current_args: Array = []
 var _depth: int = 0
 ## Where execution is, for locating a diagnostic. Statement granularity: the
 ## line of the statement being run, not of the expression inside it.
@@ -307,6 +324,8 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 		"script": script,
 		"globals": {},
 	}
+	var outer_args := _current_args
+	_current_args = args
 	var params: Array = handler.get("params", [])
 	for i in params.size():
 		frame["locals"][str(params[i]).to_lower()] = args[i] if i < args.size() else 0
@@ -327,9 +346,14 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 	_script_name = outer_script
 	_handler_name = outer_handler
 	_current_handler = outer_body
+	_current_args = outer_args
 	_line = outer_line
 	_depth -= 1
 	if flow == Flow.RETURN:
+		# `the result`, and the VOID guard is the reference's: a handler that
+		# returns nothing does not clear what the last one that answered left.
+		if _return_value != null:
+			_result = _return_value
 		return _return_value
 	return null
 
@@ -754,6 +778,12 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 		_fail("step budget exhausted")
 		return Flow.ABORT
 	_line = int(stmt.get("line", _line))
+	# `the trace`. One boolean test per statement while it is off, which is what
+	# lets the switch exist at all -- Director's own trace is a movie property and
+	# a script may turn it on for one handler and off again.
+	if LingoDiagnostics.trace:
+		LingoDiagnostics.trace_line("== %s: %s (%d) %s"
+			% [_script_name, _handler_name, _line, str(stmt.get("node", "?"))])
 	match str(stmt.get("node", "")):
 		"global", "property":
 			for name in stmt.get("names", []):
@@ -925,6 +955,13 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			var prop := str(target.get("prop", "")).to_lower()
 			if prop == "itemdelimiter":
 				item_delimiter = LingoValue.to_str(value)
+				return
+			# `the result` and `the paramCount` are read-only in Director -- the
+			# first is written by returning from a handler and the second by
+			# calling one -- so a write is dropped here rather than passed to the
+			# host, where it would land in a system-property table that accepts
+			# any name and make the property look settable.
+			if prop == "result" or prop == "paramcount":
 				return
 			_host_call("set_system_prop", [prop, value])
 		"sound_prop":
@@ -1130,8 +1167,16 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			return _host_call("get_system_prop", [window_prop])
 		"prop":
 			var prop := str(expr.get("prop", "")).to_lower()
+			# Three movie properties the interpreter owns outright, because the
+			# thing that answers them is a call frame or a chunk separator and
+			# both live here. Routing them out to the host and back would put the
+			# state one object away from every consumer of it.
 			if prop == "itemdelimiter":
 				return item_delimiter
+			if prop == "result":
+				return _result
+			if prop == "paramcount":
+				return _current_args.size()
 			return _host_call("get_system_prop", [prop])
 		"prop_of":
 			var owner: Dictionary = expr.get("target", {})
@@ -1258,6 +1303,12 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	var handled: Variant = _host_call("call_builtin", [key, []])
 	if handled != null:
 		return handled
+	# A bare word is how Lingo spells a no-argument builtin, so the VOID-answering
+	# case reaches here too -- `x = getPref` is not legal, but `clearGlobals` and
+	# `version` are written exactly this way and one of the host's arms answers
+	# nothing on purpose.
+	if _host_answered_builtin():
+		return null
 	# Unknown identifiers are VOID, which concatenates as "" and counts as 0.
 	report(
 		LingoDiagnostics.UNSET_VARIABLE if _handler_assigns(key) else LingoDiagnostics.UNBOUND_NAME,
@@ -1375,6 +1426,24 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	var script: Dictionary = frame.get("script", {})
 	if _script_has_handler(script, name) or has_handler(name):
 		return call_handler(name, args, script)
+	# `param(n)` -- the nth argument the *running* handler was called with, which
+	# neither of the two dispatch targets below can answer. `lingo_builtins.gd` is
+	# engine-free by definition and this is a call frame; the host is one frame
+	# further out and would answer for the wrong handler. Placed after the user
+	# handler for the same reason everything else is: a script may shadow it.
+	#
+	# The reference reads the *named* parameter first and falls back to the
+	# unnamed list, so `param(1)` inside a handler that has assigned its first
+	# argument answers the assigned value rather than what was passed. That
+	# distinction is kept: the locals hold the named ones.
+	if name == "param":
+		var which := LingoValue.to_int(args[0]) if args.size() > 0 else 0
+		if which < 1:
+			return null
+		var params: Array = (_current_handler.get("params", []) as Array)
+		if which <= params.size():
+			return _read_var(str(params[which - 1]), frame)
+		return _current_args[which - 1] if which <= _current_args.size() else null
 	# The engine-free builtins — math, strings, lists, geometry, predicates.
 	# Offered after a user handler, because Director lets a script shadow a
 	# builtin, and before the host, because the host is where a title's own
@@ -1386,10 +1455,30 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 		return pure
 	var result: Variant = _host_call("call_builtin", [name, args])
 	if result == null and name != "":
-		# The host binds no builtin by this name. Distinguishable from one that
-		# answers VOID, because every bound branch returns a value.
+		# **A bound builtin whose answer is VOID.** `call_builtin` says "no such
+		# name" by answering null, which is the contract in this file's header,
+		# and that spelling cannot also say "bound, and the answer is nothing".
+		# Three builtins need the second and each was broken by the first:
+		# `getPref` answers VOID for a preference never written -- how every
+		# "first run?" test in Lingo is spelled -- and `externalParamName` and
+		# `externalParamValue` answer VOID past the end of the list, which is how
+		# a movie knows the loop is over. All three came back as 0 *and* reported
+		# themselves missing.
+		if _host_answered_builtin():
+			return null
 		report(LingoDiagnostics.BUILTIN, name)
 	return result if result != null else 0
+
+
+## Whether the host reached an arm for the builtin it was just asked for.
+##
+## Optional, like every other method on the host contract: a host without it is
+## taken at its word, which is the behaviour every caller had before this
+## existed.
+func _host_answered_builtin() -> bool:
+	if host == null or not host.has_method("answered_builtin"):
+		return false
+	return bool(host.answered_builtin())
 
 
 ## Preloaded rather than reached by its `class_name`: a headless `--script` run
@@ -1424,6 +1513,15 @@ func _host_call(method: String, args: Array) -> Variant:
 	# and four of them to forget.
 	if method == "call_builtin":
 		_take_suspend_request()
+		# `the result` is the interpreter's and a few builtins write it instead of
+		# returning -- `preLoad` and `preLoadCast` report the last item they
+		# loaded through it (`lingo-builtins.cpp`). The host has no interpreter to
+		# write to, so it leaves the value behind and this takes it, exactly the
+		# way the suspend request above travels.
+		if host.has_method("take_result_request"):
+			var pending: Array = host.take_result_request()
+			if not pending.is_empty():
+				_result = pending[0]
 	return value
 
 

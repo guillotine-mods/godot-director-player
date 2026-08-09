@@ -26,6 +26,47 @@ const UNSET_VARIABLE := "unset_variable"
 ## A runaway script must not turn the sink into the leak it exists to find.
 const MAX_ENTRIES := 2000
 
+## `the trace` -- Director's own statement trace, off by default.
+##
+## Static and session-wide, like `LingoValue.float_precision` and for the same
+## reason: it is one setting for the whole movie in Director too, and the thing
+## that has to read it is `lingo_interpreter.gd:_exec`, which runs hundreds of
+## thousands of times a session and cannot afford to ask a host for it.
+##
+## **What it prints is one line per statement**, with the script, the handler and
+## the line number the interpreter is already tracking for its diagnostics. Every
+## session that has had to work out why a handler did something unexpected in
+## this port has done it by adding a `print` and taking it out again; this is the
+## switch Director shipped for that, and it costs a boolean test per statement
+## while it is off.
+static var trace := false
+## `the traceLogFile` -- where the trace goes as well as the console. "" is
+## Director's default and means the message window alone.
+static var trace_log_file := ""
+## Appended to, not rewritten, because Director's own log accumulates across the
+## session and a trace that truncates on every write is one line long.
+static var _trace_file: FileAccess = null
+
+
+## One traced statement. Called from the interpreter's hot loop, so the `trace`
+## test is the caller's and this is only reached when tracing is on.
+static func trace_line(text: String) -> void:
+	print(text)
+	if trace_log_file == "":
+		if _trace_file != null:
+			_trace_file = null
+		return
+	if _trace_file == null or _trace_file.get_path() != trace_log_file:
+		_trace_file = FileAccess.open(trace_log_file, FileAccess.WRITE)
+		if _trace_file == null:
+			# A path the player cannot write is not a reason to stop the movie.
+			# Director drops the file half and keeps the message window.
+			trace_log_file = ""
+			return
+		_trace_file.seek_end()
+	_trace_file.store_line(text)
+	_trace_file.flush()
+
 ## identity -> {category, name, script, handler, line, count}
 var _entries: Dictionary = {}
 ## How many entries the cap refused, so a truncated set says so.
