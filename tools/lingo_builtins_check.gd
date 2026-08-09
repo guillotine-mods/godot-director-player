@@ -23,6 +23,10 @@ extends SceneTree
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Builtins := preload("res://lingo/lingo_builtins.gd")
+## Preloaded rather than reached by `class_name`, for the reason
+## `lingo_interpreter.gd` records at its own `preload`. `float_precision` is a
+## static, so this and the `LingoValue` the interpreter uses are one variable.
+const Value := preload("res://lingo/lingo_value.gd")
 ## The last group drives the interpreter rather than the module, because the
 ## question it asks — "is there exactly one answer for this name?" — cannot be
 ## asked of the module alone. Preloaded rather than reached by `class_name`, for
@@ -61,6 +65,10 @@ func _init() -> void:
 	h.begin("one answer per name, reached from Lingo (§16.4 item 2)")
 	_reconciled_case(h)
 	h.complete("one answer per name, reached from Lingo (§16.4 item 2)")
+
+	h.begin("`the floatPrecision` reaches the string (§2.8)")
+	_float_precision_case(h)
+	h.complete("`the floatPrecision` reaches the string (§2.8)")
 
 	quit(h.finish("the engine-free half of Lingo answers what Director answers"))
 
@@ -218,7 +226,15 @@ func _string_cases() -> Array:
 		{"name": "offset", "args": ["l", "hello", 4], "want": 4, "note": "third argument starts later"},
 		{"name": "offset", "args": ["", "hello"], "want": 0, "note": "nothing to find"},
 
-		{"name": "string", "args": [3.0], "want": "3", "note": "whole floats lose the point (§8.17)"},
+		# **A whole float keeps its point and its zeros.** This row said `"3"` and
+		# cited §8.17's "whole floats print without a decimal part"; the reference
+		# says otherwise and says it in the write arm for `the floatPrecision`,
+		# which compiles the value into a printf format (`"%%.%df"`) that is the
+		# language's only float-to-string path. The precision-sensitive rows are in
+		# their own group below, because this one has to hold at the default.
+		{"name": "string", "args": [3.0], "want": "3.0000",
+			"note": "every float prints through `the floatPrecision`, default 4"},
+		{"name": "string", "args": [2.5], "want": "2.5000"},
 		{"name": "string", "args": [7], "want": "7"},
 		{"name": "string", "args": [null], "want": "", "note": "VOID concatenates as empty (§8.6)"},
 		{"name": "string", "args": [[1, 2]], "want": "[1, 2]"},
@@ -709,7 +725,8 @@ func _reconciled_case(h) -> void:
 		# The four that already agreed, pinned so the surviving copy cannot drift.
 		{"lingo": "chars(\"hello\", 2, 4)", "want": "ell", "was": "\"ell\", agreed"},
 		{"lingo": "length(\"hello\")", "want": 5, "was": "5, agreed"},
-		{"lingo": "string(3.0)", "want": "3", "was": "\"3\", agreed"},
+		{"lingo": "string(3.0)", "want": "3.0000",
+			"was": "\"3\": §8.17's rule, which the reference contradicts"},
 		{"lingo": "float(3)", "want": 3.0, "was": "3.0, agreed"},
 	]
 	for row in cases:
@@ -724,6 +741,42 @@ func _reconciled_case(h) -> void:
 			("was %s" % str(case_row["was"])) if agreed else "got %s <%s>" % [
 				_show(got), _type_name(got)],
 		)
+
+
+## `the floatPrecision` decides how a float prints, and this is what says it does.
+##
+## Every other float row in this file runs at the default of 4, so a build that
+## hard-coded four decimal places would pass all of them. The property was stored
+## and readable for a long while with nothing consulting it -- the `moveableSprite`
+## shape, and it survived because no test moved it off its default.
+##
+## Restored afterwards: the setting is static and session-wide in this port for
+## the reason `lingo_value.gd` gives, so a group that left it at 0 would silently
+## rewrite every float in every later group.
+func _float_precision_case(h) -> void:
+	var restore: int = Value.float_precision
+	# No exact-half value is asserted here on purpose. C's `%.0f` on 2.5 rounds to
+	# even and answers "2"; Godot's own formatter rounds away from zero and
+	# answers "3". Which of the two Director shipped is a property of whichever
+	# libc the projector was linked against, so it is not something the reference
+	# settles, and pinning either would be pinning a guess.
+	for row in [
+		{"precision": 0, "value": 3.0, "want": "3"},
+		{"precision": 0, "value": 2.6, "want": "3"},
+		{"precision": 1, "value": 3.0, "want": "3.0"},
+		{"precision": 2, "value": 1.0 / 3.0, "want": "0.33"},
+		{"precision": 4, "value": 3.0, "want": "3.0000"},
+		{"precision": 8, "value": 0.5, "want": "0.50000000"},
+	]:
+		var case_row: Dictionary = row
+		Value.float_precision = int(case_row["precision"])
+		var got := Value.to_str(case_row["value"])
+		h.check(
+			"floatPrecision %d: string(%s) -> \"%s\""
+				% [int(case_row["precision"]), case_row["value"], case_row["want"]],
+			got == str(case_row["want"]),
+			"answered \"%s\"" % got)
+	Value.float_precision = restore
 
 
 func _evaluate(expression: String) -> Variant:

@@ -16,11 +16,12 @@ const CR := "\r"
 ## coercion in the port to carry one integer would touch every call site of the
 ## commonest function in this file.
 ##
-## **This changes what a whole float prints as.** The rule here used to be "print
-## a whole float without a decimal part", which made `float(1)` come out as `1`;
-## Director formats every float with the current precision, so the same value is
-## `1.0000`. That is the reference's behaviour and it is what a script comparing
-## `string(x)` against a literal was written against.
+## **This changes what a whole float prints as, and it is now applied.** The rule
+## in `to_str` used to be "print a whole float without a decimal part", which made
+## `float(1)` come out as `1`; Director formats every float with the current
+## precision, so the same value is `1.0000`. The reference settles it: the write
+## arm for this property compiles a printf format from the value
+## (`"%%.%df"`), and that format is the language's only float-to-string path.
 static var float_precision := 4
 
 
@@ -55,20 +56,25 @@ static func to_str(value: Variant) -> String:
 		TYPE_NIL:
 			return ""
 		TYPE_FLOAT:
-			# **`the floatPrecision` is stored and readable, and is deliberately not
-			# applied here yet.** Director formats a float with the current precision,
-			# so `3.0` prints as `3.0000` at the default 4 -- but §8.17 records the
-			# opposite rule, that a whole float loses its point, and 422 checks in
-			# `lingo_builtins_check` are built on it.
+			# **Every float becomes a string through `the floatPrecision`.**
 			#
-			# One of the two is wrong and the reference decides which; until it does,
-			# the tested behaviour stands. A half-applied version shipped neither:
-			# `String.num` trims trailing zeros, so it produced `3.0` -- not the old
-			# answer and not Director's.
-			var f: float = value
-			if is_equal_approx(f, roundf(f)):
-				return str(int(roundf(f)))
-			return str(f)
+			# Settled from the reference rather than left open. `lingo-the.cpp`'s
+			# write arm for the property does not merely store it: it builds a
+			# printf format out of it on the spot -- `"%%.%df"`, so `%.4f` at the
+			# default -- and that format exists for one purpose. So `3.0` prints
+			# as `3.0000` at 4, `3.1416` for pi, and `3` once a movie sets the
+			# precision to 0.
+			#
+			# §8.17 recorded the opposite ("whole floats print without a decimal
+			# part", `put 3.0` showing `3`) and that rule is what this arm used to
+			# implement. It is wrong, and it was wrong in the direction that
+			# hides: a whole float is exactly the case where the two rules differ,
+			# and a script comparing `string(x)` against a literal was authored
+			# against Director's answer, not this one.
+			#
+			# A half-applied version shipped neither: `String.num` trims trailing
+			# zeros, so it produced `3.0`.
+			return ("%%.%df" % clampi(float_precision, 0, 19)) % (value as float)
 		TYPE_BOOL:
 			return "1" if value else "0"
 		TYPE_ARRAY:
