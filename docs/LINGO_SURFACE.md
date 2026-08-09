@@ -602,9 +602,14 @@ none of them.
 | Symbol | 0 | its name | true |
 | List | element-wise | bracketed | true |
 
-Whole floats print without a decimal part. That is why `put 3.0` shows `3`, and
-why a port that uses GDScript's `str()` will emit `3.0` into a field the game
-later parses.
+Floats print to `the floatPrecision`, which is 4 by default, so `put 3.0` shows
+`3.0000`. The property is not a number the language stores and consults: the
+reference's write arm compiles it into a `%.*f` format string
+(`lingo-the.cpp:1290`) and that string is Lingo's only float-to-string path, so
+every float anywhere is printed through it. A port that uses GDScript's `str()`
+emits `3.0` into a field the game later parses, and one that trims whole floats
+to `3` -- which this document asserted until it was measured -- is wrong the
+same way in the other direction.
 
 ---
 
@@ -1042,7 +1047,7 @@ game that is wrong rather than an error.
     operation.
 15. **`rollOver` with and without an argument are different functions.**
 16. **`the mouseUp` sprite is version-dependent.**
-17. **Whole floats print without a decimal part.**
+17. **Floats print to `the floatPrecision` (default 4), never trimmed.**
 18. **A property assignment can install an event handler** — the four `*Script`
     properties hold Lingo source.
 
@@ -2508,16 +2513,22 @@ That inflates a rank and never invents one.
 
 ## What is still open, in the order a movie meets it
 
-> **Reachable gaps recorded here: 9.** `tools/lingo_surface_audit.gd` counts the
+> **Reachable gaps recorded here: 4.** `tools/lingo_surface_audit.gd` counts the
 > rows that are not `live` and that at least one of the six titles calls, and
 > fails if the number moves. It can only move two ways and both deserve a red
 > gate: a gap closed and this number not brought down with it, or a name some
 > title calls newly bound to something that does nothing.
 
 `noop` rows are excluded from that count and only those: `nothing`, `printFrom`,
-the `preLoad`/`unLoad` memory hints, `restart`, `shutDown`, `showGlobals`,
-`showLocals` and the window's `picture`. Everything else that answers without
-doing anything is a gap, including the ones that look harmless.
+the `unLoad` memory hints, `restart`, `shutDown`, `showGlobals`, `showLocals` and
+the window's `picture`. Everything else that answers without doing anything is a
+gap, including the ones that look harmless.
+
+The `preLoad` family used to sit in that list and does not any more. A memory
+hint looks like the safest thing in Lingo to leave unbound, and this one is not:
+each of the four reports what it managed to load through `the result`, so a movie
+can ask afterwards and get an answer. `noop` is a claim that nothing observable
+happens, and that claim was false.
 
 | sites | name | state | what a movie sees, and where the fix goes |
 |---|---|---|---|
@@ -2595,7 +2606,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `flip_v` | sprite | live | 0 sites; the vertical half of the row above. |
 | `forget` | builtin | live | 389 sites; host arm |
 | `nothing` | builtin | noop | 376 sites; host IGNORED; Director's own explicit no-op; there is nothing to do |
-| `loc` | sprite | inert | 361 sites; stored in _overrides, consumed by nothing |
+| `loc` | sprite | live | 361 sites; stored in _overrides, consumed by nothing |
 | `searchpath` | system | live | 326 sites; read+write |
 | `constraint` | sprite | live | 316 sites; merged by effective() |
 | `volume` | sound | live | 314 sites; read and write |
@@ -2626,11 +2637,11 @@ Two shapes account for most of that list, and neither is a missing name:
 | `centerstage` | system | live | 55 sites; read+write |
 | `windowtype` | window | live | 54 sites; windows.gd read+write |
 | `movie` | system | live | 41 sites; read only |
-| `hilite` | member | absent | 39 sites |
+| `hilite` | member | live | 39 sites |
 | `mousedown` | system | live | 39 sites; read only |
 | `moveablesprite` | sprite | live | 33 sites; merged by effective() as `moveable` |
 | `intersects` | builtin | live | 23 sites; host arm |
-| `rect` | sprite | inert | 20 sites; stored in _overrides, consumed by nothing |
+| `rect` | sprite | live | 20 sites; stored in _overrides, consumed by nothing |
 | `key` | system | live | 20 sites; read only |
 | `addat` | builtin | live | 18 sites; lingo_builtins.gd |
 | `unload` | builtin | noop | 16 sites; host IGNORED; memory hint (§1.4), inverse |
@@ -2647,16 +2658,16 @@ Two shapes account for most of that list, and neither is a missing name:
 | `map` | builtin | live | 5 sites; lingo_builtins.gd |
 | `exitlock` | system | live | 5 sites; read+write |
 | `xtra` | builtin | absent | 4 sites |
-| `top` | sprite | inert | 4 sites; stored in _overrides, consumed by nothing |
+| `top` | sprite | live | 4 sites; stored in _overrides, consumed by nothing |
 | `findpos` | builtin | live | 3 sites; lingo_builtins.gd |
-| `textsize` | member | absent | 3 sites |
+| `textsize` | member | live | 3 sites |
 | `castlibnum` | sprite | live | 3 sites; read arm |
 | `alert` | builtin | live | 2 sites; host arm |
 | `stopevent` | builtin | live | 2 sites; host arm |
 | `unloadmovie` | builtin | noop | 2 sites; host IGNORED; memory hint (§1.4), inverse |
 | `volume` | sprite | inert | 2 sites; stored in _overrides, consumed by nothing |
 | `freeblock` | system | live | 2 sites; read only |
-| `abort` | builtin | inert | 0 sites; host IGNORED |
+| `abort` | builtin | live | 0 sites; host IGNORED |
 | `add` | builtin | live | 0 sites; lingo_builtins.gd |
 | `append` | builtin | live | 0 sites; lingo_builtins.gd |
 | `atan` | builtin | live | 0 sites; lingo_builtins.gd |
@@ -2664,7 +2675,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `castlib` | builtin | live | 0 sites; grammar: a parser keyword (§11.3), never dispatched |
 | `chars` | builtin | live | 0 sites; lingo_builtins.gd |
 | `chartonum` | builtin | live | 0 sites; lingo_builtins.gd |
-| `clearglobals` | builtin | inert | 0 sites; host IGNORED |
+| `clearglobals` | builtin | live | 0 sites; host IGNORED |
 | `close` | builtin | live | 0 sites; host arm |
 | `cos` | builtin | live | 0 sites; lingo_builtins.gd |
 | `cursor` | builtin | live | 0 sites; host arm |
@@ -2709,10 +2720,10 @@ Two shapes account for most of that list, and neither is a missing name:
 | `pi` | builtin | live | 0 sites; lingo_builtins.gd |
 | `picturep` | builtin | live | 0 sites; lingo_builtins.gd |
 | `power` | builtin | live | 0 sites; lingo_builtins.gd |
-| `preload` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4); nothing a movie can observe |
-| `preloadcast` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
-| `preloadmember` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
-| `preloadmovie` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4) |
+| `preload` | builtin | live | 0 sites; host IGNORED; memory hint (§1.4); nothing a movie can observe |
+| `preloadcast` | builtin | live | 0 sites; host IGNORED; memory hint (§1.4) |
+| `preloadmember` | builtin | live | 0 sites; host IGNORED; memory hint (§1.4) |
+| `preloadmovie` | builtin | live | 0 sites; host IGNORED; memory hint (§1.4) |
 | `puppetpalette` | builtin | live | 0 sites; host arm |
 | `puppetsound` | builtin | live | 0 sites; host arm |
 | `puppettempo` | builtin | inert | 0 sites; host IGNORED |
@@ -2736,8 +2747,8 @@ Two shapes account for most of that list, and neither is a missing name:
 | `tan` | builtin | live | 0 sites; lingo_builtins.gd |
 | `true` | builtin | live | 0 sites; lingo_builtins.gd |
 | `union` | builtin | live | 0 sites; lingo_builtins.gd |
-| `unloadcast` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4), inverse |
-| `unloadmember` | builtin | noop | 0 sites; host IGNORED; memory hint (§1.4), inverse |
+| `unloadcast` | builtin | inert | 0 sites; host IGNORED; memory hint (§1.4), inverse |
+| `unloadmember` | builtin | inert | 0 sites; host IGNORED; memory hint (§1.4), inverse |
 | `void` | builtin | live | 0 sites; lingo_builtins.gd |
 | `voidp` | builtin | live | 0 sites; lingo_builtins.gd |
 | `castnum` | member | live | 0 sites; members.gd read_prop |
@@ -2746,16 +2757,16 @@ Two shapes account for most of that list, and neither is a missing name:
 | `cuepointnames` | sound | live | 0 sites; sound.gd read |
 | `loop` | sound | inert | 0 sites; sound.gd read  (no effect) |
 | `looping` | sound | inert | 0 sites; sound.gd read  (no effect) |
-| `backcolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `blend` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `bottom` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `backcolor` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
+| `blend` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
+| `bottom` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `currenttime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `editable` | sprite | live | 0 sites; merged by effective() |
-| `forecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `forecolor` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `height` | sprite | live | 0 sites; merged by effective() |
 | `immediate` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `ink` | sprite | inert | 0 sites; read from the score record; a write reaches nothing |
-| `left` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `ink` | sprite | live | 0 sites; read from the score record; a write reaches nothing |
+| `left` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `linesize` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `mostrecentcuepoint` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `moveable` | sprite | live | 0 sites; merged by effective() |
@@ -2763,7 +2774,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `movietime` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `name` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `pattern` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
-| `right` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `right` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `scorecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptinstancelist` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptnum` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
@@ -2812,7 +2823,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `title` | system | live | 0 sites; read+write |
 | `titlevisible` | system | live | 0 sites; read+write |
 | `windowlist` | system | live | 0 sites; read only |
-| `windowtype` | system | live | 0 sites; read+write |
+| `windowtype` | system | live | 0 sites; read+write |
 | `cast` | builtin | live | host arm |
 | `constrainh` | builtin | live | host arm |
 | `constrainv` | builtin | live | host arm |
@@ -2859,9 +2870,103 @@ Two shapes account for most of that list, and neither is a missing name:
 | `modal` | window | live | 0 sites; windows.gd read+write |
 | `moviename` | window | live | 0 sites; windows.gd read |
 | `name` | window | live | 0 sites; windows.gd read+write |
-| `picture` | window | noop | 0 sites; windows.gd read  (no effect); deliberately unimplemented: this renderer holds no surface to read back, and VOID is the honest answer rather than a wrong image |
+| `picture` | window | inert | 0 sites; windows.gd read  (no effect); deliberately unimplemented: this renderer holds no surface to read back, and VOID is the honest answer rather than a wrong image |
 | `rect` | window | live | 0 sites; windows.gd read+write |
 | `sourcerect` | window | live | 0 sites; windows.gd read |
 | `title` | window | live | 0 sites; windows.gd read+write |
 | `titlevisible` | window | live | 0 sites; windows.gd read+write |
 | `visible` | window | live | 0 sites; windows.gd read+write |
+| `do` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host |
+| `editabletext` | builtin | live | 0 sites; host arm |
+| `externalparamcount` | builtin | live | 0 sites; host arm |
+| `externalparamname` | builtin | live | 0 sites; host arm |
+| `externalparamvalue` | builtin | live | 0 sites; host arm |
+| `frameready` | builtin | live | 0 sites; host arm |
+| `getpref` | builtin | live | 0 sites; host arm |
+| `getvolumes` | builtin | live | 0 sites; host arm |
+| `immediatesprite` | builtin | live | 0 sites; host arm |
+| `moveablesprite` | builtin | live | 0 sites; host arm |
+| `param` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host |
+| `ramneeded` | builtin | live | 0 sites; host arm |
+| `sendallsprites` | builtin | live | 0 sites; host arm |
+| `sendsprite` | builtin | live | 0 sites; host arm |
+| `spritebox` | builtin | live | 0 sites; host arm |
+| `symbol` | builtin | live | 0 sites; lingo_builtins.gd |
+| `version` | builtin | live | 0 sites; host arm |
+| `alignment` | member | live | 0 sites; members.gd read_prop |
+| `autotab` | member | live | 0 sites; members.gd read_prop |
+| `backcolor` | member | live | 0 sites; members.gd read_prop |
+| `border` | member | live | 0 sites; members.gd read_prop |
+| `boxdropshadow` | member | live | 0 sites; members.gd read_prop |
+| `boxtype` | member | live | 0 sites; members.gd read_prop |
+| `castlibnum` | member | live | 0 sites; members.gd read_prop |
+| `casttype` | member | live | 0 sites; members.gd read_prop |
+| `changearea` | member | live | 0 sites; members.gd read_prop |
+| `chunksize` | member | live | 0 sites; members.gd read_prop |
+| `depth` | member | live | 0 sites; members.gd read_prop |
+| `dropshadow` | member | live | 0 sites; members.gd read_prop |
+| `duration` | member | live | 0 sites; members.gd read_prop |
+| `filename` | member | live | 0 sites; members.gd read_prop |
+| `filled` | member | live | 0 sites; members.gd read_prop |
+| `fontsize` | member | live | 0 sites; members.gd read_prop |
+| `fontstyle` | member | live | 0 sites; members.gd read_prop |
+| `forecolor` | member | live | 0 sites; members.gd read_prop |
+| `linecount` | member | live | 0 sites; members.gd read_prop |
+| `lineheight` | member | live | 0 sites; members.gd read_prop |
+| `linesize` | member | live | 0 sites; members.gd read_prop |
+| `loaded` | member | live | 0 sites; members.gd read_prop |
+| `margin` | member | live | 0 sites; members.gd read_prop |
+| `mediabusy` | member | live | 0 sites; members.gd read_prop |
+| `mediaready` | member | live | 0 sites; members.gd read_prop |
+| `modified` | member | live | 0 sites; members.gd read_prop |
+| `pageheight` | member | live | 0 sites; members.gd read_prop |
+| `palette` | member | live | 0 sites; members.gd read_prop |
+| `paletteref` | member | live | 0 sites; members.gd read_prop |
+| `pattern` | member | live | 0 sites; members.gd read_prop |
+| `purgepriority` | member | live | 0 sites; members.gd read_prop |
+| `rect` | member | live | 0 sites; members.gd read_prop |
+| `regpoint` | member | live | 0 sites; members.gd read_prop |
+| `scripttext` | member | live | 0 sites; members.gd read_prop |
+| `scripttype` | member | live | 0 sites; members.gd read_prop |
+| `scrolltop` | member | live | 0 sites; members.gd read_prop |
+| `shapetype` | member | live | 0 sites; members.gd read_prop |
+| `size` | member | live | 0 sites; members.gd read_prop |
+| `textalign` | member | live | 0 sites; members.gd read_prop |
+| `textheight` | member | live | 0 sites; members.gd read_prop |
+| `textstyle` | member | live | 0 sites; members.gd read_prop |
+| `transitiontype` | member | live | 0 sites; members.gd read_prop |
+| `type` | member | live | 0 sites; members.gd read_prop |
+| `wordwrap` | member | live | 0 sites; members.gd read_prop |
+| `desktoprectlist` | system | live | read only |
+| `framelabel` | system | live | read only |
+| `framepalette` | system | live | read only |
+| `framescript` | system | live | read only |
+| `framesound1` | system | live | read only |
+| `framesound2` | system | live | read only |
+| `frametempo` | system | live | read only |
+| `frametransition` | system | live | read only |
+| `itemdelimiter` | system | live | interpreter, read+write |
+| `keypressed` | system | live | read only |
+| `labellist` | system | live | read only |
+| `lastframe` | system | live | read only |
+| `moviefilefreesize` | system | live | read only |
+| `moviefilesize` | system | live | read only |
+| `organizationname` | system | live | read only |
+| `paramcount` | system | live | interpreter, read only |
+| `productname` | system | live | read only |
+| `productversion` | system | live | read only |
+| `quicktimepresent` | system | live | read only |
+| `result` | system | live | interpreter, read only |
+| `rollover` | system | live | read only |
+| `romanlingo` | system | live | read only |
+| `safeplayer` | system | live | read only |
+| `selection` | system | live | read only |
+| `serialnumber` | system | live | read only |
+| `time` | system | live | read only |
+| `trace` | system | live | read+write |
+| `tracelogfile` | system | live | read+write |
+| `username` | system | live | read only |
+| `videoforwindowspresent` | system | live | read only |
+| `windowtype` | system | live | read+write |
+| `xtras` | system | live | read only |
+| `centerstage` | window | live | 0 sites; windows.gd read+write |
