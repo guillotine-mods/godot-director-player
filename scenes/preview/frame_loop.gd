@@ -42,6 +42,68 @@ static func paused(host) -> bool:
 	return host._host != null and host._host.playback_paused
 
 
+## The frame this step began on no longer exists.
+##
+## `score.cpp:696-698` and `:722-724` are two returns out of `update()` on the same
+## question — the handler that just ran stopped the movie, or a `go to movie`
+## swapped the container under it — and everything after them (the playhead move,
+## `prepareFrame`, the draw, `enterFrame`) belongs to the movie that *arrived*.
+##
+## This port opens the next container inside the `go to movie` call rather than
+## queueing it, so the arriving movie has already entered its own first frame by
+## the time the dispatch returns. Without this test the rest of the step then ran
+## over the top of it: measured on `DAY1.dir` frame 729, whose whole frame script is
+## `on exitFrame / go(1, "air1.dir")`, one step sent **two** `enterFrame`s for
+## AIR1's opening frame against one `prepareFrame`.
+static func movie_gone(host, score_before) -> bool:
+	return host._score != score_before or (host._host != null and host._host.stopped)
+
+
+## `idle` — the gap between two frames, which is where Director spends most of its
+## time and where a title puts anything that has to happen on a clock rather than
+## on a frame.
+##
+## **Once per engine tick, not once per score step.** `Score::step` sends it
+## (`score.cpp:336-338`) and `Window::step` calls that from the projector's main
+## loop, which turns over every ~10 ms (`director.cpp:370-405`) — many times per
+## score frame at any tempo, and `Score::update` is the half that gates on the
+## frame clock. So `idle` is sent *before* the clock is consulted and regardless of
+## what it says, which is also why the reference sends it from `step` and not from
+## `update`.
+##
+## **And while the movie is paused.** `Score::step` returns early only on
+## `kPlayPaused`/`kPlayStopped` — the projector's own states, `_paused` and
+## `stopped` here — and reads `_playbackPaused` nowhere. Director's `pause` stops
+## the playhead and leaves the movie live; that is the whole point of it, and a
+## title whose clock hangs off `idle` must keep that clock while a screen is
+## paused. `hezsave.dir` frame 8 is `on exitFrame / pause` and `HEZSAVE.dir` is one
+## of the four `rating` movies carrying `on idle / ClockScript()`.
+##
+## Guarded on "no jump is pending", which is the reference's own `hasJump`
+## (`score.cpp:330-332`): a step that already knows where it is going is not idle.
+## A `go` from inside the handler is fine — it sets the flag for the *next* tick.
+##
+## **Sent to the movie script and to nothing else.** `lingo-events.cpp:552` queues
+## it as `kMovieHandler`, alongside `startMovie` and `stepMovie`, where `exitFrame`
+## is queued as `kFrameHandler`. Handing it the frame script would let a frame
+## script's `on idle` answer an event Director never offers it.
+##
+## This was missing entirely, and it cost `rating` its whole clock. Its
+## `NAVIGATE.dir`, `BLAEGOZ.dir`, `BATZEGOZ.dir` and `HEZSAVE.dir` each carry
+## `on idle / ClockScript() / end`, and `Panel.cst`'s `ClockScript` is what
+## advances `GlobalSecond` and `GlobalHour`, fires the seventeen timed story
+## events in its `case h&s of`, and calls `checkroom` — which steps `TIMEKEEPER`
+## and reads `line TIMEKEEPER of field "timebasebackup"` to decide where the
+## player is sent and who is where. With no `idle` none of that ever ran: the
+## player's own save records `timekeeper = 2`, `globalhour = 8` and
+## `globalsecond = 0`, the init values, beside an `itemkeeper` of 14 and four
+## items collected. Hours of play, and the clock had never ticked once.
+static func send_idle(host) -> void:
+	if not host._lingo_on or host._jump_queued:
+		return
+	host._dispatch("idle", {})
+
+
 ## The playhead has landed somewhere this tick has not accounted for yet: release
 ## the auto-puppets the score wrote on the way, take the frame's tempo, arm
 ## whatever it waits for, and start any transition it carries.
@@ -122,6 +184,13 @@ static func tick(host, delta: float) -> void:
 	# frame it landed on before deciding how much time that frame is owed, or the
 	# old frame's tempo paces the new one.
 	sync_frame_entry(host)
+	# `idle`, at the engine's rate and before the clock is asked anything — see
+	# `send_idle`. An `on idle` handler may `go to movie`, which replaces the score
+	# under everything below, so the rest of the tick is skipped when it does.
+	var score_before = host._score
+	send_idle(host)
+	if movie_gone(host, score_before):
+		return
 	# Cue points and the tempo channel's wait-for-sound, before the clock. The
 	# fade ramp they interact with is stepped by `AudioDirector` itself, one
 	# process priority earlier.
@@ -198,33 +267,16 @@ static func advance(host) -> Dictionary:
 		host._pending_enter = null
 		host._dispatch("enterFrame", owed)
 
-	# `idle` — the gap between two frames, which is where Director spends most of
-	# its time and where a title puts anything that has to happen on a clock
-	# rather than on a frame. `score.cpp:336-338` sends it once per step from the
-	# interactivity block, and `lingo-events.cpp:552` queues it as a **movie**
-	# handler, so it goes to the movie script rather than to the sprite.
-	#
-	# Guarded on "no jump is pending", which is the reference's own `hasJump`: a
-	# step that already knows where it is going is not idle. A `go` from inside
-	# the handler is fine and is picked up two lines below, which is how
-	# `ClockScript`'s `go to movie "karioki.dir"` is supposed to fire.
-	#
-	# **Sent before the pause check on purpose.** `pause` stops the playhead and
-	# leaves the movie live — that is the whole point of it — and the reference's
-	# idle sits in the interactivity block a pause does not suspend.
-	#
-	# This was missing entirely, and it cost `rating` its whole clock. Its
-	# `NAVIGATE.dir`, `BLAEGOZ.dir`, `BATZEGOZ.dir` and `HEZSAVE.dir` each carry
-	# `on idle / ClockScript() / end`, and `Panel.cst`'s `ClockScript` is what
-	# advances `GlobalSecond` and `GlobalHour`, fires the seventeen timed story
-	# events in its `case h&s of`, and calls `checkroom` — which steps
-	# `TIMEKEEPER` and reads `line TIMEKEEPER of field "timebasebackup"` to decide
-	# where the player is sent and who is where. With no `idle` none of that ever
-	# ran: the player's own save records `timekeeper = 2`, `globalhour = 8` and
-	# `globalsecond = 0`, the init values, beside an `itemkeeper` of 14 and four
-	# items collected. Hours of play, and the clock had never ticked once.
-	if not host._jump_queued:
-		host._dispatch("idle", host._frame_script(host._index))
+	# `idle` used to be sent from here, once per score step. It is sent from `tick`
+	# now, once per engine tick and whether or not the playhead is held or paused,
+	# which is where `Score::step` has it — see `send_idle`. A caller stepping this
+	# directly (a harness, the arrow keys) therefore sends no `idle`, which is the
+	# reference's shape too: `Score::update` sends none either.
+
+	# The score the step began against. A handler dispatched below may open another
+	# container or stop the movie, and everything after that point belongs to the
+	# movie that arrived rather than to this one — see `movie_gone`.
+	var score_before = host._score
 	# A `go to` queued from outside the step loop has already moved the playhead,
 	# and Director sends no `exitFrame` for a frame it is leaving that way. The
 	# step still runs: it renders and enters the frame the jump landed on, and
@@ -243,6 +295,15 @@ static func advance(host) -> Dictionary:
 		host._exit_frame_called = true
 		host._dispatch("exitFrame", host._frame_script(host._index))
 		host._in_exit_frame = false
+
+	# `score.cpp:696-698`: "the exitFrame event handler may have stopped this
+	# movie", and the same test again at `:722-724` for a window switch. Both
+	# return out of `update()` before the playhead is resolved, so the frame the
+	# handler navigated to is entered by the movie that owns it and not a second
+	# time by this step.
+	if movie_gone(host, score_before):
+		host._held = false
+		return {"exited": exited, "frame": host._index}
 
 	# `updateCurrentFrame`: the handler above decided where the playhead goes.
 	# `go to the frame` -- how a room stands still at all -- reaches this as a
@@ -268,7 +329,25 @@ static func advance(host) -> Dictionary:
 	if not host._held:
 		host._index += 1
 		if host._index >= host._score.frame_count:
-			host._index = 0
+			# **Running off the end of the score is Director's *other* return from a
+			# `play`**, and the only one an interlude that simply ends ever reaches.
+			# `score.cpp:462-487` pops the movie stack inside the
+			# `nextFrameNumberToLoad >= getFramesNum()` branch, before the wrap to
+			# frame 1, and requeues the parked play state on the way past
+			# (`:474-476`). Only `play` ever pushes that stack, so the test is "is an
+			# interlude outstanding" and the wrap below is the no-interlude case.
+			#
+			# Without it a `play frame X` whose destination runs to the end of its
+			# score wraps to frame 0 and plays the movie again from the top, with the
+			# handler that called `play` parked for ever — the same hang, and the
+			# same cause, as the one `lingo_play_done` documents.
+			if not host._return_from_play_stack():
+				host._index = 0
+			elif movie_gone(host, score_before):
+				# The return crossed back into another container, which enters its own
+				# frame; the rest of this step would enter it a second time.
+				host._held = false
+				return {"exited": exited, "frame": host._index}
 	host._held = false
 	sync_frame_entry(host)
 

@@ -2488,3 +2488,150 @@ same-named fields in two casts one movie loads. `field` names are written by
 scripts rather than by the score, so the survey is a grep of the compiled sources
 against the cast tables per movie, and nobody has run it. Until it has been run,
 this is a hole with an unknown blast radius rather than a known wrong answer.
+
+## 54. `play done` returns to the frame the `play` was on; the reference returns to the one after it when the `play` came from a frame script
+
+**Status:** open · **Area:** `scenes/director_preview.gd`, `lingo-funcs.cpp:207-213`
+
+`Lingo::func_play` records where to come back to as
+
+```
+ref.frameI = getScore()->getCurrentFrameNum();
+// if we are issuing play command from script channel script. then play done should return to next frame
+if (_state->currentChannelId == 0)
+    ref.frameI++;
+```
+
+`currentChannelId == 0` is "this script is not attached to a sprite channel" — a
+frame script or a movie script. So in the reference a `play` written in a frame's
+`on exitFrame` returns the playhead to **frame + 1**, and only a `play` from a
+sprite behaviour returns to the frame itself. `lingo_play_push` records `_index`
+in both cases.
+
+That single line is why the reference never has to re-enter the caller's frame:
+it lands past it, `Score::update` clears `_exitFrameCalled` beside the
+`enterFrame` it then sends (`score.cpp:827-828`), and the caller's `exitFrame` —
+the handler that wrote the `play` — is never dispatched a second time.
+
+This port arrives at the same *outcome* by a different mechanism: `play done`
+re-enters the caller's frame and carries `_exit_frame_called` across the entry so
+that frame's `exitFrame` is suppressed once (commit 70c88e83, and now
+`_pop_play_stack`). Both stop the interlude from restarting its caller. They are
+not the same behaviour, and where they differ is visible:
+
+* the port re-runs the caller frame's `on enterFrame`, and re-arms that frame's
+  score sound, its palette and its transition through `sync_frame_entry`; the
+  reference does none of those because it never returns to the frame;
+* the port then leaves the frame *without* an `exitFrame`, so anything a room does
+  on the way out of that frame is skipped once per interlude.
+
+**Not fixed here, deliberately.** Taking `frameI++` means taking it *instead of*
+the latch, not beside it — with both, the entry on frame + 1 would swallow a real
+`exitFrame`. That unpicks a recent, measured fix (Piposh Dream's `ques.dir` 803
+save panel) and the case cannot be re-measured without driving that screen, which
+needs `--root piposh-dream` and a click.
+
+**There is a way to drive it now**, which is what that sentence was waiting for:
+
+```
+godot --headless --path . --script tools/liveness_sweep.gd -- \
+    --root piposh-dream --boot STRTGAME.dir --only ques.dir --click --verbose
+```
+
+`--click` presses every eligible sprite of the frame the watch ended on and
+watches where each one leads, and the sweep's `ping-pong` verdict is that exact
+symptom: two containers trading places, nothing on the clock, one of them drawing
+nothing. So a change to `lingo_play_push` can be measured against the screen the
+current behaviour was measured on rather than reasoned about. Read the sweep's
+own header for what a `--click` run does not reach — one click deep, no keys.
+
+Whoever picks this up: the port also has
+no `currentChannelId`, and `exitFrame` is dispatched only to the frame script
+(`frame_loop.gd:advance` passes `_frame_script(_index)`), so today every `play`
+reached from an `exitFrame` is the channel-0 case.
+
+**Reproduce:** read `lingo-funcs.cpp:207-213` beside `director_preview.gd`'s
+`lingo_play_push` / `_pop_play_stack`. The behavioural difference shows on any
+frame whose `exitFrame` calls `play` and which also has an `on enterFrame` or a
+sound in its score sound channels.
+
+## 55. A queued `go` cancels the tempo wait as well; the reference cancels only the sound, click and video waits
+
+**Status:** open · **Area:** `director/director_frame_clock.gd`, `score.cpp:400-441`
+
+`Score::isWaitingForNextFrame` computes `goingTo = _nextFrame && _nextFrame !=
+_curFrameNumber` and consults it in **three** of its four arms:
+
+```
+if (_waitForChannel)           { if (active && !goingTo) keepWaiting = true; else _waitForChannel = 0; }
+else if (_waitForClick)        { if (!goingTo) { ...; keepWaiting = true; } }
+else if (_waitForVideoChannel) { if (active && rate && !goingTo) keepWaiting = true; else _waitForVideoChannel = 0; }
+else if (millis < _nextFrameTime) keepWaiting = true;      // <- no goingTo
+```
+
+The last arm is the ordinary frame clock: the tempo channel's frame rate, and its
+`256 - tempo` seconds delay. A pending jump does not shorten it. `the delay`'s own
+timer is the same (`score.cpp:681-692`): a jump skips the frozen-script processing
+inside the delay branch and does not end the delay.
+
+This port releases all four together. `lingo_go_frame` calls `_clock.release()`
+with the comment "a pending `go to` cancels every wait — sound, click and delay
+alike (§9.2)", and `tools/frame_events.gd` asserts it as a rule
+("a queued `go to` cancels every wait").
+
+Only reachable from a `go` issued *outside* the step loop — a click, a key, an
+`idle` handler — because a `go` from `exitFrame` runs after the wait has already
+expired. On a frame carrying a two-second tempo delay, this port jumps on the
+click and the reference serves out the delay first. This corpus spends 74.0 s in
+tempo delays across thirty-six frames (`tools/transition_survey.gd`), so the
+window is not narrow.
+
+Not changed here because it is a documented rule with a harness behind it, and
+flipping it is the owner's call rather than an audit's: §9.2 would have to be
+rewritten and `frame_events`, `playhead_escape` and `sound_wait` re-measured.
+
+**Also unfixed, same family, smaller:** `Score::step` refuses to dispatch queued
+input events while a jump is pending or while any Lingo state is frozen
+(`score.cpp:332-335`, `!_movie->_inputEventQueue.empty() &&
+!_window->frozenLingoStateCount()`). This port delivers input from Godot's
+`_input` the moment it arrives, with no such gate, so a click landing between a
+`go` and the step that honours it is delivered where Director would have dropped
+it.
+
+**Reproduce:** read `score.cpp:400-441` beside `director/director_frame_clock.gd`
+and `director_preview.gd:lingo_go_frame`.
+
+## 59. A Lingo runtime error survives only until the next dispatch, so nothing can observe one during play
+
+**Status:** open · **Area:** `lingo/lingo_interpreter.gd`
+
+`LingoInterpreter._fail` is where every runtime fault the interpreter can name
+lands: "step budget exhausted", "repeat while did not terminate", "handler
+recursion too deep at X", "unknown statement", "cannot assign to X". They go into
+`errors`, a `PackedStringArray` capped at 50.
+
+`reset_steps()` clears it, and `reset_steps` is called at the **start of every
+dispatch** — `preview/scripts.gd:dispatch`, `preview/event_chain.gd:run` and the
+thaw. One score step dispatches `idle`, `exitFrame`, `prepareFrame` and
+`enterFrame` back to back, all inside one process frame, so an error raised in
+any of them but the last is gone before anything outside the interpreter can read
+it. The only reader in the whole port is `preview/debug_report.gd`, which prints
+whatever happens to be there when the report key is pressed.
+
+So the port has no way to answer "did any script fault while that room ran". A
+handler cut off half-way by the step budget leaves the room in a state nobody can
+attribute later, which is the same class of failure as a harness that reads null
+and reports zero.
+
+`tools/liveness_sweep.gd` polls `errors` once per process frame and accumulates
+what it finds, which is the best that can be done from outside: a `lingo` finding
+from it is real, and **a clean sweep is not evidence that nothing faulted.**
+
+The fix is a sink that outlives a dispatch — the shape `LingoDiagnostics` already
+has for unbound names, which deliberately survives `reset_steps` and accumulates
+over a session. `errors` wants the same treatment, or a counter beside it, so
+that "42 runtime faults this session" is a number a harness can assert on.
+
+**Reproduce:** read `lingo/lingo_interpreter.gd:698-708` (`reset_steps`) beside
+`:1634` (`_fail`) and `scenes/preview/scripts.gd:75`. Then run any movie and note
+that no tool in `tools/` can report a fault that happened two dispatches ago.

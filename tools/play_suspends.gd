@@ -322,6 +322,8 @@ end
 		"a handler is parked in the play buffer")
 	h.complete("the frozen queue drains")
 
+	await _play_off_the_end(h, preview, compiler)
+
 	# The riskiest path in the whole design, and the reason the chains are held by
 	# the preview rather than by the interpreter: `go to movie` builds a *new*
 	# interpreter inside the very call that froze the handler, so a chain the
@@ -419,6 +421,107 @@ func _dialogue_check(h: Harness, args: Dictionary) -> void:
 			(preview.get("_frozen_play") as Array).size(),
 			(preview.get("_play_stack") as Array).size()])
 	h.complete("the dialogue plays its line and then leaves")
+
+
+## The *other* return from an interlude: the one nobody writes `play done` for.
+##
+## `score.cpp:462-487` pops the movie stack when the playhead runs off the end of a
+## score, ahead of the wrap back to frame 1, and requeues the parked play state on
+## the way past (`:474-476`). That path exists precisely so a cut scene which simply
+## *ends* still hands control back — and a port with only the `play done` half has a
+## handler parked in the play buffer with nothing left in the engine that can wake
+## it. `ENGINE_TODO.md` carried it as the first of the three residues of the
+## suspension mechanism, and it is the same shape of hang as the one that made
+## Piposh Dream's save screen unusable.
+##
+## **Why the case cannot be found in a movie and has to be built.** An interlude
+## that runs off the end of its score is authored, not incidental, and neither
+## corpus reaches one under a headless drive inside a bounded number of steps: every
+## room holds itself with `go to the frame`, so the playhead never arrives at the
+## last frame on its own. So the handler is compiled here — like `suspendprobe`
+## above — and pointed at the last frame of whatever movie is loaded, which keeps it
+## title-agnostic.
+##
+## **What it would fail on.** The three states the bug produces, each asserted
+## separately because each one alone is also a state a *different* mistake produces:
+## the tail of the caller never runs (the parked handler was never requeued); the
+## play stack is still occupied (the pop never happened); and the playhead is
+## somewhere other than where `play` was issued (it wrapped to frame 0 and started
+## the movie again, which is the pre-fix behaviour exactly).
+func _play_off_the_end(h: Harness, preview: Node, compiler) -> void:
+	var case_name := "an interlude that runs off the end of its score returns to its caller"
+	h.begin(case_name)
+	var score = preview.get("_score")
+	var last := int(score.frame_count)
+	var probe: Dictionary = compiler.compile_source("""
+on playoffend
+  global gplayoffend
+  put "before" into gplayoffend
+  play frame %d
+  put "after" into gplayoffend
+end
+""" % last, "MovieScript 9003")
+	if not h.check("the off-the-end probe compiles", not probe.is_empty(), compiler.error):
+		h.complete(case_name)
+		return
+	var interpreter = preview.get("_interpreter")
+	interpreter.load_bundle(
+		{"movie": "PROBE", "cast": "probe", "scripts": {"MovieScript 9003": probe}})
+
+	# The debug pause, so the only thing moving the playhead is this function's own
+	# `_advance` calls: a real tick would spend the score's tempo on frames that have
+	# nothing to do with the question.
+	preview.set("_paused", true)
+	await process_frame
+	var from := int(preview.call("current_frame"))
+	interpreter.call_handler("playoffend")
+
+	h.check("`play frame` stops the caller where it stands",
+		str(interpreter.globals.get("gplayoffend", "")) == "before",
+		str(interpreter.globals.get("gplayoffend", "<unset>")))
+	h.check("the caller is parked in the play buffer",
+		not (preview.get("_frozen_play") as Array).is_empty(),
+		"nothing parked; the play stack holds %d" % (preview.get("_play_stack") as Array).size())
+	h.check("and the playhead went to the last frame of the score",
+		int(preview.call("current_frame")) == last - 1,
+		"frame %d of %d" % [int(preview.call("current_frame")), last - 1])
+
+	# Two steps. The first consumes the queued jump — a `go` of any form sends no
+	# `exitFrame` for the frame it is leaving — and enters the last frame; the second
+	# is the one that advances past the end.
+	preview.call("_advance")
+	await process_frame
+
+	# **The last frame's own `exitFrame` is silenced for the step that wraps, and
+	# that is isolation rather than convenience.** Measured: `strtgame.dir`'s frame
+	# 1374 carries a script that jumps to 1347, so the playhead never reaches the end
+	# and the case cannot be asked at all — a harness that stopped there would be
+	# green in every movie whose final frame happens to navigate, which is most of
+	# them, while never once exercising the wrap. `_exit_frame_called` is Director's
+	# own "this frame has already been exited" latch (`score.cpp:672`) and is
+	# reachable in play — it is what a frame resumed after a `pause` stands in — so
+	# raising it here asks the engine a question it can answer rather than one about
+	# whichever script the score happens to hang off its last frame.
+	preview.set("_exit_frame_called", true)
+	preview.call("_advance")
+	await process_frame
+	preview.set("_paused", false)
+
+	h.check("the play stack is popped rather than the score wrapping to frame 0",
+		(preview.get("_play_stack") as Array).is_empty(),
+		"%d entry(s) still on the stack, playhead on %d" % [
+			(preview.get("_play_stack") as Array).size(),
+			int(preview.call("current_frame"))])
+	h.check("the playhead is back where `play` was issued",
+		int(preview.call("current_frame")) == from,
+		"frame %d, `play` was issued from %d" % [int(preview.call("current_frame")), from])
+	h.check("nothing is left parked in the play buffer",
+		(preview.get("_frozen_play") as Array).is_empty(),
+		"a handler is still waiting for a `play done` that will never come")
+	h.check("and the statement after `play frame` ran",
+		str(interpreter.globals.get("gplayoffend", "")) == "after",
+		str(interpreter.globals.get("gplayoffend", "<unset>")))
+	h.complete(case_name)
 
 
 func _centre_of(preview: Node, channel: int) -> Vector2:

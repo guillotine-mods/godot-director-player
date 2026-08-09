@@ -32,6 +32,11 @@ const Score := preload("res://director/director_score.gd")
 const Paths := preload("res://director/director_paths.gd")
 const Clock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
+## Loaded rather than preloaded. `preload`ing the compiler at the top of this file
+## puts it ahead of `scenes/director_preview.gd` in the resolution order and the
+## preview's own `preload` of `preview_lingo_host.gd` then fails to resolve, taking
+## the whole scene with it -- a parse error in a file this harness does not touch.
+const COMPILER_PATH := "res://lingo/compile/lingo_compiler.gd"
 
 ## Long enough to leave the opening frame, cross a `go` and settle into a room
 ## that holds itself, which is where the ordering has to keep working.
@@ -171,6 +176,79 @@ func _transition_cases(h, paths) -> void:
 	h.complete("every transition this corpus plays decodes to a real duration")
 
 
+## A step whose `exitFrame` opens another movie enters that movie's frame **once**.
+##
+## `Score::update` returns at `score.cpp:696-698` — "the exitFrame event handler may
+## have stopped this movie" — and again at `:722-724`, both before the playhead is
+## resolved, so a `go to movie` from an `exitFrame` handler contributes no
+## `updateCurrentFrame`, no `renderFrame` and no `enterFrame` to the step it was
+## issued in. The arriving movie enters its own first frame, and that is the only
+## entry there is.
+##
+## This port opens the container inside the `go to movie` call rather than queueing
+## it, so the arriving movie has already entered its first frame by the time the
+## dispatch returns — and without the guard the tail of the step ran straight over
+## the top of it. Measured on `DAY1.dir` frame 729, whose whole frame script is
+## `on exitFrame / go(1, "air1.dir")`: one step, **two** `enterFrame`s for AIR1's
+## opening frame against one `prepareFrame`. A room's `on enterFrame` is where this
+## corpus establishes visibility, cursors and character placement, so running it
+## twice on arrival is not a duplicate log line.
+##
+## Built rather than found, so the case does not depend on which movie is pinned: a
+## frame with no frame script of its own is chosen (the movie-script fallback then
+## answers `exitFrame`), and the destination is the movie already playing, which
+## still replaces the score object and keeps the harness title-agnostic.
+func _movie_change_enters_once(h: Harness, preview: Node) -> void:
+	var case_name := "a step that changes movie enters the arriving frame once"
+	h.begin(case_name)
+	var score = preview.get("_score")
+	var bare := -1
+	for i in score.frame_count:
+		if (preview.call("_frame_script", i) as Dictionary).is_empty():
+			bare = i
+			break
+	if not h.check("the movie has a frame with no frame script to hang the probe on",
+			bare >= 0, "every frame of %s carries one" % preview.call("movie_name")):
+		h.complete(case_name)
+		return
+
+	var compiler = load(COMPILER_PATH).new()
+	var hop: Dictionary = compiler.compile_source("""
+on exitFrame
+  go to movie "%s"
+end
+""" % str(preview.call("movie_name")), "MovieScript 9101")
+	if not h.check("the probe compiles", not hop.is_empty(), compiler.error):
+		h.complete(case_name)
+		return
+	preview.get("_interpreter").load_bundle(
+		{"movie": "PROBE", "cast": "probe", "scripts": {"MovieScript 9101": hop}})
+
+	preview.set("_index", bare)
+	preview.set("_jump_queued", false)
+	preview.set("_exit_frame_called", false)
+	var sent: Dictionary = preview.get("_sent")
+	var enters := int(sent.get("enterFrame", 0))
+	var prepares := int(sent.get("prepareFrame", 0))
+	var was: String = str(preview.call("movie_name"))
+	var before_score = preview.get("_score")
+	preview.call("_advance")
+	var entered := int(sent.get("enterFrame", 0)) - enters
+	var prepared := int(sent.get("prepareFrame", 0)) - prepares
+
+	# The movie has to have actually been replaced, or the counts below are about a
+	# step that never changed movie and every one of them passes for free.
+	if not h.check("the step did change movie", preview.get("_score") != before_score,
+			"still on %s" % was):
+		h.complete(case_name)
+		return
+	h.check("exactly one `enterFrame` for the arriving frame", entered == 1,
+		"%d dispatched in one step" % entered)
+	h.check("and exactly one `prepareFrame` beside it", prepared == 1,
+		"%d dispatched in one step" % prepared)
+	h.complete(case_name)
+
+
 func _init() -> void:
 	var h := Harness.new()
 	var args := Args.parse()
@@ -222,12 +300,18 @@ func _init() -> void:
 		"exited f%d, opened on f%d" % [int(steps[0]["exited"]), started])
 
 	var sent: Dictionary = preview.get("_sent")
-	# One per step, plus none from the boot sequence, which sends prepareMovie,
-	# startMovie and enterFrame only.
+	# One per step, plus none from the boot sequence, which sends prepareMovie and
+	# startMovie and then enters the opening frame.
 	h.check("exactly one exitFrame per step", int(sent.get("exitFrame", 0)) == STEPS,
 		"%d dispatches over %d steps" % [int(sent.get("exitFrame", 0)), STEPS])
-	h.check("exactly one prepareFrame per step",
-		int(sent.get("prepareFrame", 0)) == STEPS, str(sent))
+	# **One more than the steps**, and the extra one is the boot's. Entering a frame
+	# means `prepareFrame` *and* `enterFrame` — `score.cpp:772-779` and `:827-831`
+	# are both in the update that follows `startPlay` — so the opening frame of a
+	# movie has one of each, exactly like the frame every step below it enters. This
+	# line read `== STEPS` for as long as `preview/boot.gd` sent only the second
+	# half of the pair.
+	h.check("exactly one prepareFrame per step, and one for the frame the movie opened on",
+		int(sent.get("prepareFrame", 0)) == STEPS + 1, str(sent))
 	h.complete("exitFrame runs at the top of the step that leaves the frame")
 
 	# `marker()` takes two argument types and answers two different questions,
@@ -302,6 +386,8 @@ func _init() -> void:
 		h.check("channels were puppeted on the way out",
 			int(reached.get("puppetsprite", 0)) > 0, JSON.stringify(reached))
 		h.complete("DAY1's opening exitFrame runs and navigates")
+
+	_movie_change_enters_once(h, preview)
 
 	# The glue between the decode above and the clock: landing on a frame that
 	# names a transition member has to hold the playhead, and let it go again.

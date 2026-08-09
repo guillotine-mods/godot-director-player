@@ -1040,7 +1040,8 @@ excluded for *moveable* sprites; size counts only when stretched.
 
 `Score::step` then `Score::update`:
 
-1. **Input events** dispatched from the queue, unless a jump is pending.
+1. **Input events** dispatched from the queue, unless a jump is pending *or any
+   Lingo state is frozen*.
 2. **idle**.
 3. (D6+) `mouseWithin`, sound cue points.
 4. **Sound fades** stepped.
@@ -1067,6 +1068,35 @@ excluded for *moveable* sprites; size counts only when stretched.
 16. **enterFrame**.
 17. **Immediate sprite scripts**.
 18. Frozen-script resumption.
+
+**Steps 1-3 are `Score::step` and steps 4-18 are `Score::update`, and the split is
+a cadence and not a tidy-up.** `Window::step` calls `Score::step` from the
+projector's main loop, which turns over roughly every 10 ms
+(`director.cpp:370-405`); `Score::update` is where the frame clock is consulted
+(step 6) and where the update ends when the playhead is not due to move. So
+**`idle` runs at the engine's rate, many times per score frame**, before the clock
+is asked anything and whatever the clock then says — and it keeps running while
+Director's `pause` holds the playhead, because `Score::step` reads
+`_playbackPaused` nowhere. Its only early exits are the projector's own
+`kPlayPaused` and `kPlayStopped`. A port that sends `idle` from inside the score
+step has it at a tenth of the rate and loses it entirely on the first `pause`.
+
+*This port:* `frame_loop.gd:tick` sends it, `frame_loop.gd:send_idle` carries the
+argument, and `tools/idle_clock.gd` asserts both the cadence and the pause.
+
+**Reaching the end of the score is the second return from a `play`.** Step 10
+pops the movie stack when `nextFrameNumberToLoad >= getFramesNum()`
+(`score.cpp:462-487`) *before* wrapping to frame 1, requeues the parked play state
+(`:474-476`, and `window.cpp:683-684` when the return crosses containers), and
+resumes the caller there. Only `play` pushes that stack, so the branch is exactly
+"an interlude ran to the end of its score instead of saying `play done`", and it is
+the only thing that can ever wake a handler parked by such a `play`. A port with
+only the `play done` half wraps to frame 1, plays the interlude again from the top,
+and leaves the caller parked for ever.
+
+*This port:* `frame_loop.gd:advance` and `director_preview.gd:_return_from_play_stack`,
+with `tools/play_suspends.gd`'s "an interlude that runs off the end of its score
+returns to its caller".
 
 Compressed: **sprite state is updated from the score first, then the frame time
 is computed, then the frame is drawn, and `enterFrame` runs after the draw.**
@@ -1109,6 +1139,26 @@ returns. So the return keeps the latch raised across the entry it lands on
 that shows it: `ques.dir` 803 fetches six save names out of `saves.dir` with a
 two-frame `play`, and the restart alternated the panel with that movie's empty
 frames for as long as the screen was open.
+
+**And the reference does not need the latch for that case at all**, which is worth
+saying here because the two mechanisms are not interchangeable: `func_play` records
+the return frame as `getCurrentFrameNum() + 1` when the `play` came from a script
+that is not attached to a sprite channel — a frame script or a movie script
+(`lingo-funcs.cpp:207-213`). It lands *past* the caller's frame, so there is
+nothing to re-enter and nothing to suppress. This port lands on the frame and
+suppresses; the outcomes agree, the observable behaviour does not, and `bugs.md`
+54 carries the difference and what taking the reference's spelling would cost.
+
+**A handler that opens another movie ends the step.** `Score::update` returns at
+`score.cpp:696-698` — "the exitFrame event handler may have stopped this movie" —
+and at `:722-724`, both before step 10, so a `go to movie` from `exitFrame`
+contributes no playhead move, no `prepareFrame`, no draw and no `enterFrame` to the
+step it was issued in. The arriving movie enters its own first frame, once. A port
+that opens the container inside the call rather than queueing it must test for this
+explicitly or the tail of the step enters the new movie's frame a second time
+(`frame_loop.gd:movie_gone`; measured at two `enterFrame`s against one
+`prepareFrame` on `DAY1.dir` 729, whose whole frame script is
+`on exitFrame / go(1, "air1.dir")`).
 
 Almost every step checks whether a script **froze** and bails out of the rest of
 the tick. That is how Director makes blocking Lingo work without threads (§9.4),

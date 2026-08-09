@@ -170,7 +170,15 @@ static func stage(host) -> void:
 		# where a movie's opening sound and its global setup live.
 		host._dispatch("prepareMovie", {})
 		host._dispatch("startMovie", {})
-		host._enter_frame_or_defer(host._frame_script(host._index))
+		# Then the frame entry, both halves of it. `Score::startPlay` stops at
+		# `startMovie`; the `update()` that follows it broadcasts `prepareFrame`
+		# (`score.cpp:772-779`) and sends `enterFrame` (`:827-831`) for the frame the
+		# movie opened on, with only `_newMovieStarted` suppressing `idle` and
+		# `exitFrame`. Sending one half of the pair here is how the two came to
+		# disagree: every other frame entry in this port sends both.
+		var opened: Dictionary = host._frame_script(host._index)
+		host._dispatch("prepareFrame", opened)
+		host._enter_frame_or_defer(opened)
 
 	# **After `startMovie`, not before.** A movie's own opening handlers write the
 	# globals the port carries -- `SAVELOAD` sets `nof`, `newsyz` and the rest --
