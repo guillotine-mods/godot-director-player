@@ -39,6 +39,9 @@ const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
 const SaveState := preload("res://scenes/preview/save_state.gd")
 const SaveFiles := preload("res://scenes/preview/save_files.gd")
+## For `MOD_SHIFT` and its three siblings alone -- §8.3's modifier word is the
+## host's field and this file is where the events that write it arrive.
+const LingoHost := preload("res://scenes/preview_lingo_host.gd")
 
 
 ## A keypress, in the order the three claimants get to see it.
@@ -65,6 +68,16 @@ const SaveFiles := preload("res://scenes/preview/save_files.gd")
 ## `director_preview.gd:_input` used to drop every non-pressed key event one call
 ## short of here, so this branch had nothing to route.
 static func key_event(host, event: InputEventKey) -> void:
+	# §8.3, and it happens before every other branch because the reference does it
+	# before every other branch: `events.cpp` writes `_keyFlags` in both the
+	# key-down and the key-up arm, and a **modifier key returns without
+	# dispatching anything at all**. So shift, control, alt and command are the
+	# one class of key that is recorded and not delivered -- no `keyDown`, no
+	# `keyDownScript`, no widget insertion. Without the early return `fromnow`,
+	# which 46 scripts install and which sees every key in the game, was being run
+	# once for the shift of every shifted character.
+	if note_modifiers(host, event):
+		return
 	if not event.pressed:
 		if not event.echo:
 			key_focus(host)._dispatch_key_up(event)
@@ -115,6 +128,58 @@ static func key_event(host, event: InputEventKey) -> void:
 	# is the same number `OS.find_keycode_from_string("Shift+F5")` produces, which
 	# is what `debug_keys.gd` built the map out of.
 	debug_key(host, event.get_keycode_with_modifiers())
+
+
+## Godot's four modifier keycodes, and the bit each carries in Director's word.
+##
+## Keyed on the *keycode* rather than on the `*_pressed` booleans because this
+## table answers a second question the booleans cannot: **is this event a
+## modifier key in its own right**, which is what §8.3 suppresses the dispatch
+## for. Godot reports left and right shift as one keycode, so there is no pair to
+## fold here.
+## The bits are the host's own, not a second copy of them: the word is stored
+## there, read there by the four properties and saved from there, and two files
+## agreeing about which bit is shift by both writing `1` is the shape that comes
+## apart the first time one of them gains a fifth modifier.
+const MODIFIER_KEYS := {
+	KEY_SHIFT: LingoHost.MOD_SHIFT,
+	KEY_ALT: LingoHost.MOD_ALT,
+	KEY_CTRL: LingoHost.MOD_CTRL,
+	KEY_META: LingoHost.MOD_META,
+}
+
+
+## Latch the modifier word that came with this event, and say whether the event
+## *is* a modifier key (§8.3).
+##
+## **The word is taken from the event, not from the keyboard.** That is the whole
+## change: `the shiftDown` and its three siblings used to ask
+## `Input.is_key_pressed` at the moment the property was read, which answers
+## about the OS keyboard some milliseconds after the event that is being handled
+## and about a keyboard no synthetic event ever touches. The reference stores
+## `event.kbd.flags` on the way past and every one of the four properties reads
+## that stored word (`lingo-the.cpp`), so a handler asking mid-dispatch is told
+## what was held when the key arrived.
+##
+## Recorded on the movie the key is being delivered to, which is where
+## `the keyCode` and `the key` are recorded as well: the reference keeps one word
+## for the engine, this port keeps one host per movie, and splitting the pair
+## would let `the keyCode` and `the shiftDown` describe different keystrokes.
+static func note_modifiers(host, event: InputEventKey) -> bool:
+	var focus: Node = key_focus(host)
+	var lingo: Object = focus.get("_host")
+	if lingo != null:
+		var flags := 0
+		if event.shift_pressed:
+			flags |= LingoHost.MOD_SHIFT
+		if event.alt_pressed:
+			flags |= LingoHost.MOD_ALT
+		if event.ctrl_pressed:
+			flags |= LingoHost.MOD_CTRL
+		if event.meta_pressed:
+			flags |= LingoHost.MOD_META
+		lingo.set("key_flags", flags)
+	return MODIFIER_KEYS.has(event.keycode)
 
 
 ## The movie a keypress belongs to.
@@ -193,15 +258,36 @@ static func mouse_button(host, event: InputEventMouseButton, at: Vector2,
 	host.route_press(at)
 
 
-## The right button (§8.1, D5). Not a click in any of the senses the left button
-## is: no drag, no `the clickOn`, no wait-for-click release -- see
-## `interaction.gd:right_button` for why each of those is deliberate.
+## The right button (§8.1, D5). Nearly a click in every sense the left button is:
+## `interaction.gd:latch_press` runs the whole §15 mouse-down block for either
+## button, and §9.2's wait-for-click is released by either too -- the reference
+## clears `_waitForClick` in the arm it shares between `EVENT_LBUTTONDOWN` and
+## `EVENT_RBUTTONDOWN` (`events.cpp:250-254`), because the frame is waiting for a
+## click and not for a particular one. What the right button does *not* raise is
+## the left pair of messages; that is the whole of the difference.
+##
+## This header used to say the opposite -- no drag, no `the clickOn`, no
+## wait-for-click release, each of them deliberate. The first two stopped being
+## true when the latch block landed and this one was never checked against the
+## reference at all, which is how a stale "deliberate" note outlives the decision
+## it records.
 ##
 ## Routed to the same movie a left press would reach, because "which movie owns
 ## this point" is a property of the point and not of the button.
 static func right_mouse_button(host, event: InputEventMouseButton, at: Vector2) -> void:
 	if bool(host._picker.get("open", false)):
 		return
+	if event.pressed:
+		# The same record the left button keeps, and for the same reason: a movie
+		# answers a click whose *press* it saw, and a window that opened during
+		# this click has not seen one. Without it the wait-for-click release in
+		# `route_right_button` is guarded on a flag only the left button ever
+		# sets, which is a fix that never fires.
+		host._saw_press = true
+		for key in host._windows:
+			var w: Node = host._windows[key]
+			if w != null:
+				w._saw_press = true
 	var blocking: Node = host.modal_window()
 	if blocking != null and not blocking.window_frame().has_point(at):
 		return

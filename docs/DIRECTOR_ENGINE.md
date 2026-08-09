@@ -859,7 +859,10 @@ has when they fire.
 answering the builtin in both its forms, measured against the **score's**
 geometry rather than the live channel's — see the function's own comment for why
 the live rect feeds a menu's highlight back into its own rollover test. `the
-rollOver` as a property is unbound and reads VOID. The hover messages are driven
+rollOver` as a property is **bound to that same descent**, which is the wrong one
+of the two — it should be the ink-aware hit test with no eligibility filter, a
+third channel this port does not maintain. It is not unbound and it does not read
+VOID; this line said so, and §19's `live` row for it disagreed. The hover messages are driven
 off the rollover channel rather than the filtered one. All three are recorded in
 `ENGINE_TODO.md` with what has to change alongside each.
 
@@ -1208,6 +1211,17 @@ from enterFrame (inside `enter_frame`), which is right in shape but has no
 advances — see §17.5. Both redraw everything every frame with no dirty rects,
 which is the right trade in Godot but forecloses destination-reading inks.
 
+The immediate-mode half of that structural point is now true here too, and it
+had to become true: `updateStage` is Director rendering the window from inside a
+handler, and a paint that can only happen in Godot's `NOTIFICATION_DRAW` cannot
+be asked for. Every draw in the player goes through
+`director/director_paint.gd`, which issues commands to a node's canvas item
+through `RenderingServer` rather than through `CanvasItem.draw_*`, so
+`director_preview.gd:_paint()` runs from Godot's `_draw` and from
+`repaint_now()` alike. What is still missing against §6.3 is the dirty
+rectangles: a synchronous repaint composites the whole frame, where Director
+re-renders only the regions a channel occupied and now occupies.
+
 ---
 
 ## 7. Cursor
@@ -1360,12 +1374,27 @@ was under it. And a right click in D5+ raises **only** the right-hand pair — n
 press does, including latching `the clickOn`, starting a drag on a moveable
 sprite, and setting the hilite.
 
-*This port:* `preview/interaction.gd` deliberately implements a **different but
-self-consistent triple** — `mouseUp` goes to the sprite that took the press,
-`mouseUpOutSide` is raised by the release when it lands outside that sprite, and
-`the clickOn` is latched by the press and never rewritten. §15 has why, and the
-corpus evidence that a shipped game cannot have run on the literal reading.
-Changing any one of the three requires changing all three.
+*This port:* two of that triple are the reference's now and the third is not.
+`mouseUp` goes to the sprite under the **release**
+(`director_preview.gd:_release_click` builds the chain from `_channel_at(at)`)
+and `the clickOn` is rewritten from that same sprite when it answered non-zero
+(`interaction.gd:release`) — the two together, because either alone makes one
+dispatch give two answers to which sprite it is about. What remains different is
+`mouseUpOutSide`: a release outside the sprite that was pressed raises it **on
+the release**, to that sprite, and dispatches no `mouseUp` at all, where the
+reference raises the `mouseUp` to whatever is under the release and defers
+`mouseUpOutSide` to the next press. It stays coherent — the rewrite happens only
+on the arm that dispatches `mouseUp`, so `the clickOn` names the recipient during
+both messages — and it is the gesture the message pair exists for: sliding off a
+control before letting go is how a player backs out of a mis-aimed press, and
+Director's own documentation describes the message as firing on that release.
+§15 and `ENGINE_TODO.md` have what closing the last one would cost.
+
+The right button does everything the left one's press does bar the two things
+that are the *player's* click rather than *a* click — the wait-for-click release
+and the palette-cycle abort — and bar `the mouseDownScript`/`mouseUpScript`,
+which Director files under the left events (§6.3). `interaction.gd:latch_press`
+is that block, once, for both buttons.
 
 ### 8.2 The hierarchy
 
@@ -1383,6 +1412,16 @@ scripts.**
   **a primary handler passes the event on by default** and must call
   `dontPassEvent` to stop it, while every other level consumes by default and
   must call `pass` to continue. Getting this inverted is the classic bug.
+  *This port:* the four Lingo-settable ones hold source and compile it in the
+  property's setter (`preview_lingo_host.gd:_compile_primary`), and
+  `preview/event_chain.gd:run_primary_script` runs the result for the mouse and
+  the keyboard alike. What runs is the compiled script's **scopeless** part,
+  which is what the reference runs: `setPrimaryEventHandler` files the string
+  under `kEventScript` and `resolveScriptEvent` then rewrites the event to
+  `kEventGeneric`, so an `on <event>` block written inside the string is never
+  reached. `rightMouseDown`/`rightMouseUp` have primary slots and no property
+  that can fill one; `timeout` has neither, because the timeout clock is
+  unbuilt.
 - **Sprite script** runs only when the event resolved to a sprite.
 - **The whole chain is queued before any of it runs**, and each element then
   re-resolves its own target at execution time against the score *as it is when
@@ -1442,6 +1481,19 @@ word and are **independent booleans**; they combine by being read separately, no
 by being encoded into `the keyCode`. On Mac in D5+, control-click is optionally
 emulated as a right click. A key event also refreshes the timeout clock when
 `the timeoutKeyDown` is set.
+
+*This port:* the word is `preview_lingo_host.gd:key_flags`, written by
+`preview/input_router.gd:note_modifiers` from the event's own modifier state on
+the way past — in the key-down arm and the key-up arm and nowhere else, which is
+where the reference writes `_keyFlags` — and a modifier key returns from
+`key_event` without dispatching. The four properties read that word. They used to
+ask `Input.is_key_pressed` at the moment of the read, which answers about the OS
+keyboard rather than about the event being handled: a chord released while the
+handler ran read as never held, and a synthesised key event could not set them at
+all. `the timeoutKeyDown` is bound and stored; there is no timeout clock for it
+to refresh yet, so it is `inert` in §19's sense and `ENGINE_TODO.md` says so.
+Control-click emulation is not implemented — this is not a Mac build, and Godot
+delivers a real right button.
 
 ### 8.4 Editable fields, focus and selection
 
@@ -1521,12 +1573,27 @@ With no tempo, the previous rate carries forward. A **puppet tempo** overrides
 the score's but is cancelled the moment the score writes a tempo or the effective
 tempo changes.
 
-*This port:* `director/director_score.gd` carries FPS forward and decodes delay
-and wait-for-click; `director/director_frame_clock.gd` is what stops the playhead
-for them. Sound and video waits are absent, and nothing in this corpus asks for
-one: across all 61 containers the tempo byte only ever holds 246, 247 or 248 —
-the D6 numbering, not D5's — so every tempo written is a frame rate, a delay or a
-wait-for-click and there is no sound or video wait to miss. The delay operand is
+*This port:* `director/director_score.gd:tempo_waits` decodes the delay, the
+click wait, the sound waits and the video waits, in both numberings, chosen by
+the movie's file version and never by the value;
+`director/director_frame_clock.gd` resolves which instruction is in force —
+the frame's cell, the carried-forward cell, or a `puppetTempo` — and is what
+stops the playhead for it. A sound wait is released by `preview/sound.gd`'s
+once-a-tick pass and a video wait by `FrameClock.video_probe`, which nothing
+installs yet, so a video wait behaves as a video that has already finished. The
+puppet's argument is read in the pre-D6 numbering whatever the movie is, because
+it never came out of a score cell; the reference reads it in the movie's, which
+turns `puppetTempo 30` into a video wait in every D6 file.
+
+**The sound wait is not unexercised, and the sentence that said so was counting
+one title.** Piposh 2's 86 containers write only 246, 247 and 248 across their
+61,371 frames — 129 rates, 36 delays, 24 click waits — which is where "no sound
+or video wait to miss" came from. *Rating*'s 118 containers write 414 rates, 160
+delays, 214 click waits **and 276 sound waits**, 259 of them on channel 1 and 17
+on channel 2. So a wait the engine had no cover for is on 276 frames of a title
+this port is meant to run, and the only reason it never showed was that the
+number was measured on the other corpus. Video waits remain at zero in both. The
+delay operand is
 read as **whole seconds**: `strtgame.dir` writes 1 and 2 there, which is 1 s and
 2 s under that reading and 17 ms and 33 ms under a tick reading, and nobody
 authors a 17 ms pause.
@@ -1967,19 +2034,25 @@ non-empty, and otherwise **wraps to frame 1** — it does not stop.
 - **Cast erase and reload**: an erased member is dropped and both the current and
   next sprite re-resolve their pointers mid-update; a member whose filename
   changed is flagged for reload.
-- **`the beepOn`** makes a click on empty stage beep.
+- **`the beepOn`** makes a click on empty stage beep. It is **off by default**,
+  and it gates that one click and nothing else: `LB::b_beep` calls `func_beep`
+  without asking, so a script's own `beep()` sounds either way. *This port:*
+  implemented in `preview/interaction.gd:latch_press`. It used to gate the `beep`
+  builtin instead — which is why the default read `true`, the only value that
+  made 154 corpus `beep()` calls audible.
 - **Button hilite has a genuinely strange rule**: on mouse-up, if the last
   mouse-*down* was in *any* button, the button under the mouse-up flips its
-  hilite. ScummVM notes this makes no sense and does it anyway.
+  hilite. ScummVM notes this makes no sense and does it anyway. *This port:* so
+  does `interaction.gd:latch_release`, off `_mouse_down_in_button`. Unexercised —
+  0 of the 51,350 members across the three corpora is of type `button`.
 - **`the clickOn`** updates on mouse-down always, on mouse-up only when the
-  release was over a sprite. **The mouse-up half is a deliberate divergence in
-  this port and is not implemented** — see `preview/interaction.gd:release`. It
-  is coherent in ScummVM only because ScummVM also delivers the mouse-up to the
-  sprite under the release; this port delivers it to the sprite that took the
-  press (D6's `mouseUp`/`mouseUpOutSide` pair), and the two rules have to name
-  the same sprite. Implementing the clause on its own broke every drop in the
-  corpus, whose idiom is a `mouseDown`/`mouseUp` pair keyed on `the clickOn`
-  being stable across the click.
+  release was over a sprite. *This port:* implemented, **together with its other
+  half** — the mouse-up chain is built from the sprite under the release, because
+  the clause is coherent only when the property and the recipient name one
+  sprite. See `preview/interaction.gd:release` for why the corpus's inventory
+  idiom survives it (every drop target it names is a *lower* channel than the
+  slot being dragged, so the dragged sprite answers for itself) and for the one
+  arm that still diverges, which is `mouseUpOutSide`'s.
 - **Immediate sprites** invert the ordering: the script runs on mouse-down and a
   paired mouse-up is synthesised immediately after. Before D4, mouse-up goes to
   the sprite that was *pressed*; from D4, to the sprite under the *release*.
@@ -1992,7 +2065,12 @@ non-empty, and otherwise **wraps to frame 1** — it does not stop.
   offset for a moveable sprite, and the cast id / script id / immediate flag the
   mouse-up will resolve against. It runs for `rightMouseDown` as well as
   `mouseDown`. Reproducing any one of them without the others is what makes a
-  right click and a left click disagree about what a click *is*.
+  right click and a left click disagree about what a click *is*. *This port:*
+  `preview/interaction.gd:latch_press`, one function, called by both buttons
+  through `director_preview.gd:_press_click`, with `latch_release` as its mirror.
+  Four of the five are there; the fifth's *immediate* flag is not, because
+  `the immediate of sprite` is unbound (see the bullet above) — the cast id and
+  the script id are, as `_press_member` and the queued chain.
 - **`the doubleClick` is derived, not latched**: the engine keeps the last two
   press timestamps and answers "were they within 25 ticks" — about 417 ms — each
   time the property is read. A third press retires the first.

@@ -45,6 +45,49 @@ extends RefCounted
 ## node's own script lookups, so this module cannot answer differently from the
 ## dispatcher it replaced.
 
+## `the mouseDownScript`, `the mouseUpScript`, `the keyDownScript`,
+## `the keyUpScript` -- the other half of tier 1. True when something ran.
+##
+## Here rather than in `interaction.gd` or in `director_preview.gd` because both
+## of those run one, and they ran two different versions of it: the mouse arm
+## looked the name up with `has_handler` and the key arm did the same thing four
+## hundred lines away with its own tally spelling. §6.3 makes them one tier and
+## one rule, so they are one function.
+##
+## **What the property holds is Lingo source, compiled on assignment**
+## (`preview_lingo_host.gd:_compile_primary`), and what arrives here is the
+## compiled record. Two forms, resolved in Director's own order: a bare word is a
+## no-argument call, so if it names a handler the movie declares, that handler
+## runs; otherwise the compiled statement runs and reaches whatever Lingo would
+## have reached. The distinction is invisible to the movie and exists so that a
+## name resolving to nothing stays silent rather than reporting an unbound
+## builtin on every keypress -- see the field's own note.
+##
+## **It passes by default**, like every tier-1 element (§8.2), so the caller runs
+## it and carries on unless the handler said `dontPassEvent`. The caller also
+## resets `pass_event` before calling: two primary elements both default to
+## passing, and the second must not inherit the first's flag.
+static func run_primary_script(host, interpreter, compiled: Dictionary,
+		label: String) -> bool:
+	if interpreter == null or compiled.is_empty():
+		return false
+	var name := str(compiled.get("name", ""))
+	var named: bool = name != "" and bool(interpreter.has_handler(name))
+	var body: Array = (compiled.get("handler", {}) as Dictionary).get("body", [])
+	if not named and body.is_empty():
+		return false
+	# The name where there is one, so `keyDownScript:fromnow` still reads as the
+	# thing that was installed; a marker where the source is not a name, because
+	# a tally key holding a whole script is a tally key nothing can look up.
+	var tag := "%s:%s" % [label, name if name != "" else "<source>"]
+	host._tally(host._sent, tag)
+	host._tally(host._ran, tag)
+	if named:
+		interpreter.call_handler(name)
+		return true
+	return bool(interpreter.run_compiled(compiled))
+
+
 ## One element of the queue.
 ##
 ## `movie` distinguishes the last element from the rest: a movie script is found

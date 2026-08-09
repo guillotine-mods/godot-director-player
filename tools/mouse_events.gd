@@ -256,20 +256,23 @@ func _send(preview: Node, stage: Vector2, event: InputEventMouse) -> void:
 
 ## Pick a sprite up, carry it over a **higher** channel, and let go there.
 ##
-## `the clickOn` must still name the sprite that was pressed, because that is the
-## sprite this port delivers the `mouseUp` to, and one dispatch cannot give two
-## answers to "which sprite is this about". Recomputing it under the pointer
-## instead is §15's clause read literally and is what ScummVM does -- but ScummVM
-## also delivers the message to the sprite under the release, and taking one
-## without the other is what this exists to stop coming back.
+## §15: `the clickOn` is rewritten from the sprite under the **release**, and the
+## `mouseUp` chain is built from that same sprite. **The two are asserted
+## together in one scenario and that is the point of the scenario** -- either
+## alone makes one dispatch give two answers to "which sprite is this about", and
+## the clause was taken alone once and reverted for exactly that.
 ##
-## It is the corpus's entire drop idiom. `MASTER/External/BehaviorScript 52`, on
-## all eight of DAY1's inventory slots and in eleven near-copies elsewhere,
-## records `objectxx = the locH of sprite the clickOn` on the way down and writes
-## it back to `sprite the clickOn` on the way up. With the recompute, dragging the
-## ladder one slot along the bar wrote slot 1's home coordinates onto slot 4's
-## sprite -- the empty marker jumped into the ladder's place and the ladder was
-## abandoned mid-bar. `preview/interaction.gd:release` carries the measurement.
+## This used to assert the opposite: that the press's channel survived the
+## release. It was the honest check of a deliberate divergence, and the
+## divergence is gone.
+##
+## What makes it safe is not asserted here because no synthetic frame can carry
+## it: the corpus's drop idiom (`MASTER/External/BehaviorScript 52` on all eight
+## of DAY1's inventory slots, eleven near-copies elsewhere) always drops onto a
+## **lower** channel -- `intersects 100` is Pip's head, 103-110 are the slots --
+## so the dragged sprite is the topmost answer and the rewrite names it. This
+## harness stages the opposite on purpose, because the case where the two
+## readings differ is the case worth pinning.
 ##
 ## Run twice: once driving the routing directly, which is the only way to assert
 ## it headlessly, and once through `_input` with real events, which is the path a
@@ -342,10 +345,24 @@ func _drop_over_a_higher_channel(preview: Node, h, host: Object, subject: int,
 			await preview.get_tree().process_frame
 		else:
 			preview.call("route_release", land)
-		h.check("[%s] the release did not hand `the clickOn` to the drop target" % how,
-			int(host.get("click_sprite")) == carried,
-			"clickOn %d, wanted %d (drop target %d)" % [
-				int(host.get("click_sprite")), carried, target])
+		h.check("[%s] the release handed `the clickOn` to the drop target" % how,
+			int(host.get("click_sprite")) == target,
+			"clickOn %d, wanted %d (pressed %d)" % [
+				int(host.get("click_sprite")), target, carried])
+		# ...while §15's *other* latch did not move with it. The cast element of
+		# the mouse-up chain resolves against the member the mouse-DOWN landed on,
+		# so the two are deliberately about different sprites: `the clickOn` names
+		# the release, `_press_member` still names the press. A port that let the
+		# release rewrite both would have lost the cast-targeting rule to the
+		# clickOn one without anything saying so.
+		var pressed_member: Dictionary = preview.get("_press_member")
+		var carried_now: Dictionary = preview.call("_effective", _sprite_on(preview, carried))
+		h.check("[%s] but the mouse-up's cast element still names the press" % how,
+			not carried_now.is_empty()
+			and int(pressed_member.get("id", -1)) == int(carried_now["cast_id"]),
+			"press member %s, pressed sprite shows %s" % [
+				str(pressed_member.get("id", -1)),
+				str(carried_now.get("cast_id", -1))])
 	# Put it back: what follows measures the rollover where the subject started,
 	# and a sprite left sitting somewhere else changes what is there.
 	preview.call("lingo_set_sprite_prop", carried, "loch", int(home.x))
@@ -763,11 +780,23 @@ func _init() -> void:
 	h.complete("§6.5: sprite-local messages never reach a frame or movie script")
 
 	# ------------------------------------------------------------------ §8.1 D5
-	h.begin("§8.1: the right button sends its own pair")
+	h.begin("§8.1: the right button sends its own pair, and latches like the left")
 	var rd := _sent(preview, "rightMouseDown")
 	var ru := _sent(preview, "rightMouseUp")
-	var dragging := int(preview.get("_drag_channel"))
+	var md := _sent(preview, "mouseDown")
 	preview.call("route_right_button", inside, true)
+	# §15's block runs at the primary tier for `rightMouseDown` exactly as for
+	# `mouseDown`, so the press is latched and `the clickOn` is written. This used
+	# to do none of it, on the recorded grounds that its five latches go in
+	# together or not at all.
+	h.check("the right press latches the channel it landed on",
+		int(preview.get("_press_channel")) == channel,
+		"pressed %d, wanted %d" % [int(preview.get("_press_channel")), channel])
+	h.check("...and `the clickOn` with it",
+		int(host.get("click_sprite")) == channel,
+		"clickOn %d, wanted %d" % [int(host.get("click_sprite")), channel])
+	h.check("...and the member the mouse-up will resolve against",
+		not (preview.get("_press_member") as Dictionary).is_empty())
 	preview.call("route_right_button", inside, false)
 	h.check("rightMouseDown and rightMouseUp both go out",
 		_sent(preview, "rightMouseDown") == rd + 1
@@ -775,11 +804,18 @@ func _init() -> void:
 		"down %d/%d, up %d/%d" % [
 			_sent(preview, "rightMouseDown"), rd + 1,
 			_sent(preview, "rightMouseUp"), ru + 1])
-	# §7.6's drag and §9.2's wait are the left button's. A right-click that
-	# cancelled a drag would be this port inventing behaviour.
-	h.check("it does not touch the drag",
-		int(preview.get("_drag_channel")) == dragging)
-	h.complete("§8.1: the right button sends its own pair")
+	# D5+: **only** the right-hand pair. A right click that also sent `mouseDown`
+	# would be running every left-button handler in the movie a second time.
+	h.check("and the left pair does not",
+		_sent(preview, "mouseDown") == md,
+		"mouseDown %d, was %d" % [_sent(preview, "mouseDown"), md])
+	# The release block is the mirror: the drag it may have started is over.
+	h.check("the right release ends the drag and the press",
+		int(preview.get("_drag_channel")) == 0
+		and int(preview.get("_press_channel")) == 0,
+		"drag %d, press %d" % [
+			int(preview.get("_drag_channel")), int(preview.get("_press_channel"))])
+	h.complete("§8.1: the right button sends its own pair, and latches like the left")
 
 	# ------------------------------------------------------------------ §6 timing
 	h.begin("§6: the click clock — clickLoc, lastClick, doubleClick")

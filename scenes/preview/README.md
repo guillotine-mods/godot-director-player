@@ -24,6 +24,7 @@ the Godot lifecycle; the modules own the rules.
 | a Movie-In-A-Window is the wrong size, won't close, or eats clicks | `windows.gd` |
 | a trails sprite leaves no stroke, or leaves one it shouldn't | `trails.gd` |
 | the whole stage paints wrong, or spills outside the letterbox | `stage_paint.gd` |
+| a paint reaches nothing, or reaches the screen at the wrong time | `../../director/director_paint.gd` |
 | the wrong colours after a palette change | `palette_view.gd` |
 | a room runs too fast or too slow, a wait never releases | `frame_loop.gd` |
 | a `pause`d room is on the wrong frame, or a click cannot lift the pause | `frame_loop.gd` |
@@ -48,6 +49,28 @@ keys were sprite fields and which were channel state, and eight bugs came out of
 the places they disagreed. A sprite property is one `FIELDS` row and is merged,
 released and read back from that row alone; a property with no row reaches
 nothing, which `sprite_props.consumed` derives rather than asserts.
+
+## One paint, two entry points
+
+`director_preview.gd:_paint()` is the only painter. Godot reaches it through
+`_draw`; Lingo reaches it through `repaint_now()`, which is what `updateStage`
+is bound to — Director redraws the stage *inside* the handler that asks (§9.1,
+3,717 sites), and a loop that moves a sprite and calls it is how a Director movie
+animates without the score.
+
+That is only possible because nothing here calls `CanvasItem.draw_rect` and
+friends any more. Those assert `drawing`, which Godot raises for the duration of
+`NOTIFICATION_DRAW` and no longer, and there is no way to make a
+`NOTIFICATION_DRAW` happen on demand: `queue_redraw()` pushes the redraw
+callback onto the message queue and GDScript cannot flush it. Every draw goes
+through `director/director_paint.gd` instead, which issues the same commands to
+the node's canvas item through `RenderingServer` and may be called from
+anywhere; `repaint_now` clears the command list, runs `_paint`, and presents with
+`RenderingServer.force_draw()`.
+
+**Add a draw call and it goes through `Paint`.** A `draw_*` call added straight
+to a module works from `_draw` and errors from `updateStage`, which is a bug that
+only appears in the movies that animate.
 
 ## The save state
 
@@ -114,7 +137,11 @@ nothing. `bugs.md` 51 carries it.
 
 The baseline is **49 pass, 2 fail** over a list that is **51 entries** since
 `idle_clock` and `new_game_reset` joined it, and neither failure is a renderer
-question:
+question. `primary_scripts` has since joined it and makes 52; its own result is
+measured (PASS) and the other 51 are *carried forward from the run below rather
+than re-measured*, so "50 pass, 2 fail over 52" is arithmetic and not a
+measurement until somebody runs the whole thing again. Which is the same warning
+the paragraph two below this one is about — do not let it become a sum:
 
 - `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
   keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).

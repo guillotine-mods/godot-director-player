@@ -199,6 +199,8 @@ const ACCOUNTED := {
 		+ " read in `_input`, which never runs inside one.",
 	"_press_channel": "excluded: with the press",
 	"_press_member": "excluded: with the press",
+	"_mouse_down_in_button": "excluded: with the press -- §15's flag lives from"
+		+ " the mouse-down to the mouse-up and no longer",
 	"_click_script": "excluded: with the press",
 	"_chain": "excluded: the queued recipients of a mouse message in flight",
 	"_drag_channel": "excluded: a drag is a button being held, and a held button"
@@ -214,6 +216,10 @@ const ACCOUNTED := {
 	"_frozen_play": "excluded: with the frozen chains",
 	"_enter_frame_froze": "excluded: with the frozen chains",
 	"_frozen_parked": "excluded: a session counter for the frozen chains",
+	"_repaints": "excluded: a session counter for the synchronous repaints"
+		+ " `updateStage` asks for, which describes this process's rendering and"
+		+ " not the movie's state",
+	"_update_stage_calls": "excluded: with the repaint counter",
 	"_in_exit_frame": "excluded: true only during a dispatch, and `_input` is not one",
 	"_toast": "excluded: a message that dismisses itself in two seconds",
 	"_toast_until": "excluded: with the toast",
@@ -364,6 +370,17 @@ static func _hooks_of(host) -> Dictionary:
 		"mouse_up_script": str(host._host.mouse_up_script),
 		"key_code": int(host._host.key_code),
 		"key_char": str(host._host.key_char),
+		# §8.3's modifier word, saved with `the keyCode` rather than apart from
+		# it: the two describe one keystroke, and a record that carried the key
+		# and not the modifiers held with it would restore a session in which the
+		# last key had been pressed with nothing held down.
+		"key_flags": int(host._host.key_flags),
+		# Two movie settings a script writes and is then restored into the middle
+		# of. `the beepOn` gates §15's empty-stage click and `the timeoutKeyDown`
+		# is the timeout clock's keyboard switch; both default off, so a save that
+		# dropped them would silently turn off whatever the movie had turned on.
+		"beep_on": bool(host._host.beep_on),
+		"timeout_key_down": bool(host._host.timeout_key_down),
 		"click_sprite": int(host._host.click_sprite),
 		"click_loc": [host._host.click_loc.x, host._host.click_loc.y],
 		"double_click": bool(host._host.double_click),
@@ -548,6 +565,9 @@ static func _restore_hooks(host, hooks: Dictionary) -> void:
 	host._host.mouse_up_script = str(hooks.get("mouse_up_script", ""))
 	host._host.key_code = int(hooks.get("key_code", -1))
 	host._host.key_char = str(hooks.get("key_char", ""))
+	host._host.key_flags = int(hooks.get("key_flags", 0))
+	host._host.beep_on = bool(hooks.get("beep_on", false))
+	host._host.timeout_key_down = bool(hooks.get("timeout_key_down", false))
 	host._host.click_sprite = int(hooks.get("click_sprite", 0))
 	var at: Array = hooks.get("click_loc", [0, 0])
 	host._host.click_loc = Vector2(float(at[0]), float(at[1])) if at.size() >= 2 else Vector2.ZERO

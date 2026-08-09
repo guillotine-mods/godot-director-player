@@ -20,6 +20,10 @@ extends RefCounted
 
 const Ink := preload("res://director/director_ink.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
+## §6.3's queue. Reached from here for two things the click model owns: the
+## member latched for the mouse-up's cast element (§15), and tier 1's
+## `*Script` runner, which the mouse and the keyboard share.
+const EventChain := preload("res://scenes/preview/event_chain.gd")
 
 ## How close two presses have to be to make `the doubleClick` true.
 ##
@@ -548,7 +552,10 @@ static func constraint_box(host, channel: int) -> Rect2:
 ## and have a mouse-up synthesised straight after. That is one authored sprite
 ## flag, though, not the click model -- applied to every sprite it makes the
 ## whole engine immediate, and nothing can be dragged anywhere.
-static func press(host, at: Vector2) -> void:
+## `right` selects the pair of messages, and **nothing else about the press**
+## (§8.1, D5; §15). A right click latches everything a left click latches and
+## raises only `rightMouseDown`/`rightMouseUp` -- not the left pair as well.
+static func press(host, at: Vector2, right := false) -> void:
 	# A window movie has its input processing switched off (`preview/boot.gd`), so
 	# the only way it ever learns where the pointer is, is from whoever routed an
 	# event into it. Without this, `the mouseH` inside a Movie-In-A-Window answers
@@ -559,7 +566,6 @@ static func press(host, at: Vector2) -> void:
 	# Cleared first, so a press the interpreter is not up for cannot leave the
 	# *previous* click's script latched for the release to send a message to.
 	host._click_script = {}
-	host._press_channel = 0
 	if not host._lingo_on or host._interpreter == null:
 		return
 	# `the clickLoc`, `the lastClick` and `the doubleClick`, which are three views
@@ -587,45 +593,176 @@ static func press(host, at: Vector2) -> void:
 	# lives in the frame script and reads `the clickOn`.
 	# Annotated rather than inferred: a call through `host` is untyped, so `:=`
 	# has nothing to infer from and the whole module fails to compile.
-	var channel: int = host._channel_at(at)
-	# `the clickOn` is latched by the mouse-DOWN and holds until the next one, so
-	# it still names the dragged channel when the release arrives. Recomputing it
-	# under the pointer at mouse-up would usually answer the same thing -- the
-	# dragged sprite is under the cursor by construction -- and would be wrong the
-	# moment a handler moves or hides it, which `BehaviorScript 52` does on its
-	# own last two lines.
-	host._host.click_sprite = channel
-	var chosen: Array = script_for_click(host, channel, host.frame_sprites())
+	#
+	# **The channel is the one `latch_press` already answered**, not a fresh
+	# descent. `_press_click` runs the latch block before it builds the chain,
+	# because §15's block runs "at the very beginning, before the first source
+	# type" and because the chain has to be settled before a `mouseDown` handler
+	# can move what it would have resolved against.
+	var channel := int(host._press_channel)
+	var events: Array = click_events(right)
+	var chosen: Array = script_for_click(host, channel, host.frame_sprites(), events)
 	var script: Dictionary = chosen[0]
 	# Says what was clicked, which script is about to answer for it, and whether
 	# a handler actually exists. "clicked nothing" and "clicked something with no
 	# mouseUp" look identical on screen and are entirely different faults.
-	var has_up: bool = host._interpreter.call("_script_has_handler", script, "mouseup") \
-		or host._interpreter.has_handler("mouseup")
+	var has_up: bool = host._interpreter.call("_script_has_handler", script, str(events[1])) \
+		or host._interpreter.has_handler(str(events[1]))
 	# Kept, not just printed: the snapshot key reports the click that went wrong,
 	# and by the time anyone presses it the score has moved on several frames.
 	host._last_click = Snapshot.note_click(
 		at, host._index, channel, str(chosen[1]), script, has_up)
 	print(Snapshot.click_line(host._last_click))
-	# Held for the release. Director sends `mouseUp` to the sprite that took the
-	# `mouseDown`, not to whatever is under the pointer when the button comes up,
-	# and resolving it again at release would ask a different question of a score
-	# that may have advanced frames in between.
+	# Held for the release, which uses it only for the *log* and the snapshot now
+	# that the chain is queued: `_dispatch` runs the queue and ignores this
+	# argument. It is still the press's resolution rather than the release's,
+	# because it is the record of what the press decided.
 	host._click_script = script
-	# The channel as well as the script, because the release has to answer a
-	# question the script cannot: was the button let go *inside the sprite that
-	# was pressed*. `release` below is where that is decided.
-	host._press_channel = channel
+	var event := "rightMouseDown" if right else "mouseDown"
 	# §6.3 tier 1. A primary handler runs ahead of every other tier and, unlike
 	# every other tier, **passes by default** -- so the sprite/frame/movie
 	# dispatch below happens anyway unless the handler called `dontPassEvent`.
 	# Inverting that default is the classic Director bug, so the ordering here is
 	# "run it, then carry on" rather than "run it and stop if it claimed".
-	if host._interpreter.run_primary("mousedown"):
-		host._tally(host._ran, "when mouseDown")
-	_run_primary_script(host, str(host._host.mouse_down_script), "mouseDownScript")
-	host._dispatch("mouseDown", script)
+	var pass_on := true
+	if host._interpreter.run_primary(event.to_lower()):
+		host._tally(host._ran, "when %s" % event)
+		pass_on = bool(host._host.pass_event)
+	# The flag again, per element (§8.2): two primary elements both default to
+	# passing and the second must not inherit the first's `dontPassEvent`. The
+	# verdict is carried in `pass_on` and put back below, so resetting here cannot
+	# erase what the `when` handler decided -- which is what an unconditional
+	# reset does, and it is the shape ENGINE_TODO's second event-chain residue was
+	# about.
+	#
+	# **The left button only.** Director files a primary handler under the event
+	# it was installed for, and the language spells only five of them --
+	# `the mouseDownScript`, `mouseUpScript`, `keyDownScript`, `keyUpScript` and
+	# `timeoutScript`. There is no `rightMouseDownScript`, so the right button's
+	# primary slot is one nothing can fill and a right click runs no `*Script`.
+	# The `when rightMouseDown then` form above is a different mechanism and does
+	# run, which is why the two lines are not one.
+	if not right:
+		host._host.pass_event = true
+		if EventChain.run_primary_script(host, host._interpreter,
+				host._host.mouse_down_compiled, "mouseDownScript"):
+			pass_on = bool(host._host.pass_event)
+	# What the primary tier left, for `EventChain.run` inside `_dispatch` to read.
+	host._host.pass_event = pass_on
+	host._dispatch(event, script)
 	host.queue_redraw()
+
+
+## §15's mouse-down block: **five things latched together, for either button.**
+##
+## The reference runs it once per click, at the primary tier, before the first
+## script element of the chain resolves -- and it runs it for `rightMouseDown`
+## exactly as for `mouseDown` (`lingo-events.cpp:158-190`). This port used to run
+## none of it for the right button, which the ENGINE_TODO entry it closes calls
+## an all-or-nothing block for a reason worth restating: taking `the clickOn`
+## alone would let a right click rename the sprite a left drag is in the middle
+## of, with no drag of its own to justify the rename.
+##
+## The five, in the reference's order:
+##
+## 1. **The beep**, when the press landed on nothing at all and `the beepOn` is
+##    set. The one thing here that happens *because* the click reached no sprite.
+## 2. **The hilite channel** -- `_press_channel`, which this port also uses as
+##    "the sprite that took the press". The reference splits the two
+##    (`_currentHiliteChannelId` is gated on `shouldHilite`), and one field is
+##    enough here because `preview/hilite.gd:artwork` asks `should_hilite` again
+##    at paint time; a channel latched here that cannot hilite simply does not.
+## 3. **"The press was in *a* button"**, which is not about *this* sprite: §15's
+##    strange rule is that the mouse-up flips the hilite of whatever button is
+##    under it if the press was in any button at all.
+## 4. **The drag**, channel and grab offset, for a moveable sprite (§7.6). This
+##    was in `route_press` and is here now, which is the whole of the right
+##    button's share of it -- the reference sets `_currentDraggedChannel` in this
+##    block and clears it in the release block, both for either button, so a
+##    right-drag drags. Unexercised: 0 sites.
+## 5. **The member the mouse-up will resolve its cast element against**, latched
+##    here so that a `mouseDown` handler swapping the member leaves the *old*
+##    member answering the release (§15, `_currentMouseDownCastID`).
+##
+## `the clickOn` is written first and by both buttons, which is the sixth thing
+## and the one the reference writes outside the block.
+##
+## **The else-arm is not optional.** A press on empty stage clears every one of
+## the five, and a port that only *sets* them keeps the last click's drag channel
+## and last click's member alive across a click that reached nothing.
+static func latch_press(host, at: Vector2, channel: int) -> void:
+	if host._host == null:
+		return
+	# `the clickOn`, written by `rightMouseDown` as well as by `mouseDown`.
+	host._host.click_sprite = channel
+	if channel <= 0:
+		# 1. §15: a click on empty stage beeps while `the beepOn` is set. Off by
+		# default, which is the reference's default and the original's -- with it
+		# on, every click that misses a hotspot beeps, and this game's menu
+		# backdrop is ineligible so most of the stage is a miss.
+		if bool(host._host.beep_on):
+			host.lingo_beep(1)
+		host._press_channel = 0
+		host._mouse_down_in_button = false
+		host._drag_channel = 0
+		host._drag_offset = Vector2.ZERO
+		host._press_member = {}
+		return
+	# 2 and 5 in one: the channel the press took, and the member it displayed.
+	host._press_channel = channel
+	host._press_member = EventChain.member_on(host, channel)
+	# 3. *A* button, not this one. See the note above, and `latch_release`.
+	host._mouse_down_in_button = _is_button(host, channel)
+	# 4. §7.6's drag, which declines by itself when the sprite is not moveable.
+	host._begin_drag(at, channel)
+
+
+## §15's mouse-up block, the mirror of the one above and for either button.
+##
+## `under` is the channel the release landed on -- the same eligibility-filtered,
+## ink-aware descent the press used.
+##
+## The button flip is the rule ScummVM's own comment calls senseless and
+## reproduces anyway: **if the last press was in any button at all, the button
+## under the release flips its hilite**, whether or not it is the button that was
+## pressed and with nothing flipping on the way down. It is `set the hilite of
+## member` state, so it goes where that write goes and outlives the click.
+## Unexercised: 0 of the 51,350 members across the three corpora is of type
+## `button`, so nothing here can fire on any title this engine has been pointed
+## at, and it is built because Director has it.
+static func latch_release(host, under: int) -> void:
+	# §7.6: the drag ends on mouse-up, for either button.
+	host._drag_channel = 0
+	if bool(host._mouse_down_in_button) and under > 0 and _is_button(host, under):
+		var member: Dictionary = _member_on(host, under)
+		if not member.is_empty():
+			var key: String = host._field_key(
+				int(member["cast_lib"]), int(member["cast_id"]))
+			host._member_hilite[key] = not bool(host._member_hilite.get(key, false))
+	host._press_channel = 0
+	host._mouse_down_in_button = false
+
+
+## Is the member `channel` displays a **button** cast member (§15)?
+static func _is_button(host, channel: int) -> bool:
+	if host._table == null:
+		return false
+	var sprite: Dictionary = _member_on(host, channel)
+	if sprite.is_empty():
+		return false
+	var member: Dictionary = host._table.get_member(
+		int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	return str(member.get("type_name", "")) == "button"
+
+
+## The effective sprite on `channel`, or `{}`. The *effective* one, so a member a
+## script swapped in is the one asked about.
+static func _member_on(host, channel: int) -> Dictionary:
+	for raw in host.frame_sprites():
+		if int(raw["channel"]) != channel:
+			continue
+		return host._effective(raw)
+	return {}
 
 
 ## The mouse-UP half: the drag ends, and the message the press promised goes out.
@@ -656,94 +793,90 @@ static func press(host, at: Vector2) -> void:
 ## rather than `mouseUpOutSide`. There is no rect to be outside of, the score
 ## moved rather than the player, and the conservative answer is the one that
 ## still runs the handler the click was aimed at.
-static func release(host, at: Vector2) -> void:
+##
+## **`the clickOn` and the recipient move together, and they moved.** §15's
+## clause -- the clickOn is rewritten on the mouse-up when the release was over a
+## sprite -- was implemented once here and reverted the same day, because it was
+## taken without its other half: the reference rewrites `_lastClickedSpriteId`
+## from `getMouseSpriteIDFromPos(event.mousePos)` **and delivers the mouse-up to
+## that same sprite** (`lingo-events.cpp:143-148`, `kSpriteHandler`, D4+). Half of
+## it makes one dispatch give two answers to "which sprite is this about", and
+## the corpus's inventory idiom is written entirely on the two agreeing:
+##
+##     on mouseDown   objectxx = the locH of sprite the clickOn
+##     on mouseUp     ... set the locH of sprite the clickOn to objectxx
+##
+## `MASTER/External/BehaviorScript 52` carries that pair on all eight of DAY1's
+## inventory slots and eleven near-copies exist across the corpus. Both halves
+## are here now, so the pair names one sprite again -- and on every drop the game
+## actually asks for it names the *same* sprite the latch used to name, because a
+## dragged sprite follows the cursor by construction (§7.6) and every drop target
+## in the corpus is a **lower** channel than the slots: `intersects 100` is Pip's
+## head, and 17, 9 and 7 are room hotspots. The descent answers the highest
+## eligible sprite, so the dragged item answers for itself and the two readings
+## agree. They differ only where the release lands on a *higher* eligible channel
+## -- dropping a slot's item onto another slot along the bar -- and there
+## Director rewrites `the clickOn` and the game sends the wrong sprite home.
+## That is the reference's answer to a gesture the game does not ask for, and it
+## is not this port's to improve.
+##
+## **One rule of the three did not move**, and it is now the only divergence
+## left: a release *outside* the sprite that was pressed raises `mouseUpOutSide`
+## to that sprite and no `mouseUp` at all, where the reference raises the
+## `mouseUp` to whatever is under the release and defers `mouseUpOutSide` to the
+## **next press** (§8.1). Kept because backing out of a mis-aimed press by
+## sliding off before letting go is the gesture the message pair exists for, and
+## because it stays coherent under the change above: `the clickOn` is rewritten
+## only on the arm that dispatches `mouseUp`, so the sprite receiving
+## `mouseUpOutSide` is still the sprite `the clickOn` names while it runs.
+static func release(host, at: Vector2, under: int, right := false) -> void:
 	# As in `press`: a window movie is told, because it cannot see the event.
 	host.note_pointer(at)
-	# §7.6: the drag ends on mouse-up. §7.5: the cursor is recomputed there too --
-	# one of the four moments Director recomputes it at all.
-	host._drag_channel = 0
-	host._resolve_cursor()
 	var script: Dictionary = host._click_script
 	var pressed := int(host._press_channel)
 	host._click_script = {}
-	host._press_channel = 0
+	# §15's release block -- the drag ends, the button flip happens, the hilite
+	# channel and the "was in a button" flag are cleared. Before the guard below,
+	# because a drag must end on the button coming up whether or not there is an
+	# interpreter to tell about it.
+	latch_release(host, under)
+	# §7.5: the cursor is recomputed on the mouse-up, one of the four moments
+	# Director recomputes it at all.
+	host._resolve_cursor()
 	if not host._lingo_on or host._interpreter == null:
 		return
-	# **`the clickOn` is NOT recomputed here**, and the missing three lines are the
-	# whole of this comment. It stays what the press latched, for the whole of the
-	# release, which is the same sprite this function is about to deliver the
-	# message to.
-	#
-	# It was recomputed, briefly: `under = host._channel_at(at)` and, if that hit
-	# anything, `click_sprite = under` before the dispatch. That is §15's clause
-	# read literally, and it is what ScummVM does -- `Movie::resolveScriptEvent`
-	# sets `_lastClickedSpriteId` to `getMouseSpriteIDFromPos(event.mousePos)` on
-	# a mouse-up whenever that answers non-zero, and does it at execution time, so
-	# the handler sees the new value.
-	#
-	# **Copying it here takes half of ScummVM's mechanism.** ScummVM can say "the
-	# sprite under the release" because ScummVM *delivers* the mouse-up to the
-	# sprite under the release (`kSpriteHandler`, D4 and later). This port
-	# deliberately does the opposite two lines below: the message goes to the
-	# sprite that took the press, and to anything else it goes as
-	# `mouseUpOutSide`. Both engines are saying the same thing -- `the clickOn`
-	# names the recipient of the message being dispatched -- and it is only the
-	# recipient rule that differs. Taking ScummVM's answer while keeping this
-	# port's recipient made one dispatch give two different answers to "which
-	# sprite is this about", which is incoherent whichever recipient is right.
-	#
-	# The corpus decides which is right, and it is not close. `MASTER/External/
-	# BehaviorScript 52` is attached to all eight of DAY1's inventory slot
-	# channels, occupied or empty, and its two handlers are a matched pair keyed
-	# on `the clickOn` being the same sprite in both:
-	#
-	#     on mouseDown   objectxx = the locH of sprite the clickOn
-	#     on mouseUp     ... set the locH of sprite the clickOn to objectxx
-	#
-	# Drag the ladder out of slot 1 and let go anywhere over slot 4 -- which is
-	# what "drag an item along the bar and drop it on an empty space" is -- and
-	# the recompute answered 106 rather than 103, because 106 is the higher
-	# channel and an empty slot answers the mouse (it carries the same behaviour).
-	# Measured: the ladder was abandoned at 430,441 instead of returning to its
-	# slot at 332,441, and the empty marker on slot 4 was *given* 332,441 and
-	# jumped into the ladder's place. Two sprites wrong from one click, and the
-	# `sprite the clickOn intersects` tests above the snap-back were asking about
-	# the wrong sprite as well. Eleven near-copies of the idiom across the corpus
-	# do the same thing.
-	#
-	# So a shipped game cannot have run on the literal reading, and this port
-	# keeps the latch. §15's clause is recorded in `docs/DIRECTOR_ENGINE.md` with
-	# the divergence noted next to it.
 	if pressed > 0 and not _release_inside(host, at, pressed):
 		# §6.5: sprite behaviours only. There is deliberately no frame or movie
 		# fallback -- a cancelled click is the sprite's business and nobody
 		# else's, and routing it onward would give every frame script a second
-		# copy of every abandoned press.
+		# copy of every abandoned press. `the clickOn` still names `pressed`
+		# here, and that is the point: it is not rewritten on this arm.
 		dispatch_sprite_only(host, "mouseUpOutSide", pressed)
 		host.queue_redraw()
 		return
-	# §6.3 tier 1, and it passes by default. See the note in `press`.
-	if host._interpreter.run_primary("mouseup"):
-		host._tally(host._ran, "when mouseUp")
-	_run_primary_script(host, str(host._host.mouse_up_script), "mouseUpScript")
-	host._dispatch("mouseUp", script)
+	# §15: rewritten from the sprite under the release, and **only when that
+	# answered something**. "Do not override when clicked on Score" is the
+	# reference's own comment: a release over bare stage leaves the property
+	# naming what the press latched, so `sprite the clickOn` in a frame script's
+	# `on mouseUp` still has a sprite to be about.
+	if under > 0:
+		host._host.click_sprite = under
+	var event := "rightMouseUp" if right else "mouseUp"
+	# §6.3 tier 1, and it passes by default. See the note in `press` -- including
+	# why the flag is carried in `pass_on` rather than reset in place.
+	var pass_on := true
+	if host._interpreter.run_primary(event.to_lower()):
+		host._tally(host._ran, "when %s" % event)
+		pass_on = bool(host._host.pass_event)
+	# The left button only, for the reason `press` gives at its own call.
+	if not right:
+		host._host.pass_event = true
+		if EventChain.run_primary_script(host, host._interpreter,
+				host._host.mouse_up_compiled, "mouseUpScript"):
+			pass_on = bool(host._host.pass_event)
+	host._host.pass_event = pass_on
+	host._dispatch(event, script)
 	host.queue_redraw()
-
-
-## `the mouseDownScript` / `the mouseUpScript`, the other half of §6.3 tier 1.
-##
-## Run alongside the `when <event> then` handler rather than instead of it: both
-## are tier 1, and both pass by default, so the sprite/frame/movie tiers run
-## afterwards either way. Same shape as `_dispatch_key`'s `keyDownScript` arm,
-## and the same divergence -- the value is treated as a handler name, because
-## this port cannot compile a source string at run time.
-static func _run_primary_script(host, name: String, tally: String) -> void:
-	var handler := name.strip_edges().to_lower()
-	if handler == "" or not host._interpreter.has_handler(handler):
-		return
-	host._tally(host._sent, tally)
-	host._tally(host._ran, tally)
-	host._interpreter.call_handler(handler)
 
 
 ## Did the button come up inside the sprite that took the press?
@@ -767,25 +900,12 @@ static func _release_inside(host, at: Vector2, channel: int) -> bool:
 	return true
 
 
-## The right button, which this port ignored entirely until now (§8.1, D5).
-##
-## Routed through the same tier resolution as the left, because `rightMouseDown`
-## and `rightMouseUp` sit in the same list in §6.3 and reach the same five tiers.
-## What it deliberately does *not* do is touch the drag, `the clickOn` or a
-## wait-for-click: §7.6's drag and §9.2's wait are both the left button's, and a
-## right-click that cancelled a drag or advanced a held frame would be this port
-## inventing behaviour rather than porting it.
-static func right_button(host, at: Vector2, pressed: bool) -> void:
-	if not host._lingo_on or host._interpreter == null:
-		return
-	var event := "rightMouseDown" if pressed else "rightMouseUp"
-	if host._interpreter.run_primary(event.to_lower()):
-		host._tally(host._ran, "when %s" % event)
-	var chosen: Array = script_for_click(
-		host, host._channel_at(at), host.frame_sprites(),
-		["rightmousedown", "rightmouseup"])
-	host._dispatch(event, chosen[0])
-	host.queue_redraw()
+## The pair of messages a click sends, lowercased, for the button it was made
+## with. `script_for_click` resolves against the **pair** and not against the
+## single message in flight -- see its own note.
+static func click_events(right: bool) -> Array:
+	return ["rightmousedown", "rightmouseup"] if right \
+		else ["mousedown", "mouseup"]
 
 
 ## Which script answers for a click on `channel`, and at which tier.
