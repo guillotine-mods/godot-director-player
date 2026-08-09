@@ -172,8 +172,27 @@ static func image_in(cast_lib: int, cast_id: int, table,
 ## member. Reading only the data gives a black rectangle; inverting the mask
 ## gives an invisible cursor.
 ##
+## **A pair may name no mask, and then the data member is its own mask** -- black
+## pixels draw black, white pixels are transparent. This is a deliberate departure
+## from the reference implementation, which is why it is argued rather than cited:
+## ScummVM's `Cursor::readFromCast` writes `(!mask || *mask) ? ... : 3`, so its
+## *intent* is that a missing mask is fully opaque, exactly what this function used
+## to do -- and then the bounds guard above that line, `x >= cursorSurface->w ||
+## (!maskSurface || x >= maskSurface->w)`, nulls every pixel of a maskless cursor
+## and it *delivers* a fully transparent one. Neither of those is what the artwork
+## was drawn for, and the artwork is the evidence. Rating names one member three
+## times -- `talkcursor`, `WalkLeftCursor`, `weaponCursor` -- and where it does
+## supply a mask (`leftcursor`/`leftcursor2`, `casecursor`/`casecursor2`,
+## `takecursor`/`takecursor2`) the mask is a filled, dilated silhouette whose whole
+## job is to make the drawing's white interior opaque. `WalkLeftCursor` settles it:
+## a solid black arrow with no outline and no white anywhere it wants kept, which
+## opaque composition can only render as a white card with an arrow on it. That
+## card is `docs/bugs-closed.md` 64.
+##
 ## Null on a fully transparent result, so the caller can fall back to the arrow
-## rather than installing a cursor the player cannot see.
+## rather than installing a cursor the player cannot see. A maskless member that is
+## entirely white reaches that fallback, which is the honest answer for art with
+## nothing to show once it is its own mask.
 static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray):
 	# Resolved once and remembered, so the hotspot read below comes from the same
 	# member as the picture. Resolving twice would let a data member found in a
@@ -185,7 +204,11 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 		return null
 	if data.get_width() > MAX_CURSOR_SIZE or data.get_height() > MAX_CURSOR_SIZE:
 		return null
-	var mask := member_image(mask_id, table, palette) if mask_id > 0 else null
+	# Only the *absent* mask defaults to the data. A mask that was named and did not
+	# resolve keeps falling through to the opaque path: substituting the data there
+	# would compose a plausible cursor out of a library lookup that failed, which is
+	# the silent shape `docs/bugs-closed.md` 29 was.
+	var mask := member_image(mask_id, table, palette) if mask_id > 0 else data
 	var out := Image.create(CURSOR_SIZE, CURSOR_SIZE, false, Image.FORMAT_RGBA8)
 	out.fill(Color(0, 0, 0, 0))
 	var visible := 0
