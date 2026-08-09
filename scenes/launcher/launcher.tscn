@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scenes/launcher/launcher.gd" id="1_launcher"]
+[ext_resource type="Texture2D" path="res://icon.svg" id="2_mark"]
 
 [node name="Launcher" type="Control"]
 layout_mode = 3
@@ -11,149 +12,438 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_launcher")
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="Backdrop" type="Panel" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 32
-theme_override_constants/margin_top = 32
-theme_override_constants/margin_right = 32
-theme_override_constants/margin_bottom = 32
 
-[node name="Tabs" type="TabContainer" parent="Margin"]
+[node name="Page" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 24
+
+[node name="Column" type="VBoxContainer" parent="Page"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Header" type="HBoxContainer" parent="Page/Column"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Mark" type="TextureRect" parent="Page/Column/Header"]
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+size_flags_vertical = 4
+texture = ExtResource("2_mark")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Wordmark" type="VBoxContainer" parent="Page/Column/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 2
+
+[node name="Name" type="Label" parent="Page/Column/Header/Wordmark"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_type_variation = &"Head"
+text = "Director Player"
 
-[node name="Player" type="VBoxContainer" parent="Margin/Tabs"]
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="GamesLabel" type="Label" parent="Margin/Tabs/Player"]
-layout_mode = 2
-text = "Game"
-
-[node name="Games" type="OptionButton" parent="Margin/Tabs/Player"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-
-[node name="Flags" type="HBoxContainer" parent="Margin/Tabs/Player"]
+[node name="Tagline" type="Label" parent="Page/Column/Header/Wordmark"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_type_variation = &"Hint"
+text = "Macromedia Director titles, read from the original discs."
 
-[node name="AspectLabel" type="Label" parent="Margin/Tabs/Player"]
-layout_mode = 2
-text = "Aspect"
-
-[node name="Aspect" type="OptionButton" parent="Margin/Tabs/Player"]
+[node name="Tabs" type="TabContainer" parent="Page/Column"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-
-[node name="Spacer" type="Control" parent="Margin/Tabs/Player"]
-layout_mode = 2
-size_flags_vertical = 2
-
-[node name="Play" type="Button" parent="Margin/Tabs/Player"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 72)
-layout_mode = 2
-text = "Play"
-
-[node name="Developer" type="VBoxContainer" parent="Margin/Tabs"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 16
-
-[node name="Scroll" type="ScrollContainer" parent="Margin/Tabs/Developer"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Fields" type="VBoxContainer" parent="Margin/Tabs/Developer/Scroll"]
+[node name="Player" type="MarginContainer" parent="Page/Column/Tabs"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 22
 
-[node name="BootLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
-layout_mode = 2
-text = "Boot movie override"
-
-[node name="Boot" type="LineEdit" parent="Margin/Tabs/Developer/Scroll/Fields"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-
-[node name="CodepageLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
-layout_mode = 2
-text = "Codepage"
-
-[node name="Codepage" type="OptionButton" parent="Margin/Tabs/Developer/Scroll/Fields"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-
-[node name="DebugLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
-layout_mode = 2
-text = "Debug layer"
-
-[node name="Debug" type="OptionButton" parent="Margin/Tabs/Developer/Scroll/Fields"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-
-[node name="BindingsButton" type="Button" parent="Margin/Tabs/Developer/Scroll/Fields"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
-layout_mode = 2
-text = "Edit preview keys…"
-
-[node name="BindingsStatus" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="PlayerScroll" type="ScrollContainer" parent="Page/Column/Tabs/Player"]
 unique_name_in_owner = true
 layout_mode = 2
-text = ""
-autowrap_mode = 2
+horizontal_scroll_mode = 0
 
-[node name="Bindings" type="VBoxContainer" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="Body" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 24
+
+[node name="Games" type="OptionButton" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="QolHeading" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
-layout_mode = 2
-text = "Quality of life — stored, not yet wired"
-
-[node name="HotspotHints" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="Titles" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Hotspot hints"
+theme_override_constants/separation = 10
 
-[node name="MinigameSkip" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="GamesLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Titles"]
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "TITLES ON DISC"
+
+[node name="Grid" type="GridContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Allow minigame skip"
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
+columns = 4
 
-[node name="EdgeHotspots" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="Solo" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SoloLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "THIS BUILD PLAYS"
+
+[node name="SoloTitle" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Expand edge hotspots"
+theme_type_variation = &"Display"
+text = ""
 
-[node name="EnhancedGraphics" type="CheckBox" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="SoloRoot" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "Enhanced graphics"
+theme_type_variation = &"Eyebrow"
+text = ""
 
-[node name="CursorSpeedLabel" type="Label" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="Gap" type="Control" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
 layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Options" type="HBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 32
+
+[node name="Language" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="LanguageLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/Language"]
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "EDITION"
+
+[node name="Flags" type="HBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/Language"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Spring" type="Control" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="AspectColumn" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="AspectLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = "STAGE FIT"
+
+[node name="Aspect" type="OptionButton" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+
+[node name="AspectHint" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "The stage is whatever size the movie was authored at. This only decides what surrounds it."
+autowrap_mode = 2
+
+[node name="Developer" type="VBoxContainer" parent="Page/Column/Tabs"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="Pad" type="MarginContainer" parent="Page/Column/Tabs/Developer"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 22
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 22
+theme_override_constants/margin_bottom = 22
+
+[node name="Scroll" type="ScrollContainer" parent="Page/Column/Tabs/Developer/Pad"]
+unique_name_in_owner = true
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Fields" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll"]
+size_flags_horizontal = 3
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="BootCard" type="PanelContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields"]
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Pad" type="MarginContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Rows" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BootLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Section"
+text = "Boot container"
+
+[node name="BootHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "The file the chosen title opens. Leave it empty and each title opens its own."
+autowrap_mode = 2
+
+[node name="Boot" type="LineEdit" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+
+[node name="TextCard" type="PanelContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields"]
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Pad" type="MarginContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Rows" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CodepageLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Section"
+text = "Text encoding"
+
+[node name="CodepageHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "Director stored text in a platform codepage, not Unicode. These discs measure as Mac OS Hebrew."
+autowrap_mode = 2
+
+[node name="Codepage" type="OptionButton" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+
+[node name="DebugCard" type="PanelContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields"]
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Pad" type="MarginContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Rows" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DebugLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Section"
+text = "Debug layer"
+
+[node name="DebugHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "Hotspot outlines, the HUD, the container picker and the keys below. Auto means on from source and off in a release build."
+autowrap_mode = 2
+
+[node name="Debug" type="OptionButton" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+
+[node name="KeysGap" type="Control" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+
+[node name="KeysHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "The preview shares a keyboard with the movie, so a key a title tests is refused here rather than fought over at runtime."
+autowrap_mode = 2
+
+[node name="BindingsButton" type="Button" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_type_variation = &"Quiet"
+text = "Edit preview keys…"
+
+[node name="BindingsStatus" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"Note"
+text = ""
+autowrap_mode = 2
+
+[node name="Bindings" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="AssistCard" type="PanelContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields"]
+layout_mode = 2
+theme_type_variation = &"Card"
+
+[node name="Pad" type="MarginContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 18
+
+[node name="Rows" type="VBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QolHeading" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Section"
+text = "Assists"
+
+[node name="QolHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+layout_mode = 2
+theme_type_variation = &"Hint"
+text = "Saved with your settings. Cursor speed is the only one the engine reads today; the four above it are waiting on the renderer and are kept so a save made now still means something when it lands."
+autowrap_mode = 2
+
+[node name="HotspotHints" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Outline what the mouse can reach"
+
+[node name="MinigameSkip" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Offer a way past minigames"
+
+[node name="EdgeHotspots" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Widen hotspots at the screen edge"
+
+[node name="EnhancedGraphics" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Smooth the artwork when upscaling"
+
+[node name="SpeedGap" type="Control" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+
+[node name="SpeedRow" type="HBoxContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+layout_mode = 2
+
+[node name="CursorSpeedLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows/SpeedRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Controller cursor speed"
 
-[node name="CursorSpeed" type="HSlider" parent="Margin/Tabs/Developer/Scroll/Fields"]
+[node name="CursorSpeedValue" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows/SpeedRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+theme_type_variation = &"Eyebrow"
+text = ""
+
+[node name="SpeedRing" type="PanelContainer" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CursorSpeed" type="HSlider" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows/SpeedRing"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 min_value = 60.0
 max_value = 1200.0
 step = 10.0
+
+[node name="Footer" type="HBoxContainer" parent="Page/Column"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Build" type="Label" parent="Page/Column/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"Eyebrow"
+text = ""
+
+[node name="Spacer" type="Control" parent="Page/Column/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PlayNote" type="Label" parent="Page/Column/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"Note"
+text = ""
+horizontal_alignment = 2
+
+[node name="Quit" type="Button" parent="Page/Column/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 48)
+layout_mode = 2
+theme_type_variation = &"Quiet"
+text = "Quit"
+
+[node name="Play" type="Button" parent="Page/Column/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+theme_type_variation = &"Primary"
+text = "Play"

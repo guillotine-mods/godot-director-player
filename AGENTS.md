@@ -107,12 +107,18 @@ the opposite and had been available from the first minute. Read
 ## Environment
 
 - **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
-  harnesses that run and are expected to pass — measured over all 62 entries on
-  4.7.1 by a whole-suite run, 60 pass, 2 fail: `debug_bindings` (config, not code)
-  and `play_suspends` (the flake, about half its runs; `bugs.md` 41). This said 23
-  pass / 1 fail, and later 40 pass / 1 fail naming a `boot_state` that passes now,
-  neither of which summed to the list, for as long as nobody ran the whole thing
-  and counted.
+  harnesses that run and are expected to pass — measured by a whole-suite run on
+  4.7.1, 2026-08-10: **every entry passes, none fail.** Both of the two that this
+  line used to name as standing failures now pass, and neither was fixed by
+  changing what they assert: `debug_bindings` was config rather than code and the
+  config moved, and `play_suspends` is the fixed-frame-count flake of `bugs.md` 41,
+  which passing once does not close. Treat a green `play_suspends` as one sample.
+  Before that this said 62 entries / 60 pass, and earlier 23 pass / 1 fail, and
+  later 40 pass / 1 fail naming a `boot_state` that passes now — none of which
+  summed to the list, for as long as nobody ran the whole thing and counted. The
+  count is deliberately not written here: it changed twice in the day this line
+  was last corrected, and a number nobody re-measures is what sent the previous
+  three readers looking for a failure that was not there. Run it and count.
   `README.md` lists more tools than that; the ones outside `ALL` are surveys and
   one-offs, and are the ones that rot, because nothing runs them. Everything that
   is not pass/fail prints a number that is not higher-is-better, which is why
