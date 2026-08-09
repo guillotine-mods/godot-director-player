@@ -98,7 +98,7 @@ func _init() -> void:
 		str(GameConfig.tracked(SCRATCH_TRACKED).get_value("game", "root", "<missing>")))
 	h.complete(case)
 
-	case := "an absent or unreadable overlay changes nothing"
+	case = "an absent or unreadable overlay changes nothing"
 	h.begin(case)
 	GameConfig.invalidate()
 	var none := GameConfig.merged(SCRATCH_TRACKED, "user://gate_game_config_absent.cfg")
@@ -120,7 +120,7 @@ func _init() -> void:
 	# The rule the other 62 entries depend on. This process *is* headless, so
 	# asking for the real overlay must not consult it -- asserted by writing one
 	# that would be obvious if it were read.
-	case := "under --headless the real overlay is not consulted"
+	case = "under --headless the real overlay is not consulted"
 	h.begin(case)
 	h.check("this run is headless", DisplayServer.get_name() == "headless",
 		DisplayServer.get_name())
@@ -333,7 +333,7 @@ static func _copy(from: ConfigFile, to: ConfigFile) -> void:
 
 Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --headless --path . --script tools/game_config.gd`
 
-Expected: `PASS` with 13 checks and no `FAIL` lines. Then confirm by hand that your own overlay survived, if you had one: `ls -l "$(godot --headless --path . --script /dev/null 2>/dev/null; echo)"` is not the way — just check the file is still there and unchanged after the run, which is what the last assertion also claims.
+Expected: `PASS` with 12 checks and no `FAIL` lines. Then confirm by hand that your own overlay survived, if you had one — the file still there and unchanged after the run, which is what the last assertion also claims.
 
 - [ ] **Step 5: Add it to the gate and correct the recorded count**
 
@@ -594,7 +594,7 @@ func _init() -> void:
 	# the row needs exactly one flag preselected. Zero leaves the launcher
 	# picking arbitrarily; two make the choice depend on iteration order, which
 	# is the same fault `debug_keys.gd` reports for two commands on one key.
-	case := "a title spanning several roots has exactly one default"
+	case = "a title spanning several roots has exactly one default"
 	h.begin(case)
 	var grouped := 0
 	var bad_defaults: Array[String] = []
@@ -1312,7 +1312,7 @@ func _init() -> void:
 	h.check("'' is not", BindingRules.named("") == KEY_NONE)
 	h.complete(case)
 
-	case := "two commands on one key is refused"
+	case = "two commands on one key is refused"
 	h.begin(case)
 	var bindings := {"step_back": "F5", "step_forward": "F6"}
 	h.check("F6 collides with step_forward",
@@ -1326,7 +1326,7 @@ func _init() -> void:
 		BindingRules.collision(bindings, "step_back", "F5") == "")
 	h.complete(case)
 
-	case := "a key some title's scripts test is refused"
+	case = "a key some title's scripts test is refused"
 	h.begin(case)
 	var tested := BindingRules.tested_codes()
 	if not h.check("the corpus yields tested key codes", not tested.is_empty(),
@@ -1348,7 +1348,7 @@ func _init() -> void:
 	# "types no character *and* is a key no title is measured to test", and
 	# `tools/debug_bindings.gd` asserts both per binding. A launcher checking
 	# only the keyCode accepts a plain letter.
-	case := "a key that types a character some title tests is refused"
+	case = "a key that types a character some title tests is refused"
 	h.begin(case)
 	var chars := BindingRules.tested_chars()
 	if not h.check("the corpus yields tested characters", not chars.is_empty(),
@@ -1369,7 +1369,7 @@ func _init() -> void:
 
 	# And the shipped map has to survive both halves, or the launcher would
 	# refuse to store the bindings the port ships with.
-	case := "every shipped binding passes the rules the launcher enforces"
+	case = "every shipped binding passes the rules the launcher enforces"
 	h.begin(case)
 	var refused: Array[String] = []
 	for command in DebugKeys.DEFAULTS:
