@@ -121,33 +121,48 @@ static func release_auto_puppets(writes: Dictionary, overrides: Dictionary) -> v
 ## when the clip returned to the room. `tofclicktalk` does carry one, which is
 ## exactly why the same fault was reported as two different bugs.
 ##
-## Returns `sprites` itself when nothing is carried, which is every frame of a
+## **The score record is dropped even when there is one.** That is the half this
+## function used to be missing, and the half nothing caught: it took the score's
+## record on any frame that carried one and only carried the channel forward
+## across frames where the record was empty. A puppet was therefore frozen
+## exactly on the frames the score was going to leave alone anyway, which is
+## indistinguishable from working until a movie puppets a channel the score is
+## still writing.
+##
+## CHESS's name wheel is that movie. It spins the same seven members on channel 8
+## twice; the click puppets the channel to freeze whoever it landed on and plays
+## that name's clip. The first spin's `go(marker(1))` lands on a frame with no
+## channel 8 in the score, so the freeze held and all seven landings were right.
+## The second lands on a frame where the score *does* carry channel 8 — always
+## `jos` — so the stage snapped back to `jos` on 6 of 7 landings while the sound
+## played the name the player actually stopped on. Reported as "the second spin
+## plays the wrong sound"; the sound was right every time and the picture was
+## wrong.
+##
+## Returns `sprites` itself when nothing is puppeted, which is every frame of a
 ## movie that never puppets a sprite.
 static func with_puppets(sprites: Array, overrides: Dictionary) -> Array:
-	var carried: Array[Dictionary] = []
+	var frozen: Dictionary = {}
 	for number in overrides:
 		var channel: Channel = Channel.at(int(number), overrides)
-		if not channel.is_puppet():
-			continue
-		var here: Dictionary = {}
-		for value in sprites:
-			var sprite: Dictionary = value
-			if int(sprite["channel"]) == channel.number:
-				here = sprite
-				break
-		if not here.is_empty():
-			channel.note_score(here)
-			continue
-		var kept := channel.carried()
-		if not kept.is_empty():
-			carried.append(kept)
-	if carried.is_empty():
+		if channel.is_puppet():
+			frozen[channel.number] = channel.carried()
+	if frozen.is_empty():
 		return sprites
 	# Channel order is depth order, and every caller relies on it: the hit test
 	# descends from the end of this array and the painter walks it forwards.
 	var out: Array[Dictionary] = []
-	out.assign(sprites)
-	out.append_array(carried)
+	for value in sprites:
+		var sprite: Dictionary = value
+		if not frozen.has(int(sprite["channel"])):
+			out.append(sprite)
+	# An empty carry is a channel puppeted while its score record was empty. It
+	# stays empty for the puppet's life rather than being refilled by a later
+	# frame, which is the same rule seen from the other side.
+	for number in frozen:
+		var kept: Dictionary = frozen[number]
+		if not kept.is_empty():
+			out.append(kept)
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return int(a["channel"]) < int(b["channel"]))
 	return out
