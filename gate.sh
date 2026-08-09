@@ -81,7 +81,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir"
+ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview container_equality_check lingo_logic_check lingo_designator_check lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry audio_coverage liveness_sweep:--limit@12"
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
 # one place in six titles where the whole chain from `the keyDownScript` to
@@ -98,6 +98,22 @@ ALL="preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_p
 # the clock only where there is one. `new_game_reset` names `rating` for the
 # opposite reason -- the tables it checks are that title's, and there is nothing
 # in `piposh2` for it to measure.
+#
+# `liveness_sweep` carries `--limit 12` and that number is the whole reason it can
+# be here at all: the full sweep of one corpus is 20-30 minutes, because an
+# art-heavy room paints at about three score ticks a second headless and the
+# sweep has to watch real frames. Twelve is deterministic -- the first twelve
+# containers of `GATE_ROOT` in sorted order -- rather than a wall-clock budget,
+# which would cover a different set on a loaded machine and turn a regression
+# into a coin toss. The sweep prints what it skipped. Run it without the flag,
+# and against the other roots, when something is suspected: `bugs.md` 58 was
+# found in `piposh-dream`, which no gate entry has ever loaded.
+#
+# `bitmap_geometry` and `audio_coverage` are bare and fast (seconds each) and are
+# the regression guards for two entries the sweep turned up: `bugs.md` 58 and 63.
+# Both read the disc rather than play it -- cast records in one case, twelve bytes
+# off the front of every file in the other -- which is why they are affordable
+# here and the sweep they came from is not.
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that

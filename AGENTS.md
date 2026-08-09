@@ -156,6 +156,16 @@ retired renderer, and were deleted with it; the instruction outlived the tool by
 long enough to be worth this paragraph. Rebuilding one on the preview is the
 single most useful tool this repo is missing.
 
+The nearest thing that does exist is `tools/liveness_sweep.gd`: it opens every
+movie of a corpus, samples `(movie, frame, sprites drawn, what is holding)` once
+per score tick off real awaited frames, and reports the ones that are stuck,
+blank, cycling across a movie boundary or raising a Lingo error — with the holds
+that legitimately explain a still playhead (`go to the frame`, a tempo wait,
+`pause`, a `soundBusy` poll while a sound is playing) separated out, which is the
+whole difficulty. `--only <movie> --verbose` is the closest to a probe on one
+movie, and `--click` drives hotspots. It is still a sweep and not a probe: it
+cannot be pointed at a marker, stepped, or stopped somewhere interesting.
+
 Whatever you build, **await real frames.** A synthetic `for i in N: tick()` loop
 advances the runtime's clock and not the audio server's, so every `soundBusy`
 guard holds for ever and any scene with speech in it looks stuck (bugs.md 22,

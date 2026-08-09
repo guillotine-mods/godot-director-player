@@ -15,6 +15,146 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 63. Nine tenths of Piposh Dream's audio was never indexed, because the index asked the filename and not the file
+
+**Status:** FIXED · **Area:** `autoload/audio_director.gd`
+· found by `tools/liveness_sweep.gd`
+
+`AudioDirector._index_dir_recursive` took a file when its name ended in `wav`,
+`ogg`, `mp3` or `aif`. **A Mac file has no extension**, and these are Mac discs.
+
+| root | sound files on disc | indexed before | after |
+|---|---|---|---|
+| `piposh-dream` | 1,897 | **187** | 1,897 |
+| `piposh` | 2,559 | 2,555 | 2,559 |
+| `piposh2` | 3,141 | 3,141 | 3,141 |
+| `rating` | 2,617 | 2,617 | 2,617 |
+
+`piposh-dream` names its speech `sounds/dream2/1`, `sounds/dream1/100`, `FX/264`
+— 1,711 extensionless AIFFs against 187 that happen to carry a suffix. The index
+held the 187, so **every line of speech and every effect in that title was
+unreachable**, in every room, from the first commit that walked the tree. The
+movies asked and got nothing: a `sound playFile` that cannot be satisfied claims
+the channel and leaves it empty, so a room that waits on `soundBusy` sails
+straight through the line it was meant to speak. The only trace was
+`Audio miss: dream2\1` in a log nobody reads, one line per request.
+
+**The rule was already correct in the other half of the same file.**
+`_load_stream` reads the container tag rather than the extension, with a comment
+saying in as many words that a disc's filenames are as much a guess as its paths
+are — `FX/DRILL.WAV` is an AIFF and `FX/BIRDS.AIF` is a RIFF, in the same folder.
+The loader had known this from the start; the index had never been told. So a
+file the loader would have decoded perfectly well never reached it.
+
+`_has_audio_tag` now reads twelve bytes off the front of every file the extension
+list did not already accept — `FORM....AIFF`/`AIFC`, `RIFF....WAVE`, `OggS`, an
+`ID3` tag, an MP3 frame sync. **Twice**, because the first version only sniffed
+files with *no* extension and `tools/audio_coverage.gd` found what that still
+missed on the next root it was pointed at: `piposh`'s `SOUNDS/PSYDEAD/PSYSCREE.M`
+is an AIFF called `.M`. There is no name-shaped version of this question that is
+right. A Director container is `RIFX`/`XFIR` and matches nothing here; the index
+build stays well under a second on every root.
+
+**A second defect fell out of the harness**, and it is the silent one:
+`_path_index` is keyed by the path with the extension *dropped* — deliberate, and
+what lets a script that names `.aif` find a converted `.wav` — so two files whose
+names differ only by extension collide on one key and the directory walk decides
+which survives. Piposh 1 ships two such pairs and they are **not** duplicates:
+
+```
+SOUNDS/DOCDAY1/PIP18    941,246 bytes   29230d90...
+SOUNDS/DOCDAY1/PIP18.AIF 106,170 bytes  68eef03a...
+SOUNDS/SAFEDAY1/CAP10   170,682 bytes   a7c3276f...
+SOUNDS/SAFEDAY1/CAP10.AIF 192,442 bytes 6e840645...
+```
+
+Different recordings of the same line, one of each pair simply unreachable.
+`_exact_index` now holds the whole relative path *with* its extension and is
+consulted first, so a request that names a file that is on the disc gets that
+file and only a request that does not gets the stem tolerance. Whole paths only,
+no tails: tails would invert the "whole path beats tail, longest match wins"
+ordering that is the thing standing between this corpus and the wrong take of a
+line.
+
+**Covered by** `tools/audio_coverage.gd` — every file under the root whose *bytes*
+say it is a sound must resolve through `AudioDirector.resolve_path`, and must
+resolve to **itself**. The tool sniffs the bytes itself rather than asking the
+engine which files are sounds, deliberately: any rule the engine applies it would
+apply to both sides of that comparison, and the extension filter would have
+passed such a test on the day it was wrong. Green on all four roots after the
+fix; `sound_paths`, `sound_wait`, `sound_format_check`, `aiff_check`,
+`audio_index` and `sound_survey` are green on `piposh2` before and after.
+
+**Still open, and worth a look:** `tools/aiff_check.gd` does its own directory
+walk and filters by extension too, so it has only ever examined 186 of
+`piposh-dream`'s 1,897 sounds. It is in `gate.sh` on `piposh2`, where every file
+has an extension, so it is green and covers everything there.
+
+---
+
+## 58. A bitmap wider than 4,095 bytes per row decoded off the end of its own buffer, on every repaint
+
+**Status:** FIXED · **Area:** `director/director_cast.gd`, `director/director_bitmap.gd`
+· found by `tools/liveness_sweep.gd`
+
+`STRIDE_MASK` was `0x0FFF`. That is the identity for every row stride below
+4,096 and a truncation for every one above, and the corpus the gate is pinned to
+has no member above it — so the fault lived entirely in a title nothing had ever
+swept.
+
+Three members in six titles are above it, all three the panoramic backdrop of a
+`piposh-dream` cat room: `hatul1.dir` #3 `stage1` and `hatul3.dir` #3 `hat3bk`
+are 4943 x 400 and 4944 x 400 at 8 bits, `hatul2.dir` #3 `hat2bk` is 4940 x 400,
+and their pitch words are `0x9350`, `0x9350` and `0x934C`. Masked to twelve bits
+those became 848, 848 and 844.
+
+**What that does.** `director_bitmap.gd:unpack` produces exactly `stride * height`
+bytes, and `_blit_8` then reads `src[y * stride + x]` for `x` up to `width`. With
+a stride of 848 and a width of 4943 that is out of bounds on the *first row*:
+
+```
+SCRIPT ERROR: Out of bounds get index '339200' (on base: 'PackedByteArray')
+   at: _blit_8 (res://director/director_bitmap.gd:137)
+       decode -> texture_for -> _texture_for -> paint_frame -> _paint -> _draw
+```
+
+A GDScript out-of-bounds read aborts the function it happens in, so the blit
+stopped part-written and `Image.create_from_data` was handed the rest of the
+buffer as it stood. The room drew a wrong picture, on every repaint, for as long
+as it was on screen, and the only trace was an engine error in a log nobody
+reads.
+
+**The mask is `0x7FFF` now, and the corpus settled it rather than a document.**
+`tools/scratch`-grade scans over all six roots, 119,013 bitmap members: the top
+nibble of the pitch word is `0x8` everywhere (bit 15 is `DEPTH_FLAG`, "not
+1-bit"), `0x0` for the 1-bit members, and `0x9` for exactly those three. With bit
+15 alone removed, the remaining value equals the member's own width times its own
+depth rounded up to an even byte count for **every one of the 119,013**, no
+exceptions in either direction. Before the fix, three members had a stride
+exactly 4,096 short of that; after it, none in any root does.
+
+**Two changes, and the second is the one that matters next time.**
+`director_bitmap.gd:decode` now refuses a stride shorter than the row its width
+and depth need, and says so in `error`, instead of letting a blit index off the
+end. Reported rather than clamped: clamping would draw *something* for a member
+whose geometry the port has misunderstood, and the wrong picture is the failure
+that survives review.
+
+**Covered by** `tools/bitmap_geometry.gd` — every bitmap member of a root, stride
+against the row it needs, plus the distribution of the padding so a title that
+pads differently shows up as a new row rather than as a failure. Seconds per
+title, in `gate.sh`'s `ALL`.
+
+**How it was found**, because the route is the point: `tools/liveness_sweep.gd`
+watches the playhead of every movie in a corpus and reports how much of each one
+it managed to sample. The three cat rooms came back at **0% coverage** — the
+repeated decode error made each paint slow enough that the score clock ran four
+steps between two samples — and chasing "why can this movie not be sampled"
+landed on the error. Nothing was looking for a decode bug. After the fix the same
+three sample at 71-84%.
+
+---
+
 ## 54. Rating's `inventorylist` is reset after all, and the reset is a literal inside `initDemo`
 
 **Status:** CLOSED, no defect · **Area:** data / `rating`

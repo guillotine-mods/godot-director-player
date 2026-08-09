@@ -90,6 +90,24 @@ static func decode(member: Dictionary, chunk: PackedByteArray, palette: PackedBy
 	if width <= 0 or height <= 0:
 		error.append("zero-area member")
 		return null
+	# A stride shorter than the row the width and depth need is a **misread
+	# member record**, not a picture to attempt. The blits below index
+	# `y * stride + x` against a buffer of exactly `stride * height`, so a short
+	# stride runs off the end on the first row -- and a GDScript out-of-bounds
+	# read aborts the function it happens in, which means the blit stops
+	# half-written and `Image.create_from_data` is handed whatever was in the
+	# buffer. That is a wrong picture drawn silently on every repaint, with the
+	# only trace an engine error in a log nobody is reading.
+	#
+	# Reported here rather than clamped. Clamping would draw *something* for a
+	# member whose geometry the port has misunderstood, and the wrong picture is
+	# the failure that survives review; `director_cast.gd:STRIDE_MASK` is where
+	# the one real instance came from and what it cost to find.
+	var row := int(ceili(float(width) * float(depth) / 8.0))
+	if stride < row:
+		error.append("row stride %d is shorter than the %d byte(s) a %d-pixel row of %d-bit pixels needs"
+			% [stride, row, width, depth])
+		return null
 
 	var buffer := unpack(chunk, stride, height, error)
 	if buffer.is_empty():

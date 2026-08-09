@@ -299,6 +299,9 @@ python3 tools/dump_movie_chunks.py --out <dir>      # dump chunks straight from 
 godot --headless --script tools/frame_events.gd -- --file PIP2DATA/DAY1.dir  # exitFrame at the top of the next step, and the clock, pass/fail
 godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.dir --marker Egoz1 --channel 11  # one click: where the playhead went, what it played, what ran — reports, never asserts
 godot --headless --script tools/movie_churn.gd     # the stage and a window each settle on a movie rather than cycling, pass/fail
+godot --headless --script tools/liveness_sweep.gd  # every movie in a corpus, opened and watched: stuck, blank, cycling across movies, or a Lingo error, with the holds that legitimately explain a still playhead separated out, pass/fail (`--root R`, `--limit N`, `--only S`, `--click`, `--verbose`)
+godot --headless --script tools/bitmap_geometry.gd # every bitmap member's row stride is at least one row long, whole corpus, pass/fail
+godot --headless --script tools/audio_coverage.gd  # every file whose bytes say it is a sound resolves through AudioDirector, and resolves to itself rather than to another take, whole corpus, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
 godot --headless --script tools/sprite_record_bytes.gd -- --all  # what each of the 48 bytes of a sprite record holds, pass/fail

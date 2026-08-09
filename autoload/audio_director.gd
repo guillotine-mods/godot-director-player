@@ -36,6 +36,32 @@ var _tail_index: Dictionary = {}
 
 var _path_index: Dictionary = {}
 
+## Relative path **with** its extension -> file on disc. The exact index, and the
+## one thing the stem index cannot answer.
+##
+## `_path_index` drops the extension on purpose — a script names `.aif` and a
+## converted disc may hold `.wav`, and that tolerance is what lets the backing
+## format change without a call site moving. The cost is that two files whose
+## names differ only by extension collide on one key and the walk order decides
+## which survives, silently. Piposh 1 ships two such pairs and they are not
+## duplicates: `SOUNDS/DOCDAY1/PIP18` is 941 KB against `PIP18.AIF`'s 106 KB, and
+## `SOUNDS/SAFEDAY1/CAP10` is 170 KB against `CAP10.AIF`'s 192 KB — different
+## recordings of the same line, one of which was simply unreachable.
+##
+## So a request that names a file exactly is answered exactly, and only a request
+## that does not gets the stem tolerance. Strictly more specific: it can only
+## change the answer where the file the script asked for is actually on the disc.
+## `tools/audio_coverage.gd` is the harness.
+##
+## **Whole relative paths only, no tails**, unlike `_tail_index`. Tails here would
+## invert the ordering the lookup is built on -- whole path beats tail, longest
+## match wins -- by letting a bare `pip18.aif` beat a fully-qualified stem match
+## somewhere else, and that ordering is the thing standing between this corpus and
+## the wrong take of a line. The narrower index decides only the case it was added
+## for: a request whose own path, minus whatever leading segments the engine
+## cannot see, is a file on the disc.
+var _exact_index: Dictionary = {}
+
 ## Tails that more than one file ends with, so a request that resolves only by
 ## guessing can say so rather than silently picking one.
 
@@ -109,6 +135,7 @@ const AiffLoader := preload("res://autoload/aiff_loader.gd")
 func _build_index() -> void:
 	_tail_index.clear()
 	_path_index.clear()
+	_exact_index.clear()
 	_ambiguous.clear()
 	# The game's own tree first. `_index_dir_recursive` is first-writer-wins, and
 	# the game's files are the source of truth: everything under `assets/audio`
@@ -122,6 +149,65 @@ func _build_index() -> void:
 	GameState.emit_log("Audio index: %d files, %d ambiguous tail(s)" % [
 		_path_index.size(), _ambiguous.size()
 	], "info")
+
+
+## Extensions that name a sound file on a disc that has extensions at all.
+const AUDIO_EXTENSIONS := ["wav", "ogg", "mp3", "aif", "aiff"]
+## Enough of a file to recognise its container tag. `FORM` and `RIFF` carry a
+## four-byte size before the form type, which is why this is twelve and not four.
+const TAG_BYTES := 12
+
+
+## Is this file a sound, judged by what is in it rather than by what it is called?
+##
+## **A Mac disc has no extensions**, and these are Mac discs. `piposh-dream`
+## ships 1,711 sound files named `sounds/dream2/1`, `FX/264` and so on, against
+## 187 that carry an extension — and the index took the 187. Nine tenths of that
+## title's audio was unreachable: every line of speech, every effect, silently, and
+## the movies asking for it got `Audio miss: dream2\1` in a log nobody reads.
+## `piposh` ships three more (`SOUNDS/DOCDAY1/PIP18` and two others).
+##
+## The rule this restores is the one `_load_stream` already applies twenty
+## screens below, with its own note that a disc's *filenames* are as much a guess
+## as its paths are — `FX/DRILL.WAV` is an AIFF and `FX/BIRDS.AIF` is a RIFF, in
+## the same folder. The loader reads the container tag for exactly that reason.
+## The index was still filtering by name, so a file the loader would have decoded
+## perfectly well never reached it.
+##
+## Consulted for **every name the extension list did not already accept**, and
+## not only for a name with no extension at all. The narrower version was written
+## first and `tools/audio_coverage.gd` found what it still missed on the next
+## root it was pointed at: `piposh`'s `SOUNDS/PSYDEAD/PSYSCREE.M` is an AIFF
+## called `.M`, so a rule keyed on "has no extension" skipped it exactly as the
+## rule keyed on "has one of these extensions" did. There is no name-shaped
+## version of this question that is right; the bytes are the question.
+##
+## The cost is twelve bytes off the front of every file under the root, once per
+## session — 2,686 files for `piposh`, 3,229 for `piposh2` — and a Director
+## container is `RIFX`/`XFIR`, which matches nothing here. Measured: the index
+## build stays well under a second on every root.
+static func _has_audio_tag(full: String) -> bool:
+	var file := FileAccess.open(full, FileAccess.READ)
+	if file == null:
+		return false
+	var head := file.get_buffer(TAG_BYTES)
+	file.close()
+	if head.size() < 4:
+		return false
+	var tag := head.slice(0, 4).get_string_from_ascii()
+	# AIFF and WAVE both have the form type at byte 8; a bare `FORM` that is not
+	# `AIFF`/`AIFC` is some other IFF document and not ours.
+	if tag == "FORM" or tag == "RIFF":
+		if head.size() < TAG_BYTES:
+			return false
+		var form := head.slice(8, TAG_BYTES).get_string_from_ascii()
+		return form in ["AIFF", "AIFC", "WAVE"]
+	if tag == "OggS":
+		return true
+	# MP3: an ID3 tag, or a bare frame sync.
+	if head.slice(0, 3).get_string_from_ascii() == "ID3":
+		return true
+	return head[0] == 0xFF and (head[1] & 0xE0) == 0xE0
 
 
 func _index_dir_recursive(path: String) -> void:
@@ -139,13 +225,17 @@ func _index_dir_recursive(path: String) -> void:
 			_index_dir_recursive(full)
 		else:
 			var ext := name.get_extension().to_lower()
-			if ext in ["wav", "ogg", "mp3", "aif"]:
+			if ext in AUDIO_EXTENSIONS or _has_audio_tag(full):
 				# What the scripts actually name: a path. Keyed relative to the
 				# game root, lowercased, separators normalised and the extension
 				# dropped, so `songs\strtgame\krupsong.aif` can find
 				# `SONGS/strtgame/KRUPSONG.WAV`.
 				var key := _relative_key(full)
 				_path_index[key] = full
+				# And the same path with its extension left on, so a request that
+				# names a file exactly is not resolved by the stem it shares with
+				# another. See `_exact_index`.
+				_exact_index[_relative_named(full)] = full
 				# And every tail of it, because a script may name any suffix of
 				# the path. This is where the folder used to be thrown away: only
 				# the bare filename was indexed beside the whole path, so a
@@ -200,6 +290,17 @@ func resolve_path(file_name: String) -> String:
 ## the shortest tail, still legal and still common, and it is the only one this
 ## corpus can leave ambiguous.
 func _resolve_normalised(raw: String) -> String:
+	# The exact name first, and only its leading segments dropped -- never its
+	# extension. A request that names a file that is on the disc gets that file;
+	# everything below is the tolerance for a request that does not. See
+	# `_exact_index` for the two Piposh 1 pairs this decides between.
+	var named := _normalise_named(raw)
+	if named != "":
+		var named_parts := named.split("/", false)
+		for start in range(named_parts.size()):
+			var tail := "/".join(Array(named_parts).slice(start))
+			if _exact_index.has(tail):
+				return str(_exact_index[tail])
 	var key := _normalise(raw)
 	if key == "":
 		return ""
@@ -370,10 +471,26 @@ static func _normalise(path: String) -> String:
 		.get_basename()
 
 
+## `_normalise` with the extension left on. See `_exact_index`.
+static func _normalise_named(path: String) -> String:
+	return path.to_lower() \
+		.replace("\\", "/") \
+		.replace(":", "/") \
+		.trim_suffix("/")
+
+
 ## The index key for a file on disc: its path relative to the game root.
 func _relative_key(full: String) -> String:
+	return _strip_root(_normalise(full))
+
+
+## The same, with the extension kept.
+func _relative_named(full: String) -> String:
+	return _strip_root(_normalise_named(full))
+
+
+func _strip_root(key: String) -> String:
 	var root := _root_prefix()
-	var key := _normalise(full)
 	if root != "" and key.begins_with(root):
 		key = key.substr(root.length())
 	return key.lstrip("/")

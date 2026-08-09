@@ -28,8 +28,29 @@ const TYPE_NAMES := {
 ## A sprite whose member is one of these and does not resolve is missing art.
 ## Anything else — a shape, a script — is *meant* to draw nothing.
 const DRAWING_TYPES := ["bitmap", "filmLoop", "picture", "richText"]
-## The low bits of a bitmap's pitch are the row stride in bytes.
-const STRIDE_MASK := 0x0FFF
+## Everything below the flag bit of a bitmap's pitch word is the row stride in
+## bytes.
+##
+## **It was `0x0FFF`, which is the same number for every stride under 4,096 and a
+## truncation for every one above.** Three members in the corpus are above it, all
+## three the panoramic backdrop of a `piposh-dream` maze room: `hatul1.dir` #3
+## `stage1` is 4943 x 400 at 8 bits, so its row is 4,944 bytes, its pitch word is
+## `0x9350`, and masking to twelve bits handed the decoder 848. `unpack` then
+## produced a buffer of `848 * 400` and `_blit_8` read `4943` bytes out of each
+## 848-byte row, which is a GDScript "out of bounds get index" on the first row --
+## an error that aborts the blit, so the member drew as whatever was already in
+## the buffer, on every repaint, for as long as the room was on screen.
+##
+## The mask is `0x7FFF` because the corpus says so rather than because a document
+## does. Over all six titles -- 119,013 bitmap members -- the top nibble of the
+## pitch word is `0x8` or `0x0` everywhere except those three, where it is `0x9`;
+## and with bit 15 alone removed, the remaining value equals the member's own
+## width times its own depth rounded up to an even byte count for **every one of
+## the 119,013**, with no exceptions in either direction. Bit 15 is `DEPTH_FLAG`
+## below and is the only bit of that word that is not stride in any file here.
+## `tools/liveness_sweep.gd` is what surfaced it: the decode error slowed the
+## paint enough to show up as a movie the sweep could not sample.
+const STRIDE_MASK := 0x7FFF
 ## Bit 0x8000 of the pitch is set for every member that is not 1-bit. It says
 ## "not 1-bit" and nothing more: reading it as "8bpp" mis-decodes the 16- and
 ## 32-bit members, which is why the depth comes from the specific block's own
