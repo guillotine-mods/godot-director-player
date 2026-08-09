@@ -135,14 +135,21 @@ still came from the config, so with the tracked config naming a `rating` contain
 every harness that does not pass its own `--file` loaded no score and asserted over
 nothing. `bugs.md` 51 carries it.
 
-The baseline is **52 pass, 2 fail** over a list that is **54 entries**, and
-neither failure is a renderer question:
+The baseline is **61 pass, 0 fail** over a list that is **61 entries**. There is
+no expected failure, which makes any red a regression rather than something to
+check against a list of excuses first.
 
-- `debug_bindings` — `snapshot = "F10"` in the tracked config collides with a
-  keyCode `rating` tests at 48 sites. Config, not code (`399feaaa`).
-- `play_suspends` — the known flake, `bugs.md` 41. Roughly half its runs, on the
-  cross-movie `suspendhop` assertion, not the dialogue one. Re-measured three
-  times over: FAIL, PASS, FAIL.
+The two this paragraph used to carry were both fixed rather than re-explained:
+
+- `debug_bindings` — `snapshot = "F10"` in the tracked config, colliding with a
+  keyCode `rating` tests at 48 sites, while the code default had already moved to
+  F11. It was described as "config, not code" for long enough to read as a
+  standing cost; it was one word.
+- `play_suspends` — described as a flake, on an assertion that waited a fixed six
+  frames for a movie to load. Waiting on the condition made it deterministic, and
+  it then failed *every* run: the timing had been hiding a real red (`bugs.md`
+  54). Worth remembering the next time an entry is filed as flaky — a result
+  nobody has to explain is a result nobody looks at.
 
 `lingo_surface_audit` was the third and passes now. **This line is a measurement,
 not a prediction** — the paragraph it replaces said 47/2 over 49, admitted that

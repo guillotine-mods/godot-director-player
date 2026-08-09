@@ -1,14 +1,22 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 54 entries in ALL is 52 pass / 2 fail, measured on 4.7.1 by a
-# whole-suite run at the commit this line was written:
+# which over the 61 entries in ALL is **61 pass / 0 fail**, measured on 4.7.1 by
+# a whole-suite run at the commit this line was written. There is no expected
+# failure any more, so any red is a regression and needs no triage against a
+# list of excuses.
 #
-#   debug_bindings  FAIL, config not code: `snapshot = "F10"` in the tracked
-#                   director_game.cfg collides with a keyCode rating tests at 48
-#                   sites (399feaaa)
-#   play_suspends   PASS or FAIL, about half and half, on one assertion that
-#                   waits a fixed six frames for a movie to load (bugs.md 41).
-#                   Re-run three times over here: FAIL, PASS, FAIL.
+# The two this line used to carry were not the standing costs they read as:
+#
+#   debug_bindings  was "config not code": `snapshot = "F10"` in the tracked
+#                   director_game.cfg, colliding with a keyCode rating tests at
+#                   48 sites, while the code default had already moved to F11.
+#                   One word.
+#   play_suspends   was "PASS or FAIL, about half and half" on an assertion that
+#                   waited a fixed six frames for a movie to load. Waiting on the
+#                   condition instead made it deterministic -- and it then failed
+#                   every time, because the flake had been hiding a real red
+#                   (bugs.md 54). A flake is not noise; it is a result nobody has
+#                   to explain.
 #
 # `boot_state` was the long-standing red in the line this replaces and passes now.
 #
