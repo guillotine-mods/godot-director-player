@@ -1,0 +1,187 @@
+extends Control
+## The screen that picks a game, before anything is loaded.
+##
+## It writes `user://director_game.local.cfg` and never the tracked file. That
+## is the whole point: `director_game.cfg` is tracked, so a screen that edited
+## it in place would produce exactly the merge conflicts it exists to remove --
+## and in an export it could not, because `res://` is inside the PCK.
+##
+## **A run that names a game on the command line plays straight through.**
+## `director_paths.gd` documents `godot --path . -- --save <file>` as sufficient
+## on its own, and a menu in front of it breaks that. A bare run shows the menu,
+## and an Android run -- which has no argv -- always does.
+
+const GameConfig := preload("res://director/game_config.gd")
+const TitleList := preload("res://scenes/launcher/title_list.gd")
+
+const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
+
+## Emoji are not in the project's font. `Open Sans SemiBold` carries Hebrew and
+## Cyrillic but no emoji block at all, measured with `has_char` on 4.7.1, so a
+## flag label needs the platform's emoji font as a fallback. A platform whose
+## emoji font declines regional-indicator pairs -- Windows does -- draws the two
+## letters instead, which is `IL`, `US`, `RU`: the label a text-only design
+## would have picked, so there is nothing to fall back to.
+const EMOJI_FONTS := ["Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"]
+
+const ASPECTS := ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]
+
+@onready var _games: OptionButton = %Games
+@onready var _flags: HBoxContainer = %Flags
+@onready var _aspect: OptionButton = %Aspect
+@onready var _play: Button = %Play
+
+var _entries: Array[Dictionary] = []
+var _root := ""
+var _boot := ""
+
+
+func _ready() -> void:
+	if _named_on_command_line():
+		_launch()
+		return
+	_entries = TitleList.build()
+	_fill_games()
+	_fill_aspect()
+	_games.item_selected.connect(_on_game_selected)
+	_play.pressed.connect(_on_play)
+	if _entries.size() > 0:
+		_on_game_selected(_games.selected)
+
+
+## `--root`, `--boot` and `--save` each name a game, and each is meant to be
+## sufficient without a menu.
+func _named_on_command_line() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		var text := str(arg)
+		for flag in ["--root", "--boot", "--save"]:
+			if text == flag or text.begins_with(flag + "="):
+				return true
+	return false
+
+
+func _fill_games() -> void:
+	_games.clear()
+	for entry in _entries:
+		_games.add_item(str(entry["title"]))
+	# One game is not a choice. A single-title build shows no list at all, which
+	# is what lets an Android export carry one game without a decision here.
+	_games.visible = _entries.size() > 1
+	_games.selected = 0
+
+
+func _fill_aspect() -> void:
+	_aspect.clear()
+	for name in ASPECTS:
+		_aspect.add_item(str(name).replace("_", " "))
+	var current := str(GameConfig.merged().get_value("display", "aspect", "native_4_3"))
+	_aspect.selected = maxi(ASPECTS.find(current), 0)
+
+
+func _on_game_selected(index: int) -> void:
+	if index < 0 or index >= _entries.size():
+		return
+	var entry := _entries[index]
+	_build_flags(entry)
+	_select_root(TitleList.default_root(entry))
+
+
+## A row of flags, and only for a title that has more than one root. Piposh is
+## the one title in six with localisations; the other three show nothing here.
+func _build_flags(entry: Dictionary) -> void:
+	for child in _flags.get_children():
+		child.queue_free()
+	var roots: Array = entry.get("roots", [])
+	_flags.visible = roots.size() > 1
+	if roots.size() < 2:
+		return
+	var group := ButtonGroup.new()
+	for row in roots:
+		var data := row as Dictionary
+		var button := Button.new()
+		button.toggle_mode = true
+		button.button_group = group
+		button.text = TitleList.flag_emoji(str(data.get("flag", "")))
+		button.tooltip_text = str(data.get("name", ""))
+		button.custom_minimum_size = Vector2(64, 64)
+		button.add_theme_font_override("font", _emoji_font())
+		button.add_theme_font_size_override("font_size", 32)
+		button.button_pressed = bool(data.get("default", false))
+		button.pressed.connect(_select_root.bind(data))
+		_flags.add_child(button)
+
+
+func _emoji_font() -> Font:
+	var system := SystemFont.new()
+	system.font_names = PackedStringArray(EMOJI_FONTS)
+	var base := FontVariation.new()
+	base.base_font = ThemeDB.fallback_font
+	base.fallbacks = [system] as Array[Font]
+	return base
+
+
+func _select_root(row: Dictionary) -> void:
+	_root = str(row.get("root", ""))
+	_boot = str(row.get("boot", ""))
+	_refresh_play()
+
+
+## The single owner of `Play`'s enabled state.
+##
+## One function and not two, because Task 6 adds a second reason to refuse --
+## a binding that failed validation -- and two writers on one property means
+## whichever ran last decides. That is the same fault `debug_keys.gd` reports
+## for two commands on one key, in a place nothing would report it.
+func _refresh_play() -> void:
+	if _root == "":
+		_play.disabled = true
+		_play.text = "No game selected"
+		return
+	if _boot == "":
+		_play.disabled = true
+		_play.text = "No boot movie — set one in Developer"
+		return
+	_play.disabled = false
+	_play.text = "Play"
+
+
+func _on_play() -> void:
+	var overlay := GameConfig.overlay()
+	overlay.set_value("game", "root", _root)
+	overlay.set_value("game", "boot_movie", _boot)
+	overlay.set_value("display", "aspect", ASPECTS[maxi(_aspect.selected, 0)])
+	GameConfig.write_overlay(overlay)
+	_redrive_autoloads()
+	_launch()
+
+
+## Autoloads read the config once, at process start, and survive a scene change.
+##
+## **This is `director_paths.gd`'s `--root` lesson arriving through a new door.**
+## That comment records what happens when the movies move and something that
+## cached the old root does not: `AudioDirector` indexed its sounds against the
+## previous title and every lookup missed, so the game ran silent. The launcher
+## changes the root *after* every autoload has already started, which is the
+## same situation reached a different way.
+##
+## `AudioDirector` happens to survive it today -- `audio_director.gd:96` defers
+## the index to the first `resolve_path`, which is after the preview has loaded
+## -- but that is an implementation detail of one file and `_indexed` is a
+## one-shot latch, so anything that touches audio before Play would poison it.
+## `AppSettings` does not survive it at all: its `_ready` calls `load_settings`
+## eagerly.
+##
+## So both are re-driven explicitly rather than relying on which one is lazy.
+## An autoload added later that caches config belongs on this list, and the fact
+## that the list exists is what makes that a thing somebody can notice.
+func _redrive_autoloads() -> void:
+	AppSettings.load_settings()
+	AudioDirector.reset_index()
+
+
+func _launch() -> void:
+	# Deferred rather than immediate. `_launch` is reached from `_ready` on the
+	# command-line bypass path, and changing scene from inside the current
+	# scene's `_ready` is the standard way to free a node that is mid-
+	# initialisation.
+	get_tree().change_scene_to_file.call_deferred(PREVIEW_SCENE)

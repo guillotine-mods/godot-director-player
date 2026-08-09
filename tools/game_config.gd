@@ -160,6 +160,38 @@ func _init() -> void:
 			and (not had or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved))
 	h.complete(case)
 
+	case = "an overlay written by the launcher reads back as it was written"
+	h.begin(case)
+	# The real path again, and the same save/restore as the case above: this is
+	# the function the launcher calls, and a round trip through a scratch path
+	# would not exercise the path it actually writes.
+	var had_written := FileAccess.file_exists(GameConfig.OVERLAY_PATH)
+	var saved_written := FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) if had_written else ""
+	var writing := ConfigFile.new()
+	writing.set_value("game", "root", "res://games/piposh-ru")
+	writing.set_value("display", "aspect", "wide_16_9")
+	h.check("write_overlay reports success", GameConfig.write_overlay(writing))
+	var back := GameConfig.overlay()
+	h.check("the root comes back", str(back.get_value("game", "root", "")) == "res://games/piposh-ru",
+		str(back.get_value("game", "root", "<missing>")))
+	h.check("and so does a key in another section",
+		str(back.get_value("display", "aspect", "")) == "wide_16_9",
+		str(back.get_value("display", "aspect", "<missing>")))
+	# write_overlay invalidates, or the launcher would write a file the rest of
+	# the process could not see. Asserted through the real tracked path, which is
+	# the only one the implicit overlay applies to.
+	h.check("and the merged view sees it without an explicit invalidate",
+		str(GameConfig.merged(GameConfig.TRACKED_PATH, GameConfig.OVERLAY_PATH)
+			.get_value("game", "root", "")) == "res://games/piposh-ru")
+	if had_written:
+		_write(GameConfig.OVERLAY_PATH, saved_written)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	h.check("the overlay this machine had is back as it was",
+		FileAccess.file_exists(GameConfig.OVERLAY_PATH) == had_written
+			and (not had_written or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved_written))
+	h.complete(case)
+
 	for path in [SCRATCH_TRACKED, SCRATCH_OVERLAY, SCRATCH_BROKEN]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	GameConfig.invalidate()

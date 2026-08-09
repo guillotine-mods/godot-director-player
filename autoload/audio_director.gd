@@ -124,6 +124,17 @@ func _ensure_index() -> void:
 	_build_index()
 
 
+## Drop the index so the next lookup rebuilds it against the current config.
+##
+## The launcher changes the root after this autoload has already started, and
+## `_indexed` is a one-shot latch: without this, anything that had touched audio
+## before Play would leave the index pointing at the previous title and every
+## lookup would miss. That is the silent game `director_paths.gd` documents,
+## reached through a different door.
+func reset_index() -> void:
+	_indexed = false
+
+
 ## Preloaded rather than reached by `class_name`: an autoload resolves global
 ## classes out of the editor's script cache, which a headless run has no reason
 ## to have refreshed, and the failure is "Identifier not declared" in a file
