@@ -1,0 +1,114 @@
+extends SceneTree
+## The tracked config, the machine-local overlay, and which one wins.
+##
+##   godot --headless --path . --script tools/game_config.gd
+##
+## Four sites used to load `director_game.cfg` for themselves. They ask
+## `director/game_config.gd` now, and this is what that file promises them: the
+## overlay wins per key, a key it does not carry falls through to the tracked
+## file, an absent or unreadable overlay changes nothing, and under `--headless`
+## the real overlay is not consulted at all.
+##
+## That last one is what keeps the other 62 entries honest. The overlay is one
+## file per machine, shared by every process on it, which is the same shape as
+## the failure `gate.sh` removed when it stopped rewriting the `root` line: two
+## runs at once had each other's corpus swapped out mid-run. Keying on the
+## display server means a harness cannot read a human's overlay even by
+## forgetting a flag, and neither can an ad-hoc `godot --headless --script` run.
+##
+## Title-agnostic: it writes its own files and names no game.
+
+const Harness := preload("res://tools/lib/harness.gd")
+const GameConfig := preload("res://director/game_config.gd")
+
+const SCRATCH_TRACKED := "user://gate_game_config_tracked.cfg"
+const SCRATCH_OVERLAY := "user://gate_game_config_overlay.cfg"
+const SCRATCH_BROKEN := "user://gate_game_config_broken.cfg"
+
+
+func _init() -> void:
+	var h := Harness.new()
+	_write(SCRATCH_TRACKED, "[game]\nroot = \"res://games/piposh2\"\nboot_movie = \"strtgame.dir\"\ncodepage = \"mac_hebrew\"\n\n[display]\naspect = \"native_4_3\"\n")
+	_write(SCRATCH_OVERLAY, "[game]\nroot = \"res://games/rating\"\n")
+	_write(SCRATCH_BROKEN, "this is not a config file\n[[[\n")
+
+	var case := "the overlay wins per key and falls through for the rest"
+	h.begin(case)
+	GameConfig.invalidate()
+	var merged := GameConfig.merged(SCRATCH_TRACKED, SCRATCH_OVERLAY)
+	h.check("the overlay's root wins",
+		str(merged.get_value("game", "root", "")) == "res://games/rating",
+		str(merged.get_value("game", "root", "<missing>")))
+	h.check("a key the overlay does not carry falls through",
+		str(merged.get_value("game", "boot_movie", "")) == "strtgame.dir",
+		str(merged.get_value("game", "boot_movie", "<missing>")))
+	h.check("a whole section the overlay does not carry falls through",
+		str(merged.get_value("display", "aspect", "")) == "native_4_3",
+		str(merged.get_value("display", "aspect", "<missing>")))
+	h.check("the tracked view is not touched by the overlay",
+		str(GameConfig.tracked(SCRATCH_TRACKED).get_value("game", "root", "")) == "res://games/piposh2",
+		str(GameConfig.tracked(SCRATCH_TRACKED).get_value("game", "root", "<missing>")))
+	h.complete(case)
+
+	case = "an absent or unreadable overlay changes nothing"
+	h.begin(case)
+	GameConfig.invalidate()
+	var none := GameConfig.merged(SCRATCH_TRACKED, "user://gate_game_config_absent.cfg")
+	h.check("an absent overlay leaves the tracked answer",
+		str(none.get_value("game", "root", "")) == "res://games/piposh2",
+		str(none.get_value("game", "root", "<missing>")))
+	GameConfig.invalidate()
+	var broken := GameConfig.merged(SCRATCH_TRACKED, SCRATCH_BROKEN)
+	h.check("an unreadable overlay is ignored rather than fatal",
+		str(broken.get_value("game", "root", "")) == "res://games/piposh2",
+		str(broken.get_value("game", "root", "<missing>")))
+	h.check("a missing tracked file reports absent",
+		not GameConfig.exists("user://gate_game_config_nothing.cfg"))
+	h.check("and a missing tracked file still answers the default",
+		str(GameConfig.merged("user://gate_game_config_nothing.cfg", "").get_value(
+			"game", "root", "fallback")) == "fallback")
+	h.complete(case)
+
+	# The rule the other 62 entries depend on. This process *is* headless, so
+	# asking for the real overlay must not consult it -- asserted by writing one
+	# that would be obvious if it were read.
+	case = "under --headless the real overlay is not consulted"
+	h.begin(case)
+	h.check("this run is headless", DisplayServer.get_name() == "headless",
+		DisplayServer.get_name())
+	h.check("so the overlay does not apply", not GameConfig.overlay_applies())
+	# **The real overlay belongs to whoever is sitting here**, and this is the
+	# one gate entry that has to touch it -- the rule under test is about that
+	# exact path, so a scratch file would assert nothing. It is read back first
+	# and put back after: `bash gate.sh` is the command this repository tells
+	# you to run constantly, and a gate that silently wipes your launcher
+	# settings would be a worse bug than the one it is guarding.
+	var had := FileAccess.file_exists(GameConfig.OVERLAY_PATH)
+	var saved := FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) if had else ""
+	var planted := ConfigFile.new()
+	planted.set_value("game", "root", "res://games/should-never-be-read")
+	planted.save(GameConfig.OVERLAY_PATH)
+	GameConfig.invalidate()
+	var real := GameConfig.merged(SCRATCH_TRACKED, "")
+	h.check("a planted overlay is not read",
+		str(real.get_value("game", "root", "")) == "res://games/piposh2",
+		str(real.get_value("game", "root", "<missing>")))
+	if had:
+		_write(GameConfig.OVERLAY_PATH, saved)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	h.check("the overlay this machine had is back as it was",
+		FileAccess.file_exists(GameConfig.OVERLAY_PATH) == had
+			and (not had or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved))
+	h.complete(case)
+
+	for path in [SCRATCH_TRACKED, SCRATCH_OVERLAY, SCRATCH_BROKEN]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	GameConfig.invalidate()
+	quit(h.finish("the tracked config, the overlay, and which one wins"))
+
+
+func _write(path: String, body: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(body)
+	f.close()
