@@ -128,6 +128,20 @@ static func overlay() -> ConfigFile:
 	return cfg
 
 
+## The tracked file's own path never carries an implicit overlay unless it *is*
+## the real tracked file. `overlay_applies()` only asks whether there is a
+## display -- it has no way to tell the real `TRACKED_PATH` from a harness's own
+## scratch fixture, and `merged()` is called with both. `fast_forward.gd` and
+## `debug_bindings.gd` each write a fixture under `user://`, at a path that is
+## not `TRACKED_PATH`, and reload it with the default (implicit) overlay
+## argument -- exactly what `DebugKeys.load_config`'s frozen signature always
+## passes. Both name running windowed as how their last section is meant to be
+## exercised. Without this check, a windowed run of either would have its
+## fixture's values silently overridden by whatever this machine's real overlay
+## contains: the fixture says one thing, `[debug] enabled` or a key binding
+## reads another, and nothing in the repository explains why. An explicit
+## `overlay_path` argument is unaffected -- that is the harness seam, and it
+## applies unconditionally, headless or not, real path or not.
 static func _build(tracked_path: String, overlay_path: String, key: String) -> void:
 	var base := ConfigFile.new()
 	_present[tracked_path] = base.load(tracked_path) == OK
@@ -137,7 +151,7 @@ static func _build(tracked_path: String, overlay_path: String, key: String) -> v
 	_copy(base, out)
 	var wanted := overlay_path
 	if wanted == "":
-		wanted = OVERLAY_PATH if overlay_applies() else ""
+		wanted = OVERLAY_PATH if (overlay_applies() and tracked_path == TRACKED_PATH) else ""
 	if wanted != "":
 		var over := ConfigFile.new()
 		# A malformed overlay is ignored, not fatal. It is a file a human edits;

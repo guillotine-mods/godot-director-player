@@ -71,7 +71,11 @@ func _init() -> void:
 
 	# The rule the other 62 entries depend on. This process *is* headless, so
 	# asking for the real overlay must not consult it -- asserted by writing one
-	# that would be obvious if it were read.
+	# that would be obvious if it were read. Two separate guards gate the read,
+	# and each is checked on its own below rather than folded into one: headless
+	# alone must block it, and so must asking under a path that is not the real
+	# tracked file, because `overlay_applies()` cannot tell that path from this
+	# one -- it only knows whether there is a display.
 	case = "under --headless the real overlay is not consulted"
 	h.begin(case)
 	h.check("this run is headless", DisplayServer.get_name() == "headless",
@@ -89,14 +93,47 @@ func _init() -> void:
 	planted.set_value("game", "root", "res://games/should-never-be-read")
 	planted.save(GameConfig.OVERLAY_PATH)
 	GameConfig.invalidate()
-	var real := GameConfig.merged(SCRATCH_TRACKED, "")
-	h.check("a planted overlay is not read",
-		str(real.get_value("game", "root", "")) == "res://games/piposh2",
+	# Exercised against the real `TRACKED_PATH` itself, so the path guard added
+	# below is trivially satisfied here and cannot be what makes this pass --
+	# only `overlay_applies()` (headless) is left to be doing the work.
+	var expected_root := str(GameConfig.tracked(GameConfig.TRACKED_PATH).get_value(
+		"game", "root", "<missing>"))
+	var real := GameConfig.merged(GameConfig.TRACKED_PATH, "")
+	h.check("a planted overlay is not read against the real tracked config",
+		str(real.get_value("game", "root", "")) == expected_root
+			and str(real.get_value("game", "root", "")) != "res://games/should-never-be-read",
 		str(real.get_value("game", "root", "<missing>")))
+	# A second guard, checked on its own: the implicit overlay is only ever
+	# offered to the real tracked file, because `overlay_applies()` cannot tell
+	# a harness's own `user://` fixture from that path -- it only knows whether
+	# there is a display. `fast_forward.gd` and `debug_bindings.gd` each merge
+	# such a fixture through the same default argument `DebugKeys.load_config`
+	# always passes, and both document running windowed as how their last
+	# section is meant to be exercised.
+	#
+	# **This process is headless, so this check cannot fail here**:
+	# `overlay_applies()` alone already blocks the read before the path is ever
+	# compared, the same way it blocks the check above -- a change that dropped
+	# the path guard from `_build` entirely would still pass 63/0. It was
+	# verified by hand instead, with a windowed run of this same script
+	# (`godot --path . --script tools/game_config.gd`, no `--headless`): there
+	# `overlay_applies()` is true, the check above correctly flips to FAIL (the
+	# real path *should* pick up the planted overlay when windowed, and does),
+	# and this one still held -- the scratch fixture read its own
+	# `res://games/piposh2`, not the planted `should-never-be-read`, which is
+	# only possible if the path guard added to `_build` is doing the blocking.
+	# The overlay planted above is still in place, so this reuses it rather
+	# than planting a second one.
+	GameConfig.invalidate()
+	var scratch := GameConfig.merged(SCRATCH_TRACKED, "")
+	h.check("a scratch tracked path never gets the implicit overlay",
+		str(scratch.get_value("game", "root", "")) == "res://games/piposh2",
+		str(scratch.get_value("game", "root", "<missing>")))
 	if had:
 		_write(GameConfig.OVERLAY_PATH, saved)
 	else:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	GameConfig.invalidate()
 	h.check("the overlay this machine had is back as it was",
 		FileAccess.file_exists(GameConfig.OVERLAY_PATH) == had
 			and (not had or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved))
