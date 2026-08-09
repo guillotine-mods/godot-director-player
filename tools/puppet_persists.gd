@@ -87,6 +87,7 @@ const Args := preload("res://tools/lib/args.gd")
 const Escape := preload("res://tools/playhead_escape.gd")
 const SaveFiles := preload("res://scenes/preview/save_files.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
+const LingoValue := preload("res://lingo/lingo_value.gd")
 
 ## The two rooms, because the two halves need different scores. See the header.
 const LABELS := "exitforest3,veranda"
@@ -412,6 +413,7 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	else:
 		print("   %d hide(s) on %s survived the release of %s"
 			% [hidden_at_entry.size(), str(hidden_at_entry), str(released.keys())])
+	_release_keeps_the_hide(h, preview, channel)
 	if abandoned.is_empty():
 		print("   the score carried every puppeted channel throughout, so this"
 			+ " room does not test the persistence")
@@ -422,6 +424,80 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 		print("   the score dropped %s and kept the puppeted ones; %s went with it"
 			% [str(abandoned.keys()), str(left_with_the_score.keys())])
 	return true
+
+
+## `puppetSprite N, FALSE` hands the **sprite** back and leaves the **channel**
+## alone, stated directly rather than waited for.
+##
+## The rule above is watched while a movie plays, and both rooms print "does not
+## test that a hide survives the release" -- neither un-puppets anything, so the
+## check that three bug reports are behind passes over a movie that never puts it
+## to the question. A rule only a movie can choose to exercise is a rule that is
+## usually not exercised, and this is the one that walked four dwarves and Renati
+## back into shot: DAY1's walk-away path runs `puppetSprite(i, 0)` over a range of
+## channels `init all` had hidden with `sprite(i).visible = 0`.
+##
+## So it is driven here instead: hide a channel the score is drawing, claim the
+## whole sprite, write a member onto it, and hand it back. Director's
+## `b_puppetSprite` is one line for the FALSE case -- `chan->setClean(the score's
+## record for this channel)` -- and `setClean` replaces the fields of the
+## **Sprite**. `Channel::_visible` is not in that object, so the hide stays; the
+## member is, so the script's write goes.
+##
+## **Both halves, because either alone passes for a `set_puppet` that does
+## nothing at all.** "The hide survived" is also what a no-op release does, and
+## "the member came back" is also what erasing the whole entry does -- which is
+## precisely the pair of behaviours this port has shipped, one each way.
+##
+## Asked of the stage rather than of the property: `_effective` is what the
+## painter, the hit test and `rollOver` all go through, so a sprite that is not in
+## its answer is a sprite the player cannot see or click.
+func _release_keeps_the_hide(h: Harness, preview: Node, channel: int) -> void:
+	var score_member := _score_member(preview, channel)
+	if score_member <= 0:
+		print("   the score has no member on channel %d here, so the release rule"
+			% channel + " could not be driven directly")
+		return
+	# A member the score is not showing, so "the script's write went" is
+	# distinguishable from "nothing was ever written". It does not have to resolve
+	# to real artwork -- nothing draws during this, and the assertion is about
+	# which number the channel is carrying.
+	var written := score_member + 1
+	preview.call("lingo_set_sprite_prop", channel, "visible", 0)
+	h.check("a script's hide takes channel %d off the stage" % channel,
+		not _channel_drawn(preview, channel))
+	preview.call("lingo_puppet_sprite", channel, true)
+	preview.call("lingo_set_sprite_prop", channel, "membernum", written)
+	h.check("and the whole-sprite puppet holds the script's member",
+		_shown_member(preview, channel) == written,
+		"wrote %d, showing %d" % [written, _shown_member(preview, channel)])
+
+	preview.call("lingo_puppet_sprite", channel, false)
+	h.check("`puppetSprite %d, FALSE` gives the sprite back to the score" % channel,
+		_shown_member(preview, channel) == score_member,
+		"score %d, showing %d" % [score_member, _shown_member(preview, channel)])
+	h.check("and leaves the channel's own hide standing",
+		int(LingoValue.to_int(preview.call("lingo_sprite_prop", channel, "visible"))) == 0,
+		"the visible of sprite %d reads %s" % [
+			channel, str(preview.call("lingo_sprite_prop", channel, "visible"))])
+	h.check("so the channel is still off the stage",
+		not _channel_drawn(preview, channel))
+	# Put it back, so a later reader of this state is not looking at the harness's
+	# own hide. Through the same setter a movie would use, which is also the only
+	# thing in Director that may lift one.
+	preview.call("lingo_set_sprite_prop", channel, "visible", 1)
+
+
+## Is `channel` drawn -- the question the painter and the hit test ask, which is
+## `_channel_shown` **and** the channel's visibility. `_effective` answers `{}` for
+## a hidden channel, and every path to the screen goes through it.
+func _channel_drawn(preview: Node, channel: int) -> bool:
+	for value in (preview.call("frame_sprites") as Array):
+		var raw: Dictionary = value
+		if int(raw["channel"]) != channel:
+			continue
+		return not (preview.call("_effective", raw) as Dictionary).is_empty()
+	return false
 
 
 ## Is `channel` on the frame at all -- not "is it visible"?

@@ -12,8 +12,9 @@ the Godot lifecycle; the modules own the rules.
 | symptom | file |
 |---|---|
 | a sprite draws in the wrong place, or is clickable where it isn't drawn | `sprite_geometry.gd` |
-| a script hid/moved/swapped a sprite and the screen disagrees | `sprite_state.gd` |
-| a puppeted sprite vanishes, or a script's member swap never wears off | `sprite_state.gd` |
+| a script hid/moved/swapped a sprite and the screen disagrees | `channel.gd` |
+| a puppeted sprite vanishes, or a script's member swap never wears off | `channel.gd` |
+| a sprite property is written, reads back, and reaches nothing | `channel.gd` (`FIELDS`) |
 | wrong colours, a matte punching holes, a solid black rectangle | `sprite_art.gd` |
 | a field shows the authored placeholder, or a HUD value never updates | `text_art.gd` |
 | typing does nothing, the caret is in the wrong field or the wrong place | `text_focus.gd` |
@@ -37,6 +38,16 @@ the Godot lifecycle; the modules own the rules.
 | a save state comes back missing something, or a field isn't carried | `save_state.gd` |
 | a save goes to the wrong place, or a stale save loads silently | `save_files.gd` |
 | a debug key, outline or overlay shows up in a build | `debug_keys.gd` (`enabled`) |
+
+`sprite_state.gd` is the six questions the node asks about a channel;
+`channel.gd` is the answers. That split is the model — one `Channel` per score
+channel, owning its own visibility, its whole-sprite puppet flag and the sprite
+fields a script holds against the score, exactly as Director's `Channel`/`Sprite`
+pair does. Before it, six functions each carried their own idea of which override
+keys were sprite fields and which were channel state, and eight bugs came out of
+the places they disagreed. A sprite property is one `FIELDS` row and is merged,
+released and read back from that row alone; a property with no row reaches
+nothing, which `sprite_props.consumed` derives rather than asserts.
 
 ## The save state
 

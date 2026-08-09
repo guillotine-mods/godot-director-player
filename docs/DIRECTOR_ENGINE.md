@@ -913,8 +913,10 @@ So: it preserves *everything visual* and re-reads only *script attachment*. That
 is not an accident; it is how a puppeted sprite still picks up per-frame
 behaviour from the score.
 
-*This port:* `scenes/preview/sprite_state.gd`. `release_auto_puppets` skips a
-channel carrying `_puppet`, and `with_puppets` is the other half —
+*This port:* `scenes/preview/channel.gd` is the `Channel`/`Sprite` pair, and
+`scenes/preview/sprite_state.gd` is the six questions the player node asks it.
+`Channel.release` skips a channel carrying `_puppet`, and `with_puppets` is the
+other half —
 **a puppeted channel stays on the frame when the score's record for it is
 empty**, which is what "the reconcile is skipped" means for a port that draws
 from the score's per-frame sprite list rather than from a live channel table. It
@@ -945,9 +947,14 @@ set of fields *this frame's delta touched*; a score that rewrites a channel with
 the member it already had has still written it, and still releases. Nothing
 anywhere compares the old value with the new one.
 
-*This port:* `scenes/preview/sprite_state.gd:release_auto_puppets`, driven by
+*This port:* `scenes/preview/channel.gd:release`, driven by
 `director/director_score.gd:writes_between` — which answers the same question the
 mask does, out of the same delta byte ranges, for the walk between two frames.
+The release table is not written out separately: `channel.gd:FIELDS` describes
+each property once, and the `released_by` column of that row *is*
+`Sprite::releaseAutoPuppet`'s entry for it. A property described in one direction
+and not the other is what produced five of this port's bug reports, so the merge,
+the release and the read-back are one table read three ways.
 `scenes/preview/frame_loop.gd:sync_frame_entry` calls it, once per frame change,
 before the new frame's scripts run; that is the port's equivalent of the
 `if (_curFrameNumber != nextFrameNumberToLoad)` the reference hangs it on, and
@@ -974,18 +981,36 @@ implies re-fitting.
 
 ### 5.5 What resets it
 
-`reset()` clears the puppet flag (movie load). Turning the flag off in Lingo
-restores nothing itself — it stops blocking, and the next frame's delta flows in;
-because the masks were reset to "all bits", that first frame copies everything,
-which is the intended "revert to the score". Auto-puppet is released per property
-by the score. **Nothing in the frame loop clears whole-sprite puppet
+`reset()` clears the puppet flag (movie load). Auto-puppet is released per
+property by the score. **Nothing in the frame loop clears whole-sprite puppet
 implicitly** — it survives frame jumps and `go to`, and dies only when the movie
 changes and channels are rebuilt.
 
-*This port diverges:* `scenes/preview/sprite_state.gd:set_puppet` **discards**
-the overrides on `puppetSprite N, FALSE`, where Director keeps the contents until
-the next reconcile and reverts on the *next frame's delta*. Observably different,
-still. What matches: nothing clears a whole-sprite puppet implicitly —
+**Turning the flag off in Lingo reverts at the call, not on the next frame**, and
+this paragraph used to say the opposite. `LB::b_puppetSprite` clears `_puppet`
+and then, if the sprite *was* puppeted, runs
+`chan->setClean(_currentFrame->_sprites[N])` immediately — and the mask on that
+record is `kSCBNoMask`, every bit set, because `updateSprites` resets all of them
+at the end of every render cycle. So `replaceFrom` copies the whole record there
+and then. The revert is synchronous with the statement.
+
+**`setClean` declines the revert entirely if any per-field auto-puppet survives**,
+which is the one thing here that is genuinely finer than a flag: its first branch
+copies only the script id when `_puppet || _autoPuppet` is set. Bits set *during*
+the whole-sprite claim cannot be among them — `setAutoPuppet` returns without
+doing anything while `_puppet` is set — so this is only about a property written
+*before* `puppetSprite N, TRUE` and never written by the score since.
+
+*This port diverges there and only there:* `channel.gd:set_puppet` clears every
+sprite field on the FALSE, so a pre-existing auto-puppet is dropped where Director
+would keep it *and* would keep the rest of the sprite with it. Unimplemented
+rather than unnoticed: it needs the channel to remember which of its fields were
+auto-puppeted before the claim, for a case with **0 sites** in this corpus, and
+the behaviour it buys is that one stale property blocks the whole revert.
+
+What matches: `puppetSprite N, FALSE` returns the *sprite* and leaves the
+*channel* — the hide, the constraint and the cursor are not in the object
+`setClean` replaces. And nothing clears a whole-sprite puppet implicitly —
 `preview/movie_session.gd:forget_previous` is the only place `_overrides` is
 cleared and it runs on a **movie** change, not on a room change, so a puppet set
 in a movie's `init all` survives every `go` inside that movie. It has to: DAY1
@@ -2127,7 +2152,7 @@ destination-reading inks.
 | Puppet | **partial**: per-field, no copy-back mask. The whole-sprite dialect went with `sprite_channel.gd` | `director_preview.gd:911-941` |
 | Ink | **done** for the five inks this format uses, everything else falls through to Copy per the reference's own fallback chain; colourisation in the preview only | `director_ink.gd` |
 | Matte flood fill | **done**: whole border ring, exact match, and the no-white-no-matte rule | `director_ink.gd:key_matte` |
-| Visibility | **partial**, and now unharnessed: `tools/puppet_visibility.gd` covered it and was deleted with the renderer it drove | `scenes/preview/sprite_state.gd` |
+| Visibility | **partial**, and now unharnessed: `tools/puppet_visibility.gd` covered it and was deleted with the renderer it drove. `tools/puppet_persists.gd` drives the release rule directly since the channel model landed | `scenes/preview/channel.gd` |
 | Frame ordering | **done** (§16.6) | `director_preview.gd:_advance`; `tools/frame_events.gd` |
 | Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** | `director_score.gd`; `director_frame_clock.gd` |
 | Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
