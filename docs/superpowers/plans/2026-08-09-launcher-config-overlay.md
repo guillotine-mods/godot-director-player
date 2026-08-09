@@ -125,6 +125,14 @@ func _init() -> void:
 	h.check("this run is headless", DisplayServer.get_name() == "headless",
 		DisplayServer.get_name())
 	h.check("so the overlay does not apply", not GameConfig.overlay_applies())
+	# **The real overlay belongs to whoever is sitting here**, and this is the
+	# one gate entry that has to touch it -- the rule under test is about that
+	# exact path, so a scratch file would assert nothing. It is read back first
+	# and put back after: `bash gate.sh` is the command this repository tells
+	# you to run constantly, and a gate that silently wipes your launcher
+	# settings would be a worse bug than the one it is guarding.
+	var had := FileAccess.file_exists(GameConfig.OVERLAY_PATH)
+	var saved := FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) if had else ""
 	var planted := ConfigFile.new()
 	planted.set_value("game", "root", "res://games/should-never-be-read")
 	planted.save(GameConfig.OVERLAY_PATH)
@@ -133,7 +141,13 @@ func _init() -> void:
 	h.check("a planted overlay is not read",
 		str(real.get_value("game", "root", "")) == "res://games/piposh2",
 		str(real.get_value("game", "root", "<missing>")))
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	if had:
+		_write(GameConfig.OVERLAY_PATH, saved)
+	else:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(GameConfig.OVERLAY_PATH))
+	h.check("the overlay this machine had is back as it was",
+		FileAccess.file_exists(GameConfig.OVERLAY_PATH) == had
+			and (not had or FileAccess.get_file_as_string(GameConfig.OVERLAY_PATH) == saved))
 	h.complete(case)
 
 	for path in [SCRATCH_TRACKED, SCRATCH_OVERLAY, SCRATCH_BROKEN]:
@@ -319,7 +333,7 @@ static func _copy(from: ConfigFile, to: ConfigFile) -> void:
 
 Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --headless --path . --script tools/game_config.gd`
 
-Expected: `PASS` with 11 checks and no `FAIL` lines.
+Expected: `PASS` with 13 checks and no `FAIL` lines. Then confirm by hand that your own overlay survived, if you had one: `ls -l "$(godot --headless --path . --script /dev/null 2>/dev/null; echo)"` is not the way — just check the file is still there and unchanged after the run, which is what the last assertion also claims.
 
 - [ ] **Step 5: Add it to the gate and correct the recorded count**
 
@@ -366,7 +380,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 Run: `bash gate.sh 2>&1 | tee /tmp/gate-before.txt` then `grep -c PASS /tmp/gate-before.txt`
 
-Expected: 63. Record it. This task's whole assertion is that the number does not move.
+Expected: 63. **Run this now, in this session, before editing any reader** — Step 6 diffs against this exact file, and Task 1's run does not count: a fresh session has no `/tmp/gate-before.txt`, and a stale one from another branch would make the comparison meaningless. This task's whole assertion is that the verdicts do not move.
 
 - [ ] **Step 2: Move `DirectorPaths.load_config`**
 
@@ -720,7 +734,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Create: `scenes/launcher/launcher.tscn`, `scenes/launcher/launcher.gd`, `scenes/launcher/title_list.gd`
-- Modify: `project.godot:19` (`run/main_scene`)
+- Modify: `project.godot:19` (`run/main_scene`), `autoload/audio_director.gd` (add `reset_index`)
 
 **Interfaces:**
 - Consumes: `GameConfig.merged()`, `GameConfig.overlay()`, `GameConfig.write_overlay(cfg)` from Task 1; the `[root.*]` schema from Task 3; `KeySites.roots()`.
@@ -842,6 +856,7 @@ const ASPECTS := ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]
 
 var _entries: Array[Dictionary] = []
 var _root := ""
+var _boot := ""
 
 
 func _ready() -> void:
@@ -930,27 +945,69 @@ func _emoji_font() -> Font:
 
 func _select_root(row: Dictionary) -> void:
 	_root = str(row.get("root", ""))
-	_play.disabled = _root == "" or str(row.get("boot", "")) == ""
-	_play.text = "Play" if not _play.disabled else "No boot movie — set one in Developer"
+	_boot = str(row.get("boot", ""))
+	_refresh_play()
+
+
+## The single owner of `Play`'s enabled state.
+##
+## One function and not two, because Task 6 adds a second reason to refuse --
+## a binding that failed validation -- and two writers on one property means
+## whichever ran last decides. That is the same fault `debug_keys.gd` reports
+## for two commands on one key, in a place nothing would report it.
+func _refresh_play() -> void:
+	if _root == "":
+		_play.disabled = true
+		_play.text = "No game selected"
+		return
+	if _boot == "":
+		_play.disabled = true
+		_play.text = "No boot movie — set one in Developer"
+		return
+	_play.disabled = false
+	_play.text = "Play"
 
 
 func _on_play() -> void:
-	var index := _games.selected
-	var entry: Dictionary = _entries[index] if index >= 0 and index < _entries.size() else {}
-	var boot := ""
-	for row in entry.get("roots", []):
-		if str((row as Dictionary).get("root", "")) == _root:
-			boot = str((row as Dictionary).get("boot", ""))
 	var overlay := GameConfig.overlay()
 	overlay.set_value("game", "root", _root)
-	overlay.set_value("game", "boot_movie", boot)
+	overlay.set_value("game", "boot_movie", _boot)
 	overlay.set_value("display", "aspect", ASPECTS[maxi(_aspect.selected, 0)])
 	GameConfig.write_overlay(overlay)
+	_redrive_autoloads()
 	_launch()
 
 
+## Autoloads read the config once, at process start, and survive a scene change.
+##
+## **This is `director_paths.gd`'s `--root` lesson arriving through a new door.**
+## That comment records what happens when the movies move and something that
+## cached the old root does not: `AudioDirector` indexed its sounds against the
+## previous title and every lookup missed, so the game ran silent. The launcher
+## changes the root *after* every autoload has already started, which is the
+## same situation reached a different way.
+##
+## `AudioDirector` happens to survive it today -- `audio_director.gd:96` defers
+## the index to the first `resolve_path`, which is after the preview has loaded
+## -- but that is an implementation detail of one file and `_indexed` is a
+## one-shot latch, so anything that touches audio before Play would poison it.
+## `AppSettings` does not survive it at all: its `_ready` calls `load_settings`
+## eagerly.
+##
+## So both are re-driven explicitly rather than relying on which one is lazy.
+## An autoload added later that caches config belongs on this list, and the fact
+## that the list exists is what makes that a thing somebody can notice.
+func _redrive_autoloads() -> void:
+	AppSettings.load_settings()
+	AudioDirector.reset_index()
+
+
 func _launch() -> void:
-	get_tree().change_scene_to_file(PREVIEW_SCENE)
+	# Deferred rather than immediate. `_launch` is reached from `_ready` on the
+	# command-line bypass path, and changing scene from inside the current
+	# scene's `_ready` is the standard way to free a node that is mid-
+	# initialisation.
+	get_tree().change_scene_to_file.call_deferred(PREVIEW_SCENE)
 ```
 
 - [ ] **Step 3: Build the scene**
@@ -973,7 +1030,23 @@ Launcher (Control, anchors full rect, script launcher.gd)
 
 The 56px and 72px minimum heights are the touch sizing: Android is the export preset, and a default-height `OptionButton` is about 31px, which is under every finger-target guideline.
 
-- [ ] **Step 4: Point `main_scene` at it**
+- [ ] **Step 4: Give `AudioDirector` a way to forget its index**
+
+In `autoload/audio_director.gd`, beside `_ensure_index` (line 120):
+
+```gdscript
+## Drop the index so the next lookup rebuilds it against the current config.
+##
+## The launcher changes the root after this autoload has already started, and
+## `_indexed` is a one-shot latch: without this, anything that had touched audio
+## before Play would leave the index pointing at the previous title and every
+## lookup would miss. That is the silent game `director_paths.gd` documents,
+## reached through a different door.
+func reset_index() -> void:
+	_indexed = false
+```
+
+- [ ] **Step 5: Point `main_scene` at it**
 
 In `project.godot`, change line 19:
 
@@ -983,19 +1056,25 @@ run/main_scene="res://scenes/launcher/launcher.tscn"
 
 This is safe to change and that was verified rather than assumed: `gate.sh:156` and `check.sh:16` both run `--script tools/<name>.gd`, and the three child processes spawned from inside harnesses (`save_state.gd:466`, `save_movie.gd:232`, `text_codepage.gd:461`) each pass `--headless --script`. Nothing in the repository boots the main scene.
 
-- [ ] **Step 5: Verify the flag row renders, by eye**
+- [ ] **Step 6: Verify the flag row renders, by eye**
 
 Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --path .`
 
-Expected: the launcher opens. The game dropdown lists **Piposh, Piposh 2, Piposh Dream, Rating** — four entries for six roots. Selecting **Piposh** shows three flag buttons; on macOS they are 🇮🇱 🇺🇸 🇷🇺 with the Israeli flag pressed. Selecting **Rating** hides the row. Pressing Play loads the movie.
+Expected: the launcher opens. The game dropdown lists **Piposh, Piposh 2, Piposh Dream, Rating** — four entries for six roots. Selecting **Piposh** shows three flag buttons; on macOS they are 🇮🇱 🇺🇸 🇷🇺 with the Israeli flag pressed. Selecting **Rating** hides the row.
 
-- [ ] **Step 6: Verify the flag bypass**
+- [ ] **Step 7: Verify a game *change* — not just a launch**
+
+First check what the tracked config currently names: `grep '^root' director_game.cfg`. Then launch and pick **a different title**, and press Play.
+
+Expected: that title loads **with sound**. This is the case that can fail and the one picking the already-configured game cannot: every autoload started before you pressed Play, and `AudioDirector` indexing against the previous root is the silent game `director_paths.gd:54-62` was written about. If it is silent, `reset_index` is not being called or is not being called before the first lookup.
+
+- [ ] **Step 8: Verify the flag bypass**
 
 Run: `. ./gate_env.sh && G=$(gate_find_godot) && "$G" --path . -- --root piposh2 --boot strtgame.dir`
 
 Expected: no menu. Piposh 2 boots directly.
 
-- [ ] **Step 7: Verify the overlay was written and the gate is untouched**
+- [ ] **Step 9: Verify the overlay was written and the gate is untouched**
 
 Run: `cat "$(. ./gate_env.sh; echo)$HOME/Library/Application Support/Godot/app_userdata/Godot Director Player/director_game.local.cfg"` — or on any platform, print `OS.get_user_data_dir()` from the running game.
 
@@ -1005,10 +1084,10 @@ Run: `bash gate.sh`
 
 Expected: 64 `PASS`, 0 `FAIL` — unchanged, because every harness is headless and skips the overlay you just wrote.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add scenes/launcher project.godot
+git add scenes/launcher project.godot autoload/audio_director.gd
 git commit -m "launcher: a main screen that picks the game, writing the overlay
 
 Four titles for six roots -- Piposh's three localisations collapse into one
@@ -1540,15 +1619,14 @@ func _on_binding_changed(_text: String, command: String) -> void:
 	_refresh_play()
 
 
-## Play is refused while any binding is bad, so a rejected value cannot reach
-## the overlay by pressing the other button.
-func _refresh_play() -> void:
+Extend Task 4's `_refresh_play` — do not add a second writer — so a rejected binding cannot reach the overlay by pressing the other button. Insert this at the top of it, before the `_root` check:
+
+```gdscript
 	for command in _binding_fields:
-		var field := _binding_fields[command] as LineEdit
-		if field.modulate != Color.WHITE:
-			%Play.disabled = true
+		if (_binding_fields[command] as LineEdit).modulate != Color.WHITE:
+			_play.disabled = true
+			_play.text = "Fix the highlighted key first"
 			return
-	%Play.disabled = _root == ""
 ```
 
 Connect `%BindingsButton.pressed` to `_on_bindings_pressed` in `_ready`, inside the `if developer.visible:` branch.
@@ -1654,7 +1732,16 @@ func _ready() -> void:
 	load_settings()
 
 
+## Re-read every value from the config layer.
+##
+## Called at start, and again by the launcher after it writes the overlay. That
+## second call is not optional: this node reads the config once at process
+## start and survives the scene change into the movie, so without it the
+## launcher's `cursor_speed` -- the one value here a live consumer reads -- would
+## be the pre-launcher one for the whole session. `AudioDirector.reset_index`
+## exists beside it for the same reason.
 func load_settings() -> void:
+	GameConfig.invalidate()
 	var cfg := GameConfig.merged()
 	upscale_mode = int(cfg.get_value("qol", "upscale_mode", upscale_mode))
 	enhanced_graphics = bool(cfg.get_value("qol", "enhanced_graphics", enhanced_graphics))
@@ -1769,6 +1856,8 @@ EOF
 
 Then run the game and confirm the slider reads 777. Delete the overlay first if it already carries `cursor_speed`, or the migration correctly does not fire.
 
+Then verify the value actually reaches its consumer **after** a launcher change, which is the half of this that can fail: move the slider to something obvious, press Play, and confirm `AppSettings.controller_cursor_speed` reports the new value from inside the running movie — the launcher's `_redrive_autoloads` calls `load_settings()` for exactly this. Without it the autoload is still holding what it read at process start, before you touched the slider.
+
 - [ ] **Step 7: Run the whole gate**
 
 Run: `bash gate.sh`
@@ -1801,7 +1890,13 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Naming consistency.** `GameConfig.merged` / `tracked` / `exists` / `invalidate` / `write_overlay` / `overlay` are defined in Task 1 and used under those exact names in Tasks 2, 4, 5 and 7. `TitleList.build` / `default_root` / `flag_emoji` are defined in Task 4 and used only there. `BindingRules.named` / `collision` / `measure` / `tested_codes` / `tested_chars` / `claimed_by` / `typed_in` are defined in Task 6 and asserted under those names in the same task's harness and used under them in its UI. `Keys.code_for` and `Keys.char_for` are the real signatures at `director/director_keys.gd:71` and `:91`. `DebugKeys.load_config(config_path)` and `DirectorPaths.load_config(config_path)` keep their signatures exactly, which `tools/debug_bindings.gd:209` depends on.
 
-**One correction made during review.** The first draft of Task 6 checked only that a key is not a `keyCode` some title tests. `director_game.cfg:95-97` states the rule in two clauses and `tools/debug_bindings.gd:145-155` asserts both — the key must also type no character any title tests. Half the rule would have let the launcher accept a plain letter, which is the exact class of binding the F-key band exists to prevent. `typed_in` and its three assertions were added.
+**Three corrections made during review**, all from re-reading the code rather than from the draft:
+
+1. **Stale autoloads across the scene change.** Autoloads read the config at process start and survive `change_scene_to_file`, so the launcher changes the root *after* they have already read the old one. `AppSettings._ready` calls `load_settings` eagerly and would have held the pre-launcher `cursor_speed` for the whole session. `AudioDirector` survives it only by accident — `audio_director.gd:96-106` defers its index to the first `resolve_path`, and `_indexed` is a one-shot latch that anything touching audio before Play would poison. Both are now re-driven explicitly in `_redrive_autoloads`, and Task 4 Step 7 verifies a game *change* rather than a launch, because picking the already-configured title is the one case that cannot fail. This is `director_paths.gd:54-62`'s silent game reached through a new door.
+2. **The `game_config` harness clobbered the real overlay.** It has to write `user://director_game.local.cfg` — the rule under test is about that exact path — but the draft then deleted it. `bash gate.sh` is the command this repo runs constantly, so that would have wiped a human's launcher settings from the gate. It now reads the file back first and restores it, and asserts that it did.
+3. **The first draft of Task 6 checked only that a key is not a `keyCode` some title tests.** `director_game.cfg:95-97` states the rule in two clauses and `tools/debug_bindings.gd:145-155` asserts both — the key must also type no character any title tests. Half the rule would have let the launcher accept a plain letter, which is the exact class of binding the F-key band exists to prevent. `typed_in` and its three assertions were added.
+
+Two smaller ones folded in without ceremony: `_launch` defers `change_scene_to_file`, since the bypass path reaches it from inside `_ready`; and `_refresh_play` is the single owner of the Play button's state, because Task 6 adds a second reason to refuse it and two writers on one property means whichever ran last decides.
 
 **Counts.** The gate's recorded set moves 62 → 63 (Task 1) → 64 (Task 3) → 65 (Task 6), and each of those tasks updates the header comment in the same commit as the `ALL` edit.
 
