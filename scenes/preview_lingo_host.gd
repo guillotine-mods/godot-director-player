@@ -21,6 +21,11 @@ extends RefCounted
 const Builtins := preload("res://lingo/lingo_builtins.gd")
 const ContainerName := preload("res://director/director_container.gd")
 const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
+## For the four `*Script` properties, which hold Lingo source and compile it on
+## assignment (§6.3 tier 1). Only the compiler half is reached from here -- the
+## interpreter that *runs* what this compiles is whichever one the movie has, and
+## a host that held one would be holding a stale one after every movie change.
+const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 
 ## The bare words `go`'s own grammar puts in front of its arguments.
 ##
@@ -75,9 +80,21 @@ var click_loc := Vector2.ZERO
 var last_click_ms := -1
 var last_roll_ms := 0
 var double_click := false
-## Director's movie-wide key handler: a handler *name*, run ahead of everything
-## else on a keypress. 46 scripts in this game set it, most to `fromnow`.
-var key_down_script := ""
+## Director's movie-wide key handler: **a string of Lingo**, compiled the moment
+## it is assigned and run ahead of everything else on a keypress (§6.3 tier 1).
+## 46 scripts in this game set it, most to `fromnow`.
+##
+## The four `*Script` properties are the only place in the language where an
+## assignment changes the event model, and each of them is one field plus one
+## compiled copy. The compile happens in the **setter**, so it happens once per
+## assignment and it happens on every path that writes the field -- a script's
+## `set the keyDownScript to`, and `preview/save_state.gd` putting a restored
+## session back. A compile at dispatch time instead would recompile per keypress
+## and would let a save reload a script that had never been through the compiler.
+var key_down_script := "":
+	set(value):
+		key_down_script = value
+		key_down_compiled = _compile_primary(value, "keyDownScript")
 ## The release half of the same mechanism (§8.2 tier 1). Measured rather than
 ## assumed: `tools/key_script_survey.gd -- --all` finds `the keyUpScript` set at
 ## **10 sites in Rating and 195 in Piposh Dream**, against 0 in Piposh 2 — so a
@@ -86,13 +103,46 @@ var key_down_script := ""
 ## `set the keyUpScript to "normalkeysx"`, and `normalkeysx` is the handler that
 ## leaves a timed scene: with no key-up path at all, those rooms could not be left
 ## by the key that leaves them however free F10 was made.
-var key_up_script := ""
+var key_up_script := "":
+	set(value):
+		key_up_script = value
+		key_up_compiled = _compile_primary(value, "keyUpScript")
 ## The mouse half of the same mechanism (§6.3 tier 1). Nothing in this corpus
-## sets either, so both are bound for the engine's sake -- see the note on the
-## write, which records that Director's own value is a source string and this is
-## a handler name.
-var mouse_down_script := ""
-var mouse_up_script := ""
+## sets either, so both are bound for the engine's sake rather than for this
+## title's need -- §6.3 lists five events with primary handlers and the mouse
+## pair is two of them.
+var mouse_down_script := "":
+	set(value):
+		mouse_down_script = value
+		mouse_down_compiled = _compile_primary(value, "mouseDownScript")
+var mouse_up_script := "":
+	set(value):
+		mouse_up_script = value
+		mouse_up_compiled = _compile_primary(value, "mouseUpScript")
+
+## What each of the four above compiled to, and the whole of §6.3's tier 1 as
+## this port runs it.
+##
+## `{}` for "nothing installed"; `{"name": <lowercased>}` for the bare-identifier
+## form; `{"script":, "handler":}` for compiled source
+## (`LingoInterpreter.compile_statements`).
+##
+## **The identifier form is not a second mechanism and is not a shortcut.** In
+## Director `set the keyDownScript to "fromnow"` compiles a one-statement script
+## whose statement is the no-argument call `fromnow`, so naming a handler is
+## what the source form *does* with a bare word; running the named handler
+## directly reaches the same handler by the same rules. It is kept separate for
+## two reasons that are about this port rather than about Director: the whole
+## corpus is that form (`fromnow`, `gomenu`, `normalkeysx` -- 747 `keyDownScript`
+## sites and 205 `keyUpScript` sites across the six roots, every one a bare
+## name), so it is the path that must not move; and a name that resolves to no
+## handler is skipped in silence here, where compiled source would run and
+## report an unbound builtin every single keypress. `fromnow` is installed by 46
+## scripts and sees every key in the game.
+var key_down_compiled: Dictionary = {}
+var key_up_compiled: Dictionary = {}
+var mouse_down_compiled: Dictionary = {}
+var mouse_up_compiled: Dictionary = {}
 ## The last key pressed. -1 rather than 0 because 0 is a real Mac key code (the
 ## `A` key), so 0 would read as a keypress that never happened.
 ##
@@ -119,6 +169,54 @@ var key_char := ""
 ## `the lastClick`, Director has no "no key yet" answer here, and a session that
 ## has seen no key reports the age of the session, which is what it is.
 var last_key_ms := 0
+
+## The modifier word, §8.3, and it is **latched with the event rather than read
+## live**.
+##
+## `the shiftDown`, `the optionDown`, `the commandDown` and `the controlDown` are
+## four reads of this one number, and the number is written where the reference
+## writes `_keyFlags`: in the key-down arm and again in the key-up arm
+## (`events.cpp:357` and `:380`), and nowhere else. A modifier key is the one key
+## that updates it *without* dispatching anything -- shift, control, alt and the
+## command keys record their state and return, which is §8.3's "modifier keys do
+## not generate keyDown events".
+##
+## Asking the keyboard at the moment of the read instead is what this replaces,
+## and it is wrong in the direction that is hardest to see: the four properties
+## are almost always read from inside a handler, the handler runs some
+## milliseconds after the event that started it, and a chord released in that gap
+## reads as never having been held. It is also wrong the other way -- a script
+## polling from `exitFrame` saw a modifier the *engine* had never been sent,
+## because `Input.is_key_pressed` answers for the OS keyboard and not for the
+## event queue this movie is being driven from. A harness that synthesises an
+## `InputEventKey` with `shift_pressed` could not make `the shiftDown` true at
+## all, which is why nothing tested it.
+##
+## Four bits rather than Godot's own `KeyModifierMask`, because the word is
+## *saved and restored* and a mask whose numeric value belongs to the engine
+## would be a Godot version number written into a save file.
+const MOD_SHIFT := 1 << 0
+const MOD_ALT := 1 << 1
+const MOD_CTRL := 1 << 2
+const MOD_META := 1 << 3
+var key_flags := 0
+
+## `the timeoutKeyDown` -- does a keypress reset the timeout clock?
+##
+## One of the three "what counts as the player still being here" switches
+## (`the timeoutMouse` and `the timeoutPlay` are the others), and the only one
+## §8.3 mentions by name: "a key event also refreshes the timeout clock when
+## `the timeoutKeyDown` is set". The reference stamps `_lastTimeOut` from the
+## key-down arm when it is true.
+##
+## **Bound and stored, and the clock it feeds does not exist yet.** There is no
+## `the timeoutLength`, no `the timeoutLapsed` and no `timeout` event in this
+## port at all, so what a script sets here is remembered and read back and
+## reaches nothing further -- `inert` in §19's sense, recorded as such, and one
+## line to make live the day the timeout clock lands. It is bound rather than
+## left absent because a movie that turns it *off* to stop a timeout firing is
+## saying something the engine will need, and an unbound write says nothing.
+var timeout_key_down := false
 
 # --------------------------------------------- what this packaging can answer
 #
@@ -212,10 +310,21 @@ var external_params: Array = []
 var xtras_loaded: Array = []
 
 
-## `the beepOn` -- while false, `beep` is silent. D2, and one of the few movie
-## settings whose whole observable effect is on another builtin, which is why it
-## is bound with the thing it gates rather than stored and forgotten.
-var beep_on := true
+## `the beepOn` -- D2, and it does **not** gate the `beep` builtin.
+##
+## What it gates is §15's one rule: a mouse-down that reached no sprite beeps
+## while this is set. `Movie::resolveScriptEvent` is the only reader
+## (`if (!event.channelId && _isBeepOn)`), and `LB::b_beep` never asks -- so a
+## script's own `beep()` sounds whether or not this is on, and 154 corpus sites
+## call it that way.
+##
+## **False by default**, which is the reference's ("Beep is off by default in the
+## original", `movie.cpp:96`) and which the empty-stage rule makes load-bearing:
+## most of this game's stage is ineligible backdrop, so with it on every click
+## that misses a hotspot would beep. It read `true` here for as long as it was
+## gating the builtin instead, where true was the only value that let `beep()`
+## make a sound.
+var beep_on := false
 
 ## `the soundEnabled` -- the movie's own mute. Director stops the audio hardware
 ## rather than muting each channel, so this gates every path out of this host:
@@ -349,36 +458,30 @@ const HANDLED := [
 	"frameready", "ramneeded", "getvolumes", "version",
 	"moveablesprite", "editabletext", "immediatesprite", "spritebox",
 	"sendsprite", "sendallsprites",
+	"updatestage",
 ]
 ## Answer VOID rather than nothing: these are real Director builtins this host
 ## has no state to implement, and letting them report as unbound would drown the
 ## ones that genuinely are.
 const IGNORED := [
-	"updatestage",
 	"unloadmember", "unload", "nothing",
-	# `updateStage` is the one name in this list whose absence a player *can*
-	# notice, and it is here after the alternative was measured rather than
-	# assumed. Director redraws the stage inside the call and returns, so a
-	# `repeat` loop that moves a sprite and calls this animates; 3,717 sites.
-	#
-	# Godot cannot present synchronously from inside a handler. `queue_redraw()`
-	# marks the canvas item dirty and pushes `NOTIFICATION_DRAW` onto the message
-	# queue, which is flushed at the end of the process frame, and GDScript has
-	# no way to flush it. `RenderingServer.force_draw()` is the obvious candidate
-	# and does not help: it redraws the *viewports* from whatever commands the
-	# canvas items already hold, and it does not re-run `_draw`. Measured on
-	# 4.7.1, headless and windowed alike -- `queue_redraw()` followed by
-	# `force_draw()` and by `force_draw(false)` left a Node2D's `draw` signal
-	# emission count unchanged, at one, from the frame before.
-	#
-	# So a real arm would have to paint through `RenderingServer`'s immediate
-	# API instead of through `_draw`, which is the whole of `stage_paint.gd`,
-	# `sprite_art.gd`, `text_art.gd`, `film_loop_view.gd` and `trails.gd`. Until
-	# that exists there is nothing to bind: `queue_redraw()` is already called
-	# from forty sites across the player, including once per score step and once
-	# per click, so an arm that only requested a redraw would change nothing a
-	# movie can see while reading as implemented from every direction. That is
-	# the `intersects` shape and it is worse than this row staying red.
+	# `updateStage` was here, at 3,717 sites -- the largest inert binding this
+	# port had -- on a measurement that was true and an inference from it that
+	# was not. The measurement: `queue_redraw()` marks the canvas item dirty and
+	# pushes the redraw callback onto the message queue, which is flushed at the
+	# end of the process frame, GDScript cannot flush it, and a `queue_redraw()`
+	# followed by `RenderingServer.force_draw()` leaves a Node2D's `draw`
+	# emission count unmoved. All still true. The inference -- "so Godot cannot
+	# present synchronously from inside a handler" -- was not: `force_draw()`
+	# presents whatever commands the canvas items *already hold*, so the fix is
+	# to change the commands first rather than to ask for a `_draw` that will
+	# never arrive. `director/director_paint.gd` issues the player's painting
+	# through `RenderingServer` instead of through `CanvasItem.draw_*`, which
+	# makes `director_preview.gd:repaint_now()` legal from anywhere, and this is
+	# bound to it at the match below. The same note also feared a partial arm
+	# that "only requested a redraw" and read as live while doing nothing; that
+	# fear was right, and it is why the arm paints and presents rather than
+	# calling `queue_redraw`.
 	#
 	# Bound deliberately inert rather than left unbound. An unbound name is
 	# reported as a gap every time it is reached, which buries the ones that
@@ -410,7 +513,13 @@ const IGNORED := [
 	# so a movie can observe them and the `noop` channel never applied.
 	"printfrom", "unloadmovie",
 	"showglobals", "showlocals",
-	"puppettempo", "unloadcast", "restart",
+	# `puppetTempo` was here, and being here is what made the tempo channel the
+	# only thing in the movie that could change the rate. §9.1 gives a puppet
+	# tempo precedence over the score's until the score takes it back, so an
+	# inert binding is not "the score wins" -- it is a rate change that never
+	# happens and a movie that keeps playing at the last rate a cell named. It is
+	# bound for real now, at `puppettempo` below.
+	"unloadcast", "restart",
 	"shutdown", "installmenu", "setcallback",
 ]
 
@@ -588,11 +697,14 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# Director's own 400 ms between repeats. 154 sites, every one of them
 			# `beep()` with no argument, and all of them silent until now.
 			#
-			# `the beepOn` is the movie's own switch over exactly this call, and it
-			# is checked here rather than stored and ignored -- a setting nothing
-			# consults is a setting that is not implemented.
-			if not beep_on:
-				return 0
+			# **`the beepOn` is not a switch over this call**, which is what it was
+			# read as here. `LB::b_beep` calls `func_beep` unconditionally; the one
+			# thing the property gates is §15's empty-stage click
+			# (`preview/interaction.gd:latch_press`). Gating the builtin with it
+			# meant a movie that turned the setting off went silent where Director
+			# would still have beeped, and it forced the default to `true` to make
+			# the 154 corpus sites audible at all -- which in turn would have made
+			# every click on bare stage beep once the empty-stage rule landed.
 			if preview != null:
 				preview.lingo_beep(
 					LingoValue.to_int(args[0]) if not args.is_empty() else 1)
@@ -644,6 +756,20 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# what overwrote the branch this line just set.
 			request_suspend("play")
 			return 0
+		"updatestage":
+			# Redraw the stage now, mid-handler, without advancing the frame
+			# (§9.1). 3,717 sites across six titles, and the point of every one
+			# of them: a `repeat` loop that moves a sprite and calls this is how
+			# Director animates without a score, and with this inert the whole
+			# loop drew once, at the end, so the sprite teleported.
+			#
+			# The work is the preview's -- see `lingo_update_stage`, which also
+			# spends a pending `puppetTransition` and re-resolves the cursor,
+			# because those are the other two things the reference does here.
+			if preview == null:
+				return 0
+			preview.lingo_update_stage()
+			return 0
 		"cursor":
 			# Was bound inert, which is why the cursor never changed: this game
 			# drives it from a `cursorfunk` handler that calls this every tick,
@@ -667,6 +793,23 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# `puppetTransition` is.
 			if preview != null:
 				preview.lingo_puppet_palette(args[0] if not args.is_empty() else 0)
+			return 0
+		"puppettempo":
+			# `puppetTempo <fps>` overrides the tempo channel until the score
+			# writes a tempo of its own, and `puppetTempo 0` hands it straight
+			# back (§9.1). Unlike the palette and the transition, the value is
+			# not a member id: it is one integer in the tempo channel's own
+			# vocabulary, which is a rate in 1-120 and a wait or a delay above
+			# it. `director_frame_clock.gd:set_puppet_tempo` is where the
+			# precedence and the release condition live.
+			#
+			# 0 sites in either corpus; bound because Director has it, and
+			# because an inert binding here reads as "the score decides the
+			# rate" from every direction while being a rate change that silently
+			# never happened.
+			if preview != null:
+				preview.lingo_puppet_tempo(
+					LingoValue.to_int(args[0]) if not args.is_empty() else 0)
 			return 0
 		"puppettransition":
 			# A scripted transition: one-shot, applied at the next frame change.
@@ -1555,6 +1698,41 @@ func set_window_prop(which: Variant, prop: String, value: Variant) -> void:
 
 # ------------------------------------------------------------------ properties
 
+## One `*Script` assignment, compiled (§6.3 tier 1). See `key_down_compiled`.
+##
+## Everything is compiled, and a **bare identifier is compiled and also named**.
+## Both keys on one record, resolved in that order at dispatch: if the name is a
+## handler the movie declares, that handler runs; otherwise the compiled
+## statement does, which for a bare word is Lingo's no-argument call and reaches
+## the same builtin Director would have reached. Keeping both is what makes
+## `set the mouseDownScript to "beep"` work while leaving all 952 of the corpus's
+## named sites on the path they have always taken.
+##
+## `""` installs nothing, which is Director's own way of *removing* a primary
+## handler. 0 corpus sites do it; that is not a reason to drop it.
+##
+## A source that will not compile installs nothing and says so on the log rather
+## than throwing: Director reports a bad `do` and carries on, this is the same
+## kind of run-time compile, and a movie that assembles a script out of a field
+## has to be able to get it wrong without taking the movie with it. There is
+## nowhere better to report from -- `LingoDiagnostics` belongs to an interpreter
+## and the assignment deliberately does not reach for one (see `Interpreter`).
+func _compile_primary(source: String, label: String) -> Dictionary:
+	var text := source.strip_edges()
+	if text == "":
+		return {}
+	var failed: Array = []
+	var compiled: Dictionary = Interpreter.compile_statements(text, label, failed)
+	if compiled.is_empty() and not text.is_valid_identifier():
+		push_warning("the %s would not compile: %s" % [
+			label, str(failed[0]) if not failed.is_empty() else "empty"])
+		print("the %s would not compile: %s" % [
+			label, str(failed[0]) if not failed.is_empty() else "empty"])
+	if text.is_valid_identifier():
+		compiled["name"] = text.to_lower()
+	return compiled
+
+
 func get_system_prop(prop: String) -> Variant:
 	if preview == null:
 		return 0
@@ -1624,15 +1802,22 @@ func get_system_prop(prop: String) -> Variant:
 				0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms),
 				_ticks_since(last_roll_ms))
 		"shiftdown":
-			return 1 if Input.is_key_pressed(KEY_SHIFT) else 0
+			return 1 if (key_flags & MOD_SHIFT) != 0 else 0
 		"optiondown":
 			# Option on the Mac the game was authored for; Alt is the key that
 			# carries it on the platform this runs on.
-			return 1 if Input.is_key_pressed(KEY_ALT) else 0
+			return 1 if (key_flags & MOD_ALT) != 0 else 0
 		"commanddown":
-			return 1 if Input.is_key_pressed(KEY_META) or Input.is_key_pressed(KEY_CTRL) else 0
+			# Command is Meta on a Mac keyboard and has no key of its own on a PC
+			# one, so Control stands in for it -- and Control therefore answers
+			# both this and `the controlDown`, exactly as the reference does
+			# (`lingo-the.cpp:594-599` reads KBD_CTRL for `the commandDown` on
+			# every platform but the Mac).
+			return 1 if (key_flags & (MOD_META | MOD_CTRL)) != 0 else 0
 		"controldown":
-			return 1 if Input.is_key_pressed(KEY_CTRL) else 0
+			return 1 if (key_flags & MOD_CTRL) != 0 else 0
+		"timeoutkeydown":
+			return 1 if timeout_key_down else 0
 		"mousecast", "mousemember":
 			# The member displayed by the sprite the pointer is over, or -1 for
 			# "over nothing" -- which is Director's answer and not 0, because 0 is
@@ -2006,7 +2191,43 @@ func get_system_prop(prop: String) -> Variant:
 			# message window, which here is the diagnostics buffer; a path sends
 			# it to a file as well.
 			return LingoDiagnostics.trace_log_file
+	# The match ran out of arms, so this movie property is not bound here at all.
+	# VOID is still the answer -- nothing about what a script sees moves -- and
+	# the name is now recorded instead of vanishing. See `_note_movie_prop`.
+	_note_movie_prop(prop)
 	return null
+
+
+## A movie property nothing in this port answers, recorded rather than lost.
+##
+## The third of the three notes, and the last one to exist:
+## `director_preview.gd:_note_sprite_prop` covers `the X of sprite`,
+## `_note_member_prop` beside it covers `the X of member`, and this covers
+## `the X`. All three now report through `LingoDiagnostics`, which declared the
+## categories from the day it was written and emitted none of them.
+##
+## **It lives on the host because the host is the movie's property surface.** The
+## two `match` statements above and below are the whole of what this engine binds
+## for `the X`, so their fall-throughs *are* the derivation -- there is no list
+## to keep in step, and a name gains an arm and leaves the report in one edit.
+## That is the same guarantee `sprite_props.gd:consumed` buys with a table, which
+## it needs only because `sprite_state.write_prop` accepts every key and so has
+## no fall-through to reach.
+##
+## Both directions, and the write half matters more than it looks. A read that
+## answers VOID at least makes an `if` take the false branch and a `put` print
+## nothing; a **write** that falls off the end of `set_system_prop` returns
+## cleanly, moves nothing, and is indistinguishable from a write that worked --
+## which is the shape that shipped as `moveableSprite`, `editableText`,
+## `constraint`, `the member of sprite` and `flipH` one entity along.
+##
+## Reported through the preview's interpreter because that is where the script,
+## the handler and the line are; the host has the property and not the location.
+## `clearGlobals` above already reaches the interpreter the same way.
+func _note_movie_prop(prop: String) -> void:
+	if preview == null or preview._interpreter == null:
+		return
+	preview._interpreter.report(LingoDiagnostics.MOVIE_PROP, prop.to_lower())
 
 
 ## The marker named on exactly this frame, or "".
@@ -2078,34 +2299,35 @@ func set_system_prop(prop: String, value: Variant) -> void:
 			# and Director answers what it can honour.
 			if preview != null:
 				preview.lingo_set_sel(prop.to_lower(), LingoValue.to_int(value))
-		"keydownscript":
-			key_down_script = LingoValue.to_str(value).strip_edges()
-		"keyupscript":
-			# The same storage-as-a-name divergence the mouse pair below records:
-			# Director holds a string of Lingo source and compiles it on
-			# assignment, and every site in either corpus assigns a bare handler
-			# name (`normalkeysx`, `normalkeys2`, `normalkeys3`).
-			key_up_script = LingoValue.to_str(value).strip_edges()
-		"mousedownscript", "mouseupscript":
-			# §6.3 tier 1. Stored as a **handler name**, exactly as this port
-			# already stores `the keyDownScript`, and that is a divergence worth
-			# stating rather than hiding: Director's primary-handler properties
-			# hold a *string of Lingo source*, compiled on assignment into a
-			# synthetic script. This port has no runtime compile-a-string path, so
-			# a name is what it can honour, and every site in this corpus that
-			# sets `the keyDownScript` sets it to a name -- `fromnow`, `gomenu` --
-			# which is why the shortcut has held so far. Nothing sets either mouse
-			# one, so the divergence is unexercised as well as unfixed.
-			var name := LingoValue.to_str(value).strip_edges()
-			if prop.to_lower() == "mousedownscript":
-				mouse_down_script = name
-			else:
-				mouse_up_script = name
+		"keydownscript", "keyupscript", "mousedownscript", "mouseupscript":
+			# §6.3 tier 1, and **the one assignment in the language that changes
+			# the event model**. Director compiles the string on assignment
+			# (`Movie::setPrimaryEventHandler` -> `replaceCode`), so the compile is
+			# in the field's setter and the property below reads back exactly the
+			# source that was assigned -- Director answers the string, not the
+			# script it became.
+			#
+			# This used to store a handler *name*, on the recorded grounds that the
+			# port had no runtime compile-a-string path. It has one: `do` landed and
+			# compiles Lingo at run time, and `LingoInterpreter.compile_statements`
+			# is that same path with the same wrapper. A bare name is still a bare
+			# name -- see `_compile_primary` for why both forms are kept on one
+			# record rather than one being made to stand in for the other.
+			var text := LingoValue.to_str(value).strip_edges()
+			match prop.to_lower():
+				"keydownscript": key_down_script = text
+				"keyupscript": key_up_script = text
+				"mousedownscript": mouse_down_script = text
+				_: mouse_up_script = text
 		"soundlevel":
 			if preview != null:
 				preview.lingo_set_sound_level(LingoValue.to_int(value))
 		"beepon":
 			beep_on = LingoValue.truthy(value)
+		"timeoutkeydown":
+			# Stored, read back, and consumed by nothing until there is a timeout
+			# clock to consume it. See the field.
+			timeout_key_down = LingoValue.truthy(value)
 		"soundenabled":
 			# Director stops the device, so turning this off silences what is
 			# already playing rather than only what starts next. Nothing here holds
@@ -2178,6 +2400,16 @@ func set_system_prop(prop: String, value: Variant) -> void:
 			# window argument: being *in* the right movie is the routing.
 			if preview != null:
 				preview.set_own_window_prop(prop.to_lower(), value)
+		_:
+			# A movie property with no write arm. Dropped before this existed, and
+			# dropped now -- the only change is that the name is recorded. This
+			# includes the properties Director makes read-only (`the frame`, `the
+			# stageLeft`), which a movie cannot write there either; a refusal and
+			# an absence look the same from here and both are worth seeing,
+			# because the port has no read-only list for `the X` to tell them
+			# apart and inventing one here would be the hand-written table
+			# `sprite_props.gd` exists to argue against.
+			_note_movie_prop(prop)
 
 
 ## `the locH of sprite N`, and the five properties that are *derived* rather than

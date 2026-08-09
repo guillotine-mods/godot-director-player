@@ -51,6 +51,7 @@ const Sound := preload("res://scenes/preview/sound.gd")
 const Trails := preload("res://scenes/preview/trails.gd")
 const PaletteView := preload("res://scenes/preview/palette_view.gd")
 const StagePaint := preload("res://scenes/preview/stage_paint.gd")
+const Paint := preload("res://director/director_paint.gd")
 const FrameLoop := preload("res://scenes/preview/frame_loop.gd")
 const Scripts := preload("res://scenes/preview/scripts.gd")
 const EventChain := preload("res://scenes/preview/event_chain.gd")
@@ -167,6 +168,15 @@ var _pending_enter = null
 var _puppet_transition: Dictionary = {}
 ## Transitions actually played, for `_report`.
 var _transitions_played := 0
+## Synchronous repaints -- `repaint_now`, which is what `updateStage` reaches.
+## Counted rather than inferred because "did the stage redraw *inside* the
+## handler" is the whole assertion, and a harness that could only look afterwards
+## cannot tell one paint from thirty (`tools/update_stage.gd`).
+var _repaints := 0
+## `updateStage` calls, whether or not they reached a paint. The two differ by
+## the ones a hidden or detached node declined, and the difference is what says
+## an arm is bound rather than merely present.
+var _update_stage_calls := 0
 var _paused := false
 var _status := ""
 ## `[display] aspect` from the game config. See `director_game.cfg`.
@@ -366,9 +376,25 @@ var _drag_offset := Vector2.ZERO
 var _press_target: Node = null
 var _click_script: Dictionary = {}
 ## The channel the press landed on, which the release needs and the script does
-## not carry: `mouseUp` goes out only when the button came up inside this sprite,
-## and `mouseUpOutSide` when it came up anywhere else (§8.1).
+## not carry: `mouseUpOutSide` goes out when the button came up anywhere but
+## inside this sprite (§8.1). It is also §15's hilite channel -- the reference
+## keeps two fields and gates the second on `shouldHilite`, and one is enough
+## here because `preview/hilite.gd:artwork` asks that question again at paint
+## time, so a channel latched here that cannot hilite simply does not.
 var _press_channel := 0
+## §15: **was the press in *a* button** -- any button, not this one.
+##
+## Latched by the mouse-down block and read by the mouse-up block, where it flips
+## the hilite of whatever button the release landed on. ScummVM's own comment
+## says the rule makes no sense and reproduces it anyway; so does this. Nothing
+## flips on the way down, and the button that flips need not be the button that
+## was pressed.
+##
+## 0 of the 51,350 members across the three corpora is of type `button`, so this
+## can never become true on any title this engine has been pointed at. It is here
+## because it is one of the five things §15's block latches and the block is all
+## five or none.
+var _mouse_down_in_button := false
 ## `{"lib":, "id":}` for the member the press landed on, latched at the *start*
 ## of the mouse-down chain and held until the next press.
 ##
@@ -743,7 +769,15 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	# rate the movie before it was using.
 	_sync_frame_entry()
 	if _lingo_on:
-		_enter_frame_or_defer(_frame_script(_index))
+		# The same pair every other frame entry sends, in the same order
+		# (`frame_loop.gd:advance`). The arriving movie's first frame is a frame
+		# entry like any other -- `score.cpp:772-779` broadcasts `prepareFrame` and
+		# `:827-831` sends `enterFrame` on the update that follows `loadNextMovie`,
+		# with only `_newMovieStarted` suppressing `idle` and `exitFrame` -- and
+		# sending one half of the pair here is how the two came to disagree.
+		var arrived: Dictionary = _frame_script(_index)
+		_dispatch("prepareFrame", arrived)
+		_enter_frame_or_defer(arrived)
 	get_window().title = "%s  -  %d frames" % [target.get_file(), _score.frame_count]
 	print("go movie -> %s frame %d" % [target.get_file(), _index])
 	queue_redraw()
@@ -923,7 +957,7 @@ func _dispatch_key(event: InputEventKey) -> bool:
 		return false
 	_host.key_code = Keys.code_for(event)
 	_host.key_char = Keys.char_for(event)
-	var claimed := _dispatch_key_event("keyDown", str(_host.key_down_script))
+	var claimed := _dispatch_key_event("keyDown", _host.key_down_compiled)
 	# The widget last, and only if no sprite-level handler answered. The focus
 	# arbitration inside `_dispatch_key_event` has already run, so focus is
 	# current for the key being delivered rather than for the frame before it.
@@ -965,7 +999,7 @@ func _dispatch_key_up(event: InputEventKey) -> bool:
 	# The event carries the key that was released; it is deliberately not stored.
 	# Named rather than `_` so the signature says what a caller must hand over.
 	var _released := event
-	var claimed := _dispatch_key_event("keyUp", str(_host.key_up_script))
+	var claimed := _dispatch_key_event("keyUp", _host.key_up_compiled)
 	queue_redraw()
 	return claimed
 
@@ -986,12 +1020,12 @@ var _typed_away := false
 ## the same primary-handler push and the same fall-through to
 ## sprite → cast → frame → movie.
 ##
-## `primary_name` is the handler name `the keyDownScript` / `the keyUpScript`
-## holds. This port stores a *name* where Director stores a string of Lingo
-## source compiled on assignment; `preview_lingo_host.gd:set_system_prop` records
-## why, and every site in either corpus assigns a name.
-func _dispatch_key_event(handler: String, primary_name: String) -> bool:
-	var script_name := primary_name.strip_edges()
+## `primary` is what `the keyDownScript` / `the keyUpScript` compiled to on
+## assignment — Director's value is a string of Lingo and this port now compiles
+## it as one (`preview_lingo_host.gd:_compile_primary`). Passed in rather than
+## read off `_host` here so that the press and the release name their own
+## property at the one call site each.
+func _dispatch_key_event(handler: String, primary: Dictionary) -> bool:
 	var event_key := handler.to_lower()
 	_typed_away = false
 	# §8.3: the focused sprite, or the frame when nothing holds focus. A sprite
@@ -1014,14 +1048,15 @@ func _dispatch_key_event(handler: String, primary_name: String) -> bool:
 		_tally(_ran, "when %s" % handler)
 		claimed = true
 		pass_on = bool(_host.pass_event)
-	if script_name != "" and _interpreter.has_handler(script_name.to_lower()):
-		var tag := "%sScript:%s" % [handler, script_name]
-		_tally(_sent, tag)
-		_tally(_ran, tag)
-		# Reset per element, not once per event: two primary handlers both pass
-		# by default, and the second must not inherit the first's `dontPassEvent`.
-		_host.pass_event = true
-		_interpreter.call_handler(script_name)
+	# Reset per element, not once per event: two primary handlers both pass by
+	# default, and the second must not inherit the first's `dontPassEvent`. It is
+	# set unconditionally rather than inside the `if`, which is the second of
+	# ENGINE_TODO's two event-chain residues: a `when keyDown then dontPassEvent`
+	# followed by a `keyDownScript` used to leave the flag false through the
+	# second element, so the second primary handler ran with the first's verdict
+	# still standing. Nothing in either corpus installs both at once.
+	_host.pass_event = true
+	if EventChain.run_primary_script(self, _interpreter, primary, "%sScript" % handler):
 		claimed = true
 		pass_on = bool(_host.pass_event)
 
@@ -1525,18 +1560,62 @@ func _clip_to_stage() -> void:
 	_clip_rect = StagePaint.clip_to_stage(self, STAGE)
 
 
-## One paint of the stage, delegated to `preview/stage_paint.gd`.
+## Godot's own entry into the paint below. It clears the command list before it
+## notifies, so this adds nothing to `_paint`.
 func _draw() -> void:
+	_paint()
+
+
+## Repaint the stage **now**, from inside whatever is running, and present it.
+##
+## Director's `updateStage` (§9.1) redraws inside the call and returns, which is
+## what makes a `repeat` loop that moves a sprite and calls it animate rather
+## than teleport. Godot has no way to deliver a `NOTIFICATION_DRAW` on demand --
+## `queue_redraw()` pushes the redraw callback onto the message queue and
+## GDScript cannot flush it -- so this does what that callback does instead:
+## clear the canvas item's command list, run the same `_paint` over it, and ask
+## the server to render and swap. `director/director_paint.gd` is what makes the
+## second half of that legal outside `_draw`, and it is why there is one painter
+## rather than two.
+##
+## `force_draw()` is the present, and it is a real one: a probe that appended a
+## green rectangle from a script and called it read the green back out of the
+## viewport texture in the same call, with the node's `draw` count unmoved. That
+## is the measurement the old "Godot cannot present synchronously" note was
+## missing -- `queue_redraw()` *followed by* `force_draw()` does nothing, because
+## the commands never change, and that is the only thing the earlier measurement
+## established.
+##
+## Returns whether it painted, so a caller can be asserted against.
+func repaint_now() -> bool:
+	if not is_inside_tree() or not is_visible_in_tree():
+		return false
+	_repaints += 1
+	RenderingServer.canvas_item_clear(get_canvas_item())
+	_paint()
+	RenderingServer.force_draw()
+	return true
+
+
+## One paint of the stage, delegated to `preview/stage_paint.gd`.
+##
+## Reached from Godot's `_draw` and from `repaint_now`, and it may not know
+## which: everything it draws goes through `director/director_paint.gd`, which
+## issues commands to this node's canvas item rather than through
+## `CanvasItem.draw_*` -- those assert `drawing`, which is raised only inside
+## `NOTIFICATION_DRAW`.
+func _paint() -> void:
 	_clip_to_stage()
 	# The stage colour, which is what every non-trails repaint fills with. Over
 	# the movie's own rect only: the chrome around a window is painted by
 	# `_draw_window_chrome` and is not part of the movie.
-	draw_rect(Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE)),
+	Paint.rect(self,
+		Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE)),
 		Color.BLACK, true)
 	if _window_key != "":
 		_draw_window_chrome()
 	if _status != "":
-		draw_string(ThemeDB.fallback_font, Vector2(16, 32), _status,
+		Paint.text(self, ThemeDB.fallback_font, Vector2(16, 32), _status,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.RED)
 		return
 	if _score == null:
@@ -1708,16 +1787,26 @@ func _draw_collision_zones() -> void:
 		var rect: Rect2 = lingo_sprite_rect(int(channel))
 		if rect.size == Vector2.ZERO:
 			continue
-		draw_rect(rect, Color(1.0, 0.15, 0.15, 0.9), false, 1.0)
+		Paint.rect(self, rect, Color(1.0, 0.15, 0.15, 0.9), false, 1.0)
 
 
 ## A mouse-down over a moveable sprite starts a drag: Director records the
 ## channel and the offset from the click to the sprite's position, then follows
 ## the cursor until mouse-up or until the sprite stops being moveable.
-func _begin_drag(at: Vector2) -> void:
+##
+## Called from `Interaction.latch_press`, which is §15's mouse-down block, rather
+## than from `route_press` where it used to sit -- the reference latches the drag
+## in that block along with the hilite, the button flag and the member, and it
+## runs the block for the right button too. `channel` comes from the block's own
+## descent instead of a second one here.
+func _begin_drag(at: Vector2, channel: int) -> void:
 	var started: Array = Interaction.begin_drag(
-		self, at, _channel_at(at), frame_sprites())
+		self, at, channel, frame_sprites())
 	if started.is_empty():
+		# Not moveable: the reference clears the pair rather than leaving them, so
+		# a press on a fixed sprite ends whatever the last press started.
+		_drag_channel = 0
+		_drag_offset = Vector2.ZERO
 		return
 	_drag_channel = int(started[0])
 	_drag_offset = started[1]
@@ -1728,20 +1817,28 @@ func _begin_drag(at: Vector2) -> void:
 ## press; the module's `press` doc comment has why that broke every drop.
 ##
 ## **The chain is built here, before the message goes out**, which is the whole
-## of §6.3's "Director decides the recipients before it runs any of them". The
-## hit test is repeated rather than taken from `Interaction.press`, because
-## `press` runs the primary handler and dispatches in the same call and the queue
-## has to exist before either: a `mouseDown` handler that swaps the member under
-## the pointer must not be able to change what the rest of its own chain
-## resolves to. It is the same descent with the same argument, so it answers the
-## same channel, and one extra hit test per press is what buys the ordering.
-func _press_click(at: Vector2) -> void:
-	var channel: int = _channel_at(at)
-	# §15: latched for the *release* as much as for this press. See `_press_member`.
-	_press_member = EventChain.member_on(self, channel)
+## of §6.3's "Director decides the recipients before it runs any of them":
+## `press` runs the primary handler and dispatches in the same call, and the
+## queue has to exist before either — a `mouseDown` handler that swaps the member
+## under the pointer must not be able to change what the rest of its own chain
+## resolves to. The descent that answers "which channel" happens **once**, in the
+## latch block below; it used to happen a second time inside `press`, which was
+## one hit test per press paying for the ordering and is now free.
+##
+## §15's **latch block runs before the chain is built**, which is the reference's
+## own ordering -- "run these steps at the very beginning, i.e. before the first
+## source type". It is also what supplies `_press_channel` and `_press_member` to
+## the two lines below, so the descent happens once.
+##
+## `right` carries `rightMouseDown`/`rightMouseUp` through the same path (§8.1,
+## D5). One function rather than two, because the entry this closes is explicit
+## that the right button latches all five things or none: a second copy of the
+## click model with a subset of them is exactly the shape it refuses.
+func _press_click(at: Vector2, right := false) -> void:
+	Interaction.latch_press(self, at, _channel_at(at))
 	_chain = {
-		"event": "mousedown",
-		"elements": EventChain.build(self, channel, _press_member),
+		"event": "rightmousedown" if right else "mousedown",
+		"elements": EventChain.build(self, _press_channel, _press_member),
 	}
 	# §8.2: the primary element's default. `Interaction.press` runs
 	# `when mouseDown then` and `the mouseDownScript` before it dispatches, and
@@ -1749,25 +1846,30 @@ func _press_click(at: Vector2) -> void:
 	# the primary tier's default rather than at whatever the last event left.
 	if _host != null:
 		_host.pass_event = true
-	Interaction.press(self, at)
+	Interaction.press(self, at, right)
 	_chain = {}
 
 
-func _release_click(at: Vector2) -> void:
-	# The channel the press latched, not the one under the pointer: this port
-	# delivers `mouseUp` to the sprite that took the `mouseDown` and
-	# `mouseUpOutSide` to anything else (`interaction.gd:release` has the corpus
-	# evidence for that divergence), so the chain has to name the same sprite the
-	# message is about. `_press_member` is §15's other half -- the member the
-	# mouse-DOWN chain started on, which is what the cast element resolves to
-	# even if a `mouseDown` handler has swapped it since.
+## The release, and **the chain is built from the sprite under it** (§15).
+##
+## That is the half of `the clickOn`-on-mouse-up that the port was missing: the
+## reference rewrites the property from `getMouseSpriteIDFromPos` at the release
+## *and* delivers the message to that sprite, and one without the other makes a
+## single dispatch give two answers to which sprite it is about.
+## `interaction.gd:release` carries the corpus measurement.
+##
+## `_press_member` is still §15's other half and is deliberately *not* re-read:
+## the cast element resolves against the member the mouse-DOWN chain started on,
+## so a `mouseDown` handler that swaps the member leaves the old one answering.
+func _release_click(at: Vector2, right := false) -> void:
+	var under: int = _channel_at(at)
 	_chain = {
-		"event": "mouseup",
-		"elements": EventChain.build(self, _press_channel, _press_member),
+		"event": "rightmouseup" if right else "mouseup",
+		"elements": EventChain.build(self, under, _press_member),
 	}
 	if _host != null:
 		_host.pass_event = true
-	Interaction.release(self, at)
+	Interaction.release(self, at, under, right)
 	_chain = {}
 
 
@@ -1795,25 +1897,41 @@ func track_rollover(at: Vector2) -> void:
 ## Queued exactly like the left button, because §6.3 puts `rightMouseDown` and
 ## `rightMouseUp` in the same list and sends them down the same five tiers.
 ##
-## **What it deliberately does not do is latch.** The member for the cast element
-## is read under the pointer for the release as well as for the press, where the
-## reference would use the one the right-mouse-DOWN chain started on. That is the
-## `A right click latches nothing` entry in `docs/ENGINE_TODO.md`, which is
-## explicit that its five latches go in as one block or not at all: taking §15's
-## member latch alone would give a right click the power to rewrite what a left
-## drag's release resolves to, which is the half-a-rule the entry exists to
-## refuse. 0 `rightMouseDown` / `rightMouseUp` handlers exist in either corpus,
-## so this is unexercised as well as unfixed.
+## **And latched exactly like the left button**, which is what changed. §15's
+## mouse-down block runs at the primary tier for `rightMouseDown` as it does for
+## `mouseDown`, and it latches five things in one go: the empty-stage beep, the
+## hilite channel, "the press was in a button", the drag channel and grab offset,
+## and the cast id the mouse-up resolves against. `the clickOn` is written by the
+## right pair too. This used to do none of it, on the recorded grounds that the
+## five go in together or not at all -- they are in together now, through the
+## same `_press_click` / `_release_click` the left button uses.
+##
+## §9.2's wait-for-click goes with them, in the body below: the reference clears
+## `_waitForClick` in the arm it shares between `EVENT_LBUTTONDOWN` and
+## `EVENT_RBUTTONDOWN`, because a frame waits for *a* click and not for a
+## particular one.
+##
+## What is still the left button's alone: §11's palette-cycle abort in
+## `route_press`, which the reference does not do from either arm and this port
+## does from one — a divergence that predates this and is not made worse by
+## leaving it where it is — and `the mouseDownScript` / `the mouseUpScript`,
+## which Director files under the left events and gives the right button no
+## property to install.
+##
+## 0 `rightMouseDown` or `rightMouseUp` handlers exist in any of the six titles,
+## so all of this is unexercised: built because Director has it.
 func route_right_button(at: Vector2, pressed: bool) -> void:
-	var channel: int = _channel_at(at)
-	_chain = {
-		"event": "rightmousedown" if pressed else "rightmouseup",
-		"elements": EventChain.build(self, channel, EventChain.member_on(self, channel)),
-	}
-	if _host != null:
-		_host.pass_event = true
-	Interaction.right_button(self, at, pressed)
-	_chain = {}
+	if pressed:
+		# §9.2: a wait-for-click is released by the mouse-DOWN, and the reference
+		# clears it on `EVENT_RBUTTONDOWN` in the same arm as the left button --
+		# the frame is waiting for a click and not for a particular one. Without
+		# this the right button was the one press in the engine a waiting frame
+		# ignored, which reads as the movie having stopped.
+		if _saw_press:
+			_clock.clicked()
+		_press_click(at, true)
+	else:
+		_release_click(at, true)
 
 
 ## `the rollOver` with no argument: the channel the pointer is over, not a
@@ -2283,6 +2401,16 @@ func lingo_puppet_palette(value: Variant) -> void:
 		_palette_applied()
 
 
+## `puppetTempo <value>`: override the score's tempo, or 0 to hand it back.
+##
+## §9.1's precedence and its release condition are the clock's -- what a puppet
+## overrides is decided where the score's own tempo is read, and nowhere else --
+## so this is the routing and not the rule. Zero sites in either corpus.
+func lingo_puppet_tempo(value: int) -> void:
+	_clock.set_puppet_tempo(value)
+	_trace("f%d puppetTempo %d -> %s" % [_index, value, _clock.status()])
+
+
 func lingo_puppet_transition(args: Array) -> void:
 	if args.is_empty():
 		_puppet_transition = {}
@@ -2299,6 +2427,51 @@ func lingo_puppet_transition(args: Array) -> void:
 		"change_area": LingoValue.to_int(args[3]) if args.size() >= 4 else 0,
 		"flags": 0,
 	}
+
+
+## `updateStage` — redraw the stage now, without advancing the frame (§9.1).
+##
+## The most-called name in six titles at 3,717 sites, and inert until this
+## existed: every `repeat` loop that animates by moving a sprite and calling it
+## drew nothing until the loop ended, so an animation that should play out
+## appeared to teleport. What it needed was a paint from inside a handler, which
+## `repaint_now` is; the reasoning that said Godot could not do that is answered
+## there.
+##
+## The order is the reference's (`lingo-builtins.cpp:b_updateStage`), and each
+## step is here because Director does it rather than because this corpus asks:
+##
+##   1. **A puppet transition wins over a plain redraw and is consumed.** The
+##      reference plays it and drops it on the spot rather than leaving it armed
+##      for the next frame change, so a `puppetTransition` followed by
+##      `updateStage` spends its transition *here*. Routed through the frame
+##      loop's own `begin_transition` with an empty frame, so the puppet source,
+##      the resolution and the hold are the one implementation and not a second
+##      copy of it. Zero sites across six titles; built because §10 has it.
+##   2. **The redraw.** A transition in this port is a timed cut rather than a
+##      wipe (`preview/frame_loop.gd`), so the paint happens either way.
+##   3. **The cursor is re-resolved.** The reference re-renders it here when it
+##      is dirty, and `the cursor of sprite` is one of the two writes that dirty
+##      it. Without this a script that changes a cursor and calls `updateStage`
+##      keeps the old one until the mouse next moves, because `_resolve_cursor`
+##      is otherwise only reached from motion (§7.5).
+##
+## Not done, and each is a difference worth naming rather than hiding:
+##
+##   - The reference flushes **queued puppet sounds** here. This port has no
+##     queue -- `lingo_puppet_sound` starts the member as it is called -- so the
+##     sound a movie is waiting for has already started by the time this runs.
+##     Earlier than Director, never later, and `soundBusy` agrees either way.
+##   - The reference suppresses `updateStage` entirely while
+##     `_disableGoPlayUpdateStage` is set, which it sets around `beginSprite` and
+##     `endSprite` dispatch. Neither event exists in this port yet (`AGENTS.md`
+##     lists them as open), so there is nothing to suppress it from.
+func lingo_update_stage() -> void:
+	_update_stage_calls += 1
+	if not _puppet_transition.is_empty():
+		_begin_transition({})
+	repaint_now()
+	_resolve_cursor()
 
 
 ## A frame jump does **not** drop what scripts puppeted.
@@ -2742,8 +2915,12 @@ func route_press(at: Vector2) -> Node:
 		# Only the hold the cycle itself asked for. A transition running on the
 		# same frame is not the player's to cut short, and releasing by reason
 		# rather than unconditionally is what keeps the two apart.
-		if _clock.hold_reason() == FrameClock.REASON_PALETTE:
-			_clock.release()
+		#
+		# `release_hold` rather than `release`, because `release` is the *jump*'s
+		# cancel-everything: it drops the wait-for-sound and the wait-for-video
+		# with the timed hold, and a click that aborts a colour cycle is not a
+		# jump and releases neither in Director.
+		_clock.release_hold(FrameClock.REASON_PALETTE)
 	# §8.4: the text widget sees the press before the sprite hit test does, and
 	# **does not consume it**. Clicking into a field is a window-manager act, not
 	# a Director message -- §4.3's eligibility says nothing about editability, so
@@ -2752,7 +2929,9 @@ func route_press(at: Vector2) -> Node:
 	# for: `SAVELOAD`'s slot buttons sit in the channels *above* its eight name
 	# boxes, and the `mouseUp` that chooses a slot has to get through.
 	TextFocus.press(self, at)
-	_begin_drag(at)
+	# The drag used to be started here, one line above the click. It is inside
+	# §15's latch block now (`Interaction.latch_press`), which is where the
+	# reference puts it and which is what gives the right button one as well.
 	_press_click(at)
 	return self
 
@@ -2826,11 +3005,50 @@ func lingo_play_done() -> void:
 	if _play_stack.is_empty():
 		_held = true
 		return
+	_pop_play_stack()
+	_held = true
+	# Returning from an interlude is a jump like any other: the frame it returns to
+	# is entered by the next step rather than by this call (§6.1 step 7).
+	if not _in_exit_frame:
+		_jump_queued = true
+	queue_redraw()
+
+
+## The playhead has run off the end of the score with a `play` outstanding.
+##
+## **Director's second return from an interlude, and the only one a cut scene that
+## simply ends ever reaches.** `score.cpp:462-487` pops the movie stack in the
+## `nextFrameNumberToLoad >= getFramesNum()` branch of `updateCurrentFrame`, ahead
+## of the wrap to frame 1, and requeues the parked play state as it goes
+## (`:474-476`, and `window.cpp:683-684` for the movie-switch half). The stack is
+## pushed by `play` and by nothing else, so "the score ended and the stack is not
+## empty" is exactly "an interlude ended without saying `play done`".
+##
+## The port had only the `play done` half. An interlude whose last frame is simply
+## the last frame of its score wrapped to frame 0 and played the movie again from
+## the top, with the handler that called `play` parked in `_frozen_play` and
+## nothing left in the engine that could ever wake it — the same hang, from the
+## same cause, as the one `lingo_play_done` above documents. `ENGINE_TODO.md`
+## carried it as the first of the three residues of the suspension mechanism.
+##
+## Returns false when no interlude is outstanding, which is the ordinary
+## end-of-score wrap and is left to the caller.
+func _return_from_play_stack() -> bool:
+	if _play_stack.is_empty():
+		return false
+	_requeue_play_state()
+	_pop_play_stack()
+	return true
+
+
+## The shared half of the two returns: take the caller's position back off the
+## stack, cross back into its container if the interlude was in another one, and
+## leave the frame entry that follows with the `exitFrame` latch still raised.
+func _pop_play_stack() -> void:
 	var back: Dictionary = _play_stack.pop_back()
 	if str(back["movie"]) != str(_movie.path):
 		lingo_go_movie(str(back["movie"]).get_file(), null)
 	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
-	_held = true
 	# **The frame being returned to has already sent its `exitFrame`, and must not
 	# send another.** That handler is the one that called `play`; it is parked
 	# mid-statement and about to be resumed, so re-entering the frame and
@@ -2860,12 +3078,12 @@ func lingo_play_done() -> void:
 	# restored the loop it exists to break, which is the measurement that settled
 	# where it goes.
 	_returning_from_play = true
-	# Returning from an interlude is a jump like any other: it cancels the wait
-	# the interlude's last frame armed, and the frame it returns to is entered by
-	# the next step rather than by this call (§6.1 step 7, §9.2).
+	# Returning from an interlude cancels the wait its last frame armed (§9.2).
+	# Whether the destination is entered by this call or by the next step is the
+	# caller's question and not this one's: `play done` runs from inside a handler
+	# and hands the entry to the next step, while the end-of-score return is already
+	# standing at the playhead move and the step it is inside enters the frame.
 	_clock.release()
-	if not _in_exit_frame:
-		_jump_queued = true
 	queue_redraw()
 
 
@@ -3155,6 +3373,12 @@ func lingo_sprite_prop(channel: int, prop: String) -> Variant:
 			LingoValue.to_int(lingo_sprite_prop(channel, "loch")),
 			LingoValue.to_int(lingo_sprite_prop(channel, "locv")),
 		]
+	# `the puppet of sprite N` is the flag `puppetSprite` sets, not a score field.
+	# It lives under `channel.gd:PUPPET_KEY` -- the string `"_puppet"` -- and an
+	# unrouted read fell through the channel table to `EMPTY_CHANNEL`'s 0, so a
+	# channel this movie had just puppeted answered "not puppeted" (§5.2).
+	if prop == "puppet":
+		return 1 if SpriteState.Channel.at(channel, _overrides).is_puppet() else 0
 	_note_sprite_prop(prop)
 	return SpriteProps.read(
 		channel, prop, _overrides, frame_sprites(), _channel_constraints)
@@ -3211,6 +3435,19 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		_channel_cursors[channel] = value
 		_cursor_applied = " "
 		_resolve_cursor()
+		return
+	# `set the puppet of sprite N to 1` and `puppetSprite N, TRUE` are **one
+	# operation** in Director -- both assign `Sprite::_puppet` -- so this routes to
+	# the builtin's own path rather than storing a field. The distinction is not
+	# bookkeeping: the claim takes a copy of the channel as it stands (§5.2), and
+	# a flag set without that copy freezes a channel holding nothing.
+	#
+	# Unrouted it stored `{"puppet": 1}` in the override entry, one underscore
+	# from `channel.gd:PUPPET_KEY`, read back as 1 and puppeted nothing -- the
+	# `moveableSprite` shape at 12 corpus sites. `preview/sprite_props.gd` has the
+	# measurement.
+	if prop == "puppet":
+		lingo_puppet_sprite(channel, LingoValue.truthy(value))
 		return
 	# `the locH of sprite` and `the locV of sprite` are one operation in Director
 	# and this is where the drag arrives as well, so the constraint is applied in
@@ -3396,7 +3633,16 @@ func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
 		# starts clear -- so the store is the whole of it.
 		return 1 if bool(_member_hilite.get(
 			_field_key(int(where[0]), int(where[1])), false)) else 0
-	return Members.read_prop(self, where, prop, _table)
+	# `read_prop` answers VOID for a name it has no arm for, and this is the only
+	# place that can tell that apart from a member property whose value is
+	# genuinely 0. Reported, then answered 0 exactly as before -- an unconsumed
+	# read is still a read, and the point is that the session can now say which
+	# names went nowhere rather than that they start failing.
+	var answer: Variant = Members.read_prop(self, where, prop, _table)
+	if answer == null:
+		_note_member_prop(prop)
+		return 0
+	return answer
 
 
 ## `member("save1").editable = 1`. §8.4's focus arbitration is re-run inside
@@ -3495,9 +3741,30 @@ func lingo_set_member_prop(which: Variant, cast: String, prop: String,
 			# shape with no symptom at all: the statement returns, the read answers
 			# the authored value, and nothing anywhere says it did nothing.
 			# `LingoDiagnostics.MEMBER_PROP` was declared for exactly this and had
-			# never once been emitted (§19).
-			if _interpreter != null:
-				_interpreter.report(LingoDiagnostics.MEMBER_PROP, prop)
+			# never once been emitted (§19). Through the same note as the *read*
+			# below, so both halves of one property surface report through one
+			# line: the write half was reported and the read half was not, which
+			# is half a diagnostic and reads in a log as a clean read surface.
+			_note_member_prop(prop)
+
+
+## A member property nothing in this port consumes, recorded rather than lost.
+##
+## The twin of `_note_sprite_prop`, and it covers both directions. A write with
+## no arm reaches this from `lingo_set_member_prop`'s fall-through; a read with
+## no arm reaches it from `lingo_member_prop`, because `preview/members.gd`
+## answers VOID rather than 0 for a name its match does not carry.
+##
+## The read half is the one that was missing and the one that hides better.
+## `read_prop` answered **0** for every unbound name, so `the frameRate of member
+## 12` -- a real Director property with no arm here -- was a plausible integer
+## rather than a hole, and a script that branched on it took a branch. §19 calls
+## exactly that shape out about `the top of sprite`: answering 0 is a wrong
+## answer, not a missing one. Fifty-odd names had it and nothing said so.
+func _note_member_prop(prop: String) -> void:
+	if _interpreter == null:
+		return
+	_interpreter.report(LingoDiagnostics.MEMBER_PROP, prop)
 
 
 ## `the selStart` / `the selEnd` — **movie properties, not field ones** (§8.4).

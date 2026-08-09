@@ -1255,10 +1255,20 @@ func _module_names() -> Array[String]:
 ## is asking the engine rather than reading over its shoulder.
 func _consumed_keys() -> Array[String]:
 	# Routed before the channel table: `cursor` and `constraint` are channel state
-	# kept in their own dictionaries on the node (§7.5, §7.6), `puppet` is the
-	# builtin's own flag, and `visible` is `Channel::_visible` -- honoured by the
-	# painter and the mouse test rather than merged into the sprite record.
-	var out: Array[String] = ["cursor", "constraint", "puppet", Channel.VISIBLE_KEY]
+	# kept in their own dictionaries on the node (§7.5, §7.6), and `visible` is
+	# `Channel::_visible` -- honoured by the painter and the mouse test rather
+	# than merged into the sprite record.
+	#
+	# **`puppet` was a fourth entry here and it was a false claim.** The comment
+	# said "the builtin's own flag", which is true of `puppetSprite` and was not
+	# true of `the puppet of sprite N`: that spelling reached nothing, because the
+	# flag is kept under `channel.gd:PUPPET_KEY` -- the string `"_puppet"` -- and
+	# an unrouted `puppet` went into the override entry under `"puppet"`. So this
+	# list, whose whole job is to say what is consumed, was the thing asserting
+	# that the one unconsumed sprite property was fine, at 12 corpus sites. It is
+	# routed on the node now and `_routed_before_the_table` reads it out of the
+	# source, which is the difference between a derivation and an excuse.
+	var out: Array[String] = ["cursor", "constraint", Channel.VISIBLE_KEY]
 	for key in Channel.FIELDS:
 		out.append(str(key))
 	return out

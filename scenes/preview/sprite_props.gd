@@ -111,7 +111,26 @@ const ALIASES := {
 ## `constraint` is in `write` below, `cursor` and `loc` in `director_preview.gd`,
 ## and `visible` is the channel's own (`channel.gd:VISIBLE_KEY`) -- honoured by
 ## the painter and by the mouse test rather than merged into a sprite record.
-const ROUTED := ["constraint", "cursor", "loc", "visible"]
+##
+## `puppet` is the fifth and it is the seventh instance of this file's whole
+## subject, found by `tools/property_surface.gd` driving Director's own name list
+## through the engine. `the puppet of sprite N` is `Sprite::_puppet` in the
+## reference (`lingo-the.cpp:1746` reads it, `:2074` writes it) -- the same flag
+## `puppetSprite N, TRUE` sets -- and this port keeps that flag under
+## `channel.gd:PUPPET_KEY`, which is the string `"_puppet"`. So an unrouted
+## `puppet` landed in the override entry under `"puppet"`, one underscore away
+## from the thing it means:
+##
+##     puppetSprite 5, TRUE               is_puppet() true, the puppet of sprite 5 -> 0
+##     set the puppet of sprite 6 to 1    is_puppet() false, the puppet of sprite 6 -> 1
+##
+## Both halves wrong and both round-tripping, at 12 corpus sites. Routed on the
+## node rather than translated by an alias, because `puppetSprite N, TRUE` is not
+## a field write: it takes a **copy of the channel as it stands**
+## (`director_preview.gd:lingo_puppet_sprite`), and an alias onto `_puppet` would
+## set the flag with no record behind it -- a channel frozen holding nothing.
+## One mechanism, reached by its two spellings.
+const ROUTED := ["constraint", "cursor", "loc", "puppet", "visible"]
 
 
 ## Does anything in this port read `prop` after a script writes it?

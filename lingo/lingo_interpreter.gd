@@ -235,6 +235,58 @@ func run_primary(event: String) -> bool:
 	return true
 
 
+## Compile the string `the mouseDownScript` and friends hold (§6.3 tier 1).
+##
+## **Director's value is Lingo source, compiled on assignment**, and the
+## reference is explicit about the shape it compiles into:
+## `Movie::setPrimaryEventHandler` calls `replaceCode(code, kEventScript, event)`
+## -- the string becomes a whole script filed under a synthetic slot keyed by the
+## event -- and `resolveScriptEvent` then rewrites the event to `kEventGeneric`
+## before running it. So what executes is the script's **scopeless** part, its
+## bare statements, and an `on <event>` block written inside the string is never
+## reached. `set the keyDownScript to "fromnow"` is therefore a one-statement
+## script whose statement is a no-argument call, which is why a bare handler name
+## has always worked in Director and is not a second mechanism.
+##
+## Wrapped in a synthetic handler rather than compiled as a bare script for the
+## reason `_do` is: a handler is what `_invoke` runs, and `_invoke` is where the
+## frame, the reporting location, the recursion guard and `play`/`go` suspension
+## all live. Reusing it means a primary handler can `go` exactly like any other
+## Lingo, which the statement-list path (`run_primary`) above cannot say.
+##
+## Returns `{}` on a source that will not compile, with the reason in `error`.
+## Static because the compile has no interpreter in it: the **assignment** is
+## what compiles (`preview_lingo_host.gd`), and the assignment happens in a host
+## that must not have to reach for whichever interpreter is current -- a movie
+## change swaps that object and the compiled script has to outlive it.
+static func compile_statements(source: String, label: String, error: Array) -> Dictionary:
+	if source.strip_edges() == "":
+		return {}
+	var compiler = DoCompiler.new()
+	var compiled: Dictionary = compiler.compile_source(
+		"on __%s\n%s\nend\n" % [label, source], label)
+	var handlers: Array = compiled.get("handlers", []) if not compiled.is_empty() else []
+	if handlers.is_empty():
+		error.append(str(compiler.error) if str(compiler.error) != "" else "no statements")
+		return {}
+	return {"script": compiled, "handler": handlers[0]}
+
+
+## Run what `compile_statements` produced. True when something ran.
+func run_compiled(compiled: Dictionary) -> bool:
+	if compiled.is_empty():
+		return false
+	var handler: Dictionary = compiled.get("handler", {})
+	if (handler.get("body", []) as Array).is_empty():
+		return false
+	_running += 1
+	_invoke(handler, [], compiled.get("script", {}))
+	_running -= 1
+	if _running == 0:
+		_park()
+	return true
+
+
 func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Variant:
 	_running += 1
 	var value: Variant = _resolve_and_call(name, args, script)
@@ -912,6 +964,31 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 				_assign(target, joined, frame)
 			return Flow.NORMAL
 		"put_echo":
+			## `put <expr>` with no `into` -- Director's message-window echo.
+			##
+			## **The expression is evaluated.** In the reference `put` is an
+			## ordinary builtin (`lingo-builtins.cpp:b_put`), so its arguments are
+			## on the stack before it runs and every side effect in them has
+			## already happened; here the parser built the expression and this arm
+			## dropped it unevaluated, so `put someHandler()` never called the
+			## handler and `put member(x).name` never touched the cast.
+			##
+			## That is the same shape as an unbound property write and it hid for
+			## the same reason: the statement returns cleanly, nothing is missing
+			## from a log, and only a caller relying on the side effect can tell.
+			## Found by `tools/property_surface.gd` -- its unbound-property probe
+			## read through a `put` and no report came out, because nothing had
+			## been read.
+			##
+			## The echo itself goes to the trace rather than to the console. This
+			## port has no message window; `the trace` and `the traceLogFile` are
+			## what stands in for one (§3), and 9,363 `put` sites means an
+			## unconditional print is a flood rather than a diagnostic.
+			var echoed: Variant = null
+			if stmt.get("value", null) != null:
+				echoed = _eval(stmt.get("value", {}), frame)
+			if LingoDiagnostics.trace:
+				LingoDiagnostics.trace_line("-- %s" % LingoValue.to_str(echoed))
 			return Flow.NORMAL
 		"call_stmt":
 			_eval(stmt.get("call", {}), frame)

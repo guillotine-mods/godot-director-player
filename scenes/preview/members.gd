@@ -408,4 +408,22 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			# ticks, and this port carries it in milliseconds because that is what
 			# the clock holds it in; converted here rather than stored twice.
 			return int(float(m.get("duration_ms", 0.0)) * 60.0 / 1000.0)
-	return 0
+
+	# **Nothing, not 0.** This fall-through is the only place that knows a member
+	# property reached the end of the match without an arm, and for as long as it
+	# answered 0 that knowledge was destroyed here: `the frameRate of member 12`
+	# and `the width of member 12` came back as two integers a script cannot tell
+	# apart, and 0 is a plausible value for most of the fifty names above.
+	#
+	# `director_preview.gd:lingo_member_prop` turns this back into the 0 a caller
+	# has always seen, after reporting it as `LingoDiagnostics.MEMBER_PROP`. The
+	# answer a movie gets does not move; the session gains the one fact it had no
+	# way to record.
+	#
+	# **This match is the derivation.** `sprite_props.gd:consumed` has to consult a
+	# table because `sprite_state.write_prop` accepts every key and has no
+	# fall-through to reach. Here the arms *are* the list of consumed names, so
+	# adding one removes a name from the report by construction and there is no
+	# second copy to drift. That holds only while no arm answers null, which is
+	# true of all fifty above and is the thing to re-check when one is added.
+	return null
