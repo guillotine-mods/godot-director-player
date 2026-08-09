@@ -64,11 +64,3 @@ func _migrated_speed() -> float:
 	if old.load(RETIRED_PATH) != OK:
 		return controller_cursor_speed
 	return float(old.get_value("input", "cursor_speed", controller_cursor_speed))
-
-
-func stage_scale_factor() -> int:
-	return clampi(upscale_mode, 1, 3)
-
-
-func use_smooth_filter() -> bool:
-	return enhanced_graphics

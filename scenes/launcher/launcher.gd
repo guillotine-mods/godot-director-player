@@ -183,8 +183,9 @@ func _build_bindings() -> void:
 
 ## The three checks, in the order that gives the most useful message: a name
 ## that is not a key first, then the key that is already taken, then the key a
-## game wants.
-func _on_binding_changed(_text: String, command: String) -> void:
+## game wants. Sets `field.modulate`, which `_refresh_play` reads as this
+## field's validity, and returns the message so a caller can show it.
+func _validate_field(command: String) -> String:
 	var field := _binding_fields[command] as LineEdit
 	var name := str(field.text).strip_edges()
 	var problem := ""
@@ -207,6 +208,23 @@ func _on_binding_changed(_text: String, command: String) -> void:
 			elif not typed.is_empty():
 				problem = "%s types a character %s tests" % [name, ", ".join(typed)]
 	field.modulate = Color.WHITE if problem == "" else Color(1.0, 0.55, 0.55)
+	return problem
+
+
+## Retyping one field can clear -- or create -- a collision on another: binding
+## `quick_save` onto a key `boxes` already holds turns `boxes` red, and it takes
+## a second pass over `boxes` to turn it white again once `quick_save` moves
+## off that key, because `boxes`'s own text never changed. So every field is
+## revalidated here, not just the one whose signal fired, and `_refresh_play`
+## -- the single owner of Play's enabled state -- is asked to look again after.
+## Only the edited field's message reaches the status line: it is the field the
+## person typing is looking at.
+func _on_binding_changed(_text: String, command: String) -> void:
+	var problem := ""
+	for other in _binding_fields:
+		var other_problem := _validate_field(str(other))
+		if str(other) == command:
+			problem = other_problem
 	%BindingsStatus.text = problem
 	_refresh_play()
 

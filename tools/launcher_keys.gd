@@ -99,6 +99,11 @@ func _init() -> void:
 	# refuse to store the bindings the port ships with.
 	case = "every shipped binding passes the rules the launcher enforces"
 	h.begin(case)
+	if not h.check("the corpus yields shipped bindings", not DebugKeys.DEFAULTS.is_empty(),
+			"%d binding(s)" % DebugKeys.DEFAULTS.size()):
+		h.complete(case)
+		quit(h.finish("what the launcher refuses to bind"))
+		return
 	var refused: Array[String] = []
 	for command in DebugKeys.DEFAULTS:
 		var name := str(DebugKeys.DEFAULTS[command])
