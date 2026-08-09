@@ -223,6 +223,16 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	var entry_channels: Array[int] = []
 	for value in (preview.get("_score").frame(before).get("sprites", []) as Array):
 		entry_channels.append(int((value as Dictionary)["channel"]))
+	# Every channel a script has *hidden* on the way in, for the third rule below.
+	# `the visible of sprite` is channel state rather than a puppeted sprite field
+	# (`preview/sprite_state.gd:CHANNEL_STATE`), so nothing that hands a channel
+	# back to the score may take a hide with it.
+	var hidden_at_entry: Array[int] = []
+	for key in overrides:
+		if int((overrides[key] as Dictionary).get("visible", 1)) == 0:
+			hidden_at_entry.append(int(key))
+	hidden_at_entry.sort()
+	var same_movie := str(preview.call("movie_name"))
 	preview.call("route_press", centre)
 	preview.call("route_release", centre)
 	if not h.check("the click was answered", int(preview.get("_index")) != before,
@@ -236,6 +246,8 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	var abandoned: Dictionary = {}
 	var stowaways: Dictionary = {}
 	var left_with_the_score: Dictionary = {}
+	var un_hidden: Dictionary = {}
+	var released: Dictionary = {}
 	var swapped_away := false
 	var score_moved := false
 	var score_wrote := false
@@ -286,6 +298,31 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 			if bool((overrides.get(ch, {}) as Dictionary).get("_puppet", false)):
 				continue
 			stowaways[ch] = here
+		# **A hide is not a puppet, and only a script may lift it.** Director keeps
+		# `the visible of sprite` on the channel, and the reference writes that
+		# field in exactly one place -- its own setter. So a hide surviving is not
+		# a nicety: an override entry that loses its `visible` key without a script
+		# writing one has had the hide taken by the engine, and the sprite appears.
+		#
+		# Phrased as "the key is gone", never as "the sprite is hidden". A script
+		# that legitimately un-hides writes `visible = 1` and the key stays, so the
+		# two cases are distinguishable -- and asserting the sprite is still hidden
+		# would fail on the movie doing exactly what it is entitled to do.
+		#
+		# Three saves are behind this: `puppetSprite(i, 0)` over a range that
+		# `init all` had hidden erased those channels outright, and four dwarves and
+		# Renati walked back into shot while somebody else walked off.
+		if str(preview.call("movie_name")) == same_movie:
+			for ch in hidden_at_entry:
+				if not (overrides.get(ch, {}) as Dictionary).has("visible") \
+						and not un_hidden.has(ch):
+					un_hidden[ch] = here
+		# And whether this room ever released a puppet at all, so a green check
+		# above can be attributed rather than assumed.
+		for ch in watched:
+			if not bool((overrides.get(ch, {}) as Dictionary).get("_puppet", false)) \
+					and not released.has(ch):
+				released[ch] = here
 		for ch in on_screen:
 			# A script may un-puppet a channel, and then the score owns it again
 			# and dropping it is correct. Only a channel that is *still* claimed
@@ -338,6 +375,9 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	h.check("and no channel the score dropped stayed without one",
 		stowaways.is_empty(),
 		"carried unpuppeted: %s" % str(stowaways) if not stowaways.is_empty() else "")
+	h.check("no script-set hide was discarded by anything but a script",
+		un_hidden.is_empty(),
+		"lost `visible` on %s" % str(un_hidden) if not un_hidden.is_empty() else "")
 	h.check("the clip wrote its own member over channel %d" % channel, swapped_away)
 	h.check("and it lasted longer than the tick it was written on",
 		not swapped_away or held > 1, "held for %d score tick(s)" % held)
@@ -362,6 +402,16 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	elif returned:
 		print("   the score never wrote channel %d's member, so the write standing"
 			% channel + " is correct and this room does not test the release")
+	if hidden_at_entry.is_empty():
+		print("   nothing was hidden by a script here, so this room does not test"
+			+ " that a hide survives")
+	elif released.is_empty():
+		print("   %d hide(s) on %s, and nothing un-puppeted a channel, so this room"
+			% [hidden_at_entry.size(), str(hidden_at_entry)]
+			+ " does not test that a hide survives the release")
+	else:
+		print("   %d hide(s) on %s survived the release of %s"
+			% [hidden_at_entry.size(), str(hidden_at_entry), str(released.keys())])
 	if abandoned.is_empty():
 		print("   the score carried every puppeted channel throughout, so this"
 			+ " room does not test the persistence")

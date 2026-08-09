@@ -25,7 +25,7 @@ extends SceneTree
 ##
 ## ## What it compares
 ##
-## Three sources, and the value is entirely in the disagreements between them:
+## Four sources, and the value is entirely in the disagreements between them:
 ##
 ## 1. **What the document claims** -- §19's claim table, which is machine-readable
 ##    precisely so that this can read it. Prose cannot be audited.
@@ -37,6 +37,15 @@ extends SceneTree
 ## 3. **What the corpus calls** -- every container under every root in `games/`,
 ##    read as the authored Lingo in the `CASt` records. So each gap carries a
 ##    usage count and the priority list orders itself.
+## 4. **What Director has** -- the reference's own name tables, read out of
+##    `reference/scummvm/`. This is the source the other three cannot supply, and
+##    the reason it was added: sources 1-3 are all bounded by names *this port or
+##    this corpus already knows about*, so a Director capability that no title
+##    happens to call and that nobody thought to write down was invisible from
+##    every direction. `AGENTS.md` is explicit that this is backwards -- "build
+##    Director, not this game", and a measured zero is a reason to build something
+##    last rather than a reason to skip it -- so the widest of the four maps is
+##    the one the other three are scored against. See `_reference()`.
 ##
 ## **A row that is claimed `live`, is bound, and is inert is the highest-severity
 ## finding there is.** It is the `intersects` shape, and it is invisible from
@@ -84,7 +93,19 @@ const ContainerFile := preload("res://director/director_file.gd")
 const Cast := preload("res://director/director_cast.gd")
 const Paths := preload("res://director/director_paths.gd")
 
-const DOC := "res://docs/LINGO_SURFACE.md"
+const DOC_DEFAULT := "res://docs/LINGO_SURFACE.md"
+## Where the *reference* count is pinned. Deliberately not §19: that file is the
+## claim table's home and is edited by whoever closes a gap, while this number is
+## a statement about the distance to Director as a whole, which is what
+## `docs/ENGINE_TODO.md` is for ("the running list of what is still missing
+## against them", `AGENTS.md`).
+const TODO := "res://docs/ENGINE_TODO.md"
+## The reference's own tables. Read at runtime rather than transcribed into this
+## file, and that is the point rather than an optimisation: what is taken from
+## `reference/scummvm/` is the *knowledge that a name exists*, and a copy of the
+## table here would be a copy of the table. See `_reference()`.
+const REF_BUILTINS := "res://reference/scummvm/lingo-builtins.cpp"
+const REF_THE := "res://reference/scummvm/lingo-the.cpp"
 const HOST_SRC := "res://scenes/preview_lingo_host.gd"
 const PREVIEW_SRC := "res://scenes/director_preview.gd"
 const MEMBERS_SRC := "res://scenes/preview/members.gd"
@@ -131,22 +152,41 @@ const MIN_ARMS := 20
 const MIN_CONTAINERS := 50
 const MIN_ROOTS := 2
 const MIN_TOKENS := 5000
+## Floors under the reference read, for the same reason and with more force: the
+## other three sources are this port's own files and fail loudly when a path
+## breaks, while `reference/scummvm/` is a vendored tree nobody edits, so a
+## renamed file there would silently turn "Director has 460 names" into "Director
+## has none" and every gap in this file would close at once.
+const MIN_REF_BUILTINS := 150
+const MIN_REF_ENTITIES := 100
+const MIN_REF_FIELDS := 150
+
+## Which document is audited. Overridable with `--doc res://path.md` so that a
+## candidate §19 -- a table with rows added for bindings that have just landed --
+## can be checked *before* it is written into the shared file. Without it the
+## only way to verify a claim-table edit is to make it, which is exactly the
+## sequence that puts a wrong row in a file two agents share.
+var _doc := DOC_DEFAULT
 
 
 func _init() -> void:
 	var args := Args.parse()
 	var survey := Args.flag(args, "survey")
 	var only := Args.text(args, "name").to_lower()
+	var doc_override := Args.text(args, "doc")
+	if doc_override != "":
+		_doc = doc_override
 
 	var h := Harness.new()
 
 	# ---------------------------------------------------------------- inputs
 	var claims := _claims()
 	var catalogue := _catalogue()
+	var reference := _reference()
 	var bound := await _bound()
 	var corpus := _corpus(only)
 
-	h.begin("the audit has three non-empty sources")
+	h.begin("the audit has four non-empty sources")
 	h.check(
 		"§19's claim table parses (%d rows, floor %d)" % [claims.size(), MIN_CLAIMS],
 		claims.size() >= MIN_CLAIMS,
@@ -173,9 +213,20 @@ func _init() -> void:
 			% [int(corpus["total"]), MIN_TOKENS],
 		int(corpus["total"]) >= MIN_TOKENS,
 		"containers opened but nothing was read out of them")
-	h.complete("the audit has three non-empty sources")
+	h.check(
+		"the reference's tables parse (%d builtins, %d `the` entities, %d fields; "
+			% [int(reference["builtins"]), int(reference["entities"]),
+				int(reference["fields"])]
+			+ "floors %d/%d/%d" % [MIN_REF_BUILTINS, MIN_REF_ENTITIES, MIN_REF_FIELDS],
+		int(reference["builtins"]) >= MIN_REF_BUILTINS
+			and int(reference["entities"]) >= MIN_REF_ENTITIES
+			and int(reference["fields"]) >= MIN_REF_FIELDS,
+		"read from %s and %s; if these are 0 the vendored tree moved and every "
+			% [REF_BUILTINS.get_file(), REF_THE.get_file()]
+			+ "unbuilt capability would report as built")
+	h.complete("the audit has four non-empty sources")
 
-	var rows := _rows(claims, catalogue, bound, corpus)
+	var rows := _rows(claims, catalogue, reference, bound, corpus)
 	if only != "":
 		var narrowed: Array = []
 		for row in rows:
@@ -267,9 +318,43 @@ func _init() -> void:
 	h.complete("the reachable-gap count is what §19 records")
 	_print_priority(open_gaps)
 
+	# ------------------------------------------------- the wider map, enforced
+	#
+	# Everything above is bounded by names something already mentions: §19's rows,
+	# the host's arms, the corpus's calls. A Director capability no title happens
+	# to use and nobody thought to document is invisible to all three, and
+	# `AGENTS.md` says that is exactly backwards -- "a measured zero is a reason to
+	# build something last, never a reason to skip it".
+	#
+	# So the reference's own tables are counted whole and the *shortfall* is
+	# pinned, the way §19 pins the reachable gaps and for the same reason: a
+	# number nobody records is a number that drifts. It can move two ways and both
+	# are worth a red gate -- a name implemented and the count not brought down
+	# with it, or a name that stopped being live.
+	h.begin("the distance to Director's own name tables is what ENGINE_TODO records")
+	var unbuilt: Array = []
+	for row in rows:
+		var r: Dictionary = row
+		if not bool(r["reference"]):
+			continue
+		if str(r["observed"]) != LIVE:
+			unbuilt.append(r)
+	var recorded_unbuilt := _recorded_reference_count()
+	h.check(
+		"Director names %d capabilities this port can reach; %d are live here, "
+			% [int(reference["total"]), int(reference["total"]) - unbuilt.size()]
+			+ "%d are not (ENGINE_TODO records %d)" % [unbuilt.size(), recorded_unbuilt],
+		unbuilt.size() == recorded_unbuilt,
+		"if this fell, lower `Reference names not live here:` in docs/ENGINE_TODO.md "
+			+ "and say which names landed; if it rose, a binding stopped being live "
+			+ "or the reference tree gained a name -- neither should pass silently")
+	h.complete("the distance to Director's own name tables is what ENGINE_TODO records")
+	_print_unbuilt(unbuilt)
+
 	quit(h.finish(
-		"docs/LINGO_SURFACE.md §19 against %s, %s and %d containers"
-			% [HOST_SRC.get_file(), "lingo_builtins.gd", int(corpus["containers"])]))
+		"docs/LINGO_SURFACE.md §19 against %s, %s and %d containers, and "
+			% [HOST_SRC.get_file(), "lingo_builtins.gd", int(corpus["containers"])]
+			+ "%d Director names from reference/scummvm/" % int(reference["total"])))
 
 
 ## Why a particular disagreement matters, in the order the brief ranks them.
@@ -305,7 +390,7 @@ func _severity(claimed: String, observed: String, uses: int) -> String:
 
 func _claims() -> Dictionary:
 	var out: Dictionary = {}
-	var text := FileAccess.get_file_as_string(DOC)
+	var text := FileAccess.get_file_as_string(_doc)
 	if text == "":
 		return out
 	var section := _section(text, "# 19.")
@@ -342,6 +427,141 @@ func _claims() -> Dictionary:
 	return out
 
 
+# ========================================================== the reference's map
+#
+# The fourth source, and the only one that is not a statement about this port.
+#
+# `reference/scummvm/` carries three tables that between them enumerate Lingo's
+# named surface: the builtin functions and commands, the `the <prop>` entities,
+# and the properties that hang off an entity. What is taken from them here is
+# *the knowledge that a name exists, and which entity it belongs to* -- the
+# names themselves are Macromedia's, not the reference's, and every description
+# of what one does is written from scratch elsewhere in this port. They are
+# parsed at runtime out of the vendored tree rather than transcribed into this
+# file, which is the difference between reading a table and copying one.
+#
+# Three deliberate exclusions, named rather than filtered by a pattern, because
+# an exclusion list is how a real gap gets hidden among the false ones:
+#
+#   `scummvm*`   the reference's own test hooks. Not Lingo, and no title can
+#                spell them.
+#   `chunk`      the reference's internal handle for `the textFont of word 3 of
+#                field "x"`. The *fields* under it are real and are kept; the
+#                entity word itself is never written by a script.
+#   `castLibs`, `castMembers`, `menuItems`
+#                the reference models `the number of castLibs` as a one-field
+#                entity. The bare entity name is already counted, and a second
+#                row named `number` under it would audit a spelling that does
+#                not exist.
+
+
+## Every Lingo name the reference knows about, as `kind/name -> {ver, where}`.
+##
+## `ver` is Director's own version gate, 200 for D2 through 700 for D7, kept
+## because it is the single best predictor of whether a title in this corpus can
+## reach a name at all -- these are 1997 D5/D6 movies, so a D7-only property is a
+## different kind of gap from a D2 one.
+func _reference() -> Dictionary:
+	var names: Dictionary = {}
+	var counts := {"builtins": 0, "entities": 0, "fields": 0}
+
+	# `{ "name", LB::b_name, min, max, version, KIND },`
+	var builtin_re := RegEx.new()
+	builtin_re.compile(
+		"\\{\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*,\\s*LB::\\w+\\s*,"
+		+ "\\s*-?\\d+\\s*,\\s*-?\\d+\\s*,\\s*(\\d+)\\s*,\\s*(\\w+)")
+	for hit in builtin_re.search_all(FileAccess.get_file_as_string(REF_BUILTINS)):
+		var name := hit.get_string(1)
+		if _reference_excluded(name):
+			continue
+		counts["builtins"] = int(counts["builtins"]) + 1
+		names[_key("builtin", name.to_lower())] = {
+			"ver": int(hit.get_string(2)), "where": hit.get_string(3).to_lower()}
+
+	var the_src := FileAccess.get_file_as_string(REF_THE)
+
+	# `{ kTheName, "name", hasId, version, isFunction },`
+	var entity_re := RegEx.new()
+	entity_re.compile(
+		"\\{\\s*kThe\\w+\\s*,\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*,"
+		+ "\\s*(true|false)\\s*,\\s*(\\d+)\\s*,\\s*(true|false)")
+	for hit in entity_re.search_all(the_src):
+		var name := hit.get_string(1)
+		if _reference_excluded(name):
+			continue
+		counts["entities"] = int(counts["entities"]) + 1
+		# An entity that takes an id is a *designator* -- `sprite N`, `member M`,
+		# `window "x"` -- and not a property of the movie. §19 records the ones
+		# this port has as builtin rows, because that is what they are here: some
+		# are parser keywords (§11.3) and some are host arms. `menu` and
+		# `menuItem` have neither, which is the honest answer and a real gap.
+		var kind := "builtin" if hit.get_string(2) == "true" else "system"
+		names[_key(kind, name.to_lower())] = {
+			"ver": int(hit.get_string(3)), "where": "the"}
+
+	# `{ kTheOwner, "name", kTheField, version },`
+	var field_re := RegEx.new()
+	field_re.compile(
+		"\\{\\s*kThe(\\w+)\\s*,\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*,"
+		+ "\\s*kThe\\w+\\s*,\\s*(\\d+)\\s*\\}")
+	for hit in field_re.search_all(the_src):
+		var owner := _reference_owner(hit.get_string(1))
+		if owner == "":
+			continue
+		var name := hit.get_string(2).to_lower()
+		# `the long date`, `the abbrev time`. The reference models the adjective as
+		# a field of a `date`/`time` entity; a script writes it as one phrase, and
+		# so does this port's parser, so the audited spelling is the phrase.
+		if owner == "system":
+			name = "%s %s" % [name, hit.get_string(1).to_lower()]
+		var key := _key(owner, name)
+		counts["fields"] = int(counts["fields"]) + 1
+		if names.has(key):
+			continue
+		names[key] = {"ver": int(hit.get_string(3)), "where": "the ... of"}
+
+	return {
+		"names": names, "total": names.size(),
+		"builtins": int(counts["builtins"]), "entities": int(counts["entities"]),
+		"fields": int(counts["fields"]),
+	}
+
+
+## The reference's own scaffolding, which is not Lingo. See the block comment.
+static func _reference_excluded(name: String) -> bool:
+	var low := name.to_lower()
+	return low.begins_with("scummvm") or low == "chunk" \
+		or low == "castlibs" or low == "castmembers" or low == "menuitems"
+
+
+## Which audited kind a reference entity's fields belong to. "" drops the owner.
+static func _reference_owner(entity: String) -> String:
+	match entity.to_lower():
+		"sprite":
+			return "sprite"
+		# A field *is* a text member reached by a shorter spelling (§5.1), so its
+		# properties are member properties and share their rows. Recording them
+		# under a `field` kind of their own would double every text property and
+		# report half of each pair as a gap.
+		"cast", "field":
+			return "member"
+		"castlib":
+			return "cast"
+		"soundentity":
+			return "sound"
+		"window":
+			return "window"
+		"chunk":
+			return "chunk"
+		"menu":
+			return "menu"
+		"menuitem":
+			return "menuitem"
+		"date", "time":
+			return "system"
+	return ""
+
+
 ## Director's own names, read out of §1 (builtins) and §3-§5 (properties).
 ##
 ## Read from the document rather than restated here, because "the reference
@@ -352,7 +572,7 @@ func _claims() -> Dictionary:
 ## §9.1 records reporting as unbound builtins for exactly this reason.
 func _catalogue() -> Dictionary:
 	var out: Dictionary = {}
-	var text := FileAccess.get_file_as_string(DOC)
+	var text := FileAccess.get_file_as_string(_doc)
 	if text == "":
 		return out
 	for spec in [
@@ -995,14 +1215,17 @@ func _uses(kind: String, name: String, corpus: Dictionary) -> int:
 # ================================================================== the report
 
 
-func _rows(claims: Dictionary, catalogue: Dictionary, bound: Dictionary,
-		corpus: Dictionary) -> Array:
+func _rows(claims: Dictionary, catalogue: Dictionary, reference: Dictionary,
+		bound: Dictionary, corpus: Dictionary) -> Array:
 	var keys: Dictionary = {}
 	for key in claims:
 		keys[key] = true
 	for key in (bound["state"] as Dictionary):
 		keys[key] = true
 	for key in catalogue:
+		keys[key] = true
+	var ref_names: Dictionary = reference["names"]
+	for key in ref_names:
 		keys[key] = true
 
 	var out: Array = []
@@ -1012,10 +1235,13 @@ func _rows(claims: Dictionary, catalogue: Dictionary, bound: Dictionary,
 		var name: String = parts[1]
 		var claim: Dictionary = claims.get(key, {})
 		var observed: String = str((bound["state"] as Dictionary).get(key, ABSENT))
+		var ref: Dictionary = ref_names.get(key, {})
 		out.append({
 			"name": name,
 			"kind": kind,
 			"recorded": claims.has(key),
+			"reference": ref_names.has(key),
+			"ver": int(ref.get("ver", 0)),
 			"claimed": str(claim.get("state", "")),
 			"observed": observed,
 			"detail": str((bound["detail"] as Dictionary).get(key, "")),
@@ -1068,7 +1294,18 @@ func _print_table(rows: Array, survey: bool) -> void:
 func _recorded_gap_count() -> int:
 	var re := RegEx.new()
 	re.compile("Reachable gaps recorded here: (\\d+)")
-	var hit := re.search(FileAccess.get_file_as_string(DOC))
+	var hit := re.search(FileAccess.get_file_as_string(_doc))
+	return int(hit.get_string(1)) if hit != null else -1
+
+
+## The number `docs/ENGINE_TODO.md` pins the reference shortfall at. -1 when the
+## sentence is missing, which fails rather than passing an unpinned run -- the
+## same rule the §19 count follows, and for the same reason: an unpinned number
+## is one nobody notices moving.
+func _recorded_reference_count() -> int:
+	var re := RegEx.new()
+	re.compile("Reference names not live here: (\\d+)")
+	var hit := re.search(FileAccess.get_file_as_string(TODO))
 	return int(hit.get_string(1)) if hit != null else -1
 
 
@@ -1084,6 +1321,46 @@ func _print_priority(gaps: Array) -> void:
 		var r: Dictionary = row
 		print("  %6d  %-8s %-24s %-7s  %s" % [
 			int(r["uses"]), r["kind"], r["name"], r["observed"], r["detail"]])
+	print("")
+
+
+## Everything Director names and this engine does not have live, grouped by the
+## entity it hangs off and ordered by corpus demand inside each group.
+##
+## This is the list §19 structurally cannot produce: its rows exist because
+## something already mentioned the name, so a capability nobody has thought about
+## has no row to be missing from. Printed rather than summarised, because the
+## count alone says how far away Director is and this says in which direction.
+func _print_unbuilt(rows: Array) -> void:
+	var by_kind: Dictionary = {}
+	for row in rows:
+		var r: Dictionary = row
+		var kind := str(r["kind"])
+		if not by_kind.has(kind):
+			by_kind[kind] = []
+		(by_kind[kind] as Array).append(r)
+	print("")
+	print("Director names this engine does not have live, by entity.")
+	print("`inert` outranks `absent` here for the reason §19 gives: an absent name")
+	print("is reported when a script reaches it and an inert one is not.")
+	var kinds: Array = by_kind.keys()
+	kinds.sort()
+	for kind in kinds:
+		var group: Array = by_kind[kind]
+		group.sort_custom(func(a, b):
+			if int(a["uses"]) != int(b["uses"]):
+				return int(a["uses"]) > int(b["uses"])
+			if int(a["ver"]) != int(b["ver"]):
+				return int(a["ver"]) < int(b["ver"])
+			return str(a["name"]) < str(b["name"]))
+		print("")
+		print("  -- %s (%d)" % [kind, group.size()])
+		for row in group:
+			var r: Dictionary = row
+			print("     D%-3s %-28s %-7s %6s  %s" % [
+				int(r["ver"]) / 100, r["name"], r["observed"],
+				("%d sites" % int(r["uses"])) if int(r["uses"]) > 0 else "",
+				r["detail"]])
 	print("")
 
 

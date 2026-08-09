@@ -18,6 +18,19 @@ what Director does, what happens without it, and where the change goes. Ordered
 by how visible the absence is.
 
 
+## The reference map
+
+**Reference names not live here: 287.** `tools/lingo_surface_audit.gd` reads
+Director's own name tables out of `reference/scummvm/` -- 511 capabilities this
+port can reach -- and pins how many of them are live. §19 measures the gaps a
+*title in this corpus calls*; this measures the gaps against Director itself,
+which is the wider and the more honest number. A name no Piposh or Rating
+script happens to use is invisible to §19 and counted here.
+
+The number is pinned so it cannot drift: if it falls, say which names landed;
+if it rises, a binding stopped being live or the reference tree gained a name,
+and neither should pass silently.
+
 ## What is genuinely still missing
 
 Corrected against the code on 2026-08-06, after the windows, palette, trails,

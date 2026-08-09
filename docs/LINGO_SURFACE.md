@@ -2508,7 +2508,7 @@ That inflates a rank and never invents one.
 
 ## What is still open, in the order a movie meets it
 
-> **Reachable gaps recorded here: 10.** `tools/lingo_surface_audit.gd` counts the
+> **Reachable gaps recorded here: 9.** `tools/lingo_surface_audit.gd` counts the
 > rows that are not `live` and that at least one of the six titles calls, and
 > fails if the number moves. It can only move two ways and both deserve a red
 > gate: a gap closed and this number not brought down with it, or a name some
@@ -2650,7 +2650,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `top` | sprite | inert | 4 sites; stored in _overrides, consumed by nothing |
 | `findpos` | builtin | live | 3 sites; lingo_builtins.gd |
 | `textsize` | member | absent | 3 sites |
-| `castlibnum` | sprite | inert | 3 sites; stored in _overrides, consumed by nothing |
+| `castlibnum` | sprite | live | 3 sites; read arm |
 | `alert` | builtin | live | 2 sites; host arm |
 | `stopevent` | builtin | live | 2 sites; host arm |
 | `unloadmovie` | builtin | noop | 2 sites; host IGNORED; memory hint (§1.4), inverse |
@@ -2812,7 +2812,47 @@ Two shapes account for most of that list, and neither is a missing name:
 | `title` | system | live | 0 sites; read+write |
 | `titlevisible` | system | live | 0 sites; read+write |
 | `windowlist` | system | live | 0 sites; read only |
-| `windowtype` | system | live | 0 sites; read+write |
+| `windowtype` | system | live | 0 sites; read+write |
+| `cast` | builtin | live | host arm |
+| `constrainh` | builtin | live | host arm |
+| `constrainv` | builtin | live | host arm |
+| `getnthfilenameinfolder` | builtin | live | host arm |
+| `setpref` | builtin | live | host arm |
+| `windowpresent` | builtin | live | host arm |
+| `abbr date` | system | live | host arm |
+| `abbr time` | system | live | host arm |
+| `abbrev date` | system | live | host arm |
+| `abbrev time` | system | live | host arm |
+| `abbreviated date` | system | live | host arm |
+| `abbreviated time` | system | live | host arm |
+| `applicationpath` | system | live | host arm |
+| `beepon` | system | live | host arm |
+| `colordepth` | system | live | host arm |
+| `colorqd` | system | live | host arm |
+| `date` | system | live | host arm |
+| `floatprecision` | system | live | host arm |
+| `freebytes` | system | live | host arm |
+| `lastkey` | system | live | host arm |
+| `long date` | system | live | host arm |
+| `long time` | system | live | host arm |
+| `maxinteger` | system | live | host arm |
+| `memorysize` | system | live | host arm |
+| `multisound` | system | live | host arm |
+| `pathname` | system | live | host arm |
+| `pausestate` | system | live | host arm |
+| `pi` | system | live | host arm |
+| `platform` | system | live | host arm |
+| `randomseed` | system | live | host arm |
+| `runmode` | system | live | host arm |
+| `searchpaths` | system | live | host arm |
+| `short date` | system | live | host arm |
+| `short time` | system | live | host arm |
+| `soundenabled` | system | live | host arm |
+| `stagebottom` | system | live | host arm |
+| `stageleft` | system | live | host arm |
+| `stageright` | system | live | host arm |
+| `stagetop` | system | live | host arm |
+| `time` | system | live | host arm |
 | `centerstage` | window | live | 0 sites; windows.gd read+write |
 | `drawrect` | window | live | 0 sites; windows.gd read+write |
 | `filename` | window | live | 0 sites; windows.gd read+write |

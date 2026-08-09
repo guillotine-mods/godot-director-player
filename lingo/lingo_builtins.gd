@@ -65,6 +65,30 @@ const SORTED_TRACKED := 256
 
 static var _sorted: Array = []
 
+## `the randomSeed`. Director's `random` is seedable and a title that seeds it is
+## asking for the same sequence twice — a demo that replays, a puzzle that deals
+## the same board. 0 means "never seeded", and then `random` draws from the
+## process-wide generator, which is what an unseeded Director does.
+##
+## The seed is held with the generator that consumes it rather than on the host,
+## so there is no second copy to disagree with the sequence it describes. It is
+## read back as written: Director answers the seed, not the generator's position.
+static var _random_seed := 0
+static var _rng: RandomNumberGenerator = null
+
+
+static func random_seed() -> int:
+	return _random_seed
+
+
+static func set_random_seed(value: int) -> void:
+	_random_seed = value
+	if value == 0:
+		_rng = null
+		return
+	_rng = RandomNumberGenerator.new()
+	_rng.seed = value
+
 
 static func call_builtin(name: String, args: Array, handled: Array) -> Variant:
 	## Name matching is case-insensitive: Lingo is, and the corpus spells
@@ -198,7 +222,12 @@ static func _math(key: String, args: Array, out: Array) -> bool:
 			# 0-based version shifts every "one of N" choice and never picks the
 			# last option. Below 1 there is nothing to choose, so 0.
 			var span := _i(_arg(args, 0))
-			out.append(randi_range(1, span) if span >= 1 else 0)
+			if span < 1:
+				out.append(0)
+			elif _rng != null:
+				out.append(_rng.randi_range(1, span))
+			else:
+				out.append(randi_range(1, span))
 		"sin":
 			out.append(sin(_f(_arg(args, 0))))
 		"sqrt":

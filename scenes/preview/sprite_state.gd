@@ -78,9 +78,38 @@ static func effective(
 	if not ignore_visible and int(LingoValue.to_int(over.get("visible", 1))) == 0:
 		return {}
 	var out := sprite.duplicate()
+	# **A member reference carries its library and a member *number* does not**,
+	# and this is where the two spellings stop being interchangeable. `the castNum
+	# of sprite` answers `Members.pack_ref`'s single integer so that it survives
+	# being handed straight back to `member()` (see `read_prop`), and a script that
+	# copies one sprite's castNum onto another -- `set the castNum of sprite 4 to
+	# the castNum of sprite 9` -- hands that packed value straight back here.
+	# Merged as a bare member number it addressed slot 131,073 of library 1 and
+	# drew nothing at all. `the memberNum of sprite` is the bare number and takes
+	# the branch it always did, which is every site in this corpus.
 	for key in ["membernum", "castnum"]:
-		if over.has(key):
-			out["cast_id"] = int(over[key])
+		if not over.has(key):
+			continue
+		var packed := LingoValue.to_int(over[key])
+		if packed >= Members.LIB_STRIDE:
+			out["cast_lib"] = packed / Members.LIB_STRIDE + 1
+			out["cast_id"] = packed % Members.LIB_STRIDE
+		else:
+			out["cast_id"] = packed
+	# `the castLibNum of sprite N` -- the library half of `the member of sprite`,
+	# and the half that reached nothing. `read_prop` has answered it from the
+	# record's `cast_lib` since the field was decoded, so a read has always been
+	# right and a write was stored where nothing looked: `sprite_props.gd`'s
+	# identity alias records the read side and says so in as many words.
+	#
+	# In the reference a write here is a `setCast` with the member number kept and
+	# the library replaced, which is why it belongs beside the two above rather
+	# than after them: everything below reads `out["cast_lib"]`, and the artwork,
+	# the drawn size, the texture-cache key and the hit-test sample all key on it.
+	# Piposh Dream's Fritz duel is the corpus site -- `the castLibNum of sprite
+	# getAt(ppl, 1) = 2` asks which library a fighter's current frame came from.
+	if over.has("castlibnum"):
+		out["cast_lib"] = LingoValue.to_int(over["castlibnum"])
 	# Director's `setCast` rule: a member swap replaces the sprite's width and
 	# height with the new member's natural size, unless the stretch flag says the
 	# author deliberately resized this sprite.
@@ -94,9 +123,16 @@ static func effective(
 	# squashed into the previous one's rect, which reads as the character
 	# stretching as his arms move, and all six size tiers draw at one size, which
 	# reads as perspective scaling that stopped working.
-	if int(out["cast_id"]) != int(sprite["cast_id"]) and not bool(sprite["stretch"]):
+	#
+	# **The library the new size is looked up in is the merged one**, not the
+	# score's. A swap that changes only the library still changes the artwork, so
+	# reading the natural size out of the library the script just left would
+	# answer for a member on the other side of the swap.
+	if (int(out["cast_id"]) != int(sprite["cast_id"])
+			or int(out["cast_lib"]) != int(sprite["cast_lib"])) \
+			and not bool(sprite["stretch"]):
 		var swapped: Dictionary = table.get_member(
-			int(sprite["cast_lib"]), int(out["cast_id"])
+			int(out["cast_lib"]), int(out["cast_id"])
 		)
 		if int(swapped.get("width", 0)) > 0 and int(swapped.get("height", 0)) > 0:
 			out["width"] = int(swapped["width"])
@@ -433,8 +469,43 @@ static func read_prop(channel: int, prop: String, overrides: Dictionary,
 	return EMPTY_CHANNEL.get(prop, 0)
 
 
-## `puppetSprite N, FALSE` returns the channel to the score, which means
-## discarding whatever the scripts wrote to it rather than merely stopping.
+## Override keys that are **channel** state rather than puppeted sprite fields,
+## and therefore survive everything that hands a channel back to the score.
+##
+## `visible` is the whole list, and it is here for the same reason it is absent
+## from `RELEASED_BY` one function up: Director keeps it on the *channel*
+## (`Channel::_visible`), not on the sprite. Reading the reference for every use
+## of that field settles it outright — it is set true once when the channel is
+## constructed, copied when a channel is copied, read by the painter, by the
+## mouse test and by `the visible of sprite`, and **written by exactly one thing,
+## `set the visible of sprite N`**. No score write touches it, `setClean` does not
+## touch it, and `puppetSprite N, FALSE` does not touch it.
+##
+## The other channel fields are deliberately not here, each for its own reason.
+## `constraint` and `cursor` never enter this table at all — they are kept in
+## their own dictionaries on the node, which is `sprite_props.gd:write` and §7.5.
+## The digital-video ones (`movieRate`, `movieTime`, `startTime`, `stopTime`)
+## belong to a decoder this port does not have, and `stopTime` is in any case one
+## of the few things `setClean` *does* reset, so promoting them here would be
+## inventing rather than transcribing.
+const CHANNEL_STATE := ["visible"]
+
+
+## `puppetSprite N, FALSE` returns the channel to the score.
+##
+## **It returns the *sprite* to the score and leaves the channel alone**, and
+## the difference is a bug report with three saves behind it. The reference puts
+## the whole of the release in one line — `chan->setClean(score's record for this
+## channel)` — and `setClean` replaces the Sprite object's fields. A channel's own
+## state is not in that object and is not restored with it.
+##
+## This used to erase the channel's whole override entry, so a script that had
+## hidden a sprite and later un-puppeted the channel un-hid it as a side effect.
+## In DAY1 that is four of the dwarves and Renati: the walk-away path runs
+## `puppetSprite(i, 0)` over a range of channels that `init all` had hidden with
+## `sprite(i).visible = 0`, and they all came back mid-walk. The player-visible
+## symptom is characters appearing out of nowhere while somebody walks off, which
+## is why it read as an animation fault rather than as a puppet one.
 ##
 ## `TRUE` records a **flag**, not merely an entry. An entry is what a property
 ## write makes too, so an entry alone cannot tell a whole-sprite puppet from the
@@ -445,8 +516,21 @@ static func set_puppet(channel: int, on: bool, overrides: Dictionary) -> void:
 		if not overrides.has(channel):
 			overrides[channel] = {}
 		(overrides[channel] as Dictionary)["_puppet"] = true
-	else:
+		return
+	var over: Dictionary = overrides.get(channel, {})
+	var kept: Dictionary = {}
+	for key in CHANNEL_STATE:
+		if over.has(key):
+			kept[key] = over[key]
+	# An entry holding nothing but channel state is still an entry, and it has to
+	# be, or `effective` would stop consulting the hide. An empty one is dropped
+	# for the reason `release_auto_puppets` drops its own: a channel with an entry
+	# and nothing in it makes `effective` duplicate the record for no merge and
+	# makes `hilite.gd` believe a script is composing something there.
+	if kept.is_empty():
 		overrides.erase(channel)
+	else:
+		overrides[channel] = kept
 
 
 ## `set the <prop> of sprite N`.

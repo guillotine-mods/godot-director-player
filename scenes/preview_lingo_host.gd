@@ -13,6 +13,12 @@ extends RefCounted
 ## "no such builtin" and raises a diagnostic; returning 0 means "bound, did
 ## nothing". The difference is the whole point of `unbound` below.
 
+## Preloaded rather than reached by its `class_name`. A global class name is
+## resolved from the editor's class cache, which a fresh headless run has not
+## built -- so `LingoBuiltins` parsed in the editor and failed to compile at
+## boot, taking the whole host with it. Every other module here is preloaded for
+## the same reason.
+const Builtins := preload("res://lingo/lingo_builtins.gd")
 const ContainerName := preload("res://director/director_container.gd")
 const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
 
@@ -74,8 +80,41 @@ var mouse_up_script := ""
 ## `the keyCode` is reading the key that went down — which is what makes
 ## Rating's `normalkeysx`, a `keyUpScript` that tests `the keyCode = 109`, work
 ## at all.
-var key_code := -1
+##
+## Written through a setter so that `the lastKey` -- Director's "how long since
+## the last keypress", in ticks -- has an origin without `director_preview.gd`
+## having to know it exists. The one writer outside this file is
+## `_dispatch_key`, which assigns this field; a setter keeps the timestamp in the
+## same place as the value it is a timestamp *of*, which is the only way the two
+## cannot drift.
+var key_code := -1:
+	set(value):
+		key_code = value
+		last_key_ms = Time.get_ticks_msec()
 var key_char := ""
+## When the last key went down, in engine milliseconds. 0 rather than -1: unlike
+## `the lastClick`, Director has no "no key yet" answer here, and a session that
+## has seen no key reports the age of the session, which is what it is.
+var last_key_ms := 0
+
+## `the beepOn` -- while false, `beep` is silent. D2, and one of the few movie
+## settings whose whole observable effect is on another builtin, which is why it
+## is bound with the thing it gates rather than stored and forgotten.
+var beep_on := true
+
+## `the soundEnabled` -- the movie's own mute. Director stops the audio hardware
+## rather than muting each channel, so this gates every path out of this host:
+## `sound playFile`, `puppetSound` and the fades alike. `the soundLevel` is a
+## different property (a 0-7 volume) and the two are independent in Director.
+var sound_enabled := true
+
+## `the randomSeed` and `the floatPrecision` are deliberately *not* fields here.
+## Both are read and written through the module that consumes them --
+## `LingoBuiltins` owns the generator `random` draws from, and `LingoValue` owns
+## the one place a float becomes a string -- so there is no second copy to fall
+## out of step with the behaviour it is supposed to control. A setting stored on
+## the host and consulted nowhere is the `moveableSprite` shape: it round-trips
+## perfectly and changes nothing.
 
 ## `the searchPath` — the folders Director looks in when a name does not resolve
 ## beside the movie that named it.
@@ -321,7 +360,11 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# looked for a file named after a member and, worse, claimed
 			# nothing: `puppetSound` takes the channel off the score until
 			# `puppetSound <channel>, 0` gives it back.
-			if preview == null:
+			#
+			# Muted by `the soundEnabled` for the same reason `sound playFile` is:
+			# Director's switch is at the device, so it covers the scripted
+			# channels and the score's alike.
+			if preview == null or not sound_enabled:
 				return 0
 			if args.size() >= 2:
 				preview.lingo_puppet_sound(LingoValue.to_int(args[0]), args[1])
@@ -379,6 +422,12 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# `beep` and `beep <count>`: the system alert sound, repeated with
 			# Director's own 400 ms between repeats. 154 sites, every one of them
 			# `beep()` with no argument, and all of them silent until now.
+			#
+			# `the beepOn` is the movie's own switch over exactly this call, and it
+			# is checked here rather than stored and ignored -- a setting nothing
+			# consults is a setting that is not implemented.
+			if not beep_on:
+				return 0
 			if preview != null:
 				preview.lingo_beep(
 					LingoValue.to_int(args[0]) if not args.is_empty() else 1)
@@ -596,6 +645,59 @@ func call_builtin(name: String, args: Array) -> Variant:
 			if to_shut != "":
 				preview.lingo_forget_window(to_shut, low == "forget")
 			return 0
+		"windowpresent":
+			# `windowPresent("map.dxr")` -- does that window exist right now. The
+			# question `window("x")` cannot be used to ask, because *naming* a
+			# window is what creates it (§14), so a script that probes with
+			# `window(...)` brings into being the thing it was testing for. That is
+			# the whole reason Director has a separate predicate.
+			#
+			# Keyed through this file's own `window_key_of`, which is the same
+			# `get_basename().to_lower()` rule `director_preview.window_key` uses to
+			# build the keys being searched. Comparing the caller's spelling against
+			# the stored key directly is the mistake `_first_window_name` documents
+			# at length: `"inventor.dir"` never equals `inventor`.
+			if preview == null or args.is_empty():
+				return 0
+			var wanted := window_key_of(LingoValue.to_str(args[0]))
+			for key in preview.window_keys():
+				if str(key) == wanted:
+					return 1
+			return 0
+		"constrainh", "constrainv":
+			# `constrainH(<channel>, <value>)` clamps a coordinate into the named
+			# channel's rectangle and answers the clamped number; `constrainV` is
+			# the vertical half. Director's own idiom for keeping a dragged sprite
+			# inside a tray, and the arithmetic form of `the constraint of sprite`
+			# -- the property makes the engine do the clamping every frame, this
+			# lets a script do it once and see the answer.
+			#
+			# Measured against the same rect `intersects` uses, so a script that
+			# clamps into a channel and then tests overlap against it cannot get
+			# two different rectangles for one sprite.
+			if preview == null or args.size() < 2:
+				return 0
+			var box: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[0]))
+			var value := LingoValue.to_int(args[1])
+			if box.size == Vector2.ZERO:
+				# An empty channel constrains nothing. Clamping into a zero-size
+				# rect at the origin would snap every value to 0, which is a wrong
+				# answer rather than a missing one.
+				return value
+			if low == "constrainh":
+				return clampi(value, int(box.position.x), int(box.end.x))
+			return clampi(value, int(box.position.y), int(box.end.y))
+		"cast":
+			# D4's older spelling of `member`: `cast "shore2"` answers the member's
+			# number. Answered from the same resolver `member(...)` uses, so the
+			# two spellings cannot disagree about which member a name is.
+			if preview == null or args.is_empty():
+				return 0
+			return preview.lingo_member_number(args[0], "")
+		"getnthfilenameinfolder":
+			return _nth_file(args)
+		"getpref", "setpref":
+			return _pref(low, args)
 	if IGNORED.has(low):
 		return 0
 	unbound[low] = int(unbound.get(low, 0)) + 1
@@ -758,7 +860,13 @@ func _go(args: Array) -> Variant:
 func _sound(args: Array) -> Variant:
 	if args.is_empty() or preview == null:
 		return 0
+	# `the soundEnabled` is the movie's own mute and Director applies it at the
+	# device, so every verb that would *start* audio is refused while it is off
+	# and every verb that stops audio still runs -- a movie that mutes itself
+	# mid-line must not be left with the line playing.
 	var verb := str(args[0]).to_lower()
+	if not sound_enabled and (verb == "playfile" or verb == "fadein"):
+		return 0
 	var channel := LingoValue.to_int(args[1]) if args.size() >= 2 else 0
 	match verb:
 		"playfile":
@@ -790,6 +898,78 @@ func _sound(args: Array) -> Variant:
 func _play(channel: int, file: String) -> Variant:
 	if preview != null:
 		preview.lingo_play_sound(channel, file)
+	return 0
+
+
+## `getNthFileNameInFolder(<folder>, <n>)` — the n'th name in a directory, 1-based,
+## and `EMPTY` once n runs past the end.
+##
+## Director's only directory listing, and the one a title uses to find out what
+## save games exist rather than guessing at names. The empty string terminator is
+## the whole protocol: every script that uses this counts up until it gets one,
+## so answering VOID instead would make the loop compare against the wrong thing
+## and either stop at 1 or never stop.
+##
+## Folders and files both count, and the order is the filesystem's, which is what
+## Director's is too. `@` is not resolved — Director's own relative-path prefix is
+## a `moviePath` question and `lingo_search_path` already owns that seam.
+func _nth_file(args: Array) -> Variant:
+	if args.size() < 2:
+		return ""
+	var folder := LingoValue.to_str(args[0]).replace("\\", "/")
+	var which := LingoValue.to_int(args[1])
+	if which < 1:
+		return ""
+	var dir := DirAccess.open(folder)
+	if dir == null:
+		# A folder that is not there lists nothing. Director answers EMPTY rather
+		# than raising, and a script that cannot tell "no such folder" from "no
+		# more files" is one that terminates either way.
+		return ""
+	var names: Array = []
+	names.append_array(dir.get_directories())
+	names.append_array(dir.get_files())
+	return str(names[which - 1]) if which <= names.size() else ""
+
+
+## `getPref(<name>)` and `setPref(<name>, <value>)` — Director's own small
+## key/value store, and the only persistence a Shockwave movie has.
+##
+## Real storage rather than a stub, because the alternative is the shape this
+## whole audit exists to catch: a `setPref` that accepts and drops leaves every
+## `getPref` answering VOID, which reads exactly like a first run, for ever.
+##
+## Under `user://`, which is where Godot puts per-user writable state on every
+## platform this exports to; Director puts it beside the projector on Windows and
+## in Preferences on the Mac, and neither location is writable on a modern
+## machine. The name is sanitised to a bare filename for the obvious reason: a
+## movie must not be able to write outside the preference folder by naming
+## `../../something`.
+const PREFS_DIR := "user://prefs"
+
+
+func _pref(which: String, args: Array) -> Variant:
+	if args.is_empty():
+		return null if which == "getpref" else 0
+	var name := LingoValue.to_str(args[0]).replace("\\", "/").get_file()
+	name = name.strip_edges().to_lower()
+	if name == "" or name.begins_with("."):
+		return null if which == "getpref" else 0
+	var path := PREFS_DIR.path_join(name + ".txt")
+	if which == "getpref":
+		# VOID when the preference has never been written, which is what Director
+		# answers and what every "first run?" test in the language is written
+		# against. An empty string would be a *value*, and a movie cannot tell the
+		# two apart any other way.
+		if not FileAccess.file_exists(path):
+			return null
+		return FileAccess.get_file_as_string(path)
+	DirAccess.make_dir_recursive_absolute(PREFS_DIR)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return 0
+	f.store_string(LingoValue.to_str(args[1] if args.size() > 1 else ""))
+	f.close()
 	return 0
 
 
@@ -1049,6 +1229,111 @@ func get_system_prop(prop: String) -> Variant:
 			# answers here rather than in a row of its own, so the two cannot
 			# drift: 41 sites read it and every one of them got VOID.
 			return preview.movie_name()
+		"lastkey":
+			# Ticks since the last keypress, as `the lastClick` is for the mouse.
+			# Both are elapsed times rather than timestamps, which is why the pair
+			# read alike and why a script can compare either against a constant.
+			return _ticks_since(last_key_ms)
+		"pausestate":
+			# Whether `pause` is holding the playhead. The read half of the
+			# `pause`/`continue` pair, and the only way a script can ask -- there is
+			# no `the paused`.
+			return 1 if playback_paused else 0
+		"beepon":
+			return 1 if beep_on else 0
+		"soundenabled":
+			return 1 if sound_enabled else 0
+		"randomseed":
+			# Answered by the module that owns the generator. A copy here would be
+			# a second seed to keep in step with the sequence it is supposed to
+			# describe.
+			return Builtins.random_seed()
+		"floatprecision":
+			return LingoValue.float_precision
+		"maxinteger":
+			# Director's largest integer, and the idiom is always the same: seed a
+			# "smallest so far" loop with it. Unbound it answered VOID, which
+			# compares as 0, so every such loop kept its first candidate.
+			return 0x7FFFFFFF
+		"pi":
+			# The same constant `pi()` answers, reached through `the` -- §1.15's
+			# spelling and §3's spelling of one value, so they answer from one
+			# place rather than two.
+			return PI
+		"colordepth":
+			# Bits per pixel. This renderer composites RGBA8 whatever the movie's
+			# palette says, so 32 is a fact about the engine rather than a
+			# placeholder; a 1997 script guarding a colour path on `>= 8` takes the
+			# branch it was written for.
+			return 32
+		"colorqd":
+			# "Is Color QuickDraw available." Always, here. D2-era art paths test
+			# it before drawing in colour at all, and VOID sends them down the
+			# 1-bit branch.
+			return 1
+		"multisound":
+			# Whether more than one sound channel can play at once. This engine
+			# mixes eight, so the answer is yes -- and a title that asks is
+			# deciding whether it may start music under speech.
+			return 1
+		"memorysize", "freebytes":
+			# The same 16 MB `the freeBlock` answers, and answered together on
+			# purpose: a script that compares one against the other -- "is the
+			# largest block most of the free space" -- gets a consistent pair
+			# rather than a number and a VOID.
+			return 16 * 1024 * 1024
+		"platform":
+			# Director's own spelling, which scripts compare literally against
+			# "Windows,32" and "Macintosh,PowerPC". Reported for the machine this
+			# is actually running on rather than for the one the title was
+			# authored against.
+			match OS.get_name():
+				"macOS":
+					return "Macintosh,PowerPC"
+				"Windows", "UWP":
+					return "Windows,32"
+			return "Windows,32"
+		"runmode":
+			# "Author", "Projector" or "Plugin" in Director. This port is never the
+			# authoring environment, and the distinction matters: a script that
+			# takes the "Author" branch skips the projector's own setup.
+			return "Projector"
+		"applicationpath":
+			# The folder the running application lives in, with a trailing
+			# separator, as `the moviePath` has. Not the movie's folder -- the two
+			# differ the moment a title is run from a disc.
+			return OS.get_executable_path().get_base_dir() + "/"
+		"stageleft", "stagetop", "stageright", "stagebottom":
+			# The stage's rectangle in screen coordinates, one edge per property.
+			# Read from the *stage* rather than from whichever movie is asking:
+			# inside `tell window("map.dxr")` these still mean the stage, which is
+			# the whole reason Director spells them `stage...` instead of making
+			# them window properties.
+			var stage: Node = preview.stage_preview()
+			var edges: Variant = (stage if stage != null else preview) \
+				.call("own_window_prop", "rect")
+			if typeof(edges) != TYPE_ARRAY or (edges as Array).size() < 4:
+				return 0
+			var at := ["stageleft", "stagetop", "stageright", "stagebottom"] \
+				.find(prop.to_lower())
+			return (edges as Array)[at]
+		"date", "long date", "short date", "abbr date", "abbrev date", \
+		"abbreviated date":
+			return _formatted_date(prop.to_lower())
+		"time", "long time", "short time", "abbr time", "abbrev time", \
+		"abbreviated time":
+			return _formatted_time(prop.to_lower())
+		"pathname":
+			# D2's spelling of `the moviePath`, and the same answer rather than a
+			# second one: the two have always meant the folder the movie was opened
+			# from, and a port where they disagree is a port where a D2-era script
+			# and a D4-era script in the same title build different paths.
+			return preview.movie_path()
+		"searchpaths":
+			# D5's spelling of `the searchPath`. One list, two names -- writing
+			# through one and reading back through the other is exactly what a
+			# title mixing script vintages does.
+			return search_path
 		"moviepath":
 			# The folder the movie was opened from, with its trailing separator.
 			# `strtgame`'s `stonecold()` is the only place this game ever sets
@@ -1176,6 +1461,30 @@ func set_system_prop(prop: String, value: Variant) -> void:
 		"soundlevel":
 			if preview != null:
 				preview.lingo_set_sound_level(LingoValue.to_int(value))
+		"beepon":
+			beep_on = LingoValue.truthy(value)
+		"soundenabled":
+			# Director stops the device, so turning this off silences what is
+			# already playing rather than only what starts next. Nothing here holds
+			# the running voices, so the preview is asked to stop them all -- which
+			# is the observable half, and without it a movie that mutes mid-line
+			# keeps talking.
+			sound_enabled = LingoValue.truthy(value)
+			if not sound_enabled and preview != null:
+				preview.lingo_stop_all_sound()
+		"randomseed":
+			Builtins.set_random_seed(LingoValue.to_int(value))
+		"floatprecision":
+			# Director clamps to 0..19 and this does too, rather than letting a
+			# script ask for a precision the formatter cannot honour and then
+			# reading back a number that does not describe the output.
+			LingoValue.float_precision = clampi(LingoValue.to_int(value), 0, 19)
+		"searchpaths":
+			# D5's spelling. Routed through the same write as `the searchPath`
+			# below rather than kept beside it: one list with two names is one
+			# write, and a second copy is a second thing to forget to hand to the
+			# audio resolver.
+			set_system_prop("searchpath", value)
 		"timer":
 			# `set the timer to 0` is how this corpus resets it -- 91 sites, always
 			# paired with the `if the timer > clockspeed` above it. Director stores
@@ -1212,15 +1521,66 @@ func set_system_prop(prop: String, value: Variant) -> void:
 				preview.set_own_window_prop(prop.to_lower(), value)
 
 
+## `the locH of sprite N`, and the five properties that are *derived* rather than
+## stored.
+##
+## `the rect`, `left`, `top`, `right` and `bottom` are read-only in Director: they
+## are the sprite's drawn rectangle, composed from its position, its registration
+## point and its member's size, and a script changes them by moving the sprite
+## rather than by assigning to them. This port accepted a write for all five,
+## stored it in the override table and let it be read straight back -- so they
+## looked implemented from every direction while `sprite_state.effective` merged
+## none of them and no read ever reflected where the sprite actually was. `the
+## rect of sprite` has 20 corpus sites and `the top of sprite` 4, and every one of
+## them was answering a stale override or 0.
+##
+## Answered here, ahead of the property tables, from the same
+## `lingo_sprite_rect` that `intersects`, `within` and `constrainH` measure --
+## the whole point being that a script cannot get two different rectangles for
+## one sprite depending on which question it asked.
+##
+## A rect is a four-element list, which is what this port represents Lingo's rect
+## with everywhere else (`windows.gd` answers `the rect of window` the same way).
 func get_sprite_prop(which: int, prop: String) -> Variant:
 	if preview == null:
 		return 0
-	return preview.lingo_sprite_prop(which, prop.to_lower())
+	var low := prop.to_lower()
+	match low:
+		"rect", "left", "top", "right", "bottom":
+			var box: Rect2 = preview.lingo_sprite_rect(which)
+			match low:
+				"left":
+					return int(box.position.x)
+				"top":
+					return int(box.position.y)
+				"right":
+					return int(box.end.x)
+				"bottom":
+					return int(box.end.y)
+			return [int(box.position.x), int(box.position.y),
+				int(box.end.x), int(box.end.y)]
+	return preview.lingo_sprite_prop(which, low)
+
+
+## The five derived properties above are **read-only in Director**, so a write is
+## refused here rather than passed on.
+##
+## That is not tidiness. `sprite_state.write_prop` stores any key at all, so a
+## write that reaches it round-trips through `read_prop` and looks like it
+## worked; with the read now answering the sprite's real rectangle, a stored
+## override would be a value the script can set, cannot read back, and cannot
+## discover was dropped. Refusing it at the seam leaves one answer to the
+## question "where is this sprite", which is the whole point of the read above.
+const SPRITE_READ_ONLY := ["rect", "left", "top", "right", "bottom"]
 
 
 func set_sprite_prop(which: int, prop: String, value: Variant) -> void:
-	if preview != null:
-		preview.lingo_set_sprite_prop(which, prop.to_lower(), value)
+	if preview == null:
+		return
+	var low := prop.to_lower()
+	if SPRITE_READ_ONLY.has(low):
+		return
+	preview.lingo_set_sprite_prop(which, low, value)
 
 
 func get_member_prop(which: Variant, cast: Variant, prop: String) -> Variant:
@@ -1283,3 +1643,56 @@ func member_number(which: Variant, cast: Variant) -> Variant:
 	if preview == null:
 		return 0
 	return preview.lingo_member_number(which, str(cast))
+
+
+# --------------------------------------------------------------- date and time
+#
+# `the date` and `the time`, in Director's own three shapes each. The adjective
+# is part of the property phrase -- `the long date`, `the abbrev time` -- and the
+# parser carries it through to here, which it did not before: it read the last
+# word of the phrase and threw the adjective away, so all six spellings arrived
+# as `date` or `time` and the long and short forms were the same string.
+#
+# Written against the calendar rather than transcribed: Director asks the system
+# for a broken-down local time and lays the fields out in the US formats below.
+# The month is 1-based here; the reference's own short-date format indexes it
+# 0-based, which its neighbouring comment contradicts.
+
+const MONTHS := ["January", "February", "March", "April", "May", "June",
+	"July", "August", "September", "October", "November", "December"]
+const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
+	"Friday", "Saturday"]
+
+
+## `the date`     8/6/26            -- and `the short date`, which is the same
+## `the long date`      Thursday, August 6, 2026
+## `the abbreviated date`  Thu, Aug 6, 2026  -- and `abbrev`, and `abbr`
+func _formatted_date(prop: String) -> String:
+	var now := Time.get_datetime_dict_from_system()
+	var month := clampi(int(now["month"]), 1, 12)
+	var day := int(now["day"])
+	var year := int(now["year"])
+	# `weekday` is 0 for Sunday, which is the order `WEEKDAYS` is written in.
+	var weekday := clampi(int(now["weekday"]), 0, 6)
+	if prop.begins_with("long"):
+		return "%s, %s %d, %d" % [WEEKDAYS[weekday], MONTHS[month - 1], day, year]
+	if prop.begins_with("abbr"):
+		return "%s, %s %d, %d" % [
+			WEEKDAYS[weekday].substr(0, 3), MONTHS[month - 1].substr(0, 3), day, year]
+	return "%d/%d/%02d" % [month, day, year % 100]
+
+
+## `the time`     3:45 PM           -- and `the short time`, and `the abbrev time`
+## `the long time`      3:45:12 PM
+func _formatted_time(prop: String) -> String:
+	var now := Time.get_datetime_dict_from_system()
+	var hour := int(now["hour"])
+	var suffix := "AM" if hour < 12 else "PM"
+	# Twelve, not zero. Director shows midnight as 12:00 AM and noon as 12:00 PM;
+	# a bare `hour % 12` shows both as 0, which is not a time anybody writes.
+	var shown := hour % 12
+	if shown == 0:
+		shown = 12
+	if prop.begins_with("long"):
+		return "%d:%02d:%02d %s" % [shown, int(now["minute"]), int(now["second"]), suffix]
+	return "%d:%02d %s" % [shown, int(now["minute"]), suffix]
