@@ -57,3 +57,7 @@ saves/
 # Agent scratch probes. Not ignored once, and a whole-file `git add` swept
 # another agent's untracked work into an unrelated commit.
 tools/scratch/
+
+# Subagent-driven-development scratch: ledgers, briefs, review packages.
+# Per-plan working state, not a record -- git log is the record.
+.superpowers/
