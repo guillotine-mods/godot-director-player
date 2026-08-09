@@ -105,13 +105,37 @@ static func artwork(canvas: CanvasItem, texture: Texture2D,
 	# Dream have 0 sites, which is why this survived: the corpus the port was built
 	# against never writes it.
 	#
-	# The button arm is an **approximation and unverified**. The reference hilites
-	# a `MacButton` *widget*, which is a Mac control drawing itself inverted, not
-	# `Ink.invert` over authored artwork; this port draws no button widget, and
-	# there is no button member in any of the three corpora to check it against
-	# (`interaction.gd:latch_release` measures 0 of 51,350). Inverting the picture
-	# is the nearest thing the port has and is what the auto-hilite path below
-	# already does.
+	# The button arm is **unreachable, not merely unverified**, and the difference
+	# matters to whoever reads this next. `preview/sprite_art.gd:texture_for`
+	# decodes bitmaps and shapes and returns null for every other type, a button
+	# is type 7, `stage_paint.gd` skips a sprite with no texture, and this
+	# function returns on its own first line when handed one. So no button member
+	# reaches this line, and the true branch below has never run and cannot.
+	#
+	# It is written anyway because the gate is on the *false* branch: without the
+	# test this inverted every type, which is the bug. Keeping the arm says what
+	# the rule is rather than leaving a bare "draw nothing" that reads like the
+	# flag has no consumer at all.
+	#
+	# What has to happen before it means anything: a button member has to be
+	# drawable, which is a button *widget* -- the reference hilites a `MacButton`,
+	# a Mac control that draws itself inverted, not `Ink.invert` over authored
+	# artwork. Inverting the picture is the nearest thing this port has and is
+	# what the auto-hilite path below already does, and it is a guess until there
+	# is something to compare it against. `tools/hilite.gd` asserts the
+	# unreachability rather than faking a button, so the day the widget lands the
+	# check fails and points here.
+	#
+	# One clause narrower than the reference, and unreachable for the same reason:
+	# `castmember/text.cpp:320-322` reassigns `type = kCastButton` when a **text**
+	# member sits on sprite type 8, 9 or 10 (`util.cpp:1361` -- button, checkbox,
+	# radio), so Director's `setHilite` reaches a field on a button sprite too.
+	# This port draws a field as glyphs and never through `texture_for`, so that
+	# path is as dead as this one; `director_score.gd` already decodes
+	# `sprite_type` for whoever revives both.
+	#
+	# There is no button member in any of the three corpora to check any of it
+	# against (`interaction.gd:latch_release` measures 0 of 51,350).
 	#
 	# Substituted here rather than painted as a second pass, for the reason the
 	# block below this function gives: the inverted copy carries the same alpha,

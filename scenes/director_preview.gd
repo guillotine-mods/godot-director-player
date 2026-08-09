@@ -233,9 +233,22 @@ var _member_editable: Dictionary = {}
 ##
 ## That one is auto-hilite: a press inverts the sprite while the button is held,
 ## and nothing in the movie asks for it. This is a **flag a script sets and the
-## movie leaves set**, which is how Director draws a selection -- Rating does
-## `set the hilite of member "rectang" to 1` once per room, on a shape member it
-## moves to mark the chosen option.
+## movie leaves set** -- stored for every member type and drawn for one.
+##
+## Director keeps it on the cast member base class
+## (`castmember.cpp:CastMember::setField(kTheHilite)` accepts it whatever the
+## type) and reads it back to draw in a single place, `text.cpp:355` under `case
+## kCastButton:`. `bitmap.cpp` and `shape.cpp` never mention it. So this
+## dictionary is a store: `the hilite of member` round-trips out of it for any
+## member, and `preview/hilite.gd` decides separately whether anything is drawn.
+##
+## **This said the opposite until 2026-08-09**, and it is the reason Rating's
+## Zehava swam in reverse video (`docs/bugs-closed.md` 66): that Rating's `set the
+## hilite of member "rectang" to 1`, once per room, was "how Director draws a
+## selection" on the shape member it moves to mark the chosen option. It is not.
+## Rating writes this flag at 39 sites across 21 containers naming 26 shapes, 5
+## bitmaps and 3 film loops and not one button, and Director draws none of them
+## differently. Whatever marks the chosen option in that game, it is not this.
 ##
 ## Same keys as `_field_text`, for the same reason: a member is `(container,
 ## library, number)` and two movies can hold the same number.

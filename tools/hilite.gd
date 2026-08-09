@@ -111,6 +111,10 @@ func _find(preview: Node, score) -> Dictionary:
 ## case reports "pressing it changed nothing" while everything works. That is
 ## what the first windowed run of this file said.
 const SAMPLE_MARGIN := 3
+## Director's cast type for a button (`director_cast.gd:TYPE_NAMES`). Named here
+## because nothing in the engine has a constant for it: no member in any of the
+## three corpora is one, so no decode path ever compares against it.
+const BUTTON_TYPE := 7
 
 
 ## A stage point the sprite certainly has a pixel at, and one inside its rect it
@@ -431,7 +435,18 @@ func _init() -> void:
 	# all: Rating writes this flag at 39 sites across 21 containers, naming 26
 	# shapes, 5 bitmaps and 3 film loops and not one button, and every one of them
 	# drew in reverse video. Zehava in `thepool` was the visible one.
-	h.begin("%s: the script-set flag draws on a button and nothing else" % movie)
+	# **The button half of it cannot be driven, and the check says so rather than
+	# faking it.** An earlier edition stamped `type_name = "button"` on the cached
+	# member and asserted that `artwork` then inverted. That passed, and it proved
+	# nothing: `Hilite.is_button` reads `type_name` while
+	# `preview/sprite_art.gd:texture_for` reads `type`, and the stamp moved only
+	# the first, so what inverted was the **bitmap** path wearing a button label.
+	# A member whose two fields disagree cannot exist -- `director_cast.gd:204`
+	# derives `type_name` from `type` -- so the lever tested a state the engine
+	# cannot reach, and it would have stayed green with the button arm broken or
+	# deleted. Stamp `type` instead and the truth comes out: the arm is
+	# unreachable, which is what the two checks below assert.
+	h.begin("%s: the script-set flag draws on nothing, and the button arm is unreachable" % movie)
 	var lib_arg := str(int(sprite["cast_lib"]))
 	var id_arg := int(sprite["cast_id"])
 	preview.call("lingo_set_member_prop", id_arg, lib_arg, "hilite", 1)
@@ -441,19 +456,36 @@ func _init() -> void:
 		Hilite.artwork(preview, plain, sprite) == plain,
 		"%s:%d" % [lib_arg, id_arg])
 
-	# The same member seen as a button, through the cached dictionary the table
-	# copies from -- the lever `auto_hilite` above already uses, and the only one
-	# short of a button member this corpus does not have.
-	var saved_name := str(member.get("type_name", ""))
+	# The predicate on its own, which is the half that *is* testable: it answers
+	# for the real member as decoded, and for the same member seen as a button
+	# through the cached dictionary the table copies from -- the lever
+	# `auto_hilite` above already uses, and the only one short of a button member
+	# this corpus does not have.
+	h.check("a bitmap member is not a button",
+		not Hilite.is_button(preview, sprite))
+	var was_type := int(member.get("type", 0))
+	var was_type_name := str(member.get("type_name", ""))
+	member["type"] = BUTTON_TYPE
 	member["type_name"] = "button"
-	h.check("a button member with the flag set draws the inverted copy",
-		Hilite.artwork(preview, plain, sprite) != plain)
-	member["type_name"] = saved_name
+	h.check("a button member is",
+		Hilite.is_button(preview, sprite))
+	# And the reason that predicate cannot put anything on the screen today.
+	# `texture_for` decodes bitmaps and shapes and returns null for every other
+	# type, `stage_paint.gd` skips a sprite with no texture, and `artwork` returns
+	# on its own first line -- so the arm `is_button` guards is unreachable, and
+	# calling it "an approximation" would overstate it. This check is here to fail
+	# the day a button member becomes drawable, because that is the day the arm
+	# starts running and the day its `Ink.invert` has to be compared against
+	# Director's `MacButton` widget rather than assumed to match it.
+	h.check("and a button member is not drawable, so the arm cannot run",
+		preview.call("_texture_for", sprite) == null)
+	member["type"] = was_type
+	member["type_name"] = was_type_name
 
 	preview.call("lingo_set_member_prop", id_arg, lib_arg, "hilite", 0)
 	h.check("clearing it puts the artwork back",
 		Hilite.artwork(preview, plain, sprite) == plain)
-	h.complete("%s: the script-set flag draws on a button and nothing else" % movie)
+	h.complete("%s: the script-set flag draws on nothing, and the button arm is unreachable" % movie)
 
 	if not windowed:
 		print("")

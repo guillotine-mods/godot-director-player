@@ -19,8 +19,8 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 **Status:** FIXED · **Area:** `scenes/preview/hilite.gd`
 · reported from play, `rating` NAVIGATE.dir marker `thepool`
-· covered by `tools/hilite.gd`, group "the script-set flag draws on a button and
-nothing else", which fails against the code before the fix
+· covered by `tools/hilite.gd`, group "the script-set flag draws on nothing, and
+the button arm is unreachable", which fails against the code before the fix
 
 Zehava swam in reverse video: green hair, dark blue skin, the whole 77x84 sprite
 photographically negative while everything else on the stage was right. `HOTEL.cst`
@@ -68,13 +68,32 @@ question `interaction.gd:_is_button` asks — on the *drawing* path only. Gating
 the round-tripping lie `preview/sprite_props.gd` exists to prevent. The harness
 asserts both halves separately for that reason.
 
-**The button arm is an approximation and is unverified.** ScummVM hilites a
-`MacButton` widget — a Mac control redrawing itself inverted — not `Ink.invert`
-over authored artwork, and this port draws no button widget. There is no button
-member in any of the three corpora to check it against (0 of 51,350, measured by
-`interaction.gd:latch_release`), so the harness reaches the arm by stamping
-`type_name` on the cached member dictionary, which is the lever `auto_hilite`
-already uses in the same file.
+**The button arm is unreachable, which is stronger than the "approximation and
+unverified" this said when it was filed.** ScummVM hilites a `MacButton` widget —
+a Mac control redrawing itself inverted — not `Ink.invert` over authored artwork,
+and this port draws no button widget. It draws no button member *at all*:
+`preview/sprite_art.gd:texture_for` decodes bitmaps and shapes and returns null
+for every other type, a button is type 7, and `hilite.gd:artwork` returns on its
+first line when handed a null texture. So the arm has never run and cannot until
+a button member becomes drawable.
+
+That correction came out of the harness rather than from re-reading. As filed,
+the check stamped `type_name = "button"` on the cached member and asserted that
+`artwork` then inverted — and it passed while proving nothing, because
+`is_button` reads `type_name` and `texture_for` reads `type`, so the stamp moved
+only the first and what inverted was the **bitmap** path wearing a button label.
+A member whose two fields disagree cannot exist; `director_cast.gd:204` derives
+one from the other. `tools/hilite.gd` now stamps `type`, asserts the predicate
+directly, and asserts the unreachability — so the day a button widget lands, the
+check fails and points at the arm that has to be compared against Director.
+
+One clause narrower than the reference, unreachable for the same reason and
+recorded so it is not rediscovered: `castmember/text.cpp:320-322` reassigns
+`type = kCastButton` when a **text** member sits on sprite type 8, 9 or 10
+(`util.cpp:1361` — button, checkbox, radio), so Director's `setHilite` reaches a
+field on a button sprite too. This port draws a field as glyphs, never through
+`texture_for`, so that path is as dead as the other. None of Rating's 39 sites
+names a field, so nothing in this corpus could reach it either way.
 
 Two things this did **not** turn out to be, both measured before the artwork was
 suspected, and worth keeping because they are the expensive half of the search:
