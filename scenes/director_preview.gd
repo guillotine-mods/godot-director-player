@@ -148,6 +148,10 @@ var _in_exit_frame := false
 ## `soundBusy` from `exitFrame` on every step of exactly such a hold, and a
 ## once-per-frame-number latch would answer that poll once and then go deaf.
 var _exit_frame_called := false
+## True for the single frame entry that a `play done` returns through, so that
+## entry keeps `_exit_frame_called` raised instead of clearing it. Set and
+## cleared in the same pair of calls; nothing else reads it.
+var _returning_from_play := false
 ## The frame script whose `enterFrame` is waiting for a transition to finish.
 ## §6.2 plays the transition inside `renderFrame`, which is after `prepareFrame`
 ## and before `enterFrame`, so a handler that runs on entry runs when the new
@@ -1444,7 +1448,14 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 	# cleared *before* the transition check rather than after: a frame that defers
 	# its `enterFrame` has still been entered, and it is the entry that makes the
 	# next `exitFrame` due.
-	_exit_frame_called = false
+	#
+	# Except on the entry that a `play done` returns through: that frame sent its
+	# `exitFrame` before the `play`, and the handler is parked inside it rather
+	# than finished. See `lingo_play_done`.
+	if _returning_from_play:
+		_returning_from_play = false
+	else:
+		_exit_frame_called = false
 	if _clock.holding_transition():
 		_pending_enter = script
 		return
@@ -2816,6 +2827,35 @@ func lingo_play_done() -> void:
 		lingo_go_movie(str(back["movie"]).get_file(), null)
 	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
 	_held = true
+	# **The frame being returned to has already sent its `exitFrame`, and must not
+	# send another.** That handler is the one that called `play`; it is parked
+	# mid-statement and about to be resumed, so re-entering the frame and
+	# dispatching it again does not repeat a side effect, it *restarts the caller*
+	# -- which reaches the same `play` a second time and never comes back.
+	#
+	# The reference guards this with a third condition on the `exitFrame` send
+	# that this port had no equivalent for: `score.cpp:672` refuses it while
+	# `_skipFrameAdvance` is set, and `func_goto` sets that flag for every jump
+	# including the one `play done` itself performs ("exitFrame is not called in
+	# this case", `score.cpp:669-671`). Here the latch already exists and says the
+	# same thing, so the return keeps it raised across the entry instead.
+	#
+	# Piposh Dream's save screen is what this costs. `ques.dir` frame 803 is the
+	# panel, and its `exitFrame` is `play frame "fillnames" of movie ...saves.dir`
+	# -- a two-frame errand that reads six save names out of that movie's fields
+	# and returns. `Saves.dir` has no artwork on those frames, so each restart
+	# painted an empty stage: the screen alternated between the panel and black
+	# for as long as it was open, and never advanced far enough to be clicked.
+	_exit_frame_called = true
+	# **Unconditionally, and not under the `_jump_queued` arm below.** `play done`
+	# is nearly always reached from inside an `exitFrame` -- it is how an interlude
+	# ends, and `Saves.dir` frame 27 is exactly that shape -- so `_in_exit_frame`
+	# is set and that arm never runs. The frame entry still happens, because the
+	# playhead has just been moved to another frame and something has to enter it;
+	# it simply is not this call that queues it. Guarding the flag on the arm
+	# restored the loop it exists to break, which is the measurement that settled
+	# where it goes.
+	_returning_from_play = true
 	# Returning from an interlude is a jump like any other: it cancels the wait
 	# the interlude's last frame armed, and the frame it returns to is entered by
 	# the next step rather than by this call (§6.1 step 7, §9.2).

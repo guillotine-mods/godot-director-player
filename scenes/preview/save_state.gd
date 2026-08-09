@@ -78,10 +78,23 @@ const ACCOUNTED := {
 	# so the first step after the load re-sends that `exitFrame`, re-pauses, and the
 	# restored session can never be resumed — a load that looks like a hang.
 	"_exit_frame_called": "saved",
+	# Saved for that same reason, one step finer: it is only ever true between a
+	# `play done` and the frame entry it returns through. Dropped, that entry
+	# clears the latch, the caller's `exitFrame` runs a second time, and a handler
+	# whose `play` is what parked it plays again -- the loop this flag exists to
+	# break, re-armed by the load.
+	"_returning_from_play": "saved",
 	"_skip_sent": "saved",
 	"_overrides": "saved",
 	"_field_text": "saved",
 	"_member_editable": "saved",
+	# Both are the same kind of thing one step along: a member property a script
+	# wrote, which the cast does not carry and a reload cannot re-derive. A
+	# restored session that drops them shows the pre-script artwork -- an unlit
+	# button, text back at its authored size -- which reads as the save having
+	# been taken a moment earlier than it was.
+	"_member_hilite": "saved",
+	"_member_style": "saved",
 	"_channel_cursors": "saved",
 	"_channel_constraints": "saved",
 	"_last_member": "saved",
@@ -239,6 +252,7 @@ static func capture(host) -> Dictionary:
 		"held": bool(host._held),
 		"jump_queued": bool(host._jump_queued),
 		"exit_frame_called": bool(host._exit_frame_called),
+		"returning_from_play": bool(host._returning_from_play),
 		"pending_enter": host._pending_enter != null,
 		"interpreter_globals": encode(
 			host._interpreter.globals if host._interpreter != null else {}),
@@ -246,6 +260,8 @@ static func capture(host) -> Dictionary:
 		"overrides": encode(host._overrides),
 		"field_text": encode(host._field_text),
 		"member_editable": encode(host._member_editable),
+		"member_hilite": encode(host._member_hilite),
+		"member_style": encode(host._member_style),
 		"channel_cursors": encode(host._channel_cursors),
 		"channel_constraints": encode(host._channel_constraints),
 		"last_member": encode(host._last_member),
@@ -413,6 +429,8 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 			_fill(host._host.globals, decode(data.get("host_globals", {})))
 		_fill(host._field_text, decode(data.get("field_text", {})))
 		_fill(host._member_editable, decode(data.get("member_editable", {})))
+		_fill(host._member_hilite, decode(data.get("member_hilite", {})))
+		_fill(host._member_style, decode(data.get("member_style", {})))
 
 	_fill_int_keyed(host._overrides, decode(data.get("overrides", {})))
 	_fill_int_keyed(host._channel_cursors, decode(data.get("channel_cursors", {})))
@@ -476,6 +494,7 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	host._held = bool(data.get("held", false))
 	host._jump_queued = bool(data.get("jump_queued", false))
 	host._exit_frame_called = bool(data.get("exit_frame_called", false))
+	host._returning_from_play = bool(data.get("returning_from_play", false))
 	host._entered_index = int(data.get("entered_index", -1))
 	host._pending_enter = (host.call("_frame_script", host._index)
 		if bool(data.get("pending_enter", false)) else null)
@@ -609,6 +628,8 @@ static func restore_windows(host, data: Dictionary) -> void:
 		_fill(host._host.globals, decode(data.get("host_globals", {})))
 	_fill(host._field_text, decode(data.get("field_text", {})))
 	_fill(host._member_editable, decode(data.get("member_editable", {})))
+	_fill(host._member_hilite, decode(data.get("member_hilite", {})))
+	_fill(host._member_style, decode(data.get("member_style", {})))
 
 
 # ------------------------------------------------------------------- naming

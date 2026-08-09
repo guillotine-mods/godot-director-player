@@ -1095,6 +1095,21 @@ it the resumed step re-runs the handler that paused, which pauses again.
 node at `director_preview.gd:_exit_frame_called` and cleared beside `enterFrame` as
 the reference clears it. `tools/pause_holds.gd` is the gate entry.
 
+**`play done` needs the latch for a third reason, and it is the one that bites.**
+The reference's "not if it is being left by a `go to`" is `_skipFrameAdvance`, and
+`func_goto` raises it for *every* jump — including the one `play done` performs to
+get back (`score.cpp:669-671`). A port that models that flag as "suppress the
+`exitFrame` of the step the jump was queued in" covers an ordinary `go` and misses
+this case, because the frame `play done` returns to is not being *left*: it is
+being resumed. Its `exitFrame` ran before the `play`, and that handler is parked
+inside it. Entering it again and dispatching a fresh `exitFrame` does not repeat a
+side effect, it restarts the caller — which reaches the same `play` and never
+returns. So the return keeps the latch raised across the entry it lands on
+(`director_preview.gd:lingo_play_done`). Piposh Dream's save screen is the movie
+that shows it: `ques.dir` 803 fetches six save names out of `saves.dir` with a
+two-frame `play`, and the restart alternated the panel with that movie's empty
+frames for as long as the screen was open.
+
 Almost every step checks whether a script **froze** and bails out of the rest of
 the tick. That is how Director makes blocking Lingo work without threads (§9.4),
 and step 18 is where what froze gets to finish. `play` and `go` are what freeze,
