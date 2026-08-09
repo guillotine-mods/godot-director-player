@@ -62,11 +62,16 @@ const CODE_PATTERN := "the\\s+keycode\\s*=\\s*\"?(\\d+)\"?"
 ## without anything here being edited -- which is the whole failure this replaces.
 static func roots() -> Array[String]:
 	var out: Array[String] = []
-	var dir := DirAccess.open(GAMES_DIR)
+	# Through `DirectorPaths`, so the launcher lists exactly the titles the
+	# engine can open: in an export that ships its games beside the binary
+	# rather than inside the `.pck`, `res://games` does not exist and a menu
+	# built from it would be empty.
+	var games: String = DirectorPaths.games_dir()
+	var dir := DirAccess.open(games)
 	if dir == null:
 		return out
 	for sub in dir.get_directories():
-		out.append(GAMES_DIR.path_join(sub))
+		out.append(games.path_join(sub))
 	out.sort()
 	return out
 

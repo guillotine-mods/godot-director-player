@@ -14,6 +14,9 @@ extends RefCounted
 ## build into a game that cannot find its own boot movie.
 
 const CONFIG_PATH := "res://director_game.cfg"
+## Where titles live when the export packaged them. `games_dir()` is what to
+## ask; this is only the packaged half of its answer.
+const GAMES_DIR := "res://games"
 const ContainerName := preload("res://director/director_container.gd")
 const GameConfig := preload("res://director/game_config.gd")
 
@@ -48,8 +51,83 @@ func load_config(config_path: String = CONFIG_PATH) -> bool:
 	root = str(cfg.get_value("game", "root", ""))
 	boot_movie = str(cfg.get_value("game", "boot_movie", ""))
 	root = _override_root(root)
+	root = beside_the_executable(root)
 	boot_movie = _override_boot(boot_movie)
 	return root != "" and boot_movie != ""
+
+
+## Where the games are, whether they were packaged or shipped beside the binary.
+##
+## `res://games` when the export carries them, and `<folder holding the
+## executable>/games` when it does not. **One answer, because two would be a bug
+## waiting**: the launcher lists titles through `KeySites.roots()` and the engine
+## opens one through `load_config`, and a build where those disagree shows a menu
+## of games that cannot be opened, or opens a game the menu never offered.
+##
+## In the editor `res://` globalises to the project folder, where `games/` is, so
+## this returns the packaged answer and nothing about a development run or any of
+## the 62 harnesses changes.
+## **Tested by what is in it, not by whether it is there.** `res://games` reports
+## as existing inside a `.pck` that contains no game at all -- measured: a desktop
+## build whose filter packages only `director_game.cfg` still answers true to
+## `dir_exists_absolute("res://games")`, so an existence test picks the packaged
+## branch and every title then fails to open with its own folder sitting beside
+## the binary. A directory holding no title is not where the games are.
+static func games_dir() -> String:
+	# In the editor -- and in every `--script` harness run, which is the same
+	# feature -- `res://games` is the real folder and there is nothing to decide.
+	# Answering the absolute path there would change the `root` string that saves
+	# stamp and harnesses compare, for no gain.
+	if OS.has_feature("editor"):
+		return GAMES_DIR
+	# In an export, `res://` cannot be trusted to describe a folder shipped beside
+	# the binary. Measured on a Windows build whose pck carries no game: the pck's
+	# `res://games` answers `dir_exists_absolute` true *and* lists the loose
+	# `rating` directory through `get_directories()`, while `get_files()` inside it
+	# returns nothing -- so a check on either existence or subdirectories picks the
+	# packaged branch and the container index comes back empty. The absolute path
+	# has no such split, so it is asked first and `res://` is the fallback for a
+	# build that really did package its games.
+	var loose := OS.get_executable_path().get_base_dir().path_join("games")
+	return loose if _holds_a_title(loose) else GAMES_DIR
+
+
+## A directory with at least one title in it. Directories rather than files,
+## because a game root is a folder and an empty `games/` is not an answer.
+static func _holds_a_title(where: String) -> bool:
+	var dir := DirAccess.open(where)
+	return dir != null and not dir.get_directories().is_empty()
+
+
+## The same rule applied to a root that already names a title.
+##
+## **Why ship the games outside the package at all.** Packaging 3.2 GB of
+## containers into the `.pck` makes the games part of the binary: adding a title
+## is a rebuild, and the download is one file that must be replaced whole. Beside
+## the executable they are ordinary folders -- drop one in, it appears in the
+## launcher.
+##
+## It also decides whether the movies can *save*. These games save by rewriting
+## their own container in place (`saveMovie` -> `HEZSAVE.DIR`, `EGOZSAVE.DIR`,
+## `Saves.dir`), and a `.pck` is read-only at runtime. Loose on disk they are
+## writable, so a saved game works on desktop exactly as it does from source.
+##
+## Android is the platform this cannot help: there is no folder beside an APK, so
+## `res://` stays and the games ride inside the package -- which is why the
+## Android preset still filters them in and the desktop one does not. Making the
+## games writable there means copying them to `user://`, which is filed on the
+## board rather than guessed at here.
+## Rewritten against `games_dir()` rather than tested independently, for the same
+## reason the launcher's enumeration goes through it: two functions each deciding
+## where the games are is how a menu comes to offer a title the engine cannot
+## open.
+static func beside_the_executable(wanted: String) -> String:
+	if wanted == "" or not wanted.begins_with(GAMES_DIR + "/"):
+		return wanted
+	var games := games_dir()
+	if games == GAMES_DIR:
+		return wanted
+	return games.path_join(wanted.trim_prefix(GAMES_DIR + "/"))
 
 
 ## `--root <name>` on the command line beats the config, for every reader.
@@ -87,7 +165,7 @@ static func _override_root(from_config: String) -> String:
 		return from_config
 	if wanted.begins_with("res://"):
 		return wanted
-	return "res://games/".path_join(wanted)
+	return GAMES_DIR.path_join(wanted)
 
 
 ## `--boot <container>` on the command line beats the config, for every reader.
