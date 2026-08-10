@@ -105,13 +105,19 @@ static func make(entry: Dictionary, flag_font: Font) -> Button:
 	column.add_child(spacer)
 	column.add_child(_title_label(entry))
 
+	# **The root line is gone from the face of the tile and kept in the tooltip.**
+	# The class comment above still argues for showing it, and it was right about
+	# why: `piposh / strtgame.dir` is the line a bug report needs and no menu here
+	# had ever shown. What changed is who this screen is for -- a player picking a
+	# game does not know what a container is, and the answer is still one hover
+	# away for whoever does. `tooltip_text` is set at the top of this function.
 	var footer := HBoxContainer.new()
 	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	footer.add_theme_constant_override("separation", 8)
-	var roots := _roots_label(entry)
-	roots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	roots.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	footer.add_child(roots)
+	var spring := Control.new()
+	spring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spring.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(spring)
 	footer.add_child(_flags_label(entry, flag_font))
 	column.add_child(footer)
 	return tile
@@ -150,19 +156,12 @@ static func _title_label(entry: Dictionary) -> Label:
 
 ## What the engine will actually open, as `root/container` -- the pair every
 ## path in this port is resolved against, and the pair a bug report has to
-## carry. A title with three editions still shows one of them: the flags beside
-## this line already say there are three, and listing all their folders is the
-## same fact twice in the space of one.
-static func _roots_label(entry: Dictionary) -> Label:
-	var label := Label.new()
-	label.theme_type_variation = "Eyebrow"
-	label.text = roots_line(entry)
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	return label
-
-
-## Public, because the launcher shows the same line without a tile around it
-## when there is only one title and therefore nothing to pick between.
+## carry. A title with three editions still shows one of them: the flags already
+## say there are three, and listing all their folders is the same fact twice.
+##
+## Public because two places want the line and neither is the face of a tile any
+## more: the tile's tooltip, and the single-title build, which shows it without a
+## tile around it because there is nothing to pick between.
 static func roots_line(entry: Dictionary) -> String:
 	var row := TitleList.default_root(entry)
 	var name := str(row.get("root", "")).get_file()
