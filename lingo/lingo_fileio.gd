@@ -551,8 +551,20 @@ static func resolve(host_object: Object, name: String) -> String:
 	var wanted := normalise(name)
 	if wanted == "":
 		return ""
-	if FileAccess.file_exists(wanted):
-		return wanted
+	# **`FileAccess.file_exists` is case-insensitive on Windows, and that makes it
+	# the wrong first question.** Asked for `arcade.ini` where the file is
+	# `Arcade.ini`, it answers true, and this returned the *requested* spelling --
+	# so the engine opened a path that does not exist as written. Godot says so
+	# itself: "Case mismatch opening requested file … This file will not open when
+	# exported to other case-sensitive platforms." Which is the whole problem: it
+	# works here and fails on Android and Linux, and the failure is a title that
+	# reads no config and hangs on a frame rather than an error anyone can see.
+	#
+	# The index below is built from the names the filesystem actually reports, so
+	# it gives back the real spelling. It is consulted **first, for everything** --
+	# including `res://`, which is where a game root lives and therefore exactly
+	# where the mis-cased answer came from. Exempting the scheme was the first
+	# attempt at this and changed nothing for that reason.
 	var index := _index_for(game_root(host_object))
 	var tail := wanted.to_lower()
 	while tail != "":
@@ -562,6 +574,13 @@ static func resolve(host_object: Object, name: String) -> String:
 		if cut < 0:
 			break
 		tail = tail.substr(cut + 1)
+	# Last, not first: an absolute path outside the game root -- a harness naming
+	# a scratch file, or a title reaching for something beside the executable --
+	# has no index to be found in, and the literal test is the only answer left.
+	# Reaching it means the index already failed, so it can no longer shadow a
+	# correctly-cased hit with a mis-cased one.
+	if FileAccess.file_exists(wanted):
+		return wanted
 	return ""
 
 
