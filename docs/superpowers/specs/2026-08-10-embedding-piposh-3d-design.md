@@ -111,23 +111,23 @@ is unaffected.
 `.gdignore` inside `titles/piposh-3d/`. Verified on a scratch project: without
 it the subdirectory's assets import, with it they do not.
 
-It is committed in the child repo, at the child's own root, and that is the
-whole mechanism — no parent setup step, no untracked content, nothing to
-coordinate.
+**No file is needed. There was never a problem here.** Godot skips any
+directory containing a nested `project.godot` outright:
 
-That works because of an asymmetry that is easy to get backwards, and this
-document had it backwards until it was measured. Godot's scanner *starts* at
-the project root, so a `.gdignore` there is never consulted against the project
-itself; it only skips directories it descends into. Same file, two projects,
-opposite effects:
-
-| where it sits | `--import` result |
+| subdirectory | class registered in parent's cache |
 | --- | --- |
-| a subdirectory of the parent | `-> NOT imported` |
-| the child's own project root | `-> IMPORTED` |
+| plain, with a `class_name` script | yes (1) |
+| same, plus a `project.godot` | no (0) |
 
-So one committed file keeps the parent's editor out of 564 MB while the child
-standalone imports exactly as before.
+`titles/piposh-3d` has a `project.godot`, so the parent's editor never
+descended into it in the first place. The observable proof was there the whole
+time and was misread as the `.gdignore` working: the parent's `.godot` is 88 K
+with 564 MB of PNGs and GLBs sitting in the tree.
+
+This is worth stating plainly because two earlier revisions of this document
+built machinery on the assumption — first a parent setup step plus a line in
+the child's `.gitignore`, then a single committed file. Both were solving
+nothing.
 
 ## Building the pack
 
@@ -166,6 +166,50 @@ invalid — the `_invalid`/`_mark_field` site, not `modulate`.
 only scene change in the whole player is `launcher.gd:759`, and
 `director_preview.gd` only ever `quit()`s. No Director title returns to the
 launcher either.
+
+## Blocked: `class_name` globals do not cross a pack boundary
+
+Implementation reached this and stopped. It is the same mechanism that hangs a
+fresh worktree — global classes resolve from
+`.godot/global_script_class_cache.cfg`, which belongs to the *host* project —
+and mounting a pack does not merge into it:
+
+```
+[cls] mount -> true
+SCRIPT ERROR: Parse Error: Identifier "PackClass" not declared in the current scope.
+```
+
+The child declares nine: `SettingsPanel`, `MdlAnimator`, `WdlInterpreter`,
+`TouchControls`, `GameHud`, `WmbLevelLoader`, `AcknexSky`, `CameraAuthority`,
+`WdlDirector` — about 200 references across ~40 files, concentrated in
+`wdl_interpreter.gd` (49) and `wdl_director.gd` (24).
+
+Two escape routes were tested and both are closed:
+
+- **Register the autoloads at runtime instead**, so the parent need not declare
+  them. With the singleton node present at `/root` *and* the `autoload/` key set
+  in `ProjectSettings`, the compiler still refuses:
+  `Compile Error: Identifier not found: P3Router`.
+- **Let the parent scan the child's scripts from disk**, so the globals land in
+  the parent's own cache. Impossible for the same reason the `.gdignore` was
+  unnecessary — the nested `project.godot` makes the directory invisible, and
+  autoloads pointed at paths inside it fail with
+  `Failed to create an autoload, can't load from UID or path`.
+
+So the remaining options all cost something, and the choice is the owner's:
+
+1. **Drop `class_name` in the child**, replacing each with a `const X =
+   preload(...)` at its use sites. ~40 files in a repo under active
+   development, and it makes the child permanently a little more awkward to
+   read in exchange for being hostable.
+2. **Patch the parent's class cache at build time**, appending the child's nine
+   entries with their in-pack paths, as part of the same step that builds the
+   pack. Zero change to the child; a hand-maintained cache the editor may
+   regenerate underneath, which is a trap of a different shape.
+3. **Give up on one binary** and ship the 3D title as its own app, with the
+   launcher not offering it.
+
+Nothing below this line is reachable until that is decided.
 
 ## Open: the renderer
 

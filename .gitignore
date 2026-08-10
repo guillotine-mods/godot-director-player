@@ -4,6 +4,12 @@
 export.cfg
 *.tmp
 build/
+
+# The piposh-3d resource pack, built from `titles/piposh-3d` by
+# `--export-pack Pack`. ~269 MB, and it is not new data: the same bytes already
+# arrive with the submodule, so it is the import saved ahead of time rather
+# than anything to store.
+titles/*.pck
 android/*.keystore
 android/*.jks
 
