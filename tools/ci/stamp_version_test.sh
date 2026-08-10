@@ -13,6 +13,21 @@ check() { # check <name> <exit-code>
 	if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi
 }
 
+# A probe that dies under `set -e` before `check` runs takes the whole suite
+# with it and prints nothing -- the shell twin of the aborted-case failure
+# `tools/lib/harness.gd` exists to catch, where a case that never completes
+# must not read as a pass. The trap makes an early death loud.
+verdict=""
+finish() {
+	st=$?
+	if [ -z "$verdict" ]; then
+		echo ""
+		echo "FAIL  stamp_version: the suite aborted (exit $st) before reaching its verdict"
+	fi
+	exit "$st"
+}
+trap finish EXIT
+
 cat >"$tmp/presets.cfg" <<'EOF'
 [preset.0.options]
 
@@ -53,9 +68,17 @@ version/name="0.1.0"
 package/unique_name="com.guillotinemods.godotdirectorplayer"
 EOF
 
-# The tag comes from $GITHUB_REF_NAME -- whoever pushes the tag picks it. These
-# reached sed unescaped: `&` splices the whole matched line back into itself and
-# leaves the file half-stamped, `|` is the sed delimiter.
+# The tag comes from $GITHUB_REF_NAME -- whoever pushes the tag picks it.
+#
+# Not all four cases carry equal weight, and saying so is the point. Against
+# the pre-fix script: the space and `;touch` cases discriminate fully (it
+# accepted both silently). The `&` case discriminates only on its "untouched"
+# half -- the old code exited nonzero too, via its own round-trip check
+# catching the corruption it had just written. The `|` case discriminates on
+# neither half: sed aborted at parse time on the delimiter collision and left
+# the file alone, so it passes identically with or without the guard. It is
+# kept because refusing `|` is still the behaviour we want locked in, but it
+# is documentation, not verification.
 for bad in 'v1.0&2.0' 'v1.0|2.0' 'v1.0 2.0' 'v1.0;touch /tmp/stamp-pwned'; do
 	cp "$tmp/pristine.cfg" "$tmp/guard.cfg"
 	if tools/ci/stamp_version.sh "$bad" 42 "$tmp/guard.cfg" >/dev/null 2>&1; then
@@ -63,18 +86,31 @@ for bad in 'v1.0&2.0' 'v1.0|2.0' 'v1.0 2.0' 'v1.0;touch /tmp/stamp-pwned'; do
 	else
 		check "a tag with metacharacters is refused ($bad)" 0
 	fi
-	cmp -s "$tmp/pristine.cfg" "$tmp/guard.cfg"
-	check "the file is untouched after refusing ($bad)" $?
+	if cmp -s "$tmp/pristine.cfg" "$tmp/guard.cfg"; then
+		check "the file is untouched after refusing ($bad)" 0
+	else
+		check "the file is untouched after refusing ($bad)" 1
+	fi
 done
 
 # Missing arguments are bad input (2), not a bash expansion failure (1).
-tools/ci/stamp_version.sh >/dev/null 2>&1 && rc=0 || rc=$?
-[ "$rc" -eq 2 ]
-check "no arguments exits 2" $?
-tools/ci/stamp_version.sh v1.0.0 >/dev/null 2>&1 && rc=0 || rc=$?
-[ "$rc" -eq 2 ]
-check "one argument exits 2" $?
+rc=0
+tools/ci/stamp_version.sh >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	check "no arguments exits 2" 0
+else
+	check "no arguments exits 2" 1
+fi
+
+rc=0
+tools/ci/stamp_version.sh v1.0.0 >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	check "one argument exits 2" 0
+else
+	check "one argument exits 2" 1
+fi
 
 echo ""
+verdict=printed
 if [ "$fail" -eq 0 ]; then echo "PASS  stamp_version"; else echo "FAIL  stamp_version"; fi
 exit "$fail"
