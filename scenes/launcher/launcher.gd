@@ -724,7 +724,14 @@ func _refresh_play() -> void:
 	elif _scene == "" and _boot == "":
 		reason = "This title names no container to open — set one under Developer"
 	_play.disabled = reason != ""
-	_play.text = "Play" if _title == "" else "Play %s" % _title
+	# Just "Play". It used to name the selected title, which was the only thing
+	# on screen saying what would launch -- back when a tile press both selected
+	# and played, so the selection was never visible for long enough to read.
+	# Now a press only selects, the chosen tile is drawn as chosen, and the
+	# button naming it again is a second answer to a question the grid already
+	# answers. A label that changes width as you arrow across the grid is also a
+	# button that moves under the pointer.
+	_play.text = "Play"
 	%PlayNote.text = reason
 	%PlayNote.visible = reason != ""
 
