@@ -151,6 +151,12 @@ static func _title_label(entry: Dictionary) -> Label:
 	label.theme_type_variation = "Display"
 	label.text = str(entry.get("title", ""))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Right, because these titles are Hebrew. Godot's bidi already orders the
+	# characters correctly without this -- the `2` and the `3D` land where a
+	# Hebrew reader expects them -- but ordering a line and placing it in a box
+	# are different questions, and the box was still filling from the left. The
+	# result read right-to-left while sitting against the wrong edge.
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	return label
 
 
