@@ -238,7 +238,28 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+
+# One EXIT trap only. Bash keeps the last registration per signal, so cleanup
+# and the abort guard have to live in the same handler -- registering them
+# separately means the second silently disables the first and every run leaks a
+# directory.
+#
+# A probe that dies under `set -e` before `check` runs takes the whole suite
+# with it and prints nothing -- the shell twin of the aborted-case failure
+# `tools/lib/harness.gd` exists to catch, where a case that never completes must
+# not read as a pass. `st=$?` is captured before the `rm` so cleanup cannot
+# overwrite the suite's own exit status.
+verdict=""
+finish() {
+	st=$?
+	rm -rf "$tmp"
+	if [ -z "$verdict" ]; then
+		echo ""
+		echo "FAIL  stamp_version: the suite aborted (exit $st) before reaching its verdict"
+	fi
+	exit "$st"
+}
+trap finish EXIT
 
 fail=0
 check() { # check <name> <exit-code>
@@ -253,13 +274,30 @@ version/name="0.1.0"
 package/unique_name="com.guillotinemods.godotdirectorplayer"
 EOF
 
+# Every probe is guarded with `if`. A bare `cmd; check ... $?` under
+# `set -euo pipefail` kills the suite on the exact run where the check should
+# have reported FAIL.
 tools/ci/stamp_version.sh v0.2.0 41 "$tmp/presets.cfg" >/dev/null
-grep -q '^version/code=41$' "$tmp/presets.cfg"
-check "version/code takes the run number" $?
-grep -q '^version/name="0.2.0"$' "$tmp/presets.cfg"
-check "version/name drops the leading v" $?
-grep -q '^package/unique_name=' "$tmp/presets.cfg"
-check "neighbouring keys survive" $?
+
+if grep -Fqx 'version/code=41' "$tmp/presets.cfg"; then
+	check "version/code takes the run number" 0
+else
+	check "version/code takes the run number" 1
+fi
+
+if grep -Fqx 'version/name="0.2.0"' "$tmp/presets.cfg"; then
+	check "version/name drops the leading v" 0
+else
+	check "version/name drops the leading v" 1
+fi
+
+# Still a pattern rather than a literal: this one asserts the key survived, not
+# what its value is.
+if grep -q '^package/unique_name=' "$tmp/presets.cfg"; then
+	check "neighbouring keys survive" 0
+else
+	check "neighbouring keys survive" 1
+fi
 
 # A non-numeric code would substitute happily and produce an APK Android will
 # not take as an update, so it has to be refused rather than written.
@@ -300,19 +338,32 @@ for bad in 'v1.0&2.0' 'v1.0|2.0' 'v1.0 2.0' 'v1.0;touch /tmp/stamp-pwned'; do
 	else
 		check "a tag with metacharacters is refused ($bad)" 0
 	fi
-	cmp -s "$tmp/pristine.cfg" "$tmp/guard.cfg"
-	check "the file is untouched after refusing ($bad)" $?
+	if cmp -s "$tmp/pristine.cfg" "$tmp/guard.cfg"; then
+		check "the file is untouched after refusing ($bad)" 0
+	else
+		check "the file is untouched after refusing ($bad)" 1
+	fi
 done
 
 # Missing arguments are bad input (2), not a bash expansion failure (1).
-tools/ci/stamp_version.sh >/dev/null 2>&1 && rc=0 || rc=$?
-[ "$rc" -eq 2 ]
-check "no arguments exits 2" $?
-tools/ci/stamp_version.sh v1.0.0 >/dev/null 2>&1 && rc=0 || rc=$?
-[ "$rc" -eq 2 ]
-check "one argument exits 2" $?
+rc=0
+tools/ci/stamp_version.sh >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	check "no arguments exits 2" 0
+else
+	check "no arguments exits 2" 1
+fi
+
+rc=0
+tools/ci/stamp_version.sh v1.0.0 >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	check "one argument exits 2" 0
+else
+	check "one argument exits 2" 1
+fi
 
 echo ""
+verdict=printed
 if [ "$fail" -eq 0 ]; then echo "PASS  stamp_version"; else echo "FAIL  stamp_version"; fi
 exit "$fail"
 ```
