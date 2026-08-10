@@ -142,6 +142,14 @@ static func arbitrate(host) -> int:
 		if host._focus_channel != 0:
 			host._focus_channel = 0
 			host._focus_member = 0
+			# The frame that stops offering an editable field is the one that
+			# should put the keyboard away: leaving it up covers a stage the
+			# player has just been handed back, and on a phone that is half the
+			# screen. Inside the `!= 0` arm so it fires on the *transition* --
+			# `arbitrate` runs from every paint, and asking the platform to hide a
+			# keyboard that is already hidden, sixty times a second, is a call
+			# nobody needs.
+			_virtual_keyboard(host, false)
 		return 0
 	for sprite_value in candidates:
 		var sprite: Dictionary = sprite_value
@@ -165,6 +173,38 @@ static func focus_on(host, channel: int, member_number: int) -> void:
 	host._sel_start = length
 	host._sel_end = length
 	host._caret_since = Time.get_ticks_msec()
+	_virtual_keyboard(host, true)
+
+
+## Ask the platform for an on-screen keyboard, or put it away.
+##
+## **A phone has no keys until something asks for them.** Godot raises the
+## virtual keyboard from inside `LineEdit`/`TextEdit`; this engine draws
+## Director's own fields and routes every keystroke itself (`key` below), so
+## nothing in the process was ever asking -- and a field on Android could be
+## focused, could show its caret, and could not be typed into. `SAVELOAD`'s six
+## save-name slots are the case that reported it: the save screen is reachable,
+## looks right, and cannot be used.
+##
+## The existing text and the caret go with the request because Android's IME
+## keeps its own copy of the buffer: opened blank over a field reading `untitled`,
+## the first keystroke replaces the line instead of appending to it, which is the
+## same off-by-a-buffer that `focus_on` documents above for the caret.
+##
+## Guarded on the feature rather than on the OS name -- desktop has a real
+## keyboard and `virtual_keyboard_show` is a no-op there, but calling it every
+## time focus moves would still be a per-frame platform call on the path
+## `arbitrate` runs from every paint.
+static func _virtual_keyboard(host, wanted: bool) -> void:
+	if not DisplayServer.has_feature(DisplayServer.FEATURE_VIRTUAL_KEYBOARD):
+		return
+	if not wanted:
+		DisplayServer.virtual_keyboard_hide()
+		return
+	var text := focused_text(host)
+	DisplayServer.virtual_keyboard_show(text, Rect2(),
+		DisplayServer.KEYBOARD_TYPE_DEFAULT, -1,
+		int(host._sel_start), int(host._sel_end))
 
 
 ## The sprite that holds focus, or `{}`.
