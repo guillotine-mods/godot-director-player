@@ -204,7 +204,7 @@ func _clamped(box: Rect2, to: Vector2) -> Vector2:
 ## the top for a sprite near the top, and the OS will not put the pointer outside
 ## the window -- so the warp lands short and a working drag reports as broken.
 func _drag_to(preview: Node, from: Vector2) -> Vector2:
-	var middle := Vector2(preview.get("STAGE")) * 0.5
+	var middle := Vector2(preview.call("stage_size")) * 0.5
 	var toward := middle - from
 	if toward.length() < 1.0:
 		toward = Vector2(1, 0)
@@ -583,7 +583,7 @@ func _init() -> void:
 		var home_rect: Rect2 = preview.call("_sprite_rect",
 			preview.call("_effective", _sprite_on(preview, slot)))
 		var grab := _grab_point(preview, home_rect, slot)
-		var out := _outside(box, Vector2(preview.get("STAGE")))
+		var out := _outside(box, Vector2(preview.call("stage_size")))
 
 		h.begin("a real drag stops at the edge of the constraint")
 		h.check("the sprite can be picked up inside the box", grab.x >= 0.0,

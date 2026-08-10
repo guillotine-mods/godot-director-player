@@ -41,7 +41,11 @@ const Shape := preload("res://director/director_shape.gd")
 const Text := preload("res://director/director_text.gd")
 const Palette := preload("res://director/director_palette.gd")
 
-const STAGE := Vector2(640, 480)
+## The stage this movie declares, read off the preview below rather than written
+## down here. It was `const STAGE := Vector2(640, 480)`, and the off-stage test
+## it feeds would call the right-hand third of an 800x600 title's fields
+## misplaced.
+var _stage := Vector2(640, 480)
 
 
 func _opaque_pixels(image: Image) -> int:
@@ -86,6 +90,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var movie := str(preview.call("movie_name"))
+	_stage = Vector2(preview.call("stage_size"))
 	var palette: PackedByteArray = preview.get("_palette")
 
 	# ------------------------------------------------------- the ink rules alone
@@ -305,7 +310,7 @@ func _init() -> void:
 					channel, str(laid["name"]), str(rect.size), int(want.x), int(want.y),
 					int(natural.x), int(natural.y),
 					int(entry["sprite"]["width"]), int(entry["sprite"]["height"])])
-			if rect.position.x > STAGE.x or rect.position.y > STAGE.y \
+			if rect.position.x > _stage.x or rect.position.y > _stage.y \
 					or rect.position.x + rect.size.x < 0.0 \
 					or rect.position.y + rect.size.y < 0.0:
 				offstage.append("ch%d %s at %s" % [channel, str(laid["name"]), str(rect.position)])

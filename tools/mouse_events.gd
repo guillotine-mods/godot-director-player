@@ -145,7 +145,7 @@ func _clickable(preview: Node) -> Array:
 	# sprite, and a room backdrop covers all of it. This corpus's boot movie is
 	# one 640x485 sprite over a 640x480 stage, so "largest" without the ceiling
 	# picks the one subject the outside-release case cannot be tested on.
-	var stage := Vector2(preview.get("STAGE"))
+	var stage := Vector2(preview.call("stage_size"))
 	var ceiling := stage.x * stage.y * 0.6
 	var best := 0
 	var best_area := 64.0
@@ -373,7 +373,7 @@ func _drop_over_a_higher_channel(preview: Node, h, host: Object, subject: int,
 ## case. Walked outward along the four axes rather than picked at random, so a
 ## failure names a reproducible point.
 func _point_off(preview: Node, rect: Rect2) -> Vector2:
-	var stage := Vector2(preview.get("STAGE"))
+	var stage := Vector2(preview.call("stage_size"))
 	for candidate in [
 		Vector2(rect.position.x - 20.0, rect.get_center().y),
 		Vector2(rect.end.x + 20.0, rect.get_center().y),

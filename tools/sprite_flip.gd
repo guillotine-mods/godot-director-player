@@ -35,7 +35,12 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 
-const STAGE := Vector2i(640, 480)
+## The stage this movie declares, read off the preview in `_init`. The 640x480 is
+## only what stands before that read: the stage is the movie's own rect
+## (`director_preview.gd:stage_size`), and sizing the OS window to a constant
+## against a movie of another size stops the fit being 1:1 -- which is the one
+## thing the windowed half of this file needs.
+var _stage := Vector2i(640, 480)
 
 
 func _init() -> void:
@@ -55,6 +60,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var movie := str(preview.call("movie_name"))
+	_stage = preview.call("stage_size")
 
 	var found := _find_asymmetric(preview, score)
 	if found.is_empty():
@@ -73,7 +79,7 @@ func _init() -> void:
 		window.mode = Window.MODE_WINDOWED
 		# Exactly the stage, so the fit is 1:1 and a mirror comparison is not
 		# also a comparison of two different resamplings.
-		window.size = STAGE
+		window.size = _stage
 		await process_frame
 		preview.call("_fit_to_window")
 	preview.call("queue_redraw")
@@ -220,7 +226,7 @@ func _find_asymmetric(preview: Node, score) -> Dictionary:
 			if rect.size.x < 24.0 or rect.size.y < 24.0:
 				continue
 			if rect.position.x < 0.0 or rect.position.y < 0.0 \
-					or rect.end.x > float(STAGE.x) or rect.end.y > float(STAGE.y):
+					or rect.end.x > float(_stage.x) or rect.end.y > float(_stage.y):
 				continue
 			var probe := _asymmetric_point(preview, sprite, rect)
 			if probe.x < 0.0:

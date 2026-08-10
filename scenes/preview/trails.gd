@@ -105,7 +105,7 @@ static func settle(host, placed_now: Dictionary,
 static func erase(host, rect: Rect2) -> void:
 	if host._trail_image == null:
 		return
-	var stage: Vector2i = host.STAGE
+	var stage: Vector2i = host.stage_size()
 	var area := Rect2(Vector2.ZERO, Vector2(stage)).intersection(rect)
 	if area.size.x < 1.0 or area.size.y < 1.0:
 		return
@@ -125,7 +125,11 @@ static func stamp(host, image: Image, at: Vector2) -> void:
 	if image == null:
 		return
 	if host._trail_image == null:
-		var stage: Vector2i = host.STAGE
+		# The layer **is** the stage, so it is allocated at the size the movie
+		# declares rather than at a constant: on a movie bigger than 640x480 a
+		# fixed layer would clip every trail mark at the old edge, and
+		# `_clear_trails` on a movie change is what makes the next size take.
+		var stage: Vector2i = host.stage_size()
 		host._trail_image = Image.create_empty(
 			stage.x, stage.y, false, Image.FORMAT_RGBA8)
 		host._trail_image.fill(Color(0, 0, 0, 0))

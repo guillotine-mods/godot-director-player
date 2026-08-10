@@ -54,7 +54,7 @@ func _clickable_point(preview: Node) -> Vector2:
 			break
 	preview.set("_hit_pixels", pixels)
 	preview.set("_index", at_frame)
-	return found if found.x >= 0.0 else Vector2(preview.get("STAGE")) * 0.5
+	return found if found.x >= 0.0 else Vector2(preview.call("stage_size")) * 0.5
 
 
 ## Can this process read back what it just put on the clipboard? Answered by

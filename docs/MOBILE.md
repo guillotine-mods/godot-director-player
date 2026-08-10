@@ -197,10 +197,17 @@ than pretending.
 
 ### What works
 
-- **Coordinate mapping.** The stage is a fixed 640x480 letterboxed into the
-  window by `_fit_to_window`, and a touch arrives in window pixels. Verified: a
-  touch at a known stage point comes out of `the mouseH`/`the mouseV` at that
-  point, within a pixel, and `the clickOn` names the sprite that was touched.
+- **Coordinate mapping.** The stage is the size the *movie* declares — its own
+  config rect, `director_preview.gd:stage_size`, not a constant — letterboxed
+  into the window by `_fit_to_window`, and a touch arrives in window pixels.
+  Verified: a touch at a known stage point comes out of `the mouseH`/`the mouseV`
+  at that point, within a pixel, and `the clickOn` names the sprite that was
+  touched. Verified across all four `[display] aspect` modes and at two stage
+  sizes, `stretch_fill` included — that is the one mode whose x and y scales
+  differ, so a mapping written as a single scale factor passes on a 4:3 stage
+  and fails there. This paragraph said "a fixed 640x480" until 2026-08-10, and
+  so did the renderer; every title in this corpus declares 640x480, which is why
+  neither was ever contradicted.
 - **Tap = click.** Touch-down sends `mouseDown`, lift sends `mouseUp`, and the
   lift alone sends `mouseUp` — the press/release split holds for a finger.
 - **`the mouseDown` / `the stillDown` / `the mouseUp`.** These are the one

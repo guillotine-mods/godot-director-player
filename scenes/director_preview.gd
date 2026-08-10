@@ -77,6 +77,21 @@ const Config := preload("res://director/director_config.gd")
 const ScoreSound := preload("res://director/score_sound.gd")
 const SoundMember := preload("res://director/director_sound.gd")
 
+## The stage size to fall back on when the movie states none.
+##
+## **A fallback, not the rule.** A Director movie carries its own stage rect in
+## its config chunk (`director/director_config.gd`, `DRCF` / `VWCF` before D5),
+## and the reference resizes the stage window to it on every movie load --
+## `movie.cpp:Movie::loadArchive`, "For the stage, always resize to the movie
+## rect". `stage_size()` is that rect's size, and it is what the letterbox, the
+## clip, the paint, the hit test and the debug overlays all ask.
+##
+## This number is what a container whose config is missing or will not parse gets
+## instead, so such a movie still opens rather than drawing at 0x0. It is 640x480
+## because that is what all six titles of the corpus this port was built on
+## declare -- which is exactly why it sat here as *the* stage size for so long,
+## and why `test-games/itamar-magichat/magichat.dir` at 800x600 is the file that
+## says whether the size flows or was only ever assumed.
 const STAGE := Vector2i(640, 480)
 
 ## Director's `the windowType` values, from the reference. Plain `const` ints
@@ -91,9 +106,6 @@ const STAGE := Vector2i(640, 480)
 const WINDOW_PLAIN_SHADOW := Windows.PLAIN_SHADOW
 const WINDOW_DOCUMENT := Windows.DOCUMENT
 const WINDOW_TITLE_BAR := Windows.TITLE_BAR
-## Floating skip control, in stage coordinates so it scales and letterboxes with
-## everything else rather than drifting when the window is resized.
-const SKIP_RECT := Rect2(STAGE.x - 62, 8, 54, 22)
 
 var _movie = null
 var _score = null
@@ -596,10 +608,21 @@ var _window_path := ""
 ## by and the next real click works normally.
 var _saw_press := false
 var _window_shown := false
-## The movie's own `DRCF` stage rect. Every movie in this corpus declares
-## 640x480, so a centred window covers the stage exactly; the rect is read rather
-## than assumed because it is what decides both, and a title whose window is
-## smaller would otherwise be drawn full-stage.
+## The movie's own `DRCF` stage rect, and the rest of its config chunk.
+##
+## **Not a window property.** It is where this movie's stage size comes from --
+## `stage_size()` -- and where its starting tempo and file version come from
+## (`preview/movie_session.gd:adopt`). A window uses it for a second thing: the
+## size and, through the difference against the stage movie's rect, the place.
+##
+## Every movie of all six titles this port was built on declares 640x480, so a
+## centred window covers the stage exactly and the size looked like a constant for
+## as long as nothing else was loaded. `test-games/itamar-magichat/magichat.dir`
+## declares 800x600 and is the counter-example.
+##
+## Null when the container has no config chunk or the chunk does not parse. Every
+## reader falls back rather than refusing, because a movie that cannot state its
+## own size still has a score to play.
 var _config = null
 ## `the centerStage` and `the windowType` as a script set them, per §14.
 ## `centerStage` decides placement at `open`; `windowType` decides the chrome.
@@ -793,6 +816,11 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	MovieSession.adopt(self)
 	MovieSession.forget_previous(self, previous_path)
 	_preloader = Preloader.new(_score)
+	# The arriving movie brings its own stage rect, and Director resizes to it on
+	# every load rather than only the first (`stage_size`). A title whose rooms are
+	# all one size never notices; one that opens a 320x240 movie from a 640x480 one
+	# would draw the small movie into the big letterbox with the old clip standing.
+	_stage_resized()
 
 	if _lingo_on:
 		_start_lingo(target)
@@ -1241,6 +1269,57 @@ func _clear_trails() -> void:
 	_trail_dirty = false
 
 
+## **How big this movie's stage is.** The one answer, asked by the letterbox, the
+## clip rect, the stage fill, the trail layer, the SKIP control, the HUD, the
+## toast and every window that has to place itself against the stage.
+##
+## Read from the movie's own config chunk rather than assumed, because that is
+## where Director keeps it: `Cast::loadConfig` decodes the rect and
+## `Movie::loadArchive` resizes the stage window to it on **every** movie load,
+## not only the first. `MovieSession.adopt` reads the chunk for every container
+## this port opens, so the answer follows a `go to movie` the same way.
+##
+## Falls back to `STAGE` for a container with no config, or one whose config does
+## not parse -- `DirectorConfig.read` answers false for both, and `_config` is
+## null. A movie that cannot say how big it is still opens.
+##
+## Deliberately derived rather than cached in a field: the two callers that can
+## change it (`_load_container` and `lingo_go_movie`, both through
+## `MovieSession.adopt`) would each have to remember to refresh a cache, and a
+## stale stage size is invisible until a title with two differently-sized movies
+## turns up. Nothing here is hot -- it is a handful of reads per paint.
+func stage_size() -> Vector2i:
+	if _config != null and _config.rect.size.x > 0 and _config.rect.size.y > 0:
+		return _config.rect.size
+	return STAGE
+
+
+## Floating skip control, in stage coordinates so it scales and letterboxes with
+## everything else rather than drifting when the window is resized.
+##
+## Anchored to the stage's own top-right, which is why this is a function and no
+## longer a `const`: a const could only be written against one stage width, and
+## the one it was written against was 640.
+func skip_rect() -> Rect2:
+	return Rect2(float(stage_size().x) - 62.0, 8.0, 54.0, 22.0)
+
+
+## The movie now playing may state a different stage size from the one that left.
+##
+## `Movie::loadArchive` resizes the stage window to the new movie's rect on every
+## load -- "For the stage, always resize to the movie rect" -- so the letterbox is
+## recomputed here rather than only at boot. A window re-places itself instead:
+## its geometry is in *stage* coordinates and `_apply_window_geometry` is what
+## owns it (`preview/boot.gd` on why a window must not fit itself to the OS
+## window).
+func _stage_resized() -> void:
+	if _window_key == "":
+		_fit_to_window()
+	else:
+		_apply_window_geometry()
+	queue_redraw()
+
+
 ## Fit the stage into the canvas the way `[display] aspect` asks.
 ##
 ## Measured against the viewport, not the OS window. The project stretches with
@@ -1253,12 +1332,21 @@ func _clear_trails() -> void:
 ## pixels then land on one more output row than their neighbours, which is the
 ## price of filling the window; the aspect ratio stays exact either way, and that
 ## is the part worth protecting.
+##
+## The stage's size is the movie's, not a constant -- see `stage_size()`. Every
+## line below used to name a hardcoded 640x480, which fits an 800x600 movie into
+## a 640x480 letterbox and then draws 800x600 of artwork through it: the movie is
+## both too big for its own box and clipped at the wrong edge, and there is no
+## point in the picture where the two errors cancel.
 func _fit_to_window() -> void:
 	var canvas := get_viewport_rect().size
 	if canvas.x <= 0.0 or canvas.y <= 0.0:
 		return
+	var stage := Vector2(stage_size())
+	if stage.x <= 0.0 or stage.y <= 0.0:
+		return
 	if _aspect == "stretch_fill":
-		scale = Vector2(canvas.x / STAGE.x, canvas.y / STAGE.y)
+		scale = Vector2(canvas.x / stage.x, canvas.y / stage.y)
 		position = Vector2.ZERO
 		return
 	var area := canvas
@@ -1267,9 +1355,9 @@ func _fit_to_window() -> void:
 			area = _letterbox(canvas, 16.0 / 9.0)
 		"ultra_21_9":
 			area = _letterbox(canvas, 21.0 / 9.0)
-	var factor := minf(area.x / STAGE.x, area.y / STAGE.y)
+	var factor := minf(area.x / stage.x, area.y / stage.y)
 	scale = Vector2(factor, factor)
-	position = ((canvas - Vector2(STAGE) * factor) * 0.5).floor()
+	position = ((canvas - stage * factor) * 0.5).floor()
 	# The cursor is built at the stage's scale, so a resize invalidates whatever
 	# is installed. Forcing the cached key to miss makes the next resolve rebuild
 	# it rather than leaving a cursor sized for the previous window.
@@ -1591,7 +1679,7 @@ func _input(event: InputEvent) -> void:
 				# than tested inside the router, because the router's job is where
 				# a click goes and this is whether the affordance exists.
 				InputRouter.mouse_button(self, button, at,
-					SKIP_RECT if DebugKeys.enabled() else Rect2())
+					skip_rect() if DebugKeys.enabled() else Rect2())
 			elif button.button_index == MOUSE_BUTTON_RIGHT:
 				InputRouter.right_mouse_button(self, button, at)
 			return
@@ -1619,7 +1707,7 @@ func _input(event: InputEvent) -> void:
 ## startup: the flag does not survive the command-list clear that precedes each
 ## paint. See `preview/stage_paint.gd`.
 func _clip_to_stage() -> void:
-	_clip_rect = StagePaint.clip_to_stage(self, STAGE)
+	_clip_rect = StagePaint.clip_to_stage(self, stage_size())
 
 
 ## Godot's own entry into the paint below. It clears the command list before it
@@ -1698,7 +1786,8 @@ func _paint() -> void:
 	# the movie's own rect only: the chrome around a window is painted by
 	# `_draw_window_chrome` and is not part of the movie.
 	Paint.rect(self,
-		Rect2(Vector2.ZERO, window_size() if _window_key != "" else Vector2(STAGE)),
+		Rect2(Vector2.ZERO,
+			window_size() if _window_key != "" else Vector2(stage_size())),
 		Color.BLACK, true)
 	if _window_key != "":
 		_draw_window_chrome()
@@ -1720,7 +1809,8 @@ func _paint() -> void:
 	# several harnesses set `_index` directly and never tick.
 	TextFocus.arbitrate(self)
 	var frame: Dictionary = _score.frame(_index)
-	StagePaint.paint_frame(self, _table, STAGE)
+	var stage := stage_size()
+	StagePaint.paint_frame(self, _table, stage)
 	# A caret blinks, and a preview holding on `go to the frame` repaints only
 	# when asked. Same reason `Toast.draw` asks below, and the ask is confined to
 	# the frames that actually have a focused widget on them.
@@ -1738,10 +1828,10 @@ func _paint() -> void:
 		_draw_collision_zones()
 	if _window_key != "":
 		return
-	StagePaint.draw_overlays(self, frame, STAGE, SKIP_RECT)
+	StagePaint.draw_overlays(self, frame, stage, skip_rect())
 	# A paused preview does not repaint on its own, so a toast that needs a paint
 	# to disappear would stay up until something else asked for one.
-	if Toast.draw(self, _toast, _toast_until, STAGE):
+	if Toast.draw(self, _toast, _toast_until, stage):
 		queue_redraw()
 	ContainerPicker.draw(self, _picker)
 

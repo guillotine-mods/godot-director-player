@@ -42,10 +42,12 @@ const Hilite := preload("res://scenes/preview/hilite.gd")
 const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 
-## The stage, as `director_preview.gd` declares it. A local copy because a
-## `const` on the node is not reachable through `get()`, which is the same reason
-## `tools/trails.gd` carries one.
-const STAGE := Vector2i(640, 480)
+## The stage this movie declares, read off the preview in `_init` rather than
+## written down here. The 640x480 is only what stands before that read, and it
+## used to be a `const`: the stage is the movie's own rect (`stage_size()`), and
+## a sample point rejected as "outside the stage" against the wrong rectangle
+## discards the whole right-hand column of an 800x600 title's artwork.
+var _stage := Vector2i(640, 480)
 
 
 ## A frame, a channel and two sample points: a bitmap sprite `isActive()` accepts,
@@ -153,7 +155,7 @@ func _sample_points(preview: Node, sprite: Dictionary, rect: Rect2,
 ## never painted. A pixel outside the stage reads back transparent and says
 ## nothing about hilite.
 func _on_stage(at: Vector2) -> bool:
-	return Rect2(Vector2.ZERO, Vector2(STAGE)).grow(-SAMPLE_MARGIN - 1).has_point(at)
+	return Rect2(Vector2.ZERO, Vector2(_stage)).grow(-SAMPLE_MARGIN - 1).has_point(at)
 
 
 func _surrounded_by(preview: Node, sprite: Dictionary, at: Vector2,
@@ -253,6 +255,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var movie := str(preview.call("movie_name"))
+	_stage = preview.call("stage_size")
 
 	var found := _find(preview, score)
 	if found.is_empty():

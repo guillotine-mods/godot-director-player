@@ -25,6 +25,7 @@ the Godot lifecycle; the modules own the rules.
 | a Movie-In-A-Window is the wrong size, won't close, or eats clicks | `windows.gd` |
 | a trails sprite leaves no stroke, or leaves one it shouldn't | `trails.gd` |
 | the whole stage paints wrong, or spills outside the letterbox | `stage_paint.gd` |
+| the stage is the wrong *size*, or the letterbox is | `director_preview.gd:stage_size` |
 | a paint reaches nothing, or reaches the screen at the wrong time | `../../director/director_paint.gd` |
 | the wrong colours after a palette change | `palette_view.gd` |
 | a room runs too fast or too slow, a wait never releases | `frame_loop.gd` |

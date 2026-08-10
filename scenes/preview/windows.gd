@@ -249,7 +249,8 @@ static func read_prop(host, prop: String) -> Variant:
 			## that is not a placement decision but a fact about the file.
 			# Typed explicitly: `:=` cannot infer through a ternary, and this file
 			# does not compile at all without it.
-			var source: Rect2i = host._config.rect if host._config != null else Rect2i(Vector2i.ZERO, host.STAGE)
+			var source: Rect2i = host._config.rect if host._config != null \
+				else Rect2i(Vector2i.ZERO, host.stage_size())
 			return [int(source.position.x), int(source.position.y),
 				int(source.end.x), int(source.end.y)]
 		"moviename", "filename":
@@ -262,12 +263,17 @@ static func read_prop(host, prop: String) -> Variant:
 	return 0
 
 
+## How big the window is: what a script set, or the size the window's own movie
+## declares.
+##
+## `stage_size()` is that second answer, and it is the *window's* stage size --
+## a window runs a whole movie, so the same question one level down. It falls
+## back to `STAGE` for a movie with no readable config, which is the only reason
+## this is not simply the config rect.
 static func size_of(host) -> Vector2:
 	if host._window_rect != null:
 		return (host._window_rect as Rect2).size
-	if host._config != null:
-		return Vector2(host._config.rect.size)
-	return Vector2(host.STAGE)
+	return Vector2(host.stage_size())
 
 
 static func origin_of(host) -> Vector2:
@@ -275,7 +281,13 @@ static func origin_of(host) -> Vector2:
 		return (host._window_rect as Rect2).position
 	var mine: Vector2 = size_of(host)
 	if host._center_stage:
-		return ((Vector2(host.STAGE) - mine) * 0.5).floor()
+		# Centred in the **stage's** rectangle, which is the stage movie's size and
+		# not this window's. The two are the same in every title of this corpus,
+		# because every movie in it declares 640x480 -- so a hardcoded constant here
+		# was indistinguishable from the right answer until a movie of another size
+		# was loaded, at which point a centred window is offset by half the
+		# difference.
+		return ((Vector2(host.stage_preview().stage_size()) - mine) * 0.5).floor()
 	# The *stage's* rect, not this window's. Director puts a window at the rect
 	# its movie was authored with -- a screen coordinate -- so it is taken
 	# relative to the stage movie's own rect, the only other thing here in that

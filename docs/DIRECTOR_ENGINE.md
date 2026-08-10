@@ -2039,6 +2039,23 @@ list, the composite surface and the current movie. **Stage colour** is what ever
 non-trails repaint fills with, and changing it marks everything dirty; it is not
 black by default.
 
+**The stage is the size the movie says it is.** The movie's config chunk carries
+a rect (`Cast::loadConfig`, `DRCF` / `VWCF` before D5) and `Movie::loadArchive`
+resizes the stage window to it — "for the stage, always resize to the movie
+rect" — on *every* movie load and not only the first, so a `go to movie` to a
+differently-sized movie resizes the stage. A window is the same question one
+level down and the rule differs by one clause: a Movie-In-A-Window resizes to its
+movie's rect only while no script has sized it, because `the rect of window` is
+an explicit statement that outranks the file's. An embedded movie borrows the
+host's window and never resizes anything.
+
+*This port:* `director_preview.gd:stage_size` is the one answer, read from
+`_config` — which `preview/movie_session.gd:adopt` refreshes for every container
+opened — and used by the letterbox, the clip rect, the stage fill, the trail
+layer, the window placement and the debug overlays. 640x480 is the fallback for a
+container with no readable config, which is the D2-and-later case ScummVM refuses
+outright; a movie that cannot state its own size still opens here.
+
 A movie can open further windows each running a movie — Movie-In-A-Window — with
 its own score, Lingo state and frozen-state stack; Lingo state is explicitly
 moved between windows on a switch. Window events are D5+. A **modal** window
@@ -2364,6 +2381,7 @@ destination-reading inks.
 | Windows / MIAW / embedded movies | **done**: open, close, forget, `tell`, window properties, geometry, click routing to the topmost window | `director_preview.gd:lingo_open_window`; `tools/window_preview.gd` |
 | Movie stack | **partial** | `director_preview.gd:1143` |
 | Labels | **done** | `director_labels.gd` |
+| Stage size | **done**: the stage is the size the movie's own config chunk states, re-read on every movie load the way `Movie::loadArchive` resizes to `_movieRect`; 640x480 is the fallback for a container that states none. Was a hardcoded 640x480 until 2026-08-10, which all six titles of this corpus happen to declare — `test-games/itamar-magichat/magichat.dir` at 800x600 is the counter-example | `director_preview.gd:stage_size`; `director_config.gd`; `tools/touch_input.gd` |
 | Stage clipping | **done** on both sides. 16.1% of sprite records reach past 640x480 | `director_preview.gd:_clip_to_stage` |
 | Preloading | **done**: lookahead decode, time-boxed. Worst single step on strtgame fell from 145.7 ms to 0.45 ms | `director_preloader.gd`; `tools/decode_stall.gd` |
 | Container packaging (`.dxr` = `.dir`) | **done**: one rule, used by path resolution and by Lingo `=`, `<>`, ordering, `case`, `contains`, `starts` | `director_container.gd` |

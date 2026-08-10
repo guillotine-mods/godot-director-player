@@ -45,10 +45,29 @@ extends SceneTree
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
+const Config := preload("res://director/director_config.gd")
 
-## Declared here rather than read off the preview, so the check below compares
-## two independent statements of the stage size instead of one with itself.
-const STAGE := Rect2(0, 0, 640, 480)
+## What size the movie says its stage is, decoded here from the container's own
+## config chunk rather than read off the preview -- so the clip check below still
+## compares two independent statements of the stage size instead of one with
+## itself.
+##
+## This was `const STAGE := Rect2(0, 0, 640, 480)`, and the constant was the
+## assumption rather than the independence: every movie of this corpus declares
+## 640x480, so it agreed with the renderer for reasons that had nothing to do
+## with the renderer being right, and it would have disagreed with a correct
+## renderer on `test-games/itamar-magichat/magichat.dir` (800x600).
+##
+## Falls back to 640x480 for a container with no readable config, which is the
+## same fallback `director_preview.gd:stage_size` takes and the reason the two
+## can still be compared for such a movie.
+static func _declared_stage(preview: Node) -> Rect2:
+	var config = Config.new()
+	if config.read(preview.get("_movie")):
+		return Rect2(Vector2.ZERO, Vector2(config.rect.size))
+	return Rect2(0, 0, 640, 480)
+
+
 ## Cast types that put pixels on the stage. A script or a sound member occupies a
 ## channel and paints nothing, so counting it as "inside the stage" would dilute
 ## the measurement with sprites that could never have spilled.
@@ -73,14 +92,15 @@ func _init() -> void:
 		quit(1)
 		return
 	var movie := str(preview.call("movie_name"))
+	var stage := _declared_stage(preview)
 
 	# ------------------------------------------------- the clip the node applied
 	h.begin("%s: the stage clips" % movie)
 	var clip: Rect2 = preview.get("_clip_rect")
 	h.check(
 		"the preview clips to the stage rect",
-		clip == STAGE,
-		"clip %s, stage %s" % [str(clip), str(STAGE)]
+		clip == stage,
+		"clip %s, stage %s" % [str(clip), str(stage)]
 	)
 
 	# ------------------------------------------- what the clip has to cut, if any
@@ -117,14 +137,14 @@ func _init() -> void:
 				continue
 			drawing += 1
 			total_area += rect.size.x * rect.size.y
-			if STAGE.encloses(rect):
+			if stage.encloses(rect):
 				continue
 			spilling += 1
-			var visible := STAGE.intersection(rect)
+			var visible := stage.intersection(rect)
 			cut_area += rect.size.x * rect.size.y - visible.size.x * visible.size.y
 			var over := maxf(
 				maxf(-rect.position.x, -rect.position.y),
-				maxf(rect.end.x - STAGE.end.x, rect.end.y - STAGE.end.y)
+				maxf(rect.end.x - stage.end.x, rect.end.y - stage.end.y)
 			)
 			if over > worst:
 				worst = over
@@ -132,7 +152,7 @@ func _init() -> void:
 					i, int(sprite["channel"]), int(sprite["cast_id"]),
 					str(m.get("name", ""))
 				]
-			if not STAGE.intersects(rect):
+			if not stage.intersects(rect):
 				wholly_off += 1
 				# An empty intersection is the correct answer for art entirely
 				# off-stage, and the only one that must not paint anything.
@@ -141,7 +161,7 @@ func _init() -> void:
 						i, int(sprite["channel"]), str(rect), str(visible)
 					])
 				continue
-			if not STAGE.encloses(visible):
+			if not stage.encloses(visible):
 				bad_intersection.append("f%d ch%d %s -> %s" % [
 					i, int(sprite["channel"]), str(rect), str(visible)
 				])
@@ -195,7 +215,7 @@ func _init() -> void:
 	)
 	h.complete("%s: the clear and the trail layer agree about this movie" % movie)
 
-	await _pixel_case(h, preview, movie, left_frame, left_worst)
+	await _pixel_case(h, preview, movie, stage, left_frame, left_worst)
 	quit(h.finish("the preview paints inside the stage, and clears all of it"))
 
 
@@ -203,7 +223,8 @@ func _init() -> void:
 ## it is declared only when one is present — a case begun and skipped would be
 ## reported as a failure by `harness.gd`, and rightly.
 func _pixel_case(
-	h: RefCounted, preview: Node, movie: String, frame_index: int, overhang: float
+	h: RefCounted, preview: Node, movie: String, stage: Rect2,
+	frame_index: int, overhang: float
 ) -> void:
 	if DisplayServer.get_name() == "headless":
 		print("")
@@ -236,7 +257,7 @@ func _pixel_case(
 	var canvas: Vector2 = root.get_viewport().get_visible_rect().size
 	var clipped := root.get_texture().get_image()
 	var factor := Vector2(clipped.get_width() / canvas.x, clipped.get_height() / canvas.y)
-	var stage_on_screen: Rect2 = preview.get_global_transform_with_canvas() * STAGE
+	var stage_on_screen: Rect2 = preview.get_global_transform_with_canvas() * stage
 	var bar_width := int(stage_on_screen.position.x * factor.x)
 	if bar_width < 16:
 		print("")

@@ -34,7 +34,11 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 
-const STAGE := Vector2i(640, 480)
+## The stage this movie declares, not a constant. Set from the preview in `_init`
+## before anything reads it; the fallback only stands for the moment before that.
+## A layer sized 640x480 against an 800x600 movie would report the right pixel
+## counts inside the old rectangle and miss every mark outside it.
+var _stage := Vector2i(640, 480)
 
 
 func _init() -> void:
@@ -54,6 +58,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var movie := str(preview.call("movie_name"))
+	_stage = preview.call("stage_size")
 
 	# A frame with a bitmap sprite big enough to find again once it has moved.
 	var found := _find_sprite(preview, score)
@@ -108,7 +113,8 @@ func _init() -> void:
 		quit(h.finish("sprite trails"))
 		return
 	h.check("it is the size of the stage",
-		layer.get_size() == STAGE, str(layer.get_size()))
+		layer.get_size() == _stage,
+		"%s, stage %s" % [str(layer.get_size()), str(_stage)])
 
 	var first_rect: Rect2 = preview.call("_stage_rect", found["sprite"])
 	var painted_first := _opaque_in(layer, first_rect)
@@ -175,10 +181,10 @@ func _init() -> void:
 
 
 ## Opaque pixels of the accumulation layer inside a stage rectangle.
-static func _opaque_in(layer: Image, rect: Rect2) -> int:
+func _opaque_in(layer: Image, rect: Rect2) -> int:
 	if layer == null:
 		return 0
-	var area := Rect2(Vector2.ZERO, Vector2(STAGE)).intersection(rect)
+	var area := Rect2(Vector2.ZERO, Vector2(_stage)).intersection(rect)
 	if area.size.x <= 0.0 or area.size.y <= 0.0:
 		return 0
 	var count := 0
@@ -206,9 +212,10 @@ func _find_sprite(preview: Node, score) -> Dictionary:
 			# positions visible and the check is not measuring the stage clip.
 			if rect.size.x < 16.0 or rect.size.y < 16.0 or rect.size.x > 200.0:
 				continue
-			if rect.position.x < 0.0 or rect.end.x + rect.size.x + 20.0 > 640.0:
+			var room := rect.end.x + rect.size.x + 20.0
+			if rect.position.x < 0.0 or room > float(_stage.x):
 				continue
-			if rect.position.y < 0.0 or rect.end.y > 480.0:
+			if rect.position.y < 0.0 or rect.end.y > float(_stage.y):
 				continue
 			if preview.call("_texture_for", sprite) == null:
 				continue

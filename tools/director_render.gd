@@ -38,7 +38,12 @@ const Paths := preload("res://director/director_paths.gd")
 const Palette := preload("res://director/director_palette.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Ink := preload("res://director/director_ink.gd")
+const Config := preload("res://director/director_config.gd")
 
+## What a movie that states no stage size gets. The size itself comes from the
+## movie's own config chunk below, the way `director_preview.gd:stage_size` reads
+## it -- rendering an 800x600 title into a 640x480 image crops a third of it and
+## the PNG looks like a renderer fault.
 const STAGE := Vector2i(640, 480)
 
 
@@ -102,7 +107,10 @@ func _init() -> void:
 		var entry: Dictionary = table.cast_libs[lib]
 		print("  %d  %-10s %s" % [lib, entry["name"], entry["path"]])
 
-	var stage := Image.create(STAGE.x, STAGE.y, false, Image.FORMAT_RGBA8)
+	var config = Config.new()
+	var size: Vector2i = config.rect.size if config.read(movie) else STAGE
+	print("stage: %dx%d" % [size.x, size.y])
+	var stage := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
 	stage.fill(Color.BLACK)
 	var palette: PackedByteArray = Palette.system_mac()
 	var drawn := 0

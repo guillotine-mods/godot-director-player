@@ -122,7 +122,7 @@ func _busiest_frame(preview: Node) -> int:
 func _subject(preview: Node) -> Array:
 	var sprites: Array = preview.get("_score").frame(
 		int(preview.get("_index"))).get("sprites", [])
-	var stage := Vector2(preview.get("STAGE"))
+	var stage := Vector2(preview.call("stage_size"))
 	var best := 0
 	var best_area := 64.0
 	var best_rect := Rect2()
@@ -161,7 +161,7 @@ func _subject(preview: Node) -> Array:
 ## qualify; the first is frame 3.
 func _rollover_pair(preview: Node) -> Array:
 	var score = preview.get("_score")
-	var stage := Vector2(preview.get("STAGE"))
+	var stage := Vector2(preview.call("stage_size"))
 	var was := int(preview.get("_index"))
 	for frame in score.frame_count:
 		if score.frame(frame).get("sprites", []).size() < 1:
@@ -657,7 +657,152 @@ func _init() -> void:
 		await process_frame
 	h.complete("there is no hover: the rollover sticks where the last finger was")
 
+	await _stage_size_case(h, preview)
+
 	print("")
 	print("NOTE: rollOver-driven menus need a finger held down to highlight.")
 	print("      See docs/MOBILE.md, \"Hover has no touch equivalent\".")
 	quit(h.finish("touch reaching the Director mouse path"))
+
+
+## **Does a touch still land where it was aimed when the stage is not 640x480?**
+##
+## A stage point reaches the engine through three transforms -- the node's
+## letterbox placement, the canvas, the project's `canvas_items` stretch -- and
+## comes back through `make_input_local`. Every one of them is derived from the
+## stage's *size*, and the stage's size is whatever the movie's own config chunk
+## says (`director_preview.gd:stage_size`, `director/director_config.gd`). Get it
+## wrong and nothing errors: the artwork is simply somewhere the hit test is not,
+## by more the further from the centre you go.
+##
+## Every movie of the six titles this port was built on declares 640x480, which is
+## why the renderer carried a hardcoded `Vector2i(640, 480)` for as long as it did
+## and why no harness caught it. The real counter-example is
+## `test-games/itamar-magichat/magichat.dir` at 800x600:
+##
+##   godot --headless --path . --script tools/touch_input.gd -- \
+##     --root res://test-games/itamar-magichat --boot magichat.dir
+##
+## That container is not in the repository, so this case cannot depend on it and
+## drives the engine's stage size instead -- through `_config.rect`, which is the
+## one field a container's config decodes into and the one field `stage_size()`
+## reads. That is a seam rather than a mock: a size written here reaches the
+## letterbox, the clip rect, the SKIP control and the touch mapping by exactly the
+## path a real 800x600 movie's size takes. Run the command above when the real
+## title is on the machine; this runs everywhere.
+##
+## The four `[display] aspect` modes are covered because they are four different
+## compositions and only one of them is uniform: `stretch_fill` scales x and y by
+## different factors, which is the case a mapping written as "one scale factor"
+## passes on a 4:3 stage and fails here.
+##
+## **What each half can and cannot catch, because the two are not the same.** The
+## touch round trip maps a stage point out through the node's *own* transform and
+## asks the engine to map it back, so it catches a mapping that disagrees with
+## itself -- a wrong inverse, a `position` the engine forgets, a non-uniform scale
+## read as one number -- and it cannot catch a mapping that is wrong the same way
+## in both directions. A stage stuck at 640x480 is exactly that: the touch check
+## still passes, because everything is consistently in the wrong place.
+##
+## The letterbox and clip checks are what catch it, and they are the reason this
+## case is not just four more touches. Measured by reverting `stage_size()` to
+## return the constant: **9 checks go red** -- `stage_size()` itself, the SKIP
+## control's anchor, the clip rect in all four modes, and "the whole stage lands
+## inside the canvas" in three of the four, where an 800x600 movie scaled by a
+## 640x480 letterbox factor overflows the canvas by 320x320 pixels. Zero of the
+## touch checks move. Worth knowing before trusting either half alone.
+func _stage_size_case(h: RefCounted, preview: Node) -> void:
+	h.begin("the stage is the movie's own size, and a touch survives the letterbox")
+	var config = preview.get("_config")
+	var declared: Vector2i = preview.call("stage_size")
+	h.check("the stage size is the movie's own config rect",
+		config == null or declared == config.rect.size,
+		"stage %s, config %s" % [str(declared),
+			"none" if config == null else str(config.rect.size)])
+
+	# The fallback, asserted rather than assumed: a container with no config chunk,
+	# or one whose chunk will not parse, must still open. `DirectorConfig.read`
+	# answers false for both and leaves `_config` null, and 640x480 is what the
+	# engine uses then -- a *fallback*, which is the whole distinction this change
+	# is about.
+	preview.set("_config", null)
+	h.check("a movie that states no stage falls back to 640x480",
+		Vector2i(preview.call("stage_size")) == Vector2i(640, 480),
+		str(preview.call("stage_size")))
+	preview.set("_config", config)
+	if config == null:
+		h.check("this movie states a stage size to drive", false,
+			"no config chunk; run this against a container that has one")
+		h.complete("the stage is the movie's own size, and a touch survives the letterbox")
+		return
+
+	var was_rect: Rect2i = config.rect
+	var was_aspect := str(preview.get("_aspect"))
+	# A size no title of this corpus declares, so nothing below can pass by
+	# agreeing with the constant that used to be hardcoded.
+	var other := Vector2i(800, 600) if declared != Vector2i(800, 600) \
+		else Vector2i(512, 342)
+	for size in [declared, other]:
+		config.rect = Rect2i(was_rect.position, size)
+		h.check("stage_size() follows the movie's rect (%dx%d)" % [size.x, size.y],
+			Vector2i(preview.call("stage_size")) == size,
+			str(preview.call("stage_size")))
+		# The SKIP control is anchored to the stage's own top-right corner, so it
+		# is the cheapest thing on the stage that says whether the size reached the
+		# overlays -- it was a `const` written against 640 and would have sat 160px
+		# inside the right edge of an 800-wide stage.
+		var skip: Rect2 = preview.call("skip_rect")
+		h.check("the SKIP control is at the stage's top-right (%dx%d)"
+			% [size.x, size.y],
+			absf(skip.end.x - (float(size.x) - 8.0)) < 0.01,
+			"skip %s, stage width %d" % [str(skip), size.x])
+		for aspect in ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]:
+			preview.set("_aspect", aspect)
+			preview.call("_fit_to_window")
+			# The clip is re-armed from `_paint`, which headless never reaches, so
+			# it is asked for directly. What is being checked is that it names the
+			# movie's rect and not a constant.
+			preview.call("_clip_to_stage")
+			await preview.get_tree().process_frame
+			var label := "%s at %dx%d" % [aspect, size.x, size.y]
+
+			var clip: Rect2 = preview.get("_clip_rect")
+			h.check("the clip is the stage rect (%s)" % label,
+				clip == Rect2(Vector2.ZERO, Vector2(size)),
+				"clip %s, stage %s" % [str(clip), str(Vector2(size))])
+
+			var canvas: Vector2 = preview.get_viewport_rect().size
+			var on_screen := Rect2(preview.position, Vector2(size) * preview.scale)
+			h.check("the whole stage lands inside the canvas (%s)" % label,
+				on_screen.position.x >= -0.5 and on_screen.position.y >= -0.5
+				and on_screen.end.x <= canvas.x + 1.0
+				and on_screen.end.y <= canvas.y + 1.0,
+				"stage on screen %s, canvas %s" % [str(on_screen), str(canvas)])
+			# `stretch_fill` is the only mode that may distort, and it must: a mode
+			# that quietly kept the aspect would be indistinguishable from a
+			# letterbox on a 4:3 stage and is the reason this loop exists.
+			var uniform := absf(preview.scale.x - preview.scale.y) < 0.001
+			h.check("the aspect is kept unless the mode says otherwise (%s)" % label,
+				uniform == (aspect != "stretch_fill"),
+				"scale %s" % str(preview.scale))
+
+			# ...and the whole point: a finger at a stage point comes back as that
+			# stage point. 0.9 of each axis is outside 640x480 whenever the stage is
+			# bigger, so a mapping still built on the old constant cannot pass it.
+			var target := (Vector2(size) * 0.9).floor()
+			_touch(preview, target, true)
+			for i in 3:
+				await preview.get_tree().process_frame
+			h.check("a touch lands where it was aimed (%s)" % label,
+				absf(float(_prop(preview, "mouseh")) - target.x) < 3.0
+				and absf(float(_prop(preview, "mousev")) - target.y) < 3.0,
+				"host (%s,%s), touched %s" % [str(_prop(preview, "mouseh")),
+					str(_prop(preview, "mousev")), str(target)])
+			_touch(preview, target, false)
+			for i in 2:
+				await preview.get_tree().process_frame
+
+	config.rect = was_rect
+	preview.set("_aspect", was_aspect)
+	preview.call("_fit_to_window")
+	h.complete("the stage is the movie's own size, and a touch survives the letterbox")
