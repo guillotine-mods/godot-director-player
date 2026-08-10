@@ -103,7 +103,23 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_members:--root@res://test-games/itamar-park audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_members:--root@res://test-games/itamar-park audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+# `text_and_shapes` appears twice, and the second entry is the only one that
+# exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
+# corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
+# field records are `adjust` and the other 40 are `limit`. So the assertion that a
+# fixed field is drawn at `MAX(score rect, initialRect, maxHeight)` passed there
+# over an empty set, which is the "passing with 0 checks" failure this file's own
+# EMPTY guard exists to catch, one level down: the harness had checks, just none of
+# them about this rule. `PIPDATA/CAPROOM.dir` is where the shape lives -- 17 memo
+# records that drew at the member's 87px instead of the score's 134px -- and it is
+# the fixture the rule was measured against.
+#
+# Two entries naming one tool is the thing the comment below warns about, and it is
+# deliberate here: a full run walks both, and only an explicit `bash gate.sh
+# text_and_shapes` is ambiguous, where it takes the bare piposh2 entry because it
+# comes first. Name the fixture directly to get the other one.
+#
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
 # one place in six titles where the whole chain from `the keyDownScript` to

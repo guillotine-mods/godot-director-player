@@ -305,6 +305,31 @@ func _init() -> void:
 			if bool(entry["sprite"].get("stretch", false)) \
 					or natural.x <= 0.0 or natural.y <= 0.0:
 				want = Vector2(int(entry["sprite"]["width"]), int(entry["sprite"]["height"]))
+			# A **fixed** or **scrolling** field is the exception, and it is the
+			# reference's own arithmetic rather than this port's: `setCast` does not
+			# reset a text sprite's dimensions (`sprite.cpp:627-632` breaks on
+			# `kCastText`), so the score's rect reaches `createWidget` as the bbox,
+			# and for those two box types the widget is built at
+			# `MAX(bbox, MAX(initialRect, maxHeight))` (`castmember/text.cpp`), then
+			# written back onto the sprite (`channel.cpp:774-779`). Spelled out here
+			# rather than taken from `sprite_geometry` on purpose: an assertion that
+			# calls the function it is checking proves only that the function is
+			# deterministic. Cited at ScummVM 805f259a.
+			#
+			# `CAPROOM.dir`'s `memo11`..`memo55` are the members this catches: 290x134
+			# in the score against a 278x87 member, drawn at 87 before this rule and
+			# clipping the sixth line of every memo.
+			elif int(entry["member"].get("text_type", 0)) in [1, 2]:
+				var ir: Dictionary = entry["member"].get("initial_rect", {})
+				if not ir.is_empty():
+					var own := Vector2(
+						float(int(ir.get("right", 0)) - int(ir.get("left", 0))),
+						float(int(ir.get("bottom", 0)) - int(ir.get("top", 0))))
+					if own.x > 0.0 and own.y > 0.0:
+						want = Vector2(
+							maxf(float(int(entry["sprite"]["width"])), own.x),
+							maxf(float(int(entry["sprite"]["height"])),
+								maxf(own.y, float(int(entry["member"].get("max_height", 0))))))
 			if int(rect.size.x) != int(want.x) or int(rect.size.y) != int(want.y):
 				wrong_box.append("ch%d %s is %s, wanted %dx%d (member %dx%d, score %dx%d)" % [
 					channel, str(laid["name"]), str(rect.size), int(want.x), int(want.y),

@@ -85,11 +85,18 @@ const KEEPS_ITS_OWN_SIZE := [8]  # shape
 ## switching a field's box from the score's rect to the member's drops a laid-out
 ## line in **11 sprite records** in the whole corpus, over 4 (member, box) pairs
 ## naming just two members -- `save2`, where the line lost is a trailing empty
-## one, and `memo21`. What it does not do is the other half of §1.2: a field whose
-## text overflows its `initialRect` still clips instead of growing, because the
-## laid-out height is not pushed back. `CAPROOM.dir`'s memos are the members that
-## would want it, and most of their records carry the stretch flag, so they keep
-## their authored box anyway.
+## one, and `memo21`.
+##
+## The other half of §1.2 -- pushing the laid-out height back -- is still missing
+## for the two box types that expand, and `_field_size` below says why that half
+## cannot land on its own. The half that needs no layout is now implemented there:
+## a fixed or scrolling field takes `MAX(score rect, initialRect, maxHeight)`.
+##
+## One claim that used to stand here was wrong and is worth recording as such: it
+## said `CAPROOM.dir`'s memos "mostly carry the stretch flag, so they keep their
+## authored box anyway". They do not -- all 112 of the records that move carry
+## `stretch=false`, which is exactly why they were being drawn at the member's
+## 87px instead of the 134px the score asked for.
 static func drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 	var w := int(sprite.get("width", 0))
 	var h := int(sprite.get("height", 0))
@@ -104,7 +111,79 @@ static func drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 		return Vector2(w, h)
 	if KEEPS_ITS_OWN_SIZE.has(int(member.get("type", 0))):
 		return Vector2(w, h)
+	if int(member.get("type", 0)) == TEXT:
+		return _field_size(sprite, member, natural)
 	return natural
+
+
+## Cast type of a field. Named because three rules below turn on it.
+const TEXT := 3
+
+## `the boxType of member`, from byte 3 of the field's specific block
+## (`director_cast.gd:376` reads it as `text_type`). The names are Director's.
+const BOX_ADJUST := 0
+const BOX_SCROLL := 1
+const BOX_FIXED := 2
+const BOX_LIMIT := 3
+
+
+## A field's drawn size, which is the widget's size and not the member's.
+##
+## `setCast` skips text when it resets a sprite's dimensions to the member's
+## `initialRect` -- `sprite.cpp:627-632` breaks on `kCastShape` and `kCastText`
+## alike -- so for a field the score's stored rect survives as the *bbox*, and
+## `castmember/text.cpp:createWidget` then combines it with the member's own rect
+## according to the author's box type. `channel.cpp:774-779` writes the widget's
+## dimensions back onto the sprite unconditionally for text, which is why the
+## widget's size is the drawn size and the sprite's own rect is only an input to
+## it. Cited at ScummVM 805f259a.
+##
+##   adjust          MIN(bbox, initialRect), then the widget may expand
+##   fixed/scrolling MAX(bbox, MAX(initialRect, maxHeight)), and never expands
+##   limit           bbox unchanged, then the widget may expand
+##
+## **Only the fixed and scrolling arm is implemented here, and the reason the
+## other two are not is measured rather than a preference.** Their MIN is the
+## size the widget *starts* at: `createWidget`'s own comment is "for mactext, we
+## can expand now, but we can't shrink", and `createWindowOrWidget` hands it a
+## `maxWidth` of the member's width plus its borders to expand into. The port has
+## no path that pushes a laid-out height back onto a sprite, so implementing the
+## MIN alone would clamp every expanding field to whatever the score last left on
+## the channel and never grow it out again. Measured over `piposh` that is
+## **5,677 of 12,622 adjust records drawn smaller than they are today**, and it is
+## `GlobalMoney` -- a 102x19 member whose rooms record it as 68x32 residue --
+## which is the regression `9d1b23d2` fixed and this docstring's own history
+## describes. So `adjust` and `limit` wait for the write-back; they take the
+## member's size, as they did before this arm existed.
+##
+## Fixed and scrolling carry no such coupling. `createWidget` passes
+## `fixDims = (_textType == kTextTypeFixed || _textType == kTextTypeScrolling)`,
+## and `channel.cpp:585-591` only re-pushes the widget's dimensions when
+## `!getFixDims()` -- so a fixed field's size is decided once, by that MAX, and
+## nothing grows it afterwards. The MAX can only ever return at least the member's
+## own rect, so it cannot reintroduce a residue *smaller* than the member the way
+## the MIN can. Measured over all six roots it moves **112 records in `piposh` and
+## 112 in `piposh-en`, and shrinks none anywhere**: `CAPROOM.dir`'s `memo11`
+## through `memo55` are recorded 290x134 against a 278x87 member with `maxHeight`
+## 87, so the port drew them at 87px -- *below the score's own rect*, which the
+## reference never does for text -- and clipped the sixth line of every memo.
+static func _field_size(sprite: Dictionary, member: Dictionary, natural: Vector2) -> Vector2:
+	var box := int(member.get("text_type", BOX_ADJUST))
+	if box != BOX_FIXED and box != BOX_SCROLL:
+		return natural
+	var rect: Dictionary = member.get("initial_rect", {})
+	if rect.is_empty():
+		return natural
+	var own := Vector2(
+		float(int(rect.get("right", 0)) - int(rect.get("left", 0))),
+		float(int(rect.get("bottom", 0)) - int(rect.get("top", 0)))
+	)
+	if own.x <= 0.0 or own.y <= 0.0:
+		return natural
+	return Vector2(
+		maxf(float(int(sprite.get("width", 0))), own.x),
+		maxf(float(int(sprite.get("height", 0))), maxf(own.y, float(int(member.get("max_height", 0)))))
+	)
 
 
 ## The registration offset, scaled into the size the sprite is actually drawn at.

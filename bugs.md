@@ -2834,6 +2834,62 @@ Reproduce:
 godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
 for f in games/rating/*.dir games/rating/*.cst; do LC_ALL=C grep -qai "mainmenu-old" "$f" && echo "$f"; done
 ```
+## 80. An expanding field still clips, because no path pushes its laid-out height back onto the sprite
+
+**Status:** open, and it is the **remaining half** of `DIRECTOR_ENGINE.md` §1.2 ·
+**Area:** `scenes/preview/sprite_geometry.gd:_field_size`,
+`director/director_text.gd:152`, `scenes/preview/text_art.gd:paint` · found
+verifying monday 12752286416
+
+`castmember/text.cpp:createWidget` sizes a field's widget from the score's rect —
+`sprite.cpp:627-632` skips `kCastText` when it resets a sprite's dimensions, so
+that rect survives as the bbox — and then `channel.cpp:774-779` writes the widget's
+size back onto the sprite. Three box types, three rules:
+
+```
+adjust(0)           MIN(bbox, initialRect), then the widget may expand
+fixed(2)/scroll(1)  MAX(bbox, MAX(initialRect, maxHeight)), never expands
+limit(3)            bbox unchanged, then the widget may expand
+```
+
+**The fixed and scrolling arm is implemented** (this entry's commit); the two arms
+that expand are not, because the port has nowhere to push a laid-out height back
+to. `director_text.gd:152` returns on the first line whose top reaches the box
+bottom, so overflow clips, and `text_art.paint` draws into the rect it is handed
+without reporting what it laid out.
+
+**The two halves cannot land separately, and that is the finding.** `createWidget`'s
+own comment is "for mactext, we can expand now, but we can't shrink", and
+`createWindowOrWidget` hands it a `maxWidth` of the member's width plus borders to
+expand into — so the MIN is a *starting* size, not an answer. Implementing it alone
+clamps every expanding field to whatever the score last left on the channel:
+measured over `piposh`, **5,677 of 12,622 `adjust` records would draw smaller than
+they do today**, and the clearest one is `GlobalMoney`, the 102x19 member every room
+records as 68x32 residue — which is exactly the regression `9d1b23d2` fixed.
+
+What is actually lost today: **16 sprite records over two members**, `save2`
+(`limit`, where the line dropped is a trailing empty one) and `memo21`. So the
+player-visible cost is small; the reason to do it is that `text_focus.gd` now makes
+fields editable, and typing past the box in `CAPROOM.dir`'s `memowrite` (`fixed`,
+277x85) clips with no growth. **Unverified:** no probe measures text Lingo writes at
+runtime.
+
+The vehicle would need to be a new one. `size_from_script`
+(`scenes/preview/channel.gd:429`) is the only existing path that makes a size stick,
+and it means "a script resized this" — a field growing because its text got longer
+is a different cause and conflating them would make `drawn_size` unable to tell them
+apart.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh --file PIPDATA/CAPROOM.dir
+godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh --file PIPDATA/MAINMENU.dir
+```
+
+`memowrite` reports `1 lines, 14pt, box (7,383) 277x85`; a `save2` box reads 19px
+tall against a member whose stored `text_height` is 38.
+
 ## 75. Three field references name a cast library their movie does not have, and the port answers them where the reference would not
 
 **Status:** open, **deliberate**, and the deviation is at the call site ·
