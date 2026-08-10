@@ -303,6 +303,17 @@ static func press(host, at: Vector2) -> bool:
 		# select anything in this port was shift-arrow -- which is why a player
 		# could type into a save slot and could not select what was in it.
 		host._text_drag = true
+		# **A tap on a field has to ask for the keyboard too.** This path sets
+		# focus by hand rather than through `focus_on` -- and it has to, because
+		# `focus_on` puts the caret at the end of the text and a press puts it
+		# where the finger landed -- so it did not inherit the request `focus_on`
+		# makes. The effect on a phone was that the keyboard came up only when
+		# `arbitrate` handed focus to a field on its own; dismiss it once, or tap a
+		# second field, and nothing brought it back.
+		#
+		# After `set_selection`, so the caret the IME is told about is the one the
+		# tap chose rather than the previous field's.
+		_virtual_keyboard(host, true)
 		return true
 	# A press that missed every editable field ends any drag that was running,
 	# rather than leaving one armed for the next time the pointer moves.
