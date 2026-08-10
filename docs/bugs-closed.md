@@ -15,6 +15,108 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 53 and 35. A field designator threw away both of its halves: the library it named, and the property it asked for
+
+**Status:** FIXED · **Area:** `scenes/director_preview.gd:lingo_field` /
+`lingo_set_field` / `lingo_field_prop`, `scenes/preview/text_art.gd:resolve`,
+`scenes/preview/members.gd:library_named`, `lingo/lingo_interpreter.gd`'s two
+`field_prop` arms · covered by `tools/field_designator.gd`, in `gate.sh`, which
+fails on the code before the fix in both halves (2 checks red for the library
+half, 4 for the property half)
+
+Two entries, one designator, and they are here together because the second was
+found while fixing the first and neither is complete without the other. `35` and
+`53` were the same defect filed twice; the numbers are kept because source
+comments cite them.
+
+### The library it named
+
+`lingo_field(name, _cast)` and `lingo_set_field(name, _cast, text)` took the cast
+library the script wrote and spelled the parameter `_cast`. Both went through
+`_resolve_field(name)`, which asked `Members.resolve_ref(name, "")` — the
+*unnamed* path, which walks every library in number order and takes the first
+member of that name. So `field "objectsfield" of castLib "master"` was resolved
+as though the clause had never been written.
+
+`Movie::getCastMemberIDByNameAndType(name, castLib, type)` is the rule
+(`reference/scummvm/movie.cpp:720-759`): the `castLib == 0` arm is the only one
+that walks every cast, a named library is searched *and nothing else*, and a
+named library that does not hold the name answers -1 rather than falling through.
+`preview/members.gd`'s own header had been saying the same thing about
+`member(...)` since `docs/bugs-closed.md` 29 and 34.
+
+**Measured before it was changed**, because `35` recorded the blast radius as
+unknown and that was the reason it had sat open. `tools/field_designator.gd
+--survey` opens every movie of a root and compares the two resolutions for every
+`field "x" of castLib Y` its scripts spell:
+
+| root | qualified references | resolve differently |
+|---|---|---|
+| piposh | 16 | 2 |
+| piposh-en | 9 | 2 |
+| piposh-ru | 9 | 2 |
+| piposh2 | 170 | 0 |
+| piposh-dream | 10 | 10 |
+| rating | 0 | 0 |
+
+So the fix moves **nothing** in Piposh 2, which is the corpus every other harness
+is measured against — the 170 qualified references all name the library that was
+going to win anyway. What it moves is the shape the corpus cannot produce by
+luck, which is what `tools/field_designator.gd` asserts instead: a field asked for
+in a library that does not hold it must answer nothing rather than the copy next
+door.
+
+**The port keeps one deliberate deviation, and it is why the fix is not simply
+"pass the argument through".** Three of those 214 references name a library the
+movie does not have. Piposh 1's `mainmenu.dir` writes
+`field "globalmoney" of castLib "master.cst"` and `field "afganifield" of castLib
+"master.cst"` where its own `MCsL` calls that library `master` — both spellings
+exist across the corpus, `zoom1`/`zoom1.cst` and `pirats`/`pirats.cst` among
+them, because each movie names its linked casts itself. Ten `piposh-dream`
+movies say `castLib "panel.cst"` for a library they do not load at all.
+`getCastLibIDByName` answers -1 for all three and the reference then finds
+nothing, which would take the money off Piposh 1's slot machine — a field the
+original draws. So `_resolve_field` asks `Members.library_named` whether the
+clause names a library that *exists*: one that does stops the search, which is the
+rule and the whole of the defect; one that does not falls back to the unqualified
+walk, which is this port's reading and is written down as such at the call site.
+
+### The property it asked for
+
+Found while fixing the above, and the worse of the two. `the <prop> of field "x"`
+parses to a `field_prop` node carrying the property name, and both of the
+interpreter's arms for it **threw the property away**: the read answered
+`get_field` and the write called `_set_field_node`. So every one of the fifty
+member properties read back as the field's *text*, and every write replaced the
+text.
+
+`Lingo::getTheField` resolves the designator to a cast member, refuses one that
+is not a field, and answers `member->getField(prop)`; `Lingo::setTheField` is
+`member->setField(prop, value)` (`reference/scummvm/lingo-the.cpp:2334-2398`).
+`docs/LINGO_SURFACE.md` §5.1 has listed the fourteen properties a field
+designator carries the whole time.
+
+The write is the player-visible half. `set the textSize of field "globalmoney"
+to 24` — Piposh 1's slot machine, in all three language builds — put the string
+`24` where the money was. That is the failure mode this repo keeps naming: a
+write that lands on the value it was *not* addressing round-trips perfectly,
+because the next read of `the text` answers what the wrong write put there. The
+harness sees it exactly that way with the fix reverted:
+
+```
+FAIL  and the member spelling agrees with the field spelling  (`the textSize of member` answered 12)
+FAIL  and the text it was not addressing is untouched  ("33")
+```
+
+Both directions now go through `_member_prop_at` / `_set_member_prop_at`, which
+are `lingo_member_prop` and `lingo_set_member_prop` split so that the reference
+can be resolved by the caller. That is deliberate rather than tidy: a field
+property that answered differently from the member property of the same name
+would be a divergence invented here, and `the textSize of field "x"` and
+`the textSize of member "x"` are one question in `lingo-the.cpp`.
+
+---
+
 ## 66. `set the hilite of member` inverted the artwork of every member type; the reference draws it for a button and nothing else
 
 **Status:** FIXED · **Area:** `scenes/preview/hilite.gd`

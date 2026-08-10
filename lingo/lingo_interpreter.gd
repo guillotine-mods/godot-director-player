@@ -1125,8 +1125,31 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				value,
 			])
 		"field_prop":
-			_set_field_node({"node": "field", "name": target.get("name", {}),
-				"cast": target.get("cast", null)}, LingoValue.to_str(value), frame)
+			## `set the <prop> of field "x" to v` â€” `setTheField`, which is
+			## `member->setField(prop, v)` in the reference
+			## (`lingo-the.cpp:2373-2398`) and not a write to the text.
+			##
+			## This arm wrote the **text** whatever the property was, so
+			## `set the textSize of field "globalmoney" to 24` â€” Piposh 1's slot
+			## machine, in all three language builds â€” replaced the money on screen
+			## with the string `24`. A write that lands on the value it was not
+			## addressing round-trips perfectly, because the next read of `the text`
+			## answers what it put there.
+			var set_prop := str(target.get("prop", "")).to_lower()
+			if host != null and host.has_method("set_field_prop"):
+				_host_call("set_field_prop", [
+					LingoValue.to_str(_eval(target.get("name", {}), frame)),
+					_cast_of(target, frame), set_prop, value,
+				])
+				return
+			# A host with no property spelling can still serve the one property
+			# that *is* the text; anything else has nowhere to land and is
+			# reported rather than written over the contents.
+			if set_prop == "text":
+				_set_field_node({"node": "field", "name": target.get("name", {}),
+					"cast": target.get("cast", null)}, LingoValue.to_str(value), frame)
+				return
+			report(LingoDiagnostics.MEMBER_PROP, "%s of field" % set_prop)
 		"prop":
 			var prop := str(target.get("prop", "")).to_lower()
 			if prop == "itemdelimiter":
@@ -1294,10 +1317,25 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				_cast_of(expr, frame),
 			])
 		"field_prop":
-			return _host_call("get_field", [
-				LingoValue.to_str(_eval(expr.get("name", {}), frame)),
-				_cast_of(expr, frame),
-			])
+			## `the <prop> of field "x"` â€” a **member property**, not the text.
+			##
+			## `Lingo::getTheField` resolves the designator to a cast member,
+			## refuses one that is not a field, and answers `member->getField(prop)`
+			## (`lingo-the.cpp:2334-2372`). This arm threw the property name away
+			## and answered `get_field`, so `the name of field "save1"` came back as
+			## whatever the player had typed into it and every one of the fifty
+			## member properties read as the text.
+			##
+			## The fallback is for a host that predates the pair â€” `lingo_host.gd`
+			## and the stub hosts in `tools/` bind `get_field` alone, and for them
+			## `the text of field "x"` is still the whole of what they can answer.
+			var field_name := LingoValue.to_str(_eval(expr.get("name", {}), frame))
+			var field_cast := _cast_of(expr, frame)
+			if host != null and host.has_method("get_field_prop"):
+				return _host_call("get_field_prop", [
+					field_name, field_cast, str(expr.get("prop", "")),
+				])
+			return _host_call("get_field", [field_name, field_cast])
 		"sprite_ref":
 			return LingoValue.to_int(_eval(expr.get("which", {}), frame))
 		"member_ref":

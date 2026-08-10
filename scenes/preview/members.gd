@@ -75,6 +75,44 @@ static func pack_ref(lib: int, member: int) -> int:
 	return (lib - 1) * LIB_STRIDE + member
 
 
+## Which library `of castLib <x>` names, or **0 for none**.
+##
+## `Movie::getCastLibIDByName` is an exact case-insensitive match against the
+## names the movie's `MCsL` gave its libraries, and answers -1 when nothing
+## matches (`movie.cpp:692-699`); 0 here is that answer, because 0 is not a
+## library number in this port either.
+##
+## Director's cast argument is a name **or** a library number -- `member(x, 2)`
+## and `the ... of castLib 2` are as legal as the spelled-out name, and this host
+## stringifies the argument before it arrives, so a number reaches here as "2".
+## Matched against library *names* it matches nothing, and the caller then falls
+## back to library 1: the library named in the script is discarded and the member
+## number resolved somewhere else, which is this module's whole subject. The name
+## is tried first so a library genuinely called "2" still wins, which is the only
+## way the two readings can disagree.
+##
+## 227 references in this corpus name their library by number and 226 of them say
+## `castLib 1`, so the miss was invisible: the wrong answer and the right one were
+## the same library. The odd one out is SAVELOAD's `field "plane" of castLib 2`.
+##
+## Split out of `resolve_ref` so that a caller which needs to know *whether* the
+## script's library exists -- `director_preview.gd:_resolve_field`, which stops
+## searching once it has been told where to look -- asks the same question rather
+## than a second copy of it.
+static func library_named(cast: String, table) -> int:
+	if table == null:
+		return 0
+	var wanted := cast.strip_edges().to_lower()
+	if wanted == "":
+		return 0
+	for number in table.cast_libs:
+		if str(table.cast_libs[number].get("name", "")).to_lower() == wanted:
+			return int(number)
+	if wanted.is_valid_int() and table.cast_libs.has(int(wanted)):
+		return int(wanted)
+	return 0
+
+
 ## `[cast library, member number]` for a Lingo member reference.
 ##
 ## An unnamed cast means the movie's own, which is how Director resolves a bare
@@ -93,33 +131,9 @@ static func resolve_ref(which: Variant, cast: String, table) -> Array:
 		var packed := int(which)
 		if packed >= LIB_STRIDE:
 			return [packed / LIB_STRIDE + 1, packed % LIB_STRIDE]
-	var lib := 1
 	var wanted := cast.strip_edges().to_lower()
-	var found_lib := false
-	if wanted != "":
-		for number in table.cast_libs:
-			if str(table.cast_libs[number].get("name", "")).to_lower() == wanted:
-				lib = int(number)
-				found_lib = true
-				break
-	# Director's cast argument is a name **or** a library number -- `member(x, 2)`
-	# and `the ... of castLib 2` are as legal as the spelled-out name, and this
-	# host stringifies the argument before it arrives, so a number reaches here as
-	# "2". Matched against library *names* it matches nothing, and the reference
-	# then falls back to library 1: the library named in the script is discarded
-	# and the member number resolved somewhere else, which is this module's whole
-	# subject. The name is tried first so a library genuinely called "2" still
-	# wins, which is the only way the two readings can disagree.
-	#
-	# 227 references in this corpus name their library by number and 226 of them
-	# say `castLib 1`, so the miss was invisible: the wrong answer and the right
-	# one were the same library. The odd one out is SAVELOAD's
-	# `field "plane" of castLib 2`.
-	if not found_lib and wanted != "" and wanted.is_valid_int():
-		var asked := int(wanted)
-		if table.cast_libs.has(asked):
-			lib = asked
-			found_lib = true
+	var found := library_named(cast, table)
+	var lib := found if found > 0 else 1
 	if typeof(which) == TYPE_INT or typeof(which) == TYPE_FLOAT:
 		return [lib, int(which)]
 	# A name, which Director looks up across every cast when the reference does
@@ -138,9 +152,9 @@ static func resolve_ref(which: Variant, cast: String, table) -> Array:
 		var cast_file = table.cast_for(int(other))
 		if cast_file == null:
 			continue
-		var found: int = cast_file.number_of(str(which))
-		if found > 0:
-			return [int(other), found]
+		var elsewhere: int = cast_file.number_of(str(which))
+		if elsewhere > 0:
+			return [int(other), elsewhere]
 	return [lib, 0]
 
 

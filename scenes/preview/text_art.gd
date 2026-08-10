@@ -66,13 +66,27 @@ static func key_for(lib: int, number: int, table) -> String:
 ## win over the *field* called `points` in the shared one, and a write would land
 ## on a member that has no text. So its answer is accepted only when it really is
 ## a field, and otherwise the libraries are walked again looking only at fields.
-static func resolve(name: String, first: Array, table) -> Array:
+##
+## **`qualified` is `field "x" of castLib Y`, and it stops the walk.**
+## `Movie::getCastMemberIDByNameAndType(name, castLib, type)` searches the named
+## library *and nothing else* -- the `castLib == 0` arm is the only one that
+## walks every cast, and a named library that does not hold the name answers -1
+## with a warning rather than falling through (`movie.cpp:720-759`). The library
+## a script names is part of the answer, exactly as it is for `member(...)`; a
+## port that keeps searching after it has been told where to look answers with a
+## member from a cast the script did not name, which is silence rather than an
+## error. `first` already carries the named library's verdict, because
+## `members.gd:resolve_ref` refuses to leave a library it was given -- so the
+## whole of the rule here is *not walking*.
+static func resolve(name: String, first: Array, table, qualified := false) -> Array:
 	if table == null:
 		return []
 	if not first.is_empty() and int(first[1]) > 0 \
 			and int(table.get_member(int(first[0]), int(first[1])).get("type", 0)) \
 				== Ink.TYPE_FIELD:
 		return first
+	if qualified:
+		return []
 	var libs: Array = table.cast_libs.keys()
 	libs.sort()
 	for lib in libs:

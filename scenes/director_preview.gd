@@ -3639,15 +3639,25 @@ func _write_position(channel: int, prop: String, value: Variant) -> void:
 ## screen. And the write was a no-op, so nothing a script put into a field could
 ## ever be read back or drawn: the score would have rendered its authored
 ## placeholder for ever.
-func lingo_field(name: String, _cast: String) -> Variant:
-	var where := _resolve_field(name)
+##
+## **The library the script named is part of the answer.** Both of these took a
+## `cast` and spelled it `_cast`, so `field "x" of castLib "master"` was resolved
+## as though it had been written `field "x"` and answered with whichever library
+## happened to hold that name first. The reference does not search past a library
+## it was given (`movie.cpp:720-759`, and `preview/members.gd`'s own header says
+## the same thing about `member(...)`), and this corpus qualifies its field
+## references 214 times across the six roots, 170 of them in Piposh 2 alone --
+## `field "objectsfield" of castLib "master"` is the inventory and is written on
+## every pickup.
+func lingo_field(name: String, cast: String) -> Variant:
+	var where := _resolve_field(name, cast)
 	if where.is_empty():
 		return ""
 	return _field_text_of(_table.get_member(int(where[0]), int(where[1])))
 
 
-func lingo_set_field(name: String, _cast: String, text: String) -> void:
-	var where := _resolve_field(name)
+func lingo_set_field(name: String, cast: String, text: String) -> void:
+	var where := _resolve_field(name, cast)
 	if where.is_empty():
 		return
 	_field_text[_field_key(int(where[0]), int(where[1]))] = text
@@ -3657,10 +3667,61 @@ func lingo_set_field(name: String, _cast: String, text: String) -> void:
 	queue_redraw()
 
 
-func _resolve_field(name: String) -> Array:
+## `the <prop> of field "x"`, in both directions.
+##
+## **A field designator carries a property, and it is not always `the text`.**
+## `Lingo::getTheField` resolves the designator to a member (`asMemberID`
+## preferring a `kCastText`), refuses anything that is not a field, and then
+## answers `member->getField(prop)` -- the *member's* property
+## (`lingo-the.cpp:2334-2398`). `setTheField` is the same statement written the
+## other way. So `the name of field "save1"` is the member's name, `the textSize
+## of field "x"` is its point size, and `set the textSize of field "x" to 12`
+## changes the size.
+##
+## This port answered the **text** for every property name and wrote the text for
+## every one, so `the name of field "save1"` came back as whatever the player had
+## typed into it and `set the textSize of field "x" to 12` replaced the field's
+## contents with the string `12`. A write that destroys the value it was not
+## addressing is the worst shape here: it round-trips, because the next read of
+## `the text` answers what the last write put there.
+##
+## Routed through the member-property path rather than reimplementing it, so a
+## property cannot answer one thing through `member` and another through `field`.
+func lingo_field_prop(name: String, cast: String, prop: String) -> Variant:
+	return _member_prop_at(_resolve_field(name, cast), prop)
+
+
+func lingo_set_field_prop(name: String, cast: String, prop: String,
+		value: Variant) -> void:
+	var where := _resolve_field(name, cast)
+	if where.is_empty():
+		return
+	_set_member_prop_at(where, prop, value)
+
+
+## `cast` is `of castLib â€¦` as the script spelled it, or `""` for a bare `field
+## "x"`. A named library is authoritative and is not searched past; see
+## `preview/text_art.gd:resolve`.
+##
+## **"Authoritative" is asked of the library, not of the clause**, and the
+## difference is measured rather than assumed. `tools/field_designator.gd`'s
+## survey over all six roots finds 214 distinct `field "x" of castLib Y`
+## references, and three of them name a library the movie does not have: Piposh
+## 1's `mainmenu.dir` says `castLib "master.cst"` where its own `MCsL` calls that
+## library `master`, and ten `piposh-dream` movies say `castLib "panel.cst"` for a
+## library that is not loaded at all. `getCastLibIDByName` answers -1 for those
+## and the reference then reports "Unknown castLib" and finds nothing â€” which
+## would take the money off Piposh 1's slot machine, a field the original draws.
+##
+## So a library that *resolves* stops the search, which is the rule and the whole
+## of the defect this closes; a library name that resolves to nothing falls back
+## to the unqualified walk, which is this port's own reading and is recorded here
+## as such rather than left to look like the reference.
+func _resolve_field(name: String, cast: String = "") -> Array:
 	if _table == null:
 		return []
-	return TextArt.resolve(name, _resolve_member_ref(name, ""), _table)
+	return TextArt.resolve(name, _resolve_member_ref(name, cast), _table,
+		Members.library_named(cast, _table) > 0)
 
 
 func _field_text_of(member: Dictionary) -> String:
@@ -3701,7 +3762,24 @@ func _resolve_member(which: Variant, cast: String) -> int:
 ## back 0 immediately after being set to 1 — a write that round-trips as a lie,
 ## which is the exact failure `preview/sprite_props.gd` was written to prevent.
 func lingo_member_prop(which: Variant, cast: String, prop: String) -> Variant:
-	var where := _resolve_member_ref(which, cast)
+	return _member_prop_at(_resolve_member_ref(which, cast), prop)
+
+
+## The same read, against a reference somebody else resolved.
+##
+## Split out so `the <prop> of field "x"` can be the member property it is in the
+## reference without a second copy of these three arms -- `lingo-the.cpp`'s
+## `getTheField` is `getField` on the member the designator names, so a field
+## property that answered differently from the member property of the same name
+## would be a divergence invented here.
+func _member_prop_at(raw_where: Array, prop: String) -> Variant:
+	# A designator that resolved to nothing is a reference to library 0, which no
+	# table has, so every arm below answers what it answers for an absent member
+	# -- `""` for the text and the name, 0 for a number. Answering a bare 0 here
+	# instead would make `the text of field "x" of castLib 1` come back as the
+	# integer 0 where the same field unqualified comes back as "", which is two
+	# answers to one question.
+	var where: Array = raw_where if not raw_where.is_empty() else [0, 0]
 	if prop == "editable":
 		return 1 if TextFocus.member_editable(
 			self, _table.get_member(int(where[0]), int(where[1]))) else 0
@@ -3749,7 +3827,16 @@ func lingo_set_member_prop(which: Variant, cast: String, prop: String,
 		value: Variant) -> void:
 	if _table == null:
 		return
-	var where := _resolve_member_ref(which, cast)
+	_set_member_prop_at(_resolve_member_ref(which, cast), prop, value)
+
+
+## The same write, against a reference somebody else resolved -- the other half
+## of `_member_prop_at`, and there for the same reason: `set the <prop> of field
+## "x"` is `setTheField`, which is `member->setField(prop, value)` in the
+## reference and must not become a second implementation here.
+func _set_member_prop_at(where: Array, prop: String, value: Variant) -> void:
+	if _table == null or where.is_empty():
+		return
 	match prop:
 		"editable":
 			TextFocus.set_member_editable(

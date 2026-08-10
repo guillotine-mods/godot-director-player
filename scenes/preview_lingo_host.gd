@@ -2566,6 +2566,26 @@ func set_field(name: String, cast: Variant, value: Variant) -> void:
 		preview.lingo_set_field(name, str(cast), LingoValue.to_str(value))
 
 
+## `the <prop> of field "x"` and `set the <prop> of field "x" to v`.
+##
+## A field designator carries a property in Director and this port had no
+## spelling for it: the interpreter sent both directions to `get_field` /
+## `set_field`, which know only the text, so every property name answered the
+## text and every write replaced it. `lingo-the.cpp:2334-2398` is the rule --
+## `getTheField`/`setTheField` resolve the designator to a member and then read
+## or write *that member's* property. `preview.lingo_field_prop` therefore lands
+## on the same code `the <prop> of member` does.
+func get_field_prop(name: String, cast: Variant, prop: String) -> Variant:
+	if preview == null:
+		return ""
+	return preview.lingo_field_prop(name, str(cast), prop.to_lower())
+
+
+func set_field_prop(name: String, cast: Variant, prop: String, value: Variant) -> void:
+	if preview != null:
+		preview.lingo_set_field_prop(name, str(cast), prop.to_lower(), value)
+
+
 func member_number(which: Variant, cast: Variant) -> Variant:
 	if preview == null:
 		return 0

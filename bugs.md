@@ -781,48 +781,6 @@ carries the claim, which is what `puppet_persists` asserts.
 
 ---
 
-## 35. `field "x" of castLib Y` drops the library
-
-**Status:** open · **Area:** Lingo host, fields · `scenes/director_preview.gd:lingo_field`
-
-`lingo_field(name, _cast)` and `lingo_set_field(name, _cast, text)` take the cast
-the script named and ignore it — the parameter is spelled `_cast`. Both then go
-through `_resolve_field`, which asks `Members.resolve_ref(name, "")`: the
-unnamed-cast path, which searches every library in number order and takes the
-first field of that name. An explicit `of castLib` in the script is discarded, so
-a movie with the same field name in two libraries reads and writes the wrong one.
-Same class as `docs/bugs-closed.md` 34 and 29: the library is part of the answer.
-
-Not currently visible, and that is the whole reason it is filed rather than
-fixed on suspicion. Found while measuring `resolve_ref` for 34. Across all 61
-movies, 1,081 member names exist in more than one library, and **four** of them
-are named by a script:
-
-| movie | name | libraries |
-|---|---|---|
-| `air1` | `jokefield` | Internal(1):201, master(3):122 |
-| `chess` | `fuel` | Internal(1):135, master(3):27 |
-| `hotel1` | `mirror` | Internal(1):364, island2(5):240 |
-| `night1` | `jokefield` | Internal(1):225, master(2):122 |
-
-None of the four is reached through a qualified `field` reference: `fuel` and
-`mirror` are `member(...)` references, and `jokefield` goes through
-`TextArt.resolve`, which re-walks the libraries preferring an actual field. The
-one qualified field reference in the corpus is SAVELOAD's
-`field "plane" of castLib 2`, and `plane` is unique in SAVELOAD, so the dropped
-library and the right library are the same one.
-
-So the corpus does not exercise it. Build it anyway — the reference says a field
-reference carries a cast and this engine is meant to run other titles.
-
-Reproduce:
-
-```
-grep -rn 'field "[^"]*" of castLib' reference/lingo --include=*.ls
-```
-
----
-
 ## 21. Every wandering character is on screen twice, because only half of `peoplefunk` is ported
 
 **Status:** open · **Area:** interpreter host / score runner
@@ -2456,39 +2414,6 @@ line each to wire up, and 0 corpus records reach it either way.
 
 ---
 
-## 53. `field "x"` resolves by name across every cast, and the library the script named is thrown away
-
-**Status:** open · **Area:** `scenes/director_preview.gd`
-
-`lingo_field(name, _cast)` and `lingo_set_field(name, _cast, text)`
-(`scenes/director_preview.gd:3199`, `:3206`) take the cast library the script
-named and discard it — the parameter is spelled `_cast`. Both forward to
-`_resolve_field(name)`, which asks `TextArt.resolve` for whichever library answers
-first.
-
-Found while tracing `docs/bugs-closed.md` 52. Rating's pickup writes
-`field "inventorylist" of castLib "panel.cst"`, and the write does land on the
-right member — `_resolve_field("inventorylist")` answers `[7, 147]`, `panel.cst`
-member 147 — because the name happens to be unique across the five casts
-`BLAEGOZ.dir` loads. That is luck, not resolution.
-
-The library being part of the answer is a rule this port has already been bitten by
-twice and has written down twice: `preview/members.gd` carries it ("the library is
-part of the answer, not a hint"), and `lingo_set_member_prop`'s own comment says
-the same thing about `set the text of member 12 of castLib 2` — which *does*
-resolve by reference, one function below the two that do not. So the fix is to
-route these two through `_resolve_member_ref(name, cast)` like their neighbour,
-not to invent anything.
-
-Not fixed alongside 52 deliberately: it is a separate defect with a separate
-failure mode, and 52's change had no reason to touch field resolution.
-
-**Unmeasured:** whether any container in any of the six roots actually ships two
-same-named fields in two casts one movie loads. `field` names are written by
-scripts rather than by the score, so the survey is a grep of the compiled sources
-against the cast tables per movie, and nobody has run it. Until it has been run,
-this is a hole with an unknown blast radius rather than a known wrong answer.
-
 ## 54. `play done` returns to the frame the `play` was on; the reference returns to the one after it when the `play` came from a frame script
 
 **Status:** fixed · `lingo_play_push` records `_index + 1` when `current_sprite_num` is 0 -- the channel of the running chain element, which is the reference's `currentChannelId`. The latch it replaces is gone: taking `frameI++` means taking it instead of, not beside. Re-measured on the screen the latch was measured on (`piposh-dream` `fritz_room.json`, click 25,12): no ping-pong, 23 sprites, all six save slots clickable, and the panel reached one step sooner, which is what landing past the caller's frame looks like.
@@ -2864,6 +2789,70 @@ Reproduce:
 godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
 for f in games/rating/*.dir games/rating/*.cst; do LC_ALL=C grep -qai "mainmenu-old" "$f" && echo "$f"; done
 ```
+## 75. Three field references name a cast library their movie does not have, and the port answers them where the reference would not
+
+**Status:** open, **deliberate**, and the deviation is at the call site ·
+**Area:** `scenes/director_preview.gd:_resolve_field`,
+`scenes/preview/members.gd:library_named` · found while closing
+`docs/bugs-closed.md` 53/35
+
+`Movie::getCastLibIDByName` is an exact case-insensitive match against the names a
+movie's `MCsL` gave its libraries and answers -1 for anything else
+(`reference/scummvm/movie.cpp:692-699`); `getCastMemberIDByNameAndType` then warns
+`Unknown castLib` and finds nothing. This port instead falls back to the
+unqualified walk when the clause names no library that exists.
+
+Three references in the corpus land on that path, and they are the reason it is
+there. Measured with
+`godot --headless --path . --script tools/field_designator.gd -- --root <r> --survey`:
+
+| root | reference | the movie's own libraries |
+|---|---|---|
+| piposh, piposh-en, piposh-ru | `mainmenu.dir`: `field "globalmoney" of castLib "master.cst"` | `Internal`, `master` |
+| piposh, piposh-en, piposh-ru | `mainmenu.dir`: `field "afganifield" of castLib "master.cst"` | `Internal`, `master` |
+| piposh-dream (10 movies) | `field "timebasebackup" of castLib "panel.cst"` | no `panel.cst` loaded |
+
+Both spellings of the same file are in use across Piposh 1 — the corpus names its
+linked casts `master` and `master.cst`, `zoom1` and `zoom1.cst`, `pirats` and
+`pirats.cst`, per movie — so the author's one spelling matches in some rooms and
+not in others. Following the reference exactly would blank the money on Piposh 1's
+slot machine, a field the original draws, so the walk is kept and written down
+rather than taken silently.
+
+**What would settle it**, in order of what it would cost: read the `MCsL` name and
+path of every library of every movie in Piposh 1 and see whether the *path*
+basename is what the script is spelling (in which case Director may match on the
+file and this port should too, which would be a fix rather than a deviation); or
+run the original under a Director projector and watch that field.
+
+The `piposh-dream` ten are a different case wearing the same clothes: neither
+resolution finds `timebasebackup` there, qualified or not, so those ten reads
+answer `""` today and would answer `""` under the reference. `checkroom` reads
+`line TIMEKEEPER of field "timebasebackup"` to decide where the player is sent,
+which makes this worth its own look — it is filed here because the survey found
+it and not because it has been traced.
+
+---
+
+## 76. `field("x").prop` — the dot spelling of a field property — resolves a member named after the field's *text*
+
+**Status:** open, unexercised · **Area:** `lingo/lingo_interpreter.gd`'s `dot`
+arms · found while closing `docs/bugs-closed.md` 53/35, and **not** fixed with it
+
+The designator spelling `the <prop> of field "x"` now reaches
+`get_field_prop`/`set_field_prop`. The dot spelling does not: `_eval`'s `dot` arm
+tests the owner node for `sprite_ref` and `member_ref` and has no `field` case, so
+`field("x").textSize` evaluates the owner — which yields the field's **text** —
+and then asks `get_member_prop` for a member of that name. `field("x").text = y`
+takes the same route through `_assign`.
+
+0 sites in any of the six titles use it, which is why it is filed rather than
+fixed in the same change: the fix is one more arm beside the two that are there,
+and it wants the same harness case as the designator spelling
+(`tools/field_designator.gd`) rather than a new file.
+
+---
+
 ## 74. Eight rows of Piposh 1's piano keyboard draw differently in the player and in `director_render.gd`
 
 `docs/bugs-closed.md` 73 removed the diagnostic's own crude keying rule, and with
