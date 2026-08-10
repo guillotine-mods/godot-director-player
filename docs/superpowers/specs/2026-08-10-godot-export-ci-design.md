@@ -53,11 +53,15 @@ number that matters is the size of the largest single asset.
 | `.cst` | 397 MB | 0.36 |
 | other | 175 MB | ~0.5 |
 
-Weighted, that is roughly 1.3 GB compressed, which fits. **But whether the
-exported pack is compressed at all is unverified.** Godot stores the `.pck`
-inside an APK uncompressed in some configurations so it can be memory-mapped. If
-that applies here the APK is ~3.2 GB and cannot be a release asset. The
-measurement was not run locally because no export templates are installed.
+Weighted, that is roughly 1.3 GB compressed, plus the ~269 MB `piposh3d.pck`
+and the engine binary, so call it 1.6 GB. That fits, with less headroom than it
+first appears.
+
+**But whether the exported pack is compressed at all is unverified.** Godot
+stores the `.pck` inside an APK uncompressed in some configurations so it can be
+memory-mapped. If that applies here the APK is north of 3.4 GB and cannot be a
+release asset. The measurement was not run locally because no export templates
+are installed; the first CI run settles it either way.
 
 Mitigation, in order:
 
@@ -73,12 +77,20 @@ Mitigation, in order:
 
 These are part of the work, not prerequisites the user does separately.
 
-**Widen the Windows `include_filter`.** Today Android has
+**Widen both `include_filter`s.** Today Android has
 `include_filter="games/*,director_game.cfg"` and Windows has only
 `include_filter="director_game.cfg"`. Because `**/*.import` is gitignored and
 game assets load at runtime from source files rather than as imported resources,
 `export_filter="all_resources"` does not sweep `games/` in. The current Windows
-export therefore ships zero game data. Widen it to match Android.
+export therefore ships zero game data.
+
+Both presets need `games/*`, `director_game.cfg` and `titles/*.pck`. That last
+entry is missing from both today: `autoload/piposh3d_pack.gd` mounts
+`res://titles/piposh3d.pck`, the file is generated and gitignored, and a `.pck`
+is not an imported resource, so without an explicit include the pack is built in
+CI and then left out of the artifact. The failure is silent, because the
+launcher gates that tile on `ResourceLoader.exists()` and simply does not draw
+it.
 
 **Version stamping in `export_presets.cfg`.** `version/code=1` is hardcoded.
 Android requires a strictly increasing `versionCode` to install an update, so
@@ -129,10 +141,12 @@ Steps in order:
 7. **Import** with `godot --headless --path . --import`. A fresh checkout has no
    `.godot`, and without it `class_name` globals do not resolve.
 8. **piposh-3d pack.** `titles/piposh-3d` is its own Godot project. Import it,
-   then `--export-pack Pack` to produce `titles/piposh-3d.pck` (~269 MB per the
-   `.gitignore` note). Skipping this does not fail the build: the launcher gates
-   the embed tile on `ResourceLoader.exists()`, so the 3D title would silently
-   disappear from the release instead.
+   then `--export-pack Pack` to produce `titles/piposh3d.pck` (~269 MB per the
+   `.gitignore` note). Note the output name has no hyphen: `piposh3d.pck` is
+   what `autoload/piposh3d_pack.gd` mounts, while the source submodule is
+   `titles/piposh-3d`. Skipping this step does not fail the build: the launcher
+   gates the embed tile on `ResourceLoader.exists()`, so the 3D title would
+   silently disappear from the release instead.
 9. **Export Windows**, `--export-release "Windows Desktop"`.
 10. **Export Android**, `--export-release "Android"`. Release rather than debug:
     a debug export enables the remote debugger and is larger.
