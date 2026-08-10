@@ -277,6 +277,41 @@ else
 	check "a missing presets file is refused" 0
 fi
 
+cat >"$tmp/pristine.cfg" <<'EOF'
+[preset.0.options]
+
+version/code=1
+version/name="0.1.0"
+package/unique_name="com.guillotinemods.godotdirectorplayer"
+EOF
+
+# The tag comes from $GITHUB_REF_NAME -- whoever pushes the tag picks it. These
+# reached sed unescaped: `&` splices the whole matched line back into itself and
+# leaves the file half-stamped, `|` is the sed delimiter.
+#
+# The pair matters. "is refused" alone is VACUOUS: the broken version also
+# exited non-zero, because its own round-trip check caught the corruption after
+# writing it. Only "the file is untouched" tells the two apart. An assertion
+# that passes against the bug it was written for is worse than no assertion.
+for bad in 'v1.0&2.0' 'v1.0|2.0' 'v1.0 2.0' 'v1.0;touch /tmp/stamp-pwned'; do
+	cp "$tmp/pristine.cfg" "$tmp/guard.cfg"
+	if tools/ci/stamp_version.sh "$bad" 42 "$tmp/guard.cfg" >/dev/null 2>&1; then
+		check "a tag with metacharacters is refused ($bad)" 1
+	else
+		check "a tag with metacharacters is refused ($bad)" 0
+	fi
+	cmp -s "$tmp/pristine.cfg" "$tmp/guard.cfg"
+	check "the file is untouched after refusing ($bad)" $?
+done
+
+# Missing arguments are bad input (2), not a bash expansion failure (1).
+tools/ci/stamp_version.sh >/dev/null 2>&1 && rc=0 || rc=$?
+[ "$rc" -eq 2 ]
+check "no arguments exits 2" $?
+tools/ci/stamp_version.sh v1.0.0 >/dev/null 2>&1 && rc=0 || rc=$?
+[ "$rc" -eq 2 ]
+check "one argument exits 2" $?
+
 echo ""
 if [ "$fail" -eq 0 ]; then echo "PASS  stamp_version"; else echo "FAIL  stamp_version"; fi
 exit "$fail"
@@ -306,11 +341,28 @@ Create `tools/ci/stamp_version.sh`:
 #
 # Writes in place, on a checkout CI is about to throw away. Not meant to be
 # committed back.
+#
+# The tag arrives from `$GITHUB_REF_NAME`, which is whatever string the person
+# pushing the tag chose, and it used to be spliced into a `|`-delimited sed
+# script unescaped. A tag carrying `&` made sed splice the whole matched line
+# back into itself and left the file half-stamped; a tag carrying `|` broke the
+# delimiter. Both are refused up front rather than escaped, because a version
+# name outside this charset is a mistake worth failing on, not a string worth
+# quoting.
 set -euo pipefail
 
-tag=${1:?usage: stamp_version.sh <tag> <code> [presets-file]}
-code=${2:?usage: stamp_version.sh <tag> <code> [presets-file]}
+usage() {
+	echo "usage: stamp_version.sh <tag> <code> [presets-file]" >&2
+	exit 2
+}
+
+[ "$#" -ge 2 ] || usage
+tag=$1
+code=$2
 file=${3:-export_presets.cfg}
+
+[ -n "$tag" ] || usage
+[ -n "$code" ] || usage
 
 # `v0.2.0` is the tag; `0.2.0` is what Android shows. Anything not starting with
 # a `v` is left alone, so a `2026.1` scheme stamps as itself.
@@ -319,6 +371,13 @@ name=${tag#v}
 case $code in
 	'' | *[!0-9]*)
 		echo "stamp_version: version code must be a positive integer, got '$code'" >&2
+		exit 2
+		;;
+esac
+
+case $name in
+	'' | *[!A-Za-z0-9._+-]*)
+		echo "stamp_version: version name must match [A-Za-z0-9._+-]+, got '$name'" >&2
 		exit 2
 		;;
 esac
@@ -337,12 +396,14 @@ sed -i.bak \
 rm -f "$file.bak"
 
 # A substitution that matched nothing exits 0, so the write is read back rather
-# than assumed.
-grep -q "^version/code=$code\$" "$file" || {
+# than assumed. `-Fqx` compares the written value as a literal whole line: a
+# semver name is full of `.`, which as a BRE matches any character, so the
+# pattern form of this check passed on values it had not actually written.
+grep -Fqx "version/code=$code" "$file" || {
 	echo "stamp_version: version/code did not take" >&2
 	exit 1
 }
-grep -q "^version/name=\"$name\"\$" "$file" || {
+grep -Fqx "version/name=\"$name\"" "$file" || {
 	echo "stamp_version: version/name did not take" >&2
 	exit 1
 }
