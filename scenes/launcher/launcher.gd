@@ -238,8 +238,12 @@ func _fit_tiles() -> void:
 	for tile in _tiles:
 		tile.custom_minimum_size.y = GameTile.MIN_HEIGHT
 	var slack := (%PlayerScroll as Control).size.y - (%Body as Control).get_combined_minimum_size().y
+	# The floor is `FLOOR_HEIGHT` rather than `MIN_HEIGHT`, so a negative slack
+	# shrinks the tiles instead of producing a scrollbar. Five titles make a
+	# second row, and on a short window two rows at `MIN_HEIGHT` do not fit --
+	# the grid scrolled, and everything below it went with it.
 	var height := clampi(GameTile.MIN_HEIGHT + int(slack / rows),
-		GameTile.MIN_HEIGHT, GameTile.MAX_HEIGHT)
+		GameTile.FLOOR_HEIGHT, GameTile.MAX_HEIGHT)
 	for tile in _tiles:
 		tile.custom_minimum_size.y = height
 

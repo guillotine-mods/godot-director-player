@@ -29,11 +29,24 @@ extends RefCounted
 const TitleList := preload("res://scenes/launcher/title_list.gd")
 
 const MIN_WIDTH := 250
+## The comfortable height: what a tile takes when the window is not arguing.
 const MIN_HEIGHT := 152
 ## What a tile is allowed to grow to when the window has height to spare.
 ## Unbounded, a single row of four in a maximized window becomes four 700px
 ## panels with a word in the corner of each.
 const MAX_HEIGHT := 196
+## How far a tile may be squeezed before the grid gives up and scrolls.
+##
+## A second row arrives at five titles, and on a short window two rows of
+## `MIN_HEIGHT` do not fit -- so the grid scrolled, and what it scrolled out of
+## sight was everything below it. Scrolling to reach Stage Fit is a worse outcome
+## than a shorter tile, so the tile yields first.
+##
+## The number is what the contents actually need rather than a guess: the title
+## is set in `Display`, the root line in `Eyebrow`, and `PADDING` is applied
+## twice. Below this they start to crowd, and at that point scrolling genuinely
+## is the better answer.
+const FLOOR_HEIGHT := 112
 const PADDING := 16
 
 
