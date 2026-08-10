@@ -740,6 +740,23 @@ func _parse_primary() -> Dictionary:
 		_advance()
 		var items: Array = []
 		var pairs: Array = []
+		# **`[:]` is the empty property list, and it is the only way to write one.**
+		# `[]` makes an empty *linear* list, and the two are different types to
+		# every `ilk` test and every `setaProp`. Director gives the colon its own
+		# spelling precisely because an empty list carries no pairs to tell them
+		# apart by. Without it a script that starts a prop list empty and fills it
+		# later does not parse at all -- and a parse failure drops the whole
+		# script, so the loss is every handler beside it.
+		#
+		# Itamar Park is the title that found it: `gArcadeFlags = [:]` sits in
+		# `getFlag`/`setFlag`/`resetFlagList`, and those three took
+		# `openLevelsWindow` down with them, which is why its level select never
+		# opened and the movie waited on a frame for ever.
+		if _at_op(":"):
+			_advance()
+			if not _expect_op("]"):
+				return {}
+			return {"node": "proplist", "pairs": [], "line": line}
 		if not _at_op("]"):
 			while not _failed():
 				var first := _parse_expr()
@@ -999,16 +1016,85 @@ func _parse_optional_of_movie(keywords):
 	return _parse_expr()
 
 
+## `the last char of x` — the ordinal comes *before* the kind, where `char 1 of x`
+## has the kind first, so the two spellings cannot share one entry point without
+## one of them looking ahead. This reads the ordinal form directly and builds the
+## same node `_parse_chunk` builds.
+##
+## The ordinal becomes the index it names, so nothing downstream learns a second
+## way of saying where a chunk is: `first` is 1, `last` is the count of that kind
+## in the source, `middle` the one at half of it. The count is written as the
+## `the number of <kind>s in <source>` the interpreter already evaluates.
+func _parse_chunk_ordinal() -> Dictionary:
+	var line := _ln()
+	var ordinal := _advance().to_lower()
+	var kind := _advance().to_lower()
+	if not _eat_kw("of") and not _eat_kw("in"):
+		return _fail("%s chunk needs `of`" % kind, _ln())
+	var source := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+	var count: Dictionary = {
+		"node": "the", "prop": "number", "of": kind + "s",
+		"target": source, "line": line,
+	}
+	var start: Dictionary = {"node": "int", "value": 1, "line": line}
+	if ordinal == "last":
+		start = count
+	elif ordinal == "middle":
+		start = {"node": "binary", "op": "/", "left": count,
+			"right": {"node": "int", "value": 2, "line": line}, "line": line}
+	return {
+		"node": "chunk", "kind": kind, "start": start, "stop": null,
+		"source": source, "line": line,
+	}
+
+
 func _parse_chunk() -> Dictionary:
 	var line := _ln()
 	var kind := _advance().to_lower()
-	var start := _parse_expr(Grammar.ADDITIVE)
+	# **`the last char of x` names a position, not a count**, and it is spelled
+	# where the index goes rather than as a modifier — so it is read here, before
+	# an index is looked for, and stands in for one. Director's ordinals are
+	# `first`, `last` and `middle`; `the last char in myLine` is the idiom that
+	# found this, in a `repeat while` that trims trailing characters.
+	#
+	# `-30000` is how the same handler writes it the other way round, and that
+	# already worked, which is the trap: a title can use both spellings two lines
+	# apart and only one of them parses.
+	var ordinal := ""
+	if _at_word("first") or _at_word("last") or _at_word("middle"):
+		ordinal = _advance().to_lower()
+	var start: Dictionary = {}
 	var stop = null
-	if _eat_kw("to"):
-		stop = _parse_expr(Grammar.ADDITIVE)
-	if not _eat_kw("of"):
+	if ordinal == "":
+		start = _parse_expr(Grammar.ADDITIVE)
+		if _eat_kw("to"):
+			stop = _parse_expr(Grammar.ADDITIVE)
+	# **`in` is the same word as `of` here.** Director accepts both for a chunk's
+	# source (`the last char in x`, `char 1 of x`), and a title uses whichever
+	# reads better in the sentence. Refusing `in` cost five scripts in one cast.
+	if not _eat_kw("of") and not _eat_kw("in"):
 		return _fail("%s chunk needs `of`" % kind, _ln())
 	var source := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+	# The ordinal is turned into the index it names, so nothing downstream has to
+	# learn a second way of saying where a chunk is: `first` is 1, `last` is the
+	# count of that chunk kind in the source, `middle` the one at half of it.
+	# `the number of <kind>s in <source>` is the expression the interpreter
+	# already evaluates for a count, so `last` is written in terms of it rather
+	# than as a new evaluator arm.
+	if ordinal != "":
+		var count: Dictionary = {
+			"node": "the", "prop": "number", "of": kind + "s",
+			"target": source, "line": line,
+		}
+		match ordinal:
+			"first":
+				start = {"node": "int", "value": 1, "line": line}
+			"last":
+				start = count
+			"middle":
+				start = {"node": "binary", "op": "/", "left": count,
+					"right": {"node": "int", "value": 2, "line": line},
+					"line": line}
 	return {
 		"node": "chunk", "kind": kind, "start": start, "stop": stop,
 		"source": source, "line": line,
@@ -1018,6 +1104,16 @@ func _parse_chunk() -> Dictionary:
 func _parse_the() -> Dictionary:
 	var line := _ln()
 	_advance() # the
+	# **`the last char in x` is a chunk expression wearing `the`.** The ordinal
+	# forms are spelled with it and the numbered ones without — `char 1 of x` and
+	# `the last char of x` are the same kind of thing — so this hands the ordinal
+	# case to the chunk parser rather than growing a second one. Reached before
+	# every property arm below because `first`/`last`/`middle` followed by a chunk
+	# kind cannot be a property name.
+	if _at_word("first") or _at_word("last") or _at_word("middle"):
+		for kind in Grammar.CHUNKS.keys():
+			if _at_word(str(kind), 1):
+				return _parse_chunk_ordinal()
 	# `the number of lines in x` counts, but `the number of member "x"` is that
 	# member's number. Same three words, different meaning.
 	if _at_word("number") and _at_kw("of", 1):
