@@ -220,8 +220,8 @@ a method on a native object in both of Director's spellings -- `openFile(f, p,
 "a stubbed Xtra must answer the standard set" made into an interface rather than
 a convention.
 
-**One Xtra is implemented: FileIO** (`lingo/lingo_fileio.gd`), and it is worth
-more than a dozen of the names above because it is what titles are *blocked on*.
+**Two Xtras are implemented, FileIO and BuddyAPI**, and both are worth more than
+a dozen of the names above because they are what titles are *blocked on*.
 Two movies pointed at this engine stop at startup without it, both while reading
 a configuration file: `itamar-park` reads `safari.ini` into a field and parses
 `[PATH]` .. `[ENDINI]` out of it to fill `the searchPaths` and choose a language,
@@ -240,14 +240,42 @@ and **writes are refused** in a headless run without `--allow-writes`
 (`-37`, bad file name). The header says why: the corpus is six git submodules and
 a movie calls `createFile` from its own Lingo without any tool asking for one.
 
-**The next Xtra a title is blocked on is BuddyAPI**, and unlike the list above it
-has a measured consequence: `itamar-magichat`'s `ReadConfigLine` is one line,
+**BuddyAPI is the second** (`lingo/lingo_buddyapi.gd`), and it is the one with a
+measured consequence: `itamar-magichat`'s `ReadConfigLine` is one line,
 `baReadIni(Section, Option, EMPTY, gIniFileName)`, and with the name unbound the
-movie's `#startFrame` never gets a value and the playhead never leaves frame 0
-(`bugs.md` 78, which records the measurement that binding it is enough and the
-two questions a real implementation has to answer first). BuddyAPI's functions
-are global handlers rather than object methods, so they bind where `call_builtin`
-binds rather than through `lingo_xtra.gd`.
+interpreter answered the integer 0, the movie's own `if tmp = EMPTY` fallback was
+skipped, `#startFrame` became 0 and the playhead never left frame 0. Bound, the
+playhead leaves frame 0 on the first tick and plays the intro loop, frames
+124-138 (`bugs.md` 78 is closed on that measurement).
+
+Its shape is not FileIO's, and the difference is the design rather than a detail:
+**every `ba*` name is a global builtin**, so they are arms of `call_builtin`
+rather than methods on an instance, which is what the reference does
+(`budapi.cpp` registers all of them `HBLTIN` and gives the Xtra object only `new`
+and `name`) and what all 46 sites in `itamar-magichat` write. The registry entry
+exists so that `the xtras` and `xtra("BudAPI")` agree with the player about what
+is loaded, and for nothing else.
+
+Fourteen names are live and §19 has a row for each: the ini set (`baReadIni`,
+`baWriteIni`, `baFlushIni`), the file set (`baFileExists`, `baFileSize`,
+`baDeleteFile`, `baCopyFile`, `baRenameFile`, `baFileList`, `baFolderList`,
+`baFolderExists`, `baCreateFolder`, `baDeleteFolder`) and `baOpenURL`, which
+**declines and reports** rather than handing the host OS a URL a movie read out
+of a configuration file. `tools/buddyapi_xtra.gd` is the harness.
+
+*What is still missing from BuddyAPI*, in the order it is worth building:
+`baCopyXFiles`, `baXCopy`, `baDeleteXFiles`, `baXDelete` and the
+`baFindFirstFile`/`baFindNextFile`/`baFindClose` iterator -- the bulk and
+iterator forms of file operations that are here singly, all well-defined and
+none of them called by anything in reach. Everything else in the published API is
+absent for a reason written per name at the bottom of `lingo_buddyapi.gd`'s
+header: an `InfoType` string whose accepted values are not sourceable
+(`baVersion`, `baSysFolder`, `baCpuInfo`, `baDiskInfo`, `baFileAttributes` …),
+something that changes the machine or launches a program (`baRunProgram`,
+`baShell`, `baExitWindows`, `baSetDisplay` …), or a subsystem there is nothing
+here to answer about (the registry, the window handles, the Start Menu). An
+absent name is reported by the unbound-name diagnostic; a bound one that answered
+something invented would not be.
 
 *What is still missing:* `openXlib`, `closeXlib`, `showXlib` -- loading a real
 `.x32` or XObject library, which is native code this port cannot run -- and

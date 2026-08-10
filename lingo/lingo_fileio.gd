@@ -311,6 +311,8 @@ func _delete() -> Variant:
 		return null
 	var absolute := ProjectSettings.globalize_path(_path)
 	var err := DirAccess.remove_absolute(absolute)
+	if err == OK:
+		note_file(_path, false)
 	_close_silently()
 	_status = OK if err == OK else IO_ERROR
 	return null
@@ -333,6 +335,9 @@ func _flush() -> bool:
 	f.store_string(_text)
 	f.close()
 	_dirty = false
+	# A `createFile` only reaches the disk here, and until this call the path
+	# resolver could not find the file the movie had just made. See `note_file`.
+	note_file(_path, true)
 	return true
 
 
@@ -623,33 +628,150 @@ static func writable_target(host_object: Object, name: String) -> String:
 ## *containers* -- `.dir`, `.cst` and their packagings -- and FileIO's whole
 ## subject is the files that are not containers.
 static var _indexes: Dictionary = {}
+## The **directories** of the same walk, keyed the same way, with no trailing
+## separator. A second dictionary rather than a second walk: BuddyAPI's
+## `baFolderExists`, `baFileList` and `baCreateFolder` (`lingo_buddyapi.gd`) ask
+## about folders and would otherwise need their own recursion over the same
+## tree, and a folder resolved by `DirAccess.dir_exists` would hand back the
+## *requested* spelling -- the Windows case-insensitivity bug the comment in
+## `resolve` is about, in the other half of the filesystem.
+static var _dir_indexes: Dictionary = {}
 
 
 static func _index_for(root: String) -> Dictionary:
-	if root == "":
-		return {}
-	if _indexes.has(root):
-		return _indexes[root]
-	var index: Dictionary = {}
-	_scan(root, "", index)
-	_indexes[root] = index
-	return index
+	_build_index(root)
+	return _indexes.get(root, {})
 
 
-static func _scan(dir_path: String, prefix: String, into: Dictionary) -> void:
-	var dir := DirAccess.open(dir_path)
+## Every directory under `root`, keyed by lower-cased relative path. `""` maps
+## to the root itself, so `baFolderExists(the pathName)` has an answer.
+static func folder_index_for(root: String) -> Dictionary:
+	_build_index(root)
+	return _dir_indexes.get(root, {})
+
+
+static func _build_index(root: String) -> void:
+	if root == "" or _indexes.has(root):
+		return
+	var files: Dictionary = {}
+	var dirs: Dictionary = {"": root}
+	_scan(root, "", files, dirs)
+	_indexes[root] = files
+	_dir_indexes[root] = dirs
+
+
+## A directory listing that can see what this session made.
+##
+## The **globalized** path first, and that is the whole point of the helper:
+## `DirAccess.open("res://…")` goes through the pack layer once a `.pck` is
+## mounted and answers a snapshot taken at startup, so a directory created a
+## statement ago does not open at all. The OS path does. The `res://` spelling is
+## still tried behind it, because in an exported build that is the only spelling
+## with anything in it and `globalize_path` hands `res://` straight back.
+static func open_dir(dir_path: String) -> DirAccess:
+	var dir := DirAccess.open(ProjectSettings.globalize_path(dir_path))
+	return dir if dir != null else DirAccess.open(dir_path)
+
+
+static func _scan(dir_path: String, prefix: String, into: Dictionary,
+		dirs: Dictionary) -> void:
+	var dir := open_dir(dir_path)
 	if dir == null:
 		return
 	for file_name in dir.get_files():
 		into[(prefix + str(file_name)).to_lower()] = "%s/%s" % [dir_path, file_name]
 	for sub in dir.get_directories():
-		_scan("%s/%s" % [dir_path, sub], "%s%s/" % [prefix, sub], into)
+		var child := "%s/%s" % [dir_path, sub]
+		dirs[(prefix + str(sub)).to_lower()] = child
+		_scan(child, "%s%s/" % [prefix, sub], into, dirs)
+
+
+## An existing *directory* for `name`, or "".
+##
+## The folder half of `resolve`, and the same three tries in the same order and
+## for the same reasons -- a movie's `the pathName & "CARDS"` carries a
+## directory tree that has not existed since 1997 in front of a tail that has.
+## A bare `DirAccess.dir_exists` is the last try rather than the first, because
+## it is case-insensitive on Windows and case-sensitive everywhere this port
+## exports to.
+static func resolve_folder(host_object: Object, name: String) -> String:
+	var wanted := normalise(name).trim_suffix("/")
+	var index := folder_index_for(game_root(host_object))
+	var tail := wanted.to_lower()
+	while true:
+		if index.has(tail):
+			return str(index[tail])
+		var cut := tail.find("/")
+		if cut < 0:
+			break
+		tail = tail.substr(cut + 1)
+	# Last, and **globalized**, for the reason `note_file` below is written at
+	# length: `DirAccess` on a `res://` path answers from a snapshot taken when
+	# the pack was mounted, so it cannot see a directory this session made. The
+	# OS path can. Case-insensitive on Windows like every literal test, which is
+	# why it is last rather than first.
+	if wanted != "" and DirAccess.dir_exists_absolute(
+			ProjectSettings.globalize_path(wanted)):
+		return wanted
+	return ""
 
 
 ## Forget the cached index. A harness that writes a file and then looks for it
 ## needs this, and so does anything that changes the root.
+##
+## **This is not enough on its own for something this session created**, and that
+## is not an optimisation note -- see `note_file`.
 static func forget_index() -> void:
 	_indexes.clear()
+	_dir_indexes.clear()
+
+
+## Record a file this player has just created or removed, in every cached index
+## it falls under.
+##
+## **Rebuilding the index instead does not work, and the reason is worth the
+## paragraph.** This project mounts a `.pck` (`autoload/piposh3d_pack.gd`), and
+## from that moment Godot serves `res://` through `DirAccessPack` -- a directory
+## tree assembled when the pack was mounted and never revisited. So
+## `DirAccess.open("res://games/x").get_directories()` answers what was there at
+## startup for the rest of the process, however many times the index is thrown
+## away and walked again. Measured directly: `make_dir_absolute` returns OK, the
+## directory is on disk, `DirAccess` on the `res://` path does not list it, and
+## `DirAccess` on `ProjectSettings.globalize_path` of the same path does.
+##
+## That made `baCreateFolder` answer 1 and `baFolderExists` answer 0 for the same
+## name one statement later, which is the "bound and reports nothing" shape from
+## the far side: both calls worked and the *index between them* was lying. FileIO
+## had the same hole -- `createFile` then `closeFile` then `openFile` on the bare
+## name could not find the file it had just written -- and `_flush` calls this
+## now for that reason.
+##
+## `exists` false is the removal, so a deleted file stops resolving without a
+## walk of the tree it is no longer in.
+static func note_file(path: String, exists: bool) -> void:
+	_note(_indexes, path, exists)
+
+
+## The folder half. A removal only forgets the folder itself, which is all this
+## port ever removes: `baDeleteFolder` refuses a folder that is not empty.
+static func note_folder(path: String, exists: bool) -> void:
+	_note(_dir_indexes, path, exists)
+
+
+static func _note(store: Dictionary, path: String, exists: bool) -> void:
+	var full := normalise(path)
+	if full == "":
+		return
+	for root in store:
+		var prefix := str(root) + "/"
+		if not full.begins_with(prefix):
+			continue
+		var index: Dictionary = store[root]
+		var key := full.substr(prefix.length()).to_lower()
+		if exists:
+			index[key] = full
+		else:
+			index.erase(key)
 
 
 # ------------------------------------------------------------------- arguments

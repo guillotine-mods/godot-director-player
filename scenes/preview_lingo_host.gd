@@ -33,6 +33,7 @@ const CastLibs := preload("res://scenes/preview/cast_libs.gd")
 ## §7.3's Xtra registry entry, and the one Xtra this player implements.
 const LingoXtra := preload("res://lingo/lingo_xtra.gd")
 const FileIO := preload("res://lingo/lingo_fileio.gd")
+const BuddyAPI := preload("res://lingo/lingo_buddyapi.gd")
 
 ## The bare words `go`'s own grammar puts in front of its arguments.
 ##
@@ -373,16 +374,21 @@ var external_params: Array = []
 ##
 ## Each entry is `{"name": <as registered>, "object": <the native object>}`.
 ##
-## **One entry: FileIO** (`lingo/lingo_fileio.gd`). The paragraph this replaces
-## said the list would stay empty until a native Xtra was written, and named
-## §7.3's object surface as the bar; FileIO clears it -- an instance answers
-## `lingo_responds_to`, `lingo_message_list` and `lingo_perform`, which is what
-## `respondsTo` and a method call need.
+## **Two entries: FileIO and BudAPI**, and both are here for the same reason --
+## they are the Xtras titles are *blocked on* rather than merely missing.
 ##
-## It is the one Xtra worth having first because it is the one titles are
-## *blocked on*: two movies pointed at this engine stop at startup without it,
-## both while reading a configuration file (see `lingo_fileio.gd`'s header). Every
-## other Xtra in the wild is an effect or a widget a movie can be missing.
+## `lingo/lingo_fileio.gd` came first: two movies pointed at this engine stop at
+## startup without it, both while reading a configuration file (see that file's
+## header). An instance answers `lingo_responds_to`, `lingo_message_list` and
+## `lingo_perform`, which is what `respondsTo` and a method call need, so §7.3's
+## object surface is cleared rather than approximated.
+##
+## `lingo/lingo_buddyapi.gd` is the second and its shape is different: BuddyAPI's
+## surface is **global**, so the entry here exists only so that `the xtras` and
+## `xtra("BudAPI")` agree with the player about what is loaded, while the `ba*`
+## names themselves are arms of `call_builtin` below. `itamar-magichat` parks on
+## frame 0 without it (`bugs.md` 78) because an unbound `baReadIni` answers the
+## integer 0 to a script that tests `= EMPTY`.
 ##
 ## Kept as a list of records rather than as bare names because `xtra("name")`
 ## returns the **object**, not the name: a registry of strings would make the
@@ -401,6 +407,10 @@ func _init() -> void:
 	xtras_loaded.append({
 		"name": "FileIO",
 		"object": LingoXtra.new("FileIO", FileIO, self),
+	})
+	xtras_loaded.append({
+		"name": BuddyAPI.XTRA_NAME,
+		"object": LingoXtra.new(BuddyAPI.XTRA_NAME, BuddyAPI, self),
 	})
 
 
@@ -545,6 +555,12 @@ const HANDLED := [
 	"window", "open", "close", "forget", "savemovie",
 	"pass", "dontpassevent", "stopevent",
 	"xtra",
+	# BuddyAPI, whose names are global builtins rather than methods on an
+	# instance (`lingo/lingo_buddyapi.gd`).
+	"bareadini", "bawriteini", "baflushini",
+	"bafileexists", "bafilesize", "badeletefile", "bacopyfile", "barenamefile",
+	"bafilelist", "bafolderlist", "bafolderexists", "bacreatefolder",
+	"badeletefolder", "baopenurl",
 	"trackcount", "tracktype", "trackstarttime", "trackstoptime",
 	"ispastcuepoint",
 	"preload", "preloadcast", "preloadmember", "preloadmovie", "clearglobals",
@@ -1278,6 +1294,53 @@ func call_builtin(name: String, args: Array) -> Variant:
 		"xtra":
 			return _xtra(args)
 
+		# ------------------------------------------------------- BuddyAPI (§19)
+		#
+		# **Global names, not methods**, which is what makes them arms here rather
+		# than an entry in an instance's `METHODS`: BuddyAPI's whole surface is
+		# registered as builtins, a movie writes `baReadIni(...)` bare, and all 46
+		# call sites in `itamar-magichat` do. `lingo/lingo_buddyapi.gd` carries the
+		# implementations, the path and write rules they share with FileIO, and --
+		# at the bottom of its header -- every published name that is deliberately
+		# *not* here, with a reason each. An absent name is reported by the
+		# unbound-name diagnostic; that is the honest state and the point of
+		# enumerating it.
+		#
+		# `baReadIni` answering a **String** is the whole of `bugs.md` 78. Unbound,
+		# it answered the integer 0, `if tmp = EMPTY` was false, and magichat's
+		# playhead never left frame 0.
+		"bareadini":
+			return BuddyAPI.read_ini(self, args)
+		"bawriteini":
+			return BuddyAPI.write_ini(self, args)
+		"baflushini":
+			return BuddyAPI.flush_ini(self, args)
+		"bafileexists":
+			return BuddyAPI.file_exists(self, args)
+		"bafilesize":
+			return BuddyAPI.file_size(self, args)
+		"badeletefile":
+			return BuddyAPI.delete_file(self, args)
+		"bacopyfile":
+			return BuddyAPI.copy_file(self, args)
+		"barenamefile":
+			return BuddyAPI.rename_file(self, args)
+		"bafilelist":
+			return BuddyAPI.file_list(self, args)
+		"bafolderlist":
+			return BuddyAPI.folder_list(self, args)
+		"bafolderexists":
+			return BuddyAPI.folder_exists(self, args)
+		"bacreatefolder":
+			return BuddyAPI.create_folder(self, args)
+		"badeletefolder":
+			return BuddyAPI.delete_folder(self, args)
+		"baopenurl":
+			# Declined on purpose, and reported rather than silent. A movie
+			# handing the host OS a URL it read out of a configuration file is
+			# not something a player does without being asked.
+			return BuddyAPI.open_url(self, args)
+
 		# ------------------------------------------------- digital video's tracks
 		#
 		# `trackCount(sprite N)`, `trackType(sprite N, t)`, `trackStartTime` and
@@ -1602,7 +1665,7 @@ func _nth_file(args: Array) -> Variant:
 ## "this port has no Xtras" and "this script was already broken in 1997".
 func _xtra(args: Array) -> Variant:
 	if args.size() != 1:
-		_report_xtra("xtra/%d arguments" % args.size())
+		report_xtra("xtra/%d arguments" % args.size())
 		return null
 	var wanted: Variant = args[0]
 	# The index form first, and only for a real integer: a symbol or a string is
@@ -1612,13 +1675,13 @@ func _xtra(args: Array) -> Variant:
 		var which := int(wanted)
 		if which >= 1 and which <= xtras_loaded.size():
 			return (xtras_loaded[which - 1] as Dictionary).get("object", null)
-		_report_xtra("xtra %d" % which)
+		report_xtra("xtra %d" % which)
 		return null
 	var name := xtra_key(LingoValue.to_str(wanted))
 	for entry in xtras_loaded:
 		if xtra_key(str((entry as Dictionary).get("name", ""))) == name:
 			return (entry as Dictionary).get("object", null)
-	_report_xtra("xtra \"%s\"" % name)
+	report_xtra("xtra \"%s\"" % name)
 	return null
 
 
@@ -1634,11 +1697,17 @@ static func xtra_key(name: String) -> String:
 	return bare.to_lower()
 
 
-## A lookup that found nothing, named in the diagnostics the way an unbound
-## builtin is. Through the interpreter because that is where the script name, the
-## handler and the line live; silently dropped when there is no interpreter to
-## tell, which is only the case in a harness that built a host on its own.
-func _report_xtra(what: String) -> void:
+## A lookup that found nothing, or an Xtra call this player refused, named in the
+## diagnostics the way an unbound builtin is. Through the interpreter because
+## that is where the script name, the handler and the line live; silently dropped
+## when there is no interpreter to tell, which is only the case in a harness that
+## built a host on its own.
+##
+## Public, not `_`-prefixed, because `lingo/lingo_buddyapi.gd` is the other
+## caller: BuddyAPI answers 1 or 0 and has no `status` channel for a reason to
+## arrive through, so a refused write and a declined `baOpenURL` say so here or
+## nowhere.
+func report_xtra(what: String) -> void:
 	if preview == null or preview._interpreter == null:
 		return
 	preview._interpreter.report(LingoDiagnostics.BUILTIN, what)
@@ -2335,9 +2404,9 @@ func get_system_prop(prop: String) -> Variant:
 		"xtras":
 			# The Xtras this player has loaded, as a list of their objects — the
 			# same registry `xtra(...)` resolves against, so `the number of xtras`
-			# and a lookup by name are two questions with one answer. None is
-			# registered, so this is empty and a script scanning it for one finds
-			# it absent rather than crashing.
+			# and a lookup by name are two questions with one answer. Two are
+			# registered, FileIO and BudAPI, and a script scanning the list for a
+			# third finds it absent rather than crashing.
 			var names: Array = []
 			for entry in xtras_loaded:
 				names.append((entry as Dictionary).get("object", null))

@@ -2712,3 +2712,92 @@ blends there where the tool does not.
 **No harness compares the two.** Nothing in `gate.sh`'s `ALL` would notice either
 of them drifting; this was found by hand while chasing 74.
 
+
+---
+
+## 78. `itamar-magichat` parked on frame 0: `baReadIni` was unbound, so an integer 0 reached a script testing `= EMPTY`
+
+**Status:** FIXED · **Area:** `lingo/lingo_buddyapi.gd` (new),
+`scenes/preview_lingo_host.gd` (the `ba*` arms and the registry),
+`lingo/lingo_fileio.gd` (the folder half of the path index, and `note_file`) ·
+covered by `tools/buddyapi_xtra.gd`, in `gate.sh`, which fails 13 checks on the
+code before the fix
+
+Three separate faults kept this title on frame 0 with a black stage, no error and
+nothing on the clock. Two were fixed earlier and are covered by
+`tools/lingo_scope_check.gd` — a `global` declared outside a handler never bound
+inside one, and `list.setaProp(…)` reading a property instead of running the
+command — and `go(VOID)` no longer coerces to frame 0. This was the third, and it
+is the one that stopped the movie.
+
+The chain, from `MovieScript 1 - start movie`'s `on startMovie`:
+
+```lingo
+tmp = ReadConfigLine("globals", "startframe")   -- MovieScript 2: baReadIni(...)
+if tmp = EMPTY then
+  tmp = "intro"
+end if
+SetGlobalInfo(#startFrame, tmp)
+```
+
+and frame 0's behaviour is `JumpFrame = GlobalInfo(#startFrame) / go(JumpFrame)`.
+
+`baReadIni` is **BuddyAPI**, a third-party Xtra this port did not implement. An
+unbound builtin is reported and answers the integer `0`
+(`lingo_interpreter.gd:_call`), so `tmp` was `0`, `tmp = EMPTY` was false, the
+movie's own `"intro"` fallback was skipped, `#startFrame` was set to `0` and the
+frame behaviour jumped to the frame it was already on. Measured before:
+`builtins unbound : {"bareadini":1}` and `gGlobalInfo = { "IniFile": <null>, …,
+"startFrame": 0 }`.
+
+**The type was the defect, not the value.** A `baReadIni` that answered `""`
+would have been enough — and that is exactly how it was confirmed to be the last
+link, with a one-line stub that was measured and removed. The implementation
+therefore returns a *String* unconditionally, and `tools/buddyapi_xtra.gd`
+asserts `ilk(baReadIni(...)) = #string` and the movie's own `= EMPTY` test rather
+than any particular value: reverted, those two go red with `integer`, which is
+the failure a reader can act on.
+
+Measured after, on the same command the entry was filed with:
+
+```
+godot --headless --path . --script tools/scratch/walkfwd.gd -- \
+    --root res://test-games/itamar-magichat --file magichat.dir --steps 160
+```
+
+step 0 is frame 136, and the playhead cycles 124–138 — the intro/retro video
+loop, 1 to 22 sprites drawn — instead of printing `magichat.dir:0` every step.
+`builtins unbound` is `{"prgotoframe":17}`, which is PrintOMatic, a different
+Xtra and reported by name.
+
+**The two questions this entry said an implementation had to answer first**, both
+answered:
+
+1. *Which file.* `ReadConfigLine` passes `gIniFileName`, which `InitProgram` sets
+   and which `on startMovie` calls only inside `if not Projector()`. `the runMode`
+   answers `"Projector"`, so it is VOID. A `baReadIni` whose file argument names
+   nothing answers the caller's `Default` — Windows' own rule for a missing file,
+   and what unsticks this movie, because the default *is* the movie's `"intro"`
+   fallback. So the boot-story question does not block the Xtra. It does still
+   block the title's menus, which is `bugs.md` 79.
+2. *Writes.* `WriteConfigLine` is `baWriteIni` + `baFlushIni` and both are live.
+   `baWriteIni` is a read-modify-write that keeps every other line of the file
+   as it stands; `baFlushIni` re-commits anything a failed write left pending and
+   drops the parsed document, so the next read comes off the disk. Both obey
+   `MovieSave.writes_allowed` and the game-root guard, so a headless run refuses
+   them (0, and reported through the diagnostics — BuddyAPI has no `status`
+   channel). Measured: seventeen `baWriteIni` calls in a 160-step run and nothing
+   written into `test-games/`.
+
+**A second defect fell out of this and is worth more than the first**, because it
+was silent and general. `res://` directory listings are a **snapshot taken when
+the `.pck` is mounted**: `DirAccess.make_dir_absolute` succeeds, the directory is
+on disk, and `DirAccess.open("res://…/newdir")` does not see it for the rest of
+the process, however many times a cached index is thrown away and rebuilt. That
+made `baCreateFolder` answer 1 and `baFolderExists` answer 0 for the same name
+one statement later — both calls correct, the index between them lying. FileIO
+had the same hole and nobody had met it: `createFile`, `closeFile`, then
+`openFile` on the bare name could not find the file it had just written. The fix
+is `FileIO.note_file` / `note_folder`, which record a creation or a removal in
+the cached indexes directly, and `FileIO.open_dir`, which lists through
+`ProjectSettings.globalize_path` — the OS path sees the live filesystem.
