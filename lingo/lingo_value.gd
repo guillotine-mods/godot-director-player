@@ -42,6 +42,13 @@ static func to_num(value: Variant) -> Variant:
 				return text.to_float()
 			return 0
 		_:
+			# `sprite(n)` is a reference rather than a number (see
+			# `lingo_sprite_ref.gd`), and every consumer that wants a channel
+			# number gets one here -- comparisons, arithmetic, `sendSprite`, and
+			# each host call that takes a channel. Unwrapping in this one place
+			# is what let the type be added without touching them.
+			if value is LingoSpriteRef:
+				return (value as LingoSpriteRef).channel
 			return 0
 
 
@@ -150,7 +157,122 @@ static func compare(a: Variant, b: Variant) -> int:
 	return -1 if sa < sb else 1
 
 
+## Arithmetic maps over a list, element by element, when either side is one.
+##
+## **This is how Director does point and rect maths**, and it is not an extra on
+## top of the scalar rule -- it is the first thing every arithmetic operator
+## checks (`LC::addData`, `subData`, `mulData`, `divData`, `modData`, all five
+## delegating to `LC::mapBinaryOp`). A port that answers only the scalar case
+## does not merely lose points: `to_num` of a list is 0, so
+## `point(3, 4) + point(1, 1)` comes back as the integer `0`, and every caller
+## downstream is then working with a number where it asked for a position.
+##
+## Magic Hat is where that surfaced. Its `HideSprite` is the standard Director
+## idiom for parking a sprite off-stage:
+##
+##     on HideSprite spr
+##       if sprite(spr).locH < 0 then exit
+##       sprite(spr).loc = sprite(spr).loc + point(-1000, -1000)
+##
+## The addition answered 0, `set the loc of sprite` requires a pair and drops
+## anything shorter, and the write vanished. The visible result was that the
+## title's full-stage `black` fade curtain -- two 800x600 shape sprites the score
+## parks in channels 24 and 50 -- was never moved away, so it covered the main
+## menu completely and the player saw a blank stage with the music playing.
+##
+## Rules taken from `mapBinaryOp`: both lists, and the result is as long as the
+## *shorter*; one list and one scalar, and the scalar is broadcast across every
+## element; the mapped function is the operator itself, so nested lists work by
+## recursion. This port has no distinct POINT or RECT type -- a point is the
+## two-element list `the loc of sprite` already answers -- so the reference's
+## type-alignment half has nothing to align and the result is always a list.
+## A list, a point or a rect as a plain Array of components; `[]` for anything
+## else.
+##
+## **Director's point and rect are lists**, which is why `count(point(1, 2))` is
+## 2 and `getAt(r, 3)` is a rect's right edge -- `lingo_builtins.gd` already
+## answers both. This port stores them as `Vector2` and `Rect2`, so every rule
+## written against "is it an array" has to come through here or it answers no to
+## two thirds of Director's list types. A `Rect2` is position-and-size and
+## Director's rect is left-top-right-bottom, so the conversion is part of the
+## flattening rather than something a caller remembers.
+static func _components(value: Variant) -> Array:
+	match typeof(value):
+		TYPE_ARRAY:
+			return value
+		TYPE_VECTOR2:
+			var point: Vector2 = value
+			return [point.x, point.y]
+		TYPE_RECT2:
+			var box: Rect2 = value
+			return [box.position.x, box.position.y,
+				box.position.x + box.size.x, box.position.y + box.size.y]
+	return []
+
+
+static func _either_is_list(a: Variant, b: Variant) -> bool:
+	return _is_list(a) or _is_list(b)
+
+
+static func _is_list(value: Variant) -> bool:
+	var kind := typeof(value)
+	return kind == TYPE_ARRAY or kind == TYPE_VECTOR2 or kind == TYPE_RECT2
+
+
+## Which of the three types the result wears, from `LC::getArrayAlignedType`.
+##
+## The left operand decides, but only while the right one has a compatible
+## length: a point plus a four-element list is a plain list, not a point, because
+## there is no point that could hold the answer. A scalar on the left defers to
+## whatever the right side is, which is what makes `2 * point(3, 4)` a point.
+static func _aligned_type(a: Variant, b: Variant) -> int:
+	var ka := typeof(a)
+	var kb := typeof(b)
+	if ka == TYPE_VECTOR2:
+		if kb == TYPE_RECT2 or (kb == TYPE_ARRAY and (b as Array).size() != 2):
+			return TYPE_ARRAY
+		return TYPE_VECTOR2
+	if ka == TYPE_RECT2:
+		if kb == TYPE_VECTOR2 or (kb == TYPE_ARRAY and (b as Array).size() != 4):
+			return TYPE_ARRAY
+		return TYPE_RECT2
+	if not _is_list(a):
+		return kb
+	return TYPE_ARRAY
+
+
+static func _rebuild(kind: int, parts: Array) -> Variant:
+	if kind == TYPE_VECTOR2 and parts.size() == 2:
+		return Vector2(to_num(parts[0]), to_num(parts[1]))
+	if kind == TYPE_RECT2 and parts.size() == 4:
+		var left := float(to_num(parts[0]))
+		var top := float(to_num(parts[1]))
+		return Rect2(left, top, float(to_num(parts[2])) - left, float(to_num(parts[3])) - top)
+	return parts
+
+
+static func _map_pairwise(a: Variant, b: Variant, op: Callable) -> Variant:
+	var a_list := _is_list(a)
+	var b_list := _is_list(b)
+	var left := _components(a)
+	var right := _components(b)
+	var size := 0
+	if a_list and b_list:
+		size = mini(left.size(), right.size())
+	elif a_list:
+		size = left.size()
+	else:
+		size = right.size()
+	var out: Array = []
+	out.resize(size)
+	for i in size:
+		out[i] = op.call(left[i] if a_list else a, right[i] if b_list else b)
+	return _rebuild(_aligned_type(a, b), out)
+
+
 static func add(a: Variant, b: Variant) -> Variant:
+	if _either_is_list(a, b):
+		return _map_pairwise(a, b, Callable(LingoValue, "add"))
 	var na: Variant = to_num(a)
 	var nb: Variant = to_num(b)
 	if typeof(na) == TYPE_INT and typeof(nb) == TYPE_INT:
@@ -159,6 +281,8 @@ static func add(a: Variant, b: Variant) -> Variant:
 
 
 static func sub(a: Variant, b: Variant) -> Variant:
+	if _either_is_list(a, b):
+		return _map_pairwise(a, b, Callable(LingoValue, "sub"))
 	var na: Variant = to_num(a)
 	var nb: Variant = to_num(b)
 	if typeof(na) == TYPE_INT and typeof(nb) == TYPE_INT:
@@ -167,6 +291,8 @@ static func sub(a: Variant, b: Variant) -> Variant:
 
 
 static func mul(a: Variant, b: Variant) -> Variant:
+	if _either_is_list(a, b):
+		return _map_pairwise(a, b, Callable(LingoValue, "mul"))
 	var na: Variant = to_num(a)
 	var nb: Variant = to_num(b)
 	if typeof(na) == TYPE_INT and typeof(nb) == TYPE_INT:
@@ -177,6 +303,8 @@ static func mul(a: Variant, b: Variant) -> Variant:
 static func div(a: Variant, b: Variant) -> Variant:
 	## Integer division when both sides are integers, as Director does. Getting
 	## this wrong silently changes arithmetic in scripts that index by division.
+	if _either_is_list(a, b):
+		return _map_pairwise(a, b, Callable(LingoValue, "div"))
 	var na: Variant = to_num(a)
 	var nb: Variant = to_num(b)
 	if typeof(na) == TYPE_INT and typeof(nb) == TYPE_INT:
@@ -189,6 +317,8 @@ static func div(a: Variant, b: Variant) -> Variant:
 
 
 static func modulo(a: Variant, b: Variant) -> Variant:
+	if _either_is_list(a, b):
+		return _map_pairwise(a, b, Callable(LingoValue, "modulo"))
 	var ia := to_int(a)
 	var ib := to_int(b)
 	if ib == 0:

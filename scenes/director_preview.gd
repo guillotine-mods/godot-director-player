@@ -3670,7 +3670,22 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	# third source of a position, and the constraint is applied in exactly one
 	# place, which is `_write_position`.
 	if prop == "loc":
-		var point: Array = value if typeof(value) == TYPE_ARRAY else []
+		# **Both spellings of a point arrive here**, and taking only one of them
+		# is how a title's sprites stop moving. `the loc of sprite N` answers a
+		# two-element list, but the `point()` builtin builds a `Vector2` -- so
+		# `sprite(24).loc = point(-1000, -1000)`, which is Director's standard
+		# way of parking a sprite off-stage, matched neither the array test nor
+		# the length test and was dropped in silence.
+		#
+		# Magic Hat is the title that showed it. `FadeSprite()` returns 24 and
+		# `HideFade` is exactly that one line; with the write going nowhere, the
+		# full-stage `black` curtain in channel 24 stayed over the main menu and
+		# the player got a blank stage with the music playing.
+		#
+		# `LingoValue._components` is the single place that knows a point, a rect
+		# and a list are all lists to Director, so the two vocabularies meet once
+		# rather than at every setter.
+		var point: Array = LingoValue._components(value)
 		if point.size() >= 2:
 			_write_position(channel, "loch", point[0])
 			_write_position(channel, "locv", point[1])

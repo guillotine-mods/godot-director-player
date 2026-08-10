@@ -955,6 +955,7 @@ end
 
 func reset_steps() -> void:
 	_steps = 0
+	_drain_errors()
 	errors.clear()
 	# `abort` unwound the last dispatch and must not refuse this one. Cleared
 	# where a dispatch *begins* rather than where it ends, because the ends are
@@ -1537,6 +1538,15 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			## place, and a `_fail` here would report a gap on every one of the 21
 			## sites that set `windowType`.
 			var window_owner: Variant = _eval(owner_node, frame)
+			# **A sprite reference that arrived through a handler**, which the
+			# `sprite_ref` arm above cannot catch because the owner node is a
+			# call: `me.ItemSprite().visible = 0`. Ahead of the window route for
+			# the same reason the object arm is -- `set_window_prop` accepts any
+			# property name and drops it, so a miss here is silent.
+			if LingoSpriteRef.is_ref(window_owner):
+				_host_call("set_sprite_prop", [
+					(window_owner as LingoSpriteRef).channel, prop_name, value])
+				return
 			# `me.pCount = 3`, the dot spelling of the designator arm above. Ahead
 			# of the window route, because a script object is not a window handle
 			# and `set_window_prop` would file it under a window named after the
@@ -1711,7 +1721,12 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				])
 			return _host_call("get_field", [field_name, field_cast])
 		"sprite_ref":
-			return LingoValue.to_int(_eval(expr.get("which", {}), frame))
+			## A reference, not a number -- `LingoValue.to_num` unwraps it to the
+			## channel for everything that wants one, so this is invisible to
+			## every consumer except a property access, which is the one that
+			## needed it. See `lingo/lingo_sprite_ref.gd`.
+			return LingoSpriteRef.new(
+				LingoValue.to_int(_eval(expr.get("which", {}), frame)))
 		"member_ref":
 			return _host_call("member_number", [
 				_eval(expr.get("which", {}), frame), _cast_of(expr, frame),
@@ -1809,6 +1824,13 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 					_cast_of(owner_node, frame), prop_name,
 				])
 			var dot_owner: Variant = _eval(owner_node, frame)
+			# The read side of the sprite-reference arm in `_assign`.
+			# `me.ItemSprite().locH > 0` guards the write, so a reference that
+			# reads as a member property answers nothing and the guard sends the
+			# handler down the wrong branch even once the write is fixed.
+			if LingoSpriteRef.is_ref(dot_owner):
+				return _host_call("get_sprite_prop", [
+					(dot_owner as LingoSpriteRef).channel, prop_name])
 			if LingoObject.is_object(dot_owner):
 				return _object_prop(dot_owner, prop_name)
 			return _host_call("get_member_prop", [dot_owner, "", prop_name])
@@ -2297,4 +2319,36 @@ func _host_call(method: String, args: Array) -> Variant:
 
 func _fail(message: String) -> void:
 	if errors.size() < 50:
-		errors.append(message)
+		# The location travels with the message. Without it a report reads
+		# "cannot assign to member_ref" and names neither the script nor the
+		# line, which is most of the work of finding it.
+		errors.append("%s  (%s > %s line %d)" % [
+			message, _script_name, _handler_name, _line])
+
+
+## Say out loud what the last dispatch could not do.
+##
+## **`errors` existed for the life of this port and nothing on the player's path
+## ever read it.** Two harnesses do; a run does not. That is how
+## `put readFile(tmp) into member FieldName` -- a statement with no arm in
+## `_assign` -- stayed invisible for as long as it did: it recorded itself
+## faithfully, into an array cleared at the start of the next dispatch, a few
+## milliseconds later.
+##
+## Drained here rather than at the three dispatch ends, for the same reason
+## `_aborting` is cleared here: this is the one line all of them already share.
+##
+## Deduplicated for the run, because these fire from frame scripts. A statement
+## that fails on an `exitFrame` fails again every tick, and an unconditional
+## print would bury the movie's own output at 15 lines a second. Once is a
+## diagnostic; sixty times a second is a reason to turn diagnostics off.
+func _drain_errors() -> void:
+	for message in errors:
+		var text := str(message)
+		if _reported.has(text):
+			continue
+		_reported[text] = true
+		print("lingo: %s" % text)
+
+
+var _reported: Dictionary = {}
