@@ -85,12 +85,23 @@ static func open_loop(lib: int, member: Dictionary, table):
 ## a child arrives as a loop record and not as a sprite record: it has no member
 ## dictionary of its own until the caller resolves one, and it has no cast type to
 ## except on.
-static func child_sprite(child: Dictionary, lib: int, member: Dictionary) -> Dictionary:
+##
+## `scale` is the loop's own squeeze (`child_scale`), and it applies after that
+## resolution rather than instead of it: a child is sized by its own rule first
+## and then shrunk with everything else in the loop. A scaled size is clamped to
+## one pixel rather than allowed to reach zero, because a zero-sized decode is an
+## error and Director's answer here is unknown — ScummVM does not scale child
+## sizes at all (DIRECTOR_ENGINE.md §18), so there is nothing to copy.
+static func child_sprite(child: Dictionary, lib: int, member: Dictionary,
+		scale := Vector2.ONE) -> Dictionary:
 	var w := int(member.get("width", 0))
 	var h := int(member.get("height", 0))
 	if bool(child["stretch"]) and int(child["width"]) > 0 and int(child["height"]) > 0:
 		w = int(child["width"])
 		h = int(child["height"])
+	if scale != Vector2.ONE:
+		w = maxi(1, int(w * scale.x))
+		h = maxi(1, int(h * scale.y))
 	# The rendering attributes come across too. `texture_for` keys on the ink and
 	# the colours, `blend_alpha` reads the blend pair and the blit reads the flip
 	# bits; a child stripped of them draws by the loop's rules instead of its own,
@@ -136,6 +147,38 @@ static func loop_origin(member: Dictionary) -> Vector2:
 	return Vector2(int(rect.get("left", 0)), int(rect.get("top", 0)))
 
 
+## How far the loop's contents are squeezed to fit the sprite, per axis.
+##
+## A loop's `initialRect` is the union bounding box of its own contents, so it is
+## simultaneously the loop's natural size and the space its children are measured
+## in (§1.6). Draw the sprite at any other size and **everything inside scales by
+## `drawn / natural`** — the child positions and the children themselves. Nothing
+## here did, which is bugs.md 16.8 as the surviving renderer inherited it, and it
+## is not a subtle offset: a squeezed loop drew its children at full size in the
+## loop's own authored coordinates, so the animation appeared wherever it had been
+## authored rather than where the sprite is.
+##
+## `PIPDATA/DISKSHOT.dir` is the instance that found it. The clay pigeons are one
+## 72x16 member on channels 24-45, each sprite stretched down to about 26x7 to sit
+## far away in the sky; clicking one swaps its member to the `diskblow` film loop,
+## whose rect is 287x279 and whose single child sits at (320,240) — the middle of
+## the stage, which is where Piposh is standing. Unscaled, that put a full-size
+## explosion over the player instead of a small one on the disk. Scaled, the
+## child's start point lands within a pixel of the disk's own.
+##
+## The identity case returns `Vector2.ONE` exactly, so a loop drawn at its natural
+## size goes through the arithmetic it always did rather than through a multiply
+## by a computed 1.0.
+static func child_scale(sprite: Dictionary, member: Dictionary) -> Vector2:
+	var natural := Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
+	if natural.x <= 0.0 or natural.y <= 0.0:
+		return Vector2.ONE
+	var drawn := Geometry.drawn_size(sprite, member)
+	if drawn == natural:
+		return Vector2.ONE
+	return Vector2(drawn.x / natural.x, drawn.y / natural.y)
+
+
 ## Where one child's artwork goes.
 ##
 ## Two subtractions, not one. A child's own start point is first made relative to
@@ -144,15 +187,23 @@ static func loop_origin(member: Dictionary) -> Vector2:
 ## rule as any other sprite. Forgetting either subtraction gives a constant
 ## offset: the loop's rect origin, or half the loop's size.
 ##
-## The child's registration offset is deliberately NOT scaled by the stretch
-## factor -- which is what the stage path does for a stretched sprite. Scaling it
-## here measurably moved the animations further from where they belong, so a
-## loop's children anchor in the loop's own coordinate space rather than in the
-## drawn one. Reverted on evidence, not theory; the stage path keeps its scaling.
+## `scale` is the loop's squeeze (`child_scale`) and it multiplies the *offset
+## inside the loop*, never the loop's landing point: the origin is already on the
+## stage, and scaling it too would move the sprite instead of its contents.
+##
+## The child's registration offset arrives already scaled and is not touched here.
+## That is a change of route rather than of rule: the caller derives it from the
+## child's **drawn** size through `Geometry.scaled_reg`, and `child_sprite` now
+## shrinks that size by the same factor, so the offset follows the artwork without
+## this function knowing about it. The note this replaces said the offset was
+## deliberately unscaled, "reverted on evidence, not theory" -- and it was right
+## for the code it described, because scaling the offset while leaving the
+## position at authored coordinates moves a child further from where it belongs.
+## Scaling both is what makes either correct.
 static func place_child(origin: Vector2, space: Vector2, child: Dictionary,
-		child_reg: Vector2) -> Vector2:
+		child_reg: Vector2, scale := Vector2.ONE) -> Vector2:
 	var at := Vector2(float(child["loc_h"]), float(child["loc_v"]))
-	return origin + (at - space) - child_reg
+	return origin + (at - space) * scale - child_reg
 
 
 ## Draw a film-loop sprite by drawing its children. False when the member is not
@@ -176,6 +227,7 @@ static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 
 	var origin := stage_origin(sprite, m)
 	var space := loop_origin(m)
+	var scale := child_scale(sprite, m)
 
 	# Counted from when this loop arrived on the channel, not from the movie
 	# clock: a loop entered a second time starts at its first frame rather than
@@ -191,7 +243,8 @@ static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 			host._tally_loop("child unresolved cast=%s" % str(child["cast_name"]))
 			continue
 		var cm: Dictionary = table.get_member(kid_lib, int(child["cast_id"]))
-		var texture: Texture2D = host._texture_for(child_sprite(child, kid_lib, cm))
+		var texture: Texture2D = host._texture_for(
+			child_sprite(child, kid_lib, cm, scale))
 		if texture == null:
 			host._tally_loop("child has no art")
 			continue
@@ -201,7 +254,7 @@ static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 		host._draw_sprite_texture(
 			texture,
 			place_child(origin, space, child,
-				Geometry.scaled_reg(cm, texture.get_size())),
+				Geometry.scaled_reg(cm, texture.get_size()), scale),
 			child,
 			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
 		)

@@ -2417,3 +2417,60 @@ arrivals count, and its claim is not about cycling: it reports that the
 walk-then-park as of a loop and is the blind spot it exists to surface. The
 original entry named it alongside `trap` as needing the same treatment; it does
 not.
+
+## 71. A film loop squeezed onto a smaller sprite drew its children full-size at their authored coordinates, so DISKSHOT's explosion went off on top of the player
+
+**Status:** fixed · **Area:** `scenes/preview/film_loop_view.gd`
+
+Reported from a snapshot: shoot a clay pigeon in `PIPDATA/DISKSHOT.dir` and the
+explosion happens next to Piposh, in the middle of the deck, instead of at the
+disk up in the sky.
+
+Everything the report needed was in the container. The disks are one member,
+`disknormal`, 72x16, on channels 24-45; every one of those sprites carries the
+stretch flag with a rect around 26x7, which is how a disk reads as far away. The
+click handler is four lines:
+
+```lingo
+set x to the clickOn
+puppetSprite(x, 1)
+set the memberNum of sprite x to the number of member "diskblow"
+```
+
+`diskblow` is film loop member 58. Its `initialRect` is 287x279 at (175,88), and
+its one child per frame sits at **(320,240)** — the middle of the stage, which is
+exactly where Piposh is standing. `the memberNum` swap keeps the sprite's rect,
+because `Sprite::setCast` replaces the dimensions only when the stretch flag is
+clear, so the loop was drawn as a 26x7 sprite.
+
+**The root cause is that nothing scaled the loop's contents to the sprite.**
+`place_child` was `origin + (childLoc − initialRect.topLeft) − reg`, with no
+factor anywhere, and `child_sprite` sized every child at its member's natural
+size. So the child was placed 145px right and 152px down from the 26x7 box and
+drawn at full size. The measured symptom agrees: predicted centre (637,198)
+against roughly (619,190) read off the reported snapshot.
+
+That was already written down as `DIRECTOR_ENGINE.md` §16.8 — the half of the
+port that scaled was `movie_player.gd`, and it was the half that got retired. The
+entry outlived the file it named.
+
+**The fix** is `child_scale`, `drawn / initialRect` per axis, applied to the
+offset inside the loop (`place_child`) and to the child's own size
+(`child_sprite`, which carries it into the registration offset through
+`Geometry.scaled_reg`). The explosion now grows 5x1, 5x1, 9x2, 17x3, 25x7 centred
+on (505.1, 49.8) inside the disk's own rect of (492, 45.5) 26x7.
+
+**ScummVM was not copied here, and the corpus is why.** `getSubChannels` sets
+every scaled child's size to the *whole* bbox with stretch forced on. Under that
+rule all six frames of `diskblow` draw at 26x7 and the growth — the only thing
+the loop exists to show — disappears. §18 had already recorded the suspicion;
+this is the evidence.
+
+**Gated by `tools/film_loop_scale.gd`**, which asserts the comparison rather than
+plain containment: 248 of piposh's 4,874 children already sit outside their
+loop's own rect at natural size, a separate question about the child stretch
+flag, so what is asserted is that a child inside its box at natural size is still
+inside it when the loop is squeezed. Green on piposh, piposh2, rating and
+piposh-dream. Drop the `* scale` from `place_child` and it reports 4,613
+regressions on piposh and 47,036 on piposh2; drop the size scaling and it reports
+275.

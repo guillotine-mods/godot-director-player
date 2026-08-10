@@ -257,22 +257,17 @@ The loop's frame counter is **channel** state, not member state: two sprites
 showing the same loop animate independently. A genuine member change resets it
 to 1.
 
-*This port:* `director/movie_player.gd:333-342` scales the child position by
-`stage_scale` and applies the child's own scaled registration offset —
-**agrees with ScummVM**. `scenes/director_preview.gd:822-826` does **neither**:
-no scale multiply, and a zero registration fallback instead of the centre. That
-is a divergence between the two halves of this port, and ScummVM sides with
-`movie_player`.
+*This port:* `scenes/preview/film_loop_view.gd` scales both — `child_scale` is
+the per-axis factor, `place_child` multiplies the offset inside the loop by it
+and `child_sprite` shrinks the child by it, so the child's registration offset
+follows through `Geometry.scaled_reg` on the shrunken size. It **does not** copy
+ScummVM's widget-rect sizing; §18 records the evidence against it. Asserted by
+`tools/film_loop_scale.gd`.
 
-`director/director_cast.gd:271-289` deliberately writes **no** registration
-offset for a loop, with a comment that centring "was a guess and it is wrong",
-matching only 19-27% of records — while both renderers centre anyway. This is a
-genuine unresolved conflict. Note the two claims are about different things:
-ScummVM describes runtime placement; the comment describes agreement with
-exported records. Also note ScummVM centres on the **loop's initialRect** size
-while `movie_player.gd:223-224` centres on the **sprite record's** width/height,
-preferring the member only as a fallback — those diverge exactly when the sprite
-is stretched. Settle it by testing placement on screen.
+That scaling was absent until DISKSHOT surfaced it, and the surviving renderer
+was the half that never had it (§16.8). `director/director_cast.gd`'s type-2
+branch now writes the centre of `initialRect` as the loop's registration offset,
+matching both the reference and what the renderer already assumed (§16.9).
 
 ### 1.7 The port's two-rect problem
 
@@ -2181,16 +2176,21 @@ the transitions were.
 
 ### Tier 2 — breaks scenes
 
-**16.8 Film loop child placement disagrees between the two halves. (Differ.)**
-`scenes/director_preview.gd:822-826` is unscaled with a zero registration
-fallback; `director/movie_player.gd:329-342` scales and centres. **ScummVM sides
-with `movie_player`** (§1.6).
+**16.8 Film loop child placement was unscaled. (Fixed.)** The half that scaled
+was the one that got retired, so the surviving renderer placed a squeezed loop's
+children at their authored coordinates and their authored size. `PIPDATA/
+DISKSHOT.dir` is what it looked like: a clay pigeon is a 26x7 sprite, the
+`diskblow` loop it swaps to is 287x279 with its child at (320,240), and the
+explosion therefore drew full-size in the middle of the stage instead of small
+and on the disk. `film_loop_view.child_scale` is the factor; `tools/
+film_loop_scale.gd` is the gate. §1.6.
 
-**16.9 The film loop registration point is unresolved inside this port.
-(Differ.)** `director/director_cast.gd:271-289` writes none;
-both renderers centre anyway. §1.6 — settle by testing placement on screen, and
-note ScummVM centres on the loop's `initialRect` while `movie_player.gd:223-224`
-prefers the sprite record's size.
+**16.9 The film loop registration point. (Resolved.)** `director_cast.gd`'s
+type-2 branch writes the centre of `initialRect`, which is what the reference
+does and what the renderer already assumed. The old note here cited a comment
+saying centring "was a guess and it is wrong" against 19-27% of exported
+records; that comparison was against the port's *input*, and §1.6's placement
+argument settles it the other way.
 
 **16.10 Ink codes compared unmasked in the preview. (Both.)**
 `scenes/director_preview.gd:673-676` versus
@@ -2356,8 +2356,15 @@ destination-reading inks.
   in `lingo/`, unread. Assume the `cursor` and `the cursor of sprite` setters set
   it; if implementing, also set it on a cast swap on a channel with a cursor.
 - **Film loop sub-sprite sizing under scale.** ScummVM sets *every* child's size
-  to the whole widget rect and forces stretch. That looks like an approximation,
-  not authentic Director. Low confidence.
+  to the whole widget rect and forces stretch. This port scales each child by the
+  same per-axis factor as its position instead, and the corpus decides it:
+  `DISKSHOT.dir`'s `diskblow` is an explosion whose frames grow 58x21, 63x42,
+  110x86, 188x151 inside a 287x279 rect. Squeezed onto a 26x7 sprite, ScummVM's
+  rule draws all six frames at 26x7 — the growth, which is the only thing the
+  loop exists to show, disappears. Scaling per child keeps it: 5x1, 5x1, 9x2,
+  17x3, 25x7. What is still unverified is what Director does with a child whose
+  scaled size falls below a pixel; this port clamps to 1 rather than decode
+  nothing (`film_loop_view.child_sprite`).
 - **How flip interacts with registration and hit testing.** ScummVM never applies
   flip, so §1.8's "mirrors within the rect, rect unchanged" is **reasoned, not
   verified**. It is the only reading consistent with flip living in a rendering

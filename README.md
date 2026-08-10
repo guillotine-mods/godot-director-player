@@ -288,6 +288,7 @@ python3 tools/dump_sprite_scripts.py                # sprite -> script attachmen
 python3 tools/dump_fields.py                        # Director fields + member names
 python3 tools/add_cast_script_names.py              # linked-cast member names
 godot --headless --script tools/film_loop_cast.gd   # a film-loop child draws out of the cast its own container named, whole corpus, pass/fail
+godot --headless --script tools/film_loop_scale.gd  # a loop squeezed onto a smaller sprite keeps its children inside it, whole corpus, pass/fail
 godot --headless --script tools/drawn_size_stability.gd # no unstretched sprite resizes while its picture and its place hold still, whole corpus, pass/fail
 godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # cursorfunk's cursor per channel, pass/fail
 python3 tools/verify_1bit_members.py                # 1-bit members match their CASt rect, pass/fail
