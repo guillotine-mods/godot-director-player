@@ -16,3 +16,6 @@
 [submodule "games/piposh-dream"]
 	path = games/piposh-dream
 	url = https://github.com/guillotine-mods/piposh-dream.git
+[submodule "titles/piposh-3d"]
+	path = titles/piposh-3d
+	url = https://github.com/guillotine-mods/piposh-3d.git
