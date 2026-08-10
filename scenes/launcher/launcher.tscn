@@ -59,13 +59,13 @@ theme_override_constants/separation = 2
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Head"
-text = "Director Player"
+text = "נגן דירקטור"
 
 [node name="Tagline" type="Label" parent="Page/Column/Header/Wordmark"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "Macromedia Director titles, read from the original discs."
+text = "משחקי Macromedia Director, נקראים מהדיסקים המקוריים."
 
 [node name="Tabs" type="TabContainer" parent="Page/Column"]
 unique_name_in_owner = true
@@ -109,7 +109,7 @@ theme_override_constants/separation = 10
 [node name="GamesLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Titles"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
-text = "TITLES ON DISC"
+text = "משחקים על הדיסק"
 
 [node name="Grid" type="GridContainer" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Titles"]
 unique_name_in_owner = true
@@ -127,7 +127,7 @@ theme_override_constants/separation = 6
 [node name="SoloLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Solo"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
-text = "THIS BUILD PLAYS"
+text = "הגרסה הזו מריצה"
 
 [node name="SoloTitle" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Solo"]
 unique_name_in_owner = true
@@ -153,7 +153,7 @@ theme_override_constants/separation = 10
 [node name="LanguageLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/Language"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
-text = "EDITION"
+text = "מהדורה"
 
 [node name="Flags" type="HBoxContainer" parent="Page/Column/Tabs/Player/Stack/Options/Language"]
 unique_name_in_owner = true
@@ -172,7 +172,7 @@ theme_override_constants/separation = 10
 [node name="AspectLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
-text = "STAGE FIT"
+text = "התאמת הבמה"
 
 [node name="Aspect" type="OptionButton" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 unique_name_in_owner = true
@@ -182,7 +182,7 @@ layout_mode = 2
 [node name="AspectHint" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "The stage is whatever size the movie was authored at. This only decides what surrounds it."
+text = "גודל הבמה הוא הגודל שבו המשחק נוצר. ההגדרה הזו קובעת רק מה מקיף אותה."
 autowrap_mode = 2
 
 [node name="Developer" type="VBoxContainer" parent="Page/Column/Tabs"]
@@ -226,12 +226,12 @@ theme_override_constants/separation = 8
 [node name="BootLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Section"
-text = "Boot container"
+text = "קובץ פתיחה"
 
 [node name="BootHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "The file the chosen title opens. Leave it empty and each title opens its own."
+text = "הקובץ שהמשחק הנבחר פותח. אם משאירים ריק, כל משחק פותח את שלו."
 autowrap_mode = 2
 
 [node name="Boot" type="LineEdit" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/BootCard/Pad/Rows"]
@@ -257,12 +257,12 @@ theme_override_constants/separation = 8
 [node name="CodepageLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Section"
-text = "Text encoding"
+text = "קידוד טקסט"
 
 [node name="CodepageHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "Director stored text in a platform codepage, not Unicode. These discs measure as Mac OS Hebrew."
+text = "דירקטור שמר טקסט בקידוד של הפלטפורמה ולא ב-Unicode. הדיסקים האלה נמדדו כ-Mac OS Hebrew."
 autowrap_mode = 2
 
 [node name="Codepage" type="OptionButton" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/TextCard/Pad/Rows"]
@@ -288,12 +288,12 @@ theme_override_constants/separation = 8
 [node name="DebugLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Section"
-text = "Debug layer"
+text = "שכבת ניפוי"
 
 [node name="DebugHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "Hotspot outlines, the HUD, the container picker and the keys below. Auto means on from source and off in a release build."
+text = "מסגרות סביב אזורי לחיצה, ה-HUD, בוחר הקבצים והמקשים שלמטה. ‏Auto פירושו דלוק בהרצה מהקוד וכבוי בגרסת שחרור."
 autowrap_mode = 2
 
 [node name="Debug" type="OptionButton" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
@@ -308,7 +308,7 @@ layout_mode = 2
 [node name="KeysHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "The preview shares a keyboard with the movie, so a key a title tests is refused here rather than fought over at runtime."
+text = "התצוגה חולקת מקלדת עם המשחק, ולכן מקש שמשחק בודק נדחה כאן במקום להתנגש איתו בזמן ריצה."
 autowrap_mode = 2
 
 [node name="BindingsButton" type="Button" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
@@ -317,7 +317,7 @@ custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 0
 theme_type_variation = &"Quiet"
-text = "Edit preview keys…"
+text = "עריכת מקשי התצוגה…"
 
 [node name="BindingsStatus" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/DebugCard/Pad/Rows"]
 unique_name_in_owner = true
@@ -350,37 +350,37 @@ theme_override_constants/separation = 8
 [node name="QolHeading" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Section"
-text = "Assists"
+text = "עזרים"
 
 [node name="QolHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "Saved with your settings. Cursor speed is the only one the engine reads today; the four above it are waiting on the renderer and are kept so a save made now still means something when it lands."
+text = "נשמרים עם ההגדרות שלך. מהירות הסמן היא היחידה שהמנוע קורא כיום; ארבעת שמעליה מחכים למנוע הגרפי ונשמרים כדי ששמירה שנעשית עכשיו תמשיך להיות תקפה כשהם ינחתו."
 autowrap_mode = 2
 
 [node name="HotspotHints" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Outline what the mouse can reach"
+text = "סימון מה שהעכבר יכול להגיע אליו"
 
 [node name="MinigameSkip" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Offer a way past minigames"
+text = "אפשרות לדלג על משחקי ביניים"
 
 [node name="EdgeHotspots" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Widen hotspots at the screen edge"
+text = "הרחבת אזורי לחיצה בקצה המסך"
 
 [node name="EnhancedGraphics" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
-text = "Smooth the artwork when upscaling"
+text = "החלקת האיורים בהגדלה"
 
 [node name="SpeedGap" type="Control" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 custom_minimum_size = Vector2(0, 6)
@@ -392,7 +392,7 @@ layout_mode = 2
 [node name="CursorSpeedLabel" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows/SpeedRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Controller cursor speed"
+text = "מהירות הסמן בשלט"
 
 [node name="CursorSpeedValue" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows/SpeedRow"]
 unique_name_in_owner = true
@@ -440,11 +440,11 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(110, 48)
 layout_mode = 2
 theme_type_variation = &"Quiet"
-text = "Quit"
+text = "יציאה"
 
 [node name="Play" type="Button" parent="Page/Column/Footer"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 theme_type_variation = &"Primary"
-text = "Play"
+text = "שחק"

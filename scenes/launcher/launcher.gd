@@ -40,10 +40,10 @@ const ASPECTS := ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]
 ## from labelling every entry as its neighbour and nothing would say so: the
 ## menu would read fine and write the wrong mode.
 const ASPECT_LABELS := {
-	"native_4_3": "4:3, the way it was authored",
-	"wide_16_9": "16:9 widescreen",
-	"ultra_21_9": "21:9 ultrawide",
-	"stretch_fill": "Stretch to fill the window",
+	"native_4_3": "4:3, כפי שנוצר",
+	"wide_16_9": "16:9 מסך רחב",
+	"ultra_21_9": "21:9 רחב במיוחד",
+	"stretch_fill": "מתיחה למסך המלא",
 }
 
 const CODEPAGES := ["", "mac_hebrew", "windows_1255"]
@@ -124,6 +124,13 @@ func _ready() -> void:
 	_fill_aspect()
 	var tabs := %Tabs as TabContainer
 	var developer := %Developer as Control
+	# A `TabContainer` labels each tab with its child's *node name*, and those are
+	# `Player` and `Developer` -- which the focus map, `launcher_surface` and every
+	# `%`-path in this file are written against, so they are not renameable. The
+	# titles are set here instead, which is the one place where what the screen
+	# says and what the code calls it are allowed to differ.
+	tabs.set_tab_title(0, "נגן")
+	tabs.set_tab_title(developer.get_index(), "מפתחים")
 	_show_developer = _developer_visible()
 	# Not `developer.visible = _show_developer`: a `TabContainer` watches every
 	# child's `visibility_changed` signal and jumps `current_tab` to whichever
@@ -171,14 +178,19 @@ func _fill_build_line() -> void:
 	var roots := 0
 	for entry in _entries:
 		roots += (entry.get("roots", []) as Array).size()
-	%Build.text = "Godot %s · %s, %s on disc" % [
+	%Build.text = "Godot %s · %s, %s על הדיסק" % [
 		str(Engine.get_version_info().get("string", "")),
-		_counted(_entries.size(), "title"), _counted(roots, "root")]
+		_counted(_entries.size(), "משחק", "משחקים"),
+		_counted(roots, "ספרייה", "ספריות")]
 
 
 ## "1 titles" is the giveaway that nobody ever ran the screen with one.
-static func _counted(n: int, noun: String) -> String:
-	return "%d %s%s" % [n, noun, "" if n == 1 else "s"]
+##
+## Both forms are passed in rather than a suffix being bolted on, because Hebrew
+## does not build its plural by appending anything -- `משחק` becomes `משחקים` and
+## `ספרייה` becomes `ספריות`, and no rule the caller could apply covers both.
+static func _counted(n: int, one: String, many: String) -> String:
+	return "%d %s" % [n, one if n == 1 else many]
 
 
 ## How wide the page is allowed to get, and how many tiles fit across it.
@@ -237,7 +249,16 @@ func _fit_tiles() -> void:
 	var rows := ceili(_tiles.size() / float(columns))
 	for tile in _tiles:
 		tile.custom_minimum_size.y = GameTile.MIN_HEIGHT
-	var slack := (%PlayerScroll as Control).size.y - (%Body as Control).get_combined_minimum_size().y
+	# `HEADROOM` off the slack, because spending all of it lands the content
+	# *exactly* on the boundary and a pixel of rounding anywhere then raises a
+	# scrollbar -- which takes width, re-lays out, and is the thing this whole
+	# function exists to avoid. Found by translating the stage-fit hint: the
+	# Hebrew wraps to two lines where the English took three, the extra slack went
+	# into the tiles, and the grid started scrolling again on a window where it
+	# had not before.
+	const HEADROOM := 8
+	var slack := (%PlayerScroll as Control).size.y \
+		- (%Body as Control).get_combined_minimum_size().y - HEADROOM
 	# The floor is `FLOOR_HEIGHT` rather than `MIN_HEIGHT`, so a negative slack
 	# shrinks the tiles instead of producing a scrollbar. Five titles make a
 	# second row, and on a short window two rows at `MIN_HEIGHT` do not fit --
@@ -389,10 +410,13 @@ func _developer_visible() -> bool:
 func _fill_developer() -> void:
 	var cfg := GameConfig.merged()
 	%Boot.text = str(cfg.get_value("game", "boot_movie", ""))
-	%Boot.placeholder_text = "empty: whatever the chosen game boots"
+	%Boot.placeholder_text = "ריק: מה שהמשחק הנבחר פותח"
 	%Codepage.clear()
 	for name in CODEPAGES:
-		%Codepage.add_item("engine default (bytes as code points)" if name == "" else name)
+		# The codepage names themselves stay as they are: `mac_hebrew` is the value
+		# written into the config and the string the engine matches on, so a
+		# translated one would be a different setting wearing the same label.
+		%Codepage.add_item("ברירת המחדל של המנוע (בתים כנקודות קוד)" if name == "" else name)
 	%Codepage.selected = maxi(CODEPAGES.find(str(cfg.get_value("game", "codepage", ""))), 0)
 	%Debug.clear()
 	for name in DEBUG_VALUES:
@@ -496,21 +520,21 @@ func _validate_field(command: String) -> String:
 	if name == "":
 		problem = ""  # Unbinding is legal, and is how a game gets a key back.
 	elif BindingRules.named(name) == KEY_NONE:
-		problem = "'%s' is not a key name" % name
+		problem = "'%s' אינו שם של מקש" % name
 	else:
 		var current: Dictionary = {}
 		for other in _binding_fields:
 			current[other] = str((_binding_fields[other] as LineEdit).text).strip_edges()
 		var clash := BindingRules.collision(current, command, name)
 		if clash != "":
-			problem = "%s is already on %s" % [clash, name]
+			problem = "%s כבר יושב על %s" % [clash, name]
 		else:
 			var claimed := BindingRules.claimed_by(name)
 			var typed := BindingRules.typed_in(name)
 			if not claimed.is_empty():
-				problem = "%s is a keyCode %s tests" % [name, ", ".join(claimed)]
+				problem = "%s הוא keyCode שנבדק על ידי %s" % [name, ", ".join(claimed)]
 			elif not typed.is_empty():
-				problem = "%s types a character %s tests" % [name, ", ".join(typed)]
+				problem = "%s מקליד תו שנבדק על ידי %s" % [name, ", ".join(typed)]
 	if problem == "":
 		_invalid.erase(command)
 	else:
@@ -714,15 +738,15 @@ func _select_root(row: Dictionary) -> void:
 func _refresh_play() -> void:
 	var reason := ""
 	if not _invalid.is_empty():
-		reason = "Fix the marked key before playing"
+		reason = "תקנו את המקש המסומן לפני שמתחילים"
 	elif _root == "":
-		reason = "Pick a title"
+		reason = "בחרו משחק"
 	# A title that is a Godot project is entered by changing scene, so it names
 	# no container and never will. The complaint below is about a *Director*
 	# title whose `[root.*]` section has no `boot` -- a real misconfiguration,
 	# and one this must keep catching.
 	elif _scene == "" and _boot == "":
-		reason = "This title names no container to open — set one under Developer"
+		reason = "למשחק הזה לא מוגדר קובץ פתיחה — הגדירו אחד בלשונית המפתחים"
 	_play.disabled = reason != ""
 	# Just "Play". It used to name the selected title, which was the only thing
 	# on screen saying what would launch -- back when a tile press both selected
@@ -731,7 +755,7 @@ func _refresh_play() -> void:
 	# button naming it again is a second answer to a question the grid already
 	# answers. A label that changes width as you arrow across the grid is also a
 	# button that moves under the pointer.
-	_play.text = "Play"
+	_play.text = "שחק"
 	%PlayNote.text = reason
 	%PlayNote.visible = reason != ""
 
