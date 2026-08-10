@@ -1,9 +1,14 @@
 #!/bin/bash
 # Run the refactor gates. Every step must reproduce the recorded pass/fail SET,
-# which over the 66 entries in ALL is **66 pass / 0 fail**, measured on 4.7.1 by
-# a whole-suite run at the commit this line was written. There is no expected
-# failure any more, so any red is a regression and needs no triage against a
-# list of excuses.
+# which is **every entry in ALL passing and none failing**, measured on 4.7.1
+# against GATE_ROOT's default by a whole-suite run at the commit this line was
+# written. There is no expected failure any more, so any red is a regression and
+# needs no triage against a list of excuses.
+#
+# How many entries that is on the day you read it is deliberately not written
+# here, for the reason README.md gives and the paragraph below demonstrates: the
+# set is uniform, so the count says nothing the sentence above does not, and it
+# is the only part of this header that has ever been wrong. Run it and count.
 #
 # The two this line used to carry were not the standing costs they read as:
 #
@@ -18,10 +23,19 @@
 #                   (bugs.md 54). A flake is not noise; it is a result nobody has
 #                   to explain.
 #
-# 62 rather than 61 because `cursor_cross_cast` joined the list. Count `ALL` when
-# you change it: this line said 54 entries for as long as it took the list to
-# reach 61, which is the failure the paragraph below is about, one paragraph
-# above where it happened.
+# A count here said 54 entries while ALL held 61, then 62, then 66 while it held
+# 68 -- `launcher_surface` (532f1e4b) and `film_loop_scale` (15fab73c) each joined
+# in the two commits after the one that wrote 66, and neither moved it. Three
+# generations of this comment carried a wrong number and each was corrected by
+# somebody who had to go looking for a failure that was not there, which is what
+# the paragraph below is about, one paragraph above where it kept happening. So
+# the number is gone rather than corrected a fourth time. If you want it:
+#
+#   sed -n 's/^ALL="\(.*\)"$/\1/p' gate.sh | wc -w
+#
+# anchored at the line start on purpose, because the obvious `grep -o 'ALL="..."'`
+# form matches its own occurrence in a comment like this one and answers one too
+# many. That is not a hypothetical; it happened while this line was written.
 #
 # `boot_state` was the long-standing red in the line this replaces and passes now.
 #
