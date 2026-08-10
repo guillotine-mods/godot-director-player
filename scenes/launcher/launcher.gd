@@ -73,6 +73,9 @@ var _entries: Array[Dictionary] = []
 var _tiles: Array[Button] = []
 var _root := ""
 var _boot := ""
+## A scene inside a mounted pack, for a title that is a Godot project rather
+## than a Director corpus. Empty for all six disc titles.
+var _scene := ""
 var _title := ""
 var _binding_fields: Dictionary = {}
 ## command -> the label beside its field, so a row can say what is wrong with it
@@ -652,6 +655,10 @@ func _emoji_font() -> Font:
 func _select_root(row: Dictionary) -> void:
 	_root = str(row.get("root", ""))
 	_boot = str(row.get("boot", ""))
+	# Empty for every Director title, and the whole of the difference for a
+	# title that is a Godot project: `_launch` changes to this instead of to the
+	# preview, and `_on_play` writes no game root, because there is no movie.
+	_scene = str(row.get("scene", ""))
 	_refresh_play()
 
 
@@ -685,6 +692,14 @@ func _on_quit() -> void:
 
 
 func _on_play() -> void:
+	# A Godot-project title has no movie, so none of the below applies to it:
+	# writing a `game.root` that holds no containers would leave the overlay
+	# pointing at something the preview cannot open, and the next launch of a
+	# Director title would inherit it.
+	if _scene != "":
+		_redrive_autoloads()
+		_launch()
+		return
 	var overlay := GameConfig.overlay()
 	overlay.set_value("game", "root", _root)
 	overlay.set_value("game", "boot_movie", _boot)
@@ -756,4 +771,4 @@ func _launch() -> void:
 	# command-line bypass path, and changing scene from inside the current
 	# scene's `_ready` is the standard way to free a node that is mid-
 	# initialisation.
-	get_tree().change_scene_to_file.call_deferred(PREVIEW_SCENE)
+	get_tree().change_scene_to_file.call_deferred(_scene if _scene != "" else PREVIEW_SCENE)
