@@ -6,20 +6,21 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 
-fail=0
-check() { # check <name> <exit-code>
-	if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi
-}
-
+# One EXIT trap only. Bash keeps the last registration per signal, so cleanup
+# and the abort guard have to live in the same handler -- an earlier revision
+# registered them separately and the second silently disabled the first,
+# leaking a directory per run.
+#
 # A probe that dies under `set -e` before `check` runs takes the whole suite
 # with it and prints nothing -- the shell twin of the aborted-case failure
 # `tools/lib/harness.gd` exists to catch, where a case that never completes
-# must not read as a pass. The trap makes an early death loud.
+# must not read as a pass. `st=$?` is captured before the `rm` so cleanup
+# cannot overwrite the suite's own exit status.
 verdict=""
 finish() {
 	st=$?
+	rm -rf "$tmp"
 	if [ -z "$verdict" ]; then
 		echo ""
 		echo "FAIL  stamp_version: the suite aborted (exit $st) before reaching its verdict"
@@ -27,6 +28,11 @@ finish() {
 	exit "$st"
 }
 trap finish EXIT
+
+fail=0
+check() { # check <name> <exit-code>
+	if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi
+}
 
 cat >"$tmp/presets.cfg" <<'EOF'
 [preset.0.options]
@@ -37,12 +43,26 @@ package/unique_name="com.guillotinemods.godotdirectorplayer"
 EOF
 
 tools/ci/stamp_version.sh v0.2.0 41 "$tmp/presets.cfg" >/dev/null
-grep -q '^version/code=41$' "$tmp/presets.cfg"
-check "version/code takes the run number" $?
-grep -q '^version/name="0.2.0"$' "$tmp/presets.cfg"
-check "version/name drops the leading v" $?
-grep -q '^package/unique_name=' "$tmp/presets.cfg"
-check "neighbouring keys survive" $?
+
+if grep -Fqx 'version/code=41' "$tmp/presets.cfg"; then
+	check "version/code takes the run number" 0
+else
+	check "version/code takes the run number" 1
+fi
+
+if grep -Fqx 'version/name="0.2.0"' "$tmp/presets.cfg"; then
+	check "version/name drops the leading v" 0
+else
+	check "version/name drops the leading v" 1
+fi
+
+# Still a pattern rather than a literal: this one asserts the key survived,
+# not what its value is.
+if grep -q '^package/unique_name=' "$tmp/presets.cfg"; then
+	check "neighbouring keys survive" 0
+else
+	check "neighbouring keys survive" 1
+fi
 
 # A non-numeric code would substitute happily and produce an APK Android will
 # not take as an update, so it has to be refused rather than written.
