@@ -435,11 +435,21 @@ func _machine_checks(h) -> void:
 		int(_value("the quickTimePresent")) == 0,
 		"there is no digital video in this port; a movie that guards on this "
 		+ "takes the branch that works")
+	# **A list, and no longer an empty one.** The check this replaces asserted
+	# emptiness, which was right while no Xtra was implemented and is now a claim
+	# that FileIO is not loaded. What has to hold either way is the *shape*: a
+	# movie scanning `the xtras` for one must be able to loop over it, and every
+	# entry has to be an object it can send `new` to rather than a bare name --
+	# §7.3's own warning, and the reason the registry holds records.
+	var xtras: Variant = _value("the xtras")
+	var every_entry_is_an_xtra := typeof(xtras) == TYPE_ARRAY
+	for entry in (xtras as Array) if typeof(xtras) == TYPE_ARRAY else []:
+		if not (entry is Object) or not (entry as Object).has_method("make_xtra_instance"):
+			every_entry_is_an_xtra = false
 	h.check(
-		"`the xtras` is an empty list rather than VOID",
-		typeof(_value("the xtras")) == TYPE_ARRAY
-			and (_value("the xtras") as Array).is_empty(),
-		"a movie scanning it for an Xtra must find it absent, not fail to loop")
+		"`the xtras` is a list, and every entry is an Xtra `new` can be applied to",
+		every_entry_is_an_xtra and not (xtras as Array).is_empty(),
+		"holds %s; FileIO is the one Xtra this player implements" % JSON.stringify(xtras))
 	h.check(
 		"`version()` and `the productVersion` agree (\"6.0\")",
 		str(_value("version()")) == "6.0" and str(_value("the productVersion")) == "6.0")
