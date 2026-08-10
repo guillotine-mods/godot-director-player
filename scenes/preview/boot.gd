@@ -281,6 +281,29 @@ static func start_lingo(host, path: String) -> void:
 			cast_name = "internal"
 		var bundle: Dictionary = compiler.compile_cast(cast, movie, cast_name)
 		var count := (bundle.get("scripts", {}) as Dictionary).size()
+		# **A script that will not parse is dropped, and saying nothing about it is
+		# the worst thing this boot does.** `compile_cast` has always collected the
+		# failures into `compiler.error`; nothing read it, so a script vanished
+		# whole -- with every handler in it -- and the only trace was those
+		# handlers turning up later in `builtins unbound`, which reads like a
+		# missing *feature* rather than a missing *file*.
+		#
+		# Itamar Park is what it cost: two syntax gaps took five scripts out of one
+		# cast, and with them `openLevelsWindow`, `getFlag` and `setFlag`. The
+		# level select never opened, the frame behind it holds with
+		# `go(the frame)` as every room in every title does, and the movie sat
+		# there for ever. No error, no hang, nothing on the clock -- a legitimate
+		# wait for something deleted at compile time. Hours went into that, and
+		# this line would have answered it in one boot.
+		#
+		# Printed rather than raised: a title with one bad script should still run
+		# as far as it can, which is how the rest of this port treats a hole. It is
+		# loud, it names the script and the line, and it is not behind the debug
+		# switch -- a build that cannot compile part of the game is not a debug
+		# question.
+		if str(compiler.error) != "":
+			push_warning("lingo: %s: %s" % [cast_name, compiler.error])
+			print("lingo: %-10s SCRIPTS DROPPED -- %s" % [cast_name, compiler.error])
 		if count == 0:
 			continue
 		host._interpreter.load_bundle(bundle, movie)

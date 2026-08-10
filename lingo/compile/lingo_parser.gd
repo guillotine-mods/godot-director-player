@@ -586,6 +586,21 @@ func _parse_put() -> Dictionary:
 		mode = "after"
 	elif _eat_kw("before"):
 		mode = "before"
+	elif _at_op(","):
+		# **`put a, b, c` echoes several values**, which only the message-window
+		# form allows -- there is no `into` to put a list into. Every value after
+		# the first was a parse error, and a parse error costs the whole script:
+		# Magic Hat's `strings` movie script is 40 lines of string helpers and one
+		# authoring-only handler that logs three values this way.
+		#
+		# Evaluated rather than discarded, and joined the way Director joins them,
+		# because `put` is how a movie talks to whoever is watching and a port that
+		# drops the arguments makes a debugging session lie.
+		var values: Array = [value]
+		while _eat_op(",") and not _failed():
+			values.append(_parse_expr())
+		_skip_newlines()
+		return {"node": "put_echo_many", "values": values, "line": line}
 	else:
 		# `put x` alone is Director's message-window echo. Harmless.
 		_skip_newlines()
@@ -1137,6 +1152,16 @@ func _parse_the() -> Dictionary:
 		# One trailing `s` only: `lines` -> `line`. Stripping every trailing `s`
 		# is the accidental behaviour of the original and no unit needs it.
 		var unit := _advance().to_lower().trim_suffix("s")
+		# **Not every count has a source.** `the number of lines in x` counts
+		# inside something; `the number of castLibs` is a fact about the movie and
+		# there is nothing for `in` to introduce. Demanding the word dropped three
+		# of Magic Hat's scripts, one of them its `Program` movie script.
+		#
+		# It cannot key off the unit, because `the number of castMembers of castLib
+		# N` is the same family *with* a source. So it asks whether a source
+		# actually follows: the end of the line means it does not.
+		if _k() == "nl" or _k() == "eof":
+			return {"node": "count", "unit": unit, "source": {}, "line": line}
 		if not (_eat_kw("in") or _eat_kw("of")):
 			return _fail("`the number of X` needs `in`", _ln())
 		return {"node": "count", "unit": unit, "source": _parse_expr(Grammar.TIGHT), "line": line}
@@ -1154,6 +1179,19 @@ func _parse_the() -> Dictionary:
 	if words.is_empty():
 		return _fail("`the` needs a property", line)
 	var prop := str(words[words.size() - 1]).to_lower()
+
+	# **`of` at the end of a line belongs to whatever wrapped this, not to the
+	# property.** `the <prop> of <target>` is greedy, and `case the keyCode of`
+	# ends its line on that word -- so the property swallowed the `case`
+	# statement's own keyword and then failed on the newline behind it, taking the
+	# whole script with it. Two of Itamar Park's behaviours are `case the keyCode
+	# of` and nothing else was wrong with either.
+	#
+	# Looking at what follows is enough to tell them apart, and is what makes this
+	# safe: a real target always continues on the same line. `of` followed by a
+	# line break, or by the end of the script, cannot be introducing one.
+	if _at_kw("of") and (_k(1) == "nl" or _k(1) == "eof"):
+		return {"node": "the", "prop": prop, "line": line}
 
 	if _eat_kw("of"):
 		if _at_kw("sprite"):

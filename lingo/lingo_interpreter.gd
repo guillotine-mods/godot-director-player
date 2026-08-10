@@ -1196,6 +1196,20 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			if LingoDiagnostics.trace:
 				LingoDiagnostics.trace_line("-- %s" % LingoValue.to_str(echoed))
 			return Flow.NORMAL
+		"put_echo_many":
+			## `put a, b, c` -- the same echo with several values. Director joins
+			## them with a space in the message window.
+			##
+			## Every value is evaluated, for the reason the arm above spells out:
+			## the reference has `put` as an ordinary builtin, so its arguments are
+			## on the stack and their side effects have already happened. Evaluating
+			## only the first would be the same silent half-execution.
+			var parts := PackedStringArray()
+			for value_node in stmt.get("values", []):
+				parts.append(LingoValue.to_str(_eval(value_node, frame)))
+			if LingoDiagnostics.trace:
+				LingoDiagnostics.trace_line("-- %s" % " ".join(parts))
+			return Flow.NORMAL
 		"call_stmt":
 			_eval(stmt.get("call", {}), frame)
 			return Flow.NORMAL
