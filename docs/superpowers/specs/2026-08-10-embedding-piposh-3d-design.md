@@ -167,10 +167,10 @@ only scene change in the whole player is `launcher.gd:759`, and
 `director_preview.gd` only ever `quit()`s. No Director title returns to the
 launcher either.
 
-## Blocked: `class_name` globals do not cross a pack boundary
+## Settled: `class_name` globals do not cross a pack boundary
 
-Implementation reached this and stopped. It is the same mechanism that hangs a
-fresh worktree — global classes resolve from
+**This blocked the work and was then removed by taking option 1 below.** It is
+the same mechanism that hangs a fresh worktree — global classes resolve from
 `.godot/global_script_class_cache.cfg`, which belongs to the *host* project —
 and mounting a pack does not merge into it:
 
@@ -196,20 +196,48 @@ Two escape routes were tested and both are closed:
   autoloads pointed at paths inside it fail with
   `Failed to create an autoload, can't load from UID or path`.
 
-So the remaining options all cost something, and the choice is the owner's:
+Three options were put to the owner, who took the first:
 
 1. **Drop `class_name` in the child**, replacing each with a `const X =
-   preload(...)` at its use sites. ~40 files in a repo under active
-   development, and it makes the child permanently a little more awkward to
-   read in exchange for being hostable.
-2. **Patch the parent's class cache at build time**, appending the child's nine
-   entries with their in-pack paths, as part of the same step that builds the
-   pack. Zero change to the child; a hand-maintained cache the editor may
-   regenerate underneath, which is a trap of a different shape.
-3. **Give up on one binary** and ship the 3D title as its own app, with the
-   launcher not offering it.
+   preload(...)` at its use sites. **Taken.** 16 files, not the ~40 first
+   estimated — the estimate counted class names appearing in comments and in
+   node-name strings.
+2. Patch the parent's class cache at build time. Zero change to the child, and a
+   hand-maintained cache the editor may regenerate underneath.
+3. Ship the 3D title as its own app and not offer it in the launcher.
 
-Nothing below this line is reachable until that is decided.
+**A const preload is not free, and that is the lasting lesson.** It pulls the
+target into compilation early, and in a `--script` run that happens before
+autoloads register — so `smoke_anim.gd` preloading `mdl_animator.gd`, which
+merely *mentions* `PiposhDebug`, failed with `Identifier not found`. A preload
+added for tidiness can break a harness that never touches the preloaded type.
+Detection has to ignore strings as well as comments.
+
+No cycle stood in the way: `wdl_interpreter` names `WdlDirector` only in
+comments, so the dependency runs one way and `preload` accepts it.
+
+## What shipped
+
+The tile exists, boots and plays. Beyond the design above, four things the design
+did not anticipate, each found by running it rather than reading it:
+
+- **`_refresh_play` refused the tile.** Every Godot-project title has an empty
+  `boot` by construction. The complaint still fires for a Director title whose
+  `[root.*]` names none — that remains a real misconfiguration.
+- **Every input was missing.** The InputMap lives in `project.godot`, which is
+  exactly what `replace_files=false` shadows, so `move_forward` and its five
+  siblings had to be carried across explicitly. This is the general shape of the
+  remaining risk: *anything* the title declared in `project.godot` is absent
+  inside the player. `[rendering]` and `[display]` are still unported.
+- **`title_list.gd` named an autoload and hung the gate**, by asking
+  `Piposh3DPack.mounted`. `ResourceLoader.exists()` on an in-pack path says the
+  same thing without a compile-time reference.
+- **A mounted pack made `res://` read-only and no movie could save.** Not a
+  piposh-3d bug at all: `director_writer.gd` handed `res://` paths to
+  `remove_absolute`/`rename_absolute`, and any mounted pack routes `res://`
+  directory access through the read-only `DirAccessPack`. `docs/MOBILE.md`
+  already proposes mounting a pack for the containers, so this was waiting
+  regardless. Fixed with `globalize_path`.
 
 ## Open: the renderer
 
@@ -217,9 +245,14 @@ The parent runs `rendering_method="mobile"` with
 `textures/canvas_textures/default_texture_filter=0` — nearest, correct for 1995
 pixel art. The child is Forward Plus with `msaa_3d=1`. One app has one of each.
 
-To be settled by building it and looking at both, not by argument. The 3D
-title's `pause_menu` and the parent's `skip_minigame` are also both Escape;
-a double-bind, not a merge conflict.
+To be settled by building it and looking at both, not by argument — and it is now
+buildable, so this is answerable rather than hypothetical. The title currently
+runs on the player's settings: `mobile`, nearest filtering, and `canvas_items`
+stretch with the window forced maximized, none of which it was built for.
+
+`pause_menu` and `skip_minigame` are both Escape. They live in different scenes,
+so it is a double-bind rather than a conflict, and worth knowing about before
+somebody adds a third.
 
 ## Rejected
 
