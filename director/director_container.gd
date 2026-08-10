@@ -55,11 +55,34 @@ static func is_container(name: String) -> bool:
 ##
 ## Order matters: a title that ships both a `.dir` and a `.dxr` of one movie must
 ## get the one the caller asked for, and only fall back when that does not exist.
+## **A name with no extension is a container reference too, and Director appends
+## the extension itself.** `the fileName of window` is the common way to write one
+## -- Director's own documentation spells it without a suffix -- and a movie that
+## opens a Movie-in-a-Window is the case that depends on it:
+##
+##     LevelsWindow.fileName = "@" & DirChar & DirChar & "levels" & DirChar & "levels"
+##     open(LevelsWindow)
+##
+## That is Itamar Park's level select, and with no extension tried the window
+## never opened. What that looks like from outside is the part worth recording:
+## the frame behind it is `on exitFrame / go(the frame)`, an ordinary hold, so the
+## movie sat on frame 2 for ever with no error, no hang and nothing in the
+## diagnostics -- a legitimate wait for something that was never coming. A
+## reference that resolves to nothing is reported; one that is never tried is not.
+##
+## Both families are offered, movies first: the extension is absent precisely
+## because the caller did not care which packaging exists, and a window names a
+## movie far more often than a cast.
 static func spellings(name: String) -> Array:
 	var out: Array = [name]
 	var extension := name.get_extension().to_lower()
 	var family := family_of(extension)
 	if family.is_empty():
+		# Nothing after the last dot is not the same as no dot at all: `a.b/c` has
+		# no extension of its own, and `get_basename` on it would eat the folder.
+		if extension == "" and not name.ends_with("."):
+			for other in MOVIE + CAST:
+				out.append("%s.%s" % [name, other])
 		return out
 	var stem := name.get_basename()
 	for other in family:
