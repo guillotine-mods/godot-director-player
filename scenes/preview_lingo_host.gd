@@ -20,6 +20,7 @@ extends RefCounted
 ## the same reason.
 const Builtins := preload("res://lingo/lingo_builtins.gd")
 const ContainerName := preload("res://director/director_container.gd")
+const GameConfig := preload("res://director/game_config.gd")
 const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
 ## For the four `*Script` properties, which hold Lingo source and compile it on
 ## assignment (§6.3 tier 1). Only the compiler half is reached from here -- the
@@ -1956,6 +1957,19 @@ func _compile_primary(source: String, label: String) -> Dictionary:
 	return compiled
 
 
+## `[game] run_mode` from the config, or "Author". Read through `GameConfig` so
+## the launcher's `user://` overlay reaches it like every other setting, and
+## cached because a movie may ask on every frame.
+static var _run_mode_cached := ""
+
+
+static func _run_mode() -> String:
+	if _run_mode_cached == "":
+		var wanted := str(GameConfig.merged().get_value("game", "run_mode", ""))
+		_run_mode_cached = wanted if wanted != "" else "Author"
+	return _run_mode_cached
+
+
 func get_system_prop(prop: String) -> Variant:
 	if preview == null:
 		return 0
@@ -2167,10 +2181,35 @@ func get_system_prop(prop: String) -> Variant:
 					return "Windows,32"
 			return "Windows,32"
 		"runmode":
-			# "Author", "Projector" or "Plugin" in Director. This port is never the
-			# authoring environment, and the distinction matters: a script that
-			# takes the "Author" branch skips the projector's own setup.
-			return "Projector"
+			# "Author", "Projector" or "Plugin" in Director, and this port is none
+			# of the three -- so the question is which answer leaves a title in the
+			# state it expects, not which label fits.
+			#
+			# **"Author", because that is the position this player is actually in.**
+			# A projector *embeds* its movie and does the startup work before the
+			# movie runs; this engine opens a bare `.dir` and nothing has set it up.
+			# That is precisely the condition a title tests for. Magic Hat:
+			#
+			#     on startMovie
+			#       if not Projector() then
+			#         clearGlobals()
+			#         if SingleGameMode() then InitProgram("magichat.ini")
+			#
+			# Answering "Projector" made it skip its own initialisation, wait for a
+			# projector that does not exist, and loop its intro for ever instead of
+			# reaching its menus. Answering "Author" it reads its ini, takes
+			# `startframe = mainmenu` and settles on the menu with no errors.
+			#
+			# The previous comment argued the other way -- that the Author branch
+			# skips the projector's own setup -- and that is true of a *real*
+			# projector, which is the thing this port is not. Nothing does that
+			# setup here unless the movie does.
+			#
+			# **Free of risk for the shipped corpus, measured**: `the runMode`
+			# appears in 0 of the six titles' scripts, so no Piposh or Rating
+			# behaviour depends on either answer. The config key exists for the
+			# title that eventually disagrees.
+			return _run_mode()
 		"applicationpath":
 			# The folder the running application lives in, with a trailing
 			# separator, as `the moviePath` has. Not the movie's folder -- the two
