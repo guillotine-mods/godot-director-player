@@ -109,7 +109,11 @@ func _open_a_movie_with_fields(h: Harness) -> void:
 	var table = _preview.get("_table")
 	var here := ""
 	if not _find_field(table, true).is_empty() and not _find_field(table, false).is_empty():
-		here = str(_preview.get("_container_path"))
+		# `movie_name()`, not a `get()` on a private field: a name that has moved
+		# makes `get()` answer null, `str(null)` answer "<null>", and this check
+		# pass while labelling the fixture with a placeholder -- the dark-harness
+		# failure `scenes/preview/README.md` names.
+		here = str(_preview.call("movie_name"))
 	else:
 		var paths := Paths.new()
 		paths.load_config()
