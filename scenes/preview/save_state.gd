@@ -178,7 +178,9 @@ const ACCOUNTED := {
 	"_rollover_channel": "rebuilt: with the hover channel",
 	"_pointer": "rebuilt: from the pointer of the process that loads",
 	"_pointer_seen": "rebuilt: with the pointer",
-	"_pointer_from_events": "rebuilt: a property of the machine, not of the session",
+	"_has_os_cursor": "rebuilt: a property of the machine, not of the session",
+	"_pointer_from_events": "rebuilt: a property of the last event and of the"
+		+ " machine, neither of which a save carries",
 	"_caret_since": "rebuilt: the blink phase restarts, which is what a keystroke does",
 
 	# ------------------------------------------------------------- excluded

@@ -833,7 +833,17 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# channel. Defaulting the argument to 1 -- the obvious implementation --
 			# silently answers "is the mouse over channel 1" to a script asking
 			# "which channel is the mouse over", and both are plausible integers.
-			if args.is_empty():
+			# **`rollOver(0)` is the no-argument form, not "channel 0".** `b_rollOver`
+			# starts from `Datum(0)` and only overwrites it when an argument was
+			# passed, so `nargs == 0` and an explicit 0 arrive at the same `arg == 0`
+			# branch and both answer `getRollOverSpriteIDFromPos` -- the channel
+			# under the pointer. Routed here to `lingo_rollover(0)` instead, this
+			# answered `_hover_channel > 0`, which is the wrong question twice over:
+			# it is the eligibility-filtered *click* channel rather than §4.5's plain
+			# rect test, and it is the one rollover field nothing recomputes per tick
+			# -- so on a touchscreen, where no motion arrives between taps, it never
+			# left whatever the last drag had put there.
+			if args.is_empty() or LingoValue.to_int(args[0]) == 0:
 				return preview.lingo_rollover_channel()
 			return 1 if preview.lingo_rollover(LingoValue.to_int(args[0])) else 0
 		"intersects", "within":

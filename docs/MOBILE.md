@@ -184,6 +184,17 @@ is why touch reaches the engine at all — and why the harness asserts it rather
 than assuming it, since an unrelated edit to that file could switch it off with
 nobody connecting the two.
 
+**The harness runs headless now**, so it is in the gate rather than being a thing
+somebody has to remember to run windowed. It used to bail out on
+`DisplayServer.get_name() == "headless"` and so contributed one check —
+"`emulate_mouse_from_touch` is enabled" — for as long as it sat in `gate.sh`'s
+list. The touch point is mapped through the same three transforms either way, and
+the run refuses to start if that composition has collapsed to an identity, which
+is the only way a headless run could pass the coordinate checks vacuously. Run it
+windowed as well when the pointer arbitration is what is in question: windowed
+there is a real OS cursor to be wrong about, and section 3 is measuring rather
+than pretending.
+
 ### What works
 
 - **Coordinate mapping.** The stage is a fixed 640x480 letterboxed into the
@@ -192,19 +203,32 @@ nobody connecting the two.
   point, within a pixel, and `the clickOn` names the sprite that was touched.
 - **Tap = click.** Touch-down sends `mouseDown`, lift sends `mouseUp`, and the
   lift alone sends `mouseUp` — the press/release split holds for a finger.
+- **`the mouseDown` / `the stillDown` / `the mouseUp`.** These are the one
+  Director property answered from live hardware rather than from engine state,
+  polled out of an `exitFrame` loop between events, and Godot's emulation does
+  update the mouse button mask for a finger. So the click-to-skip idiom — 46
+  scripts install `fromnow`, and `if the mouseDown then go ...` appears in both
+  titles — works on touch. Verified: `the mouseDown` reads 1 while a finger is
+  on the glass and 0 after it lifts.
 - **Drag.** A finger drag is press, `InputEventScreenDrag` → motion, release. The
   moveable sprite follows the finger and the drop still delivers the `mouseUp` it
   is decided in. This is the corpus's whole inventory idiom, working on touch.
 - **Multi-touch is safely ignored.** Exactly one finger is emulated — whichever
   went down while none was tracked. A second finger sends nothing, and lifting
   the first still completes its own click. No stray press without a release.
+  The other order too: lift the *tracked* finger while a second is still on the
+  glass and Godot stops tracking, so that second finger's drags and its eventual
+  lift produce nothing at all and leave no press latched. Either leak would show
+  up as a press with no release, or a second `mouseUp` for a click that already
+  finished, and both latch into the next gesture rather than into the one that
+  caused them.
 - **The SKIP control** is a drawn rectangle tested before the hit test, so it is
   reachable by tap like anything else.
 
 ### What had to change to get there
 
-Three faults, all found by the touch harness and all of which were also wrong on
-desktop:
+Five faults, all found by the touch harness and all but one of which were also
+wrong on desktop:
 
 1. **`stage_mouse()` read the OS cursor.** `get_local_mouse_position()` ends in
    `Viewport.get_mouse_position()`, which on the *root* viewport does not answer
@@ -214,17 +238,42 @@ desktop:
    the drag — read a cursor that does not exist. The message fired and every
    number in it was wrong, which on a phone reads as a broken hit test rather
    than a missing pointer. `_input` now routes the event's own position, and
-   `stage_mouse` falls back to the last event where the platform reports no
-   `FEATURE_MOUSE`.
-2. **`InputRouter.mouse_button` called `route_click` on the press** — press *and*
+   `stage_mouse` falls back to the last event.
+2. **...and which of the two was authoritative was decided once, from the
+   platform.** `_pointer_from_events` was `not has_feature(FEATURE_MOUSE)`,
+   latched at load. That is right on a phone with no mouse and on a desktop with
+   no touchscreen and **wrong on every machine that has both** — Windows laptops
+   with touchscreens, Chromebooks, Android with a mouse attached or in DeX, an
+   iPad with a trackpad. All of them report `FEATURE_MOUSE`, so the flag read
+   false and fault 1 was alive on them untouched. Measured on a Windows box: a
+   touch at stage (238,240) came out of `the mouseH`/`the mouseV` as (608,19) —
+   wherever the cursor had been parked — and `the clickOn` as 0. It is a fact
+   about the **last event** now: Godot stamps `DEVICE_ID_EMULATION` on the mouse
+   events it synthesises from a finger, so `_input` reads the answer off the
+   event. A player who plugs a mouse into a tablet mid-session gets the cursor
+   back on its first motion and the finger back on the next tap, which no
+   boot-time test can express at all.
+3. **`InputRouter.mouse_button` called `route_click` on the press** — press *and*
    release back to back — so the split that made drag-and-drop work never applied
    to a real mouse at all. Every harness drove `route_press`/`route_release`
    directly, which is right for asserting the routing and is why nothing caught
    it; the touch harness goes in through `_input` and found it immediately. This
    was a live bug on desktop too: it is the inventory drop, still broken.
-3. **The rollover was recomputed only on pointer motion.** §6.3 step 10 puts it
+4. **The rollover was recomputed only on pointer motion.** §6.3 step 10 puts it
    in the frame update. On touch there is no motion between taps, so `the
    rollOver` would have named whatever was under the previous gesture for ever.
+5. **...and a *press* did not re-aim it either**, which the frame tick hides
+   everywhere except in the handler the press itself runs. The reference
+   recomputes the hovered channel from the event's own position at the top of
+   `processSysEvent`, before the switch that separates a move from a press
+   (§4.5). A mouse cannot reach a button without a motion carrying it there, so
+   on desktop this changes nothing; a finger sends no motion, so a tap dispatched
+   `mouseDown` with the previous gesture's rollover latched and `the mouseH` and
+   `the rollOver` described two different places inside one handler. Measured on
+   `SAVELOAD.dir` frame 5: a mouse arriving over channel 5 pressed with `the
+   rollOver` = 5, a finger tapping the same point pressed with 4 — the channel it
+   had last touched. `preview/input_router.gd:aim_pointer` is the shared half of
+   `mouse_motion` that both now call.
 
 ### Hover has no touch equivalent — and this game's menu is built on it
 
@@ -307,14 +356,32 @@ and `Input.show_virtual_keyboard()` is not the answer for a single key.
   and no `mouseUp` goes out. That is the standard way to cancel a mis-aimed
   press, and it matters more on a touchscreen than on a mouse.
 - **Touch cancellation** (a system gesture stealing the finger — back swipe,
-  notification shade) arrives as a release. The engine treats it as a normal
-  lift, so a drag interrupted by the notification shade drops the item wherever
-  it was. Not verified on a device, and worth checking on one.
+  notification shade) arrives as a release. **Measured now, not reasoned**: an
+  `InputEventScreenTouch` with `canceled` set is emulated into an ordinary mouse
+  *release*, so the engine ends the drag, clears the press and dispatches
+  `mouseUp` exactly as it would for a lift. The item is dropped wherever it was
+  and the click the player abandoned is delivered.
+  **Left as it stands, and that is a decision rather than an oversight.** A
+  finger produces something a mouse cannot, so there is no parity answer and no
+  Director behaviour to match. The alternative is to route a cancel to
+  `mouseUpOutSide` — the message the engine already has for a press the player
+  backed out of — which is the honest reading of a system gesture stealing the
+  finger and would stop a back swipe committing a game action. It is a design
+  decision about the port, of the same kind as the `rollOver` menu question
+  below, and it is recorded here rather than taken. `tools/touch_input.gd` pins
+  the behaviour as it is, so changing it has to be deliberate.
+  What is still not verified on a device: whether Android delivers the cancel to
+  Godot at all when the OS takes the gesture, or simply stops sending events.
 
 ## Before shipping
 
 - [ ] **A decision on `rollOver` menus.** See "Hover has no touch equivalent" —
       this is the one item on this list that is not an engineering task.
+- [ ] **A decision on what a cancelled touch means.** Today it is an ordinary
+      lift, so a back swipe commits the click it interrupted. Routing it to
+      `mouseUpOutSide` instead is a one-branch change and uses a message Director
+      already has; it is listed here because it is a design decision and not a
+      bug. See "The rest of the mouse, on touch".
 - [ ] `include_filter="games/*"` in `export_presets.cfg`
 - [ ] `export_format` switched to AAB for Play
 - [ ] Audio transcoded, or the AIFF loader landed
@@ -347,9 +414,21 @@ Stated as inference, and worth a device test before anything depends on it:
   `tools/touch_input.gd` injects genuine `InputEventScreenTouch` events and the
   emulation, routing, transforms and dispatch below them are the same objects a
   device would run — but the touch *driver* is not, and neither is the screen.
-  The one value the harness has to fake is `_pointer_from_events`, which a device
-  sets from `DisplayServer.has_feature(FEATURE_MOUSE)` and Windows answers the
-  other way; that is why it is a variable and not an inline platform test.
+  The harness no longer fakes `_pointer_from_events`: the engine derives it per
+  event now and the harness asserts that it did. What it does set is
+  `_has_os_cursor`, which is a fact about the *machine* — true on a Windows box
+  already, so windowed nothing there is pretended; headless it is set so that the
+  arm every touchscreen-and-mouse platform takes is the one measured, instead of
+  the phone arm being measured twice.
+- **Whether Android reports `FEATURE_MOUSE`.** It no longer decides anything on
+  its own — the event's device id does — but it is still the initial value of the
+  flag, i.e. what the engine believes before the first event arrives. Not read
+  from Godot's platform source and not checked on a device.
+- **That a real mouse never carries `DEVICE_ID_EMULATION`.** The engine's pointer
+  arbitration rests on it. Measured on Windows for events Godot synthesises from
+  a finger (-1), for a freshly constructed `InputEventMouseButton` (32, not 0,
+  which is why the harness asserts "not -1" rather than a number) and for the
+  genuine OS motion a `warp_mouse` produces. Not measured on Android or iOS.
 - `Input.set_custom_mouse_cursor` being a no-op on Android and iOS is read from
   Godot's own documentation, not from the platform source and not from a device.
   It is very unlikely to be wrong and it has not been proved here.

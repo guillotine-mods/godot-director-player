@@ -850,8 +850,30 @@ They are driven by `getMouseSpriteIDFromPos`, the *eligibility-filtered* hit
 test, so a backdrop with no mouse handler is rolled over and never entered. §8.1
 has when they fire.
 
-*This port:* `preview/interaction.gd:rollover_channel` is one pure-rect descent
-answering the builtin in both its forms, measured against the **score's**
+**The channel under the pointer is recomputed from every mouse event's own
+position, and a button event is a mouse event.** `Movie::processSysEvent` opens
+by taking `event.mouse`, running the hit test on it and storing the answer in
+`_currentHoveredSpriteId` and `_lastMousePos` — *before* the switch that
+separates a move from a press, so the press, the release and the move all
+re-aim the pointer and only then dispatch. On a mouse the distinction is
+invisible, because a button cannot arrive at a new place without a motion
+carrying it there first. It is not invisible to anything that can: a warp, a
+synthetic event, and above all a **touchscreen**, which sends no motion at all
+between taps. §4.1's queries are only as current as the position they are asked
+about, and this is where that position is refreshed. What the button arm does
+*not* do is raise `mouseEnter`/`mouseLeave` — those are motion's (§8.1) — and it
+does not touch the cursor or the drag either.
+
+*This port:* `preview/input_router.gd:aim_pointer` is the paragraph above —
+called from `_input` for a move and for either button, and doing the hover
+channels and nothing else. It answered only movement until a touch harness
+measured a tap dispatching `mouseDown` with the previous gesture's rollover
+still latched, `the mouseH` naming one place and `the rollOver` another inside
+one handler. `preview/interaction.gd:rollover_channel` is one pure-rect descent
+answering the builtin in both its forms — including the explicit
+`rollOver(0)`, which used to be routed to the eligibility-filtered *click*
+channel instead and so answered a different question from the `rollOver()` it is
+the same call as — measured against the **score's**
 geometry rather than the live channel's — see the function's own comment for why
 the live rect feeds a menu's highlight back into its own rollover test. `the
 rollOver` as a property is **bound to that same descent**, which is the wrong one

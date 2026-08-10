@@ -315,23 +315,44 @@ static func right_mouse_button(host, event: InputEventMouseButton, at: Vector2) 
 ## works -- `tools/sprite_drag.gd` does exactly that, and for it the OS cursor is
 ## the truth. `Vector2.INF` rather than a null default because the parameter is
 ## typed, and an untyped one would lose the compile-time check on every caller.
-static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
-	var point: Vector2 = host.stage_mouse() if at == Vector2.INF else at
-	var over: Node = host.window_at(point)
+## **Where the pointer is now, for the movie that owns that point**, and nothing
+## else: the two hover channels, `the mouseH`/`the mouseV` inside a window, and
+## the `mouseEnter`/`mouseLeave` crossing that follows from the first.
+##
+## Split out of `mouse_motion` because a **button** event has to do it too, and
+## for the reference's own reason rather than for the touchscreen's:
+## `Movie::processSysEvent` recomputes `_currentHoveredSpriteId` and
+## `_lastMousePos` from `event.mouse` at the top of the function, before the
+## switch that separates a move from a press. `director_preview.gd:_input` calls
+## this ahead of routing either button. What it deliberately does **not** do is
+## the rest of `mouse_motion` -- the drag, the text selection and the cursor
+## recompute are movement, and a press is not movement.
+##
+## Returns the movie that took the point, so `mouse_motion` can carry on in it.
+static func aim_pointer(host, at: Vector2) -> Node:
+	var over: Node = host.window_at(at)
 	if over != null and over != host:
-		var local: Vector2 = over.stage_to_local(point)
+		var local: Vector2 = over.stage_to_local(at)
 		# The window cannot see the event itself -- its input processing is off --
 		# so this is the only thing that keeps `the mouseH` and `rollOver` inside
 		# a Movie-In-A-Window current.
 		over.call("note_pointer", local)
 		over._hover_channel = over._channel_at(local)
 		over.call("track_rollover", local)
+		return over
+	host._hover_channel = host._channel_at(at)
+	host.call("track_rollover", at)
+	return host
+
+
+static func mouse_motion(host, at: Vector2 = Vector2.INF) -> void:
+	var point: Vector2 = host.stage_mouse() if at == Vector2.INF else at
+	var was: int = host._hover_channel
+	var over: Node = aim_pointer(host, point)
+	if over != host:
 		over._resolve_cursor()
 		host.queue_redraw()
 		return
-	var was: int = host._hover_channel
-	host._hover_channel = host._channel_at(point)
-	host.call("track_rollover", point)
 	if host._drag_channel > 0:
 		# §7.6 ends the drag on mouse-up **or when the sprite stops being
 		# moveable**, and only the first half was here. A script that cleared

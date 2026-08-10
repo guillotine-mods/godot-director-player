@@ -469,14 +469,45 @@ var _mouse_down_seen := false
 ## the DisplayServer -- it is what makes the engine work on a touchscreen.
 var _pointer := Vector2.ZERO
 var _pointer_seen := false
-## Does the pointer come from input events, or from the OS cursor?
+## Is there an OS cursor on this machine at all?
 ##
 ## `FEATURE_MOUSE` rather than a platform name, because the question is precisely
-## "is there a cursor to ask about". A phone answers no. Headless answers no too,
-## and that is the right answer for it: a headless harness's pointer is whatever
-## it injected, and reading the developer's desktop cursor instead is how a check
-## comes to pass or fail depending on where somebody left their mouse.
-var _pointer_from_events := not DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE)
+## "is there a cursor to ask about". A phone with no mouse attached answers no.
+## Headless answers no too, and that is the right answer for it: a headless
+## harness's pointer is whatever it injected, and reading the developer's desktop
+## cursor instead is how a check comes to pass or fail depending on where
+## somebody left their mouse.
+##
+## A field rather than the call written inline at each site, and the reason is
+## the one `_pointer_from_events` gives below: the no-cursor arm is the piece of
+## the input path no run on a development machine can reach, so it needs a seam a
+## harness can drive. `tools/touch_input.gd` sets this to pretend to be a desktop
+## and asserts the engine still routes a finger correctly.
+var _has_os_cursor := DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE)
+## Does the pointer come from input events, or from the OS cursor?
+##
+## **A fact about the last event, not about the platform**, and that is the whole
+## of what changed here. It used to be `not has_feature(FEATURE_MOUSE)`, latched
+## once at load — which is right on a phone with no mouse and on a desktop with
+## no touchscreen, and wrong on every machine that has both. Windows laptops with
+## touchscreens, Chromebooks, Android with a mouse or in DeX, an iPad with a
+## trackpad: all of them report `FEATURE_MOUSE`, so the flag read false, so
+## `stage_mouse()` answered from an OS cursor the finger never moved. Measured:
+## a touch at stage (238,240) on this Windows box came out of `the mouseH`/`the
+## mouseV` as (608,19) — wherever the cursor had been parked — and `the clickOn`
+## as 0. That is the exact fault the flag was introduced to fix, alive on every
+## platform that owns both input devices.
+##
+## Godot decides it for us and says so: the mouse events it synthesises from a
+## finger carry `device == InputEvent.DEVICE_ID_EMULATION`, and a real mouse
+## carries a device index of its own. So `_input` reads the seam off the event.
+## A player who plugs a mouse into a tablet mid-game gets the cursor back on the
+## first motion it sends, and goes back to the finger on the next tap; neither is
+## a case a boot-time test can express at all.
+##
+## Where the platform has no cursor this stays true whatever arrives, because
+## there is nothing else for `stage_mouse()` to fall back to.
+var _pointer_from_events := not _has_os_cursor
 ## What the pointer is simply *over*, as against `_hover_channel`, which is what
 ## a click would reach. §4.5: `the rollOver` applies no eligibility filter and no
 ## matte, so the two answer different channels over the same pixel and both
@@ -1521,9 +1552,32 @@ func _input(event: InputEvent) -> void:
 	# `note_pointer` records it for everything that asks *between* events.
 	if event is InputEventMouse:
 		var at := (make_input_local(event) as InputEventMouse).position
+		# **Who owns the pointer, decided per event rather than per platform.**
+		# Godot stamps `DEVICE_ID_EMULATION` on the mouse events it synthesises
+		# from a finger, so the event itself says whether the OS cursor followed
+		# it. See `_pointer_from_events` for what a boot-time platform test got
+		# wrong and on which machines.
+		_pointer_from_events = not _has_os_cursor \
+			or event.device == InputEvent.DEVICE_ID_EMULATION
 		note_pointer(at)
 		if event is InputEventMouseButton:
 			var button := event as InputEventMouseButton
+			# **Where the pointer now is, before the button is routed anywhere.**
+			# `Movie::processSysEvent` recomputes `_currentHoveredSpriteId` and
+			# `_lastMousePos` from the event's own position at the *top* of the
+			# function, ahead of the switch — so a button event re-aims the
+			# pointer exactly as a move does, and only then dispatches.
+			#
+			# On a desktop this costs nothing: the motion that carried the mouse
+			# to the button already did it, so nothing changes and no crossing is
+			# raised. A finger sends no motion at all, so without this a tap
+			# dispatched `mouseDown` with the *previous* gesture's rollover still
+			# latched — `the mouseH` naming the new point and `the rollOver`
+			# naming the old one, inside one handler. Measured on `SAVELOAD.dir`
+			# frame 5: a mouse arriving at a point over channel 5 pressed with
+			# `the rollOver` = 5; a finger tapping the same point pressed with
+			# `the rollOver` = 4, the channel it had last touched.
+			InputRouter.aim_pointer(self, at)
 			if button.button_index == MOUSE_BUTTON_LEFT:
 				# An empty rect contains no point, so a build with the debug layer
 				# off has no SKIP hotspot either — the control is not drawn and the
@@ -2094,7 +2148,11 @@ func skip_to_end() -> void:
 ## the channel number rather than a boolean; nothing here needs that yet.
 func lingo_rollover(channel: int) -> bool:
 	if channel <= 0:
-		return _hover_channel > 0
+		# §4.5's plain rect test, the same one `the rollOver` answers with, and no
+		# longer `_hover_channel` -- see the note at the `rollover` binding in
+		# `preview_lingo_host.gd`. The binding routes 0 to the channel form now, so
+		# nothing reaches this arm; it agrees with it rather than contradicting it.
+		return _rollover_channel > 0
 	# Measured against the score's geometry, never the puppeted one. A menu
 	# script swaps a button's art *because* rollOver is true, so testing the
 	# swapped member's rect feeds the answer back into the question: the
@@ -2228,8 +2286,13 @@ func frame_sprites() -> Array:
 ## `tools/touch_input.gd` drives it on a desktop and asserts the coordinates come
 ## out right; without one, "touch works on Android" would be a claim in a
 ## document with nothing behind it.
+## Asked of the **stage**, because a Movie-In-A-Window has its input processing
+## switched off (`preview/boot.gd`) and so never sees an event to decide it from.
+## Its own `_pointer` is written by whoever routed the event in, and whether that
+## routed point or the OS cursor is the truth is a fact about the machine and the
+## last event — both of which belong to the node that received it.
 func stage_mouse() -> Vector2:
-	if _pointer_from_events and _pointer_seen:
+	if _pointer_seen and bool(stage_preview()._pointer_from_events):
 		return _pointer
 	return get_local_mouse_position()
 

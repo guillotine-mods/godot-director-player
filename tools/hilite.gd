@@ -189,9 +189,10 @@ func _covered(preview: Node, sprite: Dictionary, at: Vector2,
 ## Put the pointer at a stage point, by whichever route this platform actually
 ## reads it on.
 ##
-## Not a convenience. `stage_mouse` answers from the cached event position only
-## where the platform has no cursor -- headless and a phone -- and from the **real
-## OS cursor** everywhere else, which is deliberate (`director_preview.gd`) and
+## Not a convenience. `stage_mouse` answers from the cached event position where
+## the platform has no cursor -- headless and a phone -- or where the last mouse
+## event was one Godot synthesised from a finger, and from the **real OS cursor**
+## otherwise, which is deliberate (`director_preview.gd`) and
 ## is the whole reason `tools/touch_input.gd` exists. A harness that only ever
 ## called `note_pointer` would drive the headless run correctly and, windowed,
 ## silently measure wherever the developer left their mouse: the first version of
