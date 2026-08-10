@@ -87,6 +87,13 @@ static func to_str(value: Variant) -> String:
 
 
 static func truthy(value: Variant) -> bool:
+	# A **script object is true** (§7.1). `to_num` has no arm for one and answers
+	# 0, so without this `if myObject then` and `if the perFrameHook then` are
+	# false for an object that exists -- and `set the perFrameHook to me` stored
+	# nothing, because its setter asks this question. VOID is still false, which
+	# is what tells "no object" from "an object".
+	if typeof(value) == TYPE_OBJECT:
+		return value != null
 	if typeof(value) == TYPE_STRING:
 		var text := (value as String).to_lower()
 		if text == "true":
@@ -306,6 +313,36 @@ static func set_chunk(text: String, kind: String, start: int, stop: int,
 	out.append_array(head)
 	out.append(to_str(value))
 	out.append_array(tail)
+	return chunk_separator(kind, delimiter).join(out)
+
+
+## `delete <chunk> of <place>` -- the chunk **and its separator** come out.
+##
+## Not `set_chunk(..., "")`, which is the difference that makes the statement
+## work at all: putting "" into `word 1` of `"a b c"` leaves `" b c"`, so a
+## script that deletes the first word in a loop and tests the string for EMPTY
+## never terminates. Director removes the separator with the chunk, so the same
+## loop shortens the string every pass and ends.
+##
+## The separator taken is the one *after* the chunk, or the one before it when
+## the chunk runs to the end -- which is what keeps `delete line 3 of x` from
+## leaving a trailing empty line on a three-line string.
+##
+## `char` has no separator, so the two readings agree there and the arm is the
+## general one.
+static func delete_chunk(text: String, kind: String, start: int, stop: int,
+		delimiter: String = ",") -> String:
+	if start < 1:
+		return text
+	var parts := chunk_parts(text, kind, delimiter)
+	var last := stop if stop >= start else start
+	if start > parts.size():
+		return text
+	var out := PackedStringArray()
+	for i in parts.size():
+		if i >= start - 1 and i <= mini(last, parts.size()) - 1:
+			continue
+		out.append(parts[i])
 	return chunk_separator(kind, delimiter).join(out)
 
 

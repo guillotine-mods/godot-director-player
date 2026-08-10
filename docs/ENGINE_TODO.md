@@ -20,7 +20,7 @@ by how visible the absence is.
 
 ## The reference map
 
-**Reference names not live here: 130.** `tools/lingo_surface_audit.gd` reads
+**Reference names not live here: 114.** `tools/lingo_surface_audit.gd` reads
 Director's own name tables out of `reference/scummvm/` -- 506 capabilities this
 port can reach -- and pins how many of them are live. §19 measures the gaps a
 *title in this corpus calls*; this measures the gaps against Director itself,
@@ -33,7 +33,11 @@ and neither should pass silently.
 
 ### What moved, and where the denominator went
 
-It was **287 of 511**, then 173, and is 130 of 506. **40 of the 43 are the
+It was **287 of 511**, then 173, then 130, and is 114 of 506. The most recent 16
+are the object model, the frame callouts and the cast-library reads, and they
+have their own section immediately below this one.
+
+The 43 before them: **40 are the
 digital-video block below, plus `the currentSpriteNum` and `xtra`**: 18 member
 properties, 14 sprite properties that make up a video sprite's playhead, the 5
 track and cue-point builtins, `the digitalVideoTimeScale`, `xtra` and `the
@@ -67,9 +71,66 @@ with no spelling to ask for it. See the two commits, `lingo: 45 Director names
 this port could already answer` and `members: 46 properties a member could
 answer about itself`.
 
-## What the remaining 130 are waiting for
+### The 16 that landed with the object model and the frame callouts
 
-Grouped by the subsystem each needs, because they are not 130 independent
+Not a subsystem's worth of surface this time but four small ones, and the first
+is the one the other three hang off.
+
+**§7.1's object model** (`lingo/lingo_object.gd`). `send`, `call`,
+`sendAncestor`, `callAncestor` and `script` are live, and `new` with them --
+`new` is not in the reference's builtin table, because Director's compiler emits
+it directly, so it moves the count by nothing and had to be built anyway. An
+object is a script plus a bag of properties plus an `ancestor` property, and
+both lookups walk the chain: a message the child does not answer goes up, and so
+does a property the child does not declare. `me` is an ordinary first parameter,
+which is what Director makes it.
+
+Three things had to change under it and each was its own hole:
+
+- **`#symbol` literals did not lex.** §16.2 recorded it as a known gap that
+  "fails loudly", on the grounds that no corpus script writes one. Every object
+  message is written `call(#mouseUp, obj)`, so the messaging half of §7.1 could
+  not be spelled at all.
+- **A dot was part of an identifier**, inherited from the Python compiler, so
+  `myObject.pTag` lexed as one token named `myobject.ptag`. `member(x).name` was
+  unaffected because the dot there follows a `)` -- which is exactly why it
+  survived: the corpus's only dot spelling is the one shape the rule did not
+  break. **0 identifier tokens contain a dot across all 38,396 scripts under
+  `games/`**, measured before the rule was changed.
+- **`script "base"` parsed as a command call**, whose argument loop crosses
+  commas, so `new(script "base", who)` handed the constructor's arguments to the
+  designator. Every property a parent script set from an argument came out 0.
+
+**The timeout family and the per-frame callouts** (`scenes/preview/actors.gd`).
+`the timeoutLength`, `timeoutLapsed`, `timeoutMouse`, `timeoutPlay`,
+`timeoutScript`, `the actorList` and `the perFrameHook` are live, and `the
+timeoutKeyDown` stopped being the inert store §19 recorded. The frame loop calls
+out once per step for `stepFrame` -- the hook, then the list, at
+`score.cpp:731-770`'s point in the step -- and checks the timeout once per engine
+*tick*, which is `Score::update`'s "independently of the frame delay" and matters
+because a movie held on `go to the frame` takes no steps at all. `the
+timeoutScript` is the fifth `*Script` property and shares tier 1's machinery.
+
+`AGENTS.md` named `timeout` and `stepFrame` among the calls already made the
+wrong way; both are made now. What is still not sent is `beginSprite` /
+`endSprite` and `stepFrame` *to a sprite's own behaviours*, which is a different
+mechanism -- a message per sprite, not per actor -- and stays in the list below.
+
+**`the updateLock`** is live and is the other half of `updateStage`. The
+reference implements neither the read nor the write, so what is built is the
+property's documented meaning, and the engine's own repaints are deliberately
+outside it.
+
+**`the name`, `the fileName` and `the number of castLib`**
+(`scenes/preview/cast_libs.gd`). §5.1's third qualified entity had no dispatch
+path at all: `the name of castLib 2` fell through to a property of a
+*command-form call* to an unbound handler named `castlib`, so it reported a
+missing builtin and answered VOID. `the preLoadMode` and `the selection` are
+deliberately still absent and the module says why for each.
+
+## What the remaining 114 are waiting for
+
+Grouped by the subsystem each needs, because they are not 114 independent
 tasks -- half of them land together or not at all. Counts are from the audit's
 own grouping, and it prints the names.
 
@@ -147,19 +208,45 @@ be re-derived from it, or a per-frame override layer the frame loop merges the
 way `preview/channel.gd` merges a sprite's.
 
 **Xtras and XObjects (`openXlib`, `closeXlib`, `showXlib`, `xFactoryList`,
-`factory`, `the interface of member`).** §7.3. `xtra` itself is bound: the lookup
+`factory`, `the interface of member`).** §7.3.
+
+**The registry is no longer empty and the object model is built.** `xtra`
 resolves a name or a 1-based index against the same registry `the xtras` reads,
-with §7.3's name normalisation on both sides, and **reports by name when it finds
-nothing** instead of vanishing. The registry is empty and will stay empty until
-there is something to put in it, which is what the rest of this entry is. *What
-it would take:* native objects the interpreter can instantiate and send messages
-to, plus `new`/`mNew` dispatch and `respondsTo` -- §7.3 is explicit that a
-stubbed Xtra must answer the standard set, because scripts probe with
-`respondsTo` before calling. `factory` and `xFactoryList` are D3's version of the
-same idea and would share the object model with §7.2's parent scripts. The
-corpus's only two sites are `xtra(#net, 2, ...)` in Piposh Dream's `ratA.dir`,
-inside a handler nothing calls, with three arguments where Director takes one --
-an arity error in 1997 and reported as one now.
+with §7.3's name normalisation on both sides, and reports by name when it finds
+nothing; `new(xtra("FileIO"))` makes an instance; and the interpreter dispatches
+a method on a native object in both of Director's spellings -- `openFile(f, p,
+1)` and `f.openFile(p, 1)`. `lingo/lingo_xtra.gd` is the protocol
+(`lingo_responds_to`, `lingo_message_list`, `lingo_perform`), which is §7.3's
+"a stubbed Xtra must answer the standard set" made into an interface rather than
+a convention.
+
+**One Xtra is implemented: FileIO** (`lingo/lingo_fileio.gd`), and it is worth
+more than a dozen of the names above because it is what titles are *blocked on*.
+Two movies pointed at this engine stop at startup without it, both while reading
+a configuration file: `itamar-park` reads `safari.ini` into a field and parses
+`[PATH]` .. `[ENDINI]` out of it to fill `the searchPaths` and choose a language,
+and `itamar-magichat` carries `fileexist`, `loadfiletofield`, `copyfile`,
+`deletefile` and `externalfileok` across its movie scripts. Neither has a Lingo
+problem: both decompile, parse, compile and load. Measured after: `itamar-park`
+now completes its ini parse -- `Languages ["hebrew"]`, seven entries in `the
+searchPaths`, `CDpath` and `HDpath` set, and no `[ENDINI]` alert.
+
+Two things are deliberately *not* in it, and each is named rather than left to be
+found: **`getOSDirectory`, `displayOpen`, `displaySave` and `setFilterMask`** --
+the first names a directory this player has no business writing to and the other
+three are file dialogs, which a movie under a headless harness cannot be shown;
+and **writes are refused** in a headless run without `--allow-writes`
+(`-45`, locked, which is a real Xtra code) and outside the game root always
+(`-37`, bad file name). The header says why: the corpus is six git submodules and
+a movie calls `createFile` from its own Lingo without any tool asking for one.
+
+*What is still missing:* `openXlib`, `closeXlib`, `showXlib` -- loading a real
+`.x32` or XObject library, which is native code this port cannot run -- and
+`factory` / `xFactoryList`, which are D3's version of the parent-script model and
+could now be built on `lingo/lingo_object.gd`. The corpus's only two `xtra` sites
+are `xtra(#net, 2, ...)` in Piposh Dream's `ratA.dir`, inside a handler nothing
+calls, with three arguments where Director takes one -- an arity error in 1997
+and reported as one now.
 
 **Menus (`installMenu`, `menu`, `menuItem`, `the name of menu`, and menuItem's
 `checkMark`, `enabled`, `name`, `script`).** *What it would take:* a menu bar.
@@ -167,13 +254,21 @@ Director's `installMenu` reads a **field member** whose text is the menu
 definition, so the parsing is small; what does not exist is anywhere to put the
 result. No title in this corpus installs one.
 
-**Cast authoring (`erase`, `move`, `findEmpty`, `importFileInto`, `script`,
-`save`, `copyToClipBoard`, `pasteClipBoardInto`, and `castLib`'s five
-properties).** *What it would take:* a mutable cast. `director_cast.gd` parses a
-container read-only and `director_writer.gd` writes one back from the playing
-movie's field overrides; between them there is no in-memory member a script can
-create, erase or move. `the name of castLib` and its four neighbours need the
-same object, which is why they are here rather than with the reads that landed.
+**Cast authoring (`erase`, `move`, `findEmpty`, `importFileInto`, `save`,
+`copyToClipBoard`, `pasteClipBoardInto`).** *What it would take:* a mutable cast.
+`director_cast.gd` parses a container read-only and `director_writer.gd` writes
+one back from the playing movie's field overrides; between them there is no
+in-memory member a script can create, erase or move.
+
+`script` has left this entry: it is a *reference* to a script member, not an
+authoring verb, and it is live. So have three of `castLib`'s five properties --
+`the name`, `the fileName` and `the number` are answered from the movie's own
+`MCsL` mapping and need no mutable cast, because they are read-only in Director
+too. The two that remain are `the preLoadMode`, which has no consumer here (this
+port loads on demand, which *is* mode 0, and the preloader has no notion of a
+library), and `the selection`, which is the Cast window's selection and has no
+runtime meaning. Both are left absent rather than stored; the reasons are in
+`scenes/preview/cast_libs.gd`.
 
 **Text metrics (`charPosToLoc`, `locToCharPos`, `linePosToLocV`,
 `locVToLinePos`, `lineHeight`, `scrollByLine`, `scrollByPage`, and the nine
@@ -190,13 +285,16 @@ which is what `the textSize of member` answers from.
 the playhead on a millisecond budget, which is the mechanism; what it has no
 notion of is a *tagged* queue a script can add to, cancel and ask about.
 
-**The timeout family (`the timeoutLength`, `timeoutLapsed`, `timeoutScript`,
-`timeoutMouse`, `timeoutKeyDown`, `timeoutPlay`) and `the actorList` / `the
-perFrameHook`.** All three are the same missing thing: a per-frame callout the
-frame loop makes. `AGENTS.md` names `timeout` and `stepFrame` among the calls
-already made the wrong way. *What it would take:* `preview/frame_loop.gd` to run
-a timeout check and a `stepFrame` sweep once per tick, and the interpreter to
-send a message to an arbitrary object rather than to a script.
+**~~The timeout family and `the actorList` / `the perFrameHook`~~ -- done.**
+See the section above. What is left of the shape this entry described is the
+*per-sprite* messages -- `beginSprite`, `endSprite`, `stepFrame` to a sprite's
+own behaviours, and `prepareFrame` per channel. Those need a behaviour to be an
+**instance** rather than a script: `the scriptInstanceList of sprite` is still
+`inert`, and `sendSprite`/`sendAllSprites` still message the behaviour's script
+directly, which is right for one message and wrong for anything that has to
+survive between frames. The object model the entry asked for exists now
+(`lingo/lingo_object.gd`), so what is left is one owner for a channel's
+instances and a rule for their lifetime.
 
 **~~`updateStage` (3,717 sites)~~ -- done; `the updateLock` is what is left.**
 `updateStage` paints and presents from inside the handler
@@ -221,11 +319,13 @@ turned off for the duration of a call (without it the pair costs 5.3 ms).
 Idle rooms call it **zero** times in twenty seconds, in `strtgame`, `SEA1`,
 `MAP` and `DAY1` alike, so the cost is paid only where the animation is.
 
-*What is left:* `the updateLock` -- TRUE suppresses stage updates until it is
-cleared. The reference declares it in `lingo-the.cpp`'s table (`kTheUpdateLock`,
-D5) and implements neither the read nor the write, so there is no behaviour to
-copy; the shape is a flag on the preview that `repaint_now` and the frame loop's
-repaint both honour. 0 sites in six titles.
+*What is left:* nothing. `the updateLock` is live, and the shape this entry
+predicted is the shape it took -- a flag both `repaint_now` and the frame loop's
+repaint honour, the second through `director_preview.gd:stage_redraw`. The
+reference declares `kTheUpdateLock` and implements neither half, so the
+behaviour is the property's documented meaning rather than a copy: the paint is
+**skipped, not queued**, because a lock that queued would make the first
+`updateStage` after it present a stale frame. 0 corpus sites.
 
 **`the currentSpriteNum` -- done.** The channel is on the chain element now
 (`preview/event_chain.gd:element`), `run` sets it on the host around the one tier
@@ -237,9 +337,10 @@ answer. What is *not* covered is the per-frame sprite messages -- `beginSprite`,
 it does, they are the second place that has to set this field, and the timeout
 entry below is where they are queued.
 
-**Object messaging (`send`, `call`, `sendAncestor`, `callAncestor`).** §7.1.
-Needs script objects with an ancestor chain; `sendSprite` and `sendAllSprites`
-landed because a sprite's behaviour is a *script* and this port resolves those.
+**~~Object messaging (`send`, `call`, `sendAncestor`, `callAncestor`)~~ --
+done**, with `script` and `new`. See the section above. `sendSprite` and
+`sendAllSprites` still message a behaviour's *script* rather than an instance,
+which is the residue and is filed with the per-sprite messages.
 
 **Named individually, each its own small thing:** `mci`/`mciWait` (the Windows
 MCI string interface -- CD audio and video, a real capability this port could

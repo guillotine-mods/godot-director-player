@@ -289,6 +289,23 @@ func _parse_statement_inner() -> Dictionary:
 				_skip_newlines()
 				return {"node": "next_repeat", "line": line}
 
+	# `delete word 1 of str`, `delete char 1 of linetext` (§16.2 listed this as a
+	# known gap). **A statement, not a call**, because the chunk is a *place* and
+	# the statement rewrites what holds it -- parsed as a command call, `delete`
+	# received the chunk's *value*, the variable never shortened, and
+	# `itamar-park`'s `repeat while str <> EMPTY / add(Languages, word 1 of str) /
+	# delete word 1 of str` spun until the step budget aborted the handler.
+	# Measured that way: 199,833 calls to an unbound `delete` in one boot.
+	#
+	# Gated on a chunk keyword following, so an ordinary handler or builtin
+	# called `delete` -- FileIO has one, and it takes an instance -- still parses
+	# as the call it is.
+	if _at_word("delete") and _k(1) == "kw" and Grammar.CHUNKS.has(_v(1).to_lower()):
+		_advance()
+		var doomed := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+		_skip_newlines()
+		return {"node": "delete_chunk", "target": doomed, "line": line}
+
 	if _at_when_event():
 		return _parse_when()
 
@@ -707,6 +724,12 @@ func _parse_primary() -> Dictionary:
 		return {"node": "num", "value": value, "line": line}
 	if kind == "string":
 		return {"node": "str", "value": _advance(), "line": line}
+	if kind == "symbol":
+		# `#mouseUp` (§11.2). A literal like a number or a string -- the `#` is
+		# gone by the time the lexer hands it over, so this carries the bare name
+		# and the interpreter makes it a StringName, which is what this port's
+		# `ilk` and `symbolP` already recognise as a symbol.
+		return {"node": "sym", "value": _advance(), "line": line}
 	if _at_op("("):
 		_advance()
 		var inner := _parse_expr()
@@ -779,6 +802,38 @@ func _parse_primary() -> Dictionary:
 			which = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 			mcast = _parse_optional_castlib()
 		return {"node": "member_ref", "which": which, "cast": mcast, "line": line}
+	# `script "Parent"`, `script(12)` -- §7.1's designator for a script cast
+	# member, and the argument of every `new`.
+	#
+	# **It takes exactly one operand, and that is the whole reason this arm
+	# exists.** Without it `script` is an ordinary identifier, so `script "base"`
+	# reaches the command-call path below, whose argument loop continues across
+	# commas -- and `new(script "base", who)` then parses as `new(script("base",
+	# who))`, handing the constructor's arguments to the designator and the
+	# constructor none. Measured exactly that way: every property a parent script
+	# set from an argument came out 0.
+	#
+	# Narrowed to a literal or a parenthesis on purpose. `script` is not a keyword
+	# here and must not become one -- a title with a *variable* called `script`
+	# would have every read of it swallow the next expression -- and a variable is
+	# never followed by a string or a number.
+	#
+	# The result is a call to the `script` builtin rather than a node of its own,
+	# so the designator spelling and the function spelling are one implementation
+	# (`lingo_interpreter.gd:_own_builtin`) and cannot answer differently.
+	if _at_word("script") and (_k(1) == "string" or _k(1) == "number" or _at_op("(", 1)):
+		_advance()
+		var script_which: Dictionary
+		if _at_op("("):
+			var script_args := _parse_call_args()
+			script_which = script_args[0] if script_args.size() > 0 \
+				else {"node": "num", "value": 0}
+		else:
+			script_which = _parse_expr(Grammar.TIGHT)
+		return {
+			"node": "call", "callee": {"node": "var", "name": "script"},
+			"args": [script_which], "line": line,
+		}
 	if _k() == "kw" and Grammar.CHUNKS.has(_v().to_lower()):
 		return _parse_chunk()
 	if kind == "ident" or kind == "kw":
@@ -886,7 +941,10 @@ func _starts_command_args() -> bool:
 	var kind := _k()
 	if kind == "nl" or kind == "eof":
 		return false
-	if kind == "number" or kind == "string":
+	# A symbol is a literal like the other two, so `call #mouseUp, obj` -- the
+	# command spelling of the messaging builtins -- starts an argument list here
+	# exactly as `sound playFile 1, x` does.
+	if kind == "number" or kind == "string" or kind == "symbol":
 		return true
 	if kind == "op":
 		return _v() == "["
@@ -1078,6 +1136,21 @@ func _parse_the() -> Dictionary:
 			else:
 				which_window = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 			return {"node": "window_prop", "prop": prop, "which": which_window, "line": line}
+		# `the name of castLib 2`, `the fileName of castLib "sounds"` (§5.1).
+		# `castlib` *is* a keyword here, and that is exactly why it needed an arm:
+		# without one it fell to the generic branch below, where a keyword
+		# followed by a number is a command-form call, so the statement became a
+		# property of a call to an unbound handler named `castlib`. Every such
+		# read reported a missing builtin and answered VOID.
+		if _at_kw("castlib"):
+			_advance()
+			var which_cast: Dictionary
+			if _at_op("("):
+				var cargs := _parse_call_args()
+				which_cast = cargs[0] if cargs.size() > 0 else {"node": "num", "value": 0}
+			else:
+				which_cast = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+			return {"node": "cast_prop", "prop": prop, "which": which_cast, "line": line}
 		if _at_kw("field"):
 			_advance()
 			var fname := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)

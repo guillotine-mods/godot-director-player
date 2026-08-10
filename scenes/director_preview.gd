@@ -997,6 +997,12 @@ func _dispatch_key(event: InputEventKey) -> bool:
 		return false
 	_host.key_code = Keys.code_for(event)
 	_host.key_char = Keys.char_for(event)
+	# The timeout clock's keyboard half (§3). `events.cpp:371` stamps
+	# `_lastTimeOut` from the key-DOWN arm and from nowhere else -- there is no
+	# key-up stamp -- so a movie held open by a key repeat stays "present" and one
+	# whose player merely releases a key does not become present again.
+	if _host.timeout_key_down:
+		_host.reset_timeout()
 	var claimed := _dispatch_key_event("keyDown", _host.key_down_compiled)
 	# The widget last, and only if no sprite-level handler answered. The focus
 	# arbitration inside `_dispatch_key_event` has already run, so focus is
@@ -1646,11 +1652,37 @@ func _draw() -> void:
 func repaint_now() -> bool:
 	if not is_inside_tree() or not is_visible_in_tree():
 		return false
+	# `the updateLock` -- the other half of this pair (§3). While it is set the
+	# stage is not repainted **and the paint is not queued for later**: the canvas
+	# item keeps the commands it already holds, so the screen freezes on the last
+	# frame drawn rather than going blank or catching up in a burst when the lock
+	# clears. A lock that queued would make the first `updateStage` after it
+	# present a stale frame, which is the opposite of what `updateStage` is for.
+	if _host != null and _host.update_lock:
+		return false
 	_repaints += 1
 	RenderingServer.canvas_item_clear(get_canvas_item())
 	_paint()
 	RenderingServer.force_draw()
 	return true
+
+
+## Ask Godot to repaint at the end of the process frame -- unless `the
+## updateLock` says not to.
+##
+## The frame loop's own repaint, and the second of the two things `the
+## updateLock` gates. Separate from `repaint_now` because they are different
+## requests: that one paints inside the call, this one marks the canvas dirty and
+## lets Godot paint when it next would. Both have to honour the lock or a movie
+## that sets it still sees the score's own frames arrive.
+##
+## Everything else in this node calls `queue_redraw()` directly and should:
+## a window resize, a debug overlay and a palette change are the engine's
+## repaints, not the movie's, and Director's lock is over the movie's.
+func stage_redraw() -> void:
+	if _host != null and _host.update_lock:
+		return
+	queue_redraw()
 
 
 ## One paint of the stage, delegated to `preview/stage_paint.gd`.
@@ -1891,6 +1923,12 @@ func _begin_drag(at: Vector2, channel: int) -> void:
 ## that the right button latches all five things or none: a second copy of the
 ## click model with a subset of them is exactly the shape it refuses.
 func _press_click(at: Vector2, right := false) -> void:
+	# The timeout clock's mouse half (§3), stamped where the reference stamps it
+	# (`events.cpp:270`): on the press, for both buttons, before anything is
+	# dispatched. A release does not stamp it and neither does a move -- Director
+	# counts *clicks* as presence, which is why `the lastRoll` is a separate fact.
+	if _host != null and _host.timeout_mouse:
+		_host.reset_timeout()
 	Interaction.latch_press(self, at, _channel_at(at))
 	_chain = {
 		"event": "rightmousedown" if right else "mousedown",
@@ -3746,6 +3784,17 @@ func _forget_field_text_of(container_path: String) -> void:
 ## the library is part of the answer, not a hint -- lives there with the evidence.
 func _resolve_member_ref(which: Variant, cast: String) -> Array:
 	return Members.resolve_ref(which, cast, _table)
+
+
+## `[library, slot]` for a Lingo member reference, packed or bare.
+##
+## The public spelling of the line above, for callers outside this node that hold
+## a reference and need the library it carries -- `preview_lingo_host.gd:script_at`
+## is the first. Reaching into `_resolve_member_ref` by name would work and is
+## exactly what `scenes/preview/README.md` warns about: a private helper renamed
+## makes `get()` answer null and a harness report zero rather than fail.
+func lingo_member_where(which: Variant) -> Array:
+	return _resolve_member_ref(which, "")
 
 
 func _resolve_member(which: Variant, cast: String) -> int:

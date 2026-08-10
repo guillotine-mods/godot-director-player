@@ -18,7 +18,7 @@ extends RefCounted
 
 const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
 
-## "nl" | "number" | "string" | "ident" | "kw" | "op" | "eof"
+## "nl" | "number" | "string" | "symbol" | "ident" | "kw" | "op" | "eof"
 var kinds := PackedStringArray()
 var values := PackedStringArray()
 var lines := PackedInt32Array()
@@ -31,6 +31,7 @@ const _SPACE := 32
 const _QUOTE := 34
 const _BACKSLASH := 92
 const _MINUS := 45
+const _HASH := 35
 const _DOT := 46
 const _ZERO := 48
 const _NINE := 57
@@ -118,11 +119,29 @@ func tokenize(source: String) -> bool:
 			at += 1
 			continue
 
+		# `#name` -- a symbol literal (§11.2, §11.13 rule 20). The `#` is not an
+		# operator and there is no expression it could begin: it is stripped and
+		# the name is the value.
+		#
+		# Absent until now, and it failed *loudly* -- "unexpected character" --
+		# which is why §16.2 could record it as a known gap for as long as no
+		# script in the corpus wrote one. It is the spelling every object message
+		# is written in (`call(#mouseUp, obj)`), so the messaging half of §7.1
+		# could not be reached without it.
+		#
+		# The name is lexed with the identifier rule so `#a.b` matches whatever
+		# `member.name` matches, which is the one place a dot is part of a word.
+		if c == _HASH and at + 1 < length and _is_ident_start(src.unicode_at(at + 1)):
+			var sym_start := at + 1
+			at = sym_start + 1
+			while at < length and _is_ident_body(src.unicode_at(at)):
+				at += 1
+			_push("symbol", src.substr(sym_start, at - sym_start), line)
+			continue
+
 		if _is_ident_start(c):
 			var ident_start := at
 			at += 1
-			# Dots are part of an identifier here, exactly as in the Python, so
-			# `member.name` is one token unless the dot follows a non-identifier.
 			while at < length and _is_ident_body(src.unicode_at(at)):
 				at += 1
 			var text := src.substr(ident_start, at - ident_start)
@@ -179,5 +198,18 @@ static func _is_ident_start(c: int) -> bool:
 	return (c >= _UPPER_A and c <= _UPPER_Z) or (c >= _LOWER_A and c <= _LOWER_Z) or c == _UNDERSCORE
 
 
+## **A dot is not part of an identifier.**
+##
+## It used to be, "exactly as in the Python", so `myObject.pTag` lexed as one
+## token called `myobject.ptag` and every dot access whose receiver is a *bare
+## variable* resolved to an unset name. `member(x).name` was unaffected -- the
+## dot there follows a `)`, which is not an identifier character -- which is
+## exactly why the hole survived: the corpus's only dot spelling is the one shape
+## the rule did not break, and §7.1's `obj.someProperty` is the one it did.
+##
+## Measured before changing rather than reasoned about, because the rule was
+## inherited and might have been load-bearing: **0 identifier tokens contain a
+## dot across all 38,396 scripts in the six titles.** Nothing in this corpus can
+## tell the two readings apart, and Director's own lexer has no such rule.
 static func _is_ident_body(c: int) -> bool:
-	return _is_ident_start(c) or _is_digit(c) or c == _DOT
+	return _is_ident_start(c) or _is_digit(c)

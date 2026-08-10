@@ -360,7 +360,20 @@ func _resolve_and_call(name: String, args: Array, script: Dictionary) -> Variant
 	return null
 
 
-func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
+## Run one handler.
+##
+## `me` is the script object the message was delivered to, or null for every
+## other dispatch there is -- a frame script, a movie handler, a behaviour this
+## port reaches as a *script* rather than as an instance. It goes on the frame
+## rather than into a field, because a handler that calls another handler on
+## another object must not leave the caller's `me` showing through: the frame is
+## already the thing that is saved and restored per call.
+##
+## Nothing else changes when it is null, which is what makes this safe to add to
+## a port that has run without objects: `_read_var` and `_set_var` consult
+## `frame["me"]` only when there is one.
+func _invoke(handler: Dictionary, args: Array, script: Dictionary,
+		me: Variant = null) -> Variant:
 	if _depth > 64:
 		_fail("handler recursion too deep at %s" % str(handler.get("name", "?")))
 		return null
@@ -378,6 +391,7 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary) -> Variant:
 		"locals": {},
 		"script": script,
 		"globals": {},
+		"me": me,
 	}
 	var outer_args := _current_args
 	_current_args = args
@@ -665,12 +679,14 @@ func _take_suspend_request() -> void:
 
 ## The builtins this object answers itself, ahead of the module and the host.
 ##
-## Three, and each is here because the thing that answers it is *inside* the
-## interpreter: `do` runs a string in the caller's frame, `param` reads the
-## running call's argument list, and `abort` unwinds every frame on the stack.
-## `lingo_builtins.gd` is engine-free by definition and the host is one frame
-## further out, so neither can answer any of them -- the host had `abort` in its
-## IGNORED list, which made it `nothing` under a different name.
+## Each is here because the thing that answers it is *inside* the interpreter:
+## `do` runs a string in the caller's frame, `param` reads the running call's
+## argument list, `abort` unwinds every frame on the stack, and the object
+## messaging family (§7.1) has to *invoke a handler*, which is this file's job
+## and nobody else's. `lingo_builtins.gd` is engine-free by definition and the
+## host is one frame further out, so neither can answer any of them -- the host
+## had `abort` in its IGNORED list, which made it `nothing` under a different
+## name.
 ##
 ## **Asked from two places on purpose.** `_call` handles `do "x"` and `param(1)`;
 ## a bare word with no arguments never reaches `_call` at all, because
@@ -713,7 +729,178 @@ func _own_builtin(name: String, args: Array, frame: Dictionary,
 			if which <= params.size():
 				return _read_var(str(params[which - 1]), frame)
 			return _current_args[which - 1] if which <= _current_args.size() else null
+		"script":
+			# `script("name")`, `script(N)` and the designator spelling `script
+			# "name"` -- which needs no parser arm, because an identifier followed
+			# by a string is already the command-call form (`_parse_primary`), so
+			# all three arrive here as one argument.
+			#
+			# The answer is a **member reference**, packed the way `member()`'s is
+			# (§1.6), and not the script itself: Director's `script` is a cast
+			# reference and `the scriptText of script "x"` has to work on it. What
+			# turns one into an object is `new` below.
+			if args.is_empty():
+				return null
+			handled.append(true)
+			var script_cast := LingoValue.to_str(args[1]) if args.size() > 1 else ""
+			return _host_call("member_number", [args[0], script_cast])
+		"new":
+			# `new(script "Parent", args...)` (§7.1) and `new(xtra "name")`.
+			#
+			# The instance is created first and its `new` handler is then called
+			# with `me` as the first argument, exactly as the reference calls
+			# every other handler on an object. **What the expression evaluates to
+			# is what `new` returned**, not the instance: the convention is `return
+			# me`, and a parent script whose `new` returns something else -- a
+			# list of children, VOID for a failed construction -- means it.
+			# A script with no `new` handler answers the instance itself.
+			if args.is_empty():
+				return null
+			handled.append(true)
+			return _instantiate(args[0], args.slice(1))
+		"call", "send":
+			# `call(#msg, objectOrList, args...)`. `send` is D4's undocumented
+			# spelling of the same builtin and the reference maps both onto one
+			# body (`lingo-builtins.cpp:126,149`).
+			#
+			# A **list** of objects is Director's own broadcast form -- it is what
+			# `the scriptInstanceList of sprite` hands back -- and every object in
+			# it that answers the message runs; the value is the last one's.
+			# An object that does not answer is skipped in silence, which is the
+			# reference's `if (sym.type == VOIDSYM) return Datum()`.
+			if args.size() < 2:
+				return null
+			handled.append(true)
+			var message := _symbol_text(args[0])
+			return _broadcast(args[1], message, args.slice(2), false)
+		"callancestor", "sendancestor":
+			# `callAncestor(#msg, object, args...)`. The message skips the
+			# object's own handler and enters at its ancestor, which is how a
+			# child calls the behaviour it has overridden.
+			#
+			# **The reference stubs this** (`b_callAncestor` prints and drops the
+			# stack), so there is no implementation to read: what is built here is
+			# Director's documented meaning of the name, and `me` inside the
+			# ancestor's handler is the *ancestor* -- the object the message was
+			# actually delivered to, which is the rule every other dispatch in
+			# this file follows.
+			if args.size() < 2:
+				return null
+			handled.append(true)
+			var ancestor_message := _symbol_text(args[0])
+			return _broadcast(args[1], ancestor_message, args.slice(2), true)
 	return null
+
+
+## Director spells a message name as a symbol (`#mouseUp`), a string, or -- in
+## authored source that predates symbols -- a bare quoted word. All three reach
+## here; a symbol is a StringName in this port, and `to_str` would answer the
+## same thing, so this exists to say that the coercion is deliberate rather than
+## incidental.
+static func _symbol_text(value: Variant) -> String:
+	return LingoValue.to_str(value).trim_prefix("#")
+
+
+## `new(<script reference>, args)` -- build the object and run its constructor.
+##
+## The reference argument is whatever `script(...)` answered, which is a packed
+## member reference, so the script AST is fetched through the host: only the
+## preview knows which compiled cast a library number names. A host with no
+## `script_at` -- a harness driving the interpreter alone -- may hand the AST
+## straight in instead, which is the second arm.
+func _instantiate(reference: Variant, args: Array) -> Variant:
+	# `new(xtra("FileIO"))` (§7.3). An Xtra is not a script and has no `new`
+	# handler to run: the registry entry makes the instance itself, and what comes
+	# back is a **native object** answering `lingo_perform` rather than a
+	# `LingoObject`. Tested by method rather than by type, so nothing here has to
+	# know what an Xtra is.
+	if reference is Object and (reference as Object).has_method("make_xtra_instance"):
+		var made: Variant = (reference as Object).call("make_xtra_instance", args)
+		if made == null:
+			report(LingoDiagnostics.BUILTIN, "new: xtra would not instantiate")
+		return made
+	var ast: Dictionary = {}
+	if typeof(reference) == TYPE_DICTIONARY:
+		ast = reference
+	else:
+		var found: Variant = _host_call("script_at", [reference])
+		if typeof(found) == TYPE_DICTIONARY:
+			ast = found
+	if ast.is_empty() or (ast.get("handlers", []) as Array).is_empty():
+		# Nothing to instantiate. Reported by name rather than answering an empty
+		# object, because an object with no handlers accepts every message and
+		# does nothing -- the shape §19 calls the worst state there is.
+		report(LingoDiagnostics.BUILTIN, "new: no script at %s" % LingoValue.to_str(reference))
+		return null
+	var obj := LingoObject.new(ast, "")
+	var entry: Array = obj.resolve("new")
+	if entry.is_empty():
+		return obj
+	var full: Array = [obj]
+	full.append_array(args)
+	return _invoke_on(entry[0], entry[1], full)
+
+
+## Build a script object from a compiled script and run its `new` handler --
+## `new(script "x")` reached from GDScript rather than from Lingo (§7.1).
+##
+## Public because the engine instantiates objects too: a sprite's behaviours
+## become instances at frame entry, and a harness builds one without a cast
+## behind it. One entry point rather than each caller reaching for
+## `_instantiate` by name, which is what `scenes/preview/README.md` warns about.
+func make_object(ast: Dictionary, args: Array = []) -> Variant:
+	return _instantiate(ast, args)
+
+
+## Send `message` to a script object, with `me` in front of `args` -- the
+## reference's `callBehaviorHandler`, reached from GDScript.
+##
+## The public spelling of what `call(#msg, obj)` does, for the frame loop's
+## `stepFrame` sweep and for anything else in the engine that has to message an
+## object. VOID when nothing in the object's chain declares the handler, which is
+## the reference's own answer and not an error.
+func send_to_object(obj: Variant, message: String, args: Array = []) -> Variant:
+	return _broadcast(obj, message, args, false)
+
+
+## Deliver `message` to an object, or to every object in a list.
+##
+## `from_ancestor` starts the lookup one link up the chain, which is the whole of
+## `callAncestor`. Returns the last recipient's answer, as the reference's
+## `b_call` does.
+func _broadcast(target: Variant, message: String, args: Array,
+		from_ancestor: bool) -> Variant:
+	if typeof(target) == TYPE_ARRAY:
+		var last: Variant = null
+		for item in (target as Array):
+			last = _broadcast(item, message, args, from_ancestor)
+		return last
+	if not LingoObject.is_object(target):
+		return null
+	var recipient: Variant = target
+	if from_ancestor:
+		recipient = (target as Object).call("ancestor")
+		if recipient == null:
+			return null
+	var entry: Array = (recipient as Object).call("resolve", message)
+	if entry.is_empty():
+		return null
+	var full: Array = [entry[0]]
+	full.append_array(args)
+	return _invoke_on(entry[0], entry[1], full)
+
+
+## Run one handler *on* an object, with the same `_running`/`_park` discipline
+## every other entry point uses: a handler reached this way may `play` or `go`
+## exactly like one reached from the frame loop, and a chain that is not parked
+## is a conversation that never returns.
+func _invoke_on(obj: Variant, handler: Dictionary, args: Array) -> Variant:
+	_running += 1
+	var value: Variant = _invoke(handler, args, (obj as Object).get("ast"), obj)
+	_running -= 1
+	if _running == 0:
+		_park()
+	return value
 
 
 ## `do "<lingo>"`, run against the caller's own frame.
@@ -937,8 +1124,27 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			% [_script_name, _handler_name, _line, str(stmt.get("node", "?"))])
 	match str(stmt.get("node", "")):
 		"global", "property":
+			# **`property` means two different things and the frame decides
+			# which.** Inside a handler running on a script object (§7.1) it
+			# declares an *instance* variable on that object; everywhere else this
+			# port has no object to hang one on, so it does what it has always
+			# done and declares a global.
+			#
+			# That second reading is a divergence and it is deliberate: a
+			# behaviour this port reaches as a *script* rather than as an instance
+			# has nowhere else for the name to live, and making it a local instead
+			# would lose the value between the handlers of one behaviour, which is
+			# the one thing a `property` is for. It is narrowed rather than
+			# widened -- an object-scoped frame no longer leaks the name into the
+			# movie's globals, where a second instance of the same script would
+			# have shared it.
+			var me: Variant = frame.get("me", null)
+			var declaring_props := me != null and str(stmt.get("node", "")) == "property"
 			for name in stmt.get("names", []):
 				var key := str(name).to_lower()
+				if declaring_props:
+					(me as Object).call("declare", key)
+					continue
 				frame["globals"][key] = true
 				if not globals.has(key):
 					# An unset global is VOID, not 0. It matters: `effectspath &
@@ -1090,6 +1296,27 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			## answer is no longer a report.
 			primary_handlers[str(stmt.get("event", "")).to_lower()] = stmt.get("body", [])
 			return Flow.NORMAL
+		"delete_chunk":
+			## `delete word 1 of str`. The source is read, the chunk and its
+			## separator are removed, and the result is written back through
+			## `_assign` -- so it works on anything a chunk can be written to: a
+			## variable, a field, a member's text.
+			##
+			## A chunk of something that is not assignable (`delete word 1 of
+			## "literal"`) computes and then reports, rather than failing
+			## silently: `_assign`'s own fall-through is what says so.
+			var doomed: Dictionary = stmt.get("target", {})
+			if str(doomed.get("node", "")) != "chunk":
+				report(LingoDiagnostics.BUILTIN, "delete of a non-chunk")
+				return Flow.NORMAL
+			var source: Dictionary = doomed.get("source", {})
+			var from := LingoValue.to_int(_eval(doomed.get("start", {}), frame))
+			var upto_node: Variant = doomed.get("stop", null)
+			var upto := LingoValue.to_int(_eval(upto_node, frame)) if upto_node != null else from
+			_assign(source, LingoValue.delete_chunk(
+				LingoValue.to_str(_eval(source, frame)),
+				str(doomed.get("kind", "line")), from, upto, item_delimiter), frame)
+			return Flow.NORMAL
 		"exit_repeat":
 			return Flow.EXIT_REPEAT
 		"next_repeat":
@@ -1125,13 +1352,13 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				value,
 			])
 		"field_prop":
-			## `set the <prop> of field "x" to v` â€” `setTheField`, which is
+			## `set the <prop> of field "x" to v` — `setTheField`, which is
 			## `member->setField(prop, v)` in the reference
 			## (`lingo-the.cpp:2373-2398`) and not a write to the text.
 			##
 			## This arm wrote the **text** whatever the property was, so
-			## `set the textSize of field "globalmoney" to 24` â€” Piposh 1's slot
-			## machine, in all three language builds â€” replaced the money on screen
+			## `set the textSize of field "globalmoney" to 24` — Piposh 1's slot
+			## machine, in all three language builds — replaced the money on screen
 			## with the string `24`. A write that lands on the value it was not
 			## addressing round-trips perfectly, because the next read of `the text`
 			## answers what it put there.
@@ -1168,6 +1395,17 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 				LingoValue.to_int(_eval(target.get("which", {}), frame)),
 				str(target.get("prop", "")), value,
 			])
+		"cast_prop":
+			## Every one of Director's five cast-library properties is read-only
+			## except `the preLoadMode`, which this port does not bind. So the
+			## write has nowhere to land -- and it goes to the host anyway rather
+			## than being dropped here, because the host is where the report comes
+			## from and a write silently discarded is the shape §19 exists to
+			## catch.
+			_host_call("set_cast_prop", [
+				_eval(target.get("which", {}), frame),
+				str(target.get("prop", "")), value,
+			])
 		"window_prop":
 			## `set the windowType of window "joke.dxr" to 2`, the designator
 			## spelling. The dot spelling `window("joke.dxr").windowType = 2` is
@@ -1190,6 +1428,14 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			if str(owner.get("node", "")) == "sprite_ref":
 				var channel := LingoValue.to_int(_eval(owner.get("which", {}), frame))
 				_host_call("set_sprite_prop", [channel, str(target.get("prop", "")), value])
+				return
+			# `set the ancestor of me to new(script "base")` -- §7.1's designator
+			# spelling of an instance variable. Evaluated rather than pattern
+			# matched on the node, because the owner is any expression that yields
+			# an object: `me`, a global holding one, an element of a list.
+			var prop_owner: Variant = _eval(owner, frame)
+			if LingoObject.is_object(prop_owner):
+				_set_object_prop(prop_owner, str(target.get("prop", "")), value)
 				return
 			_fail("cannot assign to prop_of %s" % str(owner.get("node", "?")))
 		"dot":
@@ -1215,6 +1461,13 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			## place, and a `_fail` here would report a gap on every one of the 21
 			## sites that set `windowType`.
 			var window_owner: Variant = _eval(owner_node, frame)
+			# `me.pCount = 3`, the dot spelling of the designator arm above. Ahead
+			# of the window route, because a script object is not a window handle
+			# and `set_window_prop` would file it under a window named after the
+			# object's own `_to_string`.
+			if LingoObject.is_object(window_owner):
+				_set_object_prop(window_owner, prop_name, value)
+				return
 			if host != null and host.has_method("set_window_prop"):
 				_host_call("set_window_prop", [window_owner, prop_name.to_lower(), value])
 				return
@@ -1225,6 +1478,21 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			_assign_chunk(target, value, frame)
 		_:
 			_fail("cannot assign to %s" % str(target.get("node", "?")))
+
+
+## Write a property on a script object from outside it (§7.1).
+##
+## **A write from outside creates the property when the chain does not declare
+## it.** That is Director's own asymmetry and it is the opposite of the rule
+## inside a handler, where only a `property` statement creates one: a parent
+## script's caller is expected to be able to configure an instance it has just
+## built, and refusing the write would drop it in silence -- the shape §19 calls
+## the worst state there is.
+func _set_object_prop(obj: Variant, prop: String, value: Variant) -> void:
+	if bool((obj as Object).call("set_slot", prop, value)):
+		return
+	(obj as Object).call("declare", prop)
+	(obj as Object).call("set_slot", prop, value)
 
 
 func _assign_chunk(target: Dictionary, value: Variant, frame: Dictionary) -> void:
@@ -1245,6 +1513,15 @@ func _set_var(name: String, value: Variant, frame: Dictionary) -> void:
 	if host != null and host.has_method("owns_global") and host.owns_global(name):
 		host.set_global(name, value)
 		return
+	# The write half of the instance-variable scope above, in the same order and
+	# for the same reason. `set_slot` answers false for a name no object in the
+	# chain declares, so a handler running on an object still writes ordinary
+	# locals and globals -- an assignment does **not** create an instance
+	# variable, only a `property` declaration does.
+	var me: Variant = frame.get("me", null)
+	if me != null and not (frame.get("locals", {}) as Dictionary).has(name):
+		if bool((me as Object).call("set_slot", name, value)):
+			return
 	if (frame.get("globals", {}) as Dictionary).has(name) or globals.has(name):
 		globals[name] = value
 		return
@@ -1280,6 +1557,12 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			return expr.get("value", 0)
 		"str":
 			return str(expr.get("value", ""))
+		"sym":
+			# §11.2's symbol literal. A StringName rather than a String, because
+			# that is the type `lingo_builtins.gd`'s `ilk` answers `#symbol` for
+			# and `symbolP` answers true for -- a String would be a symbol that
+			# does not know it is one.
+			return StringName(str(expr.get("value", "")))
 		"var":
 			return _read_var(str(expr.get("name", "")), frame)
 		"list":
@@ -1317,7 +1600,7 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				_cast_of(expr, frame),
 			])
 		"field_prop":
-			## `the <prop> of field "x"` â€” a **member property**, not the text.
+			## `the <prop> of field "x"` — a **member property**, not the text.
 			##
 			## `Lingo::getTheField` resolves the designator to a cast member,
 			## refuses one that is not a field, and answers `member->getField(prop)`
@@ -1326,7 +1609,7 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			## whatever the player had typed into it and every one of the fifty
 			## member properties read as the text.
 			##
-			## The fallback is for a host that predates the pair â€” `lingo_host.gd`
+			## The fallback is for a host that predates the pair — `lingo_host.gd`
 			## and the stub hosts in `tools/` bind `get_field` alone, and for them
 			## `the text of field "x"` is still the whole of what they can answer.
 			var field_name := LingoValue.to_str(_eval(expr.get("name", {}), frame))
@@ -1368,6 +1651,14 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				LingoValue.to_int(_eval(expr.get("which", {}), frame)),
 				str(expr.get("prop", "")),
 			])
+		"cast_prop":
+			## `the name of castLib 2` (§5.1). Its own node for the reason
+			## `sound_prop` and `window_prop` are: a cast library is a designator,
+			## and without an arm the phrase becomes a property of a command-form
+			## call to an unbound handler.
+			return _host_call("get_cast_prop", [
+				_eval(expr.get("which", {}), frame), str(expr.get("prop", "")),
+			])
 		"window_prop":
 			## Read side of the designator above, and it has to reach the same
 			## place the write did or the two disagree — which is the fault this
@@ -1404,8 +1695,15 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 					_eval(owner.get("which", {}), frame),
 					_cast_of(owner, frame), str(expr.get("prop", "")),
 				])
+			# `the ancestor of me`, `the pCount of myObject` -- §7.1's designator
+			# read. The owner is evaluated once and its type decides, because the
+			# same node shape reaches here for a member reference held in a
+			# variable, which is what the fall-through below answers.
+			var prop_owner: Variant = _eval(owner, frame)
+			if LingoObject.is_object(prop_owner):
+				return _object_prop(prop_owner, str(expr.get("prop", "")))
 			return _host_call("get_member_prop", [
-				_eval(owner, frame), "", str(expr.get("prop", "")),
+				prop_owner, "", str(expr.get("prop", "")),
 			])
 		"dot":
 			var owner_node: Dictionary = expr.get("target", {})
@@ -1419,7 +1717,10 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 					_eval(owner_node.get("which", {}), frame),
 					_cast_of(owner_node, frame), prop_name,
 				])
-			return _host_call("get_member_prop", [_eval(owner_node, frame), "", prop_name])
+			var dot_owner: Variant = _eval(owner_node, frame)
+			if LingoObject.is_object(dot_owner):
+				return _object_prop(dot_owner, prop_name)
+			return _host_call("get_member_prop", [dot_owner, "", prop_name])
 		"index":
 			var target: Variant = _eval(expr.get("target", {}), frame)
 			var index := LingoValue.to_int(_eval(expr.get("index", {}), frame))
@@ -1481,6 +1782,33 @@ func _binary(op: String, expr: Dictionary, frame: Dictionary) -> Variant:
 			return 0
 
 
+## Read a property of a script object from outside it (§7.1).
+##
+## **Below `_binary` on purpose, not beside its two call sites in `_eval`.**
+## `tools/lingo_surface_audit.gd` reads the interpreter's own movie properties
+## out of the source between `func _eval` and `func _binary`, by scanning for
+## `if <x> == "name":` guards -- so a helper placed in that span contributes its
+## guards to the audited surface. Written between them, this one's `if key ==
+## "script"` was reported as a *system property* the engine binds, and the audit
+## then failed for a §19 row that should not exist.
+##
+## Two names answer without being instance variables, because Director answers
+## them for every object: `the script` -- what the instance was made from -- and
+## `the count of`, which §7.1 spells `the count of the properties`. Everything
+## else is the chain walk, and a name nobody declares is VOID and is *reported*,
+## because an object silently answering 0 for a misspelt property is how a script
+## takes a branch nobody wrote.
+func _object_prop(obj: Variant, prop: String) -> Variant:
+	var key := prop.to_lower()
+	if key == "script":
+		return str((obj as Object).call("script_name"))
+	if bool((obj as Object).call("has_slot", key)):
+		return (obj as Object).call("get_slot", key)
+	report(LingoDiagnostics.MEMBER_PROP, "%s of %s"
+		% [key, str((obj as Object).call("script_name"))])
+	return null
+
+
 func _read_var(name: String, frame: Dictionary) -> Variant:
 	var key := name.to_lower()
 	# Director's spelled-out constants.
@@ -1496,6 +1824,22 @@ func _read_var(name: String, frame: Dictionary) -> Variant:
 	var locals: Dictionary = frame.get("locals", {})
 	if locals.has(key):
 		return locals[key]
+	# §7.1's instance variables. A handler running *on an object* sees that
+	# object's `property` declarations, and its ancestors', by their bare names --
+	# which is the whole of Lingo's object scoping. Checked after the locals so a
+	# declared parameter still wins, and before the globals so a parent script's
+	# `property gravity` is not silently the movie's global of that name.
+	#
+	# `me` itself is normally a *parameter* (`on mouseUp me`), so it resolves
+	# above; the arm here is for a handler that uses the word without declaring
+	# it, which Director's compiler rejects and a decompiled script can still
+	# contain.
+	var me: Variant = frame.get("me", null)
+	if me != null:
+		if key == "me":
+			return me
+		if bool((me as Object).call("has_slot", key)):
+			return (me as Object).call("get_slot", key)
 	# Globals the host owns: the walk state lives in PuppetController, so
 	# `egozh`, `whatodo` and friends must alias it rather than shadow it.
 	if host != null and host.has_method("owns_global") and host.owns_global(key):
@@ -1596,7 +1940,45 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	if str(callee.get("node", "")) == "var":
 		name = str(callee.get("name", "")).to_lower()
 	elif str(callee.get("node", "")) == "dot":
-		# `member(x).name` style calls are handled as property reads.
+		# Two statements share this shape and only the receiver tells them apart.
+		# `member(x).name` is a property read with an empty argument list, which
+		# is what this arm has always answered. `myObject.mSetUp(3)` is a
+		# **message** (§7.1): D5's dot notation for `call(#mSetUp, myObject, 3)`,
+		# and reading it as a property would answer VOID and run nothing.
+		#
+		# The receiver is evaluated here only when the target is *not* one of the
+		# two designators `_eval`'s own `dot` arm resolves without evaluating
+		# (`sprite N`, `member M`). Evaluating those a second time would double
+		# every `member(x).name` in the corpus -- 1,453 sites -- and, worse, would
+		# run any side effect in the subscript twice.
+		var target_node := str((callee as Dictionary).get("target", {}).get("node", ""))
+		var receiver: Variant = null
+		if target_node != "sprite_ref" and target_node != "member_ref":
+			receiver = _eval((callee as Dictionary).get("target", {}), frame)
+		if LingoObject.is_object(receiver) or LingoXtra.is_native(receiver):
+			var dot_args: Array = []
+			for arg in expr.get("args", []):
+				dot_args.append(_eval(arg, frame))
+			var message := str((callee as Dictionary).get("prop", ""))
+			# `myFile.openFile(path, 1)` -- the dot spelling of the D3 method call
+			# handled below. A native object gets no `me` in front of the
+			# arguments: the receiver *is* the object, and FileIO's own methods
+			# take the instance only because the flat spelling puts it there.
+			if LingoXtra.is_native(receiver):
+				var out: Array = (receiver as Object).call(
+					"lingo_perform", message, dot_args)
+				if not out.is_empty():
+					return out[0]
+				report(LingoDiagnostics.BUILTIN, "%s of %s" % [message, str(receiver)])
+				return null
+			if not (receiver as Object).call("resolve", message).is_empty():
+				return _broadcast(receiver, message, dot_args, false)
+			return _object_prop(receiver, message)
+		if target_node != "sprite_ref" and target_node != "member_ref":
+			# Evaluated above; read the property off the value rather than
+			# re-entering `_eval`, which would evaluate the target a second time.
+			return _host_call("get_member_prop",
+				[receiver, "", str((callee as Dictionary).get("prop", ""))])
 		return _eval(callee, frame)
 	var args: Array = []
 	for arg in expr.get("args", []):
@@ -1643,6 +2025,22 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	if host != null and host.has_method("is_native_handler") and host.is_native_handler(name):
 		var native: Variant = _host_call("call_builtin", [name, args])
 		return native if native != null else 0
+	# **`new` is the one name a script may not shadow**, and it has to be resolved
+	# here rather than with the rest of `_own_builtin` below.
+	#
+	# In Director `new` is a language construct: the compiler emits the
+	# instantiation directly, so the word never goes through handler lookup. Here
+	# it would, and the collision is not hypothetical -- it is *universal*. Every
+	# parent script declares `on new me`, and the standard way to build an
+	# ancestor is `ancestor = new(script "base")` written **inside that very
+	# handler**. Resolved as a user handler that is unbounded recursion, which
+	# this port answers with "handler recursion too deep" after 64 frames and a
+	# VOID object: measured exactly that way before this guard existed.
+	if name == "new":
+		var built: Array = []
+		var made: Variant = _own_builtin(name, args, frame, built)
+		if not built.is_empty():
+			return made
 	# Otherwise a user handler wins over a host builtin, matching Director.
 	var script: Dictionary = frame.get("script", {})
 	if _script_has_handler(script, name) or has_handler(name):
@@ -1666,6 +2064,31 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 	# builtin, and before the host, because the host is where a title's own
 	# bindings live and nothing engine-free belongs there. `handled` is what
 	# distinguishes "answered VOID" from "not mine".
+	# **A method call on a native object, written the D3 way** (§7.3):
+	# `openFile(myFile, path, 1)`, where the object is the *first argument*. That
+	# is the spelling both FileIO-dependent titles use and the only one their
+	# authors had; `myFile.openFile(path, 1)` is the same statement and is handled
+	# at the `dot` callee above.
+	#
+	# Placed after the user handlers -- a movie may wrap `openFile` in one of its
+	# own, and `itamar-magichat` does exactly that in `loadfiletofield` -- and
+	# before the engine-free builtins, so a name like `delete` or `error` reaches
+	# the object that was handed it. The guard is the first argument being a
+	# native object that *answers* the name, which is narrow enough that a
+	# collision with a real builtin cannot happen: nothing else in the language
+	# takes an Xtra instance as its first argument.
+	# **A name the object does not answer falls through rather than reporting**,
+	# and that is not politeness -- it is the difference between working and not.
+	# `objectP(f)`, `ilk(f)` and `voidP(f)` all take an object as their first
+	# argument and are none of the object's business; a version that claimed
+	# every call with an object in front of it answered VOID for all three, which
+	# is exactly the "bound and does nothing" shape §19 exists to catch. So the
+	# object gets first refusal and the ordinary dispatch continues behind it.
+	if not args.is_empty() and LingoXtra.is_native(args[0]):
+		var native_out: Array = (args[0] as Object).call(
+			"lingo_perform", name, args.slice(1))
+		if not native_out.is_empty():
+			return native_out[0]
 	var handled: Array = []
 	var pure: Variant = Builtins.call_builtin(name, args, handled)
 	if not handled.is_empty():
@@ -1703,6 +2126,15 @@ func _host_answered_builtin() -> bool:
 ## since the last editor session fails with "not declared in the current scope"
 ## in a file nobody touched.
 const Builtins := preload("res://lingo/lingo_builtins.gd")
+## §7.1's script object. Preloaded for the reason `Builtins` is, and with more
+## force: this class was added after the last editor session on any checkout that
+## has not opened one since, so a `class_name` reference to it fails at compile
+## time in a file nobody touched.
+const LingoObject := preload("res://lingo/lingo_object.gd")
+## §7.3's native-object protocol -- an Xtra, or an instance of one. Preloaded
+## for the reason above; only `is_native` is reached from here, because the
+## whole point of the protocol is that this file does not know what an Xtra is.
+const LingoXtra := preload("res://lingo/lingo_xtra.gd")
 ## For `do`. Preloaded here rather than at the top for the same reason `Builtins`
 ## is: a headless `--script` run resolves global class names out of the editor's
 ## cache, which a fresh checkout has not built.

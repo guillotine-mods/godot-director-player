@@ -32,6 +32,9 @@ extends RefCounted
 
 const FrameClock := preload("res://director/director_frame_clock.gd")
 const Transition := preload("res://director/director_transition.gd")
+## The per-frame callouts and the timeout clock, which are the two things this
+## loop owes Lingo on a clock rather than on a score event. See its header.
+const Actors := preload("res://scenes/preview/actors.gd")
 
 
 ## Director's `pause` — the movie's own, not the debug key's `_paused`.
@@ -191,6 +194,15 @@ static func tick(host, delta: float) -> void:
 	send_idle(host)
 	if movie_gone(host, score_before):
 		return
+	# The timeout clock, **before the clock is asked anything and once per engine
+	# tick**, which is `Score::update`'s "process timeout events independently of
+	# the frame delay" (`score.cpp:638-643`). A movie at 4 fps must not get its
+	# three-minute idle timeout a quarter of a second late; more importantly, a
+	# movie whose playhead is *held* -- `go to the frame`, which is where a title
+	# spends its idle time -- takes no steps at all, and a timeout hung off the
+	# step would never fire on exactly the frames it exists for.
+	if Actors.check_timeout(host) and movie_gone(host, score_before):
+		return
 	# Cue points and the tempo channel's wait-for-sound, before the clock. The
 	# fade ramp they interact with is stepped by `AudioDirector` itself, one
 	# process priority earlier.
@@ -243,7 +255,12 @@ static func tick(host, delta: float) -> void:
 		# back to back with no sample between them, so only the first of a
 		# catch-up burst may see a press that is already over.
 		host._mouse_down_seen = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	host.queue_redraw()
+	# `stage_redraw` rather than `queue_redraw`: this is the *movie's* repaint and
+	# `the updateLock` suppresses it. The engine's own repaints -- a resize, a
+	# debug overlay, a palette change -- still call `queue_redraw` directly,
+	# because Director's lock is over the movie's updates and not over the
+	# window's.
+	host.stage_redraw()
 
 
 ## One step of the movie, in Director's order.
@@ -351,6 +368,20 @@ static func advance(host) -> Dictionary:
 	host._held = false
 	sync_frame_entry(host)
 
+	# `the perFrameHook` and `the actorList`, each sent `stepFrame`
+	# (`preview/actors.gd`). **Here**, which is `score.cpp:731-770`: as soon as
+	# the frame switch is done, ahead of `prepareFrame` and the draw, and skipped
+	# on a frame carrying a transition -- the reference calls it once per
+	# transition subframe instead, and this port has no subframes to hang it on.
+	#
+	# A hook or an actor may `go`, which replaces the frame under everything
+	# below exactly as an `exitFrame` handler may, so the same guard follows it.
+	if not host._clock.holding_transition():
+		Actors.step_frame(host)
+		if movie_gone(host, score_before):
+			host._held = false
+			return {"exited": exited, "frame": host._index}
+
 	var script: Dictionary = host._frame_script(host._index)
 	host._dispatch("prepareFrame", script)
 	# The draw. Godot paints at the end of the process frame rather than here, so
@@ -358,6 +389,6 @@ static func advance(host) -> Dictionary:
 	# still lands in the same painted frame, where Director would have shown it
 	# on the next one. A real divergence, and the cheapest one on offer -- the
 	# alternative is deferring every `enterFrame` by a whole frame.
-	host.queue_redraw()
+	host.stage_redraw()
 	host._enter_frame_or_defer(script)
 	return {"exited": exited, "frame": host._index}

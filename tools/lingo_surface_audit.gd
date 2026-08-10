@@ -86,6 +86,9 @@ extends SceneTree
 ## over every root there is.
 
 const Harness := preload("res://tools/lib/harness.gd")
+## The report sink, so the booted-preview check below can ask whether a system
+## property read *reported* rather than guessing from a VOID answer.
+const LingoDiagnostics := preload("res://lingo/lingo_diagnostics.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Host := preload("res://scenes/preview_lingo_host.gd")
 const Builtins := preload("res://lingo/lingo_builtins.gd")
@@ -138,6 +141,12 @@ const MEMBERS_SRC := "res://scenes/preview/members.gd"
 const Channel := preload("res://scenes/preview/channel.gd")
 const WINDOWS_SRC := "res://scenes/preview/windows.gd"
 const SOUND_SRC := "res://scenes/preview/sound.gd"
+## §5.1's third qualified entity. Added when `the <prop> of castLib N` landed,
+## and it had to be: the reference files a `castLib`'s fields under a `cast` kind
+## of their own, so with no scanner here every one of them would report `absent`
+## however live the binding was -- the same false verdict, in the same direction,
+## that the sprite-route comment below is about.
+const CAST_LIBS_SRC := "res://scenes/preview/cast_libs.gd"
 const GAMES_DIR := "res://games"
 
 ## The one seam a property name crosses on its way to the renderer, loaded so the
@@ -889,8 +898,18 @@ func _bound() -> Dictionary:
 	# reported `absent` while it read, wrote and was consumed by three chunk
 	# functions.
 	var interp_src := FileAccess.get_file_as_string(INTERPRETER_SRC)
-	var interp_reads := _guarded_names(interp_src, "func _eval", "func _binary")
-	var interp_writes := _guarded_names(interp_src, "func _assign", "func _assign_chunk")
+	# **Guards on the variable `prop` only**, in these two and nowhere else.
+	#
+	# `_eval` and `_assign` are big functions with arms for every kind of
+	# designator in the language, and only the `"prop"` arm is about a *movie*
+	# property. Taking every `if <x> == "name":` inside them made the field
+	# designator's own `if set_prop == "text":` and its `"picture"` neighbour read
+	# as two system properties the engine binds, and the audit then failed for two
+	# §19 rows that must not exist. The sprite-route scans below stay unfiltered,
+	# because there the whole function is about one kind.
+	var interp_reads := _guarded_names(interp_src, "func _eval", "func _binary", "prop")
+	var interp_writes := _guarded_names(
+		interp_src, "func _assign", "func _assign_chunk", "prop")
 	for name in interp_reads:
 		var key := _key("system", str(name))
 		if state.get(key, "") == LIVE:
@@ -998,6 +1017,8 @@ func _bound() -> Dictionary:
 		["window", windows_src, "static func write_prop", "## The window property",
 			"windows.gd read+write"],
 		["sound", sound_src, "static func read_prop", "\nstatic func ", "sound.gd read"],
+		["cast", FileAccess.get_file_as_string(CAST_LIBS_SRC),
+			"static func read_prop", "\nstatic func ", "cast_libs.gd read"],
 	]:
 		var pair: Array = spec
 		var entity_arms := _match_arms(str(pair[1]), str(pair[2]), str(pair[3]))
@@ -1053,12 +1074,27 @@ func _bound() -> Dictionary:
 	await process_frame
 	var live_host := Host.new()
 	live_host.preview = preview
+	# **The test is whether the host *reported*, not whether it answered VOID.**
+	#
+	# It used to be the second, and that is the `getPref` mistake in another
+	# place: `the perFrameHook` is VOID until a movie installs one, which is the
+	# arm working correctly, and a null-means-absent rule filed the one property
+	# whose documented default is nothing as the one property that is not bound.
+	#
+	# `get_system_prop`'s fall-through calls `_note_movie_prop`, which reports
+	# through the interpreter's diagnostics sink -- so asking the sink whether the
+	# name appeared is the same question the engine answers for a movie, rather
+	# than a guess made from the return value.
+	var sink = preview._interpreter.diagnostics if preview._interpreter != null else null
 	for name in reads:
 		var key := _key("system", str(name))
-		if live_host.get_system_prop(str(name)) == null:
+		var before: int = 0
+		if sink != null:
+			before = sink.names_in(LingoDiagnostics.MOVIE_PROP).size()
+		live_host.get_system_prop(str(name))
+		if sink != null and sink.names_in(LingoDiagnostics.MOVIE_PROP).size() > before:
 			# The arm exists and still falls through -- a `match` on a name the arm
-			# does not actually cover. Nothing in the tree does this today; it is
-			# checked because the scan alone could not tell.
+			# does not actually cover.
 			state[key] = ABSENT
 			detail[key] = "arm present, read falls through"
 	preview.queue_free()
@@ -1096,7 +1132,13 @@ func _routed_before_the_table() -> Array:
 ## A guard and an arm are the same statement to a caller, and this file's job is
 ## to see what a caller sees. The body is taken as the lines that follow at a
 ## deeper indent, which is what `_arm_is_inert` needs and no more.
-func _guarded_names(source: String, from: String, to: String) -> Dictionary:
+##
+## `only_var` pins the left-hand side. Empty means any identifier, which is right
+## where the whole function is about one kind of property; naming it is what a
+## caller does when the function it is scanning also holds guards about something
+## else -- see the two interpreter call sites.
+func _guarded_names(source: String, from: String, to: String,
+		only_var: String = "") -> Dictionary:
 	var out: Dictionary = {}
 	var start := source.find(from)
 	if start < 0:
@@ -1105,9 +1147,10 @@ func _guarded_names(source: String, from: String, to: String) -> Dictionary:
 	var body := source.substr(start, (end - start) if end > start else -1)
 	var guard := RegEx.new()
 	# `if prop == "loc":` and `if prop == "loch" or prop == "locv":` alike. The
-	# left-hand name is not pinned to `prop`, because the same shape is written
+	# left-hand name is not pinned by default, because the same shape is written
 	# with `low` and with `which` elsewhere in this tree.
-	guard.compile("(?m)^(\\s*)if\\s+[a-z_]+\\s*==\\s*\"[^\"]+\"(?:[^\\n:]*)?:")
+	var lhs := only_var if only_var != "" else "[a-z_]+"
+	guard.compile("(?m)^(\\s*)if\\s+%s\\s*==\\s*\"[^\"]+\"(?:[^\\n:]*)?:" % lhs)
 	var literal := RegEx.new()
 	literal.compile("\"([^\"]+)\"")
 	var lines := body.split("\n")

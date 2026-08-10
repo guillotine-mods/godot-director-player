@@ -370,12 +370,29 @@ static func _hooks_of(host) -> Dictionary:
 		# and not the modifiers held with it would restore a session in which the
 		# last key had been pressed with nothing held down.
 		"key_flags": int(host._host.key_flags),
-		# Two movie settings a script writes and is then restored into the middle
-		# of. `the beepOn` gates §15's empty-stage click and `the timeoutKeyDown`
-		# is the timeout clock's keyboard switch; both default off, so a save that
-		# dropped them would silently turn off whatever the movie had turned on.
+		# Movie settings a script writes and is then restored into the middle of.
+		# `the beepOn` gates §15's empty-stage click; the rest are the timeout
+		# clock's own switches and its length and script (§3), which a movie sets
+		# once at `startMovie` and never again -- so a save that dropped them
+		# would restore a session whose idle timeout had quietly gone back to
+		# three minutes and whose `timeOut` handler was no longer installed.
+		#
+		# **`the timeoutLapsed` is not here, and neither are `the actorList` and
+		# `the perFrameHook`.** The first is a live clock, excluded for the same
+		# reason `the timer` is, three paragraphs down. The other two hold *script
+		# objects* (§7.1), which have no JSON form at all: an object is a script
+		# plus a bag of properties plus an ancestor chain, and writing one out
+		# would be writing a heap. A restored session therefore starts with an
+		# empty actorList, which is what a movie that rebuilds its actors in
+		# `startMovie` expects and is wrong for one that does not. Recorded here
+		# rather than left to be discovered.
 		"beep_on": bool(host._host.beep_on),
 		"timeout_key_down": bool(host._host.timeout_key_down),
+		"timeout_mouse": bool(host._host.timeout_mouse),
+		"timeout_play": bool(host._host.timeout_play),
+		"timeout_length": int(host._host.timeout_length),
+		"timeout_script": str(host._host.timeout_script),
+		"update_lock": bool(host._host.update_lock),
 		"click_sprite": int(host._host.click_sprite),
 		"click_loc": [host._host.click_loc.x, host._host.click_loc.y],
 		"double_click": bool(host._host.double_click),
@@ -561,7 +578,20 @@ static func _restore_hooks(host, hooks: Dictionary) -> void:
 	host._host.key_char = str(hooks.get("key_char", ""))
 	host._host.key_flags = int(hooks.get("key_flags", 0))
 	host._host.beep_on = bool(hooks.get("beep_on", false))
-	host._host.timeout_key_down = bool(hooks.get("timeout_key_down", false))
+	# Director's own defaults where a record predates the field, not `false`:
+	# an older save must restore a movie whose timeout behaves like a fresh one.
+	host._host.timeout_key_down = bool(hooks.get("timeout_key_down", true))
+	host._host.timeout_mouse = bool(hooks.get("timeout_mouse", true))
+	host._host.timeout_play = bool(hooks.get("timeout_play", false))
+	host._host.timeout_length = int(hooks.get("timeout_length", 10800))
+	# Through the property rather than the field, so the setter recompiles the
+	# source -- the same rule the four `*Script` properties above follow, and the
+	# reason a restored session's `timeOut` handler runs at all.
+	host._host.timeout_script = str(hooks.get("timeout_script", ""))
+	host._host.update_lock = bool(hooks.get("update_lock", false))
+	# The clock itself starts now. A save records how long the player had been
+	# away and restoring that would fire a timeout on the first tick after a load.
+	host._host.reset_timeout()
 	host._host.click_sprite = int(hooks.get("click_sprite", 0))
 	var at: Array = hooks.get("click_loc", [0, 0])
 	host._host.click_loc = Vector2(float(at[0]), float(at[1])) if at.size() >= 2 else Vector2.ZERO

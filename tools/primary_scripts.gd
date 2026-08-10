@@ -233,11 +233,17 @@ func _init() -> void:
 
 	# ---------------------------------------------------------------- timeoutKeyDown
 	h.begin("§8.3: `the timeoutKeyDown` round-trips")
-	h.check("it is off by default", int(host.call("get_system_prop", "timeoutkeydown")) == 0)
-	host.call("set_system_prop", "timeoutkeydown", 1)
-	h.check("a movie can turn it on and read it back",
-		int(host.call("get_system_prop", "timeoutkeydown")) == 1)
+	# **On by default**, which is Director's value (`movie.cpp:92`). It was false
+	# here while the property was an inert store, and false stopped being harmless
+	# the moment the timeout clock landed: with the clock running, false means
+	# typing does not count as the player being present, so an idle timeout fires
+	# under someone who is typing. `tools/timeout_and_actors.gd` covers the clock
+	# itself; this covers the round trip.
+	h.check("it is on by default", int(host.call("get_system_prop", "timeoutkeydown")) == 1)
 	host.call("set_system_prop", "timeoutkeydown", 0)
+	h.check("a movie can turn it off and read it back",
+		int(host.call("get_system_prop", "timeoutkeydown")) == 0)
+	host.call("set_system_prop", "timeoutkeydown", 1)
 	h.complete("§8.3: `the timeoutKeyDown` round-trips")
 
 	# ---------------------------------------------------------------- the mouse

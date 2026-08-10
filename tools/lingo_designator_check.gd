@@ -328,6 +328,75 @@ end
 		JSON.stringify(variable_host.fields))
 	h.complete(title)
 
+	# ---------------------------------------------------------------- delete <chunk>
+	#
+	# §16.2 listed `delete <chunk>` as a known gap: it parsed as a command call
+	# named `delete`, which nothing binds, so the chunk arrived as a *value* and
+	# the place it came from was never rewritten. That is the same shape as the
+	# four above -- a designator read as something that can be ignored -- and it
+	# is the one that spins: `repeat while str <> EMPTY / delete word 1 of str`
+	# never shortens `str`. `itamar-park`'s language parse is exactly that loop,
+	# and one boot made 199,833 calls to the unbound name before the step budget
+	# aborted the handler.
+	title = "`delete <chunk> of <place>` rewrites the place, separator and all"
+	h.begin(title)
+	var deleted := _run("""
+on chopwords
+  global trail
+  str = "alpha beta gamma"
+  delete word 1 of str
+  put str into field "w"
+  delete word 2 of str
+  put str into field "w2"
+end
+""", "chopwords", {})
+	var chop_host: StubHost = deleted["host"]
+	h.check("the first word and its space are gone",
+		chop_host.fields.size() >= 1
+			and str((chop_host.fields[0] as Dictionary)["text"]) == "beta gamma",
+		JSON.stringify(chop_host.fields))
+	h.check("and a middle word takes its separator with it",
+		chop_host.fields.size() >= 2
+			and str((chop_host.fields[1] as Dictionary)["text"]) == "beta",
+		JSON.stringify(chop_host.fields))
+
+	# The loop the gap actually broke. It terminates only if every pass shortens
+	# the string, so the count is the assertion: a `delete` that wrote "" back
+	# into the chunk would leave the separator and run for ever.
+	var loop := _run("""
+on drain
+  global count
+  str = "a b c d"
+  count = 0
+  repeat while str <> EMPTY
+    count = count + 1
+    delete word 1 of str
+    if count > 20 then
+      exit repeat
+    end if
+  end repeat
+end
+""", "drain", {})
+	var loop_interp = loop["interp"]
+	h.check("a delete-until-empty loop terminates in exactly four passes",
+		int(loop_interp.globals.get("count", -1)) == 4,
+		"count %s" % str(loop_interp.globals.get("count", -1)))
+
+	# `delete` is still an ordinary call when a chunk keyword does not follow --
+	# FileIO has a `delete` method and it takes an instance, so a gate on the
+	# spelling alone would have swallowed it.
+	var still_a_call := _compile("""
+on callsdelete f
+  delete(f)
+end
+""")
+	var call_body := _handler_body(still_a_call, "callsdelete")
+	h.check("`delete(x)` with no chunk after it is still a call",
+		call_body.size() == 1
+			and str((call_body[0] as Dictionary).get("node", "")) == "call_stmt",
+		JSON.stringify(call_body))
+	h.complete(title)
+
 
 # --- driving --------------------------------------------------------------
 

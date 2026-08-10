@@ -159,17 +159,30 @@ func _xtra(h: Harness, host, interpreter) -> void:
 
 	var listed: Variant = host.get_system_prop("xtras")
 	h.check(
-		"the registry and `the xtras` are the same list",
-		typeof(listed) == TYPE_ARRAY and (listed as Array).size() == host.xtras_loaded.size(),
+		"the registry and `the xtras` are the same list, and it is not empty",
+		typeof(listed) == TYPE_ARRAY and (listed as Array).size() == host.xtras_loaded.size()
+			and not (listed as Array).is_empty(),
 		"two lists would let a lookup succeed for a name the movie cannot see in "
 		+ "the roster, which is the disagreement the one list exists to prevent")
 
+	# **The registry is no longer empty**, and this pair of checks moved with it
+	# rather than being deleted: `FileIO` is registered (`lingo/lingo_fileio.gd`),
+	# so the lookup that used to prove "every name fails" now proves the two
+	# halves that matter -- a name this player *has* answers an object, and one it
+	# has not still answers VOID. The old wording is kept in this comment because
+	# it was right about the danger: a truthy answer for an Xtra with nothing
+	# behind it hands a script an object it will then send messages to.
 	var answer: Variant = host.call_builtin("xtra", ["FileIO.x32"])
 	h.check(
-		"a name that is not registered answers VOID",
-		answer == null,
-		"the registry is empty, so every lookup fails; a truthy answer would hand "
-		+ "a script an object with nothing behind it")
+		"a registered name answers the Xtra, through §7.3's normalised key",
+		answer != null and answer is Object
+			and (answer as Object).has_method("make_xtra_instance"),
+		"asked for `FileIO.x32`; the registry holds `FileIO`, and the platform "
+		+ "extension comes off both sides of the lookup")
+	h.check(
+		"a name this player does not have still answers VOID",
+		host.call_builtin("xtra", ["QuickDraw3D"]) == null,
+		"an unimplemented Xtra must stay a reported miss, not an empty object")
 	h.check(
 		"and the host still counts as having answered",
 		host.answered_builtin(),
@@ -177,11 +190,15 @@ func _xtra(h: Harness, host, interpreter) -> void:
 		+ "which is two complaints about one miss and neither is the useful one")
 
 	# Director takes an index as well as a name, and the two have to agree about
-	# an empty registry.
+	# what is loaded.
 	h.check(
-		"an index past the end answers VOID too",
-		host.call_builtin("xtra", [1]) == null,
-		"1 is the first Xtra; there is no first Xtra")
+		"index 1 is the first Xtra, and it is the same object the name found",
+		host.call_builtin("xtra", [1]) == answer,
+		"two lookups over one registry that disagree is the thing one list "
+		+ "exists to prevent")
+	h.check(
+		"an index past the end answers VOID",
+		host.call_builtin("xtra", [host.xtras_loaded.size() + 1]) == null)
 
 	# §7.3's normalisation, asserted on the key rather than through a lookup that
 	# can only fail: the same library named three ways has to resolve once.

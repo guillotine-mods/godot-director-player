@@ -26,6 +26,13 @@ const Grammar := preload("res://lingo/compile/lingo_grammar.gd")
 ## interpreter that *runs* what this compiles is whichever one the movie has, and
 ## a host that held one would be holding a stale one after every movie change.
 const Interpreter := preload("res://lingo/lingo_interpreter.gd")
+## §5.1's third qualified entity, `the <prop> of castLib N`. Its own module for
+## the reason `windows.gd` and `sound.gd` are theirs: it needs its own dispatch
+## path, and the last entity that did not have one lost every write it was given.
+const CastLibs := preload("res://scenes/preview/cast_libs.gd")
+## §7.3's Xtra registry entry, and the one Xtra this player implements.
+const LingoXtra := preload("res://lingo/lingo_xtra.gd")
+const FileIO := preload("res://lingo/lingo_fileio.gd")
 
 ## The bare words `go`'s own grammar puts in front of its arguments.
 ##
@@ -209,14 +216,82 @@ var key_flags := 0
 ## `the timeoutKeyDown` is set". The reference stamps `_lastTimeOut` from the
 ## key-down arm when it is true.
 ##
-## **Bound and stored, and the clock it feeds does not exist yet.** There is no
-## `the timeoutLength`, no `the timeoutLapsed` and no `timeout` event in this
-## port at all, so what a script sets here is remembered and read back and
-## reaches nothing further -- `inert` in §19's sense, recorded as such, and one
-## line to make live the day the timeout clock lands. It is bound rather than
-## left absent because a movie that turns it *off* to stop a timeout firing is
-## saying something the engine will need, and an unbound write says nothing.
-var timeout_key_down := false
+## **The clock it feeds exists now** (`scenes/preview/actors.gd`), so this is
+## live rather than the inert store the paragraph this replaces described: a
+## key-down stamps `last_timeout_ms` when it is true, exactly as
+## `events.cpp:371` stamps `_lastTimeOut`, and a movie that turns it *off* to
+## stop the timeout being refreshed by typing now gets that.
+##
+## Director's default is **true** (`movie.cpp:92`). This port defaulted it false
+## while it was inert, which was harmless then and is not now: with the clock
+## running, false means typing does not count as the player being present.
+var timeout_key_down := true
+## `the timeoutMouse`, `the timeoutPlay` -- the other two switches. Director's
+## defaults, from `movie.cpp:93-94`: the mouse counts, a `play` does not.
+var timeout_mouse := true
+var timeout_play := false
+## `the timeoutLength`, in ticks. 10800 is three minutes, which is Director's own
+## default (`movie.cpp:90`). 0 or less disables the clock -- see
+## `preview/actors.gd:check_timeout` for why that is written here rather than
+## left to the reference's arithmetic.
+var timeout_length := 10800
+## When the timeout clock was last reset, in engine milliseconds. `the
+## timeoutLapsed` is the distance from here to now, in ticks.
+##
+## Stamped at construction rather than left at 0, which is `movie.cpp:89`'s
+## `_lastTimeOut = _lastEventTime` at the point a movie is made. Left at 0 it
+## would read as "the player has been away since the engine started", which is
+## only wrong by the seconds a boot takes -- and is exactly wrong for a harness
+## that boots, sets a one-tick timeout and expects to control when it fires.
+var last_timeout_ms := Time.get_ticks_msec()
+## `the timeoutScript` -- a **string of Lingo**, compiled on assignment, run as
+## the primary handler for the `timeOut` event (§6.3 tier 1). The fifth member of
+## the `*Script` family and the same mechanism exactly: the reference's write arm
+## is `movie->setPrimaryEventHandler(kEventTimeout, d.asString())`, which is the
+## call the other four make.
+var timeout_script := "":
+	set(value):
+		timeout_script = value
+		timeout_compiled = _compile_primary(value, "timeoutScript")
+var timeout_compiled: Dictionary = {}
+
+## `the actorList` -- the objects sent `stepFrame` once per frame (§6.1).
+##
+## A plain Array of script objects. Director accepts anything in it and only
+## messages the objects, which is what `preview/actors.gd` does rather than
+## filtering on assignment: a movie may legitimately park a placeholder in the
+## list and replace it later.
+var actor_list: Array = []
+## `the perFrameHook` -- one object, sent `stepFrame` before the list.
+var per_frame_hook: Variant = null
+
+## `the updateLock` -- TRUE suppresses stage updates until it is cleared.
+##
+## The other half of `updateStage`, and the reference implements neither the read
+## nor the write (`lingo-the.cpp` declares `kTheUpdateLock` and has no arm), so
+## there is no behaviour to copy and what is built here is the property's
+## documented meaning: while it is set, a repaint is *skipped* rather than
+## queued, and clearing it does not replay the ones that were missed. That is the
+## reading `updateStage` forces -- a lock that queued would make the next
+## `updateStage` paint an old frame.
+##
+## Consumed by `director_preview.gd:repaint_now` and by the frame loop's own
+## repaint, which are the two things that put pixels on the screen.
+var update_lock := false
+
+
+## Ticks since the timeout clock was last reset -- `the timeoutLapsed`.
+func timeout_lapsed_ticks() -> int:
+	return _ticks_since(last_timeout_ms)
+
+
+## The player did something that counts as being present, or the timeout fired.
+##
+## One writer for all four resets (mouse, key, play, and the event itself),
+## because the reference stamps the same field from each and four copies of
+## `last_timeout_ms = Time.get_ticks_msec()` is four places for the unit to drift.
+func reset_timeout() -> void:
+	last_timeout_ms = Time.get_ticks_msec()
 
 # --------------------------------------------- what this packaging can answer
 #
@@ -297,17 +372,36 @@ var external_params: Array = []
 ## from both sides**, so the two can never disagree about what this player has.
 ##
 ## Each entry is `{"name": <as registered>, "object": <the native object>}`.
-## Empty, and it will stay empty until a native Xtra is written: §7.3's object
-## surface (`new`, `dispose`, `respondsTo`, `messageList`, `perform`) is what an
-## entry has to answer, and nothing here answers it yet. That is the whole of
-## what "no Xtra is implemented" means, and it is a statement about the registry
-## rather than about the two names that read it.
+##
+## **One entry: FileIO** (`lingo/lingo_fileio.gd`). The paragraph this replaces
+## said the list would stay empty until a native Xtra was written, and named
+## §7.3's object surface as the bar; FileIO clears it -- an instance answers
+## `lingo_responds_to`, `lingo_message_list` and `lingo_perform`, which is what
+## `respondsTo` and a method call need.
+##
+## It is the one Xtra worth having first because it is the one titles are
+## *blocked on*: two movies pointed at this engine stop at startup without it,
+## both while reading a configuration file (see `lingo_fileio.gd`'s header). Every
+## other Xtra in the wild is an effect or a widget a movie can be missing.
 ##
 ## Kept as a list of records rather than as bare names because `xtra("name")`
 ## returns the **object**, not the name: a registry of strings would make the
 ## lookup succeed and the value it handed back useless, which is the shape §7.3
 ## warns about at its own `respondsTo`.
 var xtras_loaded: Array = []
+
+
+## Register the Xtras this player implements.
+##
+## Called from `_init` rather than written as a `var` initialiser because each
+## entry needs `self` -- an instance reaches the movie's paths and the write
+## guard through the host, and an Xtra that could not would resolve every path
+## literally and write wherever it was told.
+func _init() -> void:
+	xtras_loaded.append({
+		"name": "FileIO",
+		"object": LingoXtra.new("FileIO", FileIO, self),
+	})
 
 
 ## `the beepOn` -- D2, and it does **not** gate the `beep` builtin.
@@ -740,6 +834,17 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# return from a cut scene reads as the movie simply stopping.
 			if preview == null:
 				return 0
+			# The timeout clock's third switch (§3). `the timeoutPlay` is the one
+			# of the three the reference **stores and never reads** -- there is no
+			# `_timeOutPlay` consumer anywhere in the vendored tree -- so this is
+			# built from Director's documented meaning of the property, "the
+			# timeout period is restarted when a movie is played", rather than
+			# copied. Hung on `play` rather than on `go` because that is the verb
+			# the property is named after, and because a title that navigates on a
+			# timer would otherwise never be able to let the timer expire.
+			# Unverified against Director running.
+			if timeout_play:
+				reset_timeout()
 			var verb := str(args[0]).to_lower() if not args.is_empty() else ""
 			if verb == "done":
 				# The *thaw*, not a freeze: `play done` is what makes the handler
@@ -1664,6 +1769,26 @@ func tell_target(value: Variant) -> Object:
 	return preview.window_interpreter(window_key_of(value))
 
 
+## The compiled script a `script(...)` reference names, for `new` (§7.1).
+##
+## The interpreter cannot resolve this on its own and that is the whole reason
+## the method exists: `script("foo")` answers a **packed member reference**, and
+## only the preview knows which compiled cast a library number stands for --
+## which is `preview/scripts.gd`'s own rule that a member number is per cast and
+## the library is part of the key, not a hint. Searching every cast for a script
+## at that number is what that module exists to stop.
+##
+## `{}` when the reference names no script, which is what `new` reports rather
+## than building an object that answers every message with nothing.
+func script_at(reference: Variant) -> Dictionary:
+	if preview == null:
+		return {}
+	var where: Array = preview.lingo_member_where(reference)
+	if where.size() < 2 or int(where[1]) <= 0:
+		return {}
+	return preview.call("_script_in_lib", int(where[0]), int(where[1]))
+
+
 ## The window a property designator named, brought into existence by being named.
 ##
 ## `set the windowType of window "inventor.dir" to 2` arrives here with a bare
@@ -1828,6 +1953,29 @@ func get_system_prop(prop: String) -> Variant:
 			return 1 if (key_flags & MOD_CTRL) != 0 else 0
 		"timeoutkeydown":
 			return 1 if timeout_key_down else 0
+		"timeoutmouse":
+			return 1 if timeout_mouse else 0
+		"timeoutplay":
+			return 1 if timeout_play else 0
+		"timeoutlength":
+			return timeout_length
+		"timeoutlapsed":
+			return timeout_lapsed_ticks()
+		"timeoutscript":
+			# The installed source, as the reference answers it: it reads the
+			# movie's primary handler string for `kEventTimeout` back out
+			# (`lingo-the.cpp:1168`), so a movie can ask what it installed.
+			return timeout_script
+		"actorlist":
+			# The live Array, not a copy. Director's `the actorList` is a list
+			# value like any other and `append(the actorList, x)` is how a title
+			# adds to it, which needs the reference to be the list the frame loop
+			# reads -- a copy here makes the idiom silently do nothing.
+			return actor_list
+		"perframehook":
+			return per_frame_hook
+		"updatelock":
+			return 1 if update_lock else 0
 		"mousecast", "mousemember":
 			# The member displayed by the sprite the pointer is over, or -1 for
 			# "over nothing" -- which is Director's answer and not 0, because 0 is
@@ -2335,9 +2483,35 @@ func set_system_prop(prop: String, value: Variant) -> void:
 		"beepon":
 			beep_on = LingoValue.truthy(value)
 		"timeoutkeydown":
-			# Stored, read back, and consumed by nothing until there is a timeout
-			# clock to consume it. See the field.
 			timeout_key_down = LingoValue.truthy(value)
+		"timeoutmouse":
+			timeout_mouse = LingoValue.truthy(value)
+		"timeoutplay":
+			timeout_play = LingoValue.truthy(value)
+		"timeoutlength":
+			timeout_length = LingoValue.to_int(value)
+		"timeoutlapsed":
+			# **Writable, and the reference says so against the documentation.**
+			# `lingo-the.cpp:1496` records that D3.1's manual claims it cannot be
+			# set and that D2 and D3 Mac let you anyway, with a shipped title
+			# relying on it. Writing it moves the *origin*, so `set the
+			# timeoutLapsed to 0` restarts the clock -- which is what a movie
+			# writing it means.
+			last_timeout_ms = Time.get_ticks_msec() - int(LingoValue.to_int(value) * 1000.0 / 60.0)
+		"timeoutscript":
+			timeout_script = LingoValue.to_str(value).strip_edges()
+		"actorlist":
+			# Anything that is not a list empties it, which is how a movie clears
+			# the list: `set the actorList to []` and `to 0` are both written.
+			actor_list = value if typeof(value) == TYPE_ARRAY else []
+		"perframehook":
+			# VOID or 0 removes the hook; anything else is stored and
+			# `preview/actors.gd` messages it only if it is a script object, so a
+			# movie assigning something that cannot answer gets nothing rather
+			# than an error every frame.
+			per_frame_hook = null if not LingoValue.truthy(value) else value
+		"updatelock":
+			update_lock = LingoValue.truthy(value)
 		"soundenabled":
 			# Director stops the device, so turning this off silences what is
 			# already playing rather than only what starts next. Nothing here holds
@@ -2540,6 +2714,26 @@ func set_member_prop(which: Variant, cast: Variant, prop: String, value: Variant
 
 
 ## A sound channel's own properties, `the volume of sound 2` above all.
+## `the <prop> of castLib N` (§5.1). VOID for anything this port does not bind,
+## and the miss is reported -- `the preLoadMode` and `the selection` are absent
+## on purpose and `preview/cast_libs.gd` says why for each.
+func get_cast_prop(which: Variant, prop: String) -> Variant:
+	if preview == null:
+		return null
+	var value: Variant = CastLibs.read_prop(which, prop, preview._table)
+	if value == null:
+		_note_movie_prop("%s of castLib" % prop.to_lower())
+	return value
+
+
+## A cast library has no writable property in this port. Reported rather than
+## dropped: Director makes `name`, `fileName` and `number` read-only and this
+## does not bind `the preLoadMode`, so a movie writing any of them is asking for
+## something that is not here and a log should say so.
+func set_cast_prop(which: Variant, prop: String, _value: Variant) -> void:
+	_note_movie_prop("set %s of castLib %s" % [prop.to_lower(), LingoValue.to_str(which)])
+
+
 func get_sound_prop(channel: int, prop: String) -> Variant:
 	if preview == null:
 		return 0

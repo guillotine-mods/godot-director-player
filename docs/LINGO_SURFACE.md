@@ -2116,14 +2116,27 @@ pattern-matching the corpus against each grammar form in §11.
 Listed so that each absence is a recorded decision rather than a hole. All have
 **zero** occurrences in the extracted corpus.
 
-- **`#symbol` literals.** The lexer has no `#` in either operator table and
-  raises "unexpected character". This is the only item here that fails *loudly*.
+- ~~**`#symbol` literals.**~~ **Closed.** The lexer had no `#` in either operator
+  table and raised "unexpected character" -- the only item here that failed
+  *loudly*, and the one that mattered, because `call(#mouseUp, obj)` is how every
+  object message in §7.1 is spelled. `lingo_lexer.gd` emits a `symbol` token and
+  the interpreter makes it a `StringName`, which is the type `ilk` already answers
+  `#symbol` for. Still 0 occurrences in the corpus.
 - **`[:]`**, the empty property list. Parse error.
 - **`the last char|word|item|line of X`.** Parse error — `last` is read as a
   property name and the chunk head that follows has nowhere to go.
 - **`macro`, `factory`, `method` definitions.** Only `on` is recognised.
-- **`delete <chunk>` and `hilite <chunk>`** as statements. They parse as command
-  calls named `delete`/`hilite`, which the interpreter does not bind.
+- ~~**`delete <chunk>`**~~ **closed**, and it was not harmless. Parsed as a
+  command call, the chunk arrived as a *value* and the place it came from was
+  never rewritten — so `repeat while str <> EMPTY / delete word 1 of str` never
+  shortens `str`. One boot of `itamar-park` made **199,833** calls to the unbound
+  name before the step budget aborted the handler that reads its ini file. It is
+  a statement now (`lingo_parser.gd`, gated on a chunk keyword following, so
+  FileIO's own `delete` method still parses as the call it is), and the chunk's
+  **separator goes with it** — `LingoValue.delete_chunk` rather than writing ""
+  into the chunk, which is the difference between a loop that terminates and one
+  that does not. **`hilite <chunk>`** is still absent: it parses as a command
+  call named `hilite`, which nothing binds.
 - **`cast N` / `cast N of castLib M`** as a reference. `cast` is not a keyword
   here; it parses as a command call.
 - **`put E after|before P`.** The parser has the modes; nothing uses them.
@@ -2463,7 +2476,7 @@ one thing a table is bad at: an ordering with a reason attached to each place.
 | name | the Lingo spelling, lower-cased — Lingo is case-insensitive (§11.2) |
 | kind | `builtin`, or the entity a property hangs off: `system` (`the X`), `sprite`, `member`, `window`, `sound` |
 | state | `live`, `inert` or `absent` — see below |
-| note | corpus sites across **all six** roots under `games/`, then where the binding lives |
+| note | corpus sites across **every** root under `games/`, then where the binding lives |
 
 **Three states, never two.** That distinction is the whole point:
 
@@ -2551,7 +2564,7 @@ happens, and that claim was false.
 | 20 | `the rect of sprite N` | inert | Readable in Director and derived from loc, registration point and member size. |
 | 12 | `the currentSpriteNum` | **live** | Piposh Dream's hex board reads it to know which channel is running the behaviour, once per tile across `hex1`/`hex2`/`hex3`. §7.1 says it is synthesised rather than stored, and it is: the host carries `current_sprite_num`, `preview/event_chain.gd` sets it around the one element of the five that is a sprite behaviour and puts back what it found, and `sendSprite`/`sendAllSprites` bracket their sends the same way so a broadcasting behaviour reads its own channel again on the way back. A cast script, a frame script and a movie script all read 0 during the same click, which is Director's answer and the reason the value is per element rather than per chain. |
 | 6 | `the flipV of sprite N` | inert | As `flipH`. |
-| 4 | `xtra` | **live** | Xtra reference by name or by 1-based index, resolved against the same registry `the xtras` reads — so the two cannot disagree about what this player has loaded — with §7.3's name normalisation applied to both sides. **The registry is empty and every lookup fails**, which is the honest state of "no Xtra is implemented"; what changed is that a failure is now *reported by name* instead of vanishing, the way an unbound builtin is. The corpus's only two sites are `xtra(#net, 2, type & "thud.aif")` in Piposh Dream's `ratA.dir`, inside a handler called `__` that nothing calls: three arguments, which is an arity error in Director too, and is now reported as one. |
+| 4 | `xtra` | **live** | Xtra reference by name or by 1-based index, resolved against the same registry `the xtras` reads — so the two cannot disagree about what this player has loaded — with §7.3's name normalisation applied to both sides. **The registry holds one Xtra, FileIO** (`lingo/lingo_fileio.gd`), and a name that is not in it is still *reported by name* instead of vanishing, the way an unbound builtin is. FileIO is there because it is the one Xtra titles are *blocked on* rather than merely missing: two movies pointed at this engine stop at startup without it, both while reading a configuration file. `new(xtra("FileIO"))` answers an instance, `openFile(f, path, 1)` and `f.openFile(path, 1)` are one statement, and `status(f)` reports Director's own Mac OS codes — a script branches on `status(f) = 0`, so a plausible wrong code would be worse than no binding. Writes are refused in a headless run without `--allow-writes` and outside the game root always. The corpus's only two sites are `xtra(#net, 2, type & "thud.aif")` in Piposh Dream's `ratA.dir`, inside a handler called `__` that nothing calls: three arguments, which is an arity error in Director too, and is now reported as one. |
 | 4 | `the top of sprite N` | inert | With `left`, `right` and `bottom`: read-only in Director and *derived*, which is why §4 leaves them out of the writable set. Answering 0 is a wrong answer, not a missing one. |
 | 3 | `the textSize of member M` | absent | A member write with no arm, as `hilite`. |
 | 3 | `the castLibNum of sprite N` | inert | The library half of `the member of sprite`. |
@@ -2859,7 +2872,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `sourcerect` | system | live | 0 sites; read only |
 | `stilldown` | system | live | 0 sites; read only |
 | `ticks` | system | live | 0 sites; read only |
-| `timeoutkeydown` | system | live | 0 sites; read+write; §8.3's "a key event refreshes the timeout clock". Stored and read back, and **nothing consumes it**: there is no `the timeoutLength`, no `the timeoutLapsed` and no `timeout` event in this port yet, so the round-trip is the whole of its effect. `live` because the audit reads the arms and both reach state; the gap is `ENGINE_TODO.md`'s, and one line here goes live with the clock. |
+| `timeoutkeydown` | system | live | 0 sites; read+write; §8.3's "a key event refreshes the timeout clock", and **it now does**: `director_preview.gd:_dispatch_key` stamps the clock when this is true, where `events.cpp:371` stamps `_lastTimeOut`. The paragraph this replaces said nothing consumed it, which was true while there was no clock. Default **true**, which is Director's (`movie.cpp:92`) and not the false it carried while it was a store. |
 | `title` | system | live | 0 sites; read+write |
 | `titlevisible` | system | live | 0 sites; read+write |
 | `windowlist` | system | live | 0 sites; read only |
@@ -2904,6 +2917,24 @@ Two shapes account for most of that list, and neither is a missing name:
 | `stageright` | system | live | host arm |
 | `stagetop` | system | live | host arm |
 | `time` | system | live | host arm |
+| `new` | builtin | live | 6 sites; lingo_interpreter.gd, before the module and the host; §7.1. Builds a script object and runs its `new` handler with `me` as the first argument; the expression is what that handler *returned*, which is `me` by convention and may deliberately be something else. Resolved ahead of user handlers, alone among the builtins: every parent script declares `on new`, and `ancestor = new(script "base")` inside it would otherwise be unbounded recursion. |
+| `script` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. A packed member reference, like `member()`'s, so `the scriptText of script "x"` works on it; `new` turns one into an object through `preview_lingo_host.gd:script_at`. The designator spelling `script "Parent"` is a parser arm rather than a command call, because the command form's argument loop crosses commas and `new(script "base", who)` would hand the constructor's arguments to the designator. |
+| `call` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. `call(#msg, objectOrList, args...)`, with `me` in front of the arguments. A **list** is Director's broadcast form and every object in it that answers runs; the value is the last one's, and an object that does not answer is skipped in silence, which is the reference's own `if (sym.type == VOIDSYM)`. |
+| `send` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; D4's undocumented spelling of `call`. The reference maps both names onto one body (`lingo-builtins.cpp:126,149`) and so does this. |
+| `callancestor` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. Enters the chain at the object's **ancestor**, skipping the object's own handler, and `me` inside it is the ancestor. **The reference stubs this** (`b_callAncestor` prints and drops the stack), so what is built is Director's documented meaning of the name rather than a copy of an implementation. |
+| `sendancestor` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; D4's spelling of `callAncestor`, one body as above. |
+| `timeoutlength` | system | live | 0 sites; read+write; §3. Ticks of no player activity before `timeOut` is raised; 10800 (three minutes) by default, which is `movie.cpp:90`. **0 or less disables the clock** -- not in the reference's arithmetic, and necessary here because otherwise the default would fire on every tick of every movie. |
+| `timeoutlapsed` | system | live | 0 sites; read+write; §3. Ticks since the clock was last reset. **Writable**, against the D3.1 manual and with the reference: `lingo-the.cpp:1496` records that D2 and D3 Mac allow it and that a shipped title relies on it. Writing moves the origin, so `set the timeoutLapsed to 0` restarts the clock. |
+| `timeoutmouse` | system | live | 0 sites; read+write; §3. Whether a mouse press resets the clock; true by default. Stamped at the press for both buttons, where `events.cpp:270` stamps it -- a release and a move do not count. |
+| `timeoutplay` | system | live | 0 sites; read+write; §3. Whether `play` resets the clock; false by default. **The reference stores this and never reads it**, so the consumer is built from Director's documented meaning and is unverified against Director running. |
+| `timeoutscript` | system | live | 0 sites; read+write; §6.3 tier 1. The fifth member of the `*Script` family and the same mechanism exactly -- a string of Lingo compiled in the setter, run as the primary handler for `timeOut` before the frame and movie scripts see it. The reference's write arm is `movie->setPrimaryEventHandler(kEventTimeout, ...)`, which is the call the other four make. |
+| `actorlist` | system | live | 0 sites; read+write; §6.1. The objects sent `stepFrame` once per frame, in list order, after `the perFrameHook` (`scenes/preview/actors.gd`). The **live** Array is handed back rather than a copy, because `append(the actorList, x)` is how a title adds to it and a copy makes that idiom silently do nothing. Not saved in a session record: an object has no JSON form. |
+| `perframehook` | system | live | 0 sites; read+write; §6.1. One object, sent `stepFrame` at the point `score.cpp:731-770` calls `executePerFrameHook` -- after the playhead moves, before `prepareFrame`, and skipped on a frame carrying a transition, which the reference hangs on the transition's subframes instead. VOID until a movie installs one, which is why `tools/lingo_surface_audit.gd` now asks whether the host *reported* rather than whether it answered VOID. |
+| `updatelock` | system | live | 0 sites; read+write; §3. TRUE suppresses the stage repaint -- both `updateStage`'s (`director_preview.gd:repaint_now`) and the frame loop's (`stage_redraw`). The reference declares `kTheUpdateLock` and implements neither half, so this is the property's documented meaning: the paint is **skipped, not queued**, so clearing the lock does not replay what was missed. The engine's own repaints -- a resize, a debug overlay, a palette change -- still happen, because Director's lock is over the movie's updates. |
+| `picture` | system | live | 0 sites; read only; §14. The **movie's own window** asked about itself, on the same `get_system_prop` arm as `the centerStage`, `the windowType` and six others -- inside `tell window("x")` that is the window, which is where the corpus's 21 `set the centerStage` sites mean it. Like its window twin two rows down it answers **VOID**: this renderer holds no surface to read back, and a wrong image would be worse than nothing. It reported `absent` until `tools/lingo_surface_audit.gd` stopped reading a VOID answer as a fall-through and started asking whether the host *reported* -- the same mistake `getPref` earned, in the other direction. |
+| `filename` | cast | live | 4 sites; cast_libs.gd read; §5.1. The path the movie *names* for an external cast, not the one this port resolved it to: a title comparing it against a string it built itself is comparing against the authored spelling. "" for the internal cast, which is Director's answer. Read-only, as all three of these are. |
+| `name` | cast | live | 1 sites; cast_libs.gd read; §5.1. The library's name from the movie's `MCsL`. |
+| `number` | cast | live | 0 sites; cast_libs.gd read; §5.1. The reverse lookup, a name to a library number, asked through `members.gd:library_named` rather than re-derived -- or the two would disagree about a library genuinely called "2". **-1** for a name that matches nothing, which is the reference's answer and is not 0, because 0 would be indistinguishable from a library-1 answer. |
 | `centerstage` | window | live | 0 sites; windows.gd read+write |
 | `drawrect` | window | live | 0 sites; windows.gd read+write |
 | `filename` | window | live | 0 sites; windows.gd read+write |
@@ -3028,4 +3059,21 @@ Two shapes account for most of that list, and neither is a missing name:
 | `videoforwindowspresent` | system | live | read only |
 | `windowtype` | system | live | read+write |
 | `xtras` | system | live | read only |
+| `new` | builtin | live | 6 sites; lingo_interpreter.gd, before the module and the host; §7.1. Builds a script object and runs its `new` handler with `me` as the first argument; the expression is what that handler *returned*, which is `me` by convention and may deliberately be something else. Resolved ahead of user handlers, alone among the builtins: every parent script declares `on new`, and `ancestor = new(script "base")` inside it would otherwise be unbounded recursion. |
+| `script` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. A packed member reference, like `member()`'s, so `the scriptText of script "x"` works on it; `new` turns one into an object through `preview_lingo_host.gd:script_at`. The designator spelling `script "Parent"` is a parser arm rather than a command call, because the command form's argument loop crosses commas and `new(script "base", who)` would hand the constructor's arguments to the designator. |
+| `call` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. `call(#msg, objectOrList, args...)`, with `me` in front of the arguments. A **list** is Director's broadcast form and every object in it that answers runs; the value is the last one's, and an object that does not answer is skipped in silence, which is the reference's own `if (sym.type == VOIDSYM)`. |
+| `send` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; D4's undocumented spelling of `call`. The reference maps both names onto one body (`lingo-builtins.cpp:126,149`) and so does this. |
+| `callancestor` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; §7.1. Enters the chain at the object's **ancestor**, skipping the object's own handler, and `me` inside it is the ancestor. **The reference stubs this** (`b_callAncestor` prints and drops the stack), so what is built is Director's documented meaning of the name rather than a copy of an implementation. |
+| `sendancestor` | builtin | live | 0 sites; lingo_interpreter.gd, before the module and the host; D4's spelling of `callAncestor`, one body as above. |
+| `timeoutlength` | system | live | 0 sites; read+write; §3. Ticks of no player activity before `timeOut` is raised; 10800 (three minutes) by default, which is `movie.cpp:90`. **0 or less disables the clock** -- not in the reference's arithmetic, and necessary here because otherwise the default would fire on every tick of every movie. |
+| `timeoutlapsed` | system | live | 0 sites; read+write; §3. Ticks since the clock was last reset. **Writable**, against the D3.1 manual and with the reference: `lingo-the.cpp:1496` records that D2 and D3 Mac allow it and that a shipped title relies on it. Writing moves the origin, so `set the timeoutLapsed to 0` restarts the clock. |
+| `timeoutmouse` | system | live | 0 sites; read+write; §3. Whether a mouse press resets the clock; true by default. Stamped at the press for both buttons, where `events.cpp:270` stamps it -- a release and a move do not count. |
+| `timeoutplay` | system | live | 0 sites; read+write; §3. Whether `play` resets the clock; false by default. **The reference stores this and never reads it**, so the consumer is built from Director's documented meaning and is unverified against Director running. |
+| `timeoutscript` | system | live | 0 sites; read+write; §6.3 tier 1. The fifth member of the `*Script` family and the same mechanism exactly -- a string of Lingo compiled in the setter, run as the primary handler for `timeOut` before the frame and movie scripts see it. The reference's write arm is `movie->setPrimaryEventHandler(kEventTimeout, ...)`, which is the call the other four make. |
+| `actorlist` | system | live | 0 sites; read+write; §6.1. The objects sent `stepFrame` once per frame, in list order, after `the perFrameHook` (`scenes/preview/actors.gd`). The **live** Array is handed back rather than a copy, because `append(the actorList, x)` is how a title adds to it and a copy makes that idiom silently do nothing. Not saved in a session record: an object has no JSON form. |
+| `perframehook` | system | live | 0 sites; read+write; §6.1. One object, sent `stepFrame` at the point `score.cpp:731-770` calls `executePerFrameHook` -- after the playhead moves, before `prepareFrame`, and skipped on a frame carrying a transition, which the reference hangs on the transition's subframes instead. VOID until a movie installs one, which is why `tools/lingo_surface_audit.gd` now asks whether the host *reported* rather than whether it answered VOID. |
+| `updatelock` | system | live | 0 sites; read+write; §3. TRUE suppresses the stage repaint -- both `updateStage`'s (`director_preview.gd:repaint_now`) and the frame loop's (`stage_redraw`). The reference declares `kTheUpdateLock` and implements neither half, so this is the property's documented meaning: the paint is **skipped, not queued**, so clearing the lock does not replay what was missed. The engine's own repaints -- a resize, a debug overlay, a palette change -- still happen, because Director's lock is over the movie's updates. |
+| `filename` | cast | live | 4 sites; cast_libs.gd read; §5.1. The path the movie *names* for an external cast, not the one this port resolved it to: a title comparing it against a string it built itself is comparing against the authored spelling. "" for the internal cast, which is Director's answer. Read-only, as all three of these are. |
+| `name` | cast | live | 1 sites; cast_libs.gd read; §5.1. The library's name from the movie's `MCsL`. |
+| `number` | cast | live | 0 sites; cast_libs.gd read; §5.1. The reverse lookup, a name to a library number, asked through `members.gd:library_named` rather than re-derived -- or the two would disagree about a library genuinely called "2". **-1** for a name that matches nothing, which is the reference's answer and is not 0, because 0 would be indistinguishable from a library-1 answer. |
 | `centerstage` | window | live | 0 sites; windows.gd read+write |
