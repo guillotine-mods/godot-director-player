@@ -293,19 +293,53 @@ func _build_tiles() -> void:
 		var tile := GameTile.make(_entries[i], flags)
 		tile.focus_entered.connect(_select_game.bind(i))
 		tile.pressed.connect(_on_tile_pressed.bind(i))
+		tile.gui_input.connect(_on_tile_gui_input.bind(i))
 		%Grid.add_child(tile)
 		_tiles.append(tile)
 
 
-## Focus selects, and a press plays.
+## Focus selects, and so does a press. Playing is `Play`, or a double click.
 ##
-## That is the dashboard reading of a D-pad rather than a form's: the tile the
-## stick is on *is* the selection, so there is nothing left for a second press
-## to choose, and it is what makes `ui_accept` reach Play without a rule about
-## where focus happens to be sitting. `_play.disabled` is asked rather than
-## re-derived -- `_refresh_play` owns that answer, and this is a second way to
-## reach the same action, not a second opinion about whether it is allowed.
+## Focus-selects is the dashboard reading of a D-pad rather than a form's: the
+## tile the stick is on *is* the selection, so there is nothing left for a
+## second press to choose, and `ui_accept` can go to Play without a rule about
+## where focus happens to be sitting.
+##
+## A press used to play as well, and that was the fault: every other control on
+## this screen describes the *selected* title -- the flag row, Stage Fit, the
+## whole Developer tab -- so a click that both selected and launched left no way
+## to reach any of them. It also hid a bug rather than causing one, which is how
+## it was found: the 3D title had Play disabled for the wrong reason, so
+## `if not _play.disabled` was false and clicking it merely selected. Fixing
+## Play made it launch on click like the other four, and the inconsistency
+## people had learned turned out to be the correct behaviour all along.
+## A tile press picks a title. It does **not** play it.
+##
+## It used to do both, which made every other control on the screen unreachable
+## without launching something: the flag row, Stage Fit and the whole Developer
+## tab all describe the *selected* title, and the only way to select one was a
+## click that immediately left the screen.
+##
+## Playing is `Play`, or a double click on the tile -- see `_on_tile_gui_input`.
 func _on_tile_pressed(index: int) -> void:
+	_select_game(index)
+
+
+## The fast path back: double click a tile to pick and play in one gesture.
+##
+## On `gui_input` rather than on the `pressed` signal, because a `Button` reports
+## that it was pressed and not how many times -- `double_click` lives on the
+## event. `_select_game` runs first so a double click on a tile that was not
+## selected still plays *that* title rather than the previous one.
+##
+## Mouse only, and deliberately so. A keyboard or gamepad reaches the tile
+## through focus and `ui_accept`, which is a single press with no double form;
+## those paths press `Play`, which is why it stays the one control that always
+## launches.
+func _on_tile_gui_input(event: InputEvent, index: int) -> void:
+	var click := event as InputEventMouseButton
+	if click == null or not click.double_click or click.button_index != MOUSE_BUTTON_LEFT:
+		return
 	_select_game(index)
 	if not _play.disabled:
 		_on_play()

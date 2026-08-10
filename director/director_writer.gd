@@ -170,13 +170,27 @@ static func _verify(temp_path: String, replacements: Dictionary) -> String:
 ## truncates the target first and a failure after that point leaves nothing to
 ## recover. The target only ceases to exist once a complete, verified replacement
 ## is sitting beside it.
+## **The paths are globalized first, and that is not cosmetic.** `remove_absolute`
+## and `rename_absolute` want an absolute path; handed a `res://` one they lean on
+## `DirAccess`'s own resolution, and the moment *any* resource pack is mounted
+## Godot routes `res://` directory access through the read-only `DirAccessPack`.
+## Every removal then returns `Unavailable` and no movie can save.
+##
+## Measured, because it looks like a permissions problem and is not: with
+## `titles/piposh3d.pck` present `save_movie` fails on
+## `cannot replace res://games/piposh2/HEZSAVE.DIR: Unavailable`, and with the
+## same pack moved aside it passes 21 checks. `FileAccess` is unaffected -- the
+## temp file writes fine either way -- so the failure lands at the replace rather
+## than at the write, which is the least obvious place to look for it.
 static func _move_over(temp_path: String, target_path: String) -> String:
+	var temp_real := ProjectSettings.globalize_path(temp_path)
+	var target_real := ProjectSettings.globalize_path(target_path)
 	if FileAccess.file_exists(target_path):
-		var gone := DirAccess.remove_absolute(target_path)
+		var gone := DirAccess.remove_absolute(target_real)
 		if gone != OK:
-			DirAccess.remove_absolute(temp_path)
+			DirAccess.remove_absolute(temp_real)
 			return "cannot replace %s: %s" % [target_path, error_string(gone)]
-	var moved := DirAccess.rename_absolute(temp_path, target_path)
+	var moved := DirAccess.rename_absolute(temp_real, target_real)
 	if moved != OK:
 		# The verified replacement is still on disk under its temp name, and the
 		# message says so: this is the one failure that can leave the target

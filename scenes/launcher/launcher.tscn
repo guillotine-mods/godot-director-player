@@ -79,106 +79,107 @@ theme_override_constants/margin_top = 22
 theme_override_constants/margin_right = 22
 theme_override_constants/margin_bottom = 22
 
-[node name="PlayerScroll" type="ScrollContainer" parent="Page/Column/Tabs/Player"]
+[node name="Stack" type="VBoxContainer" parent="Page/Column/Tabs/Player"]
+layout_mode = 2
+theme_override_constants/separation = 24
+
+[node name="PlayerScroll" type="ScrollContainer" parent="Page/Column/Tabs/Player/Stack"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Body" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll"]
+[node name="Body" type="VBoxContainer" parent="Page/Column/Tabs/Player/Stack/PlayerScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 24
 
-[node name="Games" type="OptionButton" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+[node name="Games" type="OptionButton" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="Titles" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+[node name="Titles" type="VBoxContainer" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="GamesLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Titles"]
+[node name="GamesLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Titles"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = "TITLES ON DISC"
 
-[node name="Grid" type="GridContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Titles"]
+[node name="Grid" type="GridContainer" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 16
 columns = 4
 
-[node name="Solo" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+[node name="Solo" type="VBoxContainer" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="SoloLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
+[node name="SoloLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Solo"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = "THIS BUILD PLAYS"
 
-[node name="SoloTitle" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
+[node name="SoloTitle" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Solo"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Display"
 text = ""
 
-[node name="SoloRoot" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Solo"]
+[node name="SoloRoot" type="Label" parent="Page/Column/Tabs/Player/Stack/PlayerScroll/Body/Solo"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = ""
 
-[node name="Gap" type="Control" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="Options" type="HBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body"]
+[node name="Options" type="HBoxContainer" parent="Page/Column/Tabs/Player/Stack"]
 layout_mode = 2
 theme_override_constants/separation = 32
 
-[node name="Language" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+[node name="Language" type="VBoxContainer" parent="Page/Column/Tabs/Player/Stack/Options"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="LanguageLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/Language"]
+[node name="LanguageLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/Language"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = "EDITION"
 
-[node name="Flags" type="HBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/Language"]
+[node name="Flags" type="HBoxContainer" parent="Page/Column/Tabs/Player/Stack/Options/Language"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Spring" type="Control" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+[node name="Spring" type="Control" parent="Page/Column/Tabs/Player/Stack/Options"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="AspectColumn" type="VBoxContainer" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options"]
+[node name="AspectColumn" type="VBoxContainer" parent="Page/Column/Tabs/Player/Stack/Options"]
 custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="AspectLabel" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+[node name="AspectLabel" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 layout_mode = 2
 theme_type_variation = &"Eyebrow"
 text = "STAGE FIT"
 
-[node name="Aspect" type="OptionButton" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+[node name="Aspect" type="OptionButton" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 
-[node name="AspectHint" type="Label" parent="Page/Column/Tabs/Player/PlayerScroll/Body/Options/AspectColumn"]
+[node name="AspectHint" type="Label" parent="Page/Column/Tabs/Player/Stack/Options/AspectColumn"]
 layout_mode = 2
 theme_type_variation = &"Hint"
 text = "The stage is whatever size the movie was authored at. This only decides what surrounds it."
