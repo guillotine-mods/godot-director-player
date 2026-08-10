@@ -80,17 +80,28 @@ Building the pack is therefore a gate prerequisite rather than an optional step.
 
 `replace_files=false` is not a detail. The two `res://` namespaces collide on
 exactly four paths — `autoload/game_state.gd` (+`.uid`), `icon.svg`,
-`project.godot` — and a pack additionally carries `res://project.binary`. With
-`false`, the parent's own files win every one of them.
+`project.godot` — and a pack additionally carries `res://project.binary`.
+Measured on a pack and host that both hold `res://collide.txt`:
+
+```
+load_resource_pack(replace_files=false) -> true    res://collide.txt reads: PARENT VERSION
+load_resource_pack(replace_files=true)  -> true    res://collide.txt reads: CHILD VERSION
+```
+
+So with `false` the parent's file wins and the child's is genuinely
+unreachable at that path — not merely shadowed.
 
 ## The rename the child cannot avoid
 
 Both projects register an autoload called `GameState`, at their own
 `res://autoload/game_state.gd`. The child names it in 81 of its 115 scripts; the
 parent in 84 of its own. GDScript resolves autoload identifiers at parse time,
-so this cannot be shadowed away at runtime, and under `replace_files=false` the
-child's script is the one dropped — leaving its 81 scripts silently bound to the
-Director engine's state object.
+so this cannot be shadowed away at runtime, and by the measurement above the
+child's script is the one that becomes unreachable under `replace_files=false`
+— leaving its 81 scripts silently bound to the Director engine's state object.
+
+This makes the rename **required**, not merely tidy. It also dissolves one of
+the four path collisions on its own.
 
 The child renames its singleton to something unique. Mechanical, and standalone
 is unaffected.
@@ -100,29 +111,23 @@ is unaffected.
 `.gdignore` inside `titles/piposh-3d/`. Verified on a scratch project: without
 it the subdirectory's assets import, with it they do not.
 
-It cannot be committed at the child's root — that would stop the child's own
-editor importing, which is exactly what standalone development needs. So it
-exists in embedded checkouts only, created by the parent's setup step.
+It is committed in the child repo, at the child's own root, and that is the
+whole mechanism — no parent setup step, no untracked content, nothing to
+coordinate.
 
-Left alone it shows as untracked content in the submodule, measured:
+That works because of an asymmetry that is easy to get backwards, and this
+document had it backwards until it was measured. Godot's scanner *starts* at
+the project root, so a `.gdignore` there is never consulted against the project
+itself; it only skips directories it descends into. Same file, two projects,
+opposite effects:
 
-```
-A? titles/piposh-3d
-?? .gdignore
-```
+| where it sits | `--import` result |
+| --- | --- |
+| a subdirectory of the parent | `-> NOT imported` |
+| the child's own project root | `-> IMPORTED` |
 
-Two ways to silence that, and the cheaper one is not obviously the better one:
-
-- **One line in the child's `.gitignore`.** Precise — hides `.gdignore` and
-  nothing else. Costs a commit in another repo.
-- **`ignore = untracked` on the submodule in `.gitmodules`.** Entirely
-  parent-side, no coordination. But it hides *every* untracked file in the
-  child, including assets somebody forgot to add — a real loss while the child
-  is under active development.
-
-Taking the first, on the grounds that the child is the repo being actively
-worked in and a blanket ignore there is a trap. Revisit if coordinating the
-commit proves awkward.
+So one committed file keeps the parent's editor out of 564 MB while the child
+standalone imports exactly as before.
 
 ## Building the pack
 
@@ -131,8 +136,13 @@ godot --path titles/piposh-3d --export-pack <preset> titles/piposh3d.pck
 ```
 
 Verified to need no export templates installed — the Godot binary alone
-produces a pack. The child needs a committed export preset; its
-`export_presets.cfg` is currently gitignored.
+produces a pack. Scope of that check: a trivial project with
+`export_filter="all_resources"`, not the child's 4,879 `.import` files and
+564 MB. Building the real pack is a step for the implementation plan to prove,
+not a design claim already settled here.
+
+The child needs a committed export preset; its `export_presets.cfg` is
+currently gitignored.
 
 The output is gitignored on the parent side. It is not new data: the same bytes
 already arrive with the submodule, and this is only the import saved ahead of
