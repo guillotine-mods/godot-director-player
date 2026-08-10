@@ -84,13 +84,25 @@ game assets load at runtime from source files rather than as imported resources,
 `export_filter="all_resources"` does not sweep `games/` in. The current Windows
 export therefore ships zero game data.
 
-Both presets need `games/*`, `director_game.cfg` and `titles/*.pck`. That last
-entry is missing from both today: `autoload/piposh3d_pack.gd` mounts
-`res://titles/piposh3d.pck`, the file is generated and gitignored, and a `.pck`
-is not an imported resource, so without an explicit include the pack is built in
-CI and then left out of the artifact. The failure is silent, because the
-launcher gates that tile on `ResourceLoader.exists()` and simply does not draw
-it.
+Both presets need `games/*`, `director_game.cfg` and a pack entry.
+
+An earlier revision of this document claimed the pack entry was missing from
+both presets. That was wrong, and the way it was wrong is worth keeping. The
+reading it rested on came from the working tree during a session in which
+another checkout was actively mutating that file; committed history has carried
+`titles/piposh3d.pck` in both presets since `91a84057`. The claim was true of
+the bytes on disk at the moment they were read and false of every commit. Read
+`git show <rev>:<path>` rather than the working copy when a file's history is
+the thing being asserted.
+
+What survives that correction is the Windows gap, which holds at every commit:
+Windows Desktop carried `director_game.cfg` and the pack but never `games/*`,
+so the Windows export shipped no game data at all.
+
+The pack entry itself is widened from the literal `titles/piposh3d.pck` to the
+glob `titles/*.pck`. That is defensive rather than a fix: it costs nothing and
+survives a rename or a second embedded title. It is not exercised by any
+assertion, because both spellings match the one path that exists.
 
 **Version stamping in `export_presets.cfg`.** `version/code=1` is hardcoded.
 Android requires a strictly increasing `versionCode` to install an update, so
