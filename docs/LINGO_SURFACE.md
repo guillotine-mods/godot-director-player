@@ -167,6 +167,15 @@ order for sorted ones, which surfaces much later as a menu in the wrong order.
 in a different place — `if getPos(l, x) then` and `if findPos(l, x) then` read
 identically and one of them is testing a number.
 
+**Every command in the table has a second spelling**, D5's dot form:
+`myList.setaProp(#k, v)` *is* `setaProp(myList, #k, v)`, with the receiver moved
+in front of the arguments, and the two are the same statement on the same list —
+not a copy. Titles mix them freely inside one handler. A port that resolves the
+dot form as a property *read* instead answers VOID and mutates nothing, which is
+silent: `on SetGlobalInfo Prop, data / gGlobalInfo.setaProp(Prop, data)` is one
+line, and a movie whose configuration list stays empty because of it looks like a
+data problem. `tools/lingo_scope_check.gd` asserts the receiver changed.
+
 ## 1.4 Navigation and score
 
 | Name | Arity | Meaning |
@@ -1560,6 +1569,16 @@ Two forms of handler exist and both are accepted unconditionally:
 Parameter lists are comma-separated `ID`s and **a trailing comma is legal**.
 The `end` clause may itself be followed by a comma-separated list of names,
 which is parsed and thrown away.
+
+`global` and `property` are also script parts, and where one is written decides
+its reach. **A `global` outside any handler declares the name for every handler
+in that script**, so a handler that assigns it without repeating the declaration
+is still writing the movie's global and not a local of its own. Getting that
+wrong is invisible from the AST — the assignment runs, the handler returns, and
+the value goes with the frame — and it is how `itamar-magichat` reached
+`on startMovie / gFirstRun = 1` and finished the boot with an empty globals
+dictionary. `tools/lingo_scope_check.gd` asserts the declaration reaches a
+sibling handler, and that an *undeclared* name is still local.
 
 ## 11.5 Statements
 

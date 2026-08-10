@@ -393,6 +393,24 @@ func _invoke(handler: Dictionary, args: Array, script: Dictionary,
 		"globals": {},
 		"me": me,
 	}
+	# **A `global` written outside any handler declares the name for every
+	# handler in the script** (§7). The parser has always collected those into
+	# `script["globals"]` and nothing read it, so a handler whose only
+	# declaration was the script-level one treated the name as an ordinary
+	# local: `on startMovie / gFirstRun = 1` wrote into a dictionary that was
+	# discarded when the handler returned, and the next reader of `gFirstRun`
+	# found no local, no global, and fell through to the unbound-name arm --
+	# where a bare identifier is a parameterless handler call, so it answered
+	# VOID with nothing on the clock to say why. `itamar-magichat` sat on frame
+	# 0 for ever on exactly that: `gGlobalInfo` was reported as an unbound
+	# builtin 34 times a boot, `GlobalInfo(#startFrame)` answered VOID, and the
+	# frame behaviour re-jumped to where it already was.
+	#
+	# Applied per invocation rather than once at load, because the declaration
+	# is *lexically* the script's but its effect is a name binding on the frame,
+	# and the frame is built here. The list is empty for most scripts.
+	for name in script.get("globals", []):
+		_declare_global(str(name).to_lower(), frame)
 	var outer_args := _current_args
 	_current_args = args
 	var params: Array = handler.get("params", [])
@@ -1145,11 +1163,7 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 				if declaring_props:
 					(me as Object).call("declare", key)
 					continue
-				frame["globals"][key] = true
-				if not globals.has(key):
-					# An unset global is VOID, not 0. It matters: `effectspath &
-					# "x.aif"` must be "x.aif", and 0 would make it "0x.aif".
-					globals[key] = null
+				_declare_global(key, frame)
 			return Flow.NORMAL
 		"assign":
 			_assign(stmt.get("target", {}), _eval(stmt.get("value", {}), frame), frame)
@@ -1521,6 +1535,21 @@ func _assign_chunk(target: Dictionary, value: Variant, frame: Dictionary) -> voi
 	var text := LingoValue.to_str(_eval(source, frame))
 	var updated := LingoValue.set_chunk(text, kind, start, stop, value, item_delimiter)
 	_assign(source, updated, frame)
+
+
+## Bind one `global` name for the frame that declared it.
+##
+## Two callers and they must not drift: the `global` *statement* inside a
+## handler, and `_invoke` seeding the script-level declarations that apply to
+## every handler in a script. Both do the same two things -- mark the name on
+## the frame so `_set_var` writes it to the movie rather than to the locals, and
+## give the movie an entry for it if this is the first sighting.
+func _declare_global(key: String, frame: Dictionary) -> void:
+	(frame["globals"] as Dictionary)[key] = true
+	if not globals.has(key):
+		# An unset global is VOID, not 0. It matters: `effectspath &
+		# "x.aif"` must be "x.aif", and 0 would make it "0x.aif".
+		globals[key] = null
 
 
 func _set_var(name: String, value: Variant, frame: Dictionary) -> void:
@@ -1989,10 +2018,36 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 				return _broadcast(receiver, message, dot_args, false)
 			return _object_prop(receiver, message)
 		if target_node != "sprite_ref" and target_node != "member_ref":
+			# **`myList.setaProp(#a, 1)` — D5's dot spelling of a list command**,
+			# which is exactly `setaProp(myList, #a, 1)` with the receiver moved
+			# in front of the arguments (§1.3, §5). Every list and property-list
+			# command has this second spelling and the corpus mixes the two
+			# freely; without this arm the dot form fell through to the property
+			# read below, which answered VOID and **ran nothing** — a mutation
+			# that accepts and drops. `itamar-magichat` sat on frame 0 because of
+			# it: `SetGlobalInfo` is one line, `gGlobalInfo.setaProp(Prop, data)`,
+			# so the movie's whole configuration list stayed empty and
+			# `GlobalInfo(#startFrame)` answered VOID.
+			#
+			# Narrowed to list receivers. Everything else that reaches here is a
+			# member reference held in a variable, a window handle or a host
+			# value, and those have properties rather than commands; a builtin
+			# like `count` answers for any type and would swallow the read.
+			# `LingoBuiltins` declines by leaving `handled` empty, so a name it
+			# does not own still reaches the property read.
+			var dot_name := str((callee as Dictionary).get("prop", ""))
+			if typeof(receiver) == TYPE_ARRAY or typeof(receiver) == TYPE_DICTIONARY:
+				var on_list: Array = [receiver]
+				for arg in expr.get("args", []):
+					on_list.append(_eval(arg, frame))
+				var list_handled: Array = []
+				var list_value: Variant = Builtins.call_builtin(
+					dot_name, on_list, list_handled)
+				if not list_handled.is_empty():
+					return list_value
 			# Evaluated above; read the property off the value rather than
 			# re-entering `_eval`, which would evaluate the target a second time.
-			return _host_call("get_member_prop",
-				[receiver, "", str((callee as Dictionary).get("prop", ""))])
+			return _host_call("get_member_prop", [receiver, "", dot_name])
 		return _eval(callee, frame)
 	var args: Array = []
 	for arg in expr.get("args", []):

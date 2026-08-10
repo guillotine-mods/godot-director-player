@@ -240,6 +240,15 @@ and **writes are refused** in a headless run without `--allow-writes`
 (`-37`, bad file name). The header says why: the corpus is six git submodules and
 a movie calls `createFile` from its own Lingo without any tool asking for one.
 
+**The next Xtra a title is blocked on is BuddyAPI**, and unlike the list above it
+has a measured consequence: `itamar-magichat`'s `ReadConfigLine` is one line,
+`baReadIni(Section, Option, EMPTY, gIniFileName)`, and with the name unbound the
+movie's `#startFrame` never gets a value and the playhead never leaves frame 0
+(`bugs.md` 78, which records the measurement that binding it is enough and the
+two questions a real implementation has to answer first). BuddyAPI's functions
+are global handlers rather than object methods, so they bind where `call_builtin`
+binds rather than through `lingo_xtra.gd`.
+
 *What is still missing:* `openXlib`, `closeXlib`, `showXlib` -- loading a real
 `.x32` or XObject library, which is native code this port cannot run -- and
 `factory` / `xFactoryList`, which are D3's version of the parent-script model and

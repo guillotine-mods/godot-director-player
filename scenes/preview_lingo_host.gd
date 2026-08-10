@@ -1434,6 +1434,25 @@ func _go(args: Array) -> Variant:
 		return 0
 
 	var first: Variant = values[0]
+	if first == null:
+		# **`go(VOID)` navigates nowhere.** The reference's `func_goto` answers a
+		# VOID destination and a VOID movie by returning immediately, *before* it
+		# sets the skip-advance and freeze flags -- so the statement is not a jump
+		# to frame 0, it is a jump that does not happen, and the score advances
+		# out of the frame on its own as if the line were not there.
+		#
+		# Coercing it instead is silent and self-perpetuating: `go(VOID)` became
+		# `go frame 0`, which is a re-entry into the frame the handler was already
+		# in, so the same `on exitFrame` ran again and the movie stopped for ever
+		# with nothing on the clock and no error. That is `itamar-magichat`'s
+		# black screen -- `go(GlobalInfo(#startFrame))` with `#startFrame` unset.
+		#
+		# Reported as well as declined, because a destination that evaluated to
+		# nothing is nearly always a global the movie failed to fill in, and the
+		# diagnostic names the script, the handler and the line.
+		if preview != null and preview._interpreter != null:
+			preview._interpreter.report(LingoDiagnostics.BUILTIN, "go: destination is VOID")
+		return 0
 	if typeof(first) != TYPE_STRING:
 		preview.lingo_go_frame(LingoValue.to_int(first))
 		request_suspend("go")

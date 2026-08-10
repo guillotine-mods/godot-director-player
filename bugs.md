@@ -2903,3 +2903,72 @@ godot --headless --path . --script tools/director_render.gd -- --root piposh \
 
 `/tmp/prev.png`'s stage sits at (213,160) at scale 2. The three rulings about this
 room that *are* closed are `docs/bugs-closed.md` 72.
+
+## 78. `itamar-magichat` still parks on frame 0: `baReadIni` is unbound, so the movie's own ini is never read
+
+**Status:** open, engine gap (Xtra) · **Area:** `scenes/preview_lingo_host.gd`
+(builtin binding), `docs/ENGINE_TODO.md` (Xtras) · found while fixing the three
+scope bugs below it
+
+Three separate faults kept this title on frame 0 with a black stage, no error and
+nothing on the clock. Two are fixed and covered by `tools/lingo_scope_check.gd` —
+a `global` declared outside a handler never bound inside one, and `list.setaProp(…)`
+read a property instead of running the command — and `go(VOID)` no longer coerces
+to frame 0. The third is this entry, and it is the one that still stops the movie.
+
+The chain, from `MovieScript 1 - start movie`'s `on startMovie`:
+
+```lingo
+tmp = ReadConfigLine("globals", "startframe")   -- MovieScript 2: baReadIni(...)
+if tmp = EMPTY then
+  tmp = "intro"
+end if
+SetGlobalInfo(#startFrame, tmp)
+```
+
+and frame 0's behaviour is `JumpFrame = GlobalInfo(#startFrame) / go(JumpFrame)`.
+
+`baReadIni` is **BuddyAPI**, an Xtra this port does not implement. An unbound
+builtin is reported and answers the integer `0` (`lingo_interpreter.gd:_call`), so
+`tmp` is `0`, `tmp = EMPTY` is false, the movie's own `"intro"` fallback is
+skipped, `#startFrame` is set to `0` and the frame behaviour jumps to the frame it
+is already on. Measured: `builtins unbound : {"bareadini":1}` and
+`gGlobalInfo = { "IniFile": <null>, "singlemode": 0, "mainmenu": "…magichat.dir",
+"Language": <null>, "startFrame": 0 }`.
+
+**Binding `baReadIni` to answer EMPTY is enough to unstick it**, which is how this
+was confirmed to be the last link rather than the next one. With a one-line stub
+returning `""` in `call_builtin`, `tmp = EMPTY` is true, the movie takes its own
+`"intro"` fallback and the playhead leaves frame 0 immediately and plays: frames
+124-138 with 11 and 22 sprites drawn. The stub was measured and removed; nothing
+in the tree binds the name.
+
+**A real implementation has to answer two questions this entry does not.**
+
+1. *Which file.* `ReadConfigLine` passes `gIniFileName`, which is set by
+   `InitProgram` — and `on startMovie` calls `InitProgram` only inside
+   `if not Projector()`. `the runMode` answers `"Projector"`
+   (`preview_lingo_host.gd`), matching the reference's default
+   (`lingo-the.cpp` `kTheRunMode`), so the branch is skipped and `gIniFileName`
+   is VOID. That is faithful to a *projector*, where a stub movie has already run
+   `InitProgram` before branching to `magichat.dir`; this port boots the `.dir`
+   directly, with no stub, which is the authoring case. Forcing `"Author"` was
+   measured: `InitProgram` then runs and `gIniFileName` becomes `"..\magichat.ini"`
+   — the movie's own last-resort path, because `FileExist(the pathname & …)`
+   answered false, which is a third thing to look at. Whether this port should
+   report `"Author"` when it opens a container with no projector around it is a
+   decision, not a bug fix, and belongs to whoever owns the boot story.
+2. *Writes.* `WriteConfigLine` is `baWriteIni` + `baFlushIni`. Binding the read
+   half alone leaves the write half reported-and-absent, which is honest; binding
+   it to accept and drop is the failure mode `AGENTS.md` names.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/scratch/walkfwd.gd -- \
+    --root res://test-games/itamar-magichat --file magichat.dir --steps 120
+```
+
+Every step prints `magichat.dir:0`. `tools/scratch/globs.gd` with the same
+arguments prints the globals; `gGlobalInfo`'s `startFrame` is `0` and every other
+entry is filled, which is what says the rest of `startMovie` now works.
