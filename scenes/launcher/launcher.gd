@@ -679,7 +679,11 @@ func _refresh_play() -> void:
 		reason = "Fix the marked key before playing"
 	elif _root == "":
 		reason = "Pick a title"
-	elif _boot == "":
+	# A title that is a Godot project is entered by changing scene, so it names
+	# no container and never will. The complaint below is about a *Director*
+	# title whose `[root.*]` section has no `boot` -- a real misconfiguration,
+	# and one this must keep catching.
+	elif _scene == "" and _boot == "":
 		reason = "This title names no container to open — set one under Developer"
 	_play.disabled = reason != ""
 	_play.text = "Play" if _title == "" else "Play %s" % _title

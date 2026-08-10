@@ -58,13 +58,20 @@ static func build(cfg: ConfigFile = null) -> Array[Dictionary]:
 ## ships instead of six -- and in that build the scene behind this tile does not
 ## exist. A tile that cannot launch is worse than no tile, so the absence is
 ## read at the source rather than assumed from the config.
+##
+## The mount is asked about through `ResourceLoader.exists()` on a path *inside*
+## the pack, and never through `Piposh3DPack.mounted`. The two say the same
+## thing, and only one of them can be said here: naming an autoload is a
+## compile-time reference, autoloads register a frame into a `--script` run, and
+## `tools/title_list.gd` is exactly such a run. The first version of this
+## function named the autoload, and the harness did not fail -- it failed to
+## *compile*, so `_init` never reached `quit()` and the gate sat on it until the
+## 900s ceiling.
 static func embeds(cfg: ConfigFile = null) -> Array[Dictionary]:
 	var config := cfg if cfg != null else GameConfig.merged()
 	var out: Array[Dictionary] = []
 	for section in config.get_sections():
 		if not str(section).begins_with("embed."):
-			continue
-		if not Piposh3DPack.mounted:
 			continue
 		var scene := str(config.get_value(section, "scene", ""))
 		if scene == "" or not ResourceLoader.exists(scene):
