@@ -21,6 +21,16 @@ for f in "$@"; do
 		fail=1
 		continue
 	fi
+	# `-f` says it is a regular file, not that it can be opened. Without this,
+	# `wc -c <"$f"` fails on an unreadable file and `set -e` takes the whole run
+	# with it: a raw shell error instead of a named FAIL, and every file after
+	# this one goes unchecked. A gate that stops halfway and reports in the
+	# wrong voice is the failure this script exists to prevent, turned inward.
+	if [ ! -r "$f" ]; then
+		echo "FAIL  $f: not readable"
+		fail=1
+		continue
+	fi
 	size=$(wc -c <"$f")
 	mib=$((size / 1024 / 1024))
 	if [ "$size" -gt "$LIMIT" ]; then

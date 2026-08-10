@@ -82,6 +82,40 @@ else
 	check "a file one byte over the limit is refused" 0
 fi
 
+# `-f` is true for a file that cannot be opened, so without an explicit `-r`
+# check the size read fails and `set -e` takes the whole run with it.
+if [ "$(id -u)" -eq 0 ]; then
+	echo "skip  unreadable-asset cases (running as root: every file is readable)"
+else
+	printf 'x' >"$tmp/unreadable.apk"
+	chmod 000 "$tmp/unreadable.apk"
+
+	if tools/ci/check_asset_size.sh "$tmp/unreadable.apk" >/dev/null 2>&1; then
+		check "an unreadable asset is refused" 1
+	else
+		check "an unreadable asset is refused" 0
+	fi
+
+	# The exit code alone proves nothing here: an abort is also nonzero.
+	# What distinguishes a report from a crash is that the file is NAMED and
+	# that the run continues to the next one.
+	out=$(tools/ci/check_asset_size.sh "$tmp/unreadable.apk" "$tmp/small.apk" 2>&1 || true)
+
+	if printf '%s' "$out" | grep -q "not readable"; then
+		check "an unreadable asset is named, not crashed on" 0
+	else
+		check "an unreadable asset is named, not crashed on" 1
+	fi
+
+	if printf '%s' "$out" | grep -q "small.apk"; then
+		check "files after an unreadable one are still checked" 0
+	else
+		check "files after an unreadable one are still checked" 1
+	fi
+
+	chmod 644 "$tmp/unreadable.apk"
+fi
+
 echo ""
 verdict=printed
 if [ "$fail" -eq 0 ]; then echo "PASS  check_asset_size"; else echo "FAIL  check_asset_size"; fi
