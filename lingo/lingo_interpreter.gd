@@ -1369,6 +1369,54 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			_set_var(str(target.get("name", "")).to_lower(), value, frame)
 		"field":
 			_set_field_node(target, LingoValue.to_str(value), frame)
+		"member_ref":
+			## `put readFile(tmp) into member FieldName` -- a write to a bare member
+			## reference is a write to its **text**. Director's `field "x"` and
+			## `member "x"` name the same castmember and differ only in which
+			## property a bare reference stands for; for a field or text member
+			## that property is the text, which is why `the text of member "x"` and
+			## `member "x"` round-trip through each other.
+			##
+			## Missing entirely until now, and the shape of the miss is the point:
+			## every *read* worked, every `.text` spelling worked, and only the bare
+			## write had nowhere to land. It fell to the default arm, which records
+			## "cannot assign to member_ref" in `errors` and **returns normally** --
+			## so the statement was a silent no-op and the handler ran on to
+			## completion, which is why nothing anywhere reported a problem.
+			##
+			## Magic Hat's `LoadFileToField` is the handler that shows it:
+			##
+			##     openFile(tmp, Fname, 1)
+			##     if status(tmp) = 0 then
+			##       put readFile(tmp) into member FieldName   <- dropped
+			##       closeFile(tmp)
+			##
+			## The file opened, the read succeeded, the file closed, and the field
+			## stayed empty -- so `ReadInifile` then found no `[PATH]`, no `[END]`
+			## and no `[ENDFILE]`, left `the searchPaths` empty, and raised the
+			## game's own `alert("[ENDFILE] is missing at the end of the ini
+			## file")`. An engine gap wearing a data file's error message.
+			##
+			## Not one title's idiom, though the shipped corpus survived it. Piposh
+			## 1 English and Russian carry 8 sites where the Hebrew build spells the
+			## same statement `into field`, and both of the ones measured turn out
+			## to be covered:
+			##
+			##   * `put 1000 into member "GlobalMoney" of castLib 7` (`Day1.dir`) is
+			##     idempotent -- the member's authored text is already `1000`, and
+			##     the probe reads `1000` with this arm disabled.
+			##   * `put item i - 27 of SaveNames into member ("save" & i - 27)`
+			##     (`Mainmenu.dir`) is one of *two* loops filling the save-slot
+			##     names; the other spells `into field ("save" & i) of castLib 1`
+			##     and always ran.
+			##
+			## Recorded because the coincidence is the warning, not the reassurance:
+			## the arm was missing for as long as this port has existed and no title
+			## ever showed it, which is precisely how a silent no-op survives.
+			_host_call("set_member_prop", [
+				_eval(target.get("which", {}), frame),
+				_cast_of(target, frame), "text", value,
+			])
 		"sprite_prop":
 			var channel := LingoValue.to_int(_eval(target.get("which", {}), frame))
 			_host_call("set_sprite_prop", [channel, str(target.get("prop", "")), value])
