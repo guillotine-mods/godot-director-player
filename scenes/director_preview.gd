@@ -3827,7 +3827,7 @@ func lingo_set_field_prop(name: String, cast: String, prop: String,
 	_set_member_prop_at(where, prop, value)
 
 
-## `cast` is `of castLib â€¦` as the script spelled it, or `""` for a bare `field
+## `cast` is `of castLib …` as the script spelled it, or `""` for a bare `field
 ## "x"`. A named library is authoritative and is not searched past; see
 ## `preview/text_art.gd:resolve`.
 ##
@@ -3838,7 +3838,7 @@ func lingo_set_field_prop(name: String, cast: String, prop: String,
 ## 1's `mainmenu.dir` says `castLib "master.cst"` where its own `MCsL` calls that
 ## library `master`, and ten `piposh-dream` movies say `castLib "panel.cst"` for a
 ## library that is not loaded at all. `getCastLibIDByName` answers -1 for those
-## and the reference then reports "Unknown castLib" and finds nothing â€” which
+## and the reference then reports "Unknown castLib" and finds nothing — which
 ## would take the money off Piposh 1's slot machine, a field the original draws.
 ##
 ## So a library that *resolves* stops the search, which is the rule and the whole

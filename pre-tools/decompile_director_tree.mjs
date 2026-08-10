@@ -268,41 +268,63 @@ function main() {
     const label = dir === "." ? "(root)" : dir;
     console.log(`decompile ${label}  (${members.length} file(s))`);
 
-    if (!opts.dryRun) {
-      const run = spawnSync(exe, ["decompile", srcDir, "-o", dstDir], {
+    // **One invocation per file, not per directory, and the output is checked
+    // rather than the exit code.** Handing ProjectorRays a directory looks
+    // tidier and loses files: it walks the folder, and the first entry it cannot
+    // read stops the whole scan -- `Codec unsupported: ER D` on this tree's
+    // `DATA.Z` -- after which nothing later in the folder is attempted. It then
+    // **exits 0**, so a status check sees success.
+    //
+    // Measured on `Itamar-Park`, whose root holds three casts beside the DOS
+    // engine's archives: the directory run decompiled `bonus.cxt`, hit the
+    // archives, and stopped. `global.cxt` and `utils.cxt` were never reached,
+    // nothing was reported, and because the folder's rename pass was tied to the
+    // same invocation, even `bonus` kept a `.dir` extension it should not have.
+    // Per file, all three decompile cleanly.
+    //
+    // So the exit code is not consulted for success -- the output file is. A
+    // decompiler that half-works is the failure this whole script exists to
+    // catch, and it announces itself by producing nothing.
+    for (const rel of members) {
+      const base = path.basename(rel, path.extname(rel));
+      const isCast = path.extname(rel).toLowerCase() === ".cxt";
+      const wanted = path.join(dstDir, `${base}.dir`);
+      const final = path.join(dstDir, isCast ? `${base}.cst` : `${base}.dir`);
+
+      if (opts.dryRun) {
+        decompiled++;
+        if (isCast) {
+          renamed++;
+          console.log(`  ${base}.dir -> ${path.basename(final)} (planned)`);
+        }
+        continue;
+      }
+
+      const run = spawnSync(exe, ["decompile", path.join(inRoot, rel), "-o", dstDir], {
         stdio: "inherit",
       });
       if (run.error) {
-        problems.push(`${label}: could not run ProjectorRays: ${run.error.message}`);
+        problems.push(`${rel}: could not run ProjectorRays: ${run.error.message}`);
         continue;
       }
-      if (run.status !== 0) {
-        problems.push(`${label}: ProjectorRays exited ${run.status}`);
-        continue;
-      }
-    }
-    decompiled += members.length;
-
-    // Rule 5. Only the .cxt inputs are renamed; .dxr output is already .dir.
-    const cxtBases = members
-      .filter((rel) => path.extname(rel).toLowerCase() === ".cxt")
-      .map((rel) => path.basename(rel, path.extname(rel)));
-    for (const r of restoreCastExtensions(dstDir, cxtBases, {
-      dryRun: opts.dryRun,
-    })) {
-      if (r.status === "renamed") {
-        renamed++;
-        console.log(`  ${path.basename(r.from)} -> ${path.basename(r.to)}`);
-      } else if (r.status === "planned") {
-        renamed++;
-        console.log(`  ${r.base}.dir -> ${path.basename(r.to)} (planned)`);
-      } else if (r.status === "missing") {
-        problems.push(`${label}: no output for ${r.base}.cxt`);
-      } else if (r.status === "collision") {
+      if (!fs.existsSync(wanted)) {
         problems.push(
-          `${label}: ${r.base}.cst already exists, left the .dir in place`,
+          `${rel}: ProjectorRays wrote no ${base}.dir (exited ${run.status})`,
         );
+        continue;
       }
+      decompiled++;
+
+      // Rule 5. Only a `.cxt` becomes a `.cst`; a `.dxr` is already a movie and
+      // its output name is right.
+      if (!isCast) continue;
+      if (fs.existsSync(final) && !samePath(wanted, final)) {
+        problems.push(`${rel}: ${base}.cst already exists, left the .dir in place`);
+        continue;
+      }
+      fs.renameSync(wanted, final);
+      renamed++;
+      console.log(`  ${base}.dir -> ${path.basename(final)}`);
     }
   }
 

@@ -32,7 +32,9 @@ the Godot lifecycle; the modules own the rules.
 | a `pause`d room is on the wrong frame, or a click cannot lift the pause | `frame_loop.gd` |
 | a sound doesn't play, or the room moves on before speech ends | `sound.gd` |
 | a handler doesn't run, or the *wrong* handler runs | `scripts.gd` |
+| `stepFrame` never arrives, or an idle `timeOut` fires when it shouldn't | `actors.gd` |
 | `member("x")` resolves to something unrelated | `members.gd` |
+| `the name of castLib N` answers nothing | `cast_libs.gd` |
 | a `go to movie` loses state it should keep, or keeps state it should drop | `movie_session.gd` |
 | a save does not survive a restart, or `saveMovie` writes the wrong file | `movie_save.gd` |
 | a key goes to the wrong movie, or a debug binding eats a game key | `input_router.gd` |
