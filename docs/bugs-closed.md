@@ -2474,3 +2474,139 @@ inside it when the loop is squeezed. Green on piposh, piposh2, rating and
 piposh-dream. Drop the `* scale` from `place_child` and it reports 4,613
 regressions on piposh and 47,036 on piposh2; drop the size scaling and it reports
 275.
+## 72. Three things that look broken in Piposh 1's PIANO.dir and are the original's own
+
+Filed as a ruling rather than a fix: a snapshot of the piano room was reported as
+"some bugs around the piano scene". Three of the four things that look wrong in it
+are the original's own behaviour, on evidence from the original's own scripts and
+containers. Each is written down because it costs a session to re-derive, and the
+last one reads as a hard bug.
+
+**The fourth is not closed and is not here.** The mottled line across the left of
+the keyboard is `bugs.md` 74: a mechanism was found that would explain it as
+authentic art, and that is not the same as proving it, which is the bar
+`AGENTS.md` sets for the verdict that stops work. Entry 73 below removed the crude
+keying rule in `tools/director_render.gd` that made that seam look like a rendering
+bug in the first place -- the tool was deleting the interior of every key and
+showing the backdrop's clean line through it -- which narrowed what is left of the
+disagreement to eight rows.
+
+Every command below needs `--root piposh`: `director_game.cfg` points at
+`piposh2`, and PIANO.dir is Piposh **1**, under `PIPDATA/` rather than
+`PIP2DATA/`. `reference/lingo/` is Piposh 2 and has no PIANO in it, so every
+question here was answered out of the container itself with
+`tools/director_extract.gd`.
+
+**The note names cover only the right half of the keyboard.** The score says so.
+Member 139 is a 309x12 strip holding exactly fourteen labels -- two octaves,
+`do re mi fa sol la si` in red then in blue -- and sprite 62 places it at
+(241,467) on a 640-wide keyboard, so a bit under half the keys are labelled by
+construction. Scripts 5, 53 and 141 toggle that one sprite's visibility.
+
+Member 140, a 597x89 keyboard bitmap, carries the same labels baked over its right
+half and corroborates the design, but it is **not** what the room draws: at
+`playpiano` the keyboard is member 1 (the backdrop) plus 47 individual key
+sprites, and member 140 appears in the help screens. Do not cite it as the reason
+the labels stop; the reason is member 139's own width and the score's placement
+of it.
+
+**There is no hand on the keys.** Scripts 2, 4, 6 and 7 set `the memberNum of
+sprite 49` to `the number of member "normhand"` / `"clidhand"`, and **no cast
+holds either name.** A byte scan of PIANO.dir finds both strings only inside
+script bodies and the Lingo name table, never as a `<len><name>` member name —
+unlike `noclid1`, `clid1`, `song1` and `sngfld1`, which each appear once as one —
+and MASTER.CST has no `hand` or `clid` member at all. Sprite 49 also sits at locV
+489, below the 480 stage. Dead in the original data. The port is right to resolve
+the name to 0 and carry on rather than abort the handler: aborting would cost the
+key's art swap and its sound, which are the next two statements.
+
+**All five "play piece N" buttons play `nosong.aif` on a fresh game.** This is
+the one that reads as a total failure of the room, and the trail is worth keeping.
+`sngfld1`, `sngfld4` and `sngfld5` hold 248, 220 and 316 characters of authored
+note data (comma-separated note numbers, 0 for a rest) while `field "sngfld1"`
+reads back empty, so script 93's `if field ("sngfld" & x) <> EMPTY` takes the
+else branch, `go("listensong")` never runs and the pressed button is never
+hidden. The override map explains it — five entries, members 44-48 of PIANO.dir,
+all empty, present from the first frame after `go to movie` — and the writer is
+the original's own: **MASTER.CST script 6**, the piano room's `exitFrame`,
+restores each `sngfld` from `pianorecord1..5` and **clears it when the global is
+empty**. `DAY1.dir` script 15, the new-game init, sets all five to EMPTY. So the
+authored text is authoring-time leftover and the fields are the player's *own*
+recordings; empty is correct until something is recorded, which is what the
+record and stop buttons are for. `sngfld2` and `sngfld3` being empty in the
+container is authentic and moot for the same reason.
+
+**The recording round trip works, and this is how it was checked** — the piano's
+core feature, which nothing in `gate.sh` reaches:
+
+```
+godot --path . --script tools/scene_probe.gd -- --root piposh --movie PIANO.dir \
+    --marker playpiano --clicks "ch59;ch20;ch25;ch40;ch54;ch61;ch10;ch10" \
+    --settle 24 --fields sngfld1 --stage 854,640 --out /tmp/piano.png
+```
+
+Record, three keys, stop, out to the menu, the listen line, play piece 1: the
+field comes back `20,0,0,25,0,0,40,0,0,0` — the channel numbers pressed, which is
+exactly the authored format, since a white key's channel *is* its note index
+(`piano<channel>.aif` for 2..29, `diez<channel-29>.aif` for 30..48, and
+`SONGS/PIANO/` ships exactly those) — and the playhead lands on frame 83, inside
+`listensong`.
+
+**`--settle 24` is load-bearing.** Scripts 2, 4, 6 and 7 gate a press on
+`pianohand = 0` and walk it 1 -> 2 -> 0 on successive `exitFrame`s, so a second
+key inside two score ticks is ignored *by the movie*. At 15fps against a 60fps
+process loop, six process frames between presses records only the first key and
+looks exactly like a dropped input.
+
+`tools/scene_probe.gd` was written for this pass and is the general probe
+`AGENTS.md` names as the repo's most useful missing tool. `liveness_sweep --only
+PIANO.dir --click --strict` passes: 25 states over 120 ticks.
+
+
+## 73. `director_render.gd` carried its own crude keying rule, and its output was quoted against the player as a rendering bug
+
+The frame compositor in `tools/director_render.gd` resolved ink itself: a
+`KEYED_INKS` list, and `_key_paper`, which made every pixel whose R, G and B were
+all >= 241 transparent **across the whole bitmap**. Its own header documented the
+crudeness, which is why this sat for as long as it did -- a documented wrong answer
+still gets quoted.
+
+**Matte (ink 8) keys only the paper a flood fill reaches from the border**, and 63
+of the 71 sprites on `PIANO.dir` frame 37 are ink 8. Keying paper *everywhere*
+instead punches out every enclosed white region, and on this corpus that means the
+interior of every piano key: the backdrop then shows through the key bodies, and
+the backdrop's own clean dark line appears where the player correctly draws the
+key's dithered seam. So the tool drew a clean line, the player drew a dashed one,
+and **the tool's output was taken as evidence that the player was wrong.** It is
+the reason `bugs.md` 73 was filed claiming the two compositors placed sprites a
+pixel apart -- they never did; their rects agree exactly, both printing
+`(21,415) 35x72` for ch28. The mismatch was `(255,255,255)` against
+`(255,255,204)`, paper dither surviving in one and not the other.
+
+**The fix** is that the tool no longer has an idea of ink. Keying goes through
+`director_ink.gd` -- `key_for`, then `key_matte` or `key_paper(back)`, then
+`apply_colour` -- in the engine's own key-first-colourise-second order, and
+`KEYED_INKS`, `PAPER_MIN_BYTE` and `_key_paper` are deleted rather than
+documented. What remains different between the tool and the player is only what
+the tool honestly lacks: scripts, puppet state and fields.
+
+**Measured on `PIANO.dir` frame 37, player against tool, at an exact 2x capture:**
+
+| region | before | after |
+|---|---|---|
+| the book, y270-390 x128-500 | 75.8% differ | **0.00%** |
+| everything below the HUD, y90-480 | 17.8% differ | **0.30%** |
+| whole stage | 26.6% differ | 12.5% |
+
+The whole-stage figure stays high because of the HUD band, y0-89, unchanged at
+64.8%: those are the `GlobalTime`/`GlobalMoney` field members the tool skips
+outright and a panel the movie's own scripts hide. That is the tool's documented
+limit, not keying.
+
+**Not closed by this**: the eight rows of the keyboard seam, `bugs.md` 74. They
+were the original symptom, they are what is left of the 0.30%, and the player
+blends there where the tool does not.
+
+**No harness compares the two.** Nothing in `gate.sh`'s `ALL` would notice either
+of them drifting; this was found by hand while chasing 74.
+

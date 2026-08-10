@@ -216,13 +216,16 @@ check that reads the framebuffer back has to run windowed. See the note under
 There is no test suite.
 
 **`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
-actually run against the live player and are expected to pass. Measured over all
-62 entries on 4.7.1 by a whole-suite run: **60 pass, 2 fail.** `debug_bindings` is
-config rather than code -- `snapshot = "F10"` in the tracked `director_game.cfg`
-collides with a keyCode `rating` tests at 48 sites (`399feaaa`). `play_suspends`
-passes about half its runs on one assertion that waits a fixed number of frames
-for a movie to load (`bugs.md` 41), so the set is not reproducible until that is
-fixed. `boot_state`, the long-standing red this line used to name, passes. Anything below that is *not* in `ALL` is a survey
+actually run against the live player and are expected to pass, and as of a
+whole-suite run on 4.7.1 on 2026-08-10 **every entry passes and none fail** --
+including `debug_bindings`, which was config rather than code and whose config
+moved, and `boot_state`, the long-standing red this paragraph used to name. Treat
+a green `play_suspends` as one sample rather than a result: it is the
+fixed-frame-count flake of `bugs.md` 41, and passing once does not close it.
+The count is deliberately not written here, for the reason `AGENTS.md` gives --
+it changed twice in the day that line was last corrected, and a number nobody
+re-measures is what sent three readers looking for a failure that was not there.
+Run it and count. Anything below that is *not* in `ALL` is a survey
 or a one-off — useful, but nothing runs it, so nothing notices when it rots. A
 long run of tools listed here rotted exactly that way and was deleted; see
 "Retired" at the end of this section.
@@ -302,6 +305,7 @@ godot --headless --script tools/click_trace.gd -- --root rating --file BATZEGOZ.
 godot --headless --script tools/movie_churn.gd     # the stage and a window each settle on a movie rather than cycling, pass/fail
 godot --headless --script tools/liveness_sweep.gd  # every movie in a corpus, opened and watched: stuck, blank, cycling across movies, or a Lingo error, with the holds that legitimately explain a still playhead separated out, pass/fail (`--root R`, `--limit N`, `--only S`, `--click`, `--verbose`)
 godot --script tools/qa_walk.gd -- --out /tmp/shots  # play the title from its boot movie, clicking hotspots and pressing the keys its own scripts test, and write a PNG of every state — the only tool here that produces pictures, reports unless `--strict` (`--steps N`, `--patience N`, `--avoid movie:channel`, `--playff N`) — NOT --headless
+godot --script tools/scene_probe.gd -- --root piposh --movie PIANO.dir --marker playpiano --clicks ch59;ch20 --fields sngfld1 --stage 854,640 --out /tmp/p.png  # stand one container on one marker, press channels or stage points, read named fields back through `field "x"`, and photograph it — `--stage W,H` makes one photo pixel one stage pixel; reports, never asserts — NOT --headless
 godot --headless --script tools/qa_walk.gd -- --sweep  # the same detectors over every container of a corpus rather than the rooms a walk reaches: missing sounds, unresolved members, Lingo errors, a stage that stays empty — reports, or pass/fail with `--strict` (`--ticks N`, `--blank N`)
 godot --headless --script tools/bitmap_geometry.gd # every bitmap member's row stride is at least one row long, whole corpus, pass/fail
 godot --headless --script tools/audio_coverage.gd  # every file whose bytes say it is a sound resolves through AudioDirector, and resolves to itself rather than to another take, whole corpus, pass/fail

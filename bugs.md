@@ -2864,3 +2864,53 @@ Reproduce:
 godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
 for f in games/rating/*.dir games/rating/*.cst; do LC_ALL=C grep -qai "mainmenu-old" "$f" && echo "$f"; done
 ```
+## 74. Eight rows of Piposh 1's piano keyboard draw differently in the player and in `director_render.gd`
+
+`docs/bugs-closed.md` 73 removed the diagnostic's own crude keying rule, and with
+that gone the player and `tools/director_render.gd` agree on **0.30% of the stage
+below the HUD** on `PIANO.dir` frame 37, and on **0.00%** of the book. What did
+not close is the eight rows the original report was about: **y466-474, x8-259,
+where 13.3% of the pixels still differ.** Stable across frames 37 and 39, so it is
+not a frame mismatch.
+
+This is the mottled line under the left half of the keyboard. Where they differ,
+the renderer produces exact palette entries -- `(170,170,170)`, `(153,153,102)`,
+`(102,102,102)` -- and the player produces values that are in the palette's gaps,
+`(181,181,181)`, `(217,217,217)`, `(209,209,187)`. A value no palette entry holds
+came from combining two, so **the player is blending where the renderer is not**,
+and 0.3% of the sampled 2x blocks have two different columns inside one stage
+pixel, which under nearest filtering at an exact 2.000 scale should be none.
+Nearest is configured twice over -- `project.godot`
+`textures/canvas_textures/default_texture_filter=0` and `boot.gd` setting
+`TEXTURE_FILTER_NEAREST` on the host -- so the blend is coming from somewhere
+those two do not cover. That is the thread to pull.
+
+**What is already ruled out.** `key_matte` on member 2 (`noclid1`) is clean: 79.6%
+opaque, border removed, interior paper correctly kept, so it is not a matte leak.
+Dashing is genuinely *present in the inputs* -- member 2 has a solid dark row at
+its own local y55, a part-toned row at y54 and a dashed row at y56 -- and the key
+sprites overlap about 12px with each sitting one pixel lower going left, so some
+of the appearance is authentic whatever this turns out to be. Which is why this is
+still open rather than filed as authentic: an explanation of how it *could* be
+authentic is not the evidence `AGENTS.md` wants for the verdict that stops work.
+
+**Measuring this at all needs care, and getting it wrong cost a session.** A
+window capture is only comparable at an *integer* stage scale, and the window size
+that gives one is not the stage size: the stage takes 75% of the window's width,
+so `--stage 854,640` yields 641x480, a fractional 1.0016, and comparing that
+against a 640x480 render reports 38% of the stage differing -- all of it the
+capture, none of it the renderer. `--stage 1707,1280` yields exactly 1280x960;
+sample the top-left of each 2x2 block. Always check the content bounding box
+first.
+
+Reproduce:
+
+```
+godot --path . --script tools/scene_probe.gd -- --root piposh --movie PIANO.dir \
+    --frame 37 --settle 2 --ticks 0 --hold --stage 1707,1280 --quiet --out /tmp/prev.png
+godot --headless --path . --script tools/director_render.gd -- --root piposh \
+    --file PIPDATA/PIANO.dir --frame 37 --out /tmp/rend.png
+```
+
+`/tmp/prev.png`'s stage sits at (213,160) at scale 2. The three rulings about this
+room that *are* closed are `docs/bugs-closed.md` 72.

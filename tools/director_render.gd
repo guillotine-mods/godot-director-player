@@ -9,11 +9,24 @@ extends SceneTree
 ## which file each member lives in, and the bitmaps come from that file's own
 ## chunks. Nothing is read from the exported render_model.
 ##
-## This is a diagnostic, not the renderer. It resolves ink the crude way — key
-## the paper colour across the whole bitmap — where the real one distinguishes
-## Matte, which keys only the paper reachable from the bitmap's edge. On a sprite
-## whose artwork encloses white, this leaves holes the running game would not
-## have. Read the difference before filing a rendering bug from this output.
+## This is a diagnostic, not the renderer -- it has no scripts, no puppet state
+## and no fields, so a frame that a movie's own Lingo dresses on arrival comes out
+## undressed. What it no longer has is **its own idea of ink.** Keying goes through
+## `director_ink.gd`, the same `key_for` / `key_matte` / `key_paper` /
+## `apply_colour` the player calls, so the two agree about what a sprite's pixels
+## are and disagree only about the state a running movie would have applied.
+##
+## It used to key the paper colour across the *whole* bitmap for every keyed ink,
+## Matte included, at a brightness threshold. Matte keys only the paper a flood
+## fill reaches from the border, so the crude rule punched every enclosed white
+## region out of every sprite -- and on this corpus that means the interior of
+## every piano key, which let the backdrop show through the keys and drew the seam
+## under them as a clean line where the player correctly draws the key's own
+## dithered row. That output was then quoted *against* the player as evidence of a
+## rendering bug. A diagnostic that is wrong in a way nobody can see from its own
+## output is worse than no diagnostic, so the parallel rule is gone rather than
+## documented -- `docs/bugs-closed.md` 73 has the before-and-after numbers, and
+## `bugs.md` 74 is the eight rows this did not account for.
 
 const Args := preload("res://tools/lib/args.gd")
 const ContainerFile := preload("res://director/director_file.gd")
@@ -24,12 +37,9 @@ const Labels := preload("res://director/director_labels.gd")
 const Paths := preload("res://director/director_paths.gd")
 const Palette := preload("res://director/director_palette.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
+const Ink := preload("res://director/director_ink.gd")
 
 const STAGE := Vector2i(640, 480)
-## Inks that key the paper colour out. 8/9 are Matte, 1/36/39 Background
-## Transparent; this tool treats them alike, see the note above.
-const KEYED_INKS := [1, 8, 9, 36, 39]
-const PAPER_MIN_BYTE := 241
 
 
 func _init() -> void:
@@ -137,8 +147,21 @@ func _init() -> void:
 			if w > 0 and hgt > 0 and (w != image.get_width() or hgt != image.get_height()):
 				image.resize(w, hgt, Image.INTERPOLATE_NEAREST)
 
-		if KEYED_INKS.has(int(sprite["ink"])):
-			_key_paper(image)
+		# Ink through the engine's own rules, in the engine's own order: key first,
+		# colourise second. `sprite_art.gd` explains why that order is
+		# load-bearing -- a matte floods *white* in from the border, so repainting
+		# the whites first leaves the flood nothing to match.
+		var ink := int(sprite["ink"])
+		var fore := Ink.colour_of(palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
+		var back := Ink.colour_of(palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
+		match Ink.key_for(sprite, m):
+			Ink.KEY_MATTE:
+				Ink.key_matte(image)
+			Ink.KEY_PAPER:
+				Ink.key_paper(image, back)
+		if Ink.applies_colour(ink, int(sprite.get("fore_color", Ink.INDEX_BLACK)),
+				int(sprite.get("back_color", Ink.INDEX_WHITE))):
+			Ink.apply_colour(image, fore, back)
 
 		# loc is the registration point, not the top-left corner.
 		var reg_x := int(m["reg_offset_x"])
@@ -165,10 +188,3 @@ func _init() -> void:
 	movie.close()
 	quit(0)
 
-
-func _key_paper(image: Image) -> void:
-	for y in image.get_height():
-		for x in image.get_width():
-			var c := image.get_pixel(x, y)
-			if c.r8 >= PAPER_MIN_BYTE and c.g8 >= PAPER_MIN_BYTE and c.b8 >= PAPER_MIN_BYTE:
-				image.set_pixel(x, y, Color(c.r, c.g, c.b, 0.0))
