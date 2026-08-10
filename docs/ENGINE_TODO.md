@@ -887,10 +887,16 @@ an F-key, so none of them is reachable without a keyboard.
 Worth separating from the above, because these are implementations rather than
 gaps -- and an unverified implementation is an honest state, not a missing one.
 
-- **Palette** cycling and fades, on a corpus that cycles 0 times. Five built-in
-  tables (Rainbow, Pastels, Vivid, NTSC, Metallic) are authored data with no
-  generating rule: the engine warns by name and substitutes system Mac rather
-  than inventing them. Lifting them from a Director install is the fix.
+- **Palette** cycling and fades, on a corpus that cycles 0 times. The rest of the
+  palette subsystem is no longer in this list: reading a `CLUT`, a bitmap's own
+  palette field, the movie's default palette and the per-member table the
+  renderer decodes through are all asserted by `tools/palette_members.gd` against
+  `test-games/itamar-park`, which names a palette on 655 of its 657 bitmaps.
+  Seven built-in tables (Rainbow, Pastels, Vivid, NTSC, Metallic and **both
+  Windows system palettes**) are authored data with no generating rule: the
+  engine warns by name and substitutes system Mac rather than inventing them.
+  Lifting them from a Director install is the fix, and it is now a visible defect
+  rather than a theoretical one -- `bugs.md` 77 has the count.
 - **Hilite on click.** §4.6, implemented clause for clause in
   `scenes/preview/hilite.gd`: `isActive()` presence-only, not moveable, not
   puppet, bitmaps only, the member's Auto Hilite info flag with "ink is Matte"

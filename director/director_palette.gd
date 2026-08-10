@@ -8,15 +8,25 @@ extends RefCounted
 ## pure and static so it can be asserted without a movie
 ## (`tools/palette_cycle.gd`).
 ##
-## **What this corpus exercises, and therefore what is verified.** Measured by
-## `tools/palette_survey.gd` over 86 containers, 61,371 frames and 11,520 bitmap
-## members: **0** `CLUT` chunks, **0** palette cast members, **0** members naming
-## a palette other than system Mac, **0** frames naming one, and the string
-## "palette" appears **0** times in `reference/lingo/`. So system Mac is the only
-## table this game can reach, and it is the only one below with a corpus behind
-## it. Everything else is written from the reference and **unverified against
-## this corpus** — which is a different thing from absent, and is the honest
-## state for an engine that has to run Piposh 1 and *Rating* too.
+## **What the corpus exercises, and therefore what is verified.** The six shipped
+## titles exercise none of it: `tools/palette_survey.gd` over Piposh 2's 86
+## containers, 61,371 frames and 11,520 bitmap members counts **0** `CLUT`
+## chunks, **0** palette cast members, **0** members naming a palette other than
+## system Mac, **0** frames naming one, and the string "palette" appears **0**
+## times in `reference/lingo/`. That was read, for a long time, as "custom
+## palettes are unexercised, so the code for them is written from the reference
+## and unverified" — an honest statement that was also **hiding two defects**,
+## because a corpus that names one palette cannot tell a right reader from a
+## wrong one.
+##
+## `test-games/itamar-park` names plenty and both defects fell out at once: 162
+## `CLUT` chunks, 145 palette cast members, 655 of 657 bitmaps naming one of
+## them, and every table read upside down (`from_clut`) off a field read from the
+## wrong offset (`director_cast.gd:_parse_clut`). `tools/palette_members.gd` is
+## the harness that now stands between those and the next reader.
+##
+## The built-in tables below are still written from the reference and
+## **unverified**, which is a different thing from absent.
 ##
 ## The system Mac table is generated rather than embedded because its structure
 ## is the thing worth stating: a 6x6x6 colour cube in *descending* order, then
@@ -24,19 +34,23 @@ extends RefCounted
 ## every repaired cursor red, so `index_of_black` looks the value up and fails
 ## loudly rather than trusting the shape.
 ##
-## **The five tables that are data, not structure.** Rainbow, Pastels, Vivid,
-## NTSC and Metallic are hand-authored 768-byte tables with no generating rule to
-## recover — there is nothing to derive them *from*, and inventing plausible ones
+## **The tables that are data, not structure.** Rainbow, Pastels, Vivid, NTSC,
+## Metallic and both Windows system palettes are hand-authored 768-byte tables
+## with no generating rule to recover — there is nothing to derive them *from*, and inventing plausible ones
 ## would put wrong colours on screen while claiming to be Director's. So they are
 ## loaded from `data/director_palettes.json` when a title needs them, and
 ## `builtin()` says so out loud when the file has no entry. Supplying one is a
 ## data task, not an engine task: 768 bytes per id, and `PALETTE_DATA` documents
 ## the format. The dispatch, the resolution order, the cycling and the fades are
-## all built and do not wait on it.
+## all built and do not wait on it. Two titles in this tree now do -- `bugs.md`
+## 77.
 
 ## Director numbers built-in palettes negatively and a custom one by its palette
-## member number, so the sign is the branch. From the reference; only SYSTEM_MAC
-## occurs in this corpus.
+## member number, so the sign is the branch. From the reference. Only SYSTEM_MAC
+## occurs in the six shipped titles; the test corpora also name GRAYSCALE and
+## SYSTEM_WIN_D5, and everything reaching those ids comes through the *offset*
+## form Director stores — see `director_cast.gd:_parse_clut` and
+## `director_config.gd:_read_default_palette`, which both apply it.
 const SYSTEM_MAC := -1
 const RAINBOW := -2
 const GRAYSCALE := -3
@@ -45,13 +59,18 @@ const VIVID := -5
 const NTSC := -6
 const METALLIC := -7
 const VGA := -8
-const SYSTEM_WIN_D5 := -101
-const SYSTEM_WIN := -102
+## **These two were named the wrong way round.** The reference numbers the plain
+## Windows system palette -101 and the Director 5 one -102; this file had the
+## names swapped, so every warning about a missing table named the other table.
+## Nothing depended on the constants — no caller used either — but the strings
+## are what a reader would have believed.
+const SYSTEM_WIN := -101
+const SYSTEM_WIN_D5 := -102
 
 const BUILTIN_NAMES := {
 	-1: "System - Mac", -2: "Rainbow", -3: "Grayscale", -4: "Pastels",
 	-5: "Vivid", -6: "NTSC", -7: "Metallic", -8: "VGA",
-	-101: "System - Win (D5)", -102: "System - Win",
+	-101: "System - Win", -102: "System - Win (D5)",
 }
 
 ## The `CASt` type code of a palette member, whose payload chunk is its `CLUT`.
@@ -67,6 +86,13 @@ const ENTRIES := 256
 const TABLE_BYTES := 768
 
 ## Where a title supplies the built-in tables this file cannot derive.
+##
+## **A title in this tree now needs it.** `itamar-magichat` states the Windows D5
+## system palette (-102) as the default of 16 of its movies and on 881 of its
+## 1,054 bitmap members, `itamar-park` on two movies and one member, and
+## `piposh-en` / `piposh-ru` / `piposh-dream` on 244 members between them. All of
+## those draw against a substituted system Mac table today, which is visibly
+## wrong colour and is the largest remaining palette gap; `bugs.md` 77 carries it.
 ##
 ## Optional, and absent in this tree. Format is `{"<id>": "<hex>"}` where the id
 ## is the negative built-in number as a string and the hex is 1536 characters —
@@ -171,30 +197,37 @@ static func grayscale() -> PackedByteArray:
 ## A palette cast member's `CLUT` chunk.
 ##
 ## Six bytes per entry — three 16-bit Mac `RGBColor` channels, of which the high
-## byte is the 8-bit value — and **stored last entry first**, which is why the
-## fill runs backwards. That reversal is the same convention that puts white at
-## index 0 in the system Mac table above, so the two agree; read forwards, every
-## custom palette would come out inverted and look like an ink bug rather than a
-## palette bug.
+## byte is the 8-bit value — **stored entry 0 first**, in the ordinary direction.
+##
+## **This used to fill backwards**, on the theory that the chunk stored the last
+## entry first and that the reversal was what put white at index 0 the way the
+## system Mac table does. Both halves of that were wrong, and the second one is
+## why it survived: the chunk *already* opens with white and ends with black, so
+## reversing it is what moves black to index 0 — which is paper, the index both
+## ink passes key out and the one index that has to be exactly white. Every
+## custom palette came out inverted, and the artwork drew in a garish, noisy
+## version of itself with a black background.
+##
+## Measured rather than argued. `torfim.dir` #601 `Antark_back`, the palette its
+## own 616x390 `Ant_back` backdrop names, opens `ffffff ffffff e4e4ececf4f4` and
+## its last 12 bytes are zero; decoded forwards the backdrop is 61,600 white
+## pixels over a pale blue sky and a teal sea, and decoded backwards it is 84,255
+## black pixels with orange (`#eba515`) where the sea was. The reference agrees:
+## its `CLUT` reader walks a colour index up from zero and takes the high byte of
+## each 16-bit channel, with no reversal anywhere.
 ##
 ## A short chunk fills what it has and leaves the rest black rather than
 ## refusing: Director tolerates palettes of fewer than 256 entries, and a
 ## half-read palette that draws is findable where a crash on load is not.
-##
-## From the reference and **unverified against this corpus**, which ships no
-## `CLUT` chunk at all (`tools/palette_survey.gd`: 0 in 86 containers).
 static func from_clut(payload: PackedByteArray) -> PackedByteArray:
 	var table := PackedByteArray()
 	table.resize(TABLE_BYTES)
 	var steps: int = mini(payload.size() / 6, ENTRIES)
-	var index := steps - 1
-	var at := 0
-	while index >= 0:
+	for index in steps:
+		var at := index * 6
 		table[index * 3] = payload[at]
 		table[index * 3 + 1] = payload[at + 2]
 		table[index * 3 + 2] = payload[at + 4]
-		index -= 1
-		at += 6
 	return table
 
 

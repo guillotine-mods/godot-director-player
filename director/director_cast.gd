@@ -353,7 +353,7 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			var reg_x := _be_i16(spec, 20)
 			out["reg_offset_x"] = reg_x - left
 			out["reg_offset_y"] = reg_y - top
-			out["palette_id"] = _be_i16(spec, 24) if spec.size() >= 26 else -1
+			_parse_clut(spec, out)
 		3:
 			# A field's specific block is 28 bytes in every one of this corpus's
 			# 321 field members, and this layout was settled by measuring the
@@ -579,6 +579,57 @@ func _owner_of(section_id: int) -> int:
 			if int(_owned[owner][tag]) == section_id:
 				return int(owner)
 	return -1
+
+
+## The palette a bitmap member's indices are numbers in, out of the tail of its
+## specific block.
+##
+## **This used to read one signed word at offset 24, and offset 24 is not the
+## palette — it is the palette's *cast library*.** Across the six shipped titles
+## it reads -1 in 117,456 of the 117,542 bitmap members that carry the field at
+## all, and 0 in the other 86; across the two test corpora it reads -1 in all
+## 1,711. That is what a "the palette is in my own cast" library field looks like
+## and it is nothing like a distribution of palette ids. The id is the word after
+## it, and the proof is a name: in `itamar-park` **655 of 657** bitmap members
+## read a positive number there and **all 655** of those numbers are a type-4
+## palette member in the same cast library — usually the member immediately
+## before the bitmap, which is what Director writes when artwork is imported with
+## its own palette. In `itamar-magichat` it is 154 of 154. Offset 24 cannot
+## produce that once.
+##
+## **The length decides the layout, because the reference's reader is
+## sequential.** It reads pitch, the two rects, the registration pair, a spare
+## byte and the depth byte — 24 bytes — and then reads the palette: one word for
+## D4, and a library word followed by an id word from D5 on. So a specific block
+## of 28 bytes carries the pair and one of 26 carries the lone D4 id, which is the
+## same test the reference makes by checking whether the stream has run out.
+## Anything shorter carries no palette field at all: the 1,616 one-bit members
+## across the six titles stop at 23 bytes, and a 1-bit member is black and white
+## by definition.
+##
+## **Zero and below are built-ins, offset by one.** Director numbers the built-in
+## palettes from 0 downward *here*, and from -1 downward in the score's palette
+## channel, where 0 has to mean "no palette change this frame" instead. The
+## reference reconciles the two by decrementing any id at or below zero, and that
+## is what makes the overwhelmingly common value 0 mean system Mac (-1) rather
+## than a member number no cast has. It is also what makes `itamar-magichat`'s
+## 881 members reading -101 mean the Windows D5 system palette (-102), and its 19
+## reading -2 mean Grayscale (-3).
+func _parse_clut(spec: PackedByteArray, out: Dictionary) -> void:
+	var lib := 0
+	var id := 0
+	if spec.size() >= 28:
+		lib = _be_i16(spec, 24)
+		id = _be_i16(spec, 26)
+	elif spec.size() >= 26:
+		id = _be_i16(spec, 24)
+	else:
+		# No palette field: a 1-bit member, which has no palette to name.
+		out["palette_id"] = -1
+		out["palette_lib"] = 0
+		return
+	out["palette_id"] = id - 1 if id <= 0 else id
+	out["palette_lib"] = lib
 
 
 # ------------------------------------------------------------------ bytes

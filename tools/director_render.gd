@@ -36,6 +36,7 @@ const Score := preload("res://director/director_score.gd")
 const Labels := preload("res://director/director_labels.gd")
 const Paths := preload("res://director/director_paths.gd")
 const Palette := preload("res://director/director_palette.gd")
+const PaletteView := preload("res://scenes/preview/palette_view.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Ink := preload("res://director/director_ink.gd")
 const Config := preload("res://director/director_config.gd")
@@ -137,7 +138,14 @@ func _init() -> void:
 			continue
 		var chunk: PackedByteArray = f.read_chunk(int(m.get("data_chunk_id", -1)))
 		var error: Array = []
-		var image: Image = Bitmap.decode(m, chunk, palette, error)
+		# The member's own palette, exactly as the player resolves it. This has no
+		# playhead and so no stage palette, which `NO_STAGE_ID` says out loud: a
+		# member that names a buildable palette gets it, and one that does not
+		# falls back to the system Mac table above.
+		var member_palette: PackedByteArray = PaletteView.table_for_member(
+			m, table, palette, PaletteView.NO_STAGE_ID
+		)
+		var image: Image = Bitmap.decode(m, chunk, member_palette, error)
 		if image == null:
 			skipped += 1
 			print("  ch %3d  %d:%-5d  %-16s decode failed: %s" % [
@@ -160,8 +168,8 @@ func _init() -> void:
 		# load-bearing -- a matte floods *white* in from the border, so repainting
 		# the whites first leaves the flood nothing to match.
 		var ink := int(sprite["ink"])
-		var fore := Ink.colour_of(palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
-		var back := Ink.colour_of(palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
+		var fore := Ink.colour_of(member_palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
+		var back := Ink.colour_of(member_palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
 		match Ink.key_for(sprite, m):
 			Ink.KEY_MATTE:
 				Ink.key_matte(image)

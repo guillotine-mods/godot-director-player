@@ -37,6 +37,7 @@ const TextArt := preload("res://scenes/preview/text_art.gd")
 ## facts, so a member cannot answer a duration one caller can see and another
 ## cannot.
 const Media := preload("res://scenes/preview/media.gd")
+const Palette := preload("res://director/director_palette.gd")
 
 
 ## How far apart two libraries sit when a `(library, slot)` pair is carried as
@@ -254,7 +255,15 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			# The palette this member's art is indexed against. Negative is one of
 			# Director's built-ins and positive is a member number, which is the
 			# reference's own encoding and the reason this is signed.
-			return int(m.get("palette_id", 0))
+			#
+			# **This answered -1 for every member of every title until the field
+			# was read from the right offset** -- offset 24 of a bitmap's specific
+			# block is the palette's *cast library*, not the palette
+			# (`director_cast.gd:_parse_clut`). The six shipped titles genuinely
+			# are all system Mac, so the wrong answer and the right one agreed
+			# there and nowhere else: 655 of `itamar-park`'s 657 bitmap members
+			# name a palette member.
+			return int(m.get("palette_id", Palette.SYSTEM_MAC))
 
 		# ------------------------------------------------------- memory and file
 		#

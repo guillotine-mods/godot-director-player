@@ -1839,7 +1839,9 @@ func _paint() -> void:
 ## Artwork, delegated to `preview/sprite_art.gd`. The caches stay on the node --
 ## `tools/` reads `_textures` and `_hit_images` by name -- and are passed in.
 func _texture_for(sprite: Dictionary) -> Texture2D:
-	return SpriteArt.texture_for(sprite, _table, _palette, _textures, _hit_images)
+	return SpriteArt.texture_for(
+		sprite, _table, _palette, _textures, _hit_images, _palette_state.current_id
+	)
 
 
 func _draw_sprite_texture(texture: Texture2D, at: Vector2, sprite: Dictionary,

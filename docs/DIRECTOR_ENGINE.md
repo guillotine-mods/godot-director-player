@@ -1757,15 +1757,46 @@ whole mechanism is a no-op. That is an acceptable trade but it must be a
 one that animates water or fire by cycling will be static. The cheap partial is
 a per-frame recolour of the affected members for the index range concerned.
 
-*This port:* **built** — the resolution order, the puppet override, the `CLUT`
-reader, colour cycling in both forms and the fades.
-`director/director_palette.gd` holds the tables and the pure transforms,
-`director/director_palette_state.gd` the state, and
-`scenes/director_preview.gd:_begin_palette` the wiring.
+**Which palette a bitmap is drawn through.** On an 8-bit screen Director blits a
+member's indices straight into the one screen CLUT, so the palette channel is
+what makes artwork the right colour and a bitmap under the wrong palette looks
+wrong — authentically. On a **16-bit or deeper screen it converts each bitmap
+through the palette its own member names**, and the screen CLUT stops reaching
+bitmaps at all: palette switches, fades and colour cycling become no-ops on
+artwork. Every movie in every corpus here states `movieDepth` 32, so the second
+path is the one to reproduce, and this port's stage is true colour anyway.
 
-What the corpus can prove about it is almost nothing, and that is worth stating
-before the design. `tools/palette_survey.gd` counts all four places a palette can
-be named, over 86 containers, 61,371 frames and 11,520 bitmap members:
+The two readings are not close, and the corpus decides between them.
+`itamar-park` has 5,692 (frame, bitmap sprite) pairs whose member names a
+palette, and the stage is holding that palette for **22** of them — the other
+5,670 name something else, nearly always the cast member immediately before the
+bitmap, which is what Director writes when artwork is imported with its own
+palette. Drawing that title through the stage palette makes 99.6% of its artwork
+the wrong colour, and it shipped.
+
+*This port:* **built** — the resolution order, the puppet override, the `CLUT`
+reader, colour cycling in both forms, the fades, the movie's own default palette,
+and the member's own palette as what its pixels are decoded through.
+`director/director_palette.gd` holds the tables and the pure transforms,
+`director/director_palette_state.gd` the state,
+`scenes/preview/palette_view.gd:table_for_member` the per-member choice, and
+`scenes/director_preview.gd:_begin_palette` the wiring. The stage table still
+wins when a member names the palette the stage is already on, which is what keeps
+the fades and cycles above visible.
+
+**Three defects lived here for as long as the section did, and all three were
+invisible to this corpus.** `from_clut` read the chunk last-entry-first, which
+put black at index 0 — paper, the one index both ink passes require to be white;
+`director_cast.gd` read a bitmap's clut id from offset 24, which is the clut
+*cast library* and answers -1 for every bitmap ever loaded; and the movie's own
+default palette was never read at all. Six titles that genuinely are all system
+Mac cannot tell any of that from a correct reader, which is the whole argument
+for `tools/palette_members.gd` and for it naming a corpus that can.
+
+What the six shipped titles can prove about it is almost nothing, and that is
+worth stating before the design. `tools/palette_survey.gd` counts all four places
+a palette can be named, over 86 containers, 61,371 frames and 11,520 bitmap
+members:
 
 | where a palette is named | count |
 | --- | --- |
@@ -1776,15 +1807,20 @@ be named, over 86 containers, 61,371 frames and 11,520 bitmap members:
 | frames with colour cycling switched on | **0** of 61,371 |
 | `palette` in `reference/lingo/` (so `puppetPalette` too) | **0** |
 
-So this is built from the reference and **unverified against this corpus**, which
-is an honest state and not the same as absent — the engine has to run other
-titles. `tools/palette_cycle.gd` asserts it against hand-built records, labelled
-as synthetic, and against the one real frame that carries anything.
+So against *this* corpus it is unverified, which is an honest state and not the
+same as absent — the engine has to run other titles, and the moment one arrived
+it found three defects. `test-games/itamar-park` names palettes everywhere: 162
+`CLUT` chunks, 145 palette cast members, 655 of 657 bitmaps naming one, 32 frames
+naming one, and two of its three movies stating a non-Mac default.
+`tools/palette_cycle.gd` still asserts the cycling machine against hand-built
+records, labelled as synthetic; `tools/palette_members.gd` asserts the rest
+against real ones.
 
-Two corrections fell out of the survey. `director_palette.gd`'s header said every
-bitmap carries **clut id 0**; the id is **-1**, Director's number for the system
-Mac built-in, in all 11,520 — and `builtin()` only warned above zero, so it could
-never have fired on either value.
+Two corrections fell out of the original survey and one of them was itself wrong.
+`director_palette.gd`'s header said every bitmap carries **clut id 0**; the
+survey answered **-1** in all 11,520 — and both numbers came from offset 24,
+which is not the field. Read from 26 the six titles still answer system Mac, so
+the conclusion survives and the reason for it did not.
 
 The score's palette channel *is* written, on 267 frames, and is decoded in
 `director/director_score.gd:_palette_record`, where the 48-byte record's layout
@@ -1793,7 +1829,11 @@ system Mac with every effect byte zero. Five carry effect bytes and exactly one
 carries non-zero flags: `strtgame` f38, flags 0x60, a one-step fade to black,
 which the running preview now honours as a 50 ms hold on that frame.
 
-**The one thing still missing is data, not engine.** Rainbow, Pastels, Vivid,
+**The one thing still missing is data, not engine**, and a title in this tree now
+needs it: the Windows D5 system palette (-102) is the stated default of 16 of
+`itamar-magichat`'s movies and of 881 of its 1,054 bitmap members, plus 244
+members across `piposh-en`, `piposh-ru` and `piposh-dream`. All of them draw
+against a substituted system Mac table today. Rainbow, Pastels, Vivid,
 NTSC and Metallic are hand-authored 768-byte tables with no generating rule to
 recover; System Mac and Grayscale are generated because their structure *is* the
 definition. `builtin()` dispatches on the id, loads the rest from

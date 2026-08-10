@@ -79,6 +79,51 @@ today.
 
 ---
 
+## 77. Director's two Windows system palettes have no table, so 1,126 bitmap members draw in the wrong colours
+
+**Status:** OPEN. Data, not engine — the dispatch, the resolution order and the
+per-member choice are all built and asserted (`tools/palette_members.gd`); what
+is missing is 768 bytes per table.
+
+`director/director_palette.gd` generates System Mac and Grayscale because their
+structure *is* their definition, and loads the rest from
+`data/director_palettes.json`, which this tree does not ship. Anything naming one
+of the others is warned about by name and substituted with system Mac. That was
+theoretical until a title asked for one:
+
+| root | movies stating -102 as their default | bitmap members naming -102 |
+|---|---|---|
+| `test-games/itamar-magichat` | 16 of 16 | 881 of 1,054 |
+| `test-games/itamar-park` | 2 of 3 | 1 |
+| `games/piposh-ru` | 0 | 129 |
+| `games/piposh-en` | 0 | 108 |
+| `games/piposh-dream` | 0 | 7 |
+
+-102 is the Windows D5 system palette. `itamar-magichat` is the bad case by a
+distance: five sixths of its artwork is indexed against a table nobody has, and
+every pixel of it comes out of the 6x6x6 web cube instead. The Piposh members are
+a handful of odds and ends and the six titles were pixel-identical before and
+after the substitution either way, so nothing there regressed — but nothing there
+is right either.
+
+**Reproduce:**
+
+```
+godot --headless --script tools/palette_members.gd -- --root res://test-games/itamar-magichat
+godot --headless --script tools/palette_survey.gd -- --root res://test-games/itamar-park --all
+```
+
+The survey's one failing check is `ChapTrfm.dir member 65 -> -102`.
+
+**Fix:** lift both Windows tables (and Rainbow, Pastels, Vivid, NTSC, Metallic
+while there) out of a Director installation or an implementation that carries
+them, into `data/director_palettes.json` — the format is documented on
+`DirectorPalette.PALETTE_DATA`, 1,536 hex characters per id. Do not reconstruct
+them by eye: a palette that is nearly right is indistinguishable from artwork
+that is nearly right, and the two get confused for weeks.
+
+---
+
 ## 57. A whole-sprite puppet does not stop the score, so CHESS's second wheel plays one name and shows another
 
 **Status:** OPEN in the tree, **root cause found and the fix measured**; the one

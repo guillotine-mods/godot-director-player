@@ -168,11 +168,18 @@ func _dump(paths, args: Dictionary, table: PackedByteArray) -> void:
 
 	var chunk: PackedByteArray = f.read_chunk(int(m.get("data_chunk_id", -1)))
 	var error: Array = []
-	var image: Image = Bitmap.decode(m, chunk, table, error)
+	# The member's own palette, when it names one this container holds. Extracting
+	# a member and looking at it is how half the mysteries in this port were
+	# solved, and a PNG in the wrong colours is worse than none: `itamar-park`
+	# member `Ant_back` names palette 601 and comes out of the system Mac table as
+	# a purple-and-orange Antarctic.
+	var own := _member_palette(c, f, m, table)
+	var image: Image = Bitmap.decode(m, chunk, own, error)
 	if image == null:
 		print("member %d (%s) did not decode: %s" % [number, m.get("name", ""), "; ".join(error)])
 		f.close()
 		return
+	print("palette: %s" % _palette_label(m, own, table))
 
 	var out := Args.text(args, "out", "user://member_%d.png" % number)
 	var err := image.save_png(out)
@@ -185,6 +192,34 @@ func _dump(paths, args: Dictionary, table: PackedByteArray) -> void:
 	else:
 		print("could not write %s (%s)" % [out, error_string(err)])
 	f.close()
+
+
+## The table this member's indices are numbers in, as far as one container can
+## answer: its own `CLUT` when it names a palette member that lives here, the
+## built-in when it names one this port can build, and the fallback otherwise.
+## Cross-container palettes need `scenes/preview/palette_view.gd`, which has the
+## cast table this tool deliberately does not open.
+func _member_palette(c, f, m: Dictionary, fallback: PackedByteArray) -> PackedByteArray:
+	var id := int(m.get("palette_id", Palette.SYSTEM_MAC))
+	if id < 0:
+		return Palette.builtin(id) if Palette.can_build(id) else fallback
+	if id == 0:
+		return fallback
+	var pm: Dictionary = c.member(id)
+	if pm.is_empty() or int(pm.get("type", 0)) != Palette.MEMBER_TYPE:
+		return fallback
+	var chunk_id := int(pm.get("data_chunk_id", -1))
+	if chunk_id < 0:
+		return fallback
+	return Palette.from_clut(f.read_chunk(chunk_id))
+
+
+func _palette_label(m: Dictionary, used: PackedByteArray,
+		fallback: PackedByteArray) -> String:
+	var id := int(m.get("palette_id", Palette.SYSTEM_MAC))
+	if used == fallback:
+		return "member names %d, drawn through the system Mac table instead" % id
+	return "member %d" % id if id > 0 else str(Palette.BUILTIN_NAMES.get(id, id))
 
 
 func _find(root: String) -> Array[String]:

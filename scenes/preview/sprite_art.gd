@@ -30,6 +30,7 @@ const Bitmap := preload("res://director/director_bitmap.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const Hilite := preload("res://scenes/preview/hilite.gd")
 const Paint := preload("res://director/director_paint.gd")
+const PaletteView := preload("res://scenes/preview/palette_view.gd")
 
 
 ## Decoded once per (member, ink, size, colours) and kept. A member costs
@@ -40,7 +41,8 @@ const Paint := preload("res://director/director_paint.gd")
 ## where the sprite actually has pixels, so a keyed-out region passes the click
 ## through to whatever is behind it.
 static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
-		textures: Dictionary, hit_images: Dictionary) -> Texture2D:
+		textures: Dictionary, hit_images: Dictionary,
+		stage_palette_id: int = PaletteView.NO_STAGE_ID) -> Texture2D:
 	var lib := int(sprite["cast_lib"])
 	var id := int(sprite["cast_id"])
 	var ink := int(sprite["ink"])
@@ -54,6 +56,14 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	var key := Geometry.texture_key(sprite, drawn)
 	if textures.has(key):
 		return textures[key]
+
+	# A bitmap's indices are numbers in *its own* palette; see
+	# `palette_view.gd:table_for_member`, which falls back to the stage's table.
+	# It has to be resolved before the colours below, because the keying compares
+	# the paper colour against the pixels this table produced -- resolving the
+	# paper through a different table is how a matte stops matching anything.
+	if type_code == Ink.TYPE_BITMAP:
+		palette = PaletteView.table_for_member(m, table, palette, stage_palette_id)
 
 	textures[key] = null
 	# Both colours, resolved through the palette once and used by both branches.

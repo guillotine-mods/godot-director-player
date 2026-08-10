@@ -17,8 +17,17 @@ extends SceneTree
 ## Four independent places a palette can be named, all counted here:
 ##   - a `CLUT` chunk in a container (a custom palette's own colour table),
 ##   - a cast member of type 4 (the palette member that owns such a table),
-##   - a bitmap member's own clut id in its `CASt` specific block (offset 24),
+##   - a bitmap member's own clut id in its `CASt` specific block (offset **26**;
+##     this said 24 for as long as the parser read 24, and 24 is the clut *cast
+##     library* — see `director_cast.gd:_parse_clut`),
 ##   - the score's palette channel, decoded in `director_score.gd:_palette_record`.
+##
+## The conclusion above holds for the six shipped titles and for nothing else.
+## `test-games/itamar-park` ships 162 `CLUT` chunks, 145 palette members and 655
+## bitmap members naming one, which is what turned the header of
+## `director_palette.gd` from an unverified claim into a measured wrong one:
+## reading offset 24 answered "system Mac" for every bitmap of every title,
+## including the ones that name a palette on every member.
 ##
 ## Director's built-in palettes are named by *negative* ids and a custom one by a
 ## positive member number, so 0 and -1 are different facts and are printed apart.
@@ -74,10 +83,35 @@ func _init() -> void:
 	var fading := 0
 	var naming_a_palette := 0
 	var per_movie: Array[String] = []
-	# Anything the port cannot build the colour table for. Both a member's own
-	# clut id and the score's palette channel land here, because either one being
-	# unbuildable means art drawn in the wrong colours.
+	# Every palette member number the corpus holds, in any container. A positive
+	# id names a cast member and a linked cast puts it in another file, so a
+	# per-container set would call a perfectly resolvable palette missing.
+	var palette_numbers: Dictionary = {}
+	# A **built-in** this port has no table for. That is a gap in the port and it
+	# is what makes this tool able to fail: art indexed against a table nobody has
+	# draws in the wrong colours with no other symptom.
 	var unbuildable: Dictionary = {}
+	# A **member** id that resolves to no palette member anywhere in the corpus.
+	# Reported and not failed, because §11 says Director tolerates exactly this --
+	# a score authored against a palette whose member was later deleted still
+	# plays, on whatever the resolution order reaches next -- so a title carrying
+	# some is authentic data rather than a defect in the reader.
+	var unresolved: Dictionary = {}
+
+	# First pass: which palette members exist anywhere. A positive id names a cast
+	# member and a linked cast puts it in another container, so deciding
+	# buildability container by container would call a resolvable palette missing
+	# — and would depend on the order the walk happens to visit the files in.
+	for path in targets:
+		var pf := ContainerFile.new()
+		if not pf.open(path):
+			continue
+		var pc := Cast.new()
+		if pc.open(pf):
+			for number in pc.member_numbers():
+				if int(pc.member(number).get("type", 0)) == PALETTE_TYPE:
+					palette_numbers[number] = true
+		pf.close()
 
 	for path in targets:
 		var f := ContainerFile.new()
@@ -104,8 +138,12 @@ func _init() -> void:
 					bitmaps += 1
 					var clut := int(m.get("palette_id", Palette.SYSTEM_MAC))
 					bitmap_clut[clut] = int(bitmap_clut.get(clut, 0)) + 1
-					if not _buildable(clut):
-						unbuildable["%s member %d -> %d" % [path.get_file(), number, clut]] = true
+					if not _buildable(clut, palette_numbers):
+						var where := "%s member %d -> %d" % [path.get_file(), number, clut]
+						if clut < 0:
+							unbuildable[where] = true
+						else:
+							unresolved[where] = true
 
 		var vwsc: Array = f.ids_of("VWSC")
 		if not vwsc.is_empty():
@@ -122,8 +160,12 @@ func _init() -> void:
 						continue
 					naming_a_palette += 1
 					named_here += 1
-					if not _buildable(id):
-						unbuildable["%s f%d -> %d" % [path.get_file(), i, id]] = true
+					if not _buildable(id, palette_numbers):
+						var where := "%s f%d -> %d" % [path.get_file(), i, id]
+						if id < 0:
+							unbuildable[where] = true
+						else:
+							unresolved[where] = true
 					if bool(record.get("cycling", false)):
 						cycling += 1
 					if bool(record.get("fade", false)):
@@ -155,7 +197,7 @@ func _init() -> void:
 	for line in palette_members:
 		print("    %s" % line)
 	print("")
-	print("bitmap member clut id (CASt specific +24):")
+	print("bitmap member clut id (CASt specific +26, built-ins already offset):")
 	var clut_keys: Array = bitmap_clut.keys()
 	clut_keys.sort()
 	for k in clut_keys:
@@ -180,11 +222,16 @@ func _init() -> void:
 	h.begin("every palette this corpus names can be built")
 	h.check("read at least one score", scores > 0, "%d score(s)" % scores)
 	h.check("read at least one cast", bitmaps > 0, "%d bitmap member(s)" % bitmaps)
-	# The renderer draws every indexed bitmap through one table. If anything names
-	# a palette that table is not, the colours are silently wrong — which is why
-	# this is a failure and not a line in the report.
+	print("")
+	print("palette member ids naming nothing (Director tolerates these): %d" % unresolved.size())
+	for line in unresolved.keys().slice(0, 12):
+		print("    %s" % line)
+	# A built-in with no table is the failure, because art indexed against it is
+	# silently the wrong colour and nothing else says so. A *member* id naming
+	# nothing is not: §11 has Director falling through the resolution order for
+	# exactly that case, so it is printed above and counted here only.
 	h.check(
-		"no member or frame names a palette the port cannot build",
+		"no member or frame names a built-in this port cannot build",
 		unbuildable.is_empty(),
 		"%d unbuildable: %s" % [unbuildable.size(), ", ".join(unbuildable.keys().slice(0, 6))]
 	)
@@ -192,10 +239,26 @@ func _init() -> void:
 	quit(h.finish("what names a palette in this corpus"))
 
 
-## The port builds exactly one table. 0 is "none named", which resolves to the
-## movie default, and that default is system Mac here.
-static func _buildable(id: int) -> bool:
-	return id == 0 or id == Palette.SYSTEM_MAC
+## Whether the port can produce the table this id names.
+##
+## **This used to answer "0 or system Mac, and nothing else"**, on the standing
+## assumption that the corpus could never name anything more -- which made the
+## check a restatement of the survey above rather than a test of the port, and
+## made it fail outright the first time a title with 145 palette members was
+## pointed at it. 0 is "none named" and resolves to the movie default; a negative
+## id is a built-in and `can_build` knows which of those have tables; a positive
+## one is a palette cast member and is buildable when the corpus holds a member
+## of that number.
+##
+## The pass is now two-sided in a way it was not: naming `Rainbow` still fails,
+## because there is no table for it and art drawn against one would be silently
+## wrong.
+static func _buildable(id: int, palette_numbers: Dictionary) -> bool:
+	if id == 0:
+		return true
+	if id < 0:
+		return Palette.can_build(id)
+	return palette_numbers.has(id)
 
 
 static func _name_of(id: int) -> String:

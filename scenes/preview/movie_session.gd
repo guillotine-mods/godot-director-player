@@ -58,8 +58,19 @@ static func adopt(host) -> void:
 
 	# Palette ids are per movie, so the state resets with the movie rather than
 	# carrying the last one's cache and cycling offsets into this one.
+	#
+	# **The movie's own default is what it resets to**, which is §11's last resort
+	# and used to be a hardcoded system Mac. Every movie states one in its config
+	# chunk; the six shipped titles all state system Mac, so nothing about them
+	# moves, and a Windows-authored title states the Windows table instead --
+	# `itamar-park`'s two movies and 16 of `itamar-magichat`'s do. A movie with no
+	# readable config keeps system Mac, because a movie that will not say has no
+	# opinion to honour.
 	host._palette_state.table_for = host._palette_table_for
-	host._palette_state.reset(Palette.SYSTEM_MAC)
+	var default_palette := Palette.SYSTEM_MAC
+	if host._config != null and int(host._config.default_palette) != 0:
+		default_palette = int(host._config.default_palette)
+	host._palette_state.reset(default_palette)
 	host._palette = host._palette_state.table
 
 	host._ccl = PackedStringArray()

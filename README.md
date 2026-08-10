@@ -327,6 +327,7 @@ godot --script tools/save_state.gd                  # a save state reproduces th
 godot --headless --script tools/text_codepage.gd    # which single-byte codepage the corpus was authored in, measured against the candidates; the decode/encode round trip over every authored string; a Hebrew name written by one process and read by another, pass/fail (`--all` for every root)
 godot --headless --script tools/builtin_load.gd     # the player's own route to a saved game — menu, Load, the slot list, a slot, the stage resuming in the room it recorded, pass/fail (`--real` drives the frame clock instead of stepping the score)
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
+godot --headless --script tools/palette_members.gd -- --root res://test-games/itamar-park  # custom palettes as the renderer uses them: a CLUT read entry 0 first, a bitmap naming its own palette, the member's table reaching the decoder, pass/fail — fails on a corpus with no palettes rather than passing over nothing
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
 godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail
@@ -363,7 +364,12 @@ touching the renderer or the text widget.
 `palette_cycle.gd`, `sprite_flip.gd` and much of `trails.gd` are **synthetic on
 purpose**, and say so: Piposh 2 switches colour cycling on 0 times in 61,371
 frames, and neither title sets the trails bit or either flip bit in 2.7 million
-sprite records between them, so there is no authored data to assert against. Both features are Director's, so both are built and driven from
+sprite records between them, so there is no authored data to assert against.
+`palette_members.gd` is the counter-example and the reason to keep looking for
+one: the rest of the palette subsystem looked equally unassertable for the same
+reason, and had been wrong in three places the whole time — a corpus that names
+one palette everywhere cannot tell a right reader from a wrong one. It runs
+against `test-games/itamar-park`, which names 145. Both features are Director's, so both are built and driven from
 hand-made records — see "Build Director, not this game" in `AGENTS.md`.
 
 The Lingo compiler and interpreter have their own set, all pass/fail, all

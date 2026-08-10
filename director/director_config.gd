@@ -75,7 +75,37 @@ var version := 0
 ## platform id, which is why reading this field as 32 bits would come out
 ## enormous rather than merely wrong.
 var default_tempo := 0
+## The palette the movie starts on, and the cast library it lives in.
+##
+## §11's last resort: the frame's palette channel, else the score cache, else
+## this. Every movie has one and it was never read, so every movie started on
+## system Mac whatever it said — which is right for the six shipped titles, all
+## of which state exactly that, and wrong for a Windows-authored title: both
+## `itamar-park` movies and 16 of `itamar-magichat`'s state -101, the Windows D5
+## system palette once the built-in offset below is applied.
+##
+## **Where.** The reference reads the chunk as a stream, and after the checksum
+## at 64 the two layouts diverge: D4 puts a spare word at 68 and the palette
+## member at 70, and D5 and later put the spare word at 68, a palette *number* at
+## 70, a long word at 72, and then the cast library at 76 and the member at 78.
+## Both stop at 80 bytes. Only the D5 form occurs in either corpus here — every
+## container in all eight roots states a file version at or above `0x57E`, and D5
+## begins at `0x4B1` — so the D4 arm is written from the reference and is
+## **unexercised**.
+##
+## **The built-in offset.** In this chunk Director numbers the built-in palettes
+## from 0 downward, and in the score's palette channel from -1 downward, because
+## there 0 has to mean "no palette change this frame". The reference reconciles
+## them by decrementing any id at or below zero here, so a movie storing 0 means
+## system Mac and one storing -101 means the Windows D5 table. A positive id is a
+## palette cast member and is left alone.
+var default_palette := 0
+var default_palette_lib := 0
 var error: String = ""
+
+## D5 and later, from the reference's own table. Below this the config's tail is
+## the D4 layout.
+const FILE_VERSION_D5 := 0x4B1
 
 
 func parse(payload: PackedByteArray) -> bool:
@@ -105,7 +135,27 @@ func parse(payload: PackedByteArray) -> bool:
 	# negative is one nothing will take, and "the movie states no usable rate" is
 	# the honest reading of a field that is out of range either way.
 	default_tempo = _i16(payload, 54) if payload.size() >= 56 else 0
+	_read_default_palette(payload)
 	return true
+
+
+## The tail of the chunk, per the version split described on `default_palette`.
+## A chunk too short to hold the field leaves the default at 0, which resolves to
+## system Mac exactly as a stored 0 would.
+func _read_default_palette(payload: PackedByteArray) -> void:
+	default_palette = 0
+	default_palette_lib = 0
+	var stored := 0
+	if version >= FILE_VERSION_D5:
+		if payload.size() < 80:
+			return
+		default_palette_lib = _i16(payload, 76)
+		stored = _i16(payload, 78)
+	else:
+		if payload.size() < 72:
+			return
+		stored = _i16(payload, 70)
+	default_palette = stored - 1 if stored <= 0 else stored
 
 
 ## Read a movie's config chunk. False when it has none, or when it does not
