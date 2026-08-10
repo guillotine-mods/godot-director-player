@@ -87,19 +87,37 @@ const TABLE_BYTES := 768
 
 ## Where a title supplies the built-in tables this file cannot derive.
 ##
-## **A title in this tree now needs it.** `itamar-magichat` states the Windows D5
-## system palette (-102) as the default of 16 of its movies and on 881 of its
-## 1,054 bitmap members, `itamar-park` on two movies and one member, and
-## `piposh-en` / `piposh-ru` / `piposh-dream` on 244 members between them. All of
-## those draw against a substituted system Mac table today, which is visibly
-## wrong colour and is the largest remaining palette gap; `bugs.md` 77 carries it.
+## **Present, and carrying seven tables**: -2 Rainbow, -4 Pastels, -5 Vivid,
+## -6 NTSC, -7 Metallic, -101 System Win and -102 System Win (D5). -1 and -3 are
+## deliberately absent — `builtin()` short-circuits to `system_mac()` and
+## `grayscale()` before it ever consults this file, so an entry for either would
+## be a second source of truth that nothing reads. -8 VGA is absent because no
+## source in reach carries it; a title asking for it still gets the warning.
 ##
-## Optional, and absent in this tree. Format is `{"<id>": "<hex>"}` where the id
-## is the negative built-in number as a string and the hex is 1536 characters —
-## 768 bytes, RGB8, entry 0 first. Lift them from a Director installation or from
-## an implementation that carries them; do not reconstruct them by eye, because a
-## palette that is nearly right is indistinguishable from artwork that is nearly
-## right and the two get confused for weeks.
+## Which titles needed it: `itamar-magichat` states -102 as the default of 16 of
+## its movies and on 881 of its 1,054 bitmap members, `itamar-park` on two movies
+## and one member, and `piposh-en` / `piposh-ru` / `piposh-dream` on 244 members
+## between them. All of those drew against a substituted system Mac table until
+## this file existed; `bugs.md` 77.
+##
+## Format is `{"<id>": "<hex>"}` where the id is the negative built-in number as
+## a string and the hex is 1536 characters — 768 bytes, RGB8, entry 0 first. Lift
+## them from a Director installation or from an implementation that carries them;
+## do not reconstruct them by eye, because a palette that is nearly right is
+## indistinguishable from artwork that is nearly right and the two get confused
+## for weeks.
+##
+## **The transcription was checked rather than trusted.** The same source also
+## carries system Mac and grayscale, which this file derives from first
+## principles, and both came back identical to `system_mac()` and `grayscale()`
+## byte for byte — so the extraction is right and, incidentally, so are the two
+## generators. Tables that agree on the two answers you can already compute are
+## the only cheap evidence available for the seven you cannot.
+##
+## This is a plain file, not a Godot resource, so it ships only because
+## `export_presets.cfg` names `data/*.json` in `include_filter`. Left out of that
+## list, an exported build falls back to system Mac and says so only in a warning
+## nobody reads on a phone.
 const PALETTE_DATA := "res://data/director_palettes.json"
 
 ## Loaded once. Empty when the file is absent, which is the normal state here.

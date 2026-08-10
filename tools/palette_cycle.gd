@@ -167,19 +167,36 @@ func _tables(h: Harness) -> void:
 	h.check("can_build answers for what builtin() can actually produce",
 		Palette.can_build(Palette.SYSTEM_MAC) and Palette.can_build(Palette.GRAYSCALE)
 		and Palette.can_build(0))
-	# The honest half. Without a data file these ids have no table, `builtin()`
-	# says so and substitutes system Mac, and `can_build` is how a caller finds
-	# that out without reading a log. Asserting the substitution keeps it from
-	# quietly becoming a silent one again.
-	h.check("and reports the data-only built-ins as unbuildable",
-		not Palette.can_build(Palette.RAINBOW)
-		and not Palette.can_build(Palette.PASTELS)
-		and not Palette.can_build(Palette.VIVID)
-		and not Palette.can_build(Palette.NTSC)
-		and not Palette.can_build(Palette.METALLIC),
-		"add them to %s to close this" % Palette.PALETTE_DATA)
-	h.check("an unbuildable id still returns a usable table",
-		Palette.builtin(Palette.RAINBOW).size() == Palette.TABLE_BYTES)
+	# **This check used to assert the opposite**, and its own message said "add
+	# them to PALETTE_DATA to close this". They have been added, so the invariant
+	# it was holding open is now the one worth holding: each data-only id
+	# resolves, is a full table, and is *not* system Mac. That last clause is the
+	# one that matters -- `builtin()` substitutes system Mac for anything it
+	# cannot produce, so an id that resolved to system Mac would pass a size test
+	# while still being the substitution this file exists to detect.
+	var data_only := [
+		Palette.RAINBOW, Palette.PASTELS, Palette.VIVID, Palette.NTSC,
+		Palette.METALLIC, Palette.SYSTEM_WIN, Palette.SYSTEM_WIN_D5,
+	]
+	var missing: Array = []
+	var substituted: Array = []
+	for id in data_only:
+		if not Palette.can_build(id):
+			missing.append(id)
+			continue
+		var table := Palette.builtin(id)
+		if table.size() != Palette.TABLE_BYTES or table == mac:
+			substituted.append(id)
+	h.check("every data-supplied built-in resolves to its own table",
+		missing.is_empty() and substituted.is_empty(),
+		"missing %s, substituted %s" % [str(missing), str(substituted)])
+	# The substitution path itself still has to be asserted, or it becomes silent
+	# the day a table is dropped. VGA is the id no source in reach carries, so it
+	# is the one that keeps this honest.
+	h.check("an id with no table still reports itself unbuildable",
+		not Palette.can_build(Palette.VGA))
+	h.check("and still returns a usable table",
+		Palette.builtin(Palette.VGA).size() == Palette.TABLE_BYTES)
 	h.complete("the built-in tables")
 
 
