@@ -29,11 +29,24 @@ extends RefCounted
 const TitleList := preload("res://scenes/launcher/title_list.gd")
 
 const MIN_WIDTH := 250
+## The comfortable height: what a tile takes when the window is not arguing.
 const MIN_HEIGHT := 152
 ## What a tile is allowed to grow to when the window has height to spare.
 ## Unbounded, a single row of four in a maximized window becomes four 700px
 ## panels with a word in the corner of each.
 const MAX_HEIGHT := 196
+## How far a tile may be squeezed before the grid gives up and scrolls.
+##
+## A second row arrives at five titles, and on a short window two rows of
+## `MIN_HEIGHT` do not fit -- so the grid scrolled, and what it scrolled out of
+## sight was everything below it. Scrolling to reach Stage Fit is a worse outcome
+## than a shorter tile, so the tile yields first.
+##
+## The number is what the contents actually need rather than a guess: the title
+## is set in `Display`, the root line in `Eyebrow`, and `PADDING` is applied
+## twice. Below this they start to crowd, and at that point scrolling genuinely
+## is the better answer.
+const FLOOR_HEIGHT := 112
 const PADDING := 16
 
 
@@ -92,13 +105,19 @@ static func make(entry: Dictionary, flag_font: Font) -> Button:
 	column.add_child(spacer)
 	column.add_child(_title_label(entry))
 
+	# **The root line is gone from the face of the tile and kept in the tooltip.**
+	# The class comment above still argues for showing it, and it was right about
+	# why: `piposh / strtgame.dir` is the line a bug report needs and no menu here
+	# had ever shown. What changed is who this screen is for -- a player picking a
+	# game does not know what a container is, and the answer is still one hover
+	# away for whoever does. `tooltip_text` is set at the top of this function.
 	var footer := HBoxContainer.new()
 	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	footer.add_theme_constant_override("separation", 8)
-	var roots := _roots_label(entry)
-	roots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	roots.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	footer.add_child(roots)
+	var spring := Control.new()
+	spring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spring.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(spring)
 	footer.add_child(_flags_label(entry, flag_font))
 	column.add_child(footer)
 	return tile
@@ -132,24 +151,23 @@ static func _title_label(entry: Dictionary) -> Label:
 	label.theme_type_variation = "Display"
 	label.text = str(entry.get("title", ""))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Right, because these titles are Hebrew. Godot's bidi already orders the
+	# characters correctly without this -- the `2` and the `3D` land where a
+	# Hebrew reader expects them -- but ordering a line and placing it in a box
+	# are different questions, and the box was still filling from the left. The
+	# result read right-to-left while sitting against the wrong edge.
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	return label
 
 
 ## What the engine will actually open, as `root/container` -- the pair every
 ## path in this port is resolved against, and the pair a bug report has to
-## carry. A title with three editions still shows one of them: the flags beside
-## this line already say there are three, and listing all their folders is the
-## same fact twice in the space of one.
-static func _roots_label(entry: Dictionary) -> Label:
-	var label := Label.new()
-	label.theme_type_variation = "Eyebrow"
-	label.text = roots_line(entry)
-	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	return label
-
-
-## Public, because the launcher shows the same line without a tile around it
-## when there is only one title and therefore nothing to pick between.
+## carry. A title with three editions still shows one of them: the flags already
+## say there are three, and listing all their folders is the same fact twice.
+##
+## Public because two places want the line and neither is the face of a tile any
+## more: the tile's tooltip, and the single-title build, which shows it without a
+## tile around it because there is nothing to pick between.
 static func roots_line(entry: Dictionary) -> String:
 	var row := TitleList.default_root(entry)
 	var name := str(row.get("root", "")).get_file()

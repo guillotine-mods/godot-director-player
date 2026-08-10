@@ -42,6 +42,52 @@ static func build(cfg: ConfigFile = null) -> Array[Dictionary]:
 			index[title] = out.size()
 			out.append({"title": title, "roots": [] as Array[Dictionary]})
 		(out[int(index[title])]["roots"] as Array).append(row)
+	out.append_array(embeds(config))
+	return out
+
+
+## Titles that are Godot projects rather than Director corpora, from `[embed.*]`.
+##
+## They carry a `scene` where a disc title carries a `boot`, and the launcher
+## branches on exactly that. Kept in the same row shape so the tiles, the
+## selection path and `default_root` need no special case: the difference is one
+## key, not a second kind of entry.
+##
+## **Offered only when the pack actually mounted.** A build can legitimately ship
+## the Director titles alone -- narrowing `include_filter` is how one title
+## ships instead of six -- and in that build the scene behind this tile does not
+## exist. A tile that cannot launch is worse than no tile, so the absence is
+## read at the source rather than assumed from the config.
+##
+## The mount is asked about through `ResourceLoader.exists()` on a path *inside*
+## the pack, and never through `Piposh3DPack.mounted`. The two say the same
+## thing, and only one of them can be said here: naming an autoload is a
+## compile-time reference, autoloads register a frame into a `--script` run, and
+## `tools/title_list.gd` is exactly such a run. The first version of this
+## function named the autoload, and the harness did not fail -- it failed to
+## *compile*, so `_init` never reached `quit()` and the gate sat on it until the
+## 900s ceiling.
+static func embeds(cfg: ConfigFile = null) -> Array[Dictionary]:
+	var config := cfg if cfg != null else GameConfig.merged()
+	var out: Array[Dictionary] = []
+	for section in config.get_sections():
+		if not str(section).begins_with("embed."):
+			continue
+		var scene := str(config.get_value(section, "scene", ""))
+		if scene == "" or not ResourceLoader.exists(scene):
+			continue
+		var name := str(section).substr("embed.".length())
+		out.append({
+			"title": str(config.get_value(section, "title", name)),
+			"roots": [{
+				"name": name,
+				"root": "res://titles/%s" % name,
+				"boot": "",
+				"scene": scene,
+				"flag": str(config.get_value(section, "flag", "")),
+				"default": true,
+			}] as Array[Dictionary],
+		})
 	return out
 
 

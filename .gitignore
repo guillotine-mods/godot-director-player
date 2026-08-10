@@ -4,6 +4,12 @@
 export.cfg
 *.tmp
 build/
+
+# The piposh-3d resource pack, built from `titles/piposh-3d` by
+# `--export-pack Pack`. ~269 MB, and it is not new data: the same bytes already
+# arrive with the submodule, so it is the import saved ahead of time rather
+# than anything to store.
+titles/*.pck
 android/*.keystore
 android/*.jks
 
@@ -32,7 +38,15 @@ __pycache__/
 
 # ScummVM reference sources, fetched by tools/fetch_scummvm_reference.sh.
 # GPL-2.0-or-later, read for the model only — never vendored.
-reference/scummvm/
+#
+# No trailing slash, and that is the point rather than a typo. A pattern ending
+# in `/` matches directories only, so `reference/scummvm/` left a *symlink* of
+# that name untracked and visible -- which is how the tree gets into a worktree,
+# since it is fetched rather than committed and a fresh worktree therefore never
+# has it. `lingo_surface_audit` is the check that reads it, and it reports the
+# absence as 0 builtins rather than as a missing directory. One `git add -A` away
+# from committing a symlink into somebody's own checkout.
+reference/scummvm
 .traces/
 
 # Screenshots the snapshot key writes. Somebody's session, of a game that is not
