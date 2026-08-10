@@ -108,8 +108,15 @@ the opposite and had been available from the first minute. Read
 
 - **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
   harnesses that run and are expected to pass — measured by a whole-suite run on
-  4.7.1, 2026-08-10: **every entry passes, none fail.** Both of the two that this
-  line used to name as standing failures now pass, and neither was fixed by
+  4.7.1, 2026-08-11: **every entry passes except `palette_members`, and that one
+  fails for want of a corpus that is not in this repository.** Its `ALL` entry
+  names `res://test-games/itamar-park`, which is untracked, not a submodule and
+  not ignored — simply absent, so it fails on any clean clone rather than on this
+  machine. Pointed at no palettes it is *designed* to fail rather than pass over
+  nothing, so this is the harness working; it is the corpus that is missing.
+  Do not read it as a regression, and do not fix it by weakening the assert.
+  Both of the two that this line used to name as standing failures now pass,
+  and neither was fixed by
   changing what they assert: `debug_bindings` was config rather than code and the
   config moved, and `play_suspends` *was* the fixed-frame-count flake of
   `bugs.md` 41 until `b8466abb` — which replaced its six-frame budget with a wait
@@ -138,6 +145,29 @@ the opposite and had been available from the first minute. Read
   process exits, so a running editor looks like a failed one. Redirect to a file.
 - **`git add -A` sweeps pre-existing untracked `.uid` files** into the commit. Stage
   paths deliberately.
+- **`titles/piposh3d.pck` builds itself, and the first run after a fresh clone
+  pays minutes for it.** The pack is gitignored — it is the `titles/piposh-3d`
+  submodule's own bytes with the import saved ahead of time, not new data — so no
+  clean checkout has one. Three places now build it rather than asking you to:
+  `autoload/piposh3d_pack.gd` in `_init`, before the four autoloads whose scripts
+  live *inside* the pack are instantiated, so the run that builds it is also the
+  run that has the 3D title; and `gate.sh`/`check.sh` through
+  `gate_env.sh`'s `gate_require_pack`, so the wait lands once, up front, instead
+  of inside whichever harness ran first. `bash build_pack.sh` is the same thing
+  by hand.
+  Without it the 3D title is missing from the launcher, and — the half that
+  reaches everything else — those four autoloads print twelve engine `ERROR`
+  lines before every harness, in a suite whose job is to say which entries are
+  clean.
+  **A submodule bump rebuilds it too.** `titles/piposh3d.pck.stamp` holds the
+  commit the pack was built from, and a mismatch against what is checked out now
+  rebuilds. Mtimes cannot answer that question — a checkout rewrites them and a
+  pack newer than its sources is the normal case — but a commit hash is exact.
+  The check answers "not stale" whenever it cannot tell (no `.git`, no `git` on
+  PATH), because a wrong yes costs a rebuild on every run and a wrong no costs
+  one stale pack. Uncommitted edits *inside* the submodule do not register: the
+  commit has not moved, and somebody working on the 3D title does not want a
+  four-minute rebuild per launch. They run `bash build_pack.sh` themselves.
 
 ## Fixing something
 

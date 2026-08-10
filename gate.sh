@@ -51,6 +51,12 @@ cd "$(dirname "$0")" || exit 1
 . ./gate_env.sh
 G=$(gate_find_godot) || exit 1
 gate_announce_godot "$G"
+# Before the first harness, because the pack decides what every one of them
+# prints. It is not this suite's subject -- nothing in `ALL` is the 3D title --
+# and that is exactly why it has to be built rather than skipped: the autoloads
+# it carries fail in *every* entry, so an unbuilt pack puts twelve errors into
+# each of the 76 results the run is here to produce. See `gate_require_pack`.
+gate_require_pack
 
 # Pin the corpus. A gate is only meaningful against the game its baseline was
 # recorded on, and the config is a working file that gets pointed at whichever

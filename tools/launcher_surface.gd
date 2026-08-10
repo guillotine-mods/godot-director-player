@@ -36,6 +36,10 @@ extends SceneTree
 ## says so in the output rather than passing on a window that never moved.
 
 const Harness := preload("res://tools/lib/harness.gd")
+## Preloaded and not reached through the scene: the boot check below asks what
+## the launcher's own list layer answers, which is the layer `_on_play` copies
+## from, rather than reaching into the built tiles for a value they never carry.
+const TitleList := preload("res://scenes/launcher/title_list.gd")
 
 const LAUNCHER := "res://scenes/launcher/launcher.tscn"
 const SETTLE_FRAMES := 8
@@ -161,6 +165,63 @@ func _menu(h: Harness, scene: Node) -> void:
 				break
 	h.check("every row has a LineEdit directly under it", fields == panel.get_child_count(),
 		"%d field(s) for %d row(s)" % [fields, panel.get_child_count()])
+	h.complete(case)
+
+	# The boot override is the one developer field whose *default* decides whether
+	# a title launches, because `_on_play` treats anything in it as an override of
+	# the selected title's own boot container -- and the developer tab is on by
+	# default in a run from source, so a seeded value is nobody's opt-in.
+	#
+	# It used to be filled from the merged config, which is `strtgame.dir`. Four of
+	# the five Director titles boot exactly that, so the fault was invisible in
+	# four places and total in the fifth: selecting Rating, whose boot is
+	# `mainmenu.dir`, and pressing Play wrote `root = res://games/rating` with
+	# `boot_movie = strtgame.dir` and reached "no such container". The title could
+	# not be started from this screen at all.
+	#
+	# The placeholder is asserted with the text, because "empty" is only correct
+	# while the screen still says what empty *means*. A blank field under no
+	# placeholder reads as a control that failed to load rather than one that
+	# defers, and the next person to see it would helpfully fill it back in.
+	case = "the boot override defers instead of overriding by default"
+	h.begin(case)
+	var boot := scene.get_node_or_null("%Boot") as LineEdit
+	if h.check("there is a boot field to look at", boot != null):
+		h.check("it opens empty, so Play uses the selected title's own boot",
+			boot.text == "", "text=%s" % ("<empty>" if boot.text == "" else boot.text))
+		h.check("and the placeholder says that is what empty means",
+			boot.placeholder_text != "")
+	# Both halves, because the empty field alone asserts the *cause* that was
+	# removed and not the *effect* that was reported. What a player saw was a
+	# title that would not start, so the effect is what is measured below:
+	# `_on_play`'s own composition -- the field when it holds something, the
+	# selected title's boot when it does not -- has to come out as each title's
+	# own container.
+	#
+	# Composed here rather than reached by pressing Play, which writes the
+	# overlay and changes scene: two side effects on the machine running the
+	# harness, for an answer that is one `if` wide. The `if` is duplicated from
+	# `_on_play` and that is the cost -- so it is written as the same expression,
+	# and a change to the rule that is not mirrored here shows up as this check
+	# passing while the screen is broken. It caught the seeded field: with the
+	# seed back in place, Rating composes `strtgame.dir` and this fails naming
+	# it, which is the sentence the bug report was.
+	var mismatched: Array[String] = []
+	var override := str(boot.text).strip_edges() if boot != null else ""
+	for entry in TitleList.build():
+		var row := TitleList.default_root(entry) as Dictionary
+		# A Godot-project title carries a scene instead of a boot container, and
+		# `_on_play` returns before any of this for it. It is not a title with a
+		# missing boot; it is a title with no boot to miss.
+		if str(row.get("scene", "")) != "":
+			continue
+		var mine := str(row.get("boot", ""))
+		var composed := override if override != "" else mine
+		if composed != mine or mine == "":
+			mismatched.append("%s boots %s, Play would send %s"
+				% [row.get("name", ""), mine, composed])
+	h.check("and every title would start on its own boot container",
+		mismatched.is_empty(), ", ".join(mismatched))
 	h.complete(case)
 
 	case = "arrows and the D-pad have somewhere to go from every tile"

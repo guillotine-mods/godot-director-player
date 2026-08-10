@@ -13,6 +13,12 @@ cd "$(dirname "$0")" || exit 1
 . ./gate_env.sh
 G=$(gate_find_godot) || exit 1
 gate_announce_godot "$G"
+# Before the grep below, which is why this is here and not only in `gate.sh`:
+# without the pack the preview surface opens with twelve `Failed to load` lines
+# from the 3D title's autoloads, and this script reports exactly that pattern as
+# the thing that went wrong. The fast gate would fail loudly on a clean clone,
+# naming files nobody touched.
+gate_require_pack
 out=$(gate_run_capped 120 "$G" --headless --path . --script tools/preview_surface.gd -- "$@" 2>&1)
 if [ $? -eq 124 ]; then
   echo "check: preview_surface hit the 120s ceiling. An open editor contends over .godot/."

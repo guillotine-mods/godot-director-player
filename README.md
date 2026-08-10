@@ -47,6 +47,7 @@ Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVEL
 | `.claude/`, `.codex/` | Skills and slash commands, kept in sync so both agents see the same thing |
 | `bugs.md` | Open defects with reproductions. Closed ones in `docs/bugs-closed.md` |
 | `gate.sh`, `check.sh`, `gate_env.sh` | The verification gates, and the one copy of what they need to know about the machine |
+| `build_pack.sh` | Builds `titles/piposh3d.pck` out of the `titles/piposh-3d` submodule. Run once per checkout; without it the 3D title is missing from the launcher and four autoloads error on every run |
 
 Not committed, but present after a real run: `.godot/` (editor cache, see below),
 `.traces/` (ScummVM trace logs from `tools/capture_scummvm_trace.sh`),

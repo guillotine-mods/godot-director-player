@@ -10,6 +10,8 @@ build/
 # arrive with the submodule, so it is the import saved ahead of time rather
 # than anything to store.
 titles/*.pck
+# The commit each pack was built from, so a submodule bump is detectable.
+titles/*.pck.stamp
 android/*.keystore
 android/*.jks
 
