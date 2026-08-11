@@ -893,6 +893,26 @@ Confirm with `git status` that no keystore leaked into the working tree.
 
 - [ ] **Step 1: Write the workflow**
 
+> **The shipped `.github/workflows/release.yml` supersedes the block below.**
+> Review found six Important defects in it, all of them mine, and the shipped
+> file carries the fixes: a secrets pre-flight before checkout (an empty
+> `ANDROID_KEYSTORE_B64` otherwise wrote a 0-byte keystore and exited 0);
+> `tools/export_presets_check.gd` actually running in CI, after the stamp
+> mutates the presets, since otherwise Task 1's whole deliverable never ran in
+> the pipeline; a cache key including `hashFiles('tools/ci/install_godot.sh')`
+> plus post-restore validation; every action pinned to a 40-char commit SHA;
+> an assertion that `piposh3d.pck` is inside the APK; and `timeout-minutes`,
+> `persist-credentials: false`, and a failure-artifact upload.
+>
+> It also carries the release-channel convention, which this block predates:
+> `v0.x` ships as a GitHub pre-release via
+> `prerelease: ${{ startsWith(github.ref_name, 'v0.') }}`, and `v1.x` and later
+> are full releases. `stamp_version.sh` strips the leading `v`, so the Android
+> version name reads `0.1.0`.
+>
+> The block is kept for the reasoning in its comments, not as something to copy.
+> Duplicating a 230-line workflow here guarantees a third drift; read the file.
+
 Create `.github/workflows/release.yml`:
 
 ```yaml
