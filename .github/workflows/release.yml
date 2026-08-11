@@ -3,9 +3,16 @@ name: release
 # Tag-only, deliberately. With no `pull_request` trigger the submodule PAT and
 # the release keystore are unreachable from a fork PR by construction rather
 # than by a setting somebody can relax later.
+#
+# The tag scheme has no `v` prefix: `alpha-*` and `beta-*` are the prerelease
+# channels used until this project reaches official releases, and a tag
+# starting with a digit (bare semver, e.g. `1.1234.98`) is an official release.
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - "alpha-*"
+      - "beta-*"
+      - "[0-9]*"
 
 permissions:
   contents: write
@@ -208,9 +215,12 @@ jobs:
             "build/GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" \
             build/android/GodotDirectorPlayer.apk
 
+      # `alpha-*`/`beta-*` tags land as GitHub pre-releases; a bare-semver tag
+      # (the official-release channel) lands as a full release.
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           fail_on_unmatched_files: true
+          prerelease: ${{ startsWith(github.ref_name, 'alpha-') || startsWith(github.ref_name, 'beta-') }}
           files: |
             build/GodotDirectorPlayer-Windows-${{ github.ref_name }}.zip
             build/android/GodotDirectorPlayer.apk
