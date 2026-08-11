@@ -124,6 +124,13 @@ would pay that cost twice for no parallelism worth having.
 Steps in order:
 
 1. **Checkout** with `submodules: recursive` and `token: SUBMODULES_PAT`.
+2. **Run the `tools/ci` suites.** Added after this document was first approved.
+   The pre-check found that none of the guards this plan builds were exercised
+   in CI at all: the tag charset validation, the errexit handling, the
+   unreadable-asset path. Placed before the downloads so a broken guard costs
+   seconds rather than a 3.8 GB checkout and a 1 GB install.
+   `install_godot_test.sh` doubles as the pre-flight for the Godot step, since
+   it HEADs the three pinned release assets.
 2. **JDK 17** via `actions/setup-java` (temurin). Godot recommends 17
    specifically; higher versions work but 17 is the supported target.
 3. **Android SDK** via `android-actions/setup-android`, for `apksigner` and

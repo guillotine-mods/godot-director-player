@@ -925,6 +925,23 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.SUBMODULES_PAT }}
 
+      # Everything these suites guard -- the tag charset validation that stops a
+      # `&` in a tag corrupting the preset, the errexit handling that makes a
+      # failing check report instead of killing the run, the unreadable-asset
+      # path -- was exercised only on a developer's machine until this step
+      # existed. First, so a broken guard fails in seconds rather than after the
+      # ~1 GB Godot download and a 3.8 GB checkout.
+      #
+      # `install_godot_test.sh` doubles as the pre-flight for the step below it:
+      # it HEADs the three pinned release assets, so a version that has been
+      # renamed or pulled is named here rather than surfacing as a curl failure
+      # mid-install.
+      - name: Run the tools/ci suites
+        run: |
+          bash tools/ci/stamp_version_test.sh
+          bash tools/ci/check_asset_size_test.sh
+          bash tools/ci/install_godot_test.sh
+
       # `gradle_build/use_gradle_build=false`, so Godot uses prebuilt templates
       # and needs only apksigner and zipalign, not a full Gradle build.
       - uses: actions/setup-java@v4
