@@ -111,8 +111,12 @@ the opposite and had been available from the first minute. Read
   4.7.1, 2026-08-10: **every entry passes, none fail.** Both of the two that this
   line used to name as standing failures now pass, and neither was fixed by
   changing what they assert: `debug_bindings` was config rather than code and the
-  config moved, and `play_suspends` is the fixed-frame-count flake of `bugs.md` 41,
-  which passing once does not close. Treat a green `play_suspends` as one sample.
+  config moved, and `play_suspends` *was* the fixed-frame-count flake of
+  `bugs.md` 41 until `b8466abb` — which replaced its six-frame budget with a wait
+  on the condition under a 600-frame ceiling and tightened the assertion in the
+  same commit. **A green `play_suspends` is a result, not one sample**, and this
+  line said the opposite for long enough that three separate sessions treated a
+  closed entry as open.
   Before that this said 62 entries / 60 pass, and earlier 23 pass / 1 fail, and
   later 40 pass / 1 fail naming a `boot_state` that passes now — none of which
   summed to the list, for as long as nobody ran the whole thing and counted. The

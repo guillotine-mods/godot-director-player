@@ -219,9 +219,10 @@ There is no test suite.
 actually run against the live player and are expected to pass, and as of a
 whole-suite run on 4.7.1 on 2026-08-10 **every entry passes and none fail** --
 including `debug_bindings`, which was config rather than code and whose config
-moved, and `boot_state`, the long-standing red this paragraph used to name. Treat
-a green `play_suspends` as one sample rather than a result: it is the
-fixed-frame-count flake of `bugs.md` 41, and passing once does not close it.
+moved, and `boot_state`, the long-standing red this paragraph used to name. A
+green `play_suspends` is a result rather than one sample: it *was* the
+fixed-frame-count flake of `bugs.md` 41, and `b8466abb` closed it by waiting on
+the resumed global under a 600-frame ceiling instead of counting six frames.
 The count is deliberately not written here, for the reason `AGENTS.md` gives --
 it changed twice in the day that line was last corrected, and a number nobody
 re-measures is what sent three readers looking for a failure that was not there.

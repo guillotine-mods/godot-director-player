@@ -22,7 +22,7 @@ and renumbering breaks that contract worse than the collision does.
 |---|---|---|
 | 33 | here: `gate.sh`'s `editable_text` asserts nothing | closed: `go to frame X of movie Y` read its own command word |
 | 34 | here: `the visible of sprite N` on an empty channel | closed: film-loop children drew from the wrong cast |
-| 41 | here: `member (<expr>) of castLib X` drops the library | here, further down: `play_suspends` flakes about half its runs |
+| 41 | closed: `member (<expr>) of castLib X` drops the library (`66baa6a5`) | closed: `play_suspends` flakes about half its runs (`b8466abb`) |
 
 > **Many "Reproduce:" lines below name tools that no longer exist.** The retired
 > renderer and the ~24 harnesses that drove it were deleted; every command naming
@@ -37,9 +37,14 @@ and renumbering breaks that contract worse than the collision does.
 > *observation* in each entry may still be true; the command proving it is gone,
 > and re-proving it against the live player is the first step on any of them.
 >
-> **Entries 18 and 19 are about `MoviePlayer`, which is deleted**, and entry 8
+> **Entry 18 is about `MoviePlayer`, which is deleted**, and entry 8
 > asks for `movie_context.json` / `walk_doorways.json` to be retired, which has
-> happened. Those three are candidates for closing outright rather than fixing.
+> happened. Both are candidates for closing outright rather than fixing. Entry 19
+> was the third of them and has been closed rather than left standing:
+> `grep -rn "MoviePlayer\|_apply_cursor" --include="*.gd" .` returns nothing at
+> HEAD, so it named no code at all, and the question underneath it — does the
+> cursor grow with the stage — has a live answer in `docs/bugs-closed.md` 19
+> and 28.
 > Entry 2's subject, `PuppetController`, is also deleted — the underlying
 > question (does the port reimplement a walk state machine the movie's own
 > scripts already answer?) survives the file.
@@ -483,97 +488,6 @@ covers `the castNum of sprite`; something else is still reaching the map with an
 empty or long `nof`, and the deck movie that does it has not been identified. A
 `play`-and-return that skips the deck movie's own `enterFrame` is the first
 suspect, since that handler is where `nof` is set.
-
----
-
-## 41. `member (<expr>) of castLib X` drops the library, and with it every joke and every collectable card in Piposh 1
-
-**Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · **the fourth
-instance of one shape**, and the first three each cost a player bug too ·
-reported from play as *"the binoculars vanish when the deck chair collapses"*
-
-Reproduce, on the tree as it stands:
-
-```
-godot --headless --path . --script tools/parse_residue.gd -- --root piposh
-```
-
-`FAIL  piposh: no compiled statement calls a clause keyword (12 in 8754 script(s))`,
-all twelve on `MASTER.CST` member 31, lines 4 and 75 — `jokesfunk` and
-`cardsfunk`, the two handlers Piposh 1 runs on **every** room entry. Both
-localisations report the same two lines; Piposh 2 has the identical line in its
-own `MASTER.CST` member 12 and is clean only because it is commented out.
-
-**The mechanism.** `_parse_the`'s `member` arm has two branches and only one of
-them looks for the trailing clause:
-
-```gdscript
-if _at_op("("):
-    var args := _parse_call_args()
-    mwhich = args[0] if args.size() > 0 else {"node": "num", "value": 0}
-    mcast = args[1] if args.size() > 1 else null        # <-- no fallback
-else:
-    mwhich = _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
-    mcast = _parse_optional_castlib()
-```
-
-The other three sites that parse the same designator —
-`lingo_parser.gd:752` (`field (…)`), `:777` (`member (…)` as a reference) and
-`:975` (`the number of member (…)`) — all read
-`args[1] if args.size() > 1 else _parse_optional_castlib()`, and each of those
-lines was added by a bug report. This one was missed. **The fix is that same
-expression, on the `mcast` line of the `the <prop> of member (…)` arm.**
-
-**Why nothing reports it.** The expression is still valid without the clause, so
-the statement compiles; the words left over become statements of their own. From
-`tools/scratch`, the AST of
-
-```
-put the name of member (the membernum of sprite 1) of castlib "decks" into x
-```
-
-is a `put_echo` with no target, then a bare `of`, then `castlib("decks")`, then
-`into(x)`. `x` is therefore never assigned, and the four later mentions of `x` in
-`jokesfunk` compile to calls to a handler named `x` that answers VOID. So `y` is
-VOID, `char y of x` is empty, `value("")` is 0, `item 0 of globaljokes` matches
-neither `"0"` nor `"on"`, and the handler falls into its final `else`:
-`set the visible of sprite 17 to 0`. Every time. `script_compile_check.gd` sees
-a script that compiled and says so.
-
-**The player-visible half.** Piposh 1's rooms each hide one gag on channel 17 and
-one collectable card on channel 19, revealed by `globaljokes` / `globalcards` and
-restored on entry by `jokesfunk` / `cardsfunk`. In DAY1's `dl1` — the deck
-outside the cabin door, and the room the report names — channel 17 is member
-`1:156`, a pair of binoculars. Clicking the deck chair runs `dl1chair` (frames
-66-80), whose frame script at 70 (`BehaviorScript 158`) plays the chair
-collapsing, sets `item 1 of globaljokes` to `"on"` and animates the binoculars
-falling onto the deck on channel 16. Measured over the whole clip: `globaljokes`
-does become `on,0,0,0,0` and channel 16 does draw members 150→156, so the gag
-runs. Then the playhead returns to `dl1` (frame 3), `BehaviorScript 21` calls
-`jokesfunk()`, the branch above fires, and **channel 17's override stays
-`{"visible": 0}` for the rest of the movie.** The binoculars are gone.
-
-`BehaviorScript 158` gets the same value out of the same cast because it spells
-the designator *without* the parentheses — `the name of member the memberNum of
-sprite 1 of castLib "decks"` — which is why the gag can fire at all and only its
-restoration is lost.
-
-Proof that the parse is the whole of it, at `dl1go` with
-`globaljokes = "on,0,0,0,0"`:
-
-| handler called | channel 17 after |
-|---|---|
-| `jokesfunk`, as authored | `{"_member": 156, "visible": 0}` |
-| the same body with the parentheses removed | `{"_member": 156, "visible": 1}` |
-
-**Scope.** Every joke and every collectable card in Piposh 1, Piposh 1 English
-and Piposh 1 Russian, in every room, on every day — 5 jokes and 5 cards per day
-by `globaljokes`/`globalcards`, none of which can ever be seen a second time.
-`piposh2`, `piposh-dream` and `rating` report 0.
-
-**Not the same fault as the up-staircase** reported alongside it from the same
-room, which was `preview/interaction.gd:script_for_click` handing the click to a
-behaviour that declares no mouse handler. Two reports, one room, two causes.
 
 ---
 
@@ -1249,40 +1163,6 @@ forget the joke window; read it again.
 
 ---
 
-## 16. `the number of member X of castLib Y` drops the library
-
-**Status:** open, worked around in one place · **Area:** interpreter host
-
-`LingoHost.member_number()` resolves the name through the cast search order and
-returns a bare integer, so the library the script named is lost. Writing that
-integer to `the memberNum of sprite N` then keeps whichever library the sprite
-already had, which for an empty channel defaults to 1, the movie's own cast.
-
-Seen twice while wiring cursors. `cursorfunk` does
-
-    set the memberNum of sprite 93 to the number of member ("day" & globalday) of castLib "master"
-
-and `displayobject` does the same with `member "object0" of castLib "master"`.
-Run against an empty channel both resolved master's member into the movie's
-internal cast, and MURDER1, HATDAY1 and GOLDDEAD warned "Missing cast member ...
-linked cast internal, member 9" on every load. `_run_cursor_funk()` gates
-`displayobject` to hubs to avoid it, which is a workaround at one call site, not
-a fix.
-
-1064 sites in the corpus use `of castLib`, so this is not a two-handler problem.
-
-The fix is the same one `the castNum` already has: return a packed reference
-(`_pack_member`) so the library survives the assignment. The risk is that
-`the number of member ...` results are also compared and used in arithmetic, and
-a packed value is a large integer, so every consumer has to be checked first.
-That is why it was not done alongside the cursor work.
-
-Reproduce: `goto_movie` any non-hub movie with an empty channel 103 after
-removing the `context.is_hub` gate in `_run_cursor_funk()`, and watch for the
-missing-member warning.
-
----
-
 ## 24. Every room entry skips the room's own entry frames
 
 **Status:** open, deliberately not fixed · **Area:** label resolution ·
@@ -1521,26 +1401,6 @@ cursor lands on the hotspot or half a cursor away from it.
 
 ---
 
-## 19. The cursor never scales at the most common window sizes
-
-**Status:** open, cosmetic · **Area:** renderer
-
-`MoviePlayer._apply_cursor()` scales the cursor with
-`maxi(1, int(floor(_stage_scale())))`. Director cursors here are 13x17 to 17x17,
-authored for a 640x480 screen, so at a stage scale of 1.5 — which is what a
-default window gives — `floor` yields 1 and the cursor is drawn at native size
-against artwork that is half again as large. It only doubles once the window is
-big enough for scale 2.
-
-Flooring is deliberate: rounding 1.5 up would draw the cursor larger than the art
-around it. The result is still that the cursor is visibly small at the size most
-people will play at, and it steps rather than tracking the stage.
-
-Reproduce: run the game at the default window size, hover the floor in DAY1, and
-compare the cursor against the artwork it sits on. `_stage_scale()` reports 1.5.
-
----
-
 ## 25. A cold F6 warp or save-editor Apply still drops the player into a hub with unset globals
 
 **Status:** open decision, not a pending task · **Area:** dev tools / skip routing ·
@@ -1568,29 +1428,17 @@ auto-start a game, not how to seed.
 
 ---
 
-## 28. The preview's cursor never scales with the stage, and its hotspot rule is unverified
+## 28. The preview's cursor hotspot rule is unverified
 
 **Status:** open, cosmetic · **Area:** preview renderer ·
 found while fixing the preview's custom cursors
 
-Two things about how a composed cursor lands on screen in
-`scenes/director_preview.gd`, neither of which stops a cursor appearing now that
-it appears at all.
+**This entry was filed with two halves and only one is still open.** The scale
+half — the composed image handed to `Input.set_custom_mouse_cursor` at its native
+16x16 while the stage around it drew at 1.5 — was fixed by `ff066de6` and is in
+`docs/bugs-closed.md` under 19 and 28. What follows is the remainder.
 
-**Scale.** `lingo_set_cursor` hands `Input.set_custom_mouse_cursor` the composed
-image at its native 16x16 and nothing else. The preview draws the 640x480 stage
-through `_fit_to_window`, which at the project's default 1280x720 window and the
-`native_4_3` aspect picks `min(1280/640, 720/480)` = **1.5**, so every piece of
-artwork is half again as large as the cursor sitting on it. This is bugs.md 19
-for the other renderer, one step worse: `MoviePlayer._apply_cursor` at least
-scales in integer steps, and this does not scale at all.
-
-Reproduce: run
-`godot --path . res://scenes/director_preview.tscn -- --file PIP2DATA/MAP.DIR`,
-hover any of channels 3-14 on the map, and compare the 16x16 cursor against the
-map art around it.
-
-**Hotspot.** `_cursor_image` takes the hotspot from the data member's
+`_cursor_image` takes the hotspot from the data member's
 registration point and recentres it to (8,8) only when it falls outside the 16x16
 crop, which is `docs/DIRECTOR_ENGINE.md` 7.3 rule 1. Rule 2 of the same section
 says **Windows Director before D5 ignores custom hotspots entirely and always
@@ -2006,147 +1854,6 @@ have yet, and every one is a handler that silently does not run.
 
 ---
 
-## 40. Unnamed markers are dropped, so `marker(n)` cannot count to a `play done` frame
-
-**Status:** fixed in the working tree, **not yet gated** · **Area:**
-`director/director_labels.gd` · found while landing `play`/`go` suspension, and it
-is the other half of the same dialogue
-
-**This entry was open for one commit longer than anybody believed, and that is the
-part worth keeping.** It was filed with the diagnosis correct and the fix printed
-below. Commit 641d1d47 ("labels: an unnamed marker still counts, so `marker(n)`
-stops skipping past it") landed that printed fix, said in its message that the
-dialogue was repaired, and **was inert**: it moved `markers.append` above the
-`if name == "": continue` and taught `marker_at` to prefer named markers, but left
-the range guard four lines higher —
-
-```gdscript
-if start < text_base or stop > payload.size() or stop <= start:
-    continue
-```
-
-— and `stop <= start` is true for a zero-length name, so control never reached the
-append that commit had just moved. The file then carried a comment reading "An
-unnamed marker is kept, and that is not tidiness" directly beneath a guard that
-dropped them, and a class docstring still insisting they "must be dropped, or
-every later marker's index shifts", which is exactly backwards. Two independent
-readings of the same file disagreed and nothing arbitrated.
-
-**Nothing caught it, because the only harness that could had repaired its own
-subject.** `tools/play_suspends.gd:_restore_unnamed_markers` re-parsed the VWLB
-chunk, overwrote `labels.markers` with the full list, and early-returned when the
-counts already agreed — so `--dialogue` asserted against an array the player never
-gets, passed before the fix, and passed identically after it. Its docstring
-conceded this ("Put back here rather than fixed here … `bugs.md` carries it"),
-which is honest and still useless: a green run proved nothing either way. It is
-now `_check_marker_index`, which asserts the count and fails instead of repairing.
-
-The lesson generalises past this bug: a decoder's output size is an *invariant*,
-and the only trustworthy witness to it is the container's own header. That is what
-`tools/label_index.gd` now checks over every container in every root, and it is
-what would have gone red the day 641d1d47 landed.
-
-`DirectorLabels.parse` dropped every VWLB entry whose name is empty. The reference
-keeps them: `Score::loadLabels` inserts one `Label` per entry regardless of name,
-and `getNextLabelNumber` walks the whole array — so **`marker(1)` counts unnamed
-markers and this port's did not.** An unnamed marker is not decoration. It is
-how a Director author marks a frame that only the score needs to reach, and it is
-not rare: **2,236 of Rating's 4,220 entries**, 59 of `piposh-dream`'s 2,732, and
-12 of Piposh 2's 3,019 — so the gate's own corpus carries them too.
-
-Rating's `BATZEGOZ.dir` is the case that found it. Its VWLB has 28 entries and
-nine of them are unnamed, one at 0-based frame 214:
-
-```
-godot --headless --path . --script tools/label_index.gd -- --file BATZEGOZ.dir --list
-```
-
-lists them, and printed 19 of 28 before the fix:
-
-```
-    13  frame   207  egozspeak1
-    14  frame   214  <unnamed>
-    15  frame   216  Batz2A
-```
-
-Frame 214 is `BehaviorScript 36`, whose whole body is `on exitFrame / play done /
-end`, and it sits between `egozspeak1` (207) and `Batz2A` (216). The talking loop
-at 207-213 leaves with `go(marker(1))`. With the unnamed marker kept that is
-frame 214, `play done` runs, and the mouseUp that called `play frame
-"egozspeak1"` is resumed so that its own trailing `go` picks the room. With it
-dropped, `marker(1)` is 216 and **frame 214 is unreachable**: `play done` never
-runs anywhere in this movie, and all three of Egoz1's dialogue options arrive at
-the first one's destination.
-
-Measured, clicking the three options in turn (`tools/scratch` is gone; the same
-walk is what `--dialogue` asserts):
-
-| option | script | markers as parsed | markers with the unnamed ones kept |
-|---|---|---|---|
-| channel 11 | `go("batz2a")` | Batz2A | Batz2A |
-| channel 12 | `go("batz2b")` | Batz2A | Batz2b |
-| channel 13 | `go("batz2c")` | Batz2A | batz2c |
-
-so the visible symptom is *a dialogue that answers every option with the same
-reply*, and it is one line away.
-
-The fix is not simply to stop dropping them, because `marker_at` is the reason
-they were dropped in the first place — a frame inside an unnamed marker's span
-must still report the last *named* one, or "which room am I in" answers blank.
-**Nor is it `stop < start`**, which is the one-character version and leaves the
-sibling clause (`stop > payload.size()`) able to renumber the index space the same
-way for the next container that needs it. The rule the loop enforces is now stated
-as the rule: *an entry is never dropped; only its name can be unreadable*, so a
-bad range costs the name and never the position. Both halves:
-
-```gdscript
-        var name := ""
-        if stop > start and start >= text_base and stop <= payload.size():
-            name = Codepage.decode(payload.slice(start, stop)).strip_edges()
-        var zero_based := frame - 1
-        markers.append({"frame": zero_based, "name": name})
-        if name == "":
-            continue
-        var key := name.to_lower()
-        if not labels.has(key):
-            labels[key] = zero_based
-```
-
-The earlier revision of this entry printed that block without the guard folded
-into it, keeping the `continue` above — which is the shape that shipped inert. The
-`continue` has to go, not move.
-
-```gdscript
-func marker_at(frame: int) -> String:
-    var found := ""
-    for marker in markers:
-        if int(marker["frame"]) > frame:
-            break
-        if str(marker["name"]) != "":
-            found = str(marker["name"])
-    return found
-```
-
-**Keeping the entries moves `marker(0)` as well as `marker(1)`, and that is the
-risk surface rather than a footnote.** A hold loop inside an unnamed marker's span
-now returns to the unnamed marker rather than to the named room. It is
-Director-correct — `Score::getCurrentLabelNumber` (`score.cpp:238`) scans every
-entry, named or not — but it is a live behaviour change at 2,236 sites in Rating
-alone. BATZEGOZ has unnamed markers at 330, 335, 336, 367 and 369 inside
-`batz2c`'s span, and members 5, 19, 80, 84 and 123 all call `go(marker(0))`.
-
-Every reader of `markers`, and what the change does to each:
-
-| reader | effect |
-|---|---|
-| `director_preview.gd:lingo_marker` | the fix. Counts entries, as Director does |
-| `lingo_go_next` / `go next` | correct now; `gotoNext` counts unnamed ones too |
-| `tools/mouse_poll.gd:133` | **more** correct — its own comment says the handlers it drives end in `go(marker(1))` |
-| `tools/click_trace.gd:_where` | already skipped empty names in advance of this |
-| `hotspots.gd`, `click_trace.gd:_target_frame` | match by name, so `""` never matches a request |
-| `tools/builtin_load.gd:277` | bounds a room's span by "the next marker", which can now be an unnamed one. In the gate — watch it |
-| `director_preview.gd:1820` (**SKIP**) | jumps to the next marker ahead, so SKIP now stops on unnamed markers as well. Left alone deliberately: SKIP is a debug affordance with no Director semantics to be correct against, it has its own open entry (32), and "an unnamed marker is not a scene" is the same argument `marker_at` already makes. Wants a decision, not a silent change |
-
 ## 51. `gate.sh` pinned the root and not the boot movie, so most of the suite booted nothing and asserted over it
 
 **Status:** FIXED (tooling) · **Area:** `director/director_paths.gd:load_config`,
@@ -2193,57 +1900,6 @@ much a green run actually asserted.
 Reproduce (before the fix): `godot --headless --path . --script
 tools/text_and_shapes.gd -- --root piposh2` → `no score loaded`, no verdict.
 After: `--root piposh2 --boot strtgame.dir` → PASS, 10 checks.
-
-## 41. `play_suspends` fails about half its runs on one assertion, so the gate's set is not reproducible
-
-**Status:** open · **Area:** `tools/play_suspends.gd:351` · found by the first
-full-suite run on macOS, which is also the first one anybody diffed run-to-run
-
-`bash gate.sh play_suspends` twice in a row, same binary, same corpus, prints
-PASS then FAIL. Four bare runs:
-
-```
-for i in 1 2 3 4; do
-  godot --headless --path . --script tools/play_suspends.gd -- --root piposh2 \
-    2>&1 | grep -E '^(PASS|FAIL)' | tail -1
-done
-```
-
-```
-FAIL  ... (26 checks, 1 failed)
-FAIL  ... (26 checks, 1 failed)
-PASS  ... (26 checks, 0 failed)
-PASS  ... (26 checks, 0 failed)
-```
-
-26 checks every time, so this is not a harness that lost its subject and not a
-corpus that resolved differently. One assertion moves: **"and the rest of the
-handler still ran"**, which reports `before` when it fails and `after` when it
-passes.
-
-The case is `a handler frozen by 'go to movie' outlives the interpreter`. It
-calls `suspendhop`, whose body hops to another movie mid-handler, and then waits
-
-```gdscript
-	for i in 6:
-		await process_frame
-```
-
-before asserting that the trailing `put "after" into gsuspendhop` ran. Six
-frames is a fixed budget spent waiting for a *container to load off disk* and
-the suspended handler to be resumed on the new interpreter. When the load takes
-longer than six frames the assertion reads the global before the resume writes
-it, and the harness reports the engine as broken.
-
-So the fix is in the harness, not the engine: wait for the condition — the
-interpreter to have resumed, with a frame ceiling that fails loudly — instead of
-counting frames and hoping. Until then the gate's recorded set is not
-reproducible, and a session that runs the suite twice will attribute the
-difference to whatever it changed in between.
-
-Not caused by the corpus pinning moving from `director_game.cfg` to `--root`:
-both mechanisms resolve the same root, and the 26-check count is identical
-either way.
 
 ---
 
@@ -3005,65 +2661,249 @@ godot --headless --path . --script tools/director_render.gd -- --root piposh \
 `/tmp/prev.png`'s stage sits at (213,160) at scale 2. The three rulings about this
 room that *are* closed are `docs/bugs-closed.md` 72.
 
-## 79. `itamar-magichat` plays its intro loop and never reaches its menus: `the runMode` is "Projector", so `InitProgram` never runs
+---
 
-**Status:** open, boot story · **Area:** `scenes/preview_lingo_host.gd`
-`get_system_prop("runmode")` · found while closing 78, which this is the
-remainder of
+## 81. Cast type 12 (`richText`) has no arm in `_parse_cast`, so a rich-text member has no size and its sprite is drawn at the score's residue
 
-With BuddyAPI live the playhead leaves frame 0 and plays frames 124-138, the
-intro/retro video loop, for ever. It never reaches the main menu, and the reason
-is not an Xtra:
+**Status:** open, latent · **Area:** `director/director_cast.gd:_parse_cast` ·
+**another agent is working on this right now**, so read the tree before starting
 
-```lingo
-on startMovie
-  if not Projector() then          -- on Projector: `the runMode = "Projector"`
-    clearGlobals()
-    if SingleGameMode() then
-      InitProgram("magichat.ini")  -- the only caller of ReadInifile
-    end if
-  end if
+`_parse_cast`'s `match type_code` has arms for 1 (bitmap), 3 (field), 2 (film
+loop), 8 (shape), 11 (script) and 14 (transition), and stops there. There is no
+12. Every other field of the member dictionary is initialised before the match —
+`width` and `height` at **0** — so a `richText` member is decoded as a member
+with no dimensions and no registration point.
+
+Two things downstream already have opinions about that, and neither is a guess:
+
+- `TYPE_NAMES` *does* name 12 `richText` and `DRAWING_TYPES` *does* include it,
+  so the cast layer marks the member as art the renderer is expected to draw
+  (`"drawing": true`) and then hands over no geometry to draw it with. That
+  combination exists for no other type.
+- `scenes/preview/sprite_geometry.gd:drawn_size` reads a natural size of 0 on
+  either axis as "a member this cast does not describe, or one whose geometry did
+  not decode", and returns the sprite's own rect. That rect is the *score's*
+  stored one, which this file and `docs/bugs-closed.md` both record as authoring
+  residue rather than a size anybody authored — it is what put Piposh 1's money
+  17px off-centre in 33,686 sprite records. So the one member type with no
+  natural size to check the residue against is the one that gets handed it.
+
+`scenes/preview/sprite_art.gd:texture_for` returns null for anything that is not
+a bitmap or a shape, so nothing is drawn either way today; the geometry is what
+will be wrong first when something is.
+
+**Latent, and filed anyway.** `docs/DIRECTOR_ENGINE.md` records that buttons
+(type 7) and rich text (type 12) "do not occur in this corpus at all", and no
+member of `test-games/itamar-magichat`'s eight containers is one either — the
+types found there are bitmap, field, sound, shape, script, palette, transition
+and 15. Per `AGENTS.md`, 0 uses is not a reason for the arm to be missing; it is
+the reason nothing has noticed.
+
+Reproduce (there is nothing in the tree to point it at, which is the entry):
+read `director_cast.gd`'s match, then `sprite_geometry.gd:drawn_size`, and follow
+a `width` of 0 through both.
+
+---
+
+## 82. Cast type 15 (`kCastXtra`) members are skipped by the renderer entirely, and Magic Hat's `yes`/`no` buttons and its intro video are six of them
+
+**Status:** open · **Area:** `director/director_cast.gd` (`TYPE_NAMES`,
+`_parse_cast`), `scenes/preview/sprite_art.gd:texture_for` · found while reading
+`test-games/itamar-magichat` for 79
+
+Type 15 is unknown to the cast layer in three separate places, and the third is
+the one that hides the first two:
+
+- `TYPE_NAMES` stops at 14, so the member's `type_name` comes back from the
+  `"type%d"` fallback as `"type15"`.
+- `_parse_cast` has no arm for it, so width, height and registration stay 0 —
+  the same shape as 81.
+- `DRAWING_TYPES` therefore does not contain it, so `"drawing"` is false. That
+  flag is what the port uses to say "a sprite whose member is one of these and
+  does not resolve is **missing art**", so the one check that would report a
+  silently blank sprite is switched off for exactly the type that always is one.
+
+`sprite_art.gd:texture_for` returns null for any type that is not bitmap or
+shape. So a type-15 sprite draws nothing, is not counted as missing, and leaves
+nothing on the clock.
+
+**Six of them in `test-games/itamar-magichat`**, measured with
+`tools/director_extract.gd` (`--root res://test-games/itamar-magichat --file
+<cast> --out <dir>`, then `members.txt`):
+
+```
+same.cst    66  no
+same.cst    67  yes
+same.cst   178  IntroRetroVideo
+album.cst  210  magicvideo
+lng.cst    148  title1
+lng.cst    149  title2
 ```
 
-`the runMode` answers `"Projector"` (`preview_lingo_host.gd`), matching the
-reference's default (`lingo-the.cpp` `kTheRunMode`), so `InitProgram` is skipped,
-`gIniFileName` and `gCDpath` stay VOID, and two things follow. `ReadConfigLine`
-reads no file, so `#startFrame` takes the movie's `"intro"` fallback rather than
-the ini's `startframe`; and `InitMenuData` asks for
-`CDpath() & "\" & "mainpanels.txt"`, which the resolver *does* find on its tail,
-but `ReadAllMenusFile` builds no menus because nothing else in the chain ran.
+`no` and `yes` are the title's confirm and cancel buttons — two members a player
+is meant to click, and this port cannot draw either.
 
-That is faithful to a **projector**, where a stub movie has already run
-`InitProgram` before branching to `magichat.dir`. This port boots the `.dir`
-directly with no stub, which is the authoring case, and whether it should say so
-is a decision about the boot story rather than a bug in any one binding.
+**What it costs on the intro, end to end.** `magichat.dir`'s
+`BehaviorScript 134 - video intro retro loop` is the movie's own handler for
+"has the video finished":
 
-**Measured, and the reason this is worth an entry rather than a note:** forcing
-`"Author"` in that one arm and changing nothing else, magichat runs
-`InitProgram`, reads its real `magichat.ini` through `baReadIni` (7 reads, plus 2
-`baFileExists`), takes `startframe = mainmenu`, and settles on frames 19-23 with
-16 sprites drawn — the menu screen, with `errors : 0` and `builtins unbound :
-{}`. So the whole of the rest of the title's startup already works; one string is
-between it and the movie's own first screen.
+```lingo
+property prFrameStep
+on exitFrame me
+  ...
+  if sprite(1).getplaybackevent <> 1 then
+    QuitIntroRetro(1, 1)
+  else
+    go(the frame)
+  end if
+end
+```
 
-Two things to settle with it, both cheap and neither guessed at here:
+and `QuitIntroRetro` (movie script `game utils`) is `sprite(spr).stop()` followed
+by `go(the frame + FrameStep)`. Sprite 1 holds `IntroRetroVideo`, an Xtra member;
+`getPlaybackEvent` is an Xtra sprite method and is bound nowhere in this port
+(`grep -rn "getPlaybackEvent" --include="*.gd" .` returns nothing), so it can
+never answer 1 and the movie takes its own abort path **on every tick**, stepping
+one frame at a time through the intro region rather than playing it. Nothing is
+broken in that handler: it is the movie's own fallback working exactly as
+authored, against a video that is not there. **Which frames it walks is a
+separate question from whether it is reached at all** — see 79 for the boot path,
+and re-measure that before quoting a frame range from it.
 
-- One `alert` fires on that path. `ReadInifile` sets `gEndFileText = "[ENDFILE]"`
-  and alerts if `SearchField` cannot find it, and the reconstructed
-  `test-games/itamar-magichat/magichat.ini` terminates with `[ENDINI]` — which is
-  what the *other* ini-utils movie script scans for. The reconstruction's own
-  header explains why it chose `[ENDINI]`; one of the two terminators is wrong and
-  the file is reachable only on this path, so it was left alone.
-- `the runMode` is read by titles other than this one, and a port that answers
-  `"Author"` everywhere makes every projector-only setup branch in the corpus
-  stop running. If it moves it should move with a measurement per root.
+`docs/LINGO_SURFACE.md` already lists the two member properties Director gives an
+Xtra member (`interface`, `mediaBusy`); neither is bound either. **Not the same
+mechanism as 84** — an Xtra member is not a digital video, and the two fail
+differently.
+
+---
+
+## 83. A sprite behaviour is dispatched as a plain script with `me = null`, so its `property` names have nowhere to live and the score's per-sprite initialiser is never applied
+
+**Status:** open · **Area:** `lingo/lingo_interpreter.gd:_invoke` and its
+`"property"` arm, `director/director_score.gd:_read_interval`
+
+The port says this about itself, in `_invoke`'s docstring: "`me` is the script
+object the message was delivered to, or null for every other dispatch there is —
+a frame script, a movie handler, **a behaviour this port reaches as a *script*
+rather than as an instance**." The `property` statement arm then takes the
+documented consequence, which its own comment calls "a divergence and it is
+deliberate": with no `me` it declares a **global** instead of an instance
+variable, because there is no object to hang one on.
+
+That fallback covers a `property` written *inside a handler body*. Two things it
+does not cover:
+
+**1. A script-level `property` line is collected and then dropped.**
+`lingo_parser.gd` gathers the declarations outside any handler into
+`script["properties"]`, and the only reader of that key is
+`lingo_object.gd:_init`, which seeds `props` for an object built by `new`. A
+behaviour never becomes one, so the name is declared nowhere at all — not as an
+instance variable, not as a global. `_read_var` then reaches its last arm, where
+"an unknown bare identifier is a parameterless handler call in Lingo", and the
+name is answered as an unbound builtin: the same failure shape
+`docs/bugs-closed.md` 78 traces from `baReadIni`, arriving by a different route
+and with nothing in the trace to say it was a property.
+
+**2. The behaviour's authored parameters are decoded and never applied.**
+`director_score.gd:_read_interval` says so: the behaviour element's second half
+is `initializerIndex`, "an entry index holding the behaviour's authored
+parameters", and "**Nothing reads the parameters yet**; a title that authors them
+is what will need `getSpriteDetailsStream(initializerIndex)`". The same docstring
+records why this has cost nothing so far — the index is 0 in all 14,903 elements
+of Piposh 2 — which is a fact about Piposh 2 and not about Director.
+
+**`itamar-magichat` is a title that authors them**, and it is the whole pattern in
+one script (`BehaviorScript 135 - end video`):
+
+```lingo
+property prGotoFrame
+
+on exitFrame me
+  go(prGotoFrame)
+end
+
+on getPropertyDescriptionList
+  description = [:]
+  addProp(description, #prGotoFrame, [#default: EMPTY, #format: #string, #comment: "gotoFrame"])
+  return description
+end
+```
+
+`getPropertyDescriptionList` is Director's declaration of *which* parameters the
+author is offered in the score, and the score is where the answer lives — e.g.
+`[#prGotoFrame: "mainmenu"]`. The handler is one statement long and every bit of
+what it does is in a value this port never reads, so `go(prGotoFrame)` goes to
+VOID. `BehaviorScript 134` (see 82) is the same shape with `prFrameStep`.
+
+Reproduce: extract `magichat.dir`'s scripts with `tools/director_extract.gd` and
+read 134 and 135; the parameters they name are in the score's initialiser stream
+and nothing in `director/` opens it.
+
+---
+
+## 84. Digital video (cast type 10) is unimplemented, so Magic Hat's logo movie plays nothing and then skips itself on its first tick
+
+**Status:** open · **Area:** `scenes/preview/media.gd`,
+`director/director_cast.gd`
+
+`media.gd` states the gap plainly and correctly — there is no QuickTime or AVI
+decoder in this port and Godot supplies none, so a `#digitalVideo` member answers
+`the mediaReady` FALSE, a duration of 0, no cue points and no tracks, "which is
+exactly what Director answers for a digital video whose file is missing or whose
+codec is not installed". Nothing about that reasoning is wrong. What is now wrong
+is the sentence beside it: "**no member in any of the six titles is a digital
+video**, so there is nothing to measure a layout against". There is a seventh
+title in the tree and it is built around two of them.
+
+`test-games/itamar-magichat/logo/logo.dir`, all six members:
+
+```
+   1  script       start movie + quit logo
+   2  script       run movie
+   3  script       compedia logo
+   4  script       Check avi
+  27  digitalVideo prelogo
+  28  digitalVideo logo
+```
+
+and the two scripts that are only about them:
+
+```lingo
+on enterFrame                      -- "compedia logo"
+  global FilmLen
+  FilmLen = member("logo").duration
+  sprite(3).movieTime = 0
+  sprite(3).movieRate = 1
+end
+
+on exitFrame                       -- "Check avi"
+  global FilmLen
+  if sprite(3).movieTime >= FilmLen then
+    QuitFilm()                     -- go(the frame + 1)
+  else
+    go(the frame)
+  end if
+end
+```
+
+`the duration of member` is 0 for a member with no media, and `the movieTime` of
+a sprite that is not playing stays where it was put — so `0 >= 0` is true on the
+**first** `exitFrame`, `QuitFilm` runs, and the logo is left behind before a
+frame of it could have been shown. The failure is not a hang and not an error; it
+is the movie's own guard being satisfied by two zeroes.
+
+The media is on disk beside the movie (`logo/logo.avi`, `prelogo.avi`) and
+`startMovie` points the member at it explicitly —
+`member("prelogo").fileName = "prelogo.avi"` — so nothing is missing here except
+a decoder. `docs/ENGINE_TODO.md` carries the member's specific block as an open
+item on the grounds that no member in the corpus is a digital video; these two
+are the sample that argument was waiting for.
 
 Reproduce:
 
 ```
-godot --headless --path . --script tools/scratch/walkfwd.gd -- \
-    --root res://test-games/itamar-magichat --file magichat.dir --steps 160
+godot --headless --path . --script tools/director_extract.gd -- \
+    --root res://test-games/itamar-magichat --file logo/logo.dir --out <dir>
 ```
 
-Every step prints a frame between 124 and 138. `tools/scratch/globs.gd` with the
-same arguments prints the globals; `gIniFileName` is VOID.
+`members.txt` names both, and `scripts/` holds the four handlers above.
