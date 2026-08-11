@@ -277,9 +277,29 @@ jobs:
             echo "== build/ =="
             ls -lR build/ 2>&1
             echo ""
-            echo "== APK contents =="
+            echo "== APK contents (filtered) =="
             if [ -f build/android/GodotDirectorPlayer.apk ]; then
-              unzip -l build/android/GodotDirectorPlayer.apk 2>&1
+              apk_listing="${{ runner.temp }}/apk-listing-for-summary.txt"
+              # The full `unzip -l` names every file Godot packed, and this
+              # summary is uploaded to a PUBLIC workflow artifact. The
+              # expectation is that `gradle_build/use_gradle_build=false`
+              # packs the whole project into one opaque .pck entry, so the
+              # full listing would likely name no individual game file --
+              # but nothing here has built an APK to check that against yet,
+              # so this filters on the expectation rather than trust it: only
+              # the entry count, the lines naming a .pck, and unzip's own
+              # trailing totals line, none of which need the expectation to
+              # be right to stay safe to publish.
+              if unzip -l build/android/GodotDirectorPlayer.apk >"$apk_listing" 2>&1; then
+                total_line=$(tail -n 1 "$apk_listing")
+                echo "total entries: $(printf '%s' "$total_line" | awk '{print $(NF-1)}')"
+                echo "-- .pck entries --"
+                grep '\.pck' "$apk_listing" || echo "(none matched)"
+                echo "-- unzip's totals line --"
+                echo "$total_line"
+              else
+                echo "unzip could not list the APK -- see the 'Verify the piposh-3d pack is in the APK' step for the failure."
+              fi
             else
               echo "not built"
             fi
