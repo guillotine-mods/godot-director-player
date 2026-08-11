@@ -192,6 +192,38 @@ macOS in any form, Play Store publication (this is sideload-only distribution),
 and running `gate.sh` as a release gate. The last is a reasonable follow-up but
 is a separate concern from producing artifacts.
 
+## Open at merge
+
+**`bash gate.sh` has never been run in full against this branch.** It was
+deferred when the game corpora would not clone into the working worktree, on the
+understanding it runs before merge. It is the only check in this plan that has
+never executed. `gate.sh` itself was modified here — `export_presets_check` was
+added to `ALL` — and that registration has only been exercised one harness at a
+time. Run it in a checkout carrying the corpora.
+
+**Deferred minors, none blocking.** A vacuous "an unreadable asset is refused"
+assertion in `check_asset_size_test.sh`, kept as a cheap sanity check and
+labelled as such; a superfluous `chmod` before its cleanup; the bare happy-path
+stamp invocation in `stamp_version_test.sh`, where the abort trap now makes a
+death loud rather than silent; `export_presets_check.gd` cannot distinguish
+`titles/*.pck` from the literal path, which matters only once a second pack
+exists; and that harness requires every preset to carry every `games/*` root, so
+a legitimate games-beside-the-binary build would fail it.
+
+**`GITHUB_RUN_NUMBER` is not monotonic across a workflow rename.** It is scoped
+per workflow file and restarts at 1 if `release.yml` is renamed or recreated. If
+that happens, `versionCode` goes backwards and no user can update in place
+again — the exact harm the stored keystore exists to prevent. Deferred rather
+than redesigned because the obvious alternative is worse: a semver-derived code
+collides on `v0.0.1-ci1` and `v0.0.1-ci2`, so a re-run of the acceptance test
+could not install over itself. The workflow carries a comment saying it must not
+be renamed. That comment is the whole mitigation.
+
+**A GitHub pre-release is public and downloadable.** `draft` and `prerelease`
+are orthogonal. `v0.x` tags ship as pre-releases, which keeps them out of
+"Latest release" and signals status — it does not gate access. Nothing in this
+pipeline withholds an artifact from public download once a run succeeds.
+
 ## Verification
 
 The workflow is only proven by running it. A tag on a throwaway version
