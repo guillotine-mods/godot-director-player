@@ -50,9 +50,19 @@ Step 2 is the only one that varies, and it varies by how much work the check is:
 **Linux's failure mode is Android's, not macOS's**, so it gets Android's
 treatment. With `embed_pck=false` the export emits `GodotDirectorPlayer.x86_64`
 and a sibling `GodotDirectorPlayer.pck`; an archive carrying only the first is a
-build that starts and finds no engine data. That is a missing archive member,
-which `unzip -l` answers. No new file in `tools/ci/`, and no test suite, because
-there is no parsing to get wrong.
+build that starts and finds no engine data. That is a missing archive member.
+No new file in `tools/ci/`, and no test suite, because there is no parsing to get
+wrong.
+
+**Two members and one mode.** The check reads the archive with `unzip -Z1 -l`
+rather than `unzip -l`, because there is a second way this artifact arrives
+broken and it is invisible to a plain listing: a `GodotDirectorPlayer.x86_64`
+that lost its executable bit is a download the player cannot run and cannot
+easily diagnose. `zip` preserves the mode, so this is an assertion about
+something that should already be true rather than a fix — which is exactly the
+argument for asserting it, since nothing else in the pipeline would notice.
+An earlier draft of this design claimed the bit survives and then specified a
+check that could not see it.
 
 ## What has to change
 
@@ -80,7 +90,20 @@ and `zip` is also what carries the executable bit through a GitHub release asset
 **`finalize`'s asset count.** `-lt 3` becomes `-lt 4`, **and** the message
 `Expected 3 assets (Windows, macOS, Android)` changes with it. Two edits, and the
 second is the one that gets forgotten, leaving a correct gate that lies about
-why it fired.
+why it fired. The same slip is available one more time in the comment above
+`Upload build summary for inspection`, which says "three failing jobs".
+
+**`docs/LINUX.md`, new.** `docs/ANDROID.md` and `docs/MACOS.md` both exist;
+Windows has none. Following the structure the other targets set means writing the
+Linux one, and it is genuinely thinner than either because Linux asks the player
+for no signing ceremony: extract, keep the `.pck` beside the binary, `chmod +x`
+if the extractor dropped the mode, run it. It also carries the one thing a player
+will otherwise report as a bug — saving does not work from a read-only `.pck` —
+which is platform-wide and already recorded in `MACOS.md`.
+
+Not linked from `README.md`, matching what the macOS design decided and for the
+same reason: the file has mixed CRLF/CR/LF line endings, so any edit normalises
+it and turns a one-line change into a whole-file diff.
 
 ## What does not change
 
@@ -98,7 +121,20 @@ test-suite growth. The launcher still reports the build, because that reads
 every target.
 
 **`tools/ci/install_godot.sh`.** The single `export_templates.tpz` it already
-fetches carries the Linux templates alongside the others.
+fetches carries the Linux templates alongside the others. **Measured, not
+assumed**: the central directory of
+`Godot_v4.7.1-stable_export_templates.tpz` was read by range request and lists 35
+entries including `templates/linux_release.x86_64`. The development machine could
+not answer this — its installed template directory holds only `macos.zip` and
+`ios.zip`, so checking there would have produced a confident wrong answer.
+`templates/linux_release.arm64` is present too, which is noted only so that
+"arm64 Linux is out of scope" reads as a choice rather than a limitation.
+
+**The failure-summary step.** Checked rather than assumed, since it was the one
+region of `release.yml` not read before this design was written. Its build
+listing is `ls -lR build/`, which is target-generic; the only target-specific
+block is the APK content filter, guarded by its own `-f` test. A Linux leg needs
+no fourth branch there and loses no diagnostics.
 
 **`tools/ci/check_asset_size.sh`.** A Linux zip is a GitHub release asset like
 the rest, so the existing 2 GiB cap is the correct limit rather than an
@@ -150,11 +186,16 @@ booting the artifact in CI, per the constraint above.
 1. `godot --headless --path . --script tools/export_presets_check.gd` passes with
    five presets rather than four, and would fail if the new preset's
    `include_filter` were wrong.
-2. A `workflow_dispatch` dry run proves the export and the archive check before
+2. `git diff export_presets.cfg` after generating the preset shows **only** the
+   added `[preset.4]` and `[preset.4.options]` sections. Godot rewrites the file
+   wholesale and may reorder or normalise keys across all five presets, so the
+   tracked `version/code=1` and `version/name="0.1.0"` are confirmed undisturbed
+   before the diff is staged.
+3. A `workflow_dispatch` dry run proves the export and the archive check before
    any tag is pushed. The macOS work established that this is the cheap way to
    answer an export question, and that the earlier reasoning treating a test
    publish as expensive was wrong for a corpus that is already public.
-3. `bash gate.sh` before landing, **greping the output for `FAIL`**: the script
+4. `bash gate.sh` before landing, **greping the output for `FAIL`**: the script
    exits 0 on a red, and `palette_members` is a standing failure from a
    gitignored fixture.
-4. The first real tag confirms the asset size and the four-asset publish gate.
+5. The first real tag confirms the asset size and the four-asset publish gate.
