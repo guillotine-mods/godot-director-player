@@ -1,8 +1,16 @@
 name: release
 
-# Tag-only, deliberately. With no `pull_request` trigger the submodule PAT and
-# the release keystore are unreachable from a fork PR by construction rather
-# than by a setting somebody can relax later.
+# No `pull_request` trigger, deliberately and permanently. That is what makes the
+# submodule PAT and the release keystore unreachable from a fork PR by
+# construction rather than by a setting somebody can relax later. Do not add one.
+#
+# `workflow_dispatch` does NOT reopen that hole and is a different kind of
+# trigger: it can only be started by somebody who already has write access to
+# this repository, so it grants no one anything they did not already have. It
+# exists because the alternative way to exercise this pipeline was to publish a
+# real release, which makes six private game corpora a public download -- far too
+# heavy a price for answering "does the export work". A dispatch run builds
+# everything and publishes nothing; see the `if:` on the release step.
 #
 # Ordinary semver convention carries the channel: `v0.x` is pre-1.0 and ships
 # as a GitHub pre-release, `v1.x` and later (eventually `vX.Y`) are official
@@ -11,6 +19,12 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp. Nothing is published on a dispatch run."
+        required: false
+        default: "0.0.0-dryrun"
 
 permissions:
   contents: write
@@ -91,6 +105,7 @@ jobs:
         run: |
           bash tools/ci/stamp_version_test.sh
           bash tools/ci/check_asset_size_test.sh
+          bash tools/ci/check_macho_signed_test.sh
           bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
 
       # `gradle_build/use_gradle_build=false`, so Godot uses prebuilt templates
@@ -152,13 +167,37 @@ jobs:
             exit 1
           fi
 
+      # One canonical version string for every step below it, validated once here.
+      #
+      # Both possible sources are chosen by a human: a tag name on a push, or the
+      # dispatch input. Neither is untrusted in the fork-PR sense -- both require
+      # write access -- but a value containing a newline would still inject
+      # arbitrary variables through `$GITHUB_ENV`, so it is read via `env:` rather
+      # than interpolated into the script, and refused unless it matches the same
+      # charset `stamp_version.sh` enforces. Validating here rather than there
+      # means a bad value fails in seconds instead of after the ~40 minute export,
+      # and means the filenames below cannot disagree with what was stamped.
+      - name: Resolve the release version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          name="${DISPATCH_VERSION:-$GITHUB_REF_NAME}"
+          case $name in
+            '' | *[!A-Za-z0-9._+-]*)
+              echo "Refusing version '$name': it must match [A-Za-z0-9._+-]+" >&2
+              exit 1
+              ;;
+          esac
+          echo "RELEASE_NAME=$name" >> "$GITHUB_ENV"
+          echo "resolved version: $name"
+
       # `GITHUB_RUN_NUMBER` is scoped to this workflow FILE, not to the release
       # line: renaming this file, or deleting and recreating it, resets the
       # counter to 1. `stamp_version.sh` documents why that produces an Android
       # versionCode a device treats as *older* than one already installed. Do
       # not rename or recreate this file; edit it in place.
       - name: Stamp the release version
-        run: tools/ci/stamp_version.sh "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER"
+        run: tools/ci/stamp_version.sh "$RELEASE_NAME" "$GITHUB_RUN_NUMBER"
 
       # A fresh checkout has no `.godot`, and without it `class_name` globals do
       # not resolve, so this has to precede every export.
@@ -194,6 +233,61 @@ jobs:
           # export TOOK the paths the presets NAME, which `ls -lh` on its own
           # two steps up cannot show.
           ls -lh build/pc/
+
+      # Exported from this Linux runner rather than a `macos-latest` one, which
+      # is only possible because the preset uses Godot's BUILT-IN ad-hoc
+      # codesign mode. That mode is implemented inside Godot rather than by
+      # shelling out to Apple's `codesign`, so it needs no Mac, no Apple
+      # account, no certificate and no keychain. Verified locally on arm64
+      # before this step existed; this run is what confirms the cross-host half.
+      #
+      # The cost is carried by the player, not by CI: an ad-hoc signature does
+      # not satisfy Gatekeeper, so the first launch needs a right-click Open or
+      # `xattr -dr com.apple.quarantine`. Gatekeeper's own wording for this is
+      # "is damaged and can't be opened", which is misleading enough that
+      # README.md has to say otherwise.
+      #
+      # A `.zip` and not a `.dmg` deliberately: Godot can only build a .dmg on a
+      # macOS host, which would forfeit the whole reason this step lives here.
+      # Godot writes the zip itself, so there is no separate packaging step as
+      # there is for Windows.
+      # Exported straight to the tagged filename rather than renamed afterwards.
+      # The CLI path argument overrides the preset's `export_path`, which stays
+      # untagged so a developer running the export locally gets a stable name.
+      # `${RELEASE_NAME}` is expanded by the shell, not interpolated by
+      # Actions, for the same reason the Windows steps do it that way.
+      - name: Export macOS
+        run: |
+          mkdir -p build/mac
+          godot --headless --path . --export-release "macOS" \
+            "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip"
+          ls -lh build/mac/
+
+      # An ad-hoc signature that silently did not happen is invisible in Godot's
+      # export log and fatal on Apple Silicon, where an unsigned binary does not
+      # execute at all: the player sees a launch failure and CI sees a green run.
+      # `codesign` cannot be used to catch it, being Mac-only, so
+      # `check_macho_signed.py` parses the Mach-O load commands instead. See that
+      # file for why not objdump and why not grep. It checks every slice of the
+      # universal binary, not just the first.
+      - name: Verify the macOS binary carries a signature
+        run: |
+          work="${{ runner.temp }}/mac-verify"
+          mkdir -p "$work"
+          unzip -q "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip" -d "$work"
+          # Quoted `find` result and a `while read`: the bundle is named "Godot
+          # Director Player.app", so every path here contains spaces and an
+          # unquoted `$(find ...)` would word-split it into nonsense.
+          found=0
+          while IFS= read -r bin; do
+            found=1
+            python3 tools/ci/check_macho_signed.py "$bin"
+          done < <(find "$work" -type f -perm -u+x -path '*/Contents/MacOS/*')
+          if [ "$found" -eq 0 ]; then
+            echo "No executable found under Contents/MacOS/ -- the .app bundle is malformed, not merely unsigned." >&2
+            find "$work" -maxdepth 3 >&2
+            exit 1
+          fi
 
       # Release rather than debug: a debug export enables the remote debugger and
       # is larger. The three env vars override the export menu at export time, so
@@ -236,24 +330,50 @@ jobs:
       - name: Package the Windows build
         run: |
           cd build/pc
-          zip -qr "../GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" .
+          zip -qr "../GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" .
 
+      # The macOS zip is the closest of the three to the 2 GiB ceiling by a wide
+      # margin: measured at 1,987,623,288 bytes locally, which is 92.6% of the
+      # cap with 152 MiB spare. Godot writes it itself, embedding the .pck in the
+      # bundle, so unlike Windows there is no separate packaging step whose
+      # compression could be tuned. Adding a seventh title, or restoring the
+      # audio this corpus has not yet had transcoded, breaches it.
       - name: Check asset sizes
         run: |
           tools/ci/check_asset_size.sh \
-            "build/GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" \
+            "build/GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" \
+            "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip" \
             build/android/GodotDirectorPlayer.apk
+
+      # Everything above runs identically on a dispatch and on a tag. This is the
+      # one step that does not, and it is the whole reason a dispatch run is safe:
+      # publishing is what turns the six private corpora into a public download,
+      # so it happens only for a real tag.
+      #
+      # Gated on `github.ref` starting with `refs/tags/` rather than on
+      # `github.event_name != 'workflow_dispatch'`. The difference matters: a
+      # dispatch can be started against a tag as well as a branch, and the
+      # honest question is "is this a tag?", not "how was it started?". The
+      # event-name form would refuse to publish a dispatch run against a real
+      # tag while claiming to be about safety.
+      - name: Report that a dispatch run publishes nothing
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          echo "Dry run on '$GITHUB_REF'. Every export above was built and checked; nothing is published." >> "$GITHUB_STEP_SUMMARY"
+          echo "Publish requires a tag push. See the trigger comment at the top of this file." >> "$GITHUB_STEP_SUMMARY"
 
       # `v0.x` tags land as GitHub pre-releases; `v1.x` and later land as a
       # full release. `startsWith(..., 'v0.')` does not match `v10.x` -- that
       # starts `v1`, not `v0.` -- so it doesn't misfire once the major version
       # climbs into double digits.
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
         with:
           fail_on_unmatched_files: true
           prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           files: |
-            build/GodotDirectorPlayer-Windows-${{ github.ref_name }}.zip
+            build/GodotDirectorPlayer-Windows-${{ env.RELEASE_NAME }}.zip
+            build/mac/GodotDirectorPlayer-macOS-${{ env.RELEASE_NAME }}.zip
             build/android/GodotDirectorPlayer.apk
 
       # `build/` is not safe to upload: it holds the .exe, the .pck, the

@@ -178,10 +178,29 @@ func _fill_build_line() -> void:
 	var roots := 0
 	for entry in _entries:
 		roots += (entry.get("roots", []) as Array).size()
-	%Build.text = "Godot %s · %s, %s על הדיסק" % [
+	%Build.text = "גרסה %s · Godot %s · %s, %s על הדיסק" % [
+		_build_version(),
 		str(Engine.get_version_info().get("string", "")),
 		_counted(_entries.size(), "משחק", "משחקים"),
 		_counted(roots, "ספרייה", "ספריות")]
+
+
+## The build the player is actually running, for a bug report to quote.
+##
+## `application/config/version` rather than anything in `export_presets.cfg`: the
+## presets are read at BUILD time and are invisible here, so an Android
+## versionName or a macOS `short_version` cannot be asked for at runtime.
+## `tools/ci/stamp_version.sh` writes this one as `<tag>+<run number>`, and the
+## run number is what separates two builds of the same tag -- without it a
+## screenshot of this line cannot identify which workflow run produced the binary.
+##
+## The tracked value is `0.0.0-dev`, so a run from source says so rather than
+## impersonating a release. An empty or missing setting reports `dev` for the same
+## reason: no version at all must not render as `גרסה  ·`, which reads as a
+## rendering bug rather than as "this was not stamped".
+static func _build_version() -> String:
+	var raw := str(ProjectSettings.get_setting("application/config/version", ""))
+	return raw if raw.strip_edges() != "" else "dev"
 
 
 ## "1 titles" is the giveaway that nobody ever ran the screen with one.
