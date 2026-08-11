@@ -166,15 +166,48 @@ authored and the export was run so Godot's own behaviour would name what it want
 rather than hand-copying an option block from recollection into a file that looks
 plausible and silently defaults anything misspelled.
 
+## Confirmed in CI
+
+**Ad-hoc signing works when the exporter runs on Linux.** This was the last
+load-bearing inference and it is now measured. Run 31482162655 on `ubuntu-latest`
+reported `2 signed slice(s): x86_64, arm64`, and run 31488476435 repeated it under
+the matrix. No Mac, no Apple account, no certificate.
+
+**Real asset sizes, and the earlier note in this document was wrong about which
+is tightest.** Measured on both runs:
+
+| asset | bytes | of the 2 GiB cap | headroom |
+| --- | --- | --- | --- |
+| Windows zip | 1,969,891,682 | 91.7% | 169 MiB |
+| macOS zip | 1,988,407,114 | 92.6% | 152 MiB |
+| **Android APK** | **2,016,248,022** | **93.9%** | **125 MiB** |
+
+The APK leads, not macOS. All three are within 8% of a limit GitHub enforces by
+refusing the upload outright, and **the APK at 93.9% is already published** in
+`v0.0.1-alpha`. One further title, or restoring the untranscoded audio, breaks
+the release. This is the most urgent open item in this document and it is not a
+macOS problem.
+
+**Runner disk is not a constraint.** 88 GB available at job start. A single
+target's job consumes 10 to 13 GB; all three in one job consumed 20 GB. The
+estimate this replaced ("roughly 15-20 GB live") was right in magnitude and wrong
+in implication: there was never a real risk of ENOSPC on `ubuntu-latest`.
+
+**Release-asset upload at this size works.** Corrected from an earlier claim in
+this session that it was unproven: `v0.0.1-alpha` (tag run 31471520069, 08:03Z on
+2026-08-11) published a 1.97 GB zip and a 2.02 GB APK successfully. That run also
+means the pipeline had completed end to end *before* the macOS work, which
+contradicts a statement made repeatedly earlier in this session and once in the
+commit message for `303d26ef`.
+
 ## What is still unverified
 
-**That ad-hoc signing works when the exporter runs on Linux.** Everything above
-was measured exporting *from a Mac*, which does not settle the cross-host
-question. The mode is implemented inside Godot rather than by shelling out to
-Apple's `codesign`, which is the reason to expect host independence, but that
-remains an inference. If it is wrong, the "no matrix" decision collapses and
-macOS needs its own `macos-latest` job, with the unmeasured runner disk budget
-that implies against a 3.2 GB corpus.
+**The draft, upload and finalize choreography.** New code in `303d26ef`, and it
+only runs for a tag, so no dispatch run can exercise it. The first real tag is its
+first execution. The failure mode is safe by construction: anything that breaks
+leaves an unpublished draft rather than a partial public release. What is proven
+is the *upload* itself (see above); what is not is `gh release create --draft`,
+`gh release upload --clobber` and the asset-count gate in `finalize`.
 
 `tools/ci/check_macho_signed.py` exists so that this fails loudly rather than
 silently: an unsigned export would otherwise produce a green run and a build that
