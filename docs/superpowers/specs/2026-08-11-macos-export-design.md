@@ -200,14 +200,36 @@ means the pipeline had completed end to end *before* the macOS work, which
 contradicts a statement made repeatedly earlier in this session and once in the
 commit message for `303d26ef`.
 
+**The draft, upload and finalize choreography, end to end.** Run 31489722819 on a
+throwaway `v0.0.2-rc1` tag, which was deleted with `--cleanup-tag` afterwards at
+zero downloads:
+
+```
+opened draft release v0.0.2-rc1 (prerelease=true)
+uploaded ...Windows-v0.0.2-rc1.zip to draft release
+uploaded ...macOS-v0.0.2-rc1.zip  to draft release
+uploaded ...GodotDirectorPlayer.apk to draft release
+draft v0.0.2-rc1 carries 3 asset(s)
+published v0.0.2-rc1
+```
+
+`finalize` undrafted automatically five seconds after the last export, with no
+approval step. Three assets near 2 GB uploaded into a draft and the release went
+public in one flip. 645s total, about 100s more than a dispatch run because the
+uploads are real work.
+
+**Testing this cost nothing, and the reasoning that said otherwise was wrong.**
+Publishing was treated for most of this session as expensive because it makes the
+private corpora a public download. That decision had already been made and
+executed: `v0.0.1-alpha` had been public for four hours with the same corpus. A
+throwaway tag therefore added no new exposure, and "wait for the real release"
+was protecting something that was not at risk.
+
 ## What is still unverified
 
-**The draft, upload and finalize choreography.** New code in `303d26ef`, and it
-only runs for a tag, so no dispatch run can exercise it. The first real tag is its
-first execution. The failure mode is safe by construction: anything that breaks
-leaves an unpublished draft rather than a partial public release. What is proven
-is the *upload* itself (see above); what is not is `gh release create --draft`,
-`gh release upload --clobber` and the asset-count gate in `finalize`.
+Nothing load-bearing in this design. The remaining open item is not a
+verification gap but a live defect: see the asset sizes above, where the APK sits
+at 93.9% of a cap it cannot exceed, in an already-published release.
 
 `tools/ci/check_macho_signed.py` exists so that this fails loudly rather than
 silently: an unsigned export would otherwise produce a green run and a build that
