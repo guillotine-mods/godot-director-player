@@ -15,6 +15,15 @@ set -euo pipefail
 LIMIT=$((2 * 1024 * 1024 * 1024))
 
 fail=0
+
+# No arguments is not "nothing to check, so pass" -- it means the caller's
+# file list was empty, which is itself a bug worth failing loudly on rather
+# than exiting 0 having checked nothing.
+if [ "$#" -eq 0 ]; then
+	echo "FAIL  check_asset_size: no files given to check"
+	exit 1
+fi
+
 for f in "$@"; do
 	if [ ! -f "$f" ]; then
 		echo "FAIL  $f: not built"
@@ -33,11 +42,14 @@ for f in "$@"; do
 	fi
 	size=$(wc -c <"$f")
 	mib=$((size / 1024 / 1024))
+	# MiB alone is truncated, so a file one byte over the limit prints the same
+	# "2048 MiB" as the limit itself -- the message that most needs to be
+	# unambiguous reads as a contradiction. Bytes alongside settle it.
 	if [ "$size" -gt "$LIMIT" ]; then
-		echo "FAIL  $f: ${mib} MiB exceeds the 2048 MiB release-asset limit"
+		echo "FAIL  $f: ${size} bytes (${mib} MiB) exceeds the ${LIMIT} byte limit"
 		fail=1
 	else
-		echo "ok    $f: ${mib} MiB"
+		echo "ok    $f: ${size} bytes (${mib} MiB)"
 	fi
 done
 

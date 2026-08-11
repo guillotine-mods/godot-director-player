@@ -27,6 +27,16 @@ jobs:
     # killed well before it burns most of an hour.
     timeout-minutes: 60
     steps:
+      # Roughly 15-20 GB is live simultaneously right after the zip step (the
+      # 3.8 GB submodule checkout, the Godot install, both exports, and the
+      # zipped copy, all at once). ENOSPC surfaces as a truncated .pck, `zip`
+      # dying mid-write, or a Godot error that never mentions disk -- the
+      # least legible failure in this pipeline, and one that could mask the
+      # size-gate answer this first run exists to obtain. A baseline here and
+      # another after the Android export (below) bound where it happened.
+      - name: Check disk space (job start)
+        run: df -h
+
       # Secrets are invisible to `if:` conditions, so they're read into env vars
       # here and checked with plain shell tests. Without this, an empty
       # `ANDROID_KEYSTORE_B64` still makes `base64 -d` write a 0-byte file and
@@ -123,12 +133,12 @@ jobs:
           templates="$HOME/.local/share/godot/export_templates"
           if [ -z "$(find "$templates" -mindepth 1 -print -quit 2>/dev/null)" ]; then
             echo "Export templates directory is empty ($templates)." >&2
-            echo "The 'godot-*' cache entry is likely partial -- bust it and re-run." >&2
+            echo "The 'godot-*' cache entry is likely partial. Cache keys are immutable, so re-running alone restores the same entry -- delete it from the repository's Actions cache UI, or change the key, first." >&2
             exit 1
           fi
 
       - name: Point Godot at the Android SDK
-        run: tools/ci/write_editor_settings.sh "${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+        run: tools/ci/write_editor_settings.sh "${ANDROID_SDK_ROOT:-$ANDROID_HOME}" "$GODOT_VERSION"
 
       - name: Decode the release keystore
         env:
@@ -176,6 +186,14 @@ jobs:
         run: |
           mkdir -p build/pc
           godot --headless --path . --export-release "Windows Desktop" build/pc/GodotDirectorPlayer.exe
+          # Both a corpus check and size instrumentation: `embed_pck=false`
+          # means the .pck is where `games/*` actually lands, not just where
+          # the presets name it. The one confirmed real defect this branch
+          # fixed was Windows shipping zero game data, so a 40 MB .pck here
+          # instead of multiple GB is unmistakable -- this is what proves the
+          # export TOOK the paths the presets NAME, which `ls -lh` on its own
+          # two steps up cannot show.
+          ls -lh build/pc/
 
       # Release rather than debug: a debug export enables the remote debugger and
       # is larger. The three env vars override the export menu at export time, so
@@ -189,13 +207,26 @@ jobs:
           mkdir -p build/android
           godot --headless --path . --export-release "Android" build/android/GodotDirectorPlayer.apk
 
+      # See the "job start" disk check above for why: this is the point where
+      # the most is live at once (submodules, Godot, both exports), right
+      # before the zip step pushes it higher still.
+      - name: Check disk space (after Android export)
+        run: df -h
+
       # `ls -lh` on the .pck two steps up only proves it was built, not that it
       # ended up inside the artifact. If the include filter ever drops it, the
       # failure is silent: the launcher just hides a tile whose pack didn't
       # mount, and nothing else here would catch it.
       - name: Verify the piposh-3d pack is in the APK
         run: |
-          if ! unzip -l build/android/GodotDirectorPlayer.apk | grep -q piposh3d; then
+          listing="${{ runner.temp }}/apk-listing.txt"
+          if ! unzip -l build/android/GodotDirectorPlayer.apk >"$listing"; then
+            echo "unzip could not list build/android/GodotDirectorPlayer.apk -- the APK itself is missing or corrupt, not merely missing the pack." >&2
+            exit 1
+          fi
+          # Unanchored on purpose: this does not depend on where Godot places
+          # assets inside the APK, only that piposh3d appears somewhere in it.
+          if ! grep -q piposh3d "$listing"; then
             echo "titles/piposh3d.pck is not inside the APK -- the 3D title will be silently absent from this release." >&2
             exit 1
           fi
@@ -225,13 +256,49 @@ jobs:
             build/GodotDirectorPlayer-Windows-${{ github.ref_name }}.zip
             build/android/GodotDirectorPlayer.apk
 
-      # The keystore lives in `${{ runner.temp }}`, outside the workspace, so
-      # there's nothing secret in `build/` to redact. Last step, so it fires on
-      # a failure anywhere above it, including the publish step itself.
-      - name: Upload build output for inspection
+      # `build/` is not safe to upload: it holds the .exe, the .pck, the
+      # Windows zip and the APK, each bundling all six PRIVATE game
+      # submodules. This repo is public and workflow artifacts are
+      # downloadable by anyone who can see the run, so uploading the build
+      # tree would publish the private corpus through a second, unreviewed
+      # channel -- the spec sanctioned exactly one exposure channel (release
+      # assets, an explicit owner decision), not this one. The size gate is
+      # the most likely first failure on this job, so this step's first real
+      # trigger would otherwise upload the whole ~8 GB corpus. A listing
+      # keeps the diagnostic value -- what got built, how big, whether the
+      # pack landed, how much disk was left -- without the corpus ever
+      # leaving the runner. (The keystore itself lives in `${{ runner.temp }}`,
+      # outside the workspace, and was never the concern here.)
+      - name: Summarize build output for inspection
+        if: failure()
+        run: |
+          summary="${{ runner.temp }}/build-summary.txt"
+          {
+            echo "== build/ =="
+            ls -lR build/ 2>&1
+            echo ""
+            echo "== APK contents =="
+            if [ -f build/android/GodotDirectorPlayer.apk ]; then
+              unzip -l build/android/GodotDirectorPlayer.apk 2>&1
+            else
+              echo "not built"
+            fi
+            echo ""
+            echo "== disk space =="
+            df -h
+            echo ""
+            echo "== export_presets.cfg (stamped) =="
+            cat export_presets.cfg 2>&1
+          } >"$summary"
+          cat "$summary"
+
+      # Last step, so it fires on a failure anywhere above it, including the
+      # publish step itself. Uploads only the listing produced above -- never
+      # `build/` itself.
+      - name: Upload build summary for inspection
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-build-${{ github.run_id }}
-          path: build/
+          name: release-build-summary-${{ github.run_id }}
+          path: ${{ runner.temp }}/build-summary.txt
           retention-days: 5

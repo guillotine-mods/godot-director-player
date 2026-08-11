@@ -30,6 +30,14 @@ check() { # check <name> <exit-code>
 	if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi
 }
 
+# No files given must not read as "nothing to check, so pass" -- that would
+# let a caller with an empty file list publish having verified nothing.
+if tools/ci/check_asset_size.sh >/dev/null 2>&1; then
+	check "no arguments is refused, not a silent pass" 1
+else
+	check "no arguments is refused, not a silent pass" 0
+fi
+
 # Sparse files: `dd` with a seek and no input allocates nothing on disk but
 # reports the full size, which is all the gate reads.
 dd if=/dev/null of="$tmp/small.apk" bs=1 seek=$((10 * 1024 * 1024)) 2>/dev/null

@@ -43,7 +43,7 @@ else
 fi
 
 for asset in "Godot_v${VERSION}_linux.x86_64.zip" "Godot_v${VERSION}_export_templates.tpz" "SHA512-SUMS.txt"; do
-	if curl -fsSLI -o /dev/null "$BASE/$asset"; then
+	if curl -fsSLI --retry 3 -o /dev/null "$BASE/$asset"; then
 		check "$asset resolves" 0
 	else
 		check "$asset resolves" 1
