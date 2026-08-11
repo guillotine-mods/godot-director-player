@@ -194,12 +194,25 @@ is a separate concern from producing artifacts.
 
 ## Open at merge
 
-**`bash gate.sh` has never been run in full against this branch.** It was
-deferred when the game corpora would not clone into the working worktree, on the
-understanding it runs before merge. It is the only check in this plan that has
-never executed. `gate.sh` itself was modified here — `export_presets_check` was
-added to `ALL` — and that registration has only been exercised one harness at a
-time. Run it in a checkout carrying the corpora.
+**`bash gate.sh` was not run in full against this branch, by decision.** It was
+first deferred when the corpora would not clone into the working worktree, then
+waived deliberately once the argument for it was examined.
+
+The reasoning, so it can be disagreed with later: this branch touches
+`export_presets.cfg`, `gate.sh`'s `ALL` list, four CI shell scripts, one new
+harness, a workflow and docs. It touches no engine code, no launcher, no
+interpreter and no corpora — which is what the other 74 harnesses exercise.
+There is no mechanism by which widening an `include_filter` changes what
+`movie_churn` or `sprite_collision` sees.
+
+The one risk this branch did pose to `gate.sh` was that inserting a word into
+its `ALL` string broke the list. That was checked directly instead: the string
+tokenizes to 75 entries with `export_presets_check` at position 4, and
+`bash gate.sh export_presets_check` resolves it by name and reports PASS.
+
+What the waiver gives up is unrelated: a full run would surface regressions
+introduced by other branches. Worth running periodically; not a gate on this
+work.
 
 **Deferred minors, none blocking.** A vacuous "an unreadable asset is refused"
 assertion in `check_asset_size_test.sh`, kept as a cheap sanity check and
