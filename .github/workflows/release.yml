@@ -10,7 +10,7 @@ name: release
 # exists because the alternative way to exercise this pipeline was to publish a
 # real release, which makes six private game corpora a public download -- far too
 # heavy a price for answering "does the export work". A dispatch run builds
-# everything and publishes nothing; see the `if:` on the release step.
+# everything and publishes nothing.
 #
 # Ordinary semver convention carries the channel: `v0.x` is pre-1.0 and ships
 # as a GitHub pre-release, `v1.x` and later (eventually `vX.Y`) are official
@@ -32,33 +32,45 @@ permissions:
 env:
   GODOT_VERSION: 4.7.1-stable
 
+# Three jobs, and the shape is dictated by one constraint: **a built asset cannot
+# cross a job boundary here.** The only mechanisms are workflow artifacts and the
+# Actions cache, and each asset embeds all six PRIVATE game corpora while this
+# repository is public, so an artifact would publish them through a second,
+# unreviewed channel. That is the same reason the failure summary below uploads a
+# text listing rather than `build/`.
+#
+# So each export job has to upload its own asset, which means the release must
+# already exist when it does -- and three jobs racing to create the same release
+# is a real failure. The answer is a DRAFT: `preflight` creates it (a draft is not
+# publicly visible), each export uploads into it, and `finalize` publishes it only
+# once all three have succeeded. If any target fails, the draft is simply never
+# published and nothing was ever downloadable.
+#
+# **Measured, so nobody re-derives it:** this is not faster than running the three
+# exports concurrently inside one job. Both land near 10 minutes against the 18 a
+# sequential run took, because the ~253s of setup before any export can start
+# (checkout 83s, Godot restore 22s, import 8s, presets check 127s, pack 9s)
+# dominates either way and parallelises either way. The matrix was chosen for
+# different reasons: it does not raise peak disk, and this workflow's own history
+# names ENOSPC as its least legible failure mode (a truncated .pck, `zip` dying
+# mid-write, a Godot error that never mentions disk). `fail-fast: false` also
+# leaves two verdicts standing when one target breaks, instead of none.
 jobs:
-  release:
-    name: Export and publish
+  preflight:
+    name: Check, and open a draft
     runs-on: ubuntu-latest
-    # This repo's own history is headless-Godot hangs, not runaway builds. The
-    # 360-minute default is not a guard against that; a genuine hang should be
-    # killed well before it burns most of an hour.
-    timeout-minutes: 60
+    timeout-minutes: 10
+    outputs:
+      release_name: ${{ steps.version.outputs.release_name }}
     steps:
-      # Roughly 15-20 GB is live simultaneously right after the zip step (the
-      # 3.8 GB submodule checkout, the Godot install, both exports, and the
-      # zipped copy, all at once). ENOSPC surfaces as a truncated .pck, `zip`
-      # dying mid-write, or a Godot error that never mentions disk -- the
-      # least legible failure in this pipeline, and one that could mask the
-      # size-gate answer this first run exists to obtain. A baseline here and
-      # another after the Android export (below) bound where it happened.
-      - name: Check disk space (job start)
-        run: df -h
-
       # Secrets are invisible to `if:` conditions, so they're read into env vars
       # here and checked with plain shell tests. Without this, an empty
       # `ANDROID_KEYSTORE_B64` still makes `base64 -d` write a 0-byte file and
-      # exit 0 -- the failure would otherwise surface ~40 minutes later, inside
-      # the Android export, as an apksigner error naming no secret. Reports
-      # every missing secret at once, not just the first, and runs before
-      # checkout so a missing `SUBMODULES_PAT` is named here rather than as a
-      # confusing submodule-auth failure.
+      # exit 0 -- the failure would otherwise surface much later, inside the
+      # Android export, as an apksigner error naming no secret. Reports every
+      # missing secret at once, not just the first, and runs before checkout so a
+      # missing `SUBMODULES_PAT` is named here rather than as a confusing
+      # submodule-auth failure.
       - name: Verify release secrets are set
         env:
           SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
@@ -76,30 +88,26 @@ jobs:
             exit 1
           fi
 
-      # The corpora are private repos and this one is public, so the default
-      # GITHUB_TOKEN cannot read them. `fetch-depth: 1` because the submodule
-      # checkout is roughly 3.8 GB and no history is needed to export.
-      # `persist-credentials: false`: nothing later in this job does git work,
-      # and this keeps the PAT out of `.git/config` for the rest of the job.
+      # **No submodules, and no PAT.** Nothing in this job reads the corpora: the
+      # four suites test shell and Mach-O parsing against their own fixtures. That
+      # turns a broken guard or a missing secret into a ~30 second failure instead
+      # of one that arrives after an 83s, 3.8 GB corpus fetch -- which is the
+      # entire argument for this job existing separately from the exports.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          submodules: recursive
           fetch-depth: 1
-          token: ${{ secrets.SUBMODULES_PAT }}
           persist-credentials: false
 
       # Everything these suites guard -- the tag charset validation that stops a
       # `&` in a tag corrupting the preset, the errexit handling that makes a
       # failing check report instead of killing the run, the unreadable-asset
-      # path -- was exercised only on a developer's machine until this step
-      # existed. First, so a broken guard fails in seconds rather than after the
-      # ~1 GB Godot download. (Checkout above already paid for the 3.8 GB
-      # submodule fetch, so this step doesn't save that part.)
+      # path, the unsigned and non-universal Mach-O cases -- was exercised only on
+      # a developer's machine until this step existed.
       #
-      # `install_godot_test.sh` doubles as the pre-flight for the step below it:
-      # it HEADs the three pinned release assets, so a version that has been
-      # renamed or pulled is named here rather than surfacing as a curl failure
-      # mid-install. Passed `$GODOT_VERSION` explicitly so a version bump here
+      # `install_godot_test.sh` doubles as the pre-flight for the export jobs: it
+      # HEADs the pinned release assets, so a version that has been renamed or
+      # pulled is named here rather than surfacing as a curl failure mid-install in
+      # three jobs at once. Passed `$GODOT_VERSION` explicitly so a version bump
       # can't leave the pre-flight checking a stale, hardcoded version.
       - name: Run the tools/ci suites
         run: |
@@ -108,14 +116,150 @@ jobs:
           bash tools/ci/check_macho_signed_test.sh
           bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
 
-      # `gradle_build/use_gradle_build=false`, so Godot uses prebuilt templates
-      # and needs only apksigner and zipalign, not a full Gradle build.
+      # One canonical version string, resolved once and handed to every job below
+      # as an output. Three jobs each deriving it would agree today and is one
+      # edit away from not agreeing, and they name the asset files.
+      #
+      # Both possible sources are chosen by a human: a tag name on a push, or the
+      # dispatch input. Neither is untrusted in the fork-PR sense -- both require
+      # write access -- but a value containing a newline would still inject
+      # arbitrary variables through `$GITHUB_OUTPUT`, so it is read via `env:`
+      # rather than interpolated into the script, and refused unless it matches the
+      # same charset `stamp_version.sh` enforces. Validating here means a bad value
+      # fails in seconds rather than after three exports.
+      - name: Resolve the release version
+        id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          name="${DISPATCH_VERSION:-$GITHUB_REF_NAME}"
+          case $name in
+            '' | *[!A-Za-z0-9._+-]*)
+              echo "Refusing version '$name': it must match [A-Za-z0-9._+-]+" >&2
+              exit 1
+              ;;
+          esac
+          echo "release_name=$name" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $name"
+
+      # A draft, and that word is carrying the safety property that used to belong
+      # to "publish at the very end". A draft release is not publicly visible and
+      # its assets are not downloadable, so the window between the first upload and
+      # the last is not a window in which a partial release exists in public.
+      #
+      # Idempotent because re-running a failed workflow must not fail here: `gh
+      # release view` decides whether to create. Without that, every re-run after
+      # a flaky export would die on "release already exists".
+      #
+      # `startsWith(github.ref, 'refs/tags/')` rather than
+      # `event_name != 'workflow_dispatch'`: a dispatch can be started against a
+      # tag as well as a branch, and the honest question is "is this a tag", not
+      # "how was this started". The event-name form would refuse to publish a
+      # dispatch run against a genuine tag while presenting itself as safety.
+      - name: Open the draft release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          # `v0.x` is a pre-release; `v1.x` and later are not. `startsWith(...,
+          # 'v0.')` does not match `v10.x` -- that starts `v1`, not `v0.` -- so it
+          # keeps working once the major version reaches double digits.
+          PRERELEASE: ${{ startsWith(github.ref_name, 'v0.') }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; leaving it as it is"
+            exit 0
+          fi
+          # An array, not a string. A `flags="--notes Some words"` built as a
+          # string and expanded unquoted word-splits, so `--notes` would take
+          # "Some" and the rest would arrive as positional arguments -- which `gh`
+          # accepts silently enough to create a release with the wrong notes and
+          # stray asset names. Arrays keep each argument whole.
+          args=(--draft --title "$TAG" --notes "Assets are uploaded by the export jobs.")
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}"
+          echo "opened draft release $TAG (prerelease=$PRERELEASE)"
+
+  export:
+    name: Export ${{ matrix.target }}
+    needs: preflight
+    runs-on: ubuntu-latest
+    # This repo's own history is headless-Godot hangs, not runaway builds. The
+    # 360-minute default is not a guard against that; a genuine hang should be
+    # killed well before it burns most of an hour. Measured: the slowest target
+    # (macOS) took 277s to export inside an 18-minute sequential job.
+    timeout-minutes: 45
+    strategy:
+      # Not fail-fast. A macOS failure with Windows and Android already exporting
+      # should leave two verdicts standing, not cancel them: the whole reason to
+      # run these separately is that they fail for separate reasons.
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            preset: Windows Desktop
+          - target: macos
+            preset: macOS
+          - target: android
+            preset: Android
+    env:
+      RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
+    steps:
+      # A job output that failed to propagate arrives as an empty string, not as
+      # an error, and every later step would accept it: the exports would write
+      # `GodotDirectorPlayer-macOS-.zip`, the size gate would pass it, and the
+      # release would carry three plausibly-named, wrongly-named assets. Checked
+      # first, before the 3.8 GB checkout, because it costs nothing here.
+      - name: Verify the version reached this job
+        run: |
+          if [ -z "${RELEASE_NAME:-}" ]; then
+            echo "RELEASE_NAME is empty; the preflight job's output did not reach this one." >&2
+            exit 1
+          fi
+          echo "building '${{ matrix.target }}' as version $RELEASE_NAME"
+
+      # Measured on the first complete run: 88 GB available at job start, 20 GB
+      # consumed by a checkout plus all three exports, 67 GB left afterwards. So
+      # disk is not close to a constraint for ONE target, which is worth recording
+      # because the estimate this replaced ("roughly 15-20 GB live") was the reason
+      # to fear it. Kept anyway: ENOSPC surfaces as a truncated .pck, `zip` dying
+      # mid-write, or a Godot error that never mentions disk, which is the least
+      # legible failure this pipeline can produce.
+      - name: Check disk space (job start)
+        run: df -h
+
+      # The corpora are private repos and this one is public, so the default
+      # GITHUB_TOKEN cannot read them. `fetch-depth: 1` because the submodule
+      # checkout is roughly 3.8 GB and no history is needed to export.
+      # `persist-credentials: false`: nothing later in this job does git work,
+      # and this keeps the PAT out of `.git/config` for the rest of the job.
+      #
+      # Paid once per target rather than once per run. That is the matrix's real
+      # cost, and it buys back nothing in wall clock -- see the note above the
+      # `jobs:` key for why it was chosen anyway.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          token: ${{ secrets.SUBMODULES_PAT }}
+          persist-credentials: false
+
+      # Android only. `gradle_build/use_gradle_build=false`, so Godot uses
+      # prebuilt templates and needs only apksigner and zipalign, not a full
+      # Gradle build -- but it does need a JDK and the SDK's build-tools. The
+      # other two targets need neither, and installing them there would be ~22s
+      # of nothing.
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        if: ${{ matrix.target == 'android' }}
         with:
           distribution: temurin
           java-version: "17"
 
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        if: ${{ matrix.target == 'android' }}
 
       - name: Cache Godot and export templates
         id: godot-cache
@@ -127,6 +271,11 @@ jobs:
           # Includes the installer's own hash: without it, fixing a bug in
           # `install_godot.sh` leaves the old, buggy result shadowed behind an
           # unchanged cache key forever.
+          #
+          # Deliberately NOT keyed on `matrix.target`. One .tpz carries every
+          # platform's template, so all three jobs want the identical entry; a
+          # per-target key would store the same gigabyte three times. The first job
+          # to finish populates it and the others read it.
           key: godot-${{ env.GODOT_VERSION }}-${{ hashFiles('tools/ci/install_godot.sh') }}
 
       - name: Install Godot
@@ -153,49 +302,32 @@ jobs:
           fi
 
       - name: Point Godot at the Android SDK
+        if: ${{ matrix.target == 'android' }}
         run: tools/ci/write_editor_settings.sh "${ANDROID_SDK_ROOT:-$ANDROID_HOME}" "$GODOT_VERSION"
 
       - name: Decode the release keystore
+        if: ${{ matrix.target == 'android' }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: printf '%s' "$KEYSTORE_B64" | base64 -d > "${{ runner.temp }}/release.keystore"
 
       - name: Verify the release keystore decoded
+        if: ${{ matrix.target == 'android' }}
         run: |
           if [ ! -s "${{ runner.temp }}/release.keystore" ]; then
             echo "release.keystore is empty -- check ANDROID_KEYSTORE_B64." >&2
             exit 1
           fi
 
-      # One canonical version string for every step below it, validated once here.
-      #
-      # Both possible sources are chosen by a human: a tag name on a push, or the
-      # dispatch input. Neither is untrusted in the fork-PR sense -- both require
-      # write access -- but a value containing a newline would still inject
-      # arbitrary variables through `$GITHUB_ENV`, so it is read via `env:` rather
-      # than interpolated into the script, and refused unless it matches the same
-      # charset `stamp_version.sh` enforces. Validating here rather than there
-      # means a bad value fails in seconds instead of after the ~40 minute export,
-      # and means the filenames below cannot disagree with what was stamped.
-      - name: Resolve the release version
-        env:
-          DISPATCH_VERSION: ${{ inputs.version }}
-        run: |
-          name="${DISPATCH_VERSION:-$GITHUB_REF_NAME}"
-          case $name in
-            '' | *[!A-Za-z0-9._+-]*)
-              echo "Refusing version '$name': it must match [A-Za-z0-9._+-]+" >&2
-              exit 1
-              ;;
-          esac
-          echo "RELEASE_NAME=$name" >> "$GITHUB_ENV"
-          echo "resolved version: $name"
-
       # `GITHUB_RUN_NUMBER` is scoped to this workflow FILE, not to the release
       # line: renaming this file, or deleting and recreating it, resets the
       # counter to 1. `stamp_version.sh` documents why that produces an Android
       # versionCode a device treats as *older* than one already installed. Do
       # not rename or recreate this file; edit it in place.
+      #
+      # All three jobs share one run number, so the Android versionCode, the Apple
+      # build number and the launcher's `config/version` agree across targets of
+      # the same release.
       - name: Stamp the release version
         run: tools/ci/stamp_version.sh "$RELEASE_NAME" "$GITHUB_RUN_NUMBER"
 
@@ -204,72 +336,82 @@ jobs:
       - name: Import
         run: godot --headless --path . --import
 
-      # Task 1's entire deliverable, and until now nothing in CI ever called it.
+      # Runs in every target's job rather than once in `preflight`, and that is a
+      # deliberate trade. It needs the corpora and an import, so hoisting it into
+      # preflight would put ~240s of checkout-plus-import on the critical path
+      # BEFORE the matrix could start, which is slower than paying 127s three times
+      # in parallel. Each job also then verifies the presets it is about to use.
+      #
       # Has to run after both `Stamp the release version` (so it checks the
       # `export_presets.cfg` that actually gets exported, not what's checked in)
-      # and `Import` (needs `.godot` to resolve `class_name` globals used by the
-      # script it runs).
+      # and `Import` (needs `.godot` to resolve `class_name` globals).
       - name: Verify the export presets
         run: godot --headless --path . --script tools/export_presets_check.gd
 
       # `titles/piposh-3d` is its own Godot project. Skipping this does not fail
       # anything: the launcher gates the embed tile on `ResourceLoader.exists()`,
-      # so the 3D title would quietly not be in the release.
+      # so the 3D title would quietly not be in the release. Every target's
+      # `include_filter` names the pack, so every job builds it.
       - name: Build the piposh-3d pack
         run: |
           godot --headless --path titles/piposh-3d --import
           godot --headless --path titles/piposh-3d --export-pack Pack "$PWD/titles/piposh3d.pck"
           ls -lh titles/piposh3d.pck
 
+      # Each target's export sets `ASSET` to the one file that gets uploaded, so
+      # the size gate and the upload below are written once instead of three times.
+      # `$RELEASE_NAME` passed the charset guard in preflight, so it is safe in a
+      # filename.
       - name: Export Windows
+        if: ${{ matrix.target == 'windows' }}
         run: |
           mkdir -p build/pc
-          godot --headless --path . --export-release "Windows Desktop" build/pc/GodotDirectorPlayer.exe
+          godot --headless --path . --export-release "${{ matrix.preset }}" build/pc/GodotDirectorPlayer.exe
           # Both a corpus check and size instrumentation: `embed_pck=false`
           # means the .pck is where `games/*` actually lands, not just where
-          # the presets name it. The one confirmed real defect this branch
+          # the presets name it. The one confirmed real defect this pipeline
           # fixed was Windows shipping zero game data, so a 40 MB .pck here
           # instead of multiple GB is unmistakable -- this is what proves the
-          # export TOOK the paths the presets NAME, which `ls -lh` on its own
-          # two steps up cannot show.
+          # export TOOK the paths the presets NAME.
           ls -lh build/pc/
+          # `binary_format/embed_pck=false`, so the .exe on its own is inert and
+          # needs its .pck beside it. 189s on the measured run, almost all of it
+          # single-threaded deflate over ~1.9 GB.
+          ( cd build/pc && zip -qr "../GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" . )
+          echo "ASSET=build/GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" >> "$GITHUB_ENV"
 
-      # Exported from this Linux runner rather than a `macos-latest` one, which
-      # is only possible because the preset uses Godot's BUILT-IN ad-hoc
-      # codesign mode. That mode is implemented inside Godot rather than by
-      # shelling out to Apple's `codesign`, so it needs no Mac, no Apple
-      # account, no certificate and no keychain. Verified locally on arm64
-      # before this step existed; this run is what confirms the cross-host half.
+      # Exported from a Linux runner rather than a `macos-latest` one, which is
+      # only possible because the preset uses Godot's BUILT-IN ad-hoc codesign
+      # mode. That mode is implemented inside Godot rather than by shelling out to
+      # Apple's `codesign`, so it needs no Mac, no Apple account, no certificate
+      # and no keychain. **Confirmed on this runner**, not merely expected: run
+      # 31482162655 reported `2 signed slice(s): x86_64, arm64`.
       #
       # The cost is carried by the player, not by CI: an ad-hoc signature does
       # not satisfy Gatekeeper, so the first launch needs a right-click Open or
-      # `xattr -dr com.apple.quarantine`. Gatekeeper's own wording for this is
-      # "is damaged and can't be opened", which is misleading enough that
-      # README.md has to say otherwise.
+      # `xattr -dr com.apple.quarantine`. Gatekeeper's own wording is "is damaged
+      # and can't be opened", which is misleading enough that `docs/MACOS.md`
+      # exists to say otherwise.
       #
       # A `.zip` and not a `.dmg` deliberately: Godot can only build a .dmg on a
-      # macOS host, which would forfeit the whole reason this step lives here.
-      # Godot writes the zip itself, so there is no separate packaging step as
-      # there is for Windows.
-      # Exported straight to the tagged filename rather than renamed afterwards.
-      # The CLI path argument overrides the preset's `export_path`, which stays
-      # untagged so a developer running the export locally gets a stable name.
-      # `${RELEASE_NAME}` is expanded by the shell, not interpolated by
-      # Actions, for the same reason the Windows steps do it that way.
+      # macOS host, which would forfeit the whole reason this runs here. Godot
+      # writes the zip itself, so there is no separate packaging step as there is
+      # for Windows.
       - name: Export macOS
+        if: ${{ matrix.target == 'macos' }}
         run: |
           mkdir -p build/mac
-          godot --headless --path . --export-release "macOS" \
+          godot --headless --path . --export-release "${{ matrix.preset }}" \
             "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip"
           ls -lh build/mac/
+          echo "ASSET=build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip" >> "$GITHUB_ENV"
 
       # An ad-hoc signature that silently did not happen is invisible in Godot's
       # export log and fatal on Apple Silicon, where an unsigned binary does not
       # execute at all: the player sees a launch failure and CI sees a green run.
       # `codesign` cannot be used to catch it, being Mac-only, so
       # `check_macho_signed.py` parses the Mach-O load commands instead. See that
-      # file for why not objdump and why not grep. It checks every slice of the
-      # universal binary, not just the first.
+      # file for why not objdump and why not grep.
       #
       # `--require arm64,x86_64` is the separate half: it fails the build unless
       # BOTH architectures are present. Apple Silicon and Intel are different
@@ -278,10 +420,11 @@ jobs:
       # would notice that half the Macs in the world got no build. Verified by
       # thinning a real export with `lipo` and watching this refuse it.
       - name: Verify the macOS binary is signed and universal
+        if: ${{ matrix.target == 'macos' }}
         run: |
           work="${{ runner.temp }}/mac-verify"
           mkdir -p "$work"
-          unzip -q "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip" -d "$work"
+          unzip -q "$ASSET" -d "$work"
           # Quoted `find` result and a `while read`: the bundle is named "Godot
           # Director Player.app", so every path here contains spaces and an
           # unquoted `$(find ...)` would word-split it into nonsense.
@@ -295,93 +438,92 @@ jobs:
             find "$work" -maxdepth 3 >&2
             exit 1
           fi
+          # The extracted copy is ~3.4 GB of .pck and is not needed again. Left in
+          # place it would roughly double this job's peak disk for no purpose.
+          rm -rf "$work"
 
       # Release rather than debug: a debug export enables the remote debugger and
       # is larger. The three env vars override the export menu at export time, so
       # no secret is ever written into export_presets.cfg.
+      #
+      # The APK keeps an untagged filename, unlike the other two. That is how it
+      # has always been published and renaming it would change what an existing
+      # install-from-URL points at; it is not an oversight, and the release page
+      # carries the version.
       - name: Export Android
+        if: ${{ matrix.target == 'android' }}
         env:
           GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ runner.temp }}/release.keystore
           GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
           GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           mkdir -p build/android
-          godot --headless --path . --export-release "Android" build/android/GodotDirectorPlayer.apk
+          godot --headless --path . --export-release "${{ matrix.preset }}" build/android/GodotDirectorPlayer.apk
+          ls -lh build/android/
+          echo "ASSET=build/android/GodotDirectorPlayer.apk" >> "$GITHUB_ENV"
 
-      # See the "job start" disk check above for why: this is the point where
-      # the most is live at once (submodules, Godot, both exports), right
-      # before the zip step pushes it higher still.
-      - name: Check disk space (after Android export)
-        run: df -h
-
-      # `ls -lh` on the .pck two steps up only proves it was built, not that it
-      # ended up inside the artifact. If the include filter ever drops it, the
-      # failure is silent: the launcher just hides a tile whose pack didn't
-      # mount, and nothing else here would catch it.
+      # `ls -lh` on the .pck only proves it was built, not that it ended up inside
+      # the artifact. If the include filter ever drops it, the failure is silent:
+      # the launcher just hides a tile whose pack didn't mount, and nothing else
+      # here would catch it.
       - name: Verify the piposh-3d pack is in the APK
+        if: ${{ matrix.target == 'android' }}
         run: |
           listing="${{ runner.temp }}/apk-listing.txt"
-          if ! unzip -l build/android/GodotDirectorPlayer.apk >"$listing"; then
-            echo "unzip could not list build/android/GodotDirectorPlayer.apk -- the APK itself is missing or corrupt, not merely missing the pack." >&2
+          if ! unzip -l "$ASSET" >"$listing"; then
+            echo "unzip could not list $ASSET -- the APK itself is missing or corrupt, not merely missing the pack." >&2
             exit 1
           fi
           # Unanchored on purpose: this does not depend on where Godot places
           # assets inside the APK, only that piposh3d appears somewhere in it.
           if ! grep -q piposh3d "$listing"; then
-            echo "titles/piposh3d.pck is not inside the APK -- the 3D title will be silently absent from this release." >&2
+            echo "titles/piposh3d.pck is not inside $ASSET -- the 3D title will be silently absent from this release." >&2
             exit 1
           fi
 
-      # `binary_format/embed_pck=false`, so the .exe on its own is inert and
-      # needs its .pck beside it.
-      - name: Package the Windows build
+      # Every target reaches here with exactly one `ASSET`, so a missing value
+      # means a target's export step did not set it -- which would otherwise reach
+      # the size gate as "no files given to check" and read as a gate bug.
+      - name: Verify an asset was produced
         run: |
-          cd build/pc
-          zip -qr "../GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" .
+          if [ -z "${ASSET:-}" ]; then
+            echo "No ASSET was set for target '${{ matrix.target }}'; its export step did not run or did not set it." >&2
+            exit 1
+          fi
+          ls -lh "$ASSET"
 
-      # The macOS zip is the closest of the three to the 2 GiB ceiling by a wide
-      # margin: measured at 1,987,623,288 bytes locally, which is 92.6% of the
-      # cap with 152 MiB spare. Godot writes it itself, embedding the .pck in the
-      # bundle, so unlike Windows there is no separate packaging step whose
-      # compression could be tuned. Adding a seventh title, or restoring the
-      # audio this corpus has not yet had transcoded, breaches it.
-      - name: Check asset sizes
+      # GitHub refuses a release asset over 2 GiB outright, and all three are
+      # already close. Measured on run 31482162655: Windows 1,969,904,355 bytes
+      # (91.7%), macOS 1,988,402,066 (92.6%), Android 2,016,248,022 (93.9%).
+      # **The APK is the tightest, with about 125 MiB spare** -- the earlier note
+      # here claiming macOS led "by a wide margin" was wrong. One more title, or
+      # restoring the audio this corpus has not had transcoded, breaks the
+      # release. The documented fallback is a narrower `include_filter`; the
+      # launcher already hides a title whose data did not ship.
+      - name: Check asset size
+        run: tools/ci/check_asset_size.sh "$ASSET"
+
+      - name: Check disk space (after export)
+        run: df -h
+
+      # Into the draft opened by `preflight`, so this asset is not publicly
+      # downloadable until `finalize` publishes it. `--clobber` so a re-run
+      # replaces its own previous upload instead of failing on a name collision.
+      - name: Upload the asset to the draft release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          tools/ci/check_asset_size.sh \
-            "build/GodotDirectorPlayer-Windows-${RELEASE_NAME}.zip" \
-            "build/mac/GodotDirectorPlayer-macOS-${RELEASE_NAME}.zip" \
-            build/android/GodotDirectorPlayer.apk
+          gh release upload "$TAG" "$ASSET" --clobber
+          echo "uploaded $ASSET to draft release $TAG"
 
-      # Everything above runs identically on a dispatch and on a tag. This is the
-      # one step that does not, and it is the whole reason a dispatch run is safe:
-      # publishing is what turns the six private corpora into a public download,
-      # so it happens only for a real tag.
-      #
-      # Gated on `github.ref` starting with `refs/tags/` rather than on
-      # `github.event_name != 'workflow_dispatch'`. The difference matters: a
-      # dispatch can be started against a tag as well as a branch, and the
-      # honest question is "is this a tag?", not "how was it started?". The
-      # event-name form would refuse to publish a dispatch run against a real
-      # tag while claiming to be about safety.
       - name: Report that a dispatch run publishes nothing
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
-          echo "Dry run on '$GITHUB_REF'. Every export above was built and checked; nothing is published." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dry run on '$GITHUB_REF' for target '${{ matrix.target }}'. The export was built and checked; nothing is published." >> "$GITHUB_STEP_SUMMARY"
           echo "Publish requires a tag push. See the trigger comment at the top of this file." >> "$GITHUB_STEP_SUMMARY"
-
-      # `v0.x` tags land as GitHub pre-releases; `v1.x` and later land as a
-      # full release. `startsWith(..., 'v0.')` does not match `v10.x` -- that
-      # starts `v1`, not `v0.` -- so it doesn't misfire once the major version
-      # climbs into double digits.
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        with:
-          fail_on_unmatched_files: true
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
-          files: |
-            build/GodotDirectorPlayer-Windows-${{ env.RELEASE_NAME }}.zip
-            build/mac/GodotDirectorPlayer-macOS-${{ env.RELEASE_NAME }}.zip
-            build/android/GodotDirectorPlayer.apk
 
       # `build/` is not safe to upload: it holds the .exe, the .pck, the
       # Windows zip and the APK, each bundling all six PRIVATE game
@@ -390,17 +532,20 @@ jobs:
       # tree would publish the private corpus through a second, unreviewed
       # channel -- the spec sanctioned exactly one exposure channel (release
       # assets, an explicit owner decision), not this one. The size gate is
-      # the most likely first failure on this job, so this step's first real
-      # trigger would otherwise upload the whole ~8 GB corpus. A listing
-      # keeps the diagnostic value -- what got built, how big, whether the
-      # pack landed, how much disk was left -- without the corpus ever
-      # leaving the runner. (The keystore itself lives in `${{ runner.temp }}`,
-      # outside the workspace, and was never the concern here.)
+      # among the likelier failures here, so this step's first real trigger
+      # would otherwise upload gigabytes of corpus. A listing keeps the
+      # diagnostic value -- what got built, how big, whether the pack landed,
+      # how much disk was left -- without the corpus ever leaving the runner.
+      # (The keystore itself lives in `${{ runner.temp }}`, outside the
+      # workspace, and was never the concern here.)
       - name: Summarize build output for inspection
         if: failure()
         run: |
           summary="${{ runner.temp }}/build-summary.txt"
           {
+            echo "== target =="
+            echo "${{ matrix.target }} (preset: ${{ matrix.preset }})"
+            echo ""
             echo "== build/ =="
             ls -lR build/ 2>&1
             echo ""
@@ -412,11 +557,11 @@ jobs:
               # expectation is that `gradle_build/use_gradle_build=false`
               # packs the whole project into one opaque .pck entry, so the
               # full listing would likely name no individual game file --
-              # but nothing here has built an APK to check that against yet,
-              # so this filters on the expectation rather than trust it: only
-              # the entry count, the lines naming a .pck, and unzip's own
-              # trailing totals line, none of which need the expectation to
-              # be right to stay safe to publish.
+              # but that has never been checked against a real APK, so this
+              # filters on the expectation rather than trusting it: only the
+              # entry count, the lines naming a .pck, and unzip's own trailing
+              # totals line, none of which need the expectation to be right to
+              # stay safe to publish.
               if unzip -l build/android/GodotDirectorPlayer.apk >"$apk_listing" 2>&1; then
                 total_line=$(tail -n 1 "$apk_listing")
                 echo "total entries: $(printf '%s' "$total_line" | awk '{print $(NF-1)}')"
@@ -440,12 +585,52 @@ jobs:
           cat "$summary"
 
       # Last step, so it fires on a failure anywhere above it, including the
-      # publish step itself. Uploads only the listing produced above -- never
-      # `build/` itself.
+      # upload. Uploads only the listing produced above -- never `build/`. Named
+      # per target so three failing jobs do not collide on one artifact name.
       - name: Upload build summary for inspection
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-build-summary-${{ github.run_id }}
+          name: release-build-summary-${{ matrix.target }}-${{ github.run_id }}
           path: ${{ runner.temp }}/build-summary.txt
           retention-days: 5
+
+  # The step that makes the release public, and it exists as its own job purely
+  # so that it cannot run unless EVERY target succeeded. `needs: export` waits on
+  # all three matrix legs and is skipped if any of them fails, which is what
+  # guarantees a partial release is never published -- it just stays a draft
+  # somebody can inspect or delete.
+  finalize:
+    name: Publish the release
+    needs: export
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Asserts the assets are actually there before undrafting. `needs: export`
+      # proves the jobs succeeded, not that three uploads landed, and publishing
+      # a release with two assets is worse than failing here.
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          count=$(gh release view "$TAG" --json assets -q '.assets | length')
+          # A non-numeric `count` means the query failed rather than that the
+          # release is empty, and `[ "" -lt 3 ]` would abort with a shell error
+          # about an integer expression instead of naming the real problem.
+          case ${count:-} in
+            '' | *[!0-9]*)
+              echo "Could not read the asset count for $TAG (got '${count:-}'); the draft may not exist." >&2
+              exit 1
+              ;;
+          esac
+          echo "draft $TAG carries $count asset(s)"
+          if [ "$count" -lt 3 ]; then
+            gh release view "$TAG" --json assets -q '.assets[].name' >&2 || true
+            echo "Expected 3 assets (Windows, macOS, Android); refusing to publish an incomplete release." >&2
+            exit 1
+          fi
+          gh release edit "$TAG" --draft=false
+          echo "published $TAG"
