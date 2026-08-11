@@ -139,9 +139,43 @@ func _bypassed(h: Harness, scene: Node) -> void:
 
 
 func _menu(h: Harness, scene: Node) -> void:
+	# The footer names the build a bug report will quote, and it is assembled from
+	# a Latin version inside an RTL Hebrew sentence -- which is a shape that
+	# renders wrong by default. `0.0.0-dev` ends in a bidi-neutral hyphen, so the
+	# algorithm resolved it against the *next* strong run and pulled the digit out
+	# of `5 משחקים` into it: the line read `גרסה 0.0.0-5` with a stray `dev`
+	# beside the Godot version. Two facts, each corrupted by the other's
+	# neighbour, and every test passed while it happened -- the string was right
+	# and only its rendering was not.
+	#
+	# So the assertion is on the substring staying contiguous, which is what the
+	# U+2066/U+2069 isolates in `launcher.gd:_ltr` buy. It cannot see the glyph
+	# order, but it does fail if someone removes the isolates and reformats the
+	# line around them.
+	var case := "the footer names the build"
+	h.begin(case)
+	var build := scene.get_node_or_null("%Build") as Label
+	if h.check("there is a build line", build != null):
+		var text := build.text
+		h.check("it is not empty", text.strip_edges() != "", text)
+		var version := str(ProjectSettings.get_setting("application/config/version", ""))
+		h.check("the project version appears in it, unbroken",
+			version != "" and text.contains(version), "%s in %s" % [version, text])
+		# The isolates are what keep it unbroken; asserting the version alone
+		# would still pass on the mangled line if the digits happened to line up.
+		# The detail is printed on a pass as well as a failure, so it states what
+		# was found rather than asserting a conclusion. "U+2066/U+2069 absent"
+		# sitting under an `ok` line reads as a contradiction.
+		var lri := text.contains(char(0x2066))
+		var pdi := text.contains(char(0x2069))
+		h.check("the Latin runs are bidi-isolated", lri and pdi,
+			"LRI %s, PDI %s" % ["present" if lri else "absent",
+				"present" if pdi else "absent"])
+	h.complete(case)
+
 	# The shot tool types into a binding field by walking `%Bindings`'s children
 	# and taking the first `LineEdit` in each, which no name protects.
-	var case := "the binding rows are shaped the way the shot tool walks them"
+	case = "the binding rows are shaped the way the shot tool walks them"
 	h.begin(case)
 	var button := scene.get_node_or_null("%BindingsButton") as BaseButton
 	if not h.check("there is a button to open them", button != null):

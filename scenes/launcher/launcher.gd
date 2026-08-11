@@ -179,10 +179,32 @@ func _fill_build_line() -> void:
 	for entry in _entries:
 		roots += (entry.get("roots", []) as Array).size()
 	%Build.text = "גרסה %s · Godot %s · %s, %s על הדיסק" % [
-		_build_version(),
-		str(Engine.get_version_info().get("string", "")),
+		_ltr(_build_version()),
+		_ltr(str(Engine.get_version_info().get("string", ""))),
 		_counted(_entries.size(), "משחק", "משחקים"),
 		_counted(roots, "ספרייה", "ספריות")]
+
+
+## Fences a Latin/numeric run so the surrounding Hebrew cannot reorder it.
+##
+## **This is not decoration; without it the line renders wrong.** `0.0.0-dev` in
+## an RTL paragraph ends with a hyphen, which is bidi-neutral, so the algorithm
+## resolved it against the next strong run and pulled the digit out of
+## `5 משחקים` into it: the footer read `גרסה 0.0.0-5` with a stray `dev` sitting
+## beside the Godot version. Two separate facts, each corrupted by the other's
+## neighbour. Seen in `tools/launcher_shot.gd` output, not reasoned about --
+## reading the format string tells you nothing about this.
+##
+## U+2066/U+2069 (isolate rather than embed) is the current Unicode advice: an
+## isolate also stops the run from affecting how the text *around* it resolves,
+## which is exactly the direction the damage travelled here.
+##
+## Written as escapes because Godot's parser refuses the literal characters:
+## "Invisible text direction control character present in the string, escape it".
+## That is a good refusal -- pasted literally they are invisible in every editor
+## and in every diff.
+static func _ltr(text: String) -> String:
+	return "\u2066%s\u2069" % text
 
 
 ## The build the player is actually running, for a bug report to quote.

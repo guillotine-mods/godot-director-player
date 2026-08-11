@@ -216,6 +216,20 @@ assertions untouched. Verified by instantiating the real scene: it renders
 
 and `גרסה 0.2.0+41 · ...` against a stamped `project.godot`.
 
+**A Latin version inside an RTL sentence renders wrong by default,** and that was
+found by looking at a screenshot rather than by reading the code. `0.0.0-dev` ends
+in a hyphen, which is bidi-neutral, so the algorithm resolved it against the next
+strong run and pulled the digit out of `5 משחקים`: the footer read
+`גרסה 0.0.0-5` with a stray `dev` beside the Godot version. Two separate facts,
+each corrupted by the other's neighbour, with the string itself perfectly correct
+and only its rendering wrong. Fixed by fencing each Latin run in U+2066/U+2069
+(isolate, not embed, so the run also cannot affect how the text around it
+resolves). Godot's parser refuses the literal characters and demands escapes,
+which is the right refusal: pasted literally they are invisible in every editor
+and every diff. `launcher_surface` now asserts both that the version appears
+unbroken and that the isolates are present, and the assertion was checked by
+removing them and watching it fail.
+
 `stamp_version.sh` takes the project file as a fourth argument, defaulting to
 `project.godot`. Every call in its test suite passes a fixture explicitly, because
 a three-argument call from inside the repo would stamp the working tree, which is
