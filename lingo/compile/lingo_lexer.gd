@@ -91,7 +91,30 @@ func tokenize(source: String) -> bool:
 			at += 1
 			continue
 
-		if _is_digit(c) or (c == _DOT and at + 1 < length and _is_digit(src.unicode_at(at + 1))):
+		# **`.4` is a float unless a `.` was just emitted**, in which case the two
+		# dots are Director's range operator and this one is the second half of
+		# it. `x.char[1..3]` lexes `1`, then `.` (rejected as a float below,
+		# because the character after it is another dot), and then reached here
+		# with `.3` -- a number. The parser's range arm read `1` and `0.3`, took
+		# `to_int(0.3)` as 0, saw a stop below the start and answered the single
+		# chunk at the start. So `x.char[1..3]` was `x.char[1]`: a range that
+		# silently narrowed, which is the accept-and-drop shape §19 is about.
+		#
+		# The leading-dot float itself is real Lingo (`put .5` is 0.5) and the
+		# header records that its rule wins over the operator; this narrows *that*
+		# rule by one case rather than removing it. Nothing else can put a `.`
+		# immediately before a leading-dot number: the dot operator's other job is
+		# property access, and `x..5` is not an expression in any spelling.
+		#
+		# 0 range sites in all six shipped titles and in the two D5 corpora --
+		# they spell chunks one at a time -- so this is built from the reference
+		# rather than measured against a script, and the probe that exercises it
+		# is `"abcdef".char[2..4]` answering "bcd".
+		var dot_float: bool = c == _DOT and at + 1 < length \
+			and _is_digit(src.unicode_at(at + 1)) \
+			and not (kinds.size() > 0 and kinds[kinds.size() - 1] == "op"
+				and values[values.size() - 1] == ".")
+		if _is_digit(c) or dot_float:
 			var start := at
 			while at < length and _is_digit(src.unicode_at(at)):
 				at += 1

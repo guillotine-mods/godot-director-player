@@ -691,6 +691,17 @@ func _parse_postfix() -> Dictionary:
 	var node := _parse_primary()
 	while not _failed():
 		if _at_op(".") and (_k(1) == "ident" or _k(1) == "kw"):
+			# Before the ordinary property read, because `x.line` is the head of
+			# a chunk expression and not a property of `x`. `_parse_dot_chunk`
+			# declines by returning `{}` without consuming, so `x.lineHeight`
+			# and a property list whose key happens to be `#item` still reach
+			# the arm below.
+			var chunked := _parse_dot_chunk(node)
+			if _failed():
+				return {}
+			if not chunked.is_empty():
+				node = chunked
+				continue
 			_advance()
 			var prop := _advance()
 			# Line from the following token, matching the original.
@@ -711,6 +722,67 @@ func _parse_postfix() -> Dictionary:
 			continue
 		break
 	return node
+
+
+## Director 5's dot spelling of a chunk expression, desugared to the same
+## `chunk` and `count` nodes `line 3 of x` and `the number of lines in x` build.
+##
+##     str.item[2]              == item 2 of str
+##     str.char[1..3]           == char 1 to 3 of str
+##     member("data").line.count == the number of lines in member "data"
+##
+## **`.line` and `.item` are not property reads, and reading them as ones is
+## silent.** `_parse_postfix` turned `mnuLine.item[1]` into a `dot` node with the
+## property name "item" followed by an `index` node; at run time that asked the
+## host for a member property called `item` on a string, got 0, and then took
+## character 1 of "0". Magic Hat's whole menu system is built by
+## `ReadAllMenusFile`, which spells every field it reads that way -- so
+## `gAllMenus` came out empty, every `HideMenu`/`DisableAllMenus`/`EnableMenu`
+## call found VOID, and the movie's Yes/No dialog stayed on the main menu with
+## nothing anywhere reporting a fault. 41 sites in `itamar-magichat`, 0 in the
+## five older titles, which is the era split: this is D5+ syntax and the 1997
+## movies spell chunks the long way.
+##
+## Desugaring rather than a new node type is what buys the **write** side for
+## free: `put "1" into tmp.char[CardId]` and `member("LevelList").line[i] = ...`
+## both land on `_assign_chunk`, which already reads a source, edits the chunk
+## and writes it back, and `_is_place` already accepts `chunk`. A `dot_chunk`
+## node would have had to teach all three the same thing again.
+##
+## Declines without consuming — returns `{}` — unless the property name is a
+## chunk kind *and* what follows is `[` or `.count`. `x.item` on its own is
+## still a property read, which is what a property list keyed `#item` needs.
+func _parse_dot_chunk(source: Dictionary) -> Dictionary:
+	var kind := _v(1).to_lower()
+	if not Grammar.DOT_CHUNKS.has(kind):
+		return {}
+	var line := _ln(1)
+	if _at_op("[", 2):
+		_advance() # .
+		_advance() # kind
+		_advance() # [
+		var start := _parse_expr()
+		var stop = null
+		# `[1..3]` is Director's range spelling. The lexer emits two `.` operators
+		# for it, so the second index is read the way the plain index arm above
+		# skips them -- except that it is kept, which is the whole point of a
+		# range.
+		if _eat_op("."):
+			_eat_op(".")
+			stop = _parse_expr()
+		if not _expect_op("]"):
+			return {}
+		return {
+			"node": "chunk", "kind": kind, "start": start, "stop": stop,
+			"source": source, "line": line,
+		}
+	if _at_op(".", 2) and _at_word("count", 3):
+		_advance() # .
+		_advance() # kind
+		_advance() # .
+		_advance() # count
+		return {"node": "count", "unit": kind, "source": source, "line": line}
+	return {}
 
 
 func _parse_call_args() -> Array:
@@ -979,7 +1051,32 @@ func _starts_command_args() -> bool:
 	if kind == "number" or kind == "string" or kind == "symbol":
 		return true
 	if kind == "op":
-		return _v() == "["
+		# **`[` after a bare identifier is a subscript, not a list-literal
+		# argument.** `lst[2]` is D5's list access and it is how the whole of
+		# `itamar-magichat` reads a list: 659 sites there and 2 in `itamar-park`,
+		# against 0 in the five 1997 titles, which spell it `getAt(lst, 2)`.
+		# Answering true here made `_parse_primary` take the command-form branch,
+		# so `mnuData[1]` compiled to a *call* to an unbound handler named
+		# `mnuData` with `[1]` as its argument — VOID, reported as an unbound
+		# name and otherwise silent. `ReadAllMenusFile`'s
+		# `CreateMenu(mnuName, mnuData[1])` therefore built every menu from
+		# `script(VOID)`, and `_parse_postfix`'s `index` arm — which has always
+		# been there and is correct — was unreachable for every variable in the
+		# corpus.
+		#
+		# What this gives up, measured: a command call whose *first* argument is
+		# a bare list literal, `myCommand [1, 2]`. `tools/scratch/bracket_survey.gd`
+		# counts 0 of those across all eight corpora -- the only three lines in
+		# any of them with whitespace between a word and a `[` are two string
+		# literals containing the character and one `repeat with i in [#right,
+		# #left]`, which the repeat parser reads before this is reached. The call
+		# spelling `myCommand([1, 2])` still parses, and a *command word* keeps
+		# its list arguments regardless
+		# because `command_head` is checked before this gate — `sound playFile
+		# [1, 2]` is unaffected. `foo [1]` and `foo[1]` cannot be told apart by
+		# any rule, so one of the two readings has to lose, and the one with 661
+		# sites wins.
+		return false
 	if kind == "kw":
 		var low := _v().to_lower()
 		if ["the", "field", "sprite", "member", "not"].has(low) or Grammar.CHUNKS.has(low):

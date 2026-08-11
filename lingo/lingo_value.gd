@@ -375,7 +375,19 @@ static func join_lines(parts: PackedStringArray) -> String:
 
 static func chunk_parts(text: String, kind: String, delimiter: String = ",") -> PackedStringArray:
 	match kind:
-		"line":
+		# `paragraph` is D7's name for the same chunk `line` names, and Director
+		# keeps both. It differs from `line` only inside a rich-text member,
+		# where a paragraph is a styled run that soft-wraps across several
+		# displayed lines; on the plain strings and field text this port splits,
+		# a paragraph *is* a line. Written as an alias rather than left to the
+		# default arm, which returns the whole text as one part and would make
+		# `x.paragraph[2]` answer the entire string.
+		#
+		# Unverified against the corpus: 0 sites in any of the six titles. Built
+		# because Director has it (`AGENTS.md`), and reachable only through the
+		# dot spelling — see `LingoGrammar.DOT_CHUNKS` for why the word is not a
+		# lexer keyword.
+		"line", "paragraph":
 			return split_lines(text)
 		"item":
 			return text.split(delimiter)
@@ -396,7 +408,7 @@ static func chunk_parts(text: String, kind: String, delimiter: String = ",") -> 
 
 static func chunk_separator(kind: String, delimiter: String = ",") -> String:
 	match kind:
-		"line":
+		"line", "paragraph":
 			return "\n"
 		"item":
 			return delimiter
@@ -480,7 +492,7 @@ static func count_of(text: String, unit: String, delimiter: String = ",") -> int
 	if unit == "char":
 		return text.length()
 	var parts := chunk_parts(text, unit, delimiter)
-	if unit == "line":
+	if unit == "line" or unit == "paragraph":
 		# Director counts a trailing empty line as absent.
 		while parts.size() > 1 and parts[parts.size() - 1] == "":
 			parts.remove_at(parts.size() - 1)
