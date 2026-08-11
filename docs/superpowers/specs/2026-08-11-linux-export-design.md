@@ -54,8 +54,9 @@ build that starts and finds no engine data. That is a missing archive member.
 No new file in `tools/ci/`, and no test suite, because there is no parsing to get
 wrong.
 
-**Two members and one mode.** The check reads the archive with `unzip -Z1 -l`
-rather than `unzip -l`, because there is a second way this artifact arrives
+**Two members and one mode.** The check reads the archive with `unzip -Z`
+(zipinfo long format, which prints the mode column) rather than `unzip -l`,
+because there is a second way this artifact arrives
 broken and it is invisible to a plain listing: a `GodotDirectorPlayer.x86_64`
 that lost its executable bit is a download the player cannot run and cannot
 easily diagnose. `zip` preserves the mode, so this is an assertion about
