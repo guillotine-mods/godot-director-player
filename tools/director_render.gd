@@ -128,8 +128,7 @@ func _init() -> void:
 			# A shape or a script member draws nothing by design.
 			skipped += 1
 			print("  ch %3d  %d:%-5d  %-16s skipped (%s)" % [
-				sprite["channel"], lib, id, name,
-				m.get("type_name", "unresolved"),
+				sprite["channel"], lib, id, name, _why_skipped(m),
 			])
 			continue
 		var f = table.file_for(lib)
@@ -203,4 +202,30 @@ func _init() -> void:
 	table.close()
 	movie.close()
 	quit(0)
+
+
+## Why a sprite was not drawn, in enough detail to tell a decision from a gap.
+##
+## This printed `skipped (type15)` for Magic Hat's `yes` and `no` buttons, and a
+## bare type number says only that something is missing. **Nothing is missing.**
+## An Xtra cast member's picture is produced by a native Xtra DLL; this port hosts
+## two Xtras (FileIO and BuddyAPI) and neither draws. The reference does the same:
+## `castmember/xtra.cpp:promote` leaves an Xtra whose symbol is not in
+## `xtraCastMemberProtos` as the base `XtraCastMember`, which inherits
+## `CastMember::createWidget` returning `nullptr` (`castmember/castmember.h:70`,
+## ScummVM 805f259a). So drawing nothing for one is correct, and the only defect
+## was that the line did not say *which* Xtra was not drawn -- `flash` and
+## `animGif` read as a decision, `type15` reads as a decoder that fell over.
+static func _why_skipped(m: Dictionary) -> String:
+	if m.is_empty():
+		return "unresolved"
+	var why := str(m.get("type_name", "?"))
+	if bool(m.get("xtra_external", false)):
+		return why + " (external): its Xtra is linked, not embedded"
+	if not m.has("xtra_symbol"):
+		return why
+	var display := str(m.get("xtra_display_name", ""))
+	return "%s '%s'%s: no native Xtra hosted, so Director draws nothing either" % [
+		why, str(m["xtra_symbol"]), (" -- %s" % display) if display != "" else "",
+	]
 
