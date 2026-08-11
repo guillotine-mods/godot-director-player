@@ -23,6 +23,7 @@ const KeySites := preload("res://tools/lib/key_sites.gd")
 
 const PRESETS := "res://export_presets.cfg"
 const PACK_SCRIPT := "res://autoload/piposh3d_pack.gd"
+const PALETTE_SCRIPT := "res://director/director_palette.gd"
 
 
 func _init() -> void:
@@ -64,6 +65,23 @@ func _init() -> void:
 	h.check("the pack autoload still declares PACK_PATH", pack != "", PACK_SCRIPT)
 	if pack != "":
 		required.append(pack.trim_prefix("res://"))
+
+	# The built-in palette table, derived the same way and for the same reason:
+	# it is plain data read at runtime, so `export_filter="all_resources"` does
+	# not sweep it in and only `include_filter` can carry it.
+	#
+	# It arrived on `main` after this harness was written, and the harness needed
+	# no new rule to cover it -- which is the whole argument for deriving the
+	# required paths from the code that reads them rather than listing them here.
+	# A list would have gone stale at exactly this merge, silently.
+	var palette: Script = load(PALETTE_SCRIPT)
+	var palette_data := ""
+	if palette != null:
+		palette_data = str(palette.get_script_constant_map().get("PALETTE_DATA", ""))
+	h.check("the palette script still declares PALETTE_DATA", palette_data != "",
+		PALETTE_SCRIPT)
+	if palette_data != "":
+		required.append(palette_data.trim_prefix("res://"))
 	h.complete(case)
 
 	for section in presets:

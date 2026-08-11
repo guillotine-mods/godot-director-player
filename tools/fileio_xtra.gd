@@ -166,8 +166,17 @@ func _init() -> void:
 	var title := "the Xtra is registered and `xtra(...)` finds it"
 	h.begin(title)
 	var listed: Variant = lingo_host.get_system_prop("xtras")
-	h.check("`the xtras` lists exactly one Xtra",
-		typeof(listed) == TYPE_ARRAY and (listed as Array).size() == 1,
+	# The registry, whole. Asserted against the host's own list rather than
+	# against a number written here: this said "exactly one Xtra" until BudAPI
+	# joined FileIO in it, and a count in a harness is a second copy of a fact
+	# that lives in `xtras_loaded`. What matters to *this* file is that FileIO is
+	# still the entry `xtra(1)` answers, because the index lookup below is
+	# checked against it.
+	h.check("`the xtras` is the host's registry, and FileIO is the first entry",
+		typeof(listed) == TYPE_ARRAY
+			and (listed as Array).size() == lingo_host.xtras_loaded.size()
+			and (listed as Array).size() >= 1
+			and str((lingo_host.xtras_loaded[0] as Dictionary)["name"]) == "FileIO",
 		JSON.stringify(listed))
 	# §7.3's normalisation on both sides: the same library named three ways is
 	# one Xtra, and this is the lookup rather than the key function.

@@ -25,6 +25,18 @@ const Ink := preload("res://director/director_ink.gd")
 ## says "rounded rectangle", the sprite says how big, and the score's stored rect
 ## is the only answer there is. Rich text is not here because the reference does
 ## not except it either -- it takes the default branch.
+##
+## **An Xtra (type 15) takes the default branch too, and used to reach it with
+## nothing to fall back on.** Its rect is not in the specific block the way every
+## other type's is -- it is item 12 of the *info* block -- so until
+## `director_cast.gd:_apply_xtra_rect` read it, every Xtra member measured 0x0 and
+## `drawn_size` below fell through to the score's own rect, which is the residue
+## this whole file exists to stop trusting. It also had no registration point, and
+## an Xtra's is its rect's origin -- the *centre* of the box for 355 of the 494
+## members that carry one across `itamar-magichat` and `piposh-dream`, so a sprite
+## naming the 500x230 `jinnycard` was placed and hit-tested 250px off. Neither is
+## visible on the stage, because nothing draws an Xtra: they are visible in
+## `interaction.gd`'s hit test, which is `stage_rect().has_point()`.
 const KEEPS_ITS_OWN_SIZE := [8]  # shape
 
 

@@ -409,7 +409,23 @@ func _developer_visible() -> bool:
 ## what the run will actually use.
 func _fill_developer() -> void:
 	var cfg := GameConfig.merged()
-	%Boot.text = str(cfg.get_value("game", "boot_movie", ""))
+	# **Left empty, and not seeded from the config.** The placeholder says what
+	# the field means -- empty is "whatever the selected game opens" -- and
+	# `_on_play` treats anything typed here as an override of the *selected
+	# title's* boot container. Seeding it made every launch an override of a
+	# value the person had not chosen, and the value it seeded with was
+	# `[game] boot_movie` from the tracked file: `strtgame.dir`.
+	#
+	# Four of the five Director titles boot `strtgame.dir`, so it looked
+	# harmless for years. Rating boots `mainmenu.dir`, and selecting Rating and
+	# pressing Play wrote `root = res://games/rating` with `boot_movie =
+	# strtgame.dir` and reached `no such container` -- the title was not
+	# launchable from this screen at all, and the developer tab is on by default
+	# in a run from source, so that was every run.
+	#
+	# It also fed itself: the seed came from the *merged* config, which includes
+	# the overlay this screen wrote last time, so one launch of any title pinned
+	# its boot container onto the next.
 	%Boot.placeholder_text = "ריק: מה שהמשחק הנבחר פותח"
 	%Codepage.clear()
 	for name in CODEPAGES:
@@ -782,6 +798,10 @@ func _on_play() -> void:
 		# a different statement from the empty string: the key is removed rather
 		# than written blank, or `DirectorPaths.load_config` reads "" and reports
 		# no game configured.
+		#
+		# Skipping is enough to clear a stale one: the selected title's own boot
+		# is written unconditionally above, so a blank field leaves *that* in the
+		# overlay rather than whatever a previous run pinned there.
 		var override := str(%Boot.text).strip_edges()
 		if override != "":
 			overlay.set_value("game", "boot_movie", override)

@@ -25,6 +25,19 @@ const KEYWORDS := {
 ## Chunk expression heads, e.g. `line 3 of field "x"`.
 const CHUNKS := {"line": true, "item": true, "word": true, "char": true}
 
+## Chunk heads reachable through D5's dot spelling — `str.item[2]`,
+## `member("data").line.count` (§11.8's second syntax).
+##
+## A superset of `CHUNKS`, and the extra entry is the reason it is a separate
+## table rather than a reuse. `paragraph` is a chunk kind Director has and this
+## lexer does not tokenise as a keyword, so it cannot join `CHUNKS` without
+## reserving the word everywhere and breaking any script that uses `paragraph`
+## as a variable. After a `.` there is no such ambiguity: the token is a
+## property name and is matched by spelling, keyword or not.
+const DOT_CHUNKS := {
+	"line": true, "item": true, "word": true, "char": true, "paragraph": true,
+}
+
 ## Index into BINARY_LEVELS. Chunk indices bind loosely enough to include
 ## arithmetic (`line i - 102 of field "x"`) but stop before `of`, a keyword.
 ## Indices into `BINARY_LEVELS`. They shift whenever a level is added or removed,

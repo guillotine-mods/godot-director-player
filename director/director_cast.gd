@@ -23,7 +23,7 @@ const Codepage := preload("res://director/director_codepage.gd")
 const TYPE_NAMES := {
 	1: "bitmap", 2: "filmLoop", 3: "field", 4: "palette", 5: "picture",
 	6: "sound", 7: "button", 8: "shape", 9: "movie", 10: "digitalVideo",
-	11: "script", 12: "richText", 13: "OLE", 14: "transition",
+	11: "script", 12: "richText", 13: "OLE", 14: "transition", 15: "xtra",
 }
 ## A sprite whose member is one of these and does not resolve is missing art.
 ## Anything else — a shape, a script — is *meant* to draw nothing.
@@ -237,6 +237,14 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 	if specific_len > 0 and specific_at + specific_len <= data.size():
 		_parse_specific(data.slice(specific_at, specific_at + specific_len), type_code, out)
 
+	# An Xtra member is the one type whose geometry is *not* in its specific
+	# block, so it is applied here, after both halves have been read, rather than
+	# in `_parse_specific` where every other type's rect is decoded. It has to be:
+	# an external Xtra has no readable specific block at all (see the type 15 arm)
+	# and still carries a rect.
+	if type_code == 15:
+		_apply_xtra_rect(out)
+
 	# The payload chunk this member owns, by tag rather than by "its first
 	# chunk": bitmaps also own `Thum` thumbnails, and taking the first would
 	# hand the renderer a thumbnail instead of the art.
@@ -268,6 +276,26 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 				out["sound_tag"] = tag
 				break
 		out["sound_header_chunk_id"] = int(sound_owned.get("sndH", -1))
+	# A rich text member owns *three* chunks rather than one, so it cannot go
+	# through `want` above. `castmember/richtext.cpp:load()` names them: `RTE0` is
+	# the Paige editor document and is authoring-tool data with no runtime use,
+	# `RTE1` is the plain text, and `RTE2` is the antialiased bitmap Director
+	# actually draws. `data_chunk_id` is `RTE2` because that is the one a renderer
+	# needs; the other two are reported beside it so nothing has to guess a tag.
+	#
+	# Zero members of this type exist in any corpus in reach, so which tags a real
+	# rich text member owns here is the reference's claim and not a measurement.
+	if type_code == 12:
+		var rte: Dictionary = _owned.get(chunk_id, {})
+		out["rte0_chunk_id"] = int(rte.get("RTE0", -1))
+		out["rte1_chunk_id"] = int(rte.get("RTE1", -1))
+		out["rte2_chunk_id"] = int(rte.get("RTE2", -1))
+		out["data_chunk_id"] = int(rte.get("RTE2", -1))
+		# `RTE1` is the text with no styling and no header -- the reference reads
+		# the whole chunk as the string (`richtext.cpp:load()`), which is why this
+		# does not go through `_read_stxt`.
+		if int(out["rte1_chunk_id"]) >= 0:
+			out["text"] = _text(file.read_chunk(int(out["rte1_chunk_id"])))
 	if want != "":
 		var owned: Dictionary = _owned.get(chunk_id, {})
 		out["data_chunk_id"] = int(owned.get(want, -1))
@@ -329,6 +357,36 @@ func _parse_info(info: PackedByteArray, out: Dictionary) -> void:
 		var length: int = name_item[0]
 		if length + 1 <= name_item.size():
 			out["name"] = _text(name_item.slice(1, 1 + length))
+
+	# Items 9, 10 and 12 are the Xtra block of the same table, and they are read
+	# here rather than in the type-15 arm below because the table is *positional*:
+	# item 12 is `xtraRect` wherever it appears, whatever the member's type, and
+	# the offset table is the only thing that says where it starts. The indices
+	# are the reference's own -- `cast.cpp:loadCastInfo` reads 9 as a 16-byte
+	# `xtraGuid`, 10 as a C-string `xtraDisplayName` and 12 as four big-endian
+	# int32 in the order top, left, bottom, right; `cast.cpp:getCastInfoStringLength`
+	# and the writer beside it state the same widths. Cited at ScummVM 805f259a.
+	#
+	# They are read for any member whose table is long enough, and *consumed* only
+	# for type 15 -- `_parse_cast` calls `_apply_xtra_rect` on nothing else. That
+	# split is deliberate: whether a member of some other type can declare thirteen
+	# items has not been measured, and a decode that depends on the answer would be
+	# resting on an assumption. This one does not. A member with a long table and no
+	# use for these keys simply carries them.
+	var guid: PackedByteArray = item.call(9)
+	if guid.size() == 16:
+		out["xtra_guid"] = guid.hex_encode()
+	var display: PackedByteArray = item.call(10)
+	if not display.is_empty():
+		# A C string, where the name above is a Pascal one: the reference reads it
+		# with `readString(false)` and the trailing NUL is inside the item.
+		out["xtra_display_name"] = _text(_c_string(display))
+	var rect: PackedByteArray = item.call(12)
+	if rect.size() >= 16:
+		out["xtra_rect"] = {
+			"top": _be_i32(rect, 0), "left": _be_i32(rect, 4),
+			"bottom": _be_i32(rect, 8), "right": _be_i32(rect, 12),
+		}
 
 
 func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> void:
@@ -475,6 +533,118 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 		11:
 			if spec.size() >= 2:
 				out["script_type"] = _be_u16(spec, 0)
+		12:
+			# **Unverified against real data, and there is none to verify it
+			# against.** `tools/member_type_census.gd` counts every `CASt` chunk in
+			# all eight corpora in reach -- the six shipped titles under `games/`
+			# and both test corpora -- and finds **0 members of type 12 in 160,932
+			# cast members**. Piposh 1's credits census found none either. So this
+			# arm is written from the reference and from nothing else, and the
+			# thing that would verify it is one container with a rich text member
+			# in it: run the census with `--type 12 --dump 4` over that corpus and
+			# check that the two rects come out the size the member is on stage.
+			# It is here because Director has the type, not because this corpus
+			# does (AGENTS.md, "Build Director, not this game").
+			#
+			# The layout is `castmember/richtext.cpp:RichTextCastMember()`, whose
+			# own `getCastDataSize()` states it as 34 bytes: two rects of four
+			# int16 in the order top/left/bottom/right (`movie.cpp:Movie::readRect`),
+			# an antialias flag, crop flags, the scroll position, the size below
+			# which text is not antialiased, the laid-out height, one skipped byte,
+			# the fore colour as three *bytes*, and the paper as three big-endian
+			# int16 of which the high byte is the value. The two colours are stored
+			# differently and that is not a transcription slip -- the reference
+			# reads `readByte()` three times for one and `readUint16BE() >> 8`
+			# three times for the other. Cited at ScummVM 805f259a.
+			#
+			# **The length is the version gate.** The reference decodes this layout
+			# only for D5 through D11 and warns "RTE not yet supported" outside
+			# that range, so a pre-D5 rich text member has no known layout in the
+			# reference either. A cast has no version to test here -- the version
+			# is in the movie's `VWCF`, which this class never opens -- so the
+			# block's own length stands in for it: 34 bytes is the D5 record, and
+			# anything shorter is refused rather than mis-read into a rect that
+			# would then be handed to `sprite_geometry.drawn_size` as fact.
+			if spec.size() < 34:
+				return
+			var rt := _be_i16(spec, 0)
+			var rl := _be_i16(spec, 2)
+			var rb := _be_i16(spec, 4)
+			var rr := _be_i16(spec, 6)
+			out["width"] = rr - rl
+			out["height"] = rb - rt
+			out["initial_rect"] = {"top": rt, "left": rl, "bottom": rb, "right": rr}
+			# The laid-out extent, which for a rich text member can exceed the
+			# authored box. Carried, not applied: nothing here lays the text out,
+			# so a consumer that grew the sprite to it would be reporting a height
+			# the port cannot draw.
+			out["bounding_rect"] = {
+				"top": _be_i16(spec, 8), "left": _be_i16(spec, 10),
+				"bottom": _be_i16(spec, 12), "right": _be_i16(spec, 14),
+			}
+			# A rich text member carries no registration point of its own. The
+			# reference gives it none either -- `RichTextCastMember` does not
+			# override `CastMember::getRegistrationOffset`, which is (0,0)
+			# (`castmember/castmember.h:99`) -- so the sprite's `loc` is the box's
+			# top-left corner, and the zeros `_parse_cast` already put in
+			# `reg_offset_x`/`reg_offset_y` are the answer rather than a gap.
+			out["antialias"] = spec[16] != 0
+			out["crop_flags"] = spec[17]
+			out["scroll"] = _be_u16(spec, 18)
+			out["antialias_font_size"] = _be_u16(spec, 20)
+			out["text_height"] = _be_u16(spec, 22)
+			out["fore_color_rgb"] = Color8(spec[25], spec[26], spec[27])
+			out["bg_color"] = Color8(spec[28], spec[30], spec[32])
+		15:
+			# An Xtra cast member: a name and an opaque blob the named Xtra owns.
+			#
+			# `castmember/xtra.cpp:XtraCastMember()` reads exactly this and nothing
+			# more -- a big-endian uint32 length, that many bytes of symbol, a
+			# second uint32 length, and that many bytes of payload -- and the
+			# member's geometry is *not* in here at all (see `_apply_xtra_rect`).
+			# Cited at ScummVM 805f259a.
+			#
+			# Measured by `tools/xtra_members.gd`: `4 + symbol length + 4 + payload
+			# length` equals the specific block's own length for every one of the
+			# 551 Xtra members it reaches -- all 454 in `itamar-magichat`, all 97 in
+			# `piposh-dream` -- which is the same self-check the field member's
+			# 20-byte style run gets, and is what says the two length words are
+			# being read in the right places. Every one of them also yields a
+			# non-empty symbol, and there are five across those two titles:
+			# `flash` (253), `animGif` (199), `vectorShape` (94), `text` (3) and
+			# `VisibleLightOnStageMedia` (2). `itamar-park` adds a sixth spelling,
+			# `animgif`, which is why nothing here matches a symbol case-sensitively.
+			#
+			# The payload is deliberately kept as a length and not as bytes. It is
+			# the Xtra's private serialisation -- a Flash movie, a QuickTime path,
+			# whatever the DLL wrote -- and this engine cannot interpret one it has
+			# not implemented, so carrying it would be carrying a copy of something
+			# nothing reads.
+			#
+			# **An external Xtra has no such envelope.** The reference returns from
+			# the constructor before reading a byte of it when the member's info
+			# flags say `isExternal` (bit 0, `INFO_EXTERNAL`), because for a linked
+			# member the specific block is the link and not the envelope. Reading
+			# it anyway would produce a symbol length of whatever the first four
+			# bytes of a file reference happen to be.
+			if bool(out.get("has_cast_info", false)) \
+					and (int(out.get("info_flags", 0)) & INFO_EXTERNAL) != 0:
+				out["xtra_external"] = true
+				return
+			if spec.size() < 8:
+				return
+			var symbol_len := _be_u32(spec, 0)
+			if 4 + symbol_len + 4 > spec.size():
+				return
+			out["xtra_symbol"] = _text(spec.slice(4, 4 + symbol_len))
+			var data_len := _be_u32(spec, 4 + symbol_len)
+			out["xtra_data_size"] = mini(data_len, spec.size() - (8 + symbol_len))
+			# The self-check, reported rather than asserted here so that
+			# `tools/xtra_members.gd` can assert it over the whole corpus at once:
+			# the two length words and the two runs they measure must account for
+			# every byte of the block. No other split of those bytes does.
+			out["xtra_specific_len"] = spec.size()
+			out["xtra_envelope_len"] = 8 + symbol_len + data_len
 		14:
 			# A transition member is six bytes and no info block: the type, the
 			# chunk size, the change area and the duration the frame that names
@@ -482,6 +652,100 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			# the byte layout is written down against the three members in this
 			# corpus that exercise it.
 			out.merge(Transition.decode_member(spec))
+
+
+## An Xtra member's size and registration point, out of the `xtraRect` its *info*
+## block carries.
+##
+## Geometry in the info block is peculiar to this one type and is the reason this
+## is a function rather than a line in the type-15 arm above. An Xtra's specific
+## block is the Xtra's own envelope -- a symbol and an opaque payload, nothing
+## else (`castmember/xtra.cpp:XtraCastMember()`) -- so there is nowhere in it for
+## a rect, and Director puts one at item 12 of the info table instead
+## (`cast.cpp:loadCastInfo`, ScummVM 805f259a). An **external** Xtra has no
+## readable envelope at all and still has a rect, which is the other reason this
+## runs outside `_parse_specific`.
+##
+## **The reference does not do this, and the reason it does not is that it draws
+## no Xtra.** ScummVM reads the same rect into `CastMemberInfo::xtraRect` and
+## never puts it on the member, so `XtraCastMember::getInitialRect()` is the empty
+## rect its base class default-constructed -- and `sprite.cpp:Sprite::setCast`
+## then resets any sprite naming one to 0x0. That is survivable there because
+## nothing is placed or hit-tested against it. It is not survivable here: this
+## port's hit test is `sprite_geometry.stage_rect(...).has_point(at)`
+## (`scenes/preview/interaction.gd`), so a member with no size hands the score's
+## own rect straight through and a member with a *wrong* registration point moves
+## every click by half its own size.
+##
+## So what the rect means was measured rather than assumed, and it is measured
+## against a witness outside the decode -- `tools/xtra_members.gd`:
+##
+##   **The size.** For a sprite the author did not mark as stretched, Director
+##   resets the score's width and height to the member's own rect
+##   (`sprite.cpp:setCast`). Across the two corpora that place Xtra sprites --
+##   `itamar-magichat` and `piposh-dream`, two unrelated titles using four
+##   different Xtras between them -- **7,593 unstretched sprite records name an
+##   Xtra member and the score's rect matches this rect within a pixel on 7,557**.
+##   `piposh-dream`'s half of that is 6,765 records and **not one disagreement**;
+##   magichat's 36 exceptions are ordinary authoring residue of the shape
+##   `sprite_geometry.drawn_size` already documents -- `virus_2` recorded 14x18
+##   against a 90x86 member, `BonusFire` 35x35 against 100x100 -- and not a second
+##   convention. Nothing in this port derives one of those two numbers from the
+##   other, so the agreement is evidence and not arithmetic.
+##
+##   **The registration point.** The rect's *origin* is it, exactly as it is for a
+##   bitmap: `_parse_specific`'s type-1 arm stores `regPoint - left/top`, and an
+##   Xtra has no separate regPoint, so the offset is `(0,0) - (left,top)`.
+##
+##   The evidence is where the origin falls. Of magichat's 400 members that carry
+##   a rect, **287 are centred on it to within half a pixel** -- `title1` 800x600
+##   at (-400,-300), the `leftheadin`/`rightheadin` family 170x150 at (-85,-75),
+##   `no` and `yes` 125x141 at (-62,-70) -- **104 are at (0,0)**, both of the
+##   `VisibleLightOnStageMedia` video members among them, and 9 sit elsewhere
+##   inside the box. `piposh-dream`'s 94 split 68 centred and 26 elsewhere, which
+##   is what a `vectorShape` Xtra should look like: a vector's registration point
+##   is wherever the author dropped it, and a member type whose origin is *free*
+##   inside the box while a Flash movie's defaults to the centre and a video's to
+##   the corner is a registration point behaving like one.
+##
+##   **In all 494 rects across both corpora the origin lies on or inside the
+##   member's own box**, which is the falsifiable part and the one
+##   `tools/xtra_members.gd` asserts. "Centre or corner" is deliberately *not*
+##   asserted: that rule was written from the first corpus looked at, and the 9 in
+##   magichat plus the 26 here falsified it.
+##
+##   Reading the origin as (0,0) regardless -- which is what following the
+##   reference's `getRegistrationOffset` literally would do -- therefore places
+##   and hit-tests every centred member half its own size down and to the right.
+##   For `jinnycard`, 500x230, that is 250px.
+##
+## **Some Xtra members carry no rect at all** -- 54 of magichat's 454, 3 of
+## `piposh-dream`'s 97. They keep a width and height of zero, which sends
+## `drawn_size` back to the score's own rect: the same answer any member with no
+## natural size has always got, and the right one when the member cannot supply a
+## better.
+##
+## Nothing here draws an Xtra: this makes the member's *geometry* right, and
+## `scenes/preview/sprite_art.gd:texture_for` still returns null for the type,
+## which is what Director does for an Xtra it has no DLL for.
+func _apply_xtra_rect(out: Dictionary) -> void:
+	var rect: Dictionary = out.get("xtra_rect", {})
+	if rect.is_empty():
+		return
+	var left := int(rect["left"])
+	var top := int(rect["top"])
+	var w := int(rect["right"]) - left
+	var h := int(rect["bottom"]) - top
+	# A degenerate rect is left alone rather than turned into a 0x0 member: with
+	# no size `sprite_geometry.drawn_size` falls back to the score's own rect,
+	# which is the better of the two answers when the member cannot supply one.
+	if w <= 0 or h <= 0:
+		return
+	out["width"] = w
+	out["height"] = h
+	out["initial_rect"] = rect.duplicate()
+	out["reg_offset_x"] = -left
+	out["reg_offset_y"] = -top
 
 
 func _read_stxt(chunk_id: int) -> String:
@@ -658,6 +922,22 @@ static func _be_i16(d: PackedByteArray, o: int) -> int:
 
 static func _be_u32(d: PackedByteArray, o: int) -> int:
 	return (d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]
+
+
+## A signed 32-bit big-endian word. The info block's `xtraRect` is the only field
+## in a cast record stored this wide, and it is genuinely signed: a member whose
+## registration point is its centre records a negative top and left.
+static func _be_i32(d: PackedByteArray, o: int) -> int:
+	var v := _be_u32(d, o)
+	return v - 4294967296 if v >= 2147483648 else v
+
+
+## Everything up to the first NUL. The info block stores one string as a C string
+## where every other one is a Pascal string, and decoding the terminator with it
+## puts a stray character on the end of every Xtra's display name.
+static func _c_string(raw: PackedByteArray) -> PackedByteArray:
+	var stop := raw.find(0)
+	return raw if stop < 0 else raw.slice(0, stop)
 
 
 static func _u16(d: PackedByteArray, o: int, big: bool) -> int:

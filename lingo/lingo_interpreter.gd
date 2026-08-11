@@ -955,6 +955,7 @@ end
 
 func reset_steps() -> void:
 	_steps = 0
+	_drain_errors()
 	errors.clear()
 	# `abort` unwound the last dispatch and must not refuse this one. Cleared
 	# where a dispatch *begins* rather than where it ends, because the ends are
@@ -1342,7 +1343,7 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			var upto_node: Variant = doomed.get("stop", null)
 			var upto := LingoValue.to_int(_eval(upto_node, frame)) if upto_node != null else from
 			_assign(source, LingoValue.delete_chunk(
-				LingoValue.to_str(_eval(source, frame)),
+				_chunk_source_text(source, frame),
 				str(doomed.get("kind", "line")), from, upto, item_delimiter), frame)
 			return Flow.NORMAL
 		"exit_repeat":
@@ -1369,6 +1370,54 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			_set_var(str(target.get("name", "")).to_lower(), value, frame)
 		"field":
 			_set_field_node(target, LingoValue.to_str(value), frame)
+		"member_ref":
+			## `put readFile(tmp) into member FieldName` -- a write to a bare member
+			## reference is a write to its **text**. Director's `field "x"` and
+			## `member "x"` name the same castmember and differ only in which
+			## property a bare reference stands for; for a field or text member
+			## that property is the text, which is why `the text of member "x"` and
+			## `member "x"` round-trip through each other.
+			##
+			## Missing entirely until now, and the shape of the miss is the point:
+			## every *read* worked, every `.text` spelling worked, and only the bare
+			## write had nowhere to land. It fell to the default arm, which records
+			## "cannot assign to member_ref" in `errors` and **returns normally** --
+			## so the statement was a silent no-op and the handler ran on to
+			## completion, which is why nothing anywhere reported a problem.
+			##
+			## Magic Hat's `LoadFileToField` is the handler that shows it:
+			##
+			##     openFile(tmp, Fname, 1)
+			##     if status(tmp) = 0 then
+			##       put readFile(tmp) into member FieldName   <- dropped
+			##       closeFile(tmp)
+			##
+			## The file opened, the read succeeded, the file closed, and the field
+			## stayed empty -- so `ReadInifile` then found no `[PATH]`, no `[END]`
+			## and no `[ENDFILE]`, left `the searchPaths` empty, and raised the
+			## game's own `alert("[ENDFILE] is missing at the end of the ini
+			## file")`. An engine gap wearing a data file's error message.
+			##
+			## Not one title's idiom, though the shipped corpus survived it. Piposh
+			## 1 English and Russian carry 8 sites where the Hebrew build spells the
+			## same statement `into field`, and both of the ones measured turn out
+			## to be covered:
+			##
+			##   * `put 1000 into member "GlobalMoney" of castLib 7` (`Day1.dir`) is
+			##     idempotent -- the member's authored text is already `1000`, and
+			##     the probe reads `1000` with this arm disabled.
+			##   * `put item i - 27 of SaveNames into member ("save" & i - 27)`
+			##     (`Mainmenu.dir`) is one of *two* loops filling the save-slot
+			##     names; the other spells `into field ("save" & i) of castLib 1`
+			##     and always ran.
+			##
+			## Recorded because the coincidence is the warning, not the reassurance:
+			## the arm was missing for as long as this port has existed and no title
+			## ever showed it, which is precisely how a silent no-op survives.
+			_host_call("set_member_prop", [
+				_eval(target.get("which", {}), frame),
+				_cast_of(target, frame), "text", value,
+			])
 		"sprite_prop":
 			var channel := LingoValue.to_int(_eval(target.get("which", {}), frame))
 			_host_call("set_sprite_prop", [channel, str(target.get("prop", "")), value])
@@ -1489,6 +1538,15 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			## place, and a `_fail` here would report a gap on every one of the 21
 			## sites that set `windowType`.
 			var window_owner: Variant = _eval(owner_node, frame)
+			# **A sprite reference that arrived through a handler**, which the
+			# `sprite_ref` arm above cannot catch because the owner node is a
+			# call: `me.ItemSprite().visible = 0`. Ahead of the window route for
+			# the same reason the object arm is -- `set_window_prop` accepts any
+			# property name and drops it, so a miss here is silent.
+			if LingoSpriteRef.is_ref(window_owner):
+				_host_call("set_sprite_prop", [
+					(window_owner as LingoSpriteRef).channel, prop_name, value])
+				return
 			# `me.pCount = 3`, the dot spelling of the designator arm above. Ahead
 			# of the window route, because a script object is not a window handle
 			# and `set_window_prop` would file it under a window named after the
@@ -1504,6 +1562,31 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			_fail("cannot assign to %s.%s" % [str(owner_node.get("node", "?")), prop_name])
 		"chunk":
 			_assign_chunk(target, value, frame)
+		"index":
+			## `myList[2] = x` and `myPropList[1] = 0` — D5's subscript write,
+			## which is `setAt(myList, 2, x)` (§1.3) and reaches the same builtin
+			## so the two spellings cannot drift.
+			##
+			## The read arm has existed for as long as the parser has produced
+			## `index` nodes and this one never did, so the write fell to the
+			## fall-through below and was *reported* rather than performed. That
+			## is the better half of §19 — it says so — but it is still a
+			## statement that does not happen: Magic Hat's `RemoveMenu` clears the
+			## slot with `gAllMenus[MenuPos] = 0` before deleting it, and
+			## `BasicMenuObject.Remove` does the same to `prButtons[1]`.
+			##
+			## No arm for a point or a rect, and that is not an oversight:
+			## `Vector2` and `Rect2` are Godot value types, so the container this
+			## evaluates is a *copy* and a write to it would be lost. Reported
+			## rather than silently dropped, which is why the `_fail` below is
+			## reached rather than a mutation attempted.
+			var container: Variant = _eval(target.get("target", {}), frame)
+			if typeof(container) == TYPE_ARRAY or typeof(container) == TYPE_DICTIONARY:
+				var slot := LingoValue.to_int(_eval(target.get("index", {}), frame))
+				var set_handled: Array = []
+				Builtins.call_builtin("setAt", [container, slot, value], set_handled)
+				return
+			_fail("cannot assign to index of %s" % type_string(typeof(container)))
 		_:
 			_fail("cannot assign to %s" % str(target.get("node", "?")))
 
@@ -1532,9 +1615,45 @@ func _assign_chunk(target: Dictionary, value: Variant, frame: Dictionary) -> voi
 	var stop_node: Variant = target.get("stop", null)
 	var stop := LingoValue.to_int(_eval(stop_node, frame)) if stop_node != null else start
 	var source: Dictionary = target.get("source", {})
-	var text := LingoValue.to_str(_eval(source, frame))
+	var text := _chunk_source_text(source, frame)
 	var updated := LingoValue.set_chunk(text, kind, start, stop, value, item_delimiter)
 	_assign(source, updated, frame)
+
+
+## The text a chunk expression is taken *from*.
+##
+## Everything except a cast-member reference is its own string, and for those
+## `_eval` is the answer. A member reference is not: `_eval`'s `member_ref` arm
+## answers the member's **number**, because that is what `member("x") = 3` and
+## `sprite(1).member = member("y")` compare and assign. So
+## `member("LevelList").line[i]` read chunks of the *digits of a member number* —
+## `line 1 of "217"` is "217" — rather than of the field's text.
+##
+## Measured on Magic Hat's `FillSectionsInfo`, whose loop is
+## `repeat while i <= member(FieldName).line.count`: the field held 94 lines and
+## the count came back 1, so the loop ran once, built no sections, and every menu
+## in the movie went missing. `the number of lines in field "menudata"` — the
+## other spelling of the same question, on the `field` node, which does answer
+## text — said 94 in the same run.
+##
+## Director's rule is that a bare member reference *stands for* its text wherever
+## text is wanted, which is the same rule `_assign`'s `member_ref` arm writes by:
+## the two are the read and write halves of one behaviour and they now agree, so
+## `member("x").line[2] = "a"` round-trips instead of overwriting the member with
+## a rewritten member number.
+##
+## `member_number` is here too. `the number of member "x"` is a different
+## expression, but the node shape is the same and a chunk of it means the same
+## thing.
+func _chunk_source_text(node: Variant, frame: Dictionary) -> String:
+	if typeof(node) == TYPE_DICTIONARY:
+		var kind := str((node as Dictionary).get("node", ""))
+		if kind == "member_ref" or kind == "member_number":
+			return LingoValue.to_str(_host_call("get_member_prop", [
+				_eval((node as Dictionary).get("which", {}), frame),
+				_cast_of(node, frame), "text",
+			]))
+	return LingoValue.to_str(_eval(node, frame))
 
 
 ## Bind one `global` name for the frame that declared it.
@@ -1631,11 +1750,11 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			var start := LingoValue.to_int(_eval(expr.get("start", {}), frame))
 			var stop_node: Variant = expr.get("stop", null)
 			var stop := LingoValue.to_int(_eval(stop_node, frame)) if stop_node != null else start
-			var text := LingoValue.to_str(_eval(expr.get("source", {}), frame))
+			var text := _chunk_source_text(expr.get("source", {}), frame)
 			return LingoValue.get_chunk(text, kind, start, stop, item_delimiter)
 		"count":
 			var unit := str(expr.get("unit", "line"))
-			var source := LingoValue.to_str(_eval(expr.get("source", {}), frame))
+			var source := _chunk_source_text(expr.get("source", {}), frame)
 			return LingoValue.count_of(source, unit, item_delimiter)
 		"field":
 			return _host_call("get_field", [
@@ -1663,7 +1782,12 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 				])
 			return _host_call("get_field", [field_name, field_cast])
 		"sprite_ref":
-			return LingoValue.to_int(_eval(expr.get("which", {}), frame))
+			## A reference, not a number -- `LingoValue.to_num` unwraps it to the
+			## channel for everything that wants one, so this is invisible to
+			## every consumer except a property access, which is the one that
+			## needed it. See `lingo/lingo_sprite_ref.gd`.
+			return LingoSpriteRef.new(
+				LingoValue.to_int(_eval(expr.get("which", {}), frame)))
 		"member_ref":
 			return _host_call("member_number", [
 				_eval(expr.get("which", {}), frame), _cast_of(expr, frame),
@@ -1742,12 +1866,7 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			# read. The owner is evaluated once and its type decides, because the
 			# same node shape reaches here for a member reference held in a
 			# variable, which is what the fall-through below answers.
-			var prop_owner: Variant = _eval(owner, frame)
-			if LingoObject.is_object(prop_owner):
-				return _object_prop(prop_owner, str(expr.get("prop", "")))
-			return _host_call("get_member_prop", [
-				prop_owner, "", str(expr.get("prop", "")),
-			])
+			return _value_prop(_eval(owner, frame), str(expr.get("prop", "")))
 		"dot":
 			var owner_node: Dictionary = expr.get("target", {})
 			var prop_name := str(expr.get("prop", ""))
@@ -1760,18 +1879,29 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 					_eval(owner_node.get("which", {}), frame),
 					_cast_of(owner_node, frame), prop_name,
 				])
-			var dot_owner: Variant = _eval(owner_node, frame)
-			if LingoObject.is_object(dot_owner):
-				return _object_prop(dot_owner, prop_name)
-			return _host_call("get_member_prop", [dot_owner, "", prop_name])
+			return _value_prop(_eval(owner_node, frame), prop_name)
 		"index":
 			var target: Variant = _eval(expr.get("target", {}), frame)
 			var index := LingoValue.to_int(_eval(expr.get("index", {}), frame))
-			if typeof(target) == TYPE_ARRAY:
-				var list: Array = target
-				if index >= 1 and index <= list.size():
-					return list[index - 1]
-				return 0
+			match typeof(target):
+				TYPE_ARRAY, TYPE_DICTIONARY, TYPE_VECTOR2, TYPE_RECT2:
+					# **`myPropList[2]` is the second property's value**, and a
+					# point and a rect are lists too (§1.3, §1.8). This arm knew
+					# only `Array`, so every other container fell through to the
+					# character chunk below and `gAllMenus[i]` answered one digit
+					# of the printed form of a property list. Magic Hat's
+					# `DisableAllMenus`/`HideAllMenus`/`EnableAllMenus` are each
+					# `repeat with i = 1 to gAllMenus.count / <Op>Menu(
+					# gAllMenus[i].Info(#name))`, so all three walked the right
+					# number of times and messaged a string every time.
+					#
+					# Through `getAt` rather than an inline lookup, so the
+					# subscript and the builtin cannot answer differently -- one
+					# of them ordering a property list by key and the other by
+					# position is the kind of disagreement that survives for
+					# years. It also brings §8.6's rule with it: past either end
+					# is VOID, where this arm used to answer 0.
+					return _list_at(target, index)
 			return LingoValue.get_chunk(LingoValue.to_str(target), "char", index, index)
 		"call":
 			return _call(expr, frame)
@@ -1850,6 +1980,137 @@ func _object_prop(obj: Variant, prop: String) -> Variant:
 	report(LingoDiagnostics.MEMBER_PROP, "%s of %s"
 		% [key, str((obj as Object).call("script_name"))])
 	return null
+
+
+## Builtins reachable as a **property** of a value, the way ScummVM's
+## `getObjectProp` fall-through reaches any one-argument builtin.
+##
+## Spelled out rather than inferred, because this port's builtin table carries no
+## arity: `LingoBuiltins._geometry` answers `point` and `rect` for *any* argument
+## count, so an unfiltered fallback would turn `myMember.rect` — a cast member's
+## bounding box, read off a member reference held in a variable — into
+## `rect(<member number>)`, which is VOID. The three here are the ones Director
+## documents as properties of a value rather than as functions of one, and each
+## is exercised: `count` by 6 handlers in Magic Hat's `objects.cst`, `length` by
+## its scoreboard (`tmpScore.char[tmpScore.length - i + 1]`), `ilk` by
+## `case ilk(value(lst[j].item[2])) of`.
+const VALUE_PROPS := {"count": true, "ilk": true, "length": true}
+
+## Where a point's and a rect's named accessors live in the list Director says
+## they are. `getAt` is the reader; these only say which slot.
+const POINT_SLOTS := {"loch": 1, "locv": 2}
+const RECT_SLOTS := {"left": 1, "top": 2, "right": 3, "bottom": 4}
+
+
+## `x.prop` and `the prop of x` on an evaluated **value** — D5's dot read, for
+## everything that is not a script instance.
+##
+## Modelled on ScummVM `Lingo::getObjectProp` (`lingo-the.cpp:2495`), which
+## branches on the receiver's type — object, property list, point, rect, cast
+## reference, castLib reference, sprite reference — and, when none of them match,
+## falls through to *any one-argument builtin of that name called on the
+## receiver*. That last step is the whole of `"abc".length`, `myList.count` and
+## `x.ilk`: Director has no separate property table for them, the dot form is the
+## call form with the receiver moved in front.
+##
+## Both call sites used to end in `get_member_prop(value, "", prop)` — the
+## receiver read as a cast member — so every one of these answered 0:
+##
+##     [1, 2, 3].count      0   (3)
+##     [#talk: 3].talk      0   (3)
+##     "hello".length       0   (5)
+##     point(3, 4).locH     0   (3)
+##     rect(1,2,3,4).width  0   (2)
+##
+## Magic Hat is built on the first two. `MenuExist` opens
+## `if gAllMenus.count = 0`, `DisableAllMenus`/`HideAllMenus`/`RemoveAllMenus`
+## are each `repeat with i = 1 to gAllMenus.count`, and a count of 0 makes every
+## one of them a no-op that returns cleanly.
+##
+## **The property list is checked before the builtin, which is where this
+## diverges from ScummVM**, and deliberately. ScummVM answers a PARRAY read from
+## the pairs alone and never reaches the builtin fallback, so `gAllMenus.count`
+## would be VOID there. Director's `count` is documented as a property of *any*
+## list, and the corpus depends on it: 6 handlers in `objects.cst` loop on the
+## count of a property list and none of those lists carries a `#count` pair. The
+## order chosen — pairs first, builtin second — agrees with ScummVM wherever a
+## pair of that name exists and with Director where one does not.
+##
+## The final fall-through is still `get_member_prop`, unchanged, because a bare
+## member reference held in a variable evaluates to a member *number* or *name*
+## and `myMember.name` has to keep reaching the cast.
+func _value_prop(owner: Variant, prop: String) -> Variant:
+	# The read side of the sprite-reference arm in `_assign`.
+	# `me.ItemSprite().locH > 0` guards the write, so a reference that
+	# reads as a member property answers nothing and the guard sends the
+	# handler down the wrong branch even once the write is fixed.
+	if LingoSpriteRef.is_ref(owner):
+		return _host_call("get_sprite_prop", [
+			(owner as LingoSpriteRef).channel, prop])
+	if LingoObject.is_object(owner):
+		return _object_prop(owner, prop)
+	var key := prop.to_lower()
+	match typeof(owner):
+		TYPE_DICTIONARY:
+			var pairs: Dictionary = owner
+			# Property lists are keyed by the string spelling in this port, and
+			# `#talk` and `"talk"` are the same key -- `_eval`'s `proplist` arm
+			# writes `to_str` of the key. Case-insensitively, because Lingo is.
+			for pair_key in pairs:
+				if str(pair_key).to_lower() == key:
+					return pairs[pair_key]
+		TYPE_VECTOR2:
+			# **Director's point and rect are lists** -- `LingoValue` says so at
+			# `to_list`, and `getAt(r, 3)` is a rect's right edge -- so the named
+			# accessors are *indices into the same list*, not a second set of
+			# readers. Going through `getAt` is what keeps `p.locH` and
+			# `getAt(p, 1)` the same value and the same **type**:
+			# `LingoBuiltins._at` hands a whole component back as an int so that
+			# `p.locH / 2` stays on Director's integer-division path, and a
+			# reader written here would have answered `Vector2`'s float.
+			var point_slot := int(POINT_SLOTS.get(key, 0))
+			if point_slot > 0:
+				return _list_at(owner, point_slot)
+		TYPE_RECT2:
+			var rect_slot := int(RECT_SLOTS.get(key, 0))
+			if rect_slot > 0:
+				return _list_at(owner, rect_slot)
+			# `width` and `height` are not stored; Director derives them from the
+			# edges and ScummVM `getObjectProp` computes exactly this difference
+			# (`lingo-the.cpp:2534-2537`). Subtracting through `LingoValue` keeps
+			# them on the same numeric rules as every other Lingo arithmetic.
+			if key == "width":
+				return LingoValue.sub(_list_at(owner, 3), _list_at(owner, 1))
+			if key == "height":
+				return LingoValue.sub(_list_at(owner, 4), _list_at(owner, 2))
+	if VALUE_PROPS.has(key):
+		var handled: Array = []
+		var value: Variant = Builtins.call_builtin(prop, [owner], handled)
+		if not handled.is_empty():
+			return value
+	if typeof(owner) == TYPE_DICTIONARY:
+		# **A property list with no such pair answers VOID, and that is an
+		# answer rather than a miss.** `MenuExist` is
+		# `not voidp(gAllMenus.getaProp(MenuName))` — the script asks the
+		# question by reading a key that may not be there — so this must not be
+		# reported and must not fall through to the cast, where a Dictionary
+		# stands for no member and `get_member_prop` would answer 0. ScummVM
+		# pushes an empty `Datum` on the same path and warns about nothing
+		# (`getObjectProp`'s PARRAY arm, `lingo-the.cpp:2506-2514`).
+		return null
+	if owner == null:
+		# VOID has no properties, and answering 0 for one is the shape §19 calls
+		# the worst state there is: the script branches on a value nothing
+		# produced. Reported rather than raised, because Director keeps running.
+		_fail("property %s read on VOID" % prop)
+		return null
+	return _host_call("get_member_prop", [owner, "", prop])
+
+
+## One element of a point or a rect, read the way every other caller reads one.
+func _list_at(container: Variant, index: int) -> Variant:
+	var handled: Array = []
+	return Builtins.call_builtin("getAt", [container, index], handled)
 
 
 func _read_var(name: String, frame: Dictionary) -> Variant:
@@ -2036,18 +2297,66 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 			# `LingoBuiltins` declines by leaving `handled` empty, so a name it
 			# does not own still reaches the property read.
 			var dot_name := str((callee as Dictionary).get("prop", ""))
+			# Evaluated once and shared by the two tables below. Two loops would
+			# run any side effect in an argument twice for every name the first
+			# table declines, which is most of them.
+			var on_receiver: Array = [receiver]
+			for arg in expr.get("args", []):
+				on_receiver.append(_eval(arg, frame))
 			if typeof(receiver) == TYPE_ARRAY or typeof(receiver) == TYPE_DICTIONARY:
-				var on_list: Array = [receiver]
-				for arg in expr.get("args", []):
-					on_list.append(_eval(arg, frame))
 				var list_handled: Array = []
 				var list_value: Variant = Builtins.call_builtin(
-					dot_name, on_list, list_handled)
+					dot_name, on_receiver, list_handled)
 				if not list_handled.is_empty():
 					return list_value
+			# **`script("X").new(args)` — the dot spelling of `new(script "X",
+			# args)`**, and the same move as the arm above: the receiver goes in
+			# front of the arguments. Offered for every receiver rather than for
+			# lists alone, because `_own_builtin` owns nine names — `do`, `abort`,
+			# `param`, `script`, `new`, `call`, `send`, `callAncestor`,
+			# `sendAncestor` — and not one of them is a cast-member property this
+			# port binds, so there is no property read for it to swallow. The
+			# member and sprite designators never reach here at all; they return
+			# above.
+			#
+			# `script("X")` answers a **member reference**, not an object (§7.1),
+			# so `.new` on it landed in the property read below and came back 0.
+			# Magic Hat's `CreateMenu` is `MenuObj = script(MenuScript).new(
+			# MenuName)` followed by `gAllMenus.addProp(MenuName, MenuObj)`, so all
+			# seven of its menus were stored as the integer 0 and every later
+			# `MenuObj.hide()` / `.Enable()` / `.Disable()` was a message to a
+			# number. The flat spelling `new(script "X")` always worked, which is
+			# why the five older titles never showed it: they spell it that way.
+			var own_handled: Array = []
+			var own_value: Variant = _own_builtin(
+				dot_name.to_lower(), on_receiver, frame, own_handled)
+			if not own_handled.is_empty():
+				return own_value
+			if receiver == null:
+				# **A message sent to VOID, dropped in silence.** `x.hide()`
+				# where `x` is VOID has no receiver, no handler and no property,
+				# and this arm used to hand it to `get_member_prop` -- which
+				# answers 0 for a member that is not there, and returns cleanly.
+				# So the statement ran, did nothing, reported nothing, and the
+				# handler carried on.
+				#
+				# That is the state §19 calls the worst one, and it is what made
+				# the chunk bug above take a day: Magic Hat's `HideMenu` is
+				# `MenuObj = GetMenu(MenuName)` then `MenuObj.hide()`, so an empty
+				# `gAllMenus` turned into two clean no-ops per call and the only
+				# evidence anywhere was a dialog still on the screen. The
+				# arguments are not even evaluated, so a side effect in one is
+				# lost with the call.
+				#
+				# Through `_fail` rather than `report`, because this is a
+				# statement that did not happen rather than a name that did not
+				# bind -- the same path `_assign`'s fall-through uses, and it
+				# prints.
+				_fail("message %s sent to VOID" % dot_name)
+				return null
 			# Evaluated above; read the property off the value rather than
 			# re-entering `_eval`, which would evaluate the target a second time.
-			return _host_call("get_member_prop", [receiver, "", dot_name])
+			return _value_prop(receiver, dot_name)
 		return _eval(callee, frame)
 	var args: Array = []
 	for arg in expr.get("args", []):
@@ -2249,4 +2558,36 @@ func _host_call(method: String, args: Array) -> Variant:
 
 func _fail(message: String) -> void:
 	if errors.size() < 50:
-		errors.append(message)
+		# The location travels with the message. Without it a report reads
+		# "cannot assign to member_ref" and names neither the script nor the
+		# line, which is most of the work of finding it.
+		errors.append("%s  (%s > %s line %d)" % [
+			message, _script_name, _handler_name, _line])
+
+
+## Say out loud what the last dispatch could not do.
+##
+## **`errors` existed for the life of this port and nothing on the player's path
+## ever read it.** Two harnesses do; a run does not. That is how
+## `put readFile(tmp) into member FieldName` -- a statement with no arm in
+## `_assign` -- stayed invisible for as long as it did: it recorded itself
+## faithfully, into an array cleared at the start of the next dispatch, a few
+## milliseconds later.
+##
+## Drained here rather than at the three dispatch ends, for the same reason
+## `_aborting` is cleared here: this is the one line all of them already share.
+##
+## Deduplicated for the run, because these fire from frame scripts. A statement
+## that fails on an `exitFrame` fails again every tick, and an unconditional
+## print would bury the movie's own output at 15 lines a second. Once is a
+## diagnostic; sixty times a second is a reason to turn diagnostics off.
+func _drain_errors() -> void:
+	for message in errors:
+		var text := str(message)
+		if _reported.has(text):
+			continue
+		_reported[text] = true
+		print("lingo: %s" % text)
+
+
+var _reported: Dictionary = {}

@@ -47,6 +47,7 @@ Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVEL
 | `.claude/`, `.codex/` | Skills and slash commands, kept in sync so both agents see the same thing |
 | `bugs.md` | Open defects with reproductions. Closed ones in `docs/bugs-closed.md` |
 | `gate.sh`, `check.sh`, `gate_env.sh` | The verification gates, and the one copy of what they need to know about the machine |
+| `build_pack.sh` | Builds `titles/piposh3d.pck` out of the `titles/piposh-3d` submodule. Run once per checkout; without it the 3D title is missing from the launcher and four autoloads error on every run |
 
 Not committed, but present after a real run: `.godot/` (editor cache, see below),
 `.traces/` (ScummVM trace logs from `tools/capture_scummvm_trace.sh`),
@@ -219,9 +220,10 @@ There is no test suite.
 actually run against the live player and are expected to pass, and as of a
 whole-suite run on 4.7.1 on 2026-08-10 **every entry passes and none fail** --
 including `debug_bindings`, which was config rather than code and whose config
-moved, and `boot_state`, the long-standing red this paragraph used to name. Treat
-a green `play_suspends` as one sample rather than a result: it is the
-fixed-frame-count flake of `bugs.md` 41, and passing once does not close it.
+moved, and `boot_state`, the long-standing red this paragraph used to name. A
+green `play_suspends` is a result rather than one sample: it *was* the
+fixed-frame-count flake of `bugs.md` 41, and `b8466abb` closed it by waiting on
+the resumed global under a 600-frame ceiling instead of counting six frames.
 The count is deliberately not written here, for the reason `AGENTS.md` gives --
 it changed twice in the day that line was last corrected, and a number nobody
 re-measures is what sent three readers looking for a failure that was not there.
@@ -323,6 +325,8 @@ godot --headless --script tools/new_game_reset.gd -- --root rating --boot NAVIGA
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
 godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail
+godot --headless --script tools/fileio_xtra.gd     # the FileIO Xtra driven from Lingo: the registry, the reads, Director's own status codes and the write guard, pass/fail
+godot --headless --script tools/buddyapi_xtra.gd -- --allow-writes  # the BuddyAPI Xtra: `baReadIni` answers a *string* (bugs.md 78), `baFlushIni` really drops the cache, `baOpenURL` declines and says so, and every write obeys the game root, pass/fail
 godot --script tools/save_state.gd                  # a save state reproduces the session: every field on the node is saved, rebuilt or excluded-and-why; saved in one process and reloaded from `--save` in another; the Shift chords driven as real keys, pass/fail — run windowed for the keys
 godot --headless --script tools/text_codepage.gd    # which single-byte codepage the corpus was authored in, measured against the candidates; the decode/encode round trip over every authored string; a Hebrew name written by one process and read by another, pass/fail (`--all` for every root)
 godot --headless --script tools/builtin_load.gd     # the player's own route to a saved game — menu, Load, the slot list, a slot, the stage resuming in the room it recorded, pass/fail (`--real` drives the frame clock instead of stepping the score)

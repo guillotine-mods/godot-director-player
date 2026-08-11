@@ -10,6 +10,8 @@ build/
 # arrive with the submodule, so it is the import saved ahead of time rather
 # than anything to store.
 titles/*.pck
+# The commit each pack was built from, so a submodule bump is detectable.
+titles/*.pck.stamp
 android/*.keystore
 android/*.jks
 
@@ -63,6 +65,12 @@ saves/
 
 # Original Director game data lives in private Git submodules under `games/`.
 # The public parent repository tracks only their gitlinks, not their contents.
+
+# Titles being brought up against this engine, dropped in whole rather than
+# added as submodules -- 795 MB at the time of writing. Not ours to redistribute,
+# the same rule as `games/` above, and unlike `games/` there is no gitlink here
+# to stop a `git add -A` from committing the contents outright.
+test-games/
 
 # Serialises concurrent `gate.sh` runs. Two at once swap each other's corpus
 # mid-run and report another title's movies as this one's regressions.

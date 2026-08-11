@@ -51,6 +51,12 @@ cd "$(dirname "$0")" || exit 1
 . ./gate_env.sh
 G=$(gate_find_godot) || exit 1
 gate_announce_godot "$G"
+# Before the first harness, because the pack decides what every one of them
+# prints. It is not this suite's subject -- nothing in `ALL` is the 3D title --
+# and that is exactly why it has to be built rather than skipped: the autoloads
+# it carries fail in *every* entry, so an unbuilt pack puts twelve errors into
+# each of the 76 results the run is here to produce. See `gate_require_pack`.
+gate_require_pack
 
 # Pin the corpus. A gate is only meaningful against the game its baseline was
 # recorded on, and the config is a working file that gets pointed at whichever
@@ -103,7 +109,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects timeout_and_actors fileio_xtra media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_members:--root@res://test-games/itamar-park audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_members:--root@res://test-games/itamar-park audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -161,6 +167,17 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # Both read the disc rather than play it -- cast records in one case, twelve bytes
 # off the front of every file in the other -- which is why they are affordable
 # here and the sweep they came from is not.
+#
+# `palette_cycle` runs bare, beside it, and was **outside this list for its whole
+# life** -- which is the only reason it could carry four reds nobody saw. Two were
+# its own CLUT case, still asserting the reversed read that
+# `director_palette.gd:from_clut` was corrected away from when `palette_members`
+# was written; the other two were the renderer case, which drove `puppetPalette`
+# and has been re-pointed at a fade, the one palette change a true-colour stage
+# still passes to a bitmap. An ungated harness rots into a record of what the
+# engine used to do, and both halves of that had happened here. Bare because its
+# subject is the tables and the transforms, which need no corpus at all, plus
+# `GATE_ROOT`'s one authored palette frame (`strtgame` f38).
 #
 # `palette_members` names `test-games/itamar-park` for the same reason
 # `cursor_cross_cast` names `rating`: `GATE_ROOT` cannot express its subject at

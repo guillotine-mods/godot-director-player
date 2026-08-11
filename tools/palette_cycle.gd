@@ -57,6 +57,38 @@ func _init() -> void:
 ## observable here is that **the same cast member decodes to different colours**
 ## once the palette changes, which cannot happen unless the table reached the
 ## bitmap decoder and the artwork baked against the old one was thrown away.
+##
+## **Which palette change, though.** This used to drive the observable with
+## `puppetPalette grayscale` and assert the artwork came back grey, and that
+## assertion is no longer one the engine makes: `palette_view.gd:table_for_member`
+## decodes a bitmap through the palette its *own member* names, because on a
+## 16-bit-or-deeper stage — `movieDepth` 32, which every movie in reach declares —
+## Director converts each bitmap through the member's CLUT rather than blitting
+## indices into one screen CLUT. Over `itamar-park` the stage holds the palette a
+## bitmap names for 22 of 5,692 (frame, sprite) pairs, so the other reading makes
+## 99.6% of that title's artwork the wrong colour. That rule is right and
+## `tools/palette_members.gd` guards it.
+##
+## What it costs is this case's driver, because a puppet changes the *id*: the
+## member still names system Mac, the stage is now on grayscale, the two no
+## longer match and the member keeps its own table. So the drive here is a **fade
+## under an unchanged id**, which is the one thing that must still reach the
+## artwork and is what `strtgame` f38 actually does — §11's fades and cycles
+## mutate the current table in place, so a member naming the palette the stage is
+## already on sees the mutation. Every bitmap in this corpus names system Mac and
+## the stage is on system Mac from the first frame to the last, so the coupling is
+## exercised here by the same mechanism the game ships.
+##
+## **What this no longer covers, and is a real gap rather than a rewrite.** The
+## reference has one exception to the member-palette rule and this port does not
+## implement it: `castmember/bitmap.cpp:BitmapCastMember::getDitherImg`, case 8,
+## takes the *score's* palette as the source whenever `targetBpp != 1 &&
+## score->_puppetPalette && !_external` — "we're in true colour mode, rendering a
+## paletted image, and the puppet palette has been set". `table_for_member` never
+## sees whether a puppet is set (`director_palette_state.gd:puppet_id`), so on
+## this engine `puppetPalette` currently recolours nothing on screen. The two
+## checks below that are about the puppet assert the *state* half — the table is
+## installed and the caches are dropped — which is all of it that works.
 func _preview(h: Harness, movie: String) -> void:
 	var scene: PackedScene = load("res://scenes/director_preview.tscn")
 	var preview: Node = scene.instantiate()
@@ -88,21 +120,28 @@ func _preview(h: Harness, movie: String) -> void:
 		return
 
 	h.begin("%s: the palette reaches the artwork" % movie)
-	var key: String = preview.call(
-		"_texture_key", probe,
-		preview.call("_drawn_size", probe, preview.get("_table").get_member(
-			int(probe["cast_lib"]), int(probe["cast_id"])
-		))
+	var member: Dictionary = preview.get("_table").get_member(
+		int(probe["cast_lib"]), int(probe["cast_id"])
 	)
-	var before: Image = preview.get("_hit_images")[key]
-	var before_pixels := before.get_data()
+	var key: String = preview.call(
+		"_texture_key", probe, preview.call("_drawn_size", probe, member)
+	)
+	var state = preview.get("_palette_state")
 	h.check("the movie opens on system Mac",
 		preview.get("_palette") == Palette.system_mac())
 	h.check("and something is decoded against it",
 		not preview.get("_textures").is_empty(),
 		"%d cached texture(s)" % preview.get("_textures").size())
+	# The precondition the fade below rests on, asserted rather than assumed: a
+	# member naming some *other* palette would keep its own table through a stage
+	# fade, and the case would be measuring nothing while looking identical.
+	h.check("the probe names the palette the stage is on",
+		int(member.get("palette_id", Palette.SYSTEM_MAC)) == int(state.current_id),
+		"member %d, stage %d" % [
+			int(member.get("palette_id", Palette.SYSTEM_MAC)), int(state.current_id)])
 
-	# Through the Lingo builtin, which is the route a movie has.
+	# The puppet, through the Lingo builtin, which is the route a movie has. Only
+	# the state half: see the note above about `getDitherImg`'s puppet exception.
 	preview.call("lingo_puppet_palette", Palette.GRAYSCALE)
 	h.check("puppetPalette installs the table it names",
 		preview.get("_palette") == Palette.grayscale())
@@ -110,29 +149,74 @@ func _preview(h: Harness, movie: String) -> void:
 	# has to invalidate the cache or the new frame draws in the old colours.
 	h.check("and everything baked against the old one was dropped",
 		preview.get("_textures").is_empty() and preview.get("_hit_images").is_empty())
+	preview.call("lingo_puppet_palette", 0)
+	h.check("puppetPalette 0 hands the palette back to the score",
+		preview.get("_palette") == Palette.system_mac())
+
+	# ---- the fade, which is the half that has to reach pixels
+	preview.call("_texture_for", probe)
+	var before: Image = preview.get("_hit_images")[key]
+	var before_pixels := before.get_data()
+	# `enter_frame` then `step` then `_palette_applied` is exactly the pair the
+	# frame loop runs (`scenes/preview/frame_loop.gd:139` and `:213-214`); the
+	# harness drives it directly because `_paused` is set and `_process` is not.
+	state.enter_frame(_record({
+		"fade_to_black": true, "fade": true, "speed": 10, "frame_count": 4,
+	}))
+	h.check("a fade-to-black frame arms without moving the palette id",
+		state.effect_running() and int(state.current_id) == Palette.SYSTEM_MAC,
+		"id %d, %.0f ms" % [int(state.current_id), state.hold_ms()])
+	# Half the fade rather than all of it, on purpose. At the end every entry is
+	# black, so the sprite's own backColor resolves to black too and Background
+	# Transparent would key the whole image out -- the case would then be sampling
+	# zero pixels and reporting it as a pass. Halfway the table has moved by a
+	# measurable amount and the keying is unchanged, which is the stronger
+	# observable anyway: the *same* pixels, darker.
+	var moved: bool = state.step(state.hold_ms() * 0.5)
+	if moved:
+		preview.call("_palette_applied")
+	h.check("stepping it moves the table and drops the baked artwork",
+		moved and preview.get("_textures").is_empty()
+		and preview.get("_hit_images").is_empty())
 
 	preview.call("_texture_for", probe)
 	var after: Image = preview.get("_hit_images")[key]
 	h.check("the same member now decodes to different pixels",
 		after.get_data() != before_pixels,
-		"grayscale against system Mac, %d bytes each" % after.get_data().size())
-	# A grey palette must produce grey artwork: this is the check that would
-	# catch the table being installed but not consulted.
-	var greys := 0
+		"half-faded against system Mac, %d bytes each" % after.get_data().size())
+	# The direction, not just the difference: a fade towards black can only make
+	# every surviving pixel darker, and this is the check that would catch the
+	# table being installed but not consulted.
 	var sampled := 0
+	var darker := 0
+	var strictly := 0
+	var keyed := 0
 	for y in range(0, after.get_height(), 4):
 		for x in range(0, after.get_width(), 4):
-			var c := after.get_pixel(x, y)
-			if c.a <= 0.5:
+			var was := before.get_pixel(x, y)
+			var now := after.get_pixel(x, y)
+			if (was.a > 0.5) != (now.a > 0.5):
+				keyed += 1
+			if was.a <= 0.5 or now.a <= 0.5:
 				continue
 			sampled += 1
-			if c.r8 == c.g8 and c.g8 == c.b8:
-				greys += 1
-	h.check("and every one of them is grey, because the palette is",
-		sampled > 0 and greys == sampled, "%d of %d sampled pixels" % [greys, sampled])
+			if now.r8 <= was.r8 and now.g8 <= was.g8 and now.b8 <= was.b8:
+				darker += 1
+			if now.r8 < was.r8 or now.g8 < was.g8 or now.b8 < was.b8:
+				strictly += 1
+	h.check("and every one of them is darker, because the palette is",
+		sampled > 0 and darker == sampled and strictly > 0,
+		"%d of %d sampled pixels darker, %d strictly" % [darker, sampled, strictly])
+	# The keying is decided from the *palette-resolved* paper colour, so a fade
+	# that moved the artwork and the paper by the same amount must key the same
+	# pixels. A run where this moves is a run where the matte followed the fade.
+	h.check("and the same pixels are keyed out as before", keyed == 0,
+		"%d pixel(s) changed transparency" % keyed)
 
-	preview.call("lingo_puppet_palette", 0)
-	h.check("puppetPalette 0 hands the palette back to the score",
+	# Put it back, so nothing after this case inherits a half-faded stage.
+	state.abort()
+	preview.call("_palette_applied")
+	h.check("aborting the fade puts the artwork back",
 		preview.get("_palette") == Palette.system_mac())
 	h.complete("%s: the palette reaches the artwork" % movie)
 
@@ -167,19 +251,36 @@ func _tables(h: Harness) -> void:
 	h.check("can_build answers for what builtin() can actually produce",
 		Palette.can_build(Palette.SYSTEM_MAC) and Palette.can_build(Palette.GRAYSCALE)
 		and Palette.can_build(0))
-	# The honest half. Without a data file these ids have no table, `builtin()`
-	# says so and substitutes system Mac, and `can_build` is how a caller finds
-	# that out without reading a log. Asserting the substitution keeps it from
-	# quietly becoming a silent one again.
-	h.check("and reports the data-only built-ins as unbuildable",
-		not Palette.can_build(Palette.RAINBOW)
-		and not Palette.can_build(Palette.PASTELS)
-		and not Palette.can_build(Palette.VIVID)
-		and not Palette.can_build(Palette.NTSC)
-		and not Palette.can_build(Palette.METALLIC),
-		"add them to %s to close this" % Palette.PALETTE_DATA)
-	h.check("an unbuildable id still returns a usable table",
-		Palette.builtin(Palette.RAINBOW).size() == Palette.TABLE_BYTES)
+	# **This check used to assert the opposite**, and its own message said "add
+	# them to PALETTE_DATA to close this". They have been added, so the invariant
+	# it was holding open is now the one worth holding: each data-only id
+	# resolves, is a full table, and is *not* system Mac. That last clause is the
+	# one that matters -- `builtin()` substitutes system Mac for anything it
+	# cannot produce, so an id that resolved to system Mac would pass a size test
+	# while still being the substitution this file exists to detect.
+	var data_only := [
+		Palette.RAINBOW, Palette.PASTELS, Palette.VIVID, Palette.NTSC,
+		Palette.METALLIC, Palette.SYSTEM_WIN, Palette.SYSTEM_WIN_D5,
+	]
+	var missing: Array = []
+	var substituted: Array = []
+	for id in data_only:
+		if not Palette.can_build(id):
+			missing.append(id)
+			continue
+		var table := Palette.builtin(id)
+		if table.size() != Palette.TABLE_BYTES or table == mac:
+			substituted.append(id)
+	h.check("every data-supplied built-in resolves to its own table",
+		missing.is_empty() and substituted.is_empty(),
+		"missing %s, substituted %s" % [str(missing), str(substituted)])
+	# The substitution path itself still has to be asserted, or it becomes silent
+	# the day a table is dropped. VGA is the id no source in reach carries, so it
+	# is the one that keeps this honest.
+	h.check("an id with no table still reports itself unbuildable",
+		not Palette.can_build(Palette.VGA))
+	h.check("and still returns a usable table",
+		Palette.builtin(Palette.VGA).size() == Palette.TABLE_BYTES)
 	h.complete("the built-in tables")
 
 
@@ -194,27 +295,56 @@ func _all_grey(table: PackedByteArray) -> bool:
 func _clut(h: Harness) -> void:
 	h.begin("the CLUT reader")
 	# Three entries as Director stores them: 16 bits per channel, high byte
-	# significant, and the LAST entry first. Built by hand because this corpus
-	# ships no CLUT chunk at all to read.
+	# significant, **entry 0 first**. Built by hand because `GATE_ROOT` ships no
+	# CLUT chunk at all to read; `tools/palette_members.gd` reads 162 real ones.
+	#
+	# **These three assertions used to be written upside down**, and said so in
+	# their own comment: "Reversed on purpose: the chunk's last entry is index 0.
+	# Read forwards, a custom palette comes out inverted and reads as an ink bug."
+	# That was the theory `from_clut` was built on and it was wrong in both
+	# halves. A chunk already opens with white and ends with black, so reversing
+	# it moves *black* to index 0 -- which is paper, the one index both ink passes
+	# key out and the one that has to be exactly white. `torfim.dir` #601
+	# `Antark_back` opens `ffffff ffffff e4e4ececf4f4` and ends in twelve zero
+	# bytes; its 616x390 backdrop decodes forwards to 61,600 white pixels over a
+	# pale blue sky and backwards to 84,255 black ones with an orange sea.
+	# `director_palette.gd:from_clut` was corrected then and these three were not,
+	# because nothing ran this file -- it was never in `gate.sh`'s `ALL`. The
+	# reference agrees with the corrected reader: `Cast::loadPalette` walks a
+	# colour index up from zero and takes the high byte of each 16-bit channel,
+	# with no reversal anywhere.
 	var payload := PackedByteArray()
 	for entry in [[0, 0, 0], [0x40, 0x80, 0xc0], [255, 255, 255]]:
 		for channel in entry:
 			payload.append(channel)
-			# The low byte, which Director writes and the reader must skip.
+			# The low byte, which Director writes and the reader must skip. 0x11
+			# rather than 0 so a reader that took the *low* byte, or averaged the
+			# two, cannot pass: no channel below may legitimately come out 0x11.
 			payload.append(0x11)
 	var table := Palette.from_clut(payload)
 	h.check("a CLUT decodes to a full-size table",
 		table.size() == Palette.TABLE_BYTES, "%d" % table.size())
-	# Reversed on purpose: the chunk's last entry is index 0. Read forwards, a
-	# custom palette comes out inverted and reads as an ink bug.
-	h.check("the chunk's last entry lands at index 0",
-		table[0] == 255 and table[1] == 255 and table[2] == 255,
+	h.check("the chunk's first entry lands at index 0",
+		table[0] == 0 and table[1] == 0 and table[2] == 0,
 		"got %d,%d,%d" % [table[0], table[1], table[2]])
 	h.check("the middle entry keeps its high bytes",
 		table[3] == 0x40 and table[4] == 0x80 and table[5] == 0xc0,
 		"got %d,%d,%d" % [table[3], table[4], table[5]])
-	h.check("the chunk's first entry lands last of those read",
-		table[6] == 0 and table[7] == 0 and table[8] == 0)
+	h.check("the chunk's last entry lands last of those read",
+		table[6] == 255 and table[7] == 255 and table[8] == 255,
+		"got %d,%d,%d" % [table[6], table[7], table[8]])
+	# The low byte is dropped rather than blended: 0x11 in any channel means the
+	# reader read the wrong half of a 16-bit `RGBColor`.
+	var low_bytes := 0
+	for i in 9:
+		if table[i] == 0x11:
+			low_bytes += 1
+	h.check("and the low byte of every 16-bit channel is dropped", low_bytes == 0,
+		"%d channel(s) came back as the low byte" % low_bytes)
+	# Entries the chunk did not carry stay black rather than being invented.
+	h.check("entries past the end of a short chunk are left black",
+		table[9] == 0 and table[10] == 0 and table[11] == 0
+		and table[255 * 3] == 0 and table[255 * 3 + 2] == 0)
 	h.check("a short chunk fills what it has rather than failing",
 		Palette.from_clut(PackedByteArray([1, 0, 2, 0, 3, 0])).size() == Palette.TABLE_BYTES)
 	h.complete("the CLUT reader")
