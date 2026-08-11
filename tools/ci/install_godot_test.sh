@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Checks the installer without running it.
 #
-#   bash tools/ci/install_godot_test.sh
+#   bash tools/ci/install_godot_test.sh [version]
 #
 # The full install is Linux-only and about 1 GB, so this asserts the two things
 # that break in practice: the script parses, and the pinned version's assets are
-# still where the URLs say they are.
+# still where the URLs say they are. Takes the version as an optional argument
+# so the workflow can pass its own `$GODOT_VERSION` -- without that, a version
+# bump in the workflow leaves this hardcoded to the old one, and the "pre-flight"
+# HEADs assets for a version nothing installs anymore and reports green.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-VERSION=4.7.1-stable
+VERSION=${1:-4.7.1-stable}
 BASE="https://github.com/godotengine/godot-builds/releases/download/$VERSION"
 
 # One EXIT trap, and every probe guarded with `if`. A bare `cmd; check ... $?`

@@ -17,50 +17,87 @@ jobs:
   release:
     name: Export and publish
     runs-on: ubuntu-latest
+    # This repo's own history is headless-Godot hangs, not runaway builds. The
+    # 360-minute default is not a guard against that; a genuine hang should be
+    # killed well before it burns most of an hour.
+    timeout-minutes: 60
     steps:
+      # Secrets are invisible to `if:` conditions, so they're read into env vars
+      # here and checked with plain shell tests. Without this, an empty
+      # `ANDROID_KEYSTORE_B64` still makes `base64 -d` write a 0-byte file and
+      # exit 0 -- the failure would otherwise surface ~40 minutes later, inside
+      # the Android export, as an apksigner error naming no secret. Reports
+      # every missing secret at once, not just the first, and runs before
+      # checkout so a missing `SUBMODULES_PAT` is named here rather than as a
+      # confusing submodule-auth failure.
+      - name: Verify release secrets are set
+        env:
+          SUBMODULES_PAT: ${{ secrets.SUBMODULES_PAT }}
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          missing=""
+          [ -n "$SUBMODULES_PAT" ] || missing="$missing SUBMODULES_PAT"
+          [ -n "$ANDROID_KEYSTORE_B64" ] || missing="$missing ANDROID_KEYSTORE_B64"
+          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -n "$ANDROID_KEY_ALIAS" ] || missing="$missing ANDROID_KEY_ALIAS"
+          if [ -n "$missing" ]; then
+            echo "Missing required secret(s):$missing" >&2
+            exit 1
+          fi
+
       # The corpora are private repos and this one is public, so the default
       # GITHUB_TOKEN cannot read them. `fetch-depth: 1` because the submodule
       # checkout is roughly 3.8 GB and no history is needed to export.
-      - uses: actions/checkout@v4
+      # `persist-credentials: false`: nothing later in this job does git work,
+      # and this keeps the PAT out of `.git/config` for the rest of the job.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
           fetch-depth: 1
           token: ${{ secrets.SUBMODULES_PAT }}
+          persist-credentials: false
 
       # Everything these suites guard -- the tag charset validation that stops a
       # `&` in a tag corrupting the preset, the errexit handling that makes a
       # failing check report instead of killing the run, the unreadable-asset
       # path -- was exercised only on a developer's machine until this step
       # existed. First, so a broken guard fails in seconds rather than after the
-      # ~1 GB Godot download and a 3.8 GB checkout.
+      # ~1 GB Godot download. (Checkout above already paid for the 3.8 GB
+      # submodule fetch, so this step doesn't save that part.)
       #
       # `install_godot_test.sh` doubles as the pre-flight for the step below it:
       # it HEADs the three pinned release assets, so a version that has been
       # renamed or pulled is named here rather than surfacing as a curl failure
-      # mid-install.
+      # mid-install. Passed `$GODOT_VERSION` explicitly so a version bump here
+      # can't leave the pre-flight checking a stale, hardcoded version.
       - name: Run the tools/ci suites
         run: |
           bash tools/ci/stamp_version_test.sh
           bash tools/ci/check_asset_size_test.sh
-          bash tools/ci/install_godot_test.sh
+          bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
 
       # `gradle_build/use_gradle_build=false`, so Godot uses prebuilt templates
       # and needs only apksigner and zipalign, not a full Gradle build.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
 
       - name: Cache Godot and export templates
         id: godot-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/godot-bin
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}
+          # Includes the installer's own hash: without it, fixing a bug in
+          # `install_godot.sh` leaves the old, buggy result shadowed behind an
+          # unchanged cache key forever.
+          key: godot-${{ env.GODOT_VERSION }}-${{ hashFiles('tools/ci/install_godot.sh') }}
 
       - name: Install Godot
         if: steps.godot-cache.outputs.cache-hit != 'true'
@@ -69,14 +106,42 @@ jobs:
       - name: Put Godot on PATH
         run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
 
+      # A restored cache entry is never exercised before this: `cache-hit` can
+      # be true for a partial or corrupt entry, and with nothing between
+      # restore and first real use, that surfaces much later as a bare
+      # `godot: command not found` -- or an export that silently lacks
+      # templates -- against a step named "Install Godot" that reads as merely
+      # skipped.
+      - name: Verify the cached Godot
+        run: |
+          godot --version
+          templates="$HOME/.local/share/godot/export_templates"
+          if [ -z "$(find "$templates" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "Export templates directory is empty ($templates)." >&2
+            echo "The 'godot-*' cache entry is likely partial -- bust it and re-run." >&2
+            exit 1
+          fi
+
       - name: Point Godot at the Android SDK
-        run: tools/ci/write_editor_settings.sh "$ANDROID_SDK_ROOT"
+        run: tools/ci/write_editor_settings.sh "${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
       - name: Decode the release keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-        run: printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+        run: printf '%s' "$KEYSTORE_B64" | base64 -d > "${{ runner.temp }}/release.keystore"
 
+      - name: Verify the release keystore decoded
+        run: |
+          if [ ! -s "${{ runner.temp }}/release.keystore" ]; then
+            echo "release.keystore is empty -- check ANDROID_KEYSTORE_B64." >&2
+            exit 1
+          fi
+
+      # `GITHUB_RUN_NUMBER` is scoped to this workflow FILE, not to the release
+      # line: renaming this file, or deleting and recreating it, resets the
+      # counter to 1. `stamp_version.sh` documents why that produces an Android
+      # versionCode a device treats as *older* than one already installed. Do
+      # not rename or recreate this file; edit it in place.
       - name: Stamp the release version
         run: tools/ci/stamp_version.sh "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER"
 
@@ -84,6 +149,14 @@ jobs:
       # not resolve, so this has to precede every export.
       - name: Import
         run: godot --headless --path . --import
+
+      # Task 1's entire deliverable, and until now nothing in CI ever called it.
+      # Has to run after both `Stamp the release version` (so it checks the
+      # `export_presets.cfg` that actually gets exported, not what's checked in)
+      # and `Import` (needs `.godot` to resolve `class_name` globals used by the
+      # script it runs).
+      - name: Verify the export presets
+        run: godot --headless --path . --script tools/export_presets_check.gd
 
       # `titles/piposh-3d` is its own Godot project. Skipping this does not fail
       # anything: the launcher gates the embed tile on `ResourceLoader.exists()`,
@@ -111,6 +184,17 @@ jobs:
           mkdir -p build/android
           godot --headless --path . --export-release "Android" build/android/GodotDirectorPlayer.apk
 
+      # `ls -lh` on the .pck two steps up only proves it was built, not that it
+      # ended up inside the artifact. If the include filter ever drops it, the
+      # failure is silent: the launcher just hides a tile whose pack didn't
+      # mount, and nothing else here would catch it.
+      - name: Verify the piposh-3d pack is in the APK
+        run: |
+          if ! unzip -l build/android/GodotDirectorPlayer.apk | grep -q piposh3d; then
+            echo "titles/piposh3d.pck is not inside the APK -- the 3D title will be silently absent from this release." >&2
+            exit 1
+          fi
+
       # `binary_format/embed_pck=false`, so the .exe on its own is inert and
       # needs its .pck beside it.
       - name: Package the Windows build
@@ -124,9 +208,20 @@ jobs:
             "build/GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" \
             build/android/GodotDirectorPlayer.apk
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           fail_on_unmatched_files: true
           files: |
             build/GodotDirectorPlayer-Windows-${{ github.ref_name }}.zip
             build/android/GodotDirectorPlayer.apk
+
+      # The keystore lives in `${{ runner.temp }}`, outside the workspace, so
+      # there's nothing secret in `build/` to redact. Last step, so it fires on
+      # a failure anywhere above it, including the publish step itself.
+      - name: Upload build output for inspection
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-build-${{ github.run_id }}
+          path: build/
+          retention-days: 5
