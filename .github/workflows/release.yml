@@ -1,0 +1,132 @@
+name: release
+
+# Tag-only, deliberately. With no `pull_request` trigger the submodule PAT and
+# the release keystore are unreachable from a fork PR by construction rather
+# than by a setting somebody can relax later.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: 4.7.1-stable
+
+jobs:
+  release:
+    name: Export and publish
+    runs-on: ubuntu-latest
+    steps:
+      # The corpora are private repos and this one is public, so the default
+      # GITHUB_TOKEN cannot read them. `fetch-depth: 1` because the submodule
+      # checkout is roughly 3.8 GB and no history is needed to export.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          token: ${{ secrets.SUBMODULES_PAT }}
+
+      # Everything these suites guard -- the tag charset validation that stops a
+      # `&` in a tag corrupting the preset, the errexit handling that makes a
+      # failing check report instead of killing the run, the unreadable-asset
+      # path -- was exercised only on a developer's machine until this step
+      # existed. First, so a broken guard fails in seconds rather than after the
+      # ~1 GB Godot download and a 3.8 GB checkout.
+      #
+      # `install_godot_test.sh` doubles as the pre-flight for the step below it:
+      # it HEADs the three pinned release assets, so a version that has been
+      # renamed or pulled is named here rather than surfacing as a curl failure
+      # mid-install.
+      - name: Run the tools/ci suites
+        run: |
+          bash tools/ci/stamp_version_test.sh
+          bash tools/ci/check_asset_size_test.sh
+          bash tools/ci/install_godot_test.sh
+
+      # `gradle_build/use_gradle_build=false`, so Godot uses prebuilt templates
+      # and needs only apksigner and zipalign, not a full Gradle build.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Cache Godot and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}
+
+      - name: Install Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: tools/ci/install_godot.sh "$GODOT_VERSION" "$HOME/godot-bin"
+
+      - name: Put Godot on PATH
+        run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Point Godot at the Android SDK
+        run: tools/ci/write_editor_settings.sh "$ANDROID_SDK_ROOT"
+
+      - name: Decode the release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Stamp the release version
+        run: tools/ci/stamp_version.sh "$GITHUB_REF_NAME" "$GITHUB_RUN_NUMBER"
+
+      # A fresh checkout has no `.godot`, and without it `class_name` globals do
+      # not resolve, so this has to precede every export.
+      - name: Import
+        run: godot --headless --path . --import
+
+      # `titles/piposh-3d` is its own Godot project. Skipping this does not fail
+      # anything: the launcher gates the embed tile on `ResourceLoader.exists()`,
+      # so the 3D title would quietly not be in the release.
+      - name: Build the piposh-3d pack
+        run: |
+          godot --headless --path titles/piposh-3d --import
+          godot --headless --path titles/piposh-3d --export-pack Pack "$PWD/titles/piposh3d.pck"
+          ls -lh titles/piposh3d.pck
+
+      - name: Export Windows
+        run: |
+          mkdir -p build/pc
+          godot --headless --path . --export-release "Windows Desktop" build/pc/GodotDirectorPlayer.exe
+
+      # Release rather than debug: a debug export enables the remote debugger and
+      # is larger. The three env vars override the export menu at export time, so
+      # no secret is ever written into export_presets.cfg.
+      - name: Export Android
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ runner.temp }}/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p build/android
+          godot --headless --path . --export-release "Android" build/android/GodotDirectorPlayer.apk
+
+      # `binary_format/embed_pck=false`, so the .exe on its own is inert and
+      # needs its .pck beside it.
+      - name: Package the Windows build
+        run: |
+          cd build/pc
+          zip -qr "../GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" .
+
+      - name: Check asset sizes
+        run: |
+          tools/ci/check_asset_size.sh \
+            "build/GodotDirectorPlayer-Windows-${GITHUB_REF_NAME}.zip" \
+            build/android/GodotDirectorPlayer.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            build/GodotDirectorPlayer-Windows-${{ github.ref_name }}.zip
+            build/android/GodotDirectorPlayer.apk
