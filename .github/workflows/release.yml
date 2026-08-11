@@ -7,11 +7,25 @@ name: release
 # The tag scheme has no `v` prefix: `alpha-*` and `beta-*` are the prerelease
 # channels used until this project reaches official releases, and a tag
 # starting with a digit (bare semver, e.g. `1.1234.98`) is an official release.
+#
+# Two patterns for that one official-release case, deliberately: GitHub's
+# filter-pattern syntax documents `?` and `+` as regex-style quantifiers over
+# the PRECEDING CHARACTER but `*` as a glob-style "zero or more characters"
+# wildcard, and does not say which reading `[0-9]*` gets. Under the wildcard
+# reading it matches `1.1234.98` fine; under a quantifier reading it means
+# "zero or more digits" and matches only an all-digit tag, silently excluding
+# every real semver tag. `[0-9]+.[0-9]+.[0-9]+` is the shape GitHub's own docs
+# use in their worked example (`v[12].[0-9]+.[0-9]+` matching `v1.10.1`), so
+# it's the form most likely to behave as documented; `[0-9]*` stays as a
+# catch-all for an official tag that isn't exactly three dot-separated numeric
+# parts (e.g. a future `2.0`). Tag patterns are OR'd, so listing both costs
+# nothing -- do not delete either as "redundant".
 on:
   push:
     tags:
       - "alpha-*"
       - "beta-*"
+      - "[0-9]+.[0-9]+.[0-9]+"
       - "[0-9]*"
 
 permissions:
