@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """Refuses a macOS binary that carries no embedded code signature.
 
-    tools/ci/check_macho_signed.py path/to/GodotDirectorPlayer.app/Contents/MacOS/...
+    tools/ci/check_macho_signed.py <binary> [--require arm64,x86_64]
+
+`--require` additionally fails unless every named architecture is present, which
+is what keeps the build universal. Without it, flipping
+`binary_format/architecture` away from `universal` would publish a binary that
+runs on half the Macs in the world and pass every other check in this pipeline:
+the slice that is there is signed, so the signature test is satisfied and says
+nothing about the slice that is missing. Apple Silicon and Intel are separate
+audiences and losing either is silent.
 
 An ad-hoc signature that silently did not happen is invisible in Godot's export
 log and fatal on Apple Silicon, where an unsigned binary does not execute at all.
@@ -67,9 +75,18 @@ def slices(blob: bytes):
             yield offset, cpu_name(cputype & 0xFFFFFFFF)
         return
 
-    # Not fat: a single image starting at 0. Its own magic decides endianness,
-    # which `has_signature` reads again, so nothing is assumed here.
-    yield 0, "single slice"
+    # Not fat: a single image starting at 0. Its cputype is read here rather than
+    # reported as an anonymous "single slice", because `--require` compares
+    # against these names -- a thin arm64 binary must satisfy `--require arm64`,
+    # and calling it "single slice" made it fail against its own architecture.
+    magic_le = struct.unpack_from("<I", blob, 0)[0]
+    if magic_le in (MH_MAGIC, MH_MAGIC_64):
+        cputype = struct.unpack_from("<i", blob, 4)[0]
+    elif magic_le in (MH_CIGAM, MH_CIGAM_64):
+        cputype = struct.unpack_from(">i", blob, 4)[0]
+    else:
+        raise ValueError(f"not a Mach-O or fat binary (magic {magic_le:#x})")
+    yield 0, cpu_name(cputype & 0xFFFFFFFF)
 
 
 def has_signature(blob: bytes, offset: int) -> bool:
@@ -103,11 +120,34 @@ def has_signature(blob: bytes, offset: int) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: check_macho_signed.py <binary>", file=sys.stderr)
+    args = argv[1:]
+    required_arches: list[str] = []
+
+    # Hand-parsed rather than argparse: this runs on whatever python3 the runner
+    # has, the surface is two forms, and argparse would exit 2 with its own
+    # wording for cases this file reports in the `FAIL  <path>: ...` voice the
+    # rest of tools/ci uses.
+    if "--require" in args:
+        i = args.index("--require")
+        if i + 1 >= len(args):
+            print("usage: check_macho_signed.py <binary> [--require arm64,x86_64]",
+                  file=sys.stderr)
+            return 2
+        required_arches = [a.strip() for a in args[i + 1].split(",") if a.strip()]
+        # An empty or comma-only value would otherwise require nothing while
+        # looking like it required something -- the failure mode this flag exists
+        # to prevent, wearing the flag's own name.
+        if not required_arches:
+            print("FAIL  --require was given an empty architecture list", file=sys.stderr)
+            return 2
+        del args[i:i + 2]
+
+    if len(args) != 1:
+        print("usage: check_macho_signed.py <binary> [--require arm64,x86_64]",
+              file=sys.stderr)
         return 2
 
-    path = argv[1]
+    path = args[0]
     try:
         with open(path, "rb") as fh:
             blob = fh.read()
@@ -138,6 +178,25 @@ def main(argv: list[str]) -> int:
             return 1
 
     arches = ", ".join(name for _off, name in found)
+
+    # Checked before the signature verdict: "your Intel users have no build" and
+    # "your build is unsigned" are different problems, and reporting only the
+    # second when both are true sends the reader to fix the wrong one.
+    present = {name for _off, name in found}
+    missing = [a for a in required_arches if a not in present]
+    if missing:
+        print(
+            f"FAIL  {path}: missing architecture(s): {', '.join(missing)}"
+            f" (found: {arches})",
+            file=sys.stderr,
+        )
+        print(
+            "The build is not universal. Check binary_format/architecture in the"
+            " macOS preset; it must be \"universal\".",
+            file=sys.stderr,
+        )
+        return 1
+
     if unsigned:
         print(
             f"FAIL  {path}: no code signature on: {', '.join(unsigned)}"

@@ -270,7 +270,14 @@ jobs:
       # `check_macho_signed.py` parses the Mach-O load commands instead. See that
       # file for why not objdump and why not grep. It checks every slice of the
       # universal binary, not just the first.
-      - name: Verify the macOS binary carries a signature
+      #
+      # `--require arm64,x86_64` is the separate half: it fails the build unless
+      # BOTH architectures are present. Apple Silicon and Intel are different
+      # audiences, and a binary carrying only one of them passes every other check
+      # here -- the slice that is present is correctly signed, so nothing else
+      # would notice that half the Macs in the world got no build. Verified by
+      # thinning a real export with `lipo` and watching this refuse it.
+      - name: Verify the macOS binary is signed and universal
         run: |
           work="${{ runner.temp }}/mac-verify"
           mkdir -p "$work"
@@ -281,7 +288,7 @@ jobs:
           found=0
           while IFS= read -r bin; do
             found=1
-            python3 tools/ci/check_macho_signed.py "$bin"
+            python3 tools/ci/check_macho_signed.py "$bin" --require arm64,x86_64
           done < <(find "$work" -type f -perm -u+x -path '*/Contents/MacOS/*')
           if [ "$found" -eq 0 ]; then
             echo "No executable found under Contents/MacOS/ -- the .app bundle is malformed, not merely unsigned." >&2

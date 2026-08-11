@@ -146,6 +146,41 @@ else
 	check "no arguments exits 2" 1
 fi
 
+# --require is what keeps the build universal. Without it, flipping
+# binary_format/architecture away from "universal" ships a binary that runs on
+# half the Macs and passes every other check here, because the slice that IS
+# present is correctly signed.
+require() { # require <name> <fixture> <arches> <expected-exit>
+	rc=0
+	python3 tools/ci/check_macho_signed.py "$tmp/$2" --require "$3" >/dev/null 2>&1 || rc=$?
+	if [ "$rc" -eq "$4" ]; then check "$1" 0; else check "$1 (exit $rc, wanted $4)" 1; fi
+}
+
+require "a universal binary satisfies --require" fat_both_signed "arm64,x86_64" 0
+require "an arm64-only binary is refused when Intel is required" thin_signed "arm64,x86_64" 1
+require "an arm64-only binary passes when only arm64 is required" thin_signed "arm64" 0
+# Order must not matter; a set is being compared, not a string.
+require "the required order is irrelevant" fat_both_signed "x86_64,arm64" 0
+# An empty list would require nothing while looking like it required something.
+require "an empty --require list is refused" fat_both_signed "," 2
+# The flag needs a value; consuming the path as its argument would leave no path.
+rc=0
+python3 tools/ci/check_macho_signed.py "$tmp/fat_both_signed" --require >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	check "--require with no value exits 2" 0
+else
+	check "--require with no value exits 2" 1
+fi
+
+# A missing arch and a missing signature are different problems. Reporting only
+# the signature when both are true sends the reader to fix the wrong one.
+out=$(python3 tools/ci/check_macho_signed.py "$tmp/thin_unsigned" --require "arm64,x86_64" 2>&1 || true)
+if printf '%s\n' "$out" | grep -q 'missing architecture'; then
+	check "a missing arch is reported ahead of the signature" 0
+else
+	check "a missing arch is reported ahead of the signature" 1
+fi
+
 probe "a missing file is refused" nope_does_not_exist 1
 
 # On a developer's Mac, cross-check the parser against Apple's own verdict on a

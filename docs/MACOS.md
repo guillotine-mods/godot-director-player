@@ -4,9 +4,21 @@ What the macOS release asset is, and the two things a player has to know that no
 other target requires. [`ANDROID.md`](ANDROID.md) is the same document for phones.
 
 The asset is `GodotDirectorPlayer-macOS-<tag>.zip`, holding
-`Godot Director Player.app`. Universal, so it runs natively on both Apple Silicon
-and Intel. Measured on an arm64 machine: it launches, mounts `piposh3d.pck` and
-initialises the game globals.
+`Godot Director Player.app`. Measured on an arm64 machine: it launches, mounts
+`piposh3d.pck` and initialises the game globals.
+
+**Universal, and CI refuses to publish it otherwise.** `lipo -archs` reports
+`x86_64 arm64`, so it runs natively on both Apple Silicon and Intel with no
+Rosetta, and `codesign` confirms both slices are signed. The release workflow runs
+`check_macho_signed.py --require arm64,x86_64`, which fails the build if either is
+missing. That check exists because a single-architecture binary passes every other
+test in the pipeline: the slice that is present is correctly signed, so without
+this nothing would notice that half of all Macs got no build.
+
+Universal is also the right choice for the export specifically. Godot's macOS
+template ships universal, so `binary_format/architecture="universal"` uses it
+as-is, while asking for one architecture would require thinning the binary on a
+Linux runner that has no `lipo`.
 
 ## macOS will say the app is damaged. It is not.
 
