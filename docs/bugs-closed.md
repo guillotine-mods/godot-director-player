@@ -3412,3 +3412,329 @@ through `Input.parse_input_event`, a 111-move pointer sweep, and `soundBusy(2)`
 standing at 1 — which is the menu music looping and is correct. Also ruled out:
 the cast-name re-parse fixed in `77f7cf3b`, measured as not the cause
 (8.8 → 7.9 ms/move).
+
+---
+
+## 89. `the regPoint of member` was read-only, so every write of a registration point was a statement that returned having done nothing
+
+**Status:** fixed · **Area:** `scenes/preview/members.gd` (`read_prop`'s
+`regpoint` arm, and a new `write_prop`), `director/director_cast.gd`
+(`set_reg_point`), `scenes/director_preview.gd` (`_set_member_prop_at`'s
+fall-through), `lingo/lingo_value.gd` (`components` made public)
+
+Director lets a script move a member's registration point, and that moves every
+sprite drawn from that member at once, because `locH`/`locV` position the
+*registration point* rather than the top-left corner (`DIRECTOR_ENGINE.md`
+§8.10). Titles use it as a layout primitive: Itamar Park's
+`setRegPointToCorner(51, 78, 1, #right, #Middle)` re-anchors 28 members to their
+right-middle edge in one statement, and `addToRegPoint` nudges a range of them.
+
+This port answered the property and could not store it. `grep -n regpoint
+scenes/preview/members.gd` returned one line, the read, and
+`_set_member_prop_at`'s `match` fell through to `_note_member_prop` — so the
+statement returned, the read answered the authored value, and the layout the
+movie asked for silently did not happen.
+
+**The write.** `preview/members.gd:write_prop` is the new half, and it is a
+sibling of `read_prop` rather than another arm in `director_preview.gd`'s match
+for one reason: the properties already in that match (`editable`, `hilite`,
+`text`, the text style) belong to node-owned override stores, and this one
+belongs to the **member record**. `director_cast.gd:set_reg_point` writes into
+the parsed cache `member()` hands out, so the next reader sees it and the cast
+outliving it is the movie's own lifetime — which is Director's, for an internal
+cast. The reference's chain is `Lingo::setTheCast` → `CastMember::setField` →
+`BitmapCastMember::setField`'s `kTheRegPoint` arm (`castmember/bitmap.cpp` @
+ScummVM 805f259a).
+
+**The read had to move with it, and that is the part that is not obvious.** The
+arm answered the stored *offset*; the reference answers the member's own
+coordinates. `BitmapCastMember::getField` pushes `_regX`/`_regY` unchanged, and
+the offset the painter applies is a second quantity, `getRegistrationOffset()` =
+`_regX - _initialRect.left`. This port stores only the offset
+(`_parse_specific`'s type-1 arm computes `regPoint - left/top`), so the origin is
+added back on the way out and taken off again on the way in. Measured with
+`tools/scratch/regsurvey.gd`: **97,464 of the 120,869 bitmap members** across the
+six shipped titles and the two Itamar corpora have a non-zero `initial_rect`
+origin, so the two readings disagree for four members in five — and it is the
+round trip that makes the `addToRegPoint` idiom,
+`member(i).regPoint = member(i).regPoint + point(dx, dy)`, move a member by
+`(dx, dy)` instead of by `(dx, dy)` plus its own rect origin. No script in any of
+the eight corpora *reads* the property, so this half is settled against the
+reference and asserted by the harness rather than by a title.
+
+**Both spellings of a point.** The reference accepts `POINT` or an `ARRAY` of at
+least two elements; this port has both live at once, because `point()` makes a
+`Vector2` and `the loc of sprite` answers a two-element `Array`.
+`LingoValue.components` was already the single place that flattens either — it
+was private and `director_preview.gd`'s `the loc of sprite` writer was already
+reaching in for it — so it is public now rather than copied. A scalar is
+declined and reported, not coerced: `n` read as `(n, n)` would move every sprite
+drawn from the member somewhere no script asked for.
+
+**No cache to invalidate, and that is measured rather than assumed.** The
+reference calls `score->invalidateRectsForMember(this)` because it composites
+dirty rectangles. This renderer repaints the stage every frame and
+`sprite_geometry.stage_rect` recomputes the offset from the member on every
+call, so no rect is held anywhere; `_textures` is keyed by member, ink, drawn
+size and colours and `_hit_images` by member and size, and a moved anchor
+changes the pixels and the size not at all. `queue_redraw()` is the whole of it.
+
+**What it did not fix, which is worth recording because the entry was filed
+believing it would.** Itamar Park's arcade objects draw at `locV` 0, and this was
+filed as the cause. It is not: `defReg`, the handler that calls
+`setRegPointToCorner`, occurs twice in `torfim.dir` — once as `on defReg` and
+once in its script's name table — and is called from nowhere, and the 28 members
+it would re-anchor are already anchored right-middle in the file, so running it
+changes nothing. With the write implemented the objects are still at `locV` 0.
+The real cause is `bugs.md` 94: the score *does* carry those channels, with the
+row positions 340/210/110, and `director_score.gd:_snapshot` drops the records
+because they state a zero size. Park's one live regPoint write is
+`GiveNextBonus`, which centres the bonus artwork before placing it at the middle
+of the stage.
+
+Covered by `tools/reg_point.gd`, in `gate.sh`'s `ALL`. It asserts the
+player-visible invariant rather than setter/getter agreement: it takes whichever
+bitmap sprite the booted movie has on the frame it settles on, writes through
+Lingo, and measures `_sprite_rect` — the same call the painter, the hit test and
+`rollOver` go through. Six checks: the drawn rect moves by exactly minus the
+anchor's displacement, the size is untouched, the property reads back what was
+written, the list spelling lands where the point spelling did, and a scalar
+moves nothing.
+
+Reproduce the original defect on any title:
+
+```bash
+godot --headless --audio-driver Dummy --path . --script tools/reg_point.gd -- \
+    --root piposh2 --boot strtgame.dir
+```
+
+Before the fix the first check fails with the drawn rect unmoved; after it,
+`ch1 1:303 (68,49) -> (51,72)` for a written displacement of `(17, -23)`.
+
+---
+
+## 87. `beginSprite` was never sent, so Magic Hat's album screen kept the main menu's screen items and its red X close button did nothing
+
+**Status:** FIXED · **Area:** the frame loop's per-sprite messages
+(`scenes/preview/frame_loop.gd`, `scenes/preview/event_chain.gd`) · found while
+fixing the click freeze in `test-games/itamar-magichat`
+
+`docs/ENGINE_TODO.md` already records that `beginSprite`/`endSprite` are not sent
+and that sending them needs a behaviour to be an **instance** with a lifetime.
+This entry is the player-visible consequence of that gap in one title, so that
+the cost of the entry is on record beside it rather than only its shape.
+
+Magic Hat drives every screen through a framework in `objects.cst`
+(`Screen items functions`, `BasicMenuObject`, `GraphicButtonObject`). One global
+property list, `gAllScreenItems`, maps a **sprite channel** to the button object
+that answers for it, and the *only* thing that rebuilds that map when a screen
+changes is a behaviour's `on beginSprite`. `magichat.dir` member 33,
+`BehaviorScript 33 - init album`, is the whole of it:
+
+```lingo
+on beginSprite me
+  HideToolTip()
+  DisableAllMenus()
+  EnableMenu(#mnuAlbum)
+  SetMusicFile("album_m.mp3")
+end
+```
+
+`DisableAllMenus` calls `BasicMenuObject.Disable`, which calls
+`RemoveScreenItem` for each of the menu's buttons; `EnableMenu` calls
+`AddScreenItem` for the new screen's. Neither runs, because the message never
+arrives. Measured: after clicking the album button on the main menu, with the
+playhead on frame 42 and the album drawn correctly, `gAllScreenItems` still has
+the keys `["2","3","4","5","6","7","8","9","10"]` — the nine **main menu**
+buttons — and none of the album's.
+
+What the player sees is not a blank screen, which is why this was never noticed.
+The album draws correctly, because the score places its sprites. It breaks on the
+first mouse move: `screen item script` sends `ItemMouseEnter` for the channel
+under the pointer, `GetScreenItem(8)` answers the *main menu's* button 7, and
+`GraphicButtonObject.ItemMouseEnter` does `me.SetMember(me.Info(#active))`. So
+rolling the pointer over the album's red X close button, channel 8, swaps that
+channel's member from `album:89` (the X, 40x52 at 760,34) to the main menu's
+`bMain7_on` — measured as `6:13`, 273x233 at (287,0). The X is replaced by a
+menu button drawn in the middle of the screen, and the corner the player is
+aiming at now hits nothing:
+
+```
+before the pointer arrives:  channel_at (779,59) -> 8
+after it:                    channel_at (779,59) -> 0
+```
+
+The close button therefore cannot be clicked at all, and the album is a screen a
+player can enter and not leave. Every other screen in the title is built the same
+way (`init magic`, `init tools`, `init login`, `init teuda`, `init credits` are
+all `on beginSprite`), so this is not one screen's bug.
+
+Reproduce, headless, in about 40 seconds:
+
+```bash
+godot --headless --audio-driver Dummy --path . --script tools/scratch/album_close.gd -- \
+  --root res://test-games/itamar-magichat --file magichat.dir
+```
+
+It boots to the menu, clicks the album button at stage (448,378), prints the live
+channel/member of every sprite, moves the pointer onto the X, and prints them
+again. The two `channel_at` lines above are its output. In the real window the
+same click sequence is
+`bash` + `C:\tmp\drive.ps1 -Stage @(448,378,779,59)`; the click log line reads
+`clicked (778,59) frame 42  ch0`, and `ch0` is the whole bug.
+
+**Not a hit-test bug and not a member-name bug.** `tools/hotspots.gd --frame 42`
+reports channel 8 eligible with the right rect, and the descent answers 8 for
+that point until the rollover fires. `_channel_at` is reading a channel whose
+member a script legitimately swapped; the script only got to run because the
+engine never told the screen it had changed.
+
+---
+
+### What it was, and the half the entry above did not have
+
+**`init album` is on the *behaviour channel*, not on a sprite channel.** The
+entry above reads as a sprite problem and it is not: `tools/scratch/spans.gd`
+says `BehaviorScript 33 - init album` is a **frame** interval spanning [34..34] —
+Director's score row above the sprite channels, "sprite 0", the one a frame's own
+behaviour is attached to. Seven of this title's eight screens are built the same
+way: `init magic` [69], `init tools` [84], `init login` [9], `init teuda` [99],
+`init credits` [114], `init intro` [124], `init retro` [134], every one of them a
+frame interval whose only handler is `on beginSprite`. Sending the message to
+sprite channels alone delivered 32 of them on the way into the album and still
+ran none of these.
+
+The reference does not send `beginSprite`/`endSprite` to its script channel:
+`Score::killScriptInstances` and `Score::createScriptInstances`
+(`lingo-events.cpp:845-856`, `:965-978`) manage `_scriptChannelScriptInstance`'s
+lifetime and never call `processEvent` for it, where the channel loop in each of
+them does. That is a gap in ScummVM rather than in Director, and the evidence is
+outside the port: this title shipped, and seven of its screens are dead without
+the message.
+
+### The fix
+
+`scenes/preview/frame_loop.gd:sync_sprite_lifetime`, called from
+`director_preview.gd:_enter_frame_or_defer` — the one door every frame entry goes
+through, and the position the reference sends from (after `prepareFrame`, before
+`enterFrame`). It diffs the score's own spans at the current frame against
+`_begun_sprites`, ends what left, then begins what arrived.
+
+The lifetime is the **score span** and nothing else, which is
+`Channel::_startFrame`/`_endFrame` (`channel.cpp:69-71`, `:685-688`): not a member
+swap, not a puppet, not "the channel is occupied". `director_score.gd` already
+decodes the spans, and only for sprites that carry a behaviour, so a title's
+scriptless sprites cost nothing. Measured on `PIP2DATA/DAY1.dir`, 400 engine
+frames: **472 → 525 dispatches**, of which 32 `beginSprite` and 18 `endSprite`
+over 24 score steps. `tools/sprite_lifetime.gd` asserts the storm cannot come
+back — a frame the playhead is standing on must send none, which is where a
+Director title spends most of its time.
+
+`go`, `play` and `updateStage` are ignored inside both messages
+(`director_preview.gd:_sprite_message`), which is `Score::_disableGoPlayUpdateStage`
+(`lingo-funcs.cpp:54`, `:162`, `lingo-builtins.cpp:3687` — all three warn and
+return).
+
+### Two other defects were in the way, and both are closed here
+
+**91**, below: a regression from the same day had taken every main-menu button
+off stage, so the album could not be reached at all.
+
+**92**, below: `value()` could not parse a property-list literal containing
+`point(-10, 0)`, which is exactly `bAlbum7` — the close button — in
+`mainpanels.txt`. With `beginSprite` arriving and the registry correct, clicking
+the X ran `AlbumMenuObject.MenuMouseUp` with a VOID button name and fell through
+to its page-turning default.
+
+### Verified
+
+`godot --headless --audio-driver Dummy --resolution 800x600 --path . --script
+tools/sprite_lifetime.gd -- --root res://test-games/itamar-magichat --file
+magichat.dir` — 11 checks, 0 failed. The album opens from the menu (23 → 42), the
+red X still answers the hit test *after* the rollover (channel 8, was 0), clicking
+it returns to the main menu (frame 23), and the tools button then works (23 → 89).
+
+---
+
+
+## 91. A channel a script had given a member replaced the score's own record for that channel, so every one of Magic Hat's main-menu buttons went off stage
+
+**Status:** FIXED · **Area:** `scenes/preview/sprite_state.gd:with_puppets` ·
+found while verifying 87, and it was a same-day regression from `7a41b29c`
+
+`7a41b29c` fixed the right thing — the reference draws a channel a script has
+given a member whether or not anyone said `puppetSprite`, because
+`Sprite::setCast` raises the `kAPCast` auto-puppet (`sprite.h:41`,
+`channel.cpp:649`) — and applied it in the wrong place. `with_puppets` builds a
+`frozen` map and then **drops the frame's own record for every channel in it**,
+which is correct for a whole-sprite puppet (`Sprite::replaceFrom` returns early on
+`_puppet`, so the score never reconciles it) and wrong for an auto-puppet.
+
+An auto-puppet is a per-field mask: `setClean` copies every field the mask does
+not name, so the script's member sits **on top of** the score's position, ink and
+size. This port does that merge in `_effective`, which needs the score's record to
+merge onto — and the new arm took it away, handing the channel
+`channel.gd:_bare_sprite` at loc (0,0) instead.
+
+Measured on `test-games/itamar-magichat` frame 23, where the nine main-menu
+buttons are score sprites in channels 2-10 and their behaviour writes
+`me.SetMember(...)` on every rollover:
+
+```
+ch8   score (287,0) 273x233        with the regression  (-113,-300) 273x233
+```
+
+— its own registration point negated, because loc was 0 and `reg(113,300)` was
+subtracted. All nine were off stage, `channel_at` answered 0 anywhere on the menu,
+and the title could not be clicked past its first screen. `bugs.md` 87's own
+headless repro had stopped reproducing: it stayed on frame 23 instead of reaching
+the album on 42.
+
+**Fixed** by skipping the auto-puppet arm for any channel the frame's score list
+already carries. The whole-sprite arm is untouched, which is the point: the two
+halves of the rule are not the same rule.
+
+Reproduce the regression by reverting `sprite_state.gd` and `channel.gd` to
+`64594c3b` and running `tools/sprite_lifetime.gd` against magichat; the album case
+fails at the first check.
+
+---
+
+## 92. `value()` lost a whole property list when one of its values was a `point()`, so three of Magic Hat's screen buttons had no name and no artwork
+
+**Status:** FIXED · **Area:** `lingo/lingo_builtins.gd:_value_of`,
+`_split_top_level`, `_top_colon` · found while verifying 87
+
+Magic Hat describes every screen button as a Lingo property-list literal in
+`mainpanels.txt` and reads it back with `value()`. Three of them carry a point:
+
+```
+bAlbum7=[#Name:"close",#Active:"bAlbum7_on",#NotActive:"bAlbum7_of",#tooltip:"bAlbum7_tt",#tooltipofs:point(-10,0)]
+```
+
+`_split_top_level` tracked brackets and quotes and **not parens**, so the comma
+inside `point(-10,0)` split the literal. The trailing fragment `0)` has no
+top-level colon, `_parse_container` therefore decided the literal was not keyed,
+and a nine-property list came back as a two-element *list*.
+
+Measured, before the fix, in `gAllScreenItems` on the album screen — every button
+but three held its authored properties, and those three held nothing:
+
+```
+key 7  ... "Name": "schema", "Active": "bAlbum6_on", ... (nine keys)
+key 8  ... "": ""
+key 9  ... "Name": "magic1", "NotActive": "bAlbum8_of", ...
+```
+
+Key 8 is `bAlbum7`, the album's close button; keys 19 and 20 are `bAlbum18` and
+`bAlbum19`, its schema arrows, and they carry `point(0,-7)`. So `Info(#Name)`
+answered VOID for exactly those three, `AlbumMenuObject.MenuMouseUp`'s `case` fell
+through to its page-turning default, and clicking the close button ran
+`go(label("album") + 1)` — the album re-entered itself. It also left
+`prMemberName` VOID, so those three buttons never got their artwork.
+
+**Fixed** in two parts, both general: `(` and `)` count toward the depth in
+`_split_top_level` and `_top_colon`, and `_value_of` now builds a `point(h,v)` and
+a `rect(l,t,r,b)`. Director's `value()` evaluates a whole Lingo expression, so
+neither is a special case there; these two are the constructors that turn up as
+data.

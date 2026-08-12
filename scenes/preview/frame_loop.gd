@@ -263,6 +263,257 @@ static func tick(host, delta: float) -> void:
 	host.stage_redraw()
 
 
+## The sprite behaviours the score has on stage at `index`, as
+## `channel -> [start, end, lib, member, start, end, lib, member, ...]`.
+##
+## **A "sprite" is a score *span*, not a channel that happens to be occupied.**
+## That is the whole of what decides `beginSprite`/`endSprite`, and getting it
+## from anywhere else is what turns these two messages into a per-frame storm.
+## The reference keeps `_startFrame`/`_endFrame` on the channel, copies them from
+## the sprite record (`channel.cpp:69-71`, `:685-688`) and asks one question in
+## each direction: `Score::killScriptInstances` ends a sprite when
+## `frameNum < channel->_startFrame || frameNum > channel->_endFrame`, and
+## `Score::createScriptInstances` begins one when the frame *is* in range and the
+## channel has no instances yet (both `lingo-events.cpp:845-993`). Neither looks
+## at the member, the puppet flag or whether the channel drew anything. So a
+## score that animates a channel by swapping its member for forty frames is **one**
+## sprite and sends **one** `beginSprite`, and a puppeted member swap from Lingo
+## sends none at all.
+##
+## This port already has the spans: `director_score.gd:_read_interval` decodes the
+## score's own interval entries, which is where a behaviour is attached to a
+## channel in the first place, and each carries `start`, `end` and the script.
+## Only spans that name a behaviour are decoded at all, so a movie's sprites
+## without scripts cost nothing here -- DAY1 has 425 sprite intervals against a
+## score whose frames hold far more sprites than that.
+##
+## The flat int array is the identity *and* the payload: two adjacent spans in one
+## channel naming the same script are two sprites and must end and begin, which a
+## `channel -> script` key cannot express, and `endSprite` has to be sent to a span
+## the playhead has already left, which a lookup by current frame cannot answer.
+## Four ints per behaviour because a D6+ span carries a *list* of them (2 spans of
+## 158,001 in Piposh 2 do, both naming the same script twice) and the reference
+## instantiates and messages each.
+##
+## **Channel 0 is the behaviour channel and it is in here**, which is the half of
+## this that the whole of `bugs.md` 87 actually turns on. Director's score has one
+## row above the sprite channels holding the frame's own behaviour; it is "sprite
+## 0", it is an instance, and it receives `beginSprite` and `endSprite` when the
+## playhead enters and leaves its span like any other sprite. Magic Hat is built
+## on that and on nothing else: `BehaviorScript 33 - init album` is a **frame**
+## interval spanning [34..34] whose only handler is `on beginSprite`, and `init
+## magic` [69], `init tools` [84], `init login` [9], `init teuda` [99], `init
+## credits` [114], `init intro` [124] and `init retro` [134] are the same shape --
+## seven of this title's eight screens are set up by a behaviour-channel
+## `beginSprite` and by nothing else. Treating only sprite channels would have sent
+## 32 messages on the way into the album and still not run the one handler the bug
+## is about.
+##
+## The reference does *not* send these two to its script channel: `Score::
+## killScriptInstances` and `Score::createScriptInstances` manage
+## `_scriptChannelScriptInstance`'s lifetime (`lingo-events.cpp:845-856`,
+## `:965-978`) and never call `processEvent` for it, where the channel loop below
+## each of them does. That is a gap in ScummVM rather than in Director, and the
+## evidence is outside the port: this title shipped, and seven of its screens are
+## dead without the message.
+##
+## **The narrowest span covering the frame wins, for channel 0 only**, because the
+## behaviour channel is one row and can hold one span at a time. The decode does
+## produce overlapping frame intervals -- DAY1's `what to do everyframe` covers the
+## whole movie underneath the room-specific ones -- and `preview/scripts.gd:
+## for_frame` already resolves them this way to decide which script gets
+## `exitFrame`. Resolving the lifetime by a different rule than the dispatch would
+## mean sending `beginSprite` to one script and `exitFrame` to another on the same
+## frame.
+static func sprite_behaviours_at(score, index: int) -> Dictionary:
+	var out: Dictionary = {}
+	if score == null:
+		return out
+	var frame_span := 0x7FFFFFFF
+	for interval in score.intervals():
+		var start := int(interval["start"])
+		var end := int(interval["end"])
+		if index < start or index > end:
+			continue
+		var lib := int(interval["script_cast_lib"])
+		var member := int(interval["script_member"])
+		if str(interval["kind"]) == "frame":
+			if end - start >= frame_span:
+				continue
+			frame_span = end - start
+			out[0] = [start, end, lib, member]
+			continue
+		var channel := int(interval["channel"])
+		if channel <= 0:
+			continue
+		var spec: Array = out.get(channel, [])
+		spec.append(start)
+		spec.append(end)
+		spec.append(lib)
+		spec.append(member)
+		out[channel] = spec
+	return out
+
+
+## Send `beginSprite` or `endSprite` to one channel's behaviours.
+##
+## **It stops at the sprite tier.** `lingo-events.cpp:620-625` queues one element
+## per behaviour on the channel and then `break`s out of the fall-through that
+## would have added the cast, frame and movie tiers -- "These events do not go any
+## further than the sprite behaviors". So this calls `call_in_script`, which runs
+## the named handler in that script and nowhere else, rather than `_dispatch`,
+## whose movie-script fallback would hand a movie-wide `on beginSprite` every
+## sprite in the picture.
+##
+## **The instance is created whether or not the script answers**, because that is
+## what `Score::createScriptInstances` does: it instantiates every behaviour on the
+## span and only then sends the message. It is also what makes `me` and
+## `me.spriteNum` correct for the *later* messages -- a button whose behaviour has
+## only `on mouseUp me` still needs an instance, and creating it here means the
+## instance exists from the moment the sprite appears rather than from the first
+## click on it.
+##
+## `the currentSpriteNum` is saved and restored around the call for the reason
+## `event_chain.gd:run` gives: a behaviour may `sendSprite` another sprite, and the
+## outer one has to read its own channel again on the way back.
+static func send_sprite_message(host, handler: String, channel: int,
+		spec: Array) -> void:
+	var interpreter = host._interpreter
+	if interpreter == null:
+		return
+	var key := handler.to_lower()
+	var at := 0
+	while at + 4 <= spec.size():
+		var lib := int(spec[at + 2])
+		var member := int(spec[at + 3])
+		at += 4
+		var script: Dictionary = host._script_in_lib(lib, member)
+		if script.is_empty():
+			continue
+		# Channel 0 is the behaviour channel, whose sprite number *is* 0 -- see
+		# `LingoInterpreter.behaviour_instance` for why that needs saying out loud.
+		var script_channel := channel == 0
+		if key == "beginsprite":
+			interpreter.behaviour_instance(script, channel, script_channel)
+		host._tally(host._sent, handler)
+		if not bool(interpreter.call("_script_has_handler", script, key)):
+			if key == "endsprite":
+				interpreter.release_behaviour(script, channel)
+			continue
+		host._tally(host._ran, handler)
+		var outer := 0
+		if host._host != null:
+			outer = int(host._host.current_sprite_num)
+			host._host.current_sprite_num = channel
+		# §6.3's step budget, per message: `MAX_STEPS` stops a runaway loop inside
+		# one dispatch, and a count that accumulates across a session eventually
+		# aborts every handler.
+		interpreter.reset_steps()
+		host._sprite_message += 1
+		interpreter.call_in_script(handler, script, channel, script_channel)
+		host._sprite_message -= 1
+		if host._host != null:
+			host._host.current_sprite_num = outer
+		if key == "endsprite":
+			# `channel->_scriptInstanceList.clear()` (`lingo-events.cpp:872`): the
+			# sprite is gone and so is its property bag. Without this a screen
+			# re-entered later would find its behaviour still holding the values it
+			# left, which is the one thing an *instance* is for.
+			interpreter.release_behaviour(script, channel)
+
+
+## `beginSprite` for every sprite the playhead has just entered, `endSprite` for
+## every one it has just left.
+##
+## **Ends before begins, always.** `Score::update` calls `killScriptInstances`
+## ahead of the frame load (`score.cpp:700-702`) and `createScriptInstances` after
+## it, from inside the render (`score.cpp:1029`), so a screen tears its own
+## registry down before the next screen builds one. Magic Hat depends on exactly
+## that: `DisableAllMenus()` in one screen's `beginSprite` and `EnableMenu` in the
+## next both write one global property list keyed by channel, and running them the
+## other way round leaves the arriving screen's entries overwritten by the
+## departing screen's.
+##
+## **This is a diff, not an edge trigger.** It compares the score's spans at the
+## current frame against what is on stage and is a no-op when they agree, so the
+## caller may run it on every frame entry without knowing whether the playhead
+## moved, how it moved, or whether a jump skipped past a span entirely. A `go`
+## that crosses forty frames ends every span it left and begins every span it
+## landed in, in one pass, which a "did the frame number increase by one" trigger
+## could not do.
+##
+## **Two divergences from the reference, both deliberate and both measured.**
+##
+## The reference sends `endSprite` *before* the new frame is loaded, against the
+## frame number the playhead is about to reach; this sends it after. There is no
+## "before the load" moment here to hang it on: `lingo_go_frame` writes `_index`
+## inside the `go`, so by the time any step notices, the playhead has already
+## moved. What an `on endSprite` handler sees is therefore the arriving frame's
+## sprites rather than the departing frame's. Every `endSprite` in this corpus
+## works on the global registries by channel number, which do not care.
+##
+## The reference sends `beginSprite` from inside the render, between `prepareFrame`
+## and `enterFrame` (`score.cpp:806-830`, and "Window is drawn between the
+## prepareFrame and enterFrame events"). This is called from
+## `director_preview.gd:_enter_frame_or_defer`, which is the one door every frame
+## entry in this port goes through -- the step loop, the first frame of a movie and
+## a `go to movie` alike -- and which is called from exactly that position. The
+## divergence is only at boot, where this port sends `prepareMovie`/`startMovie`
+## before the first frame's `prepareFrame` and the reference sends `beginSprite`
+## before `startMovie` (`score.cpp:317-321`). Later here rather than earlier is the
+## safe direction: a `beginSprite` handler that reads a global the movie script
+## sets in `prepareMovie` would find it VOID the other way round.
+##
+## **Nothing is sent when a movie is left.** The reference destroys the `Score` and
+## with it every `_scriptInstanceList`, and `killScriptInstances` is called from
+## one place only -- `score.cpp:702`, inside `update()`. So `go to movie` sends no
+## `endSprite`, and neither does the end of the movie; `movie_session.gd` clears
+## the record instead.
+static func sync_sprite_lifetime(host) -> void:
+	if not host._lingo_on or host._score == null or host._interpreter == null:
+		return
+	var begun: Dictionary = host._begun_sprites
+	var now: Dictionary = sprite_behaviours_at(host._score, host._index)
+	var score_before = host._score
+	# The depth counter is restored here as well as decremented per message,
+	# because a GDScript runtime error inside a handler aborts the statement it
+	# happened in and carries on: the matching `-= 1` in `send_sprite_message` is
+	# one of the statements it can skip. A counter left standing would refuse
+	# every `go`, `play` and `updateStage` in the movie for the rest of the
+	# session -- a silent, permanent freeze whose cause is nowhere near the error
+	# that started it. Restored rather than zeroed, so a nested call (a
+	# `sendSprite` from inside `beginSprite`) still unwinds to its own caller's
+	# depth.
+	var outer_depth: int = host._sprite_message
+	var leaving: Array = []
+	for channel in begun:
+		if now.get(channel, null) != begun[channel]:
+			leaving.append(int(channel))
+	leaving.sort()
+	for channel in leaving:
+		var was: Array = begun[channel]
+		# Erased before the message, not after: an `endSprite` handler is entitled
+		# to ask the engine anything, and a record that still claims the sprite is
+		# on stage would answer that it is.
+		begun.erase(channel)
+		send_sprite_message(host, "endSprite", channel, was)
+		if movie_gone(host, score_before):
+			host._sprite_message = outer_depth
+			return
+	var arriving: Array = []
+	for channel in now:
+		if not begun.has(channel):
+			arriving.append(int(channel))
+	arriving.sort()
+	for channel in arriving:
+		begun[channel] = now[channel]
+		send_sprite_message(host, "beginSprite", channel, now[channel])
+		if movie_gone(host, score_before):
+			host._sprite_message = outer_depth
+			return
+	host._sprite_message = outer_depth
+
+
 ## One step of the movie, in Director's order.
 ##
 ## Returns what the step did, so a harness can assert the ordering rather than

@@ -112,9 +112,13 @@ because a movie held on `go to the frame` takes no steps at all. `the
 timeoutScript` is the fifth `*Script` property and shares tier 1's machinery.
 
 `AGENTS.md` named `timeout` and `stepFrame` among the calls already made the
-wrong way; both are made now. What is still not sent is `beginSprite` /
-`endSprite` and `stepFrame` *to a sprite's own behaviours*, which is a different
-mechanism -- a message per sprite, not per actor -- and stays in the list below.
+wrong way; both are made now. **`beginSprite` and `endSprite` are sent now too**
+(`scenes/preview/frame_loop.gd:sync_sprite_lifetime`, covered by
+`tools/sprite_lifetime.gd`): the lifetime is the score's own span, the behaviour
+channel counts as sprite 0 and gets both, and the messages stop at the sprite
+tier. What is still not sent is `stepFrame` *to a sprite's own behaviours*, which
+is a different mechanism -- a message per sprite, not per actor -- and stays in
+the list below.
 
 **`the updateLock`** is live and is the other half of `updateStage`. The
 reference implements neither the read nor the write, so what is built is the
@@ -322,16 +326,18 @@ which is what `the textSize of member` answers from.
 the playhead on a millisecond budget, which is the mechanism; what it has no
 notion of is a *tagged* queue a script can add to, cancel and ask about.
 
-**~~The timeout family and `the actorList` / `the perFrameHook`~~ -- done.**
-See the section above. What is left of the shape this entry described is the
-*per-sprite* messages -- `beginSprite`, `endSprite`, `stepFrame` to a sprite's
-own behaviours, and `prepareFrame` per channel. Those need a behaviour to be an
-**instance** rather than a script: `the scriptInstanceList of sprite` is still
-`inert`, and `sendSprite`/`sendAllSprites` still message the behaviour's script
-directly, which is right for one message and wrong for anything that has to
-survive between frames. The object model the entry asked for exists now
-(`lingo/lingo_object.gd`), so what is left is one owner for a channel's
-instances and a rule for their lifetime.
+**~~The timeout family and `the actorList` / `the perFrameHook`~~ -- done**, and
+**`beginSprite`/`endSprite` with them.** See the section above. The instances and
+the lifetime this entry asked for exist: `LingoInterpreter.behaviour_instance`
+owns one object per (channel, script) and `release_behaviour` drops it,
+`director_preview.gd:_begun_sprites` is the record of what is on stage, and
+`frame_loop.gd:sync_sprite_lifetime` diffs it against the score's spans at every
+frame entry. What is left of the shape this entry described is `stepFrame` to a
+sprite's own behaviours and `prepareFrame` per channel; `the scriptInstanceList
+of sprite` is still `inert`, and `sendSprite`/`sendAllSprites` still message the
+behaviour's *script* rather than reaching the instance the frame loop now keeps
+-- which is the next thing to join up, because the two now disagree about what
+`me` is for the same sprite.
 
 **~~`updateStage` (3,717 sites)~~ -- done; `the updateLock` is what is left.**
 `updateStage` paints and presents from inside the handler
@@ -369,10 +375,10 @@ behaviour is the property's documented meaning rather than a copy: the paint is
 of the five that is a sprite behaviour and restores what it found, and
 `sendSprite`/`sendAllSprites` bracket their sends the same way. A cast script, a
 frame script and a movie script read 0 during the same click, which is Director's
-answer. What is *not* covered is the per-frame sprite messages -- `beginSprite`,
-`endSprite`, `stepFrame` -- because this port does not send them at all yet; when
-it does, they are the second place that has to set this field, and the timeout
-entry below is where they are queued.
+answer. `beginSprite` and `endSprite` are the second place that sets this field
+and they do (`frame_loop.gd:send_sprite_message`, saved and restored the same
+way). `stepFrame` to a sprite's own behaviours is the third and is still absent;
+the timeout entry below is where it is queued.
 
 **~~Object messaging (`send`, `call`, `sendAncestor`, `callAncestor`)~~ --
 done**, with `script` and `new`. See the section above. `sendSprite` and

@@ -143,6 +143,11 @@ static func release_auto_puppets(writes: Dictionary, overrides: Dictionary) -> v
 ## movie that never puppets a sprite.
 static func with_puppets(sprites: Array, overrides: Dictionary) -> Array:
 	var frozen: Dictionary = {}
+	# Which channels this frame's score is carrying itself. The auto-puppet arm
+	# below needs it; the whole-sprite arm deliberately does not.
+	var scored: Dictionary = {}
+	for value in sprites:
+		scored[int((value as Dictionary)["channel"])] = true
 	for number in overrides:
 		var channel: Channel = Channel.at(int(number), overrides)
 		if channel.is_puppet():
@@ -157,6 +162,28 @@ static func with_puppets(sprites: Array, overrides: Dictionary) -> Array:
 		# Park's eighteen arcade object channels are moved by
 		# `sprite(n).member = …` and never puppeted, so the whole level's food,
 		# animals and enemies existed in `_overrides` and reached no frame.
+		#
+		# **Only where the score has nothing for the channel on this frame**, and
+		# that qualifier is the difference between the two halves of the rule. A
+		# whole-sprite puppet is not reconciled from the score at all
+		# (`Sprite::replaceFrom` returns early on `_puppet`), so it replaces the
+		# frame's record. An *auto*-puppet is a per-field mask: `Sprite::setCast`
+		# raises `kAPCast` alone (`sprite.h:41`, `channel.cpp:649`) and `setClean`
+		# copies every field the mask does not name, so the script's member sits on
+		# top of the score's own position, ink and size rather than in place of
+		# them. This port does that merge in `_effective`, which needs the score's
+		# record to merge onto -- and replacing it here took that record away.
+		#
+		# Measured: `test-games/itamar-magichat` frame 23, where the nine main-menu
+		# buttons are score sprites in channels 2-10 whose behaviour writes
+		# `me.SetMember(...)` on every rollover. Carried unconditionally, all nine
+		# arrive as `channel.gd:_bare_sprite` at loc (0,0) -- ch8's rect became
+		# (-113,-300) 273x233, its own registration point negated, against the
+		# score's (287,0). Every button was off-stage, `channel_at` answered 0
+		# anywhere on the menu, and the title could not be clicked past its first
+		# screen.
+		if scored.has(channel.number):
+			continue
 		var auto: Dictionary = channel.carried()
 		if not auto.is_empty():
 			frozen[channel.number] = auto

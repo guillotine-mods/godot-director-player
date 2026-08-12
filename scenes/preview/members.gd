@@ -239,11 +239,35 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			return [int(box.get("left", 0)), int(box.get("top", 0)),
 				int(box.get("right", 0)), int(box.get("bottom", 0))]
 		"regpoint":
-			# The registration point, as an offset from the member's top-left --
-			# which is what `locH`/`locV` position (§8.10). Answered as the
-			# two-element list this port represents a point with, the same shape
-			# `the loc of sprite` answers, so one can be written to the other.
-			return [int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))]
+			# The registration point -- what `locH`/`locV` position, rather than
+			# the top-left corner (§8.10). Answered as the two-element list this
+			# port represents a point with, the same shape `the loc of sprite`
+			# answers, so one can be written to the other.
+			#
+			# **In the member's own coordinates, not as an offset from its
+			# top-left**, which is what this answered until `write_prop` below
+			# existed and is a real difference rather than a spelling.
+			# `BitmapCastMember::getField`'s `kTheRegPoint` arm pushes `_regX` and
+			# `_regY` unchanged (`castmember/bitmap.cpp` @ ScummVM 805f259a) and
+			# the drawing offset is a *second* quantity, `getRegistrationOffset()`
+			# = `_regX - _initialRect.left`. This port stores only the offset, so
+			# the origin is added back here and taken off again in `write_prop`;
+			# together they round-trip, which is what
+			# `addToRegPoint`-shaped handlers need --
+			# `member(i).regPoint = member(i).regPoint + point(dx, dy)` has to
+			# move a member by `(dx, dy)` and not by `(dx, dy) + the origin`.
+			#
+			# 97,464 of 120,869 bitmap members across the six shipped titles and
+			# the two Itamar corpora carry a non-zero origin
+			# (`tools/scratch/regsurvey.gd`), so the two readings disagree for
+			# four members in five. No script in any of them *reads* the property,
+			# so this arm is settled against the reference rather than against a
+			# title, and `tools/reg_point.gd` asserts the round trip.
+			var box: Dictionary = m.get("initial_rect", {})
+			return [
+				int(m.get("reg_offset_x", 0)) + int(box.get("left", 0)),
+				int(m.get("reg_offset_y", 0)) + int(box.get("top", 0)),
+			]
 		"size":
 			# Bytes of the member's own payload chunk. Director reports what the
 			# member costs in memory, and the payload is that cost: the bitmap
@@ -461,3 +485,60 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 	# second copy to drift. That holds only while no arm answers null, which is
 	# true of all fifty above and is the thing to re-check when one is added.
 	return null
+
+
+## `set the <prop> of member` for the properties that live on the member record
+## itself. `false` when this module has no arm, so the caller can report it.
+##
+## The twin of `read_prop`, and it exists because a member property surface with
+## a read and no write is not read-only in Director -- it is a write a script
+## makes, a value the script then reads back unchanged, and nothing anywhere
+## saying the statement did nothing. `the regPoint of member` was that (bugs.md
+## 89): one arm above and no writer at all.
+##
+## **Only the properties whose value is the *member's* belong here.** `editable`,
+## `hilite`, `text` and the text style are answered out of the node's override
+## stores because that is where Lingo's version of them lives, and they stay in
+## `director_preview.gd:_set_member_prop_at` for the same reason `read_prop` does
+## not answer them either.
+static func write_prop(host, where: Array, prop: String, value: Variant,
+		table) -> bool:
+	if int(where[0]) <= 0 or int(where[1]) <= 0:
+		return false
+	match prop:
+		"regpoint":
+			# **A point or a two-element list, because Director's point *is* a
+			# list.** The reference tests exactly that --
+			# `d.type == POINT || (d.type == ARRAY && d.u.farr->arr.size() >= 2)`
+			# in `BitmapCastMember::setField` (`castmember/bitmap.cpp` @ ScummVM
+			# 805f259a) -- and this port has both spellings live at once: the
+			# `point()` builtin makes a `Vector2` and `the loc of sprite` answers
+			# a two-element `Array`. `LingoValue.components` is the single place
+			# that flattens either, so `member(i).regPoint = point(x, y)` and
+			# `member(i).regPoint = sprite(n).loc` cannot diverge here.
+			#
+			# Anything else is **declined, not coerced**: the reference warns and
+			# returns without writing, and a scalar silently read as `(n, n)`
+			# would move every sprite drawn from the member to a place no script
+			# asked for.
+			var parts: Array = LingoValue.components(value)
+			if parts.size() < 2:
+				return false
+			var cast = table.cast_for(int(where[0]))
+			if cast == null or not cast.set_reg_point(
+					int(where[1]), int(parts[0]), int(parts[1])):
+				return false
+			# **The repaint is the whole of the invalidation, and that is
+			# measured rather than assumed.** The reference calls
+			# `score->invalidateRectsForMember(this)` before moving the point
+			# because it composites dirty rectangles; this renderer repaints the
+			# stage every frame and `sprite_geometry.stage_rect` recomputes the
+			# offset from the member on every call, so no rect is cached to go
+			# stale. Neither per-member cache needs dropping either: `_textures`
+			# is keyed by `texture_key`, which is member, ink, drawn size and
+			# colours, and `_hit_images` by member and size -- a moved anchor
+			# changes the member's pixels and its size not at all, only where the
+			# painter puts them.
+			host.queue_redraw()
+			return true
+	return false

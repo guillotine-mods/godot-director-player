@@ -2936,8 +2936,19 @@ godot --headless --path . --script tools/director_extract.gd -- \
 ## 85. A channel the score does not carry never draws, however much a script writes to it — so Itamar Park's arcade runs with no food, no animals and no enemies
 
 **Status:** FIXED for the draw, and the objects are on screen; **their vertical
-position is a second gap, `the regPoint of member` is read-only** — see 89 ·
-**Area:** `preview/channel.gd:carried`, `preview/sprite_state.gd:with_puppets`
+position is a second gap and it is 94, not 89** · **Area:**
+`preview/channel.gd:carried`, `preview/sprite_state.gd:with_puppets`
+
+**Correction, and it undoes this entry's central measurement.** The claim below
+that channels 20-23 are "never carried by the score" is an artifact of the tool
+that measured it: `tools/scratch/chanscan.gd` reads `Score.frame()`, and
+`_snapshot` drops any record that names a member and states a zero size. All
+eighteen object channels *are* recorded, for 178 frames each, naming `ObjBlnk`
+at `locH` -1000 and at the three row `locV` values 340, 210 and 110 — which is
+the vertical position this entry left missing. See 90 for the bytes. The fix
+below is still right and still needed, because a script may give a channel a
+member the score never gave it; what is wrong is the reasoning that no record
+existed to retain. `tools/scratch/rawchan.gd` prints the records `frame()` hides.
 
 A script that gives a channel a member now makes that channel live, which is the
 reference's rule and not a special case there: `_channels` holds one `Channel`
@@ -3007,84 +3018,6 @@ Reproduce: the command in entry 85, and read the `play_stack=` column.
 
 ---
 
-## 87. `beginSprite` is never sent, so Magic Hat's album screen keeps the main menu's screen items and its red X close button stops working
-
-**Status:** open · **Area:** the frame loop's per-sprite messages
-(`scenes/preview/frame_loop.gd`, `scenes/preview/event_chain.gd`) · found while
-fixing the click freeze in `test-games/itamar-magichat`
-
-`docs/ENGINE_TODO.md` already records that `beginSprite`/`endSprite` are not sent
-and that sending them needs a behaviour to be an **instance** with a lifetime.
-This entry is the player-visible consequence of that gap in one title, so that
-the cost of the entry is on record beside it rather than only its shape.
-
-Magic Hat drives every screen through a framework in `objects.cst`
-(`Screen items functions`, `BasicMenuObject`, `GraphicButtonObject`). One global
-property list, `gAllScreenItems`, maps a **sprite channel** to the button object
-that answers for it, and the *only* thing that rebuilds that map when a screen
-changes is a behaviour's `on beginSprite`. `magichat.dir` member 33,
-`BehaviorScript 33 - init album`, is the whole of it:
-
-```lingo
-on beginSprite me
-  HideToolTip()
-  DisableAllMenus()
-  EnableMenu(#mnuAlbum)
-  SetMusicFile("album_m.mp3")
-end
-```
-
-`DisableAllMenus` calls `BasicMenuObject.Disable`, which calls
-`RemoveScreenItem` for each of the menu's buttons; `EnableMenu` calls
-`AddScreenItem` for the new screen's. Neither runs, because the message never
-arrives. Measured: after clicking the album button on the main menu, with the
-playhead on frame 42 and the album drawn correctly, `gAllScreenItems` still has
-the keys `["2","3","4","5","6","7","8","9","10"]` — the nine **main menu**
-buttons — and none of the album's.
-
-What the player sees is not a blank screen, which is why this was never noticed.
-The album draws correctly, because the score places its sprites. It breaks on the
-first mouse move: `screen item script` sends `ItemMouseEnter` for the channel
-under the pointer, `GetScreenItem(8)` answers the *main menu's* button 7, and
-`GraphicButtonObject.ItemMouseEnter` does `me.SetMember(me.Info(#active))`. So
-rolling the pointer over the album's red X close button, channel 8, swaps that
-channel's member from `album:89` (the X, 40x52 at 760,34) to the main menu's
-`bMain7_on` — measured as `6:13`, 273x233 at (287,0). The X is replaced by a
-menu button drawn in the middle of the screen, and the corner the player is
-aiming at now hits nothing:
-
-```
-before the pointer arrives:  channel_at (779,59) -> 8
-after it:                    channel_at (779,59) -> 0
-```
-
-The close button therefore cannot be clicked at all, and the album is a screen a
-player can enter and not leave. Every other screen in the title is built the same
-way (`init magic`, `init tools`, `init login`, `init teuda`, `init credits` are
-all `on beginSprite`), so this is not one screen's bug.
-
-Reproduce, headless, in about 40 seconds:
-
-```bash
-godot --headless --audio-driver Dummy --path . --script tools/scratch/album_close.gd -- \
-  --root res://test-games/itamar-magichat --file magichat.dir
-```
-
-It boots to the menu, clicks the album button at stage (448,378), prints the live
-channel/member of every sprite, moves the pointer onto the X, and prints them
-again. The two `channel_at` lines above are its output. In the real window the
-same click sequence is
-`bash` + `C:\tmp\drive.ps1 -Stage @(448,378,779,59)`; the click log line reads
-`clicked (778,59) frame 42  ch0`, and `ch0` is the whole bug.
-
-**Not a hit-test bug and not a member-name bug.** `tools/hotspots.gd --frame 42`
-reports channel 8 eligible with the right rect, and the descent answers 8 for
-that point until the rollover fires. `_channel_at` is reading a channel whose
-member a script legitimately swapped; the script only got to run because the
-engine never told the screen it had changed.
-
----
-
 ## 88. `GetLng()` / `SetLng()` are absent game data in Magic Hat, not a cast that failed to load — nothing to fix in the engine
 
 **Status:** not a bug, recorded so the next reader does not re-derive it ·
@@ -3138,42 +3071,6 @@ does not carry, or simply left dangling by the authors.
 Director would have raised "Handler not defined" at the same call. The engine's
 `builtins unbound` line is therefore accurate reporting and not a port fault, and
 there is nothing here to bind.
-
----
-
-## 89. `the regPoint of member` is read-only, so a title that positions art by moving registration points draws it in the wrong place
-
-**Status:** open · **Area:** `preview/members.gd` — `read_prop` has a `regpoint`
-arm and there is no writer · found while closing 85
-
-Director lets a script move a member's registration point, and that moves every
-sprite drawn from that member, because `locH`/`locV` position the *registration
-point* rather than the top-left corner (§8.10). This port answers the property
-and cannot store it: `grep -n regpoint scenes/preview/members.gd` returns exactly
-one line, the read.
-
-Itamar Park's arcade is the case. `on defReg` is one statement —
-`setRegPointToCorner(51, 78, 1, #right, #Middle)` — which walks members 51..78 of
-library 1 and re-anchors each to its right-middle edge, and the object channels
-are then placed with `loch` alone. So with the registration write dropped, every
-object draws from its stored anchor instead of the one the game chose, and lands
-at the top of the stage rather than on the ice.
-
-That is visible in the screenshot taken when 85 was closed: the fish is on
-screen, moving, at `locV` 0.
-
-**Not the same defect as 85 and it does not undo it.** 85 was whether the channel
-reaches a frame at all — it does now, with its member, its ink and its horizontal
-movement. This is where the art sits once it is there.
-
-What it needs: a write arm that stores `reg_offset_x`/`reg_offset_y` back onto
-the member, and an invalidation, because the texture cache and the hit-test image
-cache are both keyed per member and a moved anchor changes neither the pixels nor
-the size — only the offset the painter applies. `sprite_geometry.gd` is where
-that offset is consumed.
-
-The reference's own writer is `Lingo::setTheCast`'s `kTheRegPoint` arm
-(`lingo-the.cpp`), which sets the member's registration and marks it modified.
 
 ---
 
@@ -3259,3 +3156,175 @@ godot --headless --path . --script tools/sound_rate.gd -- --tolerance 1.0
 gh workflow run nightly.yml --ref main \
     -f entries='sound_rate:--tolerance@1.0 puppet_persists:--label@exitforest3'
 ```
+
+---
+
+## 94. A score sprite record that names a member and states a zero size is dropped, so eighteen of Itamar Park's arcade channels lose the only vertical position they ever get
+
+**Status:** open · **Area:** `director/director_score.gd:_snapshot`, the
+occupancy test · found while closing 89, and **it is what 85 and 89 both
+misattributed**
+
+`_snapshot` decides whether a channel is occupied with
+
+```gdscript
+if cast_id <= 0 or width <= 0 or height <= 0:
+    continue
+```
+
+The size half has no counterpart in the reference. `Frame` reads every channel's
+record into `_sprites[]` and `Score` builds one `Channel` per channel whatever
+the record says; the only emptiness test anywhere near the render walk is on the
+**cast id** (`score.cpp`, `channel.cpp` @ ScummVM 805f259a). A record that names
+a member and states a zero size is a sprite there, and it is a sprite that
+carries a position.
+
+**Itamar Park's arcade is built on exactly that record.** Channels 20-37 are
+recorded in `torfim.dir` for 178 frames each, all naming member `1:60`
+`ObjBlnk` — a deliberately 0x0 bitmap, the title's own device for "occupy this
+channel and draw nothing" — at `locH` -1000 and at three `locV` values that
+repeat down the channels:
+
+```
+ch20 10 24 ff 00 0001 003c 0000 07f4 0154 fc18 0000 0000 ...
+                       ^cast 60   locV 0x0154=340  locH 0xfc18=-1000  w=h=0
+ch21 ... locV 0x00d2 = 210
+ch22 ... locV 0x006e = 110
+ch23 340   ch24 210   ch25 110   ...  through ch37
+```
+
+340, 210 and 110 are the arcade's three ice rows, and they are the **only**
+place the objects' vertical position exists. Nothing downstream needs changing to
+use them: `docs/bugs-closed.md` 91 already made the auto-puppet merge prefer the
+frame's own record over a synthesised one, so admitting the record is enough for
+the script's `locH` to land on top of the score's `locV`. `MovieScript 6 - play handlers1`
+writes `sprite(i + j).locH` and nothing else; `MovieScript 7`'s `ChangePlayer`
+sets the *player's* `locV` from `gPlayerLocVList` and `MovieScript 10`'s
+`setSubLevelNum` reads an object's `locV` back
+(`sprite(kSubNumSpNum).locV = sprite(getFlag(#FlagOnStage)).locV - 55`), so the
+score is where the rows are authored and a script consumes them. With the record
+dropped, `sprite_state.with_puppets` synthesises a base at `locV` 0 and every
+object draws straddling the top edge of the stage.
+
+Measured, by removing the size half of the test and playing the level in
+(`tools/scratch/parkarcade.gd`, same command as below). Before:
+
+```
+ch20 1:51  AntAnimA1 loc(-226,0)   rect(-349,-46 123x93)
+ch21 1:60  ObjBlnk   loc(-480,0)   rect(-480,0 0x0)
+ch22 1:174 AntFood4  loc(-1091,0)  rect(-1139,-15 48x30)
+```
+
+After:
+
+```
+ch20 1:173 AntFood3  loc(-139,340) rect(-189,328 50x25)
+ch21 1:52  AntAnimA2 loc(-644,210) rect(-760,167 116x87)
+ch22 1:177 AntFood7  loc(-1087,110) rect(-1137,98 50x25)
+```
+
+Channels 44, 53, 54, 55, 59 and 60 — `kBonus3SpNum`, `kCollisionSpNum`,
+`kSubNumSpNum` and `kBonusScoreSpNum`, all of them script-driven and all of them
+recorded as `ObjBlnk` — arrive with their authored positions in the same run.
+
+**Why it is filed rather than fixed.** Removing the size half admits 4,506
+records in `itamar-park` and **370 across the six shipped titles**
+(`tools/scratch/zerosize.gd`, out of 8,057,628 member-bearing records), and
+three of those groups name a member with real pixels, where `drawn_size` would
+then draw the member's natural size on a channel that draws nothing today
+(`tools/scratch/zerosize2.gd`):
+
+```
+piposh / -en / -ru  Hezroom.dir ch6   1:245  d6          0x0      x10 each
+piposh-dream        hatul2/3 ch10,27,32  1:86            1x1      x3
+piposh-dream        meet7.dir ch15    12:5               48x31    x135
+piposh2             GOLDDEAD.dir ch1  1:3 a1             640x400  x26
+rating              11 movies ch48    2:33 GlobalTime    79x24 field  x176
+itamar-park         torfim.dir 25 channels  1:60 ObjBlnk 0x0      x4506
+```
+
+`GOLDDEAD.dir` ch1 is a full-stage bitmap on 26 frames and `rating`'s ch48 is
+the `GlobalTime` field on 176 — both would newly appear, and whether they should
+is a question about `sprite_geometry.drawn_size`'s fallback rather than about
+this test. Nobody has looked at those three on screen. That is the work this
+entry is asking for; the diagnosis above is complete and the blast radius is
+measured.
+
+**This corrects two earlier entries.** 85 says channels 20-23 are "never carried
+by the score", and 89 says Park's objects sit at `locV` 0 because
+`the regPoint of member` was read-only. Both are wrong and both were measured
+through `Score.frame()`, which is the post-filter view — `tools/scratch/chanscan.gd`
+reads it, so "NEVER carried by the score" is what it prints for any channel whose
+records are all zero-sized. `tools/scratch/rawchan.gd` prints the bytes instead.
+`defReg`, the handler 89 blamed, occurs **twice** in `torfim.dir` — once as
+`on defReg` and once in its script's name table — and is called from nowhere;
+its 28 members are already anchored right-middle in the file, so running it would
+change nothing. `the regPoint of member` was a real gap and is fixed (89, now in
+`docs/bugs-closed.md`), and fixing it moves none of these objects.
+
+Reproduce:
+
+```bash
+godot --headless --audio-driver Dummy --path . --script tools/scratch/rawchan.gd -- \
+    --root res://test-games/itamar-park --file torfim/torfim.dir --frame 24 --from 18 --to 40
+
+godot --headless --audio-driver Dummy --path . --script tools/scratch/parkarcade.gd -- \
+    --root res://test-games/itamar-park --file torfim/torfim.dir \
+    --steps 3000 --clicks "play+10:11" --until antplay --from 18 --to 60
+```
+
+The first prints the records above. The second plays the level select in, clicks
+level 1, and prints every object channel's member, `loc` and drawn rect once the
+arcade is running; the `loc(...,0)` column is the bug.
+
+---
+
+## 93. A behaviour gets its instance from `beginSprite` and from a click, and from nothing else: `exitFrame`, `enterFrame` and `prepareFrame` still run against a bare script
+
+**Status:** open · **Area:** `scenes/preview/scripts.gd:dispatch`,
+`lingo/lingo_interpreter.gd:call_handler` · found while closing 87
+
+`bugs.md` 87 made a behaviour an instance for the two messages it added, and
+`scenes/preview/event_chain.gd` already did it for the mouse and key chain. The
+frame events did not join in. `Scripts.dispatch` calls
+`interpreter.call_handler(handler, [], script)` with the default channel 0, and
+`call_handler` reads that as "not a behaviour" — so `on exitFrame me` in a
+behaviour-channel script binds `me` to VOID, while `on beginSprite me` in the
+script attached to the *same* score row binds it to a real object.
+
+Director has no such split. A behaviour-channel script is one instance for the
+life of its span and every message it receives arrives on that instance, which is
+what makes the standard idiom work:
+
+```lingo
+property pSomething
+on beginSprite me
+  pSomething = ...
+on exitFrame me
+  if pSomething then ...
+```
+
+Here the property written in `beginSprite` is on an object `exitFrame` never sees.
+Nothing in the six shipped titles is known to depend on it yet — this was found by
+reading, not by a symptom — but it is the same defect `87` was, one message along,
+and it is why `docs/ENGINE_TODO.md` still lists `the scriptInstanceList of sprite`
+as `inert`.
+
+**The fix is not "pass channel 0"**, and that is the whole difficulty.
+`call_handler`'s channel-0 default is what stops a *movie* script and an ordinary
+frame script from acquiring a `me` they have never had; `behaviour_instance` takes
+an explicit `script_channel` flag for exactly that reason. What the dispatcher
+needs is to know whether the script it is about to message is a behaviour-channel
+script or a plain frame script, which `frame_loop.gd:sprite_behaviours_at` already
+computes and `_begun_sprites` already records — so the join is available, and this
+entry is the decision to make it deliberately rather than as a side effect of 87.
+
+The same gap covers `sendSprite`/`sendAllSprites`, which still message a
+behaviour's script directly (`docs/ENGINE_TODO.md`); after 87 those two and the
+frame loop now disagree about what `me` is for the same sprite.
+
+Reproduce by adding a case to `tools/sprite_lifetime.gd`: on any movie, run a
+frame whose behaviour-channel script declares both `beginSprite` and `exitFrame`
+and compare the object identity `me` binds to in each. `magichat.dir` frame 42's
+`BehaviorScript 34 - album loop` declares `enterFrame`, `exitFrame`, `mouseUp` and
+`endSprite`, which is four of the five doors in one script.

@@ -810,6 +810,17 @@ The registration point is the reason a naive port's sprites are all offset:
 `locH`/`locV` position the *registration point*, not the top-left corner, and
 Director's default for a bitmap is its centre.
 
+`regPoint` is **writable, and the write is a layout primitive rather than a
+curiosity**: the point belongs to the member, so one statement re-anchors every
+sprite drawn from it. Itamar Park's `setRegPointToCorner(51, 78, 1, #right,
+#Middle)` walks 28 members that way. The value is in the member's own
+coordinates and not an offset from its top-left — `BitmapCastMember::getField`
+pushes `_regX`/`_regY` unchanged while the drawing offset is the separate
+`getRegistrationOffset()`, `_regX - _initialRect.left` — which matters because
+97,464 of this corpus's 120,869 bitmap members have a non-zero rect origin.
+`preview/members.gd:write_prop` is the writer and `tools/reg_point.gd` asserts
+that a write moves the drawn rectangle; see `docs/bugs-closed.md` 89.
+
 **Shape members.** `shapeType` (W), `filled` (W), `lineSize` (W),
 `pattern` (W).
 
@@ -3034,7 +3045,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `pattern` | member | live | 0 sites; members.gd read_prop |
 | `purgepriority` | member | live | 0 sites; members.gd read_prop |
 | `rect` | member | live | 0 sites; members.gd read_prop |
-| `regpoint` | member | live | 0 sites; members.gd read_prop |
+| `regpoint` | member | live | 0 sites; members.gd read_prop and write_prop |
 | `scripttext` | member | live | 0 sites; members.gd read_prop |
 | `scripttype` | member | live | 0 sites; members.gd read_prop |
 | `scrolltop` | member | live | 0 sites; members.gd read_prop |

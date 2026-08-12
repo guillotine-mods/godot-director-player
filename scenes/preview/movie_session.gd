@@ -144,6 +144,14 @@ static func forget_previous(host, previous_path: String) -> void:
 	host._puppet_transition = {}
 	host._entered_index = -1
 	host._jump_queued = false
+	# **Cleared, not ended.** The reference sends no `endSprite` when a movie is
+	# left: `killScriptInstances` is called from one place, `score.cpp:702` inside
+	# `update()`, and a `go to movie` destroys the whole `Score` with every
+	# `_scriptInstanceList` in it. What has to go is the record, because it is keyed
+	# by channel and by frame span -- both of which name something else in the movie
+	# that is arriving, so a channel left in here would compare equal to a stranger
+	# and that sprite would never be told it had begun.
+	host._begun_sprites.clear()
 	# Restart-on-change compares this frame's sound channels against the frame
 	# before. Carried across a movie change, the new movie's first frame would be
 	# compared against the last frame of the old one -- which in the case that

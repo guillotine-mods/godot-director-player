@@ -341,7 +341,51 @@ static func _value_of(raw: Variant) -> Variant:
 		return text.to_float()
 	if text.begins_with("[") and text.ends_with("]"):
 		return _parse_container(text)
+	# `point(h, v)` and `rect(l, t, r, b)` -- the two constructors that turn up as
+	# *data*. Director's `value()` evaluates a whole Lingo expression, so these are
+	# not a special case there and nothing else about them is special here either;
+	# they are simply the shapes a title writes into a text file that this parser
+	# has to be able to read back.
+	#
+	# Magic Hat is the measurement. `mainpanels.txt` describes each screen button
+	# as a property-list literal, and three of them carry a `#tooltipofs`:
+	# `bAlbum7` (the album's close button), `bAlbum18` and `bAlbum19` (its schema
+	# arrows). Without this the comma inside `point(-10,0)` split the literal, the
+	# list stopped being keyed, and the button's whole info list came back as a
+	# two-element list -- so `Info(#Name)` answered VOID, `AlbumMenuObject.
+	# MenuMouseUp`'s `case` fell through to its page-turning default, and clicking
+	# the album's close button ran `go(label("album") + 1)`: the album re-entered
+	# itself and could not be left. Measured before the fix, key 8 of
+	# `gAllScreenItems` held `{"": ""}` where every other button held its nine
+	# authored properties.
+	var call := _constructor(text, "point", 2)
+	if call.size() == 2:
+		return Vector2(float(call[0]), float(call[1]))
+	call = _constructor(text, "rect", 4)
+	if call.size() == 4:
+		return Rect2(float(call[0]), float(call[1]),
+			float(call[2]) - float(call[0]), float(call[3]) - float(call[1]))
 	return null
+
+
+## The arguments of `name(...)`, or `[]` when `text` is not that call with
+## exactly `arity` arguments. Parsed with the same top-level splitter the
+## containers use, so `point(1, point(2, 3)[1])` splits where Lingo would.
+static func _constructor(text: String, name: String, arity: int) -> Array:
+	var head := name + "("
+	if not text.to_lower().begins_with(head) or not text.ends_with(")"):
+		return []
+	var inner := text.substr(head.length(), text.length() - head.length() - 1)
+	var parts := _split_top_level(inner)
+	if parts.size() != arity:
+		return []
+	var out: Array = []
+	for part in parts:
+		var value: Variant = _parse_scalar(part)
+		if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+			return []
+		out.append(value)
+	return out
 
 
 static func _parse_container(text: String) -> Variant:
@@ -378,6 +422,13 @@ static func _parse_scalar(part: String) -> Variant:
 	return _value_of(text)
 
 
+## Split on commas that are not inside a bracket, a **paren** or a string.
+##
+## The parens are as load-bearing as the brackets and were missing: a value may
+## be a call, and a call's own commas are not the list's. `[#a: point(-10, 0)]`
+## split into `#a: point(-10` and `0)`, the second of which has no top-level
+## colon -- so `_parse_container` decided the literal was not keyed and built a
+## *list* out of a property list. See `_value_of` for what that cost.
 static func _split_top_level(text: String) -> PackedStringArray:
 	var out := PackedStringArray()
 	var depth := 0
@@ -389,9 +440,9 @@ static func _split_top_level(text: String) -> PackedStringArray:
 			quoted = not quoted
 		elif quoted:
 			continue
-		elif c == "[":
+		elif c == "[" or c == "(":
 			depth += 1
-		elif c == "]":
+		elif c == "]" or c == ")":
 			depth -= 1
 		elif c == "," and depth == 0:
 			out.append(text.substr(start, i - start))
@@ -400,6 +451,8 @@ static func _split_top_level(text: String) -> PackedStringArray:
 	return out
 
 
+## The same rule for the key separator: `#cursor: [280, -1]` keys on its first
+## colon, and a colon inside a nested call or list is not that one.
 static func _top_colon(part: String) -> int:
 	var depth := 0
 	var quoted := false
@@ -409,9 +462,9 @@ static func _top_colon(part: String) -> int:
 			quoted = not quoted
 		elif quoted:
 			continue
-		elif c == "[":
+		elif c == "[" or c == "(":
 			depth += 1
-		elif c == "]":
+		elif c == "]" or c == ")":
 			depth -= 1
 		elif c == ":" and depth == 0:
 			return i

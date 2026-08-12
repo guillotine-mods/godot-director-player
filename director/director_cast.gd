@@ -167,6 +167,47 @@ func member(number: int) -> Dictionary:
 	return parsed
 
 
+## Move a member's registration point. `false` when the slot has no member.
+##
+## `the regPoint of member` is writable in Director and this cast is where the
+## write has to land, because the registration point is the member's and every
+## sprite drawn from it moves together -- `locH`/`locV` position the registration
+## point rather than the top-left corner (`DIRECTOR_ENGINE.md` §8.10), so one
+## write re-anchors eighteen channels at once. The reference's own writer is
+## `BitmapCastMember::setField`'s `kTheRegPoint` arm
+## (`castmember/bitmap.cpp` @ ScummVM 805f259a), which assigns `_regX`/`_regY`
+## and sets `_modified`.
+##
+## **The argument is canvas space, and the stored offset is not.** ScummVM's
+## `_regX` is the raw number the cast record carries — `getField(kTheRegPoint)`
+## pushes it unchanged — while the offset the painter applies is
+## `getRegistrationOffset()`, `_regX - _initialRect.left`. This port stores the
+## *offset* (`_parse_specific`'s type-1 arm computes `regPoint - left/top`), so
+## the translation happens here and `read_prop` puts it back on the way out.
+## That is not a distinction without a difference in this corpus: **97,464 of
+## 120,869 bitmap members across the six shipped titles and the two Itamar test
+## corpora have a non-zero `initial_rect` origin** (`tools/scratch/regsurvey.gd`),
+## so reading and writing the offset instead would move four members in five.
+##
+## **Written through the parsed cache, so it lasts exactly as long as the cast
+## does.** `member()` hands out the cached dictionary itself and
+## `DirectorCastTable.get_member` duplicates it per call, so a write here is seen
+## by the next reader and by nothing that already ran. The cast is dropped when
+## the movie changes (`director_preview.gd:lingo_go_movie` closes the table),
+## which is the reference's lifetime for an *internal* cast — Director unloads it
+## with the movie. A shared external cast outlives the movie there and does not
+## here; nothing in this corpus writes a regPoint into an external cast, so that
+## divergence is stated rather than measured.
+func set_reg_point(number: int, reg_x: int, reg_y: int) -> bool:
+	var m: Dictionary = member(number)
+	if m.is_empty():
+		return false
+	var box: Dictionary = m.get("initial_rect", {})
+	m["reg_offset_x"] = reg_x - int(box.get("left", 0))
+	m["reg_offset_y"] = reg_y - int(box.get("top", 0))
+	return true
+
+
 ## Member number for a name, case-insensitively, or 0 when there is none.
 func number_of(name: String) -> int:
 	_build_names()

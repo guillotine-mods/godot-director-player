@@ -79,6 +79,17 @@ const ACCOUNTED := {
 	# restored session can never be resumed — a load that looks like a hang.
 	"_exit_frame_called": "saved",
 	"_skip_sent": "saved",
+	# Saved because it is a statement about what the movie has already been *told*,
+	# and nothing in the container can re-derive it. A restored session that starts
+	# with this empty re-sends `beginSprite` to every behaviour on the frame it came
+	# back on — over globals the record has already restored, so a screen would
+	# register its buttons twice and, where the handler is not idempotent, disagree
+	# with the session it is supposed to be reproducing.
+	"_begun_sprites": "saved",
+	# Non-zero only while a `beginSprite`/`endSprite` handler is on the stack, and
+	# `_input` — where the save key is read — runs between frames and never inside a
+	# dispatch, so a capture can never catch it set.
+	"_sprite_message": "excluded: in-flight, and always 0 when a save is taken",
 	"_overrides": "saved",
 	"_field_text": "saved",
 	"_member_editable": "saved",
@@ -237,6 +248,7 @@ const REQUIRED := [
 	"version", "movie", "index", "ticks", "interpreter_globals", "host_globals",
 	"overrides", "field_text", "member_editable", "channel_cursors",
 	"channel_constraints", "last_member", "loop_start", "skip_sent",
+	"begun_sprites",
 	"play_stack", "clock", "palette", "score_sound", "focus", "hooks",
 	"flags", "counters", "windows", "sound", "frozen",
 ]
@@ -274,6 +286,7 @@ static func capture(host) -> Dictionary:
 		"last_member": encode(host._last_member),
 		"loop_start": encode(host._loop_start),
 		"skip_sent": encode(host._skip_sent),
+		"begun_sprites": encode(host._begun_sprites),
 		"play_stack": encode(host._play_stack),
 		"puppet_transition": encode(host._puppet_transition),
 		"clock": host._clock.state(),
@@ -473,6 +486,7 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	_fill_int_keyed(host._last_member, decode(data.get("last_member", {})))
 	_fill_int_keyed(host._loop_start, decode(data.get("loop_start", {})))
 	_fill_int_keyed(host._skip_sent, decode(data.get("skip_sent", {})))
+	_fill_int_keyed(host._begun_sprites, decode(data.get("begun_sprites", {})))
 	host._play_stack = decode(data.get("play_stack", []))
 	host._puppet_transition = decode(data.get("puppet_transition", {}))
 

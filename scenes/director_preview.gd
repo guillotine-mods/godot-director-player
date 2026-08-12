@@ -140,6 +140,26 @@ var _entered_index := -1
 ## does not send `exitFrame` for a frame that is being left by a queued `go to`
 ## (DIRECTOR_ENGINE.md §6.1 step 7), and a click that navigates is exactly that.
 var _jump_queued := false
+## Which sprites have been sent `beginSprite` and not yet `endSprite`:
+## `channel -> [start, end, lib, member, ...]`, the score span that is on stage in
+## that channel. `Channel::_startFrame`/`_endFrame` plus
+## `Channel::_scriptInstanceList` in one field, because here the two are the same
+## question. `frame_loop.gd:sync_sprite_lifetime` is the only writer and carries
+## the reference citations; `movie_session.gd` clears it, because a channel number
+## means nothing in the next movie.
+var _begun_sprites: Dictionary = {}
+## Depth of `beginSprite`/`endSprite` dispatch, and the reason it is a counter
+## rather than a flag is that one of those handlers may `sendSprite` another.
+##
+## `Score::_disableGoPlayUpdateStage` (`score.cpp:773`, `lingo-events.cpp:863-866`
+## and `:990-993`): Director brackets both messages with it, and `go`, `play` and
+## `updateStage` are **ignored** while it is set -- not deferred, not queued
+## (`lingo-funcs.cpp:54`, `:162`, `lingo-builtins.cpp:3687`, all three of which
+## warn and return). Without it a `beginSprite` that navigates moves the playhead
+## from inside the frame entry that is announcing the sprites, which re-enters and
+## announces again: a storm whose first symptom is the room it started in never
+## being drawn.
+var _sprite_message := 0
 ## True only while `exitFrame` is being dispatched. It is what tells a `go` which
 ## tick it lands in: `exitFrame` runs at step 7 and the playhead is resolved at
 ## step 10, so a redirect from there is honoured by the same tick — while a `go`
@@ -784,6 +804,11 @@ func _load_container(path: String) -> bool:
 ## playing rather than stranding the player on a dead stage.
 func lingo_go_movie(name: String, where: Variant) -> void:
 	if _paths == null:
+		return
+	# The same guard as `lingo_go_frame`: `Lingo::func_goto` handles both forms and
+	# refuses both while `_disableGoPlayUpdateStage` is set.
+	if _sprite_message > 0:
+		_trace("go movie %s ignored inside a sprite message" % name)
 		return
 	var here := str(_movie.path).get_base_dir()
 	var target: String = _paths.resolve(name, here)
@@ -1621,6 +1646,17 @@ func _thaw_lingo() -> void:
 ## the top of the room being left". Every path that enters a frame goes through
 ## here: the step loop, the first frame of a movie, and a `go to movie`.
 func _enter_frame_or_defer(script: Dictionary) -> void:
+	# `beginSprite` and `endSprite`, which the reference sends from inside the
+	# render -- after `prepareFrame` and before `enterFrame` (`score.cpp:806-830`,
+	# `:1029`). This is the only door every frame entry goes through, which is why
+	# it is here rather than in `advance`: the first frame of a movie and a
+	# `go to movie` reach it and never reach that. See
+	# `frame_loop.gd:sync_sprite_lifetime` for what decides who begins and ends.
+	#
+	# Before the transition defer, not after: the defer is about `enterFrame`
+	# running over a frame that is still wiping in, and a sprite that has appeared
+	# has appeared.
+	FrameLoop.sync_sprite_lifetime(self)
 	# The step has entered a frame, so the `exitFrame` owed for it has not been sent
 	# yet. `score.cpp:827-828` clears the same flag in the same place, and it is
 	# cleared *before* the transition check rather than after: a frame that defers
@@ -1758,6 +1794,11 @@ func _draw() -> void:
 ## Returns whether it painted, so a caller can be asserted against.
 func repaint_now() -> bool:
 	if not is_inside_tree() or not is_visible_in_tree():
+		return false
+	# `lingo-builtins.cpp:3687-3690`: `updateStage` is ignored inside
+	# `beginSprite`/`endSprite` for the same reason `go` is. The stage is about to
+	# be drawn by the frame entry that sent the message.
+	if _sprite_message > 0:
 		return false
 	# `the updateLock` -- the other half of this pair (§3). While it is set the
 	# stage is not repainted **and the paint is not queued for later**: the canvas
@@ -2922,6 +2963,11 @@ func lingo_update_stage() -> void:
 ## every room: DAY1's own frame script sets the visibility of sprites 15, 17 and
 ## 33 on every `enterFrame`.
 func lingo_go_frame(frame: int) -> void:
+	# `lingo-funcs.cpp:54-57`: a `go` from inside `beginSprite`/`endSprite` is
+	# ignored outright. See `_sprite_message`.
+	if _sprite_message > 0:
+		_trace("go %d ignored inside a sprite message" % frame)
+		return
 	_held = true
 	var target := clampi(frame, 0, maxi(_score.frame_count - 1, 0))
 	_index = target
@@ -3409,6 +3455,12 @@ func route_release(at: Vector2) -> Node:
 ## `current_sprite_num` is the channel of the chain element running now, which is
 ## exactly `currentChannelId`; it exists because `the currentSpriteNum` was bound.
 func lingo_play_push(args: Array) -> void:
+	# `lingo-funcs.cpp:162-165`, the `play` half of the same refusal. Guarded here
+	# rather than only in `lingo_go_frame` so that the stack entry is not pushed
+	# either -- a `play` that is ignored has nothing to return from.
+	if _sprite_message > 0:
+		_trace("play ignored inside a sprite message")
+		return
 	var from_sprite: bool = _host != null and int(_host.current_sprite_num) > 0
 	_play_stack.append({
 		"movie": str(_movie.path),
@@ -3948,10 +4000,10 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 		# full-stage `black` curtain in channel 24 stayed over the main menu and
 		# the player got a blank stage with the music playing.
 		#
-		# `LingoValue._components` is the single place that knows a point, a rect
+		# `LingoValue.components` is the single place that knows a point, a rect
 		# and a list are all lists to Director, so the two vocabularies meet once
 		# rather than at every setter.
-		var point: Array = LingoValue._components(value)
+		var point: Array = LingoValue.components(value)
 		if point.size() >= 2:
 			_write_position(channel, "loch", point[0])
 			_write_position(channel, "locv", point[1])
@@ -4333,7 +4385,15 @@ func _set_member_prop_at(where: Array, prop: String, value: Variant) -> void:
 			# below, so both halves of one property surface report through one
 			# line: the write half was reported and the read half was not, which
 			# is half a diagnostic and reads in a log as a clean read surface.
-			_note_member_prop(prop)
+			#
+			# **Offered to `preview/members.gd:write_prop` first**, which is where
+			# a property whose value belongs to the *member record* is written --
+			# `the regPoint of member` is the first, and the arms above are the
+			# ones whose value belongs to a node-owned override store instead.
+			# Declined writes still fall through to the report, so a point handed
+			# a scalar is recorded rather than coerced.
+			if not Members.write_prop(self, where, prop, value, _table):
+				_note_member_prop(prop)
 
 
 ## A member property nothing in this port consumes, recorded rather than lost.

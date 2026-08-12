@@ -353,8 +353,18 @@ func run_compiled(compiled: Dictionary) -> bool:
 ## `spriteNum` is declared on the instance whether or not the script names it.
 ## Director's behaviours all have it -- it is how a behaviour knows which sprite
 ## it is on -- and a script is free to read it without declaring anything.
-func behaviour_instance(script: Dictionary, channel: int) -> Variant:
-	if channel <= 0 or script.is_empty():
+## `script_channel` is the score's **behaviour channel** -- Director's "sprite 0",
+## the row above the sprite channels where a frame's own behaviour is attached. It
+## is an instance like any other and `the currentSpriteNum` inside it is 0, which
+## is exactly the number this function otherwise reads as "not a behaviour at
+## all". The flag is the only way to tell those two apart, and it is a parameter
+## rather than a sentinel channel number because `call_handler` defaults its
+## channel to 0 for every ordinary dispatch in the port: widening the guard would
+## hand a movie script and a frame script an instance and a `me` they have never
+## had.
+func behaviour_instance(script: Dictionary, channel: int,
+		script_channel := false) -> Variant:
+	if script.is_empty() or (channel <= 0 and not script_channel):
 		return null
 	var key := "%d:%s" % [channel, str(script.get("script", ""))]
 	if not _behaviours.has(key):
@@ -367,6 +377,22 @@ func behaviour_instance(script: Dictionary, channel: int) -> Variant:
 
 ## Live behaviour instances, keyed `<channel>:<script name>`. See above.
 var _behaviours: Dictionary = {}
+
+
+## The sprite is gone: drop its instance so the next one is a new object.
+##
+## `Score::killScriptInstances` clears `channel->_scriptInstanceList` right after
+## it sends `endSprite` (`reference/scummvm/lingo-events.cpp:866-872`), and a
+## behaviour's whole reason for being an instance is that its `property`
+## declarations are per sprite. Kept out of `behaviour_instance`'s own cache
+## discipline because the cache cannot know the lifetime -- only the frame loop
+## can, which is why this is a call and not a timeout.
+## Channel 0 is a real key here -- the behaviour channel's instance, see
+## `behaviour_instance` -- so the guard is "negative", not "not positive".
+func release_behaviour(script: Dictionary, channel: int) -> void:
+	if channel < 0 or script.is_empty():
+		return
+	_behaviours.erase("%d:%s" % [channel, str(script.get("script", ""))])
 
 
 func call_handler(name: String, args: Array = [], script: Dictionary = {},
@@ -400,7 +426,8 @@ func call_handler(name: String, args: Array = [], script: Dictionary = {},
 ##
 ## Same `_running`/`_park` discipline as `call_handler`, because a handler
 ## reached this way can `play` or `go` exactly like any other.
-func call_in_script(name: String, script: Dictionary, channel: int = 0) -> bool:
+func call_in_script(name: String, script: Dictionary, channel: int = 0,
+		script_channel := false) -> bool:
 	var key := name.to_lower()
 	for value in script.get("handlers", []):
 		var handler: Dictionary = value
@@ -410,7 +437,7 @@ func call_in_script(name: String, script: Dictionary, channel: int = 0) -> bool:
 		# The queued sprite tier reaches a behaviour through here rather than
 		# through `call_handler`, so the instance has to be offered at both
 		# doors or a mouse event sees a `me` a frame event does not.
-		var on_object: Variant = behaviour_instance(script, channel)
+		var on_object: Variant = behaviour_instance(script, channel, script_channel)
 		_invoke(handler, [on_object] if on_object != null else [], script, on_object)
 		_running -= 1
 		if _running == 0:

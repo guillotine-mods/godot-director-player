@@ -196,7 +196,14 @@ static func compare(a: Variant, b: Variant) -> int:
 ## two thirds of Director's list types. A `Rect2` is position-and-size and
 ## Director's rect is left-top-right-bottom, so the conversion is part of the
 ## flattening rather than something a caller remembers.
-static func _components(value: Variant) -> Array:
+##
+## Public because it has callers outside this file. `director_preview.gd`'s
+## `the loc of sprite` writer already reached in for it under its old private
+## spelling, and `preview/members.gd:write_prop` needs it for the same reason:
+## `member(i).regPoint = point(x, y)` and `member(i).regPoint = sprite(n).loc`
+## hand it a `Vector2` and an `Array` for one Director type, and a second
+## flattener written next to either one is how they start disagreeing.
+static func components(value: Variant) -> Array:
 	match typeof(value):
 		TYPE_ARRAY:
 			return value
@@ -254,8 +261,8 @@ static func _rebuild(kind: int, parts: Array) -> Variant:
 static func _map_pairwise(a: Variant, b: Variant, op: Callable) -> Variant:
 	var a_list := _is_list(a)
 	var b_list := _is_list(b)
-	var left := _components(a)
-	var right := _components(b)
+	var left := components(a)
+	var right := components(b)
 	var size := 0
 	if a_list and b_list:
 		size = mini(left.size(), right.size())
