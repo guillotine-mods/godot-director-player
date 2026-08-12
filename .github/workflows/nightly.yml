@@ -9,6 +9,10 @@ on:
         description: "Harness names to run instead of the whole suite, space-separated. Empty runs all 78."
         required: false
         default: ""
+      godot_args:
+        description: "Extra flags for Godot itself, e.g. --audio-driver Dummy. For asking a runner what this machine cannot answer."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -155,16 +159,22 @@ jobs:
       - name: Run the gate
         env:
           ENTRIES: ${{ inputs.entries }}
+          GATE_GODOT_ARGS: ${{ inputs.godot_args }}
         run: |
-          case "${ENTRIES:-}" in
-            '') ;;
-            *[!A-Za-z0-9_\ :@,./-]*)
-              echo "Refusing entries '$ENTRIES': it must match [A-Za-z0-9_ :@,./-]+" >&2
-              exit 1
-              ;;
-          esac
+          for v in "${ENTRIES:-}" "${GATE_GODOT_ARGS:-}"; do
+            case "$v" in
+              '') ;;
+              *[!A-Za-z0-9_\ :@,./-]*)
+                echo "Refusing '$v': it must match [A-Za-z0-9_ :@,./-]+" >&2
+                exit 1
+                ;;
+            esac
+          done
           if [ -n "${ENTRIES:-}" ]; then
             echo "running a subset: $ENTRIES"
+          fi
+          if [ -n "${GATE_GODOT_ARGS:-}" ]; then
+            echo "extra godot flags: $GATE_GODOT_ARGS"
           fi
           bash gate.sh $ENTRIES
 

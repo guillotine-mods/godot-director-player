@@ -242,7 +242,14 @@ for t in ${WANTED:-$ALL}; do
   case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
   # `--root` first, so an ALL entry that names its own wins: the override takes
   # the last one on the line.
-  out=$(gate_run_capped ${GATE_TIMEOUT:-900} "$G" --headless --path . --script "tools/$t.gd" -- --root "$ROOT" --boot "$BOOT" $extra 2>&1)
+  # `$GATE_GODOT_ARGS` is unquoted so several flags split into several arguments,
+  # and it sits before `--` because these are Godot's own rather than the
+  # harness's. It exists for the question a runner can be asked and this machine
+  # cannot: `puppet_persists` fails on every macOS runner and passes on Windows
+  # and here, at an identical score-tick rate, which points at the environment
+  # rather than at the clock. Trying `--audio-driver Dummy` against that needs no
+  # edit here now.
+  out=$(gate_run_capped ${GATE_TIMEOUT:-900} "$G" --headless $GATE_GODOT_ARGS --path . --script "tools/$t.gd" -- --root "$ROOT" --boot "$BOOT" $extra 2>&1)
   status=$?
   # A hang and a crash are not the same finding, and printing both as ERROR is
   # how `movie_churn` got called flaky. 124 is the ceiling, from `timeout` or
