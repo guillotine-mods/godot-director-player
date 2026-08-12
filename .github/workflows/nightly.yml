@@ -107,6 +107,32 @@ jobs:
             exit 1
           fi
 
+      # `lingo_surface_audit` reads these and fails without them, which no
+      # developer machine could show: `reference/scummvm/` is gitignored and
+      # everyone has already fetched it. Run 31591246444 failed on both
+      # platforms for this and nothing else, which is the first thing running
+      # the gate somewhere clean has told us.
+      #
+      # 26 files at a revision pinned inside the script, so the cache key is the
+      # script's own hash: bumping the pin fetches again, and nothing else does.
+      - name: Restore the ScummVM reference
+        id: scummvm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: reference/scummvm
+          key: scummvm-${{ hashFiles('tools/fetch_scummvm_reference.sh') }}
+
+      - name: Fetch the ScummVM reference
+        if: steps.scummvm-cache.outputs.cache-hit != 'true'
+        run: bash tools/fetch_scummvm_reference.sh
+
+      - name: Save the ScummVM reference
+        if: steps.scummvm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: reference/scummvm
+          key: ${{ steps.scummvm-cache.outputs.cache-primary-key }}
+
       - name: Import
         run: |
           "$GODOT" --headless --path . --import
