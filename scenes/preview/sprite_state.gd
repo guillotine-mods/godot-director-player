@@ -146,7 +146,20 @@ static func with_puppets(sprites: Array, overrides: Dictionary) -> Array:
 	for number in overrides:
 		var channel: Channel = Channel.at(int(number), overrides)
 		if channel.is_puppet():
+			# A whole-sprite puppet is carried even when its carry is empty --
+			# see the paragraph above about a channel puppeted while the score
+			# had nothing for it.
 			frozen[channel.number] = channel.carried()
+			continue
+		# **And a channel a script has given a member is carried too**, which is
+		# the auto-puppet half of the same rule. `channel.gd:carried` has the
+		# reference for it and the cost of having only the explicit half: Itamar
+		# Park's eighteen arcade object channels are moved by
+		# `sprite(n).member = …` and never puppeted, so the whole level's food,
+		# animals and enemies existed in `_overrides` and reached no frame.
+		var auto: Dictionary = channel.carried()
+		if not auto.is_empty():
+			frozen[channel.number] = auto
 	if frozen.is_empty():
 		return sprites
 	# Channel order is depth order, and every caller relies on it: the hit test

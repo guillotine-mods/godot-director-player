@@ -506,10 +506,81 @@ func note_score(sprite: Dictionary) -> void:
 	entry[SCORE_KEY] = sprite
 
 
-## What a whole-sprite puppet keeps on the frame when the score has let go, or
-## `{}` when there is nothing to carry.
+## What this channel keeps on the frame when the score has let go, or `{}` when
+## there is nothing to carry.
+##
+## **A script that gives a channel a member makes it live**, whether or not
+## anyone said `puppetSprite`. That is the reference's rule and it is not a
+## special case there: `_channels` holds one `Channel` for every channel however
+## few the frame carries, `Sprite::setCast` raises the `kAPCast` auto-puppet
+## (`sprite.h:41`, `channel.cpp:649`), and `setClean` then refuses to replace the
+## sprite from the score (`channel.cpp:534`). The channel simply keeps being what
+## the script made it.
+##
+## This port draws the score's per-frame sprite list instead, so "keeps being"
+## has to be spelled out -- and it used to be spelled `is_puppet()` alone, which
+## is only the explicit half. Itamar Park's arcade is the whole cost of that
+## missing half: `MovieScript 6 - play handlers1` moves eighteen object channels
+## with `sprite(n).member = "AntFood9"` and never puppets one, so all eighteen
+## were alive in `_overrides` and scrolling correctly while `frame_sprites()`
+## never returned them. The player walked an empty ice sheet and the food bar
+## drained with nothing to eat, and the level ended by starvation -- which is the
+## *game's* correct response to a level with no food in it.
+##
+## **A member is what makes it live, not any write at all.** The reference draws
+## a channel whose sprite has a cast member; a script that writes only a position
+## to an empty channel has said nothing about what to draw there, and inventing
+## something would put a sprite on the stage no title asked for. So the test is
+## the cast group of `FIELDS` -- the same three rows the merge treats as the cast
+## swap -- and nothing else.
 func carried() -> Dictionary:
-	return entry.get(SCORE_KEY, {}) if is_puppet() else {}
+	if is_puppet():
+		return entry.get(SCORE_KEY, {})
+	if not _holds_a_member():
+		return {}
+	return entry.get(SCORE_KEY, _bare_sprite())
+
+
+## Has a script put a member on this channel?
+func _holds_a_member() -> bool:
+	for key in FIELDS:
+		if str(FIELDS[key].get("group", "")) == "cast" and entry.has(key):
+			return true
+	return false
+
+
+## A sprite record for a channel the score has never carried, for the merge to
+## write the script's own fields onto.
+##
+## Not an invention: it is `Sprite`'s own constructed state in the reference --
+## no cast, ink 0, the default colours, and a zero size that `setCast` replaces
+## with the member's natural one because `stretch` is false. `merged` runs the
+## cast group first and then `_resize_for_swap`, so the size arrives there by the
+## same path a score-carried swap uses rather than by a second rule here.
+##
+## `carried()` prefers a remembered score record over this whenever there is one,
+## so a channel the score used to carry keeps that record's ink and flags -- as
+## the reference's channel keeps the sprite it last had.
+func _bare_sprite() -> Dictionary:
+	return {
+		"channel": number,
+		"cast_lib": 1,
+		"cast_id": 0,
+		"loc_h": 0,
+		"loc_v": 0,
+		"width": 0,
+		"height": 0,
+		"ink": 0,
+		"stretch": false,
+		"trails": false,
+		"sprite_type": 0,
+		"fore_color": 255,
+		"back_color": 0,
+		"thickness": 1,
+		"has_blend": false,
+		"flip_h": false,
+		"flip_v": false,
+	}
 
 
 # -------------------------------------------------------- the property surface

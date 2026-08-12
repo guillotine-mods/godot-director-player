@@ -2935,57 +2935,37 @@ godot --headless --path . --script tools/director_extract.gd -- \
 
 ## 85. A channel the score does not carry never draws, however much a script writes to it — so Itamar Park's arcade runs with no food, no animals and no enemies
 
-`preview/sprite_state.gd:with_puppets` carries a channel past the score's own
-sprite list **only when `channel.is_puppet()`** — the whole-sprite
-`puppetSprite N, TRUE` flag. A channel that a script has only *written to* —
-`sprite(20).member = "AntFood9"`, `sprite(20).locH = …` — gets an override entry
-and nothing else, so `frame_sprites()` never returns it and the painter and the
-hit test never see it.
+**Status:** FIXED for the draw, and the objects are on screen; **their vertical
+position is a second gap, `the regPoint of member` is read-only** — see 89 ·
+**Area:** `preview/channel.gd:carried`, `preview/sprite_state.gd:with_puppets`
 
-The reference makes no such distinction. `Score::_channels` exists for every
-channel whatever the frame carries, `Sprite::setCast` raises the `kAPCast`
-auto-puppet (`sprite.h:41`, `channel.cpp:649`), and the render walk draws any
-channel whose sprite has a cast id. An auto-puppet is enough to make a channel
-live there; here only the whole-sprite puppet is.
+A script that gives a channel a member now makes that channel live, which is the
+reference's rule and not a special case there: `_channels` holds one `Channel`
+for every channel however few the frame carries, `Sprite::setCast` raises the
+`kAPCast` auto-puppet (`sprite.h:41`, `channel.cpp:649`), and `setClean` then
+refuses to replace the sprite from the score (`channel.cpp:534`). This port draws
+the score's per-frame sprite list, so "keeps being" had to be spelled out, and it
+had been spelled `is_puppet()` alone — the explicit half only.
 
-Measured in `test-games/itamar-park`, `torfim/torfim.dir`, frame 24 (`AntPlay`),
-after playing in and dismissing the world explanation. `MovieScript 6 - play
-handlers1` moves eighteen object channels, `kObjSpNum` = 20 through 37, and all
-eighteen are alive in `_overrides` and scrolling correctly:
+**A member is what makes a channel live, not any write at all.** A script that
+writes only a position to an empty channel has said nothing about what to draw
+there, and inventing something would put a sprite on stage no title asked for. So
+the test is the cast group of `FIELDS`, the same three rows the merge treats as
+the cast swap.
 
-```
-ovr20={ "ink": 36, "membernum": 60, "loch": 470 }
-ovr21={ "membernum": 174, "loch": 44 }
-ovr22={ "membernum": 60, "loch": -474 }
-ovr23={ "membernum": 177, "loch": -892 }
-```
-
-`loch` advances by `gStep` every tick exactly as `on idle` asks. None of the four
-appears in `frame_sprites()`, and `tools/hotspots.gd --marker AntPlay` lists 34
-sprites on that frame with nothing between channels 18 and 45. The player walks
-an empty ice sheet, the food bar drains with nothing to eat, and the sub-level
-ends by starvation and drops back to the level select — which is the *game's*
-correct response to a level with no food in it.
-
-The fix is not one line: `with_puppets` returns score records, and a channel with
-no score record has no ink, no size and no registration point to merge an
-override onto, so an auto-puppeted channel needs a synthesised base built from
-the member. That is core to every title's draw path, which is why it is filed
-rather than attempted here.
-
-Reproduce:
+Measured at `torfim.dir` frame 24 (`AntPlay`), the four sampled object channels
+now appear in `frame_sprites()` with real rects where they previously appeared
+only in `_overrides`:
 
 ```
-godot --headless --path . --script tools/scratch/parkplay.gd -- \
-    --root res://test-games/itamar-park --file torfim/torfim.dir \
-    --clicks "play+15:11,ant+60:127" --steps 480 --verbose-from 470 \
-    --watch "45,20,21,22,23"
+ch20 1:60@(93,0)   ch21 1:60@(-341,0)   ch22 1:177@(-1003,-12)   ch23 1:175@(-1565,-12)
 ```
 
-Channel 45 (the penguin) prints both an `ovr45=` and a `ch45 …@(x,y)` — it has a
-score record. Channels 20-23 print only `ovr20=`…`ovr23=`.
-
----
+`tools/scratch/chanscan.gd` confirms why a synthesised base was needed rather
+than a remembered record: channels 20-23 are **never carried by the score** in
+that movie, so there is nothing to retain. The base is `Sprite`'s own constructed
+state in the reference — no cast, ink 0, default colours, and a zero size that
+the cast swap replaces with the member's natural one.
 
 ## 86. `play frame the frame` re-enters its frame four times per rendered tick, and the play stack grows by four entries a tick for as long as the movie runs
 
@@ -3158,3 +3138,39 @@ does not carry, or simply left dangling by the authors.
 Director would have raised "Handler not defined" at the same call. The engine's
 `builtins unbound` line is therefore accurate reporting and not a port fault, and
 there is nothing here to bind.
+
+---
+
+## 89. `the regPoint of member` is read-only, so a title that positions art by moving registration points draws it in the wrong place
+
+**Status:** open · **Area:** `preview/members.gd` — `read_prop` has a `regpoint`
+arm and there is no writer · found while closing 85
+
+Director lets a script move a member's registration point, and that moves every
+sprite drawn from that member, because `locH`/`locV` position the *registration
+point* rather than the top-left corner (§8.10). This port answers the property
+and cannot store it: `grep -n regpoint scenes/preview/members.gd` returns exactly
+one line, the read.
+
+Itamar Park's arcade is the case. `on defReg` is one statement —
+`setRegPointToCorner(51, 78, 1, #right, #Middle)` — which walks members 51..78 of
+library 1 and re-anchors each to its right-middle edge, and the object channels
+are then placed with `loch` alone. So with the registration write dropped, every
+object draws from its stored anchor instead of the one the game chose, and lands
+at the top of the stage rather than on the ice.
+
+That is visible in the screenshot taken when 85 was closed: the fish is on
+screen, moving, at `locV` 0.
+
+**Not the same defect as 85 and it does not undo it.** 85 was whether the channel
+reaches a frame at all — it does now, with its member, its ink and its horizontal
+movement. This is where the art sits once it is there.
+
+What it needs: a write arm that stores `reg_offset_x`/`reg_offset_y` back onto
+the member, and an invalidation, because the texture cache and the hit-test image
+cache are both keyed per member and a moved anchor changes neither the pixels nor
+the size — only the offset the painter applies. `sprite_geometry.gd` is where
+that offset is consumed.
+
+The reference's own writer is `Lingo::setTheCast`'s `kTheRegPoint` arm
+(`lingo-the.cpp`), which sets the member's registration and marks it modified.
