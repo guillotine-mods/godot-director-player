@@ -154,6 +154,17 @@ is 0, there are no cue points and there are no tracks -- which is exactly what
 Director answers for a video whose file is missing or whose codec is not
 installed. Nothing plays and nothing draws.
 
+**That is a settled decision now rather than an open one, and
+[`docs/DIGITAL_VIDEO.md`](DIGITAL_VIDEO.md) is where it is written down** -- the
+census over all eight corpora, what each title loses, and four options costed
+against each other. The two numbers that decide it: **the six shipped titles hold
+0 video members, 0 video sprites and 0 bytes of video media**, and the one title
+that has any degrades cleanly on all three of its video frames rather than
+hanging on one (`tools/video_fallback.gd`, all eight roots green). The
+recommendation is to leave the MPEG-1 decoder alone and build the two items that
+are Director's own and need no decoder -- the specific block below, and the Xtra
+sprite methods.
+
 Three things are open under it, each of which needs the decoder first:
 
 - **The playhead never advances.** `the movieRate` is stored and read back and
@@ -163,13 +174,23 @@ Three things are open under it, each of which needs the decoder first:
   controller`, `directToStage`, `video`, `sound`, `crop`, `center`, `scale`,
   `frameRate`, `pausedAtStart`, `loop` and `preLoad` live in the `#digitalVideo`
   member's **specific block**, and `director/director_cast.gd:_parse_specific`
-  has no arm for type 10. It cannot get one honestly today: no member in any of
-  the six titles is a digital video, so there is no sample to measure a layout
-  against, and `reference/scummvm/` does not vendor the file that reads it. So
-  each answers its default until a script writes it -- right for a member left as
-  authored, wrong for one the author changed, and there is no way to tell which
-  from inside this port. Inventing offsets would answer with the same confidence
-  and be wrong invisibly.
+  has no arm for type 10. So each answers its default until a script writes it --
+  right for a member left as authored, wrong for one the author changed, and there
+  is no way to tell which from inside this port. Inventing offsets would answer
+  with the same confidence and be wrong invisibly.
+
+  **The "there is no sample" half of that has expired.** This used to say the arm
+  could not be written honestly because no member in any of the six titles is a
+  digital video. Measured over all eight corpora by `tools/video_census.gd`
+  (2026-08-12) that is still true of the six and false of the tree:
+  `test-games/itamar-magichat/logo/logo.dir` holds **two** -- #27 `prelogo` and
+  #28 `logo` -- and `reference/scummvm/castmember/digitalvideo.h` names every
+  field the block has to yield (`_vflags`, `_looping`, `_pausedAtStart`,
+  `_enableVideo`, `_enableSound`, `_crop`, `_center`, `_preload`,
+  `_scaleX`/`_scaleY`, `_showControls`, `_directToStage`, `_frameRate`,
+  `_videoType`). Two samples and a field list is what this item was waiting for.
+  It is now an ordinary decode job and **it needs no decoder**; `bugs.md` 84 and
+  `docs/DIGITAL_VIDEO.md` §6 carry it.
 - **`the media of member`** is deliberately still absent: Director hands back a
   duplicate of the member's media as an object assignable into another member,
   and that needs the mutable cast below.

@@ -515,12 +515,81 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		if at + SPRITE_RECORD_SIZE > buffer.size():
 			break
 		var cast_id := _u16(buffer, at + 6)
+		# Occupancy is the **member and nothing else**: hundreds of thousands of
+		# records carry a type byte and no member, and those are the empty ones.
+		# The reference gates its render walk the same way and in the same place
+		# — `score.cpp:503` and `score.cpp:2474` both test
+		# `_sprite->_castId.member != 0` (ScummVM 805f259a).
+		#
+		# **A stated size of zero used to be part of this test, and it is not an
+		# emptiness signal in Director.** `frame.cpp:396` normalises a
+		# non-positive width or height to `0` and keeps reading the record;
+		# `Score::setSpriteCasts` (`score.cpp:2329`) then runs
+		# `Sprite::setCast(castId, !stretch)` over *every* sprite of every frame
+		# it loads, and for a bitmap that replaces `_width`/`_height` with the
+		# member's `initialRect` (`sprite.cpp:627-637`). A 0x0 record naming a
+		# bitmap therefore draws that bitmap at its natural size, which is
+		# already what `sprite_geometry.drawn_size` does — the record was being
+		# thrown away one layer earlier than the rule that handles it.
+		#
+		# Dropping it lost the record's **position and ink** as well as its size,
+		# and that is what made it a bug rather than a redundancy. Removing the
+		# size half admits 4,506 records in `itamar-park` and 370 across the six
+		# shipped titles (`tools/scratch/zerosize.gd`, `bugs.md` 94's own count),
+		# three groups of which name a member with real pixels
+		# and so could put art on the stage that was not there
+		# (`tools/scratch/zerosize_frames.gd` lists the frames;
+		# `tools/scratch/chantimeline.gd` shows what the channel holds around
+		# them). **All three were rendered before and after and looked at**, not
+		# counted:
+		#
+		# - `piposh2 PIP2DATA/GOLDDEAD.dir` ch1 holds `1:3 a1`, the 640x400 room
+		#   backdrop, at `loc(320,200)` ink 0 continuously from frame 0 to 1340 —
+		#   except that the record states 0x0 on frames 944-962 and 964-970.
+		#   Member, position and ink are identical either side of both gaps, so
+		#   the filter was punching a 19-frame and a 7-frame hole in a backdrop
+		#   that is on screen before and after it. On the stage it makes **no
+		#   difference at all**: `tools/director_render.gd` on frames 943, 944,
+		#   950, 955, 960, 962, 963, 964, 967, 970 and 971 is byte-identical with
+		#   the filter and without it, because this is the darkened-stage scene
+		#   and ch36's 654x409 `1:37` covers `a1` completely on every one of
+		#   them. Admitting the record restores a hidden backdrop, which is the
+		#   right state to be in and costs nothing to look at.
+		# - `rating` ch48 holds `2:33 GlobalTime`, the 79x24 clock field, at a
+		#   fixed `loc` and ink 36. `BLABOMB.dir` states its size as 88x36 on
+		#   frames 6-13, 60-83 and 96-476 and as 0x0 on 2-5, 14-59 and 84-95 —
+		#   the same hole, 176 frames of it across 11 movies. This one **is**
+		#   visible, and it was a missing HUD element rather than a spurious one:
+		#   `tools/scene_probe.gd --root rating --movie BLABOMB.dir --frame 20`
+		#   photographs an empty rounded box beside the "שעה" (hour) label before
+		#   the change and `07:01` in it after. `director_render.gd` cannot see
+		#   this — it prints `skipped (field)` — which is why the shot has to come
+		#   off the real preview.
+		# - `piposh-dream meet7.dir` ch15 is the one group that is not a hole:
+		#   `12:5` is the channel's only state, stated 2x0 on frames 337-471. The
+		#   member is the 48x31 tuft of grass the *same* frame already draws from
+		#   ch17, and the record puts a second one at `loc(469,430)` — rect
+		#   `(445,415 48x31)` through the preview, on the ground beside the milk
+		#   churn in the lower right, keyed by its own ink 36 and partly behind
+		#   the churn. Photographed at frame 403 before and after: the scene is
+		#   identical but for that tuft. It is scenery that belongs, so the
+		#   change ships whole rather than as a position-and-ink-only variant.
+		#
+		# The fourth group is `1:86`, a 1x1 bitmap on three `piposh-dream`
+		# frames, and `itamar-park`'s 4,506 are `1:60 ObjBlnk`, a 0x0 member —
+		# `drawn_size` returns 0x0 for a 0x0 member, so neither draws anything
+		# and both arrive with the position and ink the record carries. Park's
+		# arcade is built on that (`bugs.md` 94), and it is the ink half that
+		# nobody had noticed: with the record dropped, `channel.gd:_bare_sprite`
+		# is what the object scripts write over and its ink is 0, Copy, so the
+		# obstacles drew their paper as a white box. Measured through
+		# `tools/scratch/chanink.gd` on the arcade — before, channels 21-39 all
+		# report ink 0 at `locV` 0; after, channels 20-37 report ink 36 at
+		# `locV` 340/210/110, the three ice rows.
+		if cast_id <= 0:
+			continue
 		var height := _i16(buffer, at + 16)
 		var width := _i16(buffer, at + 18)
-		# Occupancy is member-and-size, not "any non-zero byte": hundreds of
-		# thousands of records carry a type byte and no member.
-		if cast_id <= 0 or width <= 0 or height <= 0:
-			continue
 		var ink_byte := buffer[at + 1]
 		var cast_lib := _u16(buffer, at + 4)
 		var thickness_byte := buffer[at + THICKNESS_AT]

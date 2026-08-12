@@ -2743,6 +2743,31 @@ lng.cst    149  title2
 `no` and `yes` are the title's confirm and cancel buttons — two members a player
 is meant to click, and this port cannot draw either.
 
+**Six was a first-`CAS*` walk's answer and the real number is 566 across the
+tree.** `tools/member_type_census.gd` counts `CASt` chunks rather than `CAS*`
+slots and reports **454 type-15 members in `itamar-magichat` alone** — 412 of them
+in a second cast library of `witch.dir` that a first-`CAS*` walk never opens —
+plus 97 in `piposh-dream`, 7 in `itamar-park`, 4 in `piposh2` and 1 each in
+`piposh`, `piposh-en`, `piposh-ru` and `rating`. So the type is not a Magic Hat
+curiosity: it is 566 members over 677 containers, and this entry's "renderer skips
+it entirely" applies to all of them.
+
+What they *are* is five symbols, measured by `tools/xtra_members.gd` over all
+eight roots:
+
+```
+flash                     253      animGif / animgif   206
+vectorShape                94      text                 11
+VisibleLightOnStageMedia    2
+```
+
+Only the last two members are video, and both are Magic Hat's. **The 253 Flash and
+206 animated-GIF members are the bulk of what this entry costs**, and they are not
+a decoder problem in the sense the paragraphs below describe — they are moving
+pictures in formats a port could reasonably decode, and `itamar-magichat` scores
+151 of them. The `yes`/`no` buttons, the 94 `vectorShape` members and the 11 `text`
+members need no decoder at all.
+
 **What it costs on the intro, end to end.** `magichat.dir`'s
 `BehaviorScript 134 - video intro retro loop` is the movie's own handler for
 "has the video finished":
@@ -2797,6 +2822,48 @@ no, not in this engine today.** Three things were checked rather than reasoned:
 So what is left here is a *decoder*, not a binding, and the binding is only worth
 building once there is something behind it. The `yes`/`no` buttons in `same.cst`
 are the separable half and do not need one.
+
+### The video half is settled and the answer is written down — 2026-08-12
+
+**`docs/DIGITAL_VIDEO.md` is the costed decision** and it supersedes the three
+bullets above as the place to look. What it adds over them:
+
+- **The census is complete.** `tools/video_census.gd` walks all eight corpora, all
+  677 containers, and classifies every media file on disc by its own magic bytes.
+  **Four members in the tree play video** — `logo.dir` #27 `prelogo` and #28 `logo`
+  (type 10), `same.cst` #178 `IntroRetroVideo` and `album.cst` #210 `magicvideo`
+  (`VisibleLightOnStageMedia`) — and all four are `itamar-magichat`'s. **The six
+  shipped Piposh titles hold 0 video members, 0 video sprites and 0 bytes of video
+  media**, so none of this costs them anything.
+- **The two `.mpg` encodes match the two Xtra members' own rects exactly.**
+  `IntroRetroVideo` is 352x288 and `heb/mainmenu/{intro,retro}.mpg` are 352x288 at
+  25 fps; `magicvideo` is 320x240 and the twenty `heb/album/*.mpg` are 320x240 at
+  25 fps. Two different parts of the container agreeing on the same pair of numbers
+  is what turns "these members play those files" from a reading of the Lingo into a
+  measurement.
+- **A third site was missing from this entry.** Beside `sprite(1)`'s intro there is
+  `BehaviorScript 38 - video loop` polling **`sprite(25).getPlaybackEvent`** for the
+  **album**: `AlbumMenuObject.MenuMouseUp` sets `member("MagicVideo").mediaFilename`
+  to `album\magic<page>.mpg` or `album\solution<page>.mpg` and jumps to the `video`
+  marker. Twenty clips, ten pages × (magic, solution), and they are the album's
+  actual content. Its fallback arm is `sprite(25).stop()` / `go(the frame + 1)` —
+  a clean skip, like the intro's.
+- **The reference does not implement this Xtra either.** ScummVM's
+  `castmember/xtra.cpp:xtraCastMemberProtos` promotes exactly one symbol into a
+  `DigitalVideoCastMember` and it is `quickTimeMedia`;
+  `VisibleLightOnStageMedia` is not in the table, so it falls through to
+  `CastMember::createWidget` returning `nullptr` (805f259a).
+- **Nothing hangs, and that is now asserted rather than observed once.**
+  `tools/video_fallback.gd` drives the playhead **onto** each of the three video
+  frames — which is the only way to reach the intro, since `magichat.ini` in this
+  tree says `startframe=mainmenu` and a normal boot never goes near it — and
+  watches it leave. All three leave; all eight roots pass.
+
+The rest of this entry — type 15 unknown to `TYPE_NAMES`, no arm in
+`_parse_cast`, absent from `DRAWING_TYPES`, `texture_for` returning null — is
+unchanged and is still the bug. **It is also the larger half**, because 459 of the
+566 type-15 members are Flash and animated GIF rather than video, and those need no
+MPEG decoder.
 
 ---
 
@@ -2930,6 +2997,50 @@ godot --headless --path . --script tools/director_extract.gd -- \
 ```
 
 `members.txt` names both, and `scripts/` holds the four handlers above.
+
+### Two corrections and the costed answer — 2026-08-12
+
+**`prelogo.avi` is not on disk.** `ls test-games/itamar-magichat/logo` is
+`logo.avi`, `logo.dir`, and nothing else; `tools/video_census.gd` classifies every
+media file under all eight roots and finds exactly one AVI in the tree. The
+sentence above that says both files are there was wrong. `startMovie` still names
+it, so `prelogo` is a member with no decoder **and** no media, and no decoder
+decision reaches it. `logo` — the one that is scored, on channel 3 from frame 3 —
+is the only type-10 member in the tree with a file behind it.
+
+**And that file is far more decodable than "no QuickTime or AVI decoder" implies.**
+Read from its own headers rather than from its extension:
+
+```
+RIFF AVI, 640x480 at 11.11 fps, video 'mrle', 8-bit, audio tag 1 (PCM), 22050 Hz, 1 ch
+112 frames -> 10.1 seconds, 1.7 MB
+```
+
+`mrle` with `biCompression = BI_RLE8` is Microsoft RLE — a run-length encoding, not
+a transform codec. ScummVM decodes exactly this pair with no external dependency
+(`video/avi_decoder.cpp` over `image/codecs/msrle.cpp`), and this port already
+turns raw PCM into an `AudioStreamWAV` in `director/director_sound.gd`. **Both
+digital-video members in eight corpora are AVI**, so an MS-RLE reader closes the
+whole of type 10 in this tree, and it needs no MPEG-1 work and no native
+dependency. `docs/DIGITAL_VIDEO.md` §4 costs it as option C1 and recommends it as
+the one piece of decoder work with a good ratio.
+
+**The skip is correct and is now asserted.** `tools/video_fallback.gd` reads both
+members through the real Lingo seam and checks that `the mediaReady of member`
+answers FALSE and `the duration of member` answers 0 — the two values `Check avi`
+actually branches on — and then drives the playhead onto frame 3 and watches it
+leave. It does, in six states. That assertion is the guard worth having: a future
+`media.gd` that answered a confident duration here would turn this clean skip into
+a hang, and `Check avi`'s other arm is `go(the frame)`.
+
+**`logo.dir` is not on the boot path in this port today.** The title's own
+`magichat.ini` has `startfile=CD$\logo\logo`, so the logo movie is where the
+original starts; `run-itamar-magichat.bat` boots `magichat.dir` directly, so
+nothing reaches `logo.dir` unless a harness sends it there. Worth knowing before
+measuring "what the player sees" from a normal launch.
+
+`docs/DIGITAL_VIDEO.md` carries the full census, the per-title verdict and the
+four costed options.
 
 ---
 
