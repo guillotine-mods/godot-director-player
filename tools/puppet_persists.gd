@@ -260,19 +260,29 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	var last := -1
 	var was_at := int(preview.get("_index"))
 	# Two limits, and only the first is the measurement. The tick budget is the
-	# movie's own clock and is the same number on every machine; the wall-clock
-	# one is a hang guard and must never be what ends a healthy run, because the
-	# moment it does the result depends on how fast the machine is. It did:
-	# `puppet_persists` passed on this repo's Windows runner and on a developer
-	# Mac and failed on every macOS runner, which is the signature of a
-	# wall-clock budget rather than of a defect.
+	# movie's own clock; the wall-clock one is a hang guard and must never be what
+	# ends a healthy run, because the moment it does the result depends on how fast
+	# the machine is.
+	#
+	# The tick budget is **not** machine-independent either, and the comment here
+	# used to say it was. `exitforest3` returns in 295 ticks on this machine and
+	# needs more than 400 on every macOS runner, at an identical score-tick rate,
+	# and that difference is real: `dnzclicktalk` loops its talking animation for
+	# as long as `soundBusy` holds, and `soundBusy` is paced by the audio device's
+	# throughput rather than by the sound's own length (`bugs.md` 90). A device at
+	# half speed doubles the ticks the clip takes.
+	#
+	# So the number below is left where it is deliberately. Raising it to 700
+	# makes the macOS runner pass and would bury an engine defect inside a budget,
+	# which is the shape this file's header spends four paragraphs refusing
+	# elsewhere. The red is the finding until `soundBusy` answers for the sound.
 	var tick_budget := Args.number(args, "ticks", 400)
-	# 240000 was the old value and it is exactly what this failed on: the macOS
-	# runner's gate step ran 241s, hitting the guard to the second, while this
-	# machine finishes the whole harness in 87s. Doubled, which clears the
-	# measured need with room and still sits under the nightly's 600s
-	# `GATE_TIMEOUT` so the harness reports its own FAIL rather than being killed
-	# and reported as a TIMEOUT.
+	# The hang guard. 240000 was the old value; it was blamed for the macOS
+	# failure above and doubled, and that was wrong -- the failing run spent 52s
+	# of it and the CI step happening to last 241s was a coincidence. Kept at the
+	# doubled value anyway: it clears the measured need with room and still sits
+	# under the nightly's 600s `GATE_TIMEOUT`, so the harness reports its own FAIL
+	# rather than being killed and reported as a TIMEOUT.
 	var watch_ms := Args.number(args, "watch-ms", 480000)
 	while int(preview.get("_ticks")) - began < tick_budget \
 			and Time.get_ticks_msec() - start < watch_ms:

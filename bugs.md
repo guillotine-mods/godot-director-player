@@ -3174,3 +3174,88 @@ that offset is consumed.
 
 The reference's own writer is `Lingo::setTheCast`'s `kTheRegPoint` arm
 (`lingo-the.cpp`), which sets the member's registration and marks it modified.
+
+---
+
+## 90. `soundBusy` is paced by the audio device and not by the sound, so every speech wait in the corpus stretches by whatever the device is slow by
+
+**Status:** open · **Area:** `autoload/audio_director.gd`
+
+`sound_busy` is one line — `return player.playing` — and `playing` is retired by
+the **audio server**, when its mix thread has consumed the stream. So the flag
+measures the output device's throughput, not the sound's length. On hardware the
+two are the same number to within a fraction of a percent, which is why this can
+sit unnoticed: it looks like an identity rather than like a choice.
+
+They come apart where there is no hardware. Measured on one 0.63s file
+(`fx/bang`), by `tools/sound_rate.gd`:
+
+```
+   Windows runner    <= 1.00x real time   (passes a 1.0x tolerance)
+   developer Mac        1.12x             (0.71s for 0.63s)
+   macOS runner         2.09x             (1.32s for 0.63s, over 67 polls)
+```
+
+A movie cannot observe this as a sound that is slow, because it never asks how
+long a sound is. It asks `soundBusy`, and this corpus's speech is built on
+`BehaviorScript 250`'s shape:
+
+```lingo
+on exitFrame
+  if soundBusy(1) then go(marker(0))
+end
+```
+
+The talking animation loops back to its own marker for as long as the channel is
+busy. So a `soundBusy` that runs at half speed does not make the speech slow — it
+makes the **playhead** loop twice as many times, and the player watches a mouth
+move for twice as long as the line it is speaking. Every frame budget downstream
+of a speech wait is wrong by the same factor.
+
+This is what `puppet_persists` had been failing on, on every macOS runner, while
+passing on Windows and on a developer Mac. `exitforest3`'s `dnzclicktalk` returns
+in 295 score ticks here and needs more than 400 there; with `--ticks 700` the
+macOS runner passes. The harness was right and its budget was right: the two
+machines' score-tick *rate* is identical (7.7/sec vs 7.8/sec), and the clip's
+pacing per marker jump is 14 ticks on both. What differs is how many jumps the
+wait takes — 27 markers in 400 ticks and still inside the clip, against 19 in the
+295 it takes here.
+
+Three things this was mistaken for first, each measured and none of them it:
+
+- **a wall-clock guard.** The watch's `--watch-ms` was blamed and doubled; the
+  failing run spent 52s of 480,000ms.
+- **machine speed.** Score ticks are tempo-gated, so the rate is the same on any
+  machine. The engine's *frame* rate is not the same — 11.3 process frames per
+  score tick on the runner against 23.7 here — but nothing in the clip is paced
+  by frames, and the `idle` tally that shows it is a red herring.
+- **a missing audio device.** `--audio-driver Dummy` on the runner fails too, and
+  Dummy passes here, so the driver is not the variable. The runner is slow with
+  both.
+
+The audio index is identical on both machines — 3142 files, 315 ambiguous tails —
+so this is not a data gap and not a case-sensitivity difference in path
+resolution.
+
+`tools/sound_wait.gd` cannot catch it and is not wrong for that: it asserts that a
+channel is busy if and only if a sound the script asked for is playing on it,
+which is the *logic* of `soundBusy` and is correct on every machine. The clock is
+a separate rule, and `tools/sound_rate.gd` is what asserts it.
+
+The fix is a ceiling rather than a replacement: record the stream's own length
+when `_start` plays it, and answer `player.playing and now < that`. Nothing
+changes where the device is honest; a device that lags can no longer hold a
+movie. Two details make it cheap here — nothing in this engine's audio path loops
+a stream or touches `stream_paused`, and `_start` is the single funnel both
+`play_file` and `play_stream` go through. `take_cues_passed` reads
+`get_playback_position`, so on a slow device it would still lag behind a
+wall-clock `soundBusy`; no script in the corpus names a cue point, so that is
+recorded rather than solved.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/sound_rate.gd -- --tolerance 1.0
+gh workflow run nightly.yml --ref main \
+    -f entries='sound_rate:--tolerance@1.0 puppet_persists:--label@exitforest3'
+```
