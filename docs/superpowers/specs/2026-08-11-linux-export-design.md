@@ -177,6 +177,43 @@ Windows at the *loose* end of that table. It does not change the standing proble
 which is that the APK is already published at 93.9% and one more title breaks the
 release.
 
+## Confirmed in CI
+
+Dispatch run 31574486395 on `ubuntu-latest`, `version=0.0.0-linuxcheck`. All four
+export legs succeeded; `finalize` was skipped, correctly, because a dispatch is
+not a tag.
+
+**The export took the corpus.** `build/linux/` held a **3.4 GB**
+`GodotDirectorPlayer.pck` beside a 71 MB `GodotDirectorPlayer.x86_64`. This is the
+number the archive check cannot answer — a tens-of-megabytes `.pck` would pass
+every gate in the pipeline and ship a player with no games, which is the one
+confirmed real defect this pipeline has produced.
+
+**The executable bit survives on the runner's Info-ZIP.** The pre-zip listing
+reports `-rwxr-xr-x` on the binary, and the archive check passed. That check had
+only ever been exercised against macOS's BSD `unzip`/`awk`, so this closes the
+one deferred unknown from the implementation.
+
+**Linux is the loosest asset of the four, not the tightest.** Measured on the same
+run:
+
+| asset | bytes | of the 2 GiB cap | headroom |
+| --- | --- | --- | --- |
+| **Linux** | **1,960,249,811** | **91.3%** | **179 MiB** |
+| Windows | 1,969,864,839 | 91.7% | 169 MiB |
+| macOS | 1,988,411,990 | 92.6% | 152 MiB |
+| Android | 2,016,248,022 | 93.9% | 125 MiB |
+
+The design predicted Linux would land "beside Windows at the loose end of that
+table", and it landed slightly looser still. Adding this target therefore does not
+move the standing problem, which remains the APK at 93.9% in an already-published
+release.
+
+**Still unproven: the four-asset publish gate.** `finalize` is gated on
+`startsWith(github.ref, 'refs/tags/')`, so a dispatch run cannot execute it. The
+`-lt 4` comparison and its message fire for the first time on the next real tag.
+Nothing else in this design is unverified.
+
 ## Out of scope
 
 `.deb`, `.AppImage`, Flatpak, Snap, arm64 Linux, and Steam packaging. Also out:
