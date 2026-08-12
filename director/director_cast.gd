@@ -87,6 +87,21 @@ var _cast_chunk: Dictionary = {}
 var _owned: Dictionary = {}
 var _members: Dictionary = {}
 var _names_lower: Dictionary = {}
+## Whether `_build_names` has run, which is **not** the same question as whether
+## it found anything.
+##
+## The guard used to be `_names_lower.is_empty()`, so a library with no named
+## members answered "not built yet" for ever and re-parsed every one of its
+## `CASt` chunks on every single lookup. A name lookup that misses walks *all*
+## the libraries (`preview/members.gd:resolve_ref`), so one miss re-scanned every
+## nameless cast in the movie.
+##
+## Invisible until something asked often. Magic Hat asks on every rollover --
+## `ItemMouseEnter` swaps the button to its `#active` member by name -- so moving
+## the mouse across the main menu re-parsed whole cast libraries dozens of times
+## a second and the title locked up. The engine had this all along; resolving
+## `sprite(n).member = "name"` is what started asking.
+var _names_built := false
 
 
 ## Indexes one library. `cast_owner_id < 0` means "the only CAS* in this file".
@@ -180,8 +195,9 @@ func fields() -> Dictionary:
 
 
 func _build_names() -> void:
-	if not _names_lower.is_empty():
+	if _names_built:
 		return
+	_names_built = true
 	for number in member_numbers():
 		var m := member(number)
 		var name := str(m.get("name", ""))
