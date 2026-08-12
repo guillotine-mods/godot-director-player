@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -176,6 +176,22 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # that only runs against `test-games/itamar-magichat` -- the album screen of
 # `bugs.md` 87, which is the title this was found in -- and says so and skips when
 # pointed anywhere else.
+#
+# `sound_rate` sits beside `sound_wait` and asserts the other half of the same
+# rule: `sound_wait` says a channel is busy iff a sound is playing on it, and this
+# says the sound stops answering in about its own length. Two entries because the
+# second is a *clock* and the first is a logic table, and the clock is the one no
+# developer machine can fail -- it is 1.12x here, <=1.0x on the Windows runner and
+# 2.09x on every macOS runner, which is `bugs.md` 90 and is what `puppet_persists`
+# had been red for. Bare: the 2.0x default tolerance is the assertion, and it is
+# deliberately generous, because the fault is a device that cannot keep up rather
+# than one that is late by a buffer.
+#
+# **This is expected red on macOS runners until `bugs.md` 90 is fixed.** That is
+# the point of it being here rather than an argument against: an ungated harness
+# rots into a record of what the engine used to do, which is what left
+# `palette_cycle` carrying four reds nobody saw, and a nightly that names the
+# cause beside the symptom is one line instead of another investigation.
 #
 # `bitmap_geometry` and `audio_coverage` are bare and fast (seconds each) and are
 # the regression guards for two entries the sweep turned up: `bugs.md` 58 and 63.
