@@ -3658,6 +3658,40 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	if prop == "puppet":
 		lingo_puppet_sprite(channel, LingoValue.truthy(value))
 		return
+	# **A member *name* assigned to a sprite is resolved here, not stored raw.**
+	#
+	# `sprite(n).member = "bMain1_of"` is how a script swaps artwork by name, and
+	# Director resolves the name through the cast search order exactly as
+	# `member("bMain1_of")` does. This port stored the string itself under
+	# `membernum`, where every reader downstream wants a slot: the merge wrote it
+	# into `cast_id`, `get_member` was asked for member `"bMain1_of"` of library
+	# 1, found nothing, and the sprite drew nothing at all.
+	#
+	# Silent, and worse than silent -- the channel keeps its position, its ink and
+	# its rect, so the sprite is *present* and merely invisible. Magic Hat's whole
+	# main menu is nine of them: `SetMember` ends in
+	# `me.ItemSprite().member = MemberName`, so every menu button in the title
+	# vanished the moment the menu objects dressed it, leaving only the shadows
+	# painted into the background art and a screen that looks like it failed to
+	# load.
+	#
+	# Numbers are left exactly as they were. `the memberNum of sprite` is written
+	# with an integer at every corpus site, and a numeric string is still a
+	# number, so this arm only fires for a name -- which nothing could have meant
+	# as a slot.
+	if (prop == "member" or prop == "membernum" or prop == "castnum") \
+			and typeof(value) == TYPE_STRING and not LingoValue.is_numeric(value):
+		var named: String = value
+		if named.strip_edges() != "":
+			var where := _resolve_member_ref(named, "")
+			if int(where[1]) > 0:
+				value = Members.pack_ref(int(where[0]), int(where[1]))
+			else:
+				# Reported rather than stored: a name that resolves to nothing is
+				# a script asking for artwork this cast does not have, and the
+				# stored string would draw nothing while looking like a value.
+				push_warning("sprite %d: no member named %s" % [channel, named])
+				return
 	# `the locH of sprite` and `the locV of sprite` are one operation in Director
 	# and this is where the drag arrives as well, so the constraint is applied in
 	# one place for both. See `_write_position`.
