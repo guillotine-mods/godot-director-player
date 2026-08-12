@@ -259,8 +259,23 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	var start := Time.get_ticks_msec()
 	var last := -1
 	var was_at := int(preview.get("_index"))
-	while int(preview.get("_ticks")) - began < Args.number(args, "ticks", 400) \
-			and Time.get_ticks_msec() - start < 240000:
+	# Two limits, and only the first is the measurement. The tick budget is the
+	# movie's own clock and is the same number on every machine; the wall-clock
+	# one is a hang guard and must never be what ends a healthy run, because the
+	# moment it does the result depends on how fast the machine is. It did:
+	# `puppet_persists` passed on this repo's Windows runner and on a developer
+	# Mac and failed on every macOS runner, which is the signature of a
+	# wall-clock budget rather than of a defect.
+	var tick_budget := Args.number(args, "ticks", 400)
+	# 240000 was the old value and it is exactly what this failed on: the macOS
+	# runner's gate step ran 241s, hitting the guard to the second, while this
+	# machine finishes the whole harness in 87s. Doubled, which clears the
+	# measured need with room and still sits under the nightly's 600s
+	# `GATE_TIMEOUT` so the harness reports its own FAIL rather than being killed
+	# and reported as a TIMEOUT.
+	var watch_ms := Args.number(args, "watch-ms", 480000)
+	while int(preview.get("_ticks")) - began < tick_budget \
+			and Time.get_ticks_msec() - start < watch_ms:
 		await process_frame
 		var now := int(preview.get("_ticks"))
 		if now == last:
@@ -382,8 +397,17 @@ func _measure(h: Harness, preview: Node, args: Dictionary, channel: int) -> bool
 	h.check("the clip wrote its own member over channel %d" % channel, swapped_away)
 	h.check("and it lasted longer than the tick it was written on",
 		not swapped_away or held > 1, "held for %d score tick(s)" % held)
+	# The detail names which limit ended the watch, because "stopped on f2621" on
+	# its own cannot distinguish a clip that went somewhere wrong from one that
+	# simply ran out of budget, and those want opposite fixes. A nightly failure
+	# is read once, on a runner that no longer exists.
+	var spent_ticks := int(preview.get("_ticks")) - began
+	var spent_ms := Time.get_ticks_msec() - start
 	h.check("the clip returned to the frame it was entered from", returned,
-		"stopped on f%d" % int(preview.get("_index")))
+		"stopped on f%d after %d/%d tick(s) and %d/%d ms -- ended by %s" % [
+			int(preview.get("_index")), spent_ticks, tick_budget, spent_ms, watch_ms,
+			"the wall-clock guard, so this is a budget and not a defect"
+				if spent_ms >= watch_ms else "the tick budget"])
 	# Every branch says when it proved nothing rather than passing on a vacuous
 	# truth. `porting-fidelity-verification`: a green check nobody can attribute
 	# is the shape that lets a fix look verified when it was never exercised.
