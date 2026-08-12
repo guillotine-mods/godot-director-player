@@ -1980,6 +1980,26 @@ func get_system_prop(prop: String) -> Variant:
 			return int(preview.stage_mouse().x)
 		"mousev":
 			return int(preview.stage_mouse().y)
+		"mouseloc":
+			# **The pair, and its absence is what freezes a software cursor.**
+			# `the mouseH` and `the mouseV` were bound and this was not, so a
+			# title that reads the pair got VOID -- and the commonest thing to do
+			# with the pair is drive a sprite:
+			#
+			#     set the loc of sprite CursorCh to the mouseLoc
+			#
+			# That is Itamar Park's `on idle`, and it is the whole of how the
+			# title moves its pointer: `InitVariables` calls `HideWindowsCursor()`
+			# and channel 100 draws the cursor from then on. With this unbound the
+			# assignment took VOID, `set the loc of sprite` needs a pair and drops
+			# anything shorter, and the drawn cursor stood still on a stage with
+			# no system cursor either -- reported, exactly, as "the mouse doesn't
+			# move".
+			#
+			# A two-element list, like `the clickLoc` above and `the loc of
+			# sprite`, so all three read the same way and feed each other.
+			var at: Vector2 = preview.stage_mouse()
+			return [int(at.x), int(at.y)]
 		"clickon":
 			return click_sprite
 		"currentspritenum":
