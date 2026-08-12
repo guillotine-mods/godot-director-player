@@ -293,7 +293,14 @@ that lost it is a download the player cannot run and cannot diagnose."
 grep -n "three failing jobs\|-lt 3\|Expected 3 assets" .github/workflows/release.yml
 ```
 
-Expected: exactly three hits. The gate itself, its error message, and a comment. Changing only the first leaves a correct gate that lies about why it fired.
+Expected: exactly **four** hits.
+
+1. `~636` — a comment about artifact-name collisions saying "three failing jobs".
+2. `~668` — a comment illustrating the non-numeric guard with `[ "" -lt 3 ]`.
+3. `~677` — the gate itself.
+4. `~679` — the gate's error message.
+
+Changing only the gate leaves it correct and lying about why it fired. Leaving the two comments leaves them describing code that no longer exists.
 
 - [ ] **Step 2: Update the gate and its message**
 
@@ -301,15 +308,22 @@ In the `Publish the draft` step:
 
 ```bash
           if [ "$count" -lt 4 ]; then
-            gh release view "$TAG" --json assets -q '.assets[].name' >&2
+            gh release view "$TAG" --json assets -q '.assets[].name' >&2 || true
             echo "Expected 4 assets (Windows, macOS, Linux, Android); refusing to publish an incomplete release." >&2
             exit 1
           fi
 ```
 
-- [ ] **Step 3: Update the stale comment**
+**Keep the `|| true`.** Actions runs `bash -e`, so without it a failure of that
+diagnostic listing aborts the step on `gh`'s exit status instead of printing the
+"Expected 4 assets" message the block exists to print. Changing only the number
+is the whole edit here.
+
+- [ ] **Step 3: Update both stale comments**
 
 Above `Upload build summary for inspection`, change `three failing jobs do not collide` to `four failing jobs do not collide`.
+
+In the comment above the `case ${count:-}` guard, change the illustration `[ "" -lt 3 ]` to `[ "" -lt 4 ]` so it matches the gate it is explaining.
 
 - [ ] **Step 4: Confirm no occurrence was missed**
 
