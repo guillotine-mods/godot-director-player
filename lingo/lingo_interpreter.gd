@@ -362,6 +362,12 @@ func run_compiled(compiled: Dictionary) -> bool:
 ## channel to 0 for every ordinary dispatch in the port: widening the guard would
 ## hand a movie script and a frame script an instance and a `me` they have never
 ## had.
+##
+## **A dispatch does not reach for this; it reaches for `live_behaviour`.** The
+## span is what makes the instance -- `frame_loop.gd:send_sprite_message` on
+## `beginSprite`, which is the port's `Score::createScriptInstances` -- and every
+## message afterwards only looks one up. `bugs.md` 93 is what the split cost
+## while `exitFrame` had no way to ask.
 func behaviour_instance(script: Dictionary, channel: int,
 		script_channel := false) -> Variant:
 	if script.is_empty() or (channel <= 0 and not script_channel):
@@ -377,6 +383,38 @@ func behaviour_instance(script: Dictionary, channel: int,
 
 ## Live behaviour instances, keyed `<channel>:<script name>`. See above.
 var _behaviours: Dictionary = {}
+
+
+## The instance `script` is already running as on `channel`, or null.
+## **Creates none**, and that is the whole point of it existing beside
+## `behaviour_instance`.
+##
+## A message is delivered on an instance that the score has *already* made, never
+## on one the delivery invents. The reference has no other shape available:
+## instances are made in exactly one place -- `Score::createScriptInstances`, on
+## entering a span (`reference/scummvm/lingo-events.cpp:940-995`) -- and every
+## dispatch afterwards only *reads* one. `resolveScriptEvent` reads
+## `channel->_scriptInstanceList[i]` for the sprite tier (`:296-303`) and
+## `_scriptChannelScriptInstance` for the frame tier (`:369-377`), and both are
+## fields that are either populated or not.
+##
+## **Channel 0 is the frame tier**, Director's "sprite 0": the score row above
+## the sprite channels, holding one behaviour at a time. Every message that
+## reaches that tier is delivered on its instance -- `exitFrame`, `enterFrame`,
+## `idle`, `timeout`, `prepareFrame`, and every mouse and key event that falls
+## through the sprite and cast tiers (`:636-641`). So the presence of a `0:<name>`
+## entry *is* the score's answer to "is this a behaviour-channel script or a
+## plain frame script", and it is the same question the reference asks its field.
+##
+## Looking up rather than creating is what makes `bugs.md` 93's fix safe in both
+## directions. A create here would hand every ordinary frame script and every
+## movie script a `me` they have never had -- the wrong fix that entry names --
+## and it would leak an instance per channel per script for the life of the
+## movie, because `release_behaviour` only ever runs for a span that *began*.
+func live_behaviour(script: Dictionary, channel: int) -> Variant:
+	if script.is_empty() or channel < 0:
+		return null
+	return _behaviours.get("%d:%s" % [channel, str(script.get("script", ""))], null)
 
 
 ## The sprite is gone: drop its instance so the next one is a new object.
@@ -395,6 +433,14 @@ func release_behaviour(script: Dictionary, channel: int) -> void:
 	_behaviours.erase("%d:%s" % [channel, str(script.get("script", ""))])
 
 
+## Send one message, with Director's movie-script fallback behind it.
+##
+## `channel` is `the currentSpriteNum` -- **which sprite this message is for**,
+## 0 for the frame tier -- and `preview/scripts.gd:dispatch` derives it rather
+## than every call site passing one. It selects the recipient's instance and does
+## not create it: see `live_behaviour` for why that direction, and `bugs.md` 93
+## for the shape of the bug while this defaulted to 0 and read 0 as "not a
+## behaviour at all".
 func call_handler(name: String, args: Array = [], script: Dictionary = {},
 		channel: int = 0) -> Variant:
 	_running += 1
@@ -402,8 +448,12 @@ func call_handler(name: String, args: Array = [], script: Dictionary = {},
 	## argument (which is how `on mouseUp me` binds it) and on the frame (which
 	## is how a handler that omits the parameter still reads it).
 	var on_object: Variant = behaviour_instance(script, channel)
-	if on_object != null and args.is_empty():
-		args = [on_object]
+	# The frame tier, which names no sprite and so cannot ask for an instance to
+	# be made: `channel <= 0` is refused by the line above on purpose, and what
+	# answers here is the behaviour channel's *live* instance if the score has one
+	# -- `bugs.md` 93, and `live_behaviour` for why a lookup and not a create.
+	if on_object == null:
+		on_object = live_behaviour(script, 0)
 	var value: Variant = _resolve_and_call(name, args, script, on_object)
 	_running -= 1
 	# The outermost dispatch is where a suspended chain leaves the interpreter.
@@ -438,6 +488,18 @@ func call_in_script(name: String, script: Dictionary, channel: int = 0,
 		# through `call_handler`, so the instance has to be offered at both
 		# doors or a mouse event sees a `me` a frame event does not.
 		var on_object: Variant = behaviour_instance(script, channel, script_channel)
+		# The queued **frame** tier, which carries no channel: `event_chain.gd:
+		# build` gives its frame element channel 0 because only one tier of the
+		# five is a sprite behaviour, and 0 is what `the currentSpriteNum` must
+		# read there. The reference still delivers that element on the behaviour
+		# channel's instance -- `resolveScriptEvent`'s `kFrameHandler` arm reads
+		# `_scriptChannelScriptInstance` for a *mouse* event exactly as it does for
+		# `exitFrame` (`lingo-events.cpp:369-377`). Without this, magichat's
+		# `BehaviorScript 34 - album loop` would get a `me` in `exitFrame` and none
+		# in the `mouseUp` three lines below it, which is `bugs.md` 93 one door
+		# along rather than fixed.
+		if on_object == null:
+			on_object = live_behaviour(script, 0)
 		_invoke(handler, [on_object] if on_object != null else [], script, on_object)
 		_running -= 1
 		if _running == 0:
@@ -474,11 +536,22 @@ func _resolve_and_call(name: String, args: Array, script: Dictionary,
 	## goes only to the script's own handler: a *movie* handler reached through
 	## the fallback belongs to no sprite, and handing it a `me` would make
 	## `me.spriteNum` answer a channel it has nothing to do with.
+	##
+	## **Both halves of that**, and the second was nearly lost. `me` arrives twice
+	## -- on the frame, for a handler that omits the parameter, and as the first
+	## *argument*, which is how `on mouseUp me` binds it. The argument used to be
+	## substituted in `call_handler`, before this function chose a tier, so an
+	## instance resolved for the frame tier travelled into the movie tier whenever
+	## the frame script did not declare the handler: the movie's `on exitFrame me`
+	## would then bind a behaviour it has nothing to do with. Substituting it here,
+	## inside the branch that runs the script's own handler, is what makes the
+	## paragraph above true of the argument as well as of the frame.
 	var key := name.to_lower()
 	if not script.is_empty():
 		for handler in script.get("handlers", []):
 			if str(handler.get("name", "")).to_lower() == key:
-				return _invoke(handler, args, script, on_object)
+				var own := [on_object] if on_object != null and args.is_empty() else args
+				return _invoke(handler, own, script, on_object)
 	if _movie_handlers.has(key):
 		var entry: Dictionary = _movie_handlers[key]
 		var owner := find_script(str(entry.get("cast", "")), str(entry.get("script", "")))

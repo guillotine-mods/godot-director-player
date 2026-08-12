@@ -280,10 +280,31 @@ func _member_checks(h) -> void:
 			"`the rect of member %d` matches the member's own rectangle" % number,
 			_rect_of(m) == _value("the rect of member %d" % number),
 			"want %s, got %s" % [str(_rect_of(m)), str(_value("the rect of member %d" % number))])
+		# **In the member's own coordinates, not as an offset from its top-left.**
+		#
+		# This asserted the offset until `preview/members.gd` gained a `regPoint`
+		# writer and the read was corrected alongside it: the reference pushes
+		# `_regX`/`_regY` unchanged (`castmember/bitmap.cpp:getField`) and the
+		# drawing offset is a *second* quantity, `_regX - _initialRect.left`. The
+		# two disagree for 97,464 of 120,869 bitmap members across the eight
+		# corpora, so this check went red for member 1 and member 205 and stayed
+		# green for member 28 -- the one whose rect happens to start at the
+		# origin, where offset and coordinate are the same number.
+		#
+		# Recorded rather than quietly re-pointed, because a harness that was
+		# asserting the old rule is the shape `porting-fidelity-verification`
+		# warns about: it passed for as long as the engine agreed with it, and it
+		# is the *engine* that was corrected here. `tools/reg_point.gd` asserts
+		# the other half, the drawn rectangle, which is what a wrong reading
+		# would actually cost.
+		var origin: Dictionary = m.get("initial_rect", {})
 		h.check(
-			"`the regPoint of member %d` is its registration offset" % number,
+			"`the regPoint of member %d` is in the member's own coordinates" % number,
 			_value("the regPoint of member %d" % number)
-				== [int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))])
+				== [int(m.get("reg_offset_x", 0)) + int(origin.get("left", 0)),
+					int(m.get("reg_offset_y", 0)) + int(origin.get("top", 0))],
+			"want offset + rect origin, got %s"
+				% str(_value("the regPoint of member %d" % number)))
 		h.check(
 			"`the castLibNum of member %d` is the movie's own library" % number,
 			int(_value("the castLibNum of member %d" % number)) == 1)

@@ -84,7 +84,63 @@ static func dispatch(host, interpreter, handler: String, script: Dictionary) -> 
 	var owns: bool = interpreter.call("_script_has_handler", script, key)
 	if owns or interpreter.has_handler(key):
 		host._tally(host._ran, handler)
-	interpreter.call_handler(handler, [], script)
+	interpreter.call_handler(
+		handler, [], script, addressed_channel(host, interpreter, script))
+
+
+## Which sprite this dispatch is for -- `the currentSpriteNum`, 0 for the frame.
+##
+## **`bugs.md` 93, and the reason it is derived here rather than passed in.**
+## `call_handler` reads its channel as "which behaviour instance is this message
+## for", and every call through `dispatch` used to take the default 0 -- so
+## `on exitFrame me` in a behaviour-channel script bound `me` to VOID while
+## `on beginSprite me` in the *same script* got a real object, and a `property`
+## written in one was invisible in the other. Two callers reach this function
+## with two different needs and neither can be served by a constant:
+##
+##   the frame events   `prepareFrame`, `enterFrame`, `exitFrame`, `idle`,
+##                      `timeout` -- Director's frame tier, channel 0. The
+##                      recipient is the behaviour channel's instance when the
+##                      score has one there and nothing at all when it does not,
+##                      which is a distinction `call_handler` makes for itself:
+##                      `live_behaviour` looks the channel-0 instance up and
+##                      never creates one, so a plain frame script and a movie
+##                      script still come away with no `me`.
+##   `sendSprite` /     the caller *named* the recipient, and
+##   `sendAllSprites`   `preview_lingo_host.gd` has already put that channel in
+##                      `the currentSpriteNum` before reaching here (§7.1, and
+##                      the reference brackets each send with the same save and
+##                      restore). So the number this needs is already on the host
+##                      and reading it is the join; passing it down through
+##                      `_dispatch` would mean a second, parallel answer to a
+##                      question one field already answers.
+##
+## Reading `the currentSpriteNum` is not a shortcut for the score: it is what
+## `spriteNum` itself is answered from in the reference, where `ScriptContext::
+## getProp` returns `_currentSpriteNum` for a behaviour that never declared the
+## property (`reference/scummvm/lingo-object.cpp:719-721`) and `processEvent`
+## sets that field from the queued event's channel (`lingo-events.cpp:806`).
+##
+## **A sprite channel is reported only when that sprite is already running this
+## script**, and that guard is not belt-and-braces -- it is what keeps the field
+## honest. `the currentSpriteNum` is ambient: `frame_loop.gd:send_sprite_message`
+## and `event_chain.gd:run` both set it around a behaviour, so a handler reached
+## from inside one of those that causes a *frame* event to be dispatched would
+## otherwise report that behaviour's channel for the frame script. Asking for the
+## live instance first makes the mismatch answer 0 instead, and -- because
+## `call_handler` will happily *make* an instance for a channel above 0, the way
+## the rollover messages need it to -- it is also what stops that case leaving a
+## `<channel>:<frame script>` object behind on every tick.
+static func addressed_channel(host, interpreter, script: Dictionary) -> int:
+	if host == null or interpreter == null or script.is_empty():
+		return 0
+	var lingo_host: Variant = host.get("_host")
+	if lingo_host == null:
+		return 0
+	var channel := int(lingo_host.get("current_sprite_num"))
+	if channel <= 0:
+		return 0
+	return channel if interpreter.live_behaviour(script, channel) != null else 0
 
 
 

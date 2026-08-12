@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -192,6 +192,16 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # rots into a record of what the engine used to do, which is what left
 # `palette_cycle` carrying four reds nobody saw, and a nightly that names the
 # cause beside the symptom is one line instead of another investigation.
+#
+# `behaviour_me` names `PIP2DATA/DAY1.dir` and the flag is the entry, not a
+# detail of it: `bugs.md` 93 is about whether a behaviour is one *object* for
+# every message it receives, and `GATE_ROOT`'s boot movie carries no
+# behaviour-channel script and no sprite behaviour on the frame it settles on --
+# so run bare it asserts nothing and the EMPTY guard below is what you get.
+# DAY1 has both (`BehaviorScript 55 - what to do everyframe` on the behaviour
+# channel, five sprite behaviours beside it), and 7 of its 9 checks failed before
+# the fix, which is the point: this is a shipped title's own scripts, not a
+# fixture. The harness's third case is Magic Hat's and says so and skips here.
 #
 # `bitmap_geometry` and `audio_coverage` are bare and fast (seconds each) and are
 # the regression guards for two entries the sweep turned up: `bugs.md` 58 and 63.

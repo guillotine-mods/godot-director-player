@@ -671,6 +671,36 @@ var _title_visible := true
 var _modal := false
 ## Where `play` came from, so `play done` can return there.
 var _play_stack: Array = []
+## How many of those return addresses are kept before the oldest is dropped.
+##
+## **The reference has no ceiling and this port needs one.** `Lingo::func_play`
+## pushes one `MovieReference` per call (`lingo-funcs.cpp:212`) into
+## `Window::_movieStack`, a `Common::List` (`window.h:238`) that only `play done`
+## and the end-of-score return ever pop. Nothing refuses a push, and nothing
+## refuses it when the destination is the frame the playhead is already on — so a
+## frame script whose whole body is `play frame the frame` grows that list once
+## per score step, for as long as the movie runs, in ScummVM exactly as here.
+## Measured on Itamar Park's arcade loop (`BehaviorScript 24 - play frame`,
+## `torfim.dir` frame 20 at an 80 fps tempo): 7,283 entries after 4,000 rendered
+## ticks, and still climbing 80 a second.
+##
+## Two costs, and only the first is one the reference shares. The list itself is
+## six bytes an entry there and a `{String, int}` dictionary here, which is the
+## ordinary leak. The second is this port's alone: `preview/save_state.gd:290`
+## writes `_play_stack` into every save, so an hour in the arcade would put a
+## quarter of a million identical return addresses into the player's save file.
+##
+## 64 is the reference's own number for "this is a runaway rather than a nesting"
+## — `Score::update` stops at `frozenLingoStateCount() >= 64` with "By this point
+## D3 will have run out of stack space" (`score.cpp:748-752`). It is a different
+## stack, but it is the same judgement about the same machine.
+##
+## **The oldest goes, not the newest**, because the newest is the one `play done`
+## is about to use. Refusing the push instead would make the next `play done`
+## return to a frame the movie left long ago, which is a wrong jump where this is
+## only a forgotten one — and forgotten at a depth no authored `play` nest
+## reaches. Only a `play` that never says `done` can get here.
+const MAX_PLAY_STACK := 64
 
 # --------------------------------------------- frozen Lingo (§6.1 step 18, §9.4)
 #
@@ -2970,6 +3000,7 @@ func lingo_go_frame(frame: int) -> void:
 		return
 	_held = true
 	var target := clampi(frame, 0, maxi(_score.frame_count - 1, 0))
+	var elsewhere := target != _index
 	_index = target
 	# A pending `go to` cancels the waits that are waiting on something — the sound
 	# channel, the click, the video — and **not** the frame clock. It is how a
@@ -2979,7 +3010,20 @@ func lingo_go_frame(frame: int) -> void:
 	# the frame lasts, the reference's fourth wait arm is the one that does not
 	# consult a pending jump, and cutting it short makes the movie play faster than
 	# Director did. `FrameClock.release` carries the reference citation.
-	_clock.release()
+	#
+	# **A jump to the frame the playhead is already on is not one of them.**
+	# `Score::isWaitingForNextFrame` builds the flag the three arms consult as
+	# `goingTo = _nextFrame && _nextFrame != _curFrameNumber` (`score.cpp:404`) —
+	# so `go to the frame`, `play frame the frame` and any `go` that resolves to
+	# the current frame leave every wait exactly where they found it. The
+	# distinction is the whole of what makes the idiom work: a frame that waits
+	# for its narration and loops on itself is *supposed* to keep waiting, and
+	# releasing on the self-jump turns "hold here until the line finishes" into
+	# "step at the tempo and ignore the sound". Only reachable from a handler that
+	# runs while the playhead is held — `on idle`, a key, a click — because a
+	# frame that is waiting sends no `exitFrame` to jump from.
+	if elsewhere:
+		_clock.release()
 	if not _in_exit_frame:
 		# Anywhere but `exitFrame` — a mouse handler, a key handler, `enterFrame`
 		# — is after the playhead has already been resolved for this tick, so the
@@ -3466,6 +3510,12 @@ func lingo_play_push(args: Array) -> void:
 		"movie": str(_movie.path),
 		"frame": _index if from_sprite else _index + 1,
 	})
+	# See `MAX_PLAY_STACK`. Traced once per drop rather than once per push, so a
+	# runaway says so in the log without becoming the log.
+	if _play_stack.size() > MAX_PLAY_STACK:
+		_play_stack.remove_at(0)
+		_trace("f%d play stack at its %d ceiling: oldest return dropped"
+			% [_index, MAX_PLAY_STACK])
 	var movie := ""
 	var where: Variant = null
 	for a in args:
