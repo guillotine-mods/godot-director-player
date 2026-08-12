@@ -633,7 +633,7 @@ jobs:
 
       # Last step, so it fires on a failure anywhere above it, including the
       # upload. Uploads only the listing produced above -- never `build/`. Named
-      # per target so three failing jobs do not collide on one artifact name.
+      # per target so four failing jobs do not collide on one artifact name.
       - name: Upload build summary for inspection
         if: failure()
         uses: actions/upload-artifact@v7
@@ -665,7 +665,7 @@ jobs:
         run: |
           count=$(gh release view "$TAG" --json assets -q '.assets | length')
           # A non-numeric `count` means the query failed rather than that the
-          # release is empty, and `[ "" -lt 3 ]` would abort with a shell error
+          # release is empty, and `[ "" -lt 4 ]` would abort with a shell error
           # about an integer expression instead of naming the real problem.
           case ${count:-} in
             '' | *[!0-9]*)
@@ -674,9 +674,9 @@ jobs:
               ;;
           esac
           echo "draft $TAG carries $count asset(s)"
-          if [ "$count" -lt 3 ]; then
+          if [ "$count" -lt 4 ]; then
             gh release view "$TAG" --json assets -q '.assets[].name' >&2 || true
-            echo "Expected 3 assets (Windows, macOS, Android); refusing to publish an incomplete release." >&2
+            echo "Expected 4 assets (Windows, macOS, Linux, Android); refusing to publish an incomplete release." >&2
             exit 1
           fi
           gh release edit "$TAG" --draft=false
