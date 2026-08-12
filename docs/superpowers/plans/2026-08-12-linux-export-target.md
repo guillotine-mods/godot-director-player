@@ -246,7 +246,18 @@ print([m['target'] for m in d['jobs']['export']['strategy']['matrix']['include']
 
 Expected: `['windows', 'macos', 'android', 'linux']`
 
-(If PyYAML is unavailable, `gh workflow view release --yaml >/dev/null` also parses it.)
+If PyYAML is unavailable, use Ruby's stdlib, which needs no install:
+
+```bash
+ruby -ryaml -e 'd=YAML.load_file(".github/workflows/release.yml"); \
+p d["jobs"]["export"]["strategy"]["matrix"]["include"].map{|m| m["target"]}'
+```
+
+**Do not use `gh workflow view release --yaml` for this.** It fetches the copy
+GitHub has registered, not your working tree, so it parses the pre-edit file and
+reports success no matter what you just wrote. Found the hard way during Task 2:
+grepping its output for `target: linux` returned nothing while the local edit was
+correct.
 
 - [ ] **Step 6: Commit**
 
