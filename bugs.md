@@ -2775,6 +2775,29 @@ Xtra member (`interface`, `mediaBusy`); neither is bound either. **Not the same
 mechanism as 84** — an Xtra member is not a digital video, and the two fail
 differently.
 
+**Re-measured 2026-08-12, and the verdict on "can anything better be done" is
+no, not in this engine today.** Three things were checked rather than reasoned:
+
+- The abort path is not a hang. A windowed run reaches the main menu (frame 23)
+  within a few seconds of boot, so the intro region is walked and left. `VOID <>
+  1` is true, which is the arm that leaves; a binding that answered 1 would be
+  strictly worse, because `go(the frame)` is the other arm and that one never
+  ends.
+- `IntroRetroVideo` and `magicvideo` are **MPEG-1 players**, not Flash or
+  QuickTime. `init intro` sets
+  `member("IntroRetroVideo").mediaFilename = the moviePath & Language() &
+  "\mainmenu\intro.mpg"`, and the title ships
+  `heb/album/magic1.mpg` ... `magic10.mpg` beside it.
+- Godot 4.7 ships exactly one video decoder, Ogg Theora. There is no MPEG-1 path
+  to bind `play()`/`getPlaybackEvent` to, so a faithful implementation of the
+  Xtra surface would still show a black rectangle. Transcoding the title's own
+  `.mpg` files is not an option: `games/` and `test-games/` are the owner's data
+  and the engine reads the original containers.
+
+So what is left here is a *decoder*, not a binding, and the binding is only worth
+building once there is something behind it. The `yes`/`no` buttons in `same.cst`
+are the separable half and do not need one.
+
 ---
 
 ## 83. A sprite behaviour is dispatched as a plain script with `me = null`, so its `property` names have nowhere to live and the score's per-sprite initialiser is never applied
@@ -2907,3 +2930,231 @@ godot --headless --path . --script tools/director_extract.gd -- \
 ```
 
 `members.txt` names both, and `scripts/` holds the four handlers above.
+
+---
+
+## 85. A channel the score does not carry never draws, however much a script writes to it — so Itamar Park's arcade runs with no food, no animals and no enemies
+
+`preview/sprite_state.gd:with_puppets` carries a channel past the score's own
+sprite list **only when `channel.is_puppet()`** — the whole-sprite
+`puppetSprite N, TRUE` flag. A channel that a script has only *written to* —
+`sprite(20).member = "AntFood9"`, `sprite(20).locH = …` — gets an override entry
+and nothing else, so `frame_sprites()` never returns it and the painter and the
+hit test never see it.
+
+The reference makes no such distinction. `Score::_channels` exists for every
+channel whatever the frame carries, `Sprite::setCast` raises the `kAPCast`
+auto-puppet (`sprite.h:41`, `channel.cpp:649`), and the render walk draws any
+channel whose sprite has a cast id. An auto-puppet is enough to make a channel
+live there; here only the whole-sprite puppet is.
+
+Measured in `test-games/itamar-park`, `torfim/torfim.dir`, frame 24 (`AntPlay`),
+after playing in and dismissing the world explanation. `MovieScript 6 - play
+handlers1` moves eighteen object channels, `kObjSpNum` = 20 through 37, and all
+eighteen are alive in `_overrides` and scrolling correctly:
+
+```
+ovr20={ "ink": 36, "membernum": 60, "loch": 470 }
+ovr21={ "membernum": 174, "loch": 44 }
+ovr22={ "membernum": 60, "loch": -474 }
+ovr23={ "membernum": 177, "loch": -892 }
+```
+
+`loch` advances by `gStep` every tick exactly as `on idle` asks. None of the four
+appears in `frame_sprites()`, and `tools/hotspots.gd --marker AntPlay` lists 34
+sprites on that frame with nothing between channels 18 and 45. The player walks
+an empty ice sheet, the food bar drains with nothing to eat, and the sub-level
+ends by starvation and drops back to the level select — which is the *game's*
+correct response to a level with no food in it.
+
+The fix is not one line: `with_puppets` returns score records, and a channel with
+no score record has no ink, no size and no registration point to merge an
+override onto, so an auto-puppeted channel needs a synthesised base built from
+the member. That is core to every title's draw path, which is why it is filed
+rather than attempted here.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/scratch/parkplay.gd -- \
+    --root res://test-games/itamar-park --file torfim/torfim.dir \
+    --clicks "play+15:11,ant+60:127" --steps 480 --verbose-from 470 \
+    --watch "45,20,21,22,23"
+```
+
+Channel 45 (the penguin) prints both an `ovr45=` and a `ch45 …@(x,y)` — it has a
+score record. Channels 20-23 print only `ovr20=`…`ovr23=`.
+
+---
+
+## 86. `play frame the frame` re-enters its frame four times per rendered tick, and the play stack grows by four entries a tick for as long as the movie runs
+
+Itamar Park's arcade loop is `BehaviorScript 24 - play frame`:
+
+```lingo
+on exitFrame
+  idle()
+  KeepBackSoundGoing()
+  play frame the frame
+end
+```
+
+Director grows a stack here too — `Lingo::func_play` pushes one entry per call
+(`lingo-funcs.cpp:212`) and nothing pops it until `play done` — so unbounded
+growth is the movie's own design and not the finding. The finding is the **rate**:
+`_play_stack` gains four entries per `process_frame`, so the frame's `exitFrame`
+runs four times per rendered tick. Measured at `torfim.dir` frame 24 (`AntPlay`),
+one entry per step:
+
+```
+step 470  play_stack=319
+step 471  play_stack=323
+step 472  play_stack=327
+step 473  play_stack=331
+```
+
+The movie's tempo there is 80 fps against a 60 fps display, so at most two score
+steps per rendered frame can be owed. The other two are the port re-entering the
+frame within one step, and the arcade therefore runs at roughly twice the speed
+the score asks for — which the title partly hides, because `calcStep` regulates
+its scroll against `the ticks` rather than against the frame rate.
+
+Not diagnosed further. The suspects are `lingo_go_frame`'s `_in_exit_frame`
+branch, which writes `_index` directly and queues no jump, and
+`frame_loop.advance`, which then does not know the frame was re-entered.
+
+Reproduce: the command in entry 85, and read the `play_stack=` column.
+
+---
+
+## 87. `beginSprite` is never sent, so Magic Hat's album screen keeps the main menu's screen items and its red X close button stops working
+
+**Status:** open · **Area:** the frame loop's per-sprite messages
+(`scenes/preview/frame_loop.gd`, `scenes/preview/event_chain.gd`) · found while
+fixing the click freeze in `test-games/itamar-magichat`
+
+`docs/ENGINE_TODO.md` already records that `beginSprite`/`endSprite` are not sent
+and that sending them needs a behaviour to be an **instance** with a lifetime.
+This entry is the player-visible consequence of that gap in one title, so that
+the cost of the entry is on record beside it rather than only its shape.
+
+Magic Hat drives every screen through a framework in `objects.cst`
+(`Screen items functions`, `BasicMenuObject`, `GraphicButtonObject`). One global
+property list, `gAllScreenItems`, maps a **sprite channel** to the button object
+that answers for it, and the *only* thing that rebuilds that map when a screen
+changes is a behaviour's `on beginSprite`. `magichat.dir` member 33,
+`BehaviorScript 33 - init album`, is the whole of it:
+
+```lingo
+on beginSprite me
+  HideToolTip()
+  DisableAllMenus()
+  EnableMenu(#mnuAlbum)
+  SetMusicFile("album_m.mp3")
+end
+```
+
+`DisableAllMenus` calls `BasicMenuObject.Disable`, which calls
+`RemoveScreenItem` for each of the menu's buttons; `EnableMenu` calls
+`AddScreenItem` for the new screen's. Neither runs, because the message never
+arrives. Measured: after clicking the album button on the main menu, with the
+playhead on frame 42 and the album drawn correctly, `gAllScreenItems` still has
+the keys `["2","3","4","5","6","7","8","9","10"]` — the nine **main menu**
+buttons — and none of the album's.
+
+What the player sees is not a blank screen, which is why this was never noticed.
+The album draws correctly, because the score places its sprites. It breaks on the
+first mouse move: `screen item script` sends `ItemMouseEnter` for the channel
+under the pointer, `GetScreenItem(8)` answers the *main menu's* button 7, and
+`GraphicButtonObject.ItemMouseEnter` does `me.SetMember(me.Info(#active))`. So
+rolling the pointer over the album's red X close button, channel 8, swaps that
+channel's member from `album:89` (the X, 40x52 at 760,34) to the main menu's
+`bMain7_on` — measured as `6:13`, 273x233 at (287,0). The X is replaced by a
+menu button drawn in the middle of the screen, and the corner the player is
+aiming at now hits nothing:
+
+```
+before the pointer arrives:  channel_at (779,59) -> 8
+after it:                    channel_at (779,59) -> 0
+```
+
+The close button therefore cannot be clicked at all, and the album is a screen a
+player can enter and not leave. Every other screen in the title is built the same
+way (`init magic`, `init tools`, `init login`, `init teuda`, `init credits` are
+all `on beginSprite`), so this is not one screen's bug.
+
+Reproduce, headless, in about 40 seconds:
+
+```bash
+godot --headless --audio-driver Dummy --path . --script tools/scratch/album_close.gd -- \
+  --root res://test-games/itamar-magichat --file magichat.dir
+```
+
+It boots to the menu, clicks the album button at stage (448,378), prints the live
+channel/member of every sprite, moves the pointer onto the X, and prints them
+again. The two `channel_at` lines above are its output. In the real window the
+same click sequence is
+`bash` + `C:\tmp\drive.ps1 -Stage @(448,378,779,59)`; the click log line reads
+`clicked (778,59) frame 42  ch0`, and `ch0` is the whole bug.
+
+**Not a hit-test bug and not a member-name bug.** `tools/hotspots.gd --frame 42`
+reports channel 8 eligible with the right rect, and the descent answers 8 for
+that point until the rollover fires. `_channel_at` is reading a channel whose
+member a script legitimately swapped; the script only got to run because the
+engine never told the screen it had changed.
+
+---
+
+## 88. `GetLng()` / `SetLng()` are absent game data in Magic Hat, not a cast that failed to load — nothing to fix in the engine
+
+**Status:** not a bug, recorded so the next reader does not re-derive it ·
+**Area:** none · found while fixing 87
+
+`test-games/itamar-magichat` reports `builtins unbound : {"getlng":1}` on every
+boot, and `lng.cst` sitting unopened in the folder is the obvious suspect. It is
+not the cause, and the arithmetic that made it look like one — "only 4 of its 7
+casts load" — is counting two different things.
+
+**Every cast library the movie declares opens.** `magichat.dir`'s `MCsL` names
+eight, and all eight resolve and index:
+
+```
+lib 1  Internal  (embedded)   135 members
+lib 2  utils     utils.cst     51
+lib 3  objects   objects.cst   23
+lib 4  cards     cards.cst     98
+lib 5  album     album.cst    935
+lib 6  same      same.cst     195
+lib 7  code      code.cst      22
+lib 8  lng       lng.cst      211
+```
+
+`tools/director_containers.gd --root res://test-games/itamar-magichat` opens all
+sixteen containers in the title, and its one FAIL is only that the tracked
+config's `strtgame.dir` is not this title's boot movie.
+
+**Four of the eight carry Lingo, and that is the "4 of 7".** `cards`, `album`,
+`same` and `lng` hold no `Lscr` chunks at all — `lng.cst`'s 211 members are
+tooltip *bitmaps* (`bmain1_tt`, `blogin1_tt`, `balbum1_tt` …), which is what a
+localisation cast in this title is. So `lingo: 77 script(s) across 4 cast(s)` is
+the complete and correct count, not a shortfall.
+
+**`GetLng` is defined in none of the sixteen containers.** Extracted every one of
+them with `tools/director_extract.gd` and searched the lot:
+
+```
+grep -rn 'on GetLng\|on SetLng' <every extracted scripts/ dir>   # no matches
+grep -rn 'GetLng\|SetLng'       <the same>                        # one file
+```
+
+The one file is `magichat.dir` member 87, `LogInMenuObject`, which calls
+`GetLng()` once in `on new` and `SetLng(prDefaultLng)` once on the way out. Both
+are on the login screen and nowhere else. `utils.cst`'s `language` script has
+`Language()` and `ChangeLanguage()`, which are the handlers the rest of the title
+actually uses, so `GetLng`/`SetLng` are a third spelling with no implementation
+behind them — supplied by an Xtra or by a shell movie that this copy of the title
+does not carry, or simply left dangling by the authors.
+
+Director would have raised "Handler not defined" at the same call. The engine's
+`builtins unbound` line is therefore accurate reporting and not a port fault, and
+there is nothing here to bind.

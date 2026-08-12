@@ -1298,8 +1298,24 @@ func _parse_the() -> Dictionary:
 	# Looking at what follows is enough to tell them apart, and is what makes this
 	# safe: a real target always continues on the same line. `of` followed by a
 	# line break, or by the end of the script, cannot be introducing one.
+	#
+	# **It has to build the same node the plain form builds**, and it did not:
+	# it returned `{"node": "the", …}`, which no arm of `LingoInterpreter._eval`
+	# has ever handled, so every `case the <prop> of` evaluated its subject to 0
+	# through the default arm and reported `unknown expression the`. The parse
+	# error this block removed was replaced by a run-time one, which is worse:
+	# the script compiles, the `case` runs, and no branch can ever match.
+	#
+	# Measured in `itamar-park`: `BehaviorScript 23 - Exp shut down Frame` and
+	# `BehaviorScript 24 - play frame` both open `on keyDown` with
+	#
+	#     case the keyCode of
+	#       "123", "124", "125", "126", "49": setFlag(#NewGameOrWorld, 0)
+	#
+	# — the arrow keys and space, and the only keyboard way out of the world's
+	# explanation screen. Both answered 0 and neither branch was reachable.
 	if _at_kw("of") and (_k(1) == "nl" or _k(1) == "eof"):
-		return {"node": "the", "prop": prop, "line": line}
+		return _the_prop_node(words, prop, line)
 
 	if _eat_kw("of"):
 		if _at_kw("sprite"):
@@ -1404,6 +1420,17 @@ func _parse_the() -> Dictionary:
 		var target := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
 		return {"node": "prop_of", "prop": prop, "target": target, "line": line}
 
+	return _the_prop_node(words, prop, line)
+
+
+## The node a bare `the <adjective> <prop>` compiles to.
+##
+## Split out so the two returns that build it cannot drift: the ordinary one at
+## the end of `_parse_the`, and the `case the keyCode of` arm that has to stop
+## before a trailing `of` and hand back the same thing. When the second one built
+## its own shape instead, it built one the interpreter could not evaluate and the
+## defect surfaced only at run time — see the comment on that arm.
+func _the_prop_node(words: Array, prop: String, line: int) -> Dictionary:
 	var lowered: Array = []
 	for word in words:
 		lowered.append(str(word).to_lower())

@@ -685,6 +685,19 @@ func take_suspend_request() -> String:
 	return kind
 
 
+## A spinning `repeat` is asking the platform for its turn.
+##
+## The interpreter calls this from inside a loop that has been going for a while
+## (`lingo_interpreter.gd:BREATHE_MS`), so that a loop polling `the mouseDown`,
+## `the mouseLoc` or a modifier key can see those answers change. Only the
+## preview can do anything about it — it owns the window and the event queue —
+## and only the live host has one, which is why this is here and not on
+## `lingo_host.gd`.
+func breathe() -> void:
+	if preview != null:
+		preview.call("lingo_breathe")
+
+
 ## Where a suspended handler goes. The preview holds it rather than the
 ## interpreter, because `go to movie` replaces the interpreter and Director keeps
 ## frozen state on the window across exactly that.
@@ -1274,7 +1287,12 @@ func call_builtin(name: String, args: Array) -> Variant:
 			else:
 				for sprite in preview.frame_sprites():
 					channels.append(int((sprite as Dictionary)["channel"]))
-			var frame_index: int = preview.current_frame() - 1
+			# The playhead's index, as every other `_sprite_script` caller passes
+			# it (`event_chain.gd`, `hilite.gd`, `interaction.gd` all pass
+			# `_index`). Subtracting one resolved the behaviours of the frame
+			# before the playhead, so a `sendAllSprites` on the first frame of a
+			# new segment messaged the segment it had just left.
+			var frame_index: int = preview.current_frame()
 			# §7.1: a behaviour reached this way reads its **own** channel from
 			# `the currentSpriteNum`, and the caller's is put back afterwards. The
 			# reference brackets each send with the same save and restore, and the
@@ -1518,7 +1536,14 @@ func _go(args: Array) -> Variant:
 			preview._interpreter.report(LingoDiagnostics.BUILTIN, "go: destination is VOID")
 		return 0
 	if typeof(first) != TYPE_STRING:
-		preview.lingo_go_frame(LingoValue.to_int(first))
+		# `go 5` names Director's fifth frame, not the sixth. This passed the
+		# number through as an index, which cancelled against `the frame` for the
+		# relative forms everybody writes (`go(the frame + 1)`) and was wrong for
+		# every absolute one -- `go(1)` at 32 sites in `reference/lingo/` landed on
+		# the second frame while `go(1, "movie")` two lines away landed on the
+		# first. See `director_preview.lingo_frame_index`.
+		preview.lingo_go_frame(
+			preview.lingo_frame_index(LingoValue.to_int(first)))
 		request_suspend("go")
 		return 0
 	match str(first):
@@ -1975,7 +2000,12 @@ func get_system_prop(prop: String) -> Variant:
 		return 0
 	match prop.to_lower():
 		"frame":
-			return preview.current_frame()
+			# 1-based, like `the lastFrame` beside it and like every frame number
+			# a script writes — `director_preview.lingo_frame_number` carries the
+			# reference citation and what the raw index cost. Answering the index
+			# made `the frame = the lastFrame` unsatisfiable on the last frame and
+			# `play frame the frame` walk backwards.
+			return preview.lingo_frame_number(preview.current_frame())
 		"mouseh":
 			return int(preview.stage_mouse().x)
 		"mousev":
@@ -2371,7 +2401,14 @@ func get_system_prop(prop: String) -> Variant:
 			# not the marker in force, which is what `marker(0)` answers. Director
 			# distinguishes them and a script that tests `the frameLabel = "x"`
 			# to decide it has arrived depends on the distinction.
-			return _label_on_frame(preview.current_frame())
+			# `_label_on_frame` takes the number, not the index -- it says so and
+			# it was handed the index anyway, so it hunted for a marker one frame
+			# past the playhead and answered "" for every frame that carries one.
+			# Itamar Park's `Hand script`, `Tele script` and `Study Button script`
+			# all open `if not (the frameLabel contains "play") then exit`, so all
+			# three buttons in the arcade absorbed their click and did nothing.
+			return _label_on_frame(
+				preview.lingo_frame_number(preview.current_frame()))
 		"labellist":
 			# Every marker name in score order, one per line. Director separates
 			# them with CR and this port normalises CR to LF everywhere a Lingo
@@ -2559,7 +2596,13 @@ func _label_on_frame(frame: int) -> String:
 func _frame_channel(prop: String) -> Variant:
 	if preview == null or preview._score == null:
 		return 0
-	var record: Dictionary = preview._score.frame(preview.current_frame() - 1)
+	# `current_frame()` is already the score's own index (`director_labels.gd`:
+	# 0-based everywhere in the runtime), so the cell wanted is at that index.
+	# Subtracting one here read the frame *before* the playhead: every one of
+	# these four properties answered the previous frame's cell, and
+	# `tools/lingo_movie_surface.gd` agreed with it because it made the same
+	# subtraction on the other side of the comparison.
+	var record: Dictionary = preview._score.frame(preview.current_frame())
 	match prop:
 		"framescript":
 			var script_member: Variant = record.get("frame_script", null)

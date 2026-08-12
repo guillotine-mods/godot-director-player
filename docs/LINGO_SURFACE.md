@@ -2676,7 +2676,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `searchpath` | system | live | 326 sites; read+write |
 | `constraint` | sprite | live | 316 sites; merged by effective() |
 | `volume` | sound | live | 314 sites; read and write |
-| `frame` | system | live | 302 sites; read only |
+| `frame` | system | live | 302 sites; read only; **1-based**, like every frame number Lingo names -- `go N`, `play frame N`, `label()` and `marker()` are the same space, and the runtime's own 0-based index is behind `director_preview.lingo_frame_index`/`lingo_frame_number` |
 | `mousev` | system | live | 300 sites; read only |
 | `count` | builtin | live | 275 sites; lingo_builtins.gd |
 | `dontpassevent` | builtin | live | 262 sites; host arm |

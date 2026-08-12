@@ -204,6 +204,12 @@ const ACCOUNTED := {
 	"_drag_offset": "excluded: with the drag",
 	"_text_drag": "excluded: with the drag",
 	"_saw_press": "excluded: with the press",
+	"_lingo_breathing": "excluded: true only for the duration of one"
+		+ " `DisplayServer.process_events()` call inside a spinning repeat, and the"
+		+ " save key is read in `_input`, which that call refuses to act on",
+	"_deferred_input": "excluded: InputEvent objects of this process, held for at"
+		+ " most one frame. `_process` drains them before anything else it does, so"
+		+ " a save taken anywhere else finds the list empty.",
 	"_typed_away": "excluded: with the press",
 	"_frozen_lingo": "excluded: a chain of positions inside compiled AST nodes,"
 		+ " which are objects of this process. The queue drains inside the step"

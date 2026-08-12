@@ -562,8 +562,15 @@ func _init() -> void:
 	var host_for_marker = preview.get("_host")
 	var named := ""
 	var named_frame := 0
+	# **`_labels.labels` is the 0-based runtime index and `marker()` answers a
+	# Lingo frame *number***, so the two sides of this comparison are in
+	# different spaces and the expectation is converted rather than compared raw.
+	# It used to compare raw and pass, because `the frame`, `go` and `marker()`
+	# were all answering the index -- see `director_preview.lingo_frame_index`
+	# for what that cost and why the surface is 1-based now.
 	if labels != null and host_for_marker != null:
-		var here: int = int(preview.call("lingo_marker", 0))
+		var here: int = preview.lingo_frame_index(
+			int(preview.call("lingo_marker", 0)))
 		for key in (labels.labels as Dictionary):
 			var frame_of := int((labels.labels as Dictionary)[key])
 			# Frame 0 is excluded, and not for tidiness: an unknown name answers
@@ -576,11 +583,13 @@ func _init() -> void:
 	if named == "":
 		print("   no marker away from the playhead in this movie; nothing to ask")
 	else:
+		var want: int = preview.lingo_frame_number(named_frame)
 		h.check("a marker name answers that marker's frame",
-			int(host_for_marker.call_builtin("marker", [named])) == named_frame,
-			"marker(%s) -> %s, label says %d" % [
+			int(host_for_marker.call_builtin("marker", [named])) == want,
+			"marker(%s) -> %s, label index says %d, so the number is %d" % [
 				JSON.stringify(named),
-				str(host_for_marker.call_builtin("marker", [named])), named_frame])
+				str(host_for_marker.call_builtin("marker", [named])),
+				named_frame, want])
 		# The other half, and the one §1.5 warns about: a number must stay
 		# playhead-relative rather than being looked up as a name.
 		h.check("a number stays playhead-relative",

@@ -31,6 +31,36 @@ enum Flow { NORMAL, EXIT_REPEAT, NEXT_REPEAT, RETURN, ABORT, SUSPEND }
 ## otherwise hang the frame.
 const MAX_STEPS := 400000
 
+## How often a spinning repeat lets the platform breathe, in milliseconds.
+##
+## **A loop that polls live input is a Director idiom, not a bug**, and it only
+## works where the polled thing keeps changing while the loop runs. Director's
+## `the mouseDown` is a hardware read -- ScummVM spells the same thing
+## `g_system->getEventManager()->getButtonState()` in `lingo-the.cpp:865` -- so
+## `repeat while the mouseDown` in a `mouseDown` handler ends when the player
+## lets go, and the standard Director drag loop is built out of exactly that.
+##
+## Here the handler runs on Godot's main thread, inside `_input`, and Godot's
+## button state is only written by the main loop that the handler is blocking.
+## So the poll can never observe the release: `itamar-magichat`'s
+## `ItemMouseDown` (objects.cst, `Screen items functions`, line 114) spun for
+## 400,000 steps and 16 wall-clock seconds on **every** click of its main menu,
+## with the window's message pump dead and Windows reporting the process as not
+## responding, until this guard aborted the handler. That is the whole of the
+## reported freeze.
+##
+## The fix is to give the platform its turn: `host.breathe()` pumps the OS event
+## queue so that the live properties this loop is watching actually move. The
+## interval is a compromise -- often enough that a release is seen within a
+## frame, rarely enough that a `repeat with i = 1 to 10000` doing arithmetic
+## does not pay for a system call per iteration.
+const BREATHE_MS := 8
+
+## Cheap pre-filter for the wall-clock check above: only every 64th step of a
+## loop asks the clock at all. `Time.get_ticks_msec()` is not expensive, but it
+## is not free either and this is the interpreter's hottest path.
+const BREATHE_EVERY := 64
+
 var globals: Dictionary = {}
 var host: Object = null
 var item_delimiter: String = ","
@@ -50,6 +80,11 @@ var _movie_handlers: Dictionary = {}
 ## cast -> script name -> ast, for behaviour and cast scripts.
 var _scripts: Dictionary = {}
 var _steps: int = 0
+## When the platform was last given a turn, for `BREATHE_MS`. Milliseconds on
+## the same clock `the ticks` reads, and deliberately *not* reset per handler: a
+## handler that runs three loops back to back should breathe on the same
+## schedule as one that runs a single loop of the same total length.
+var _breathed_at: int = 0
 var _return_value: Variant = null
 ## `the result` -- the value the most recent handler call returned.
 ##
@@ -1150,6 +1185,7 @@ func _repeat_while(stmt: Dictionary, frame: Dictionary) -> int:
 		if _steps > MAX_STEPS:
 			_fail("repeat while did not terminate")
 			return Flow.ABORT
+		_breathe()
 		var flow := _exec_block(stmt.get("body", []), frame)
 		if flow == Flow.SUSPEND:
 			_suspended.append(_at_position({
@@ -1183,6 +1219,7 @@ func _repeat_with(stmt: Dictionary, frame: Dictionary, name: String,
 		if _steps > MAX_STEPS:
 			_fail("repeat with did not terminate")
 			return Flow.ABORT
+		_breathe()
 	return Flow.NORMAL
 
 
@@ -1209,6 +1246,7 @@ func _repeat_forever(stmt: Dictionary, frame: Dictionary) -> int:
 		if _steps > MAX_STEPS:
 			_fail("bare repeat did not terminate")
 			return Flow.ABORT
+		_breathe()
 		var flow := _exec_block(stmt.get("body", []), frame)
 		if flow == Flow.SUSPEND:
 			_suspended.append(_at_position({
@@ -1219,6 +1257,31 @@ func _repeat_forever(stmt: Dictionary, frame: Dictionary) -> int:
 		if flow == Flow.RETURN or flow == Flow.ABORT:
 			return flow
 	return Flow.NORMAL
+
+
+## Let the platform have its turn while a repeat is spinning.
+##
+## Called from the three loops that can spin without the movie stepping. It is
+## **not** a yield: nothing about this interpreter's state is unwound, the
+## handler keeps the stack it has, and the loop resumes on the next line. All it
+## does is give the host the chance to do whatever a Director host does between
+## two machine instructions -- which, on this one, is pump the OS event queue so
+## that `the mouseDown`, `the mouseLoc` and the modifier keys are answers about
+## now rather than about the moment the handler was entered.
+##
+## The host is asked rather than told: `lingo_host.gd` and every harness host
+## has no window and no event queue, so the absence of the method is the correct
+## answer for them and not a missing binding. See `BREATHE_MS` for why this
+## exists at all and what it costs.
+func _breathe() -> void:
+	if (_steps & (BREATHE_EVERY - 1)) != 0:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _breathed_at < BREATHE_MS:
+		return
+	_breathed_at = now
+	if host != null and host.has_method("breathe"):
+		host.call("breathe")
 
 
 func _exec(stmt: Dictionary, frame: Dictionary) -> int:
@@ -1674,8 +1737,16 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			## reached rather than a mutation attempted.
 			var container: Variant = _eval(target.get("target", {}), frame)
 			if typeof(container) == TYPE_ARRAY or typeof(container) == TYPE_DICTIONARY:
-				var slot := LingoValue.to_int(_eval(target.get("index", {}), frame))
+				var subscript: Variant = _eval(target.get("index", {}), frame)
 				var set_handled: Array = []
+				# `myPropList[#key] = v` names the property, and it *adds* one
+				# that is not there yet -- `b_setaProp`'s PARRAY arm pushes a new
+				# `PCell` on a miss (`lingo-builtins.cpp:1460-1464`).
+				if typeof(container) == TYPE_DICTIONARY and not _is_position(subscript):
+					Builtins.call_builtin(
+						"setaProp", [container, subscript, value], set_handled)
+					return
+				var slot := LingoValue.to_int(subscript)
 				Builtins.call_builtin("setAt", [container, slot, value], set_handled)
 				return
 			_fail("cannot assign to index of %s" % type_string(typeof(container)))
@@ -1974,7 +2045,13 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			return _value_prop(_eval(owner_node, frame), prop_name)
 		"index":
 			var target: Variant = _eval(expr.get("target", {}), frame)
-			var index := LingoValue.to_int(_eval(expr.get("index", {}), frame))
+			var subscript: Variant = _eval(expr.get("index", {}), frame)
+			# `myPropList[#key]` is that property's value, not a position.
+			if typeof(target) == TYPE_DICTIONARY and not _is_position(subscript):
+				var read: Array = []
+				return Builtins.call_builtin(
+					"getaProp", [target, subscript], read)
+			var index := LingoValue.to_int(subscript)
 			match typeof(target):
 				TYPE_ARRAY, TYPE_DICTIONARY, TYPE_VECTOR2, TYPE_RECT2:
 					# **`myPropList[2]` is the second property's value**, and a
@@ -2200,6 +2277,38 @@ func _value_prop(owner: Variant, prop: String) -> Variant:
 
 
 ## One element of a point or a rect, read the way every other caller reads one.
+## Is this subscript a *position*, or a property name?
+##
+## **`getAt` and `setAt` type-check their index to INT or FLOAT** —
+## `lingo-builtins.cpp:1135` and `:1487`, both `TYPECHECK2(indexD, INT, FLOAT)` —
+## so a symbol subscript can never have meant either of them, and the only
+## reading left for `myPropList[#key]` is `getaProp`/`setaProp`. Those two handle
+## a linear list by delegating straight back to `getAt`/`setAt` (`:1101-1104`,
+## `:1450-1455`), which is why the split can be made on the subscript alone.
+##
+## **Positional stays positional**, which is the half that had to be preserved:
+## `myPropList[2]` is the second property's *value* in this port on purpose, and
+## Magic Hat's `DisableAllMenus`/`HideAllMenus`/`EnableAllMenus` are each a
+## `repeat with i = 1 to gAllMenus.count` over exactly that. See the `index` read
+## arm for what that cost when it was missing.
+##
+## What the missing half cost, measured in `itamar-park`: `setFlag`/`getFlag`
+## (`utils.cst`, `MovieScript 4 - sprites`) are the whole arcade's state and are
+## `gArcadeFlags[myFlag] = myValue` / `return gArcadeFlags[myFlag]` with `myFlag`
+## a symbol. Every write coerced `#windowOpen` to slot 0 and was dropped, so
+## after 500 frames of play `gArcadeFlags` was still `[:]` and every one of
+## `#windowOpen`, `#NewGameOrWorld`, `#NewGameExp`, `#FlagOnStage`, `#LifeSpan`
+## and `#BallClicked` read VOID. The world's explanation frame is gated on
+## `getFlag(#NewGameOrWorld) = 1`, so it never held and the narration was cut off
+## on its first tick.
+##
+## A numeric *string* is a key, not a position: Director's type check is on the
+## datum's type, and `[#a: 1]["1"]` has no position to name.
+static func _is_position(subscript: Variant) -> bool:
+	return typeof(subscript) == TYPE_INT or typeof(subscript) == TYPE_FLOAT \
+		or typeof(subscript) == TYPE_BOOL
+
+
 func _list_at(container: Variant, index: int) -> Variant:
 	var handled: Array = []
 	return Builtins.call_builtin("getAt", [container, index], handled)

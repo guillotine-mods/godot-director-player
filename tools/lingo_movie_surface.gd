@@ -84,7 +84,11 @@ func _score_checks(h) -> void:
 		int(_value("the lastFrame")) == int(score.frame_count),
 		"unbound this answered VOID, and `repeat with i = 1 to the lastFrame` "
 		+ "never entered its body")
-	var record: Dictionary = score.frame(_preview.current_frame() - 1)
+	# The playhead's own index. This used to subtract one, and so did the binding
+	# it checks, so the pair agreed on the frame *before* the playhead and the
+	# check passed while both were wrong -- the failure mode this file's own
+	# header warns about, from the other direction.
+	var record: Dictionary = score.frame(_preview.current_frame())
 	var script_member: Variant = record.get("frame_script", null)
 	var want_script := int(script_member) if script_member != null else 0
 	h.check(

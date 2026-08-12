@@ -3307,3 +3307,108 @@ godot --headless --path . --script tools/scratch/walkfwd.gd -- \
 
 Every step prints a frame between 124 and 138. `tools/scratch/globs.gd` with the
 same arguments prints the globals; `gIniFileName` is VOID.
+
+---
+
+## 88. Every click on Magic Hat's main menu froze the application for 16 seconds, because a Lingo loop polling `the mouseDown` could never see the button come up
+
+**Status:** fixed · **Area:** `lingo/lingo_interpreter.gd` (`_breathe`,
+`BREATHE_MS`), `scenes/director_preview.gd` (`lingo_breathe`,
+`_queue_button_changes`, `_flush_deferred_input`), `scenes/preview_lingo_host.gd`
+(`breathe`)
+
+**The symptom, and which kind of freeze it was.** A **hang**, not a hold: the
+window stopped repainting and Windows reported the process as not responding.
+Measured by posting a real `WM_LBUTTONDOWN`/`WM_LBUTTONUP` pair at the album
+button of a maximised windowed run started exactly as the owner starts it — main
+scene, `res://scenes/director_preview.tscn`, not a `--script` SceneTree — and
+sampling `SendMessageTimeout(hwnd, WM_NULL, SMTO_ABORTIFHUNG|SMTO_BLOCK, 2000)`
+once a second:
+
+```
+CLICK stage=(448,378)
+t=  0s pump=False ... cpu=12.16s
+t=  1s pump=False ... cpu=15.17s
+...
+t= 15s pump=False ... cpu=28.44s
+t= 16s pump=True  ... cpu=29.42s
+```
+
+Sixteen seconds with the message pump dead and one core saturated, then the log
+line that ends it:
+
+```
+clicked (559,472) frame 23  ch2  sprite script BehaviorScript 20 - screen item script  mouseUp:yes
+lingo: repeat while did not terminate  (MovieScript 17 - Screen items functions > ItemMouseDown line 115)
+```
+
+The recovery is `MAX_STEPS` aborting the handler after 400,000 steps, which also
+loses the `mouseUp` — so the button did nothing either.
+
+**The cause.** `objects.cst`, `Screen items functions`, lines 108-117, is
+Director's standard drag loop:
+
+```lingo
+t = the ticks
+repeat while the mouseDown and ((the ticks - t) < 10)
+end repeat
+if the mouseDown then
+  ItemObj.ItemDrag(X, Y)
+  repeat while the mouseDown
+    ItemObj.ItemMouseStilldown((the mouseLoc)[1], (the mouseLoc)[2])
+  end repeat
+  ItemObj.ItemDrop()
+end if
+```
+
+In Director `the mouseDown` is a read of the hardware — ScummVM answers it from
+`g_system->getEventManager()->getButtonState()` at `lingo-the.cpp:865` — so a
+click shorter than 10 ticks leaves the first loop by its *first* condition and
+the drag loop is never entered. Here the handler runs on Godot's main thread,
+inside `_input`, and Godot's `Input` state is written only by the main loop that
+the handler is blocking. So `the mouseDown` was frozen true: the first loop
+always fell out on its 167 ms timeout instead, `if the mouseDown` was therefore
+always true, and the drag loop then spun until the runaway guard fired. **Every
+click, not an occasional one** — which is why the owner could reproduce it every
+time and a headless harness, which never has an OS button to release, could not
+reproduce it at all.
+
+**The fix.** A spinning `repeat` now gives the platform its turn every 8 ms:
+`_breathe` in the interpreter calls the host, the host calls
+`director_preview.lingo_breathe`, and that calls `DisplayServer.process_events()`.
+Two things had to go with it:
+
+- `_input` refuses to *act* on anything that arrives during a breathe. Lingo is
+  not re-entrant in Director either, so a press landing while a handler runs
+  raises no second handler; it is queued and answered from the top of `_process`.
+- **Godot drops a re-entrant dispatch outright**, which is measured rather than
+  assumed: with a print at the top of `_input` and another around the pump, the
+  click logged `breathe: live button true -> false` — the pump had taken the
+  `WM_LBUTTONUP` and updated `Input`'s mask — and logged no `_input` call for it
+  at all, and the run's exit report counted `mouseDown: 1` with no `mouseUp`.
+  So the button events are rebuilt from the mask
+  (`_queue_button_changes`) rather than waited for. A key pressed during a
+  spinning loop is still lost; there is no mask to rebuild it from, and that
+  divergence is written into `lingo_breathe`'s docstring.
+
+**After, same measurement, same click:**
+
+```
+CLICK stage=(448,378)
+t=  0s pump=True ... cpu=9.61s
+...
+t= 19s pump=True ... cpu=14.33s
+clicked (447,377) frame 23  ch2  sprite script BehaviorScript 20 - screen item script  mouseUp:yes
+  frame 42 script: BehaviorScript 34 - album loop
+```
+
+The pump never dies, the CPU cost drops from ~1.0 s/s to ~0.25 s/s, there is no
+`repeat while did not terminate`, and the playhead reaches the album screen — the
+whole click, press to `mouseUp`, arrives.
+
+**Ruled out along the way, so nobody repeats them:** headless clicks on the same
+channel (clean, 23 → 42), windowed runs at 800x600 and 2560x1440, clicks driven
+through `Input.parse_input_event`, a 111-move pointer sweep, and `soundBusy(2)`
+standing at 1 — which is the menu music looping and is correct. Also ruled out:
+the cast-name re-parse fixed in `77f7cf3b`, measured as not the cause
+(8.8 → 7.9 ms/move).

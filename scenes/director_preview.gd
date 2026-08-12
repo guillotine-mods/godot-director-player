@@ -831,7 +831,8 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	if typeof(where) == TYPE_STRING and str(where) != "":
 		_index = int(_labels.labels.get(str(where).to_lower(), 0))
 	elif where != null:
-		_index = clampi(int(where) - 1, 0, maxi(_score.frame_count - 1, 0))
+		_index = clampi(lingo_frame_index(int(where)), 0,
+			maxi(_score.frame_count - 1, 0))
 	# Entered like the first frame of any movie: the tempo is taken from the frame
 	# rather than inherited, so a room that runs at 30 fps does not open at the
 	# rate the movie before it was using.
@@ -1450,6 +1451,10 @@ func _palette_libs() -> Array:
 ## and the pending-enter debt stay on the node: `tools/` reads `_index`, `_clock`
 ## and `_pending_enter` by name, and several harnesses write `_index` directly.
 func _process(delta: float) -> void:
+	# Ahead of every guard below: an event a Lingo loop's pump collected is owed
+	# to the movie whether or not the score is running, and a click is how a
+	# player leaves a `pause`.
+	_flush_deferred_input()
 	if _score == null or _paused:
 		return
 	# `quit` and `halt` stop the movie (§1.4). The reference sets the score's play
@@ -1638,6 +1643,20 @@ func _enter_frame_or_defer(script: Dictionary) -> void:
 ## headless harness, and "the click went to the wrong movie" has to be
 ## assertable.
 func _input(event: InputEvent) -> void:
+	# A handler is on the stack and this event arrived from the pump *it* asked
+	# for (`lingo_breathe`). Director queues it: Lingo is not re-entrant, so a
+	# press that lands while a `mouseDown` handler is running does not start a
+	# second one, and the release that ends a drag loop is still the `mouseUp`
+	# the movie is owed. Motion is the exception and is taken now rather than
+	# queued -- a drag loop reading `the mouseLoc` wants where the pointer *is*,
+	# and a motion replayed after the loop would be a rollover into the past.
+	if _lingo_breathing:
+		if event is InputEventMouseMotion:
+			note_pointer((make_input_local(event) as InputEventMouse).position)
+			return
+		if event is InputEventMouseButton or event is InputEventKey:
+			_deferred_input.append(event)
+		return
 	# **Where the event happened, not where the cursor is now.** The two agree on
 	# a desktop and do not on a touchscreen: Godot synthesises the button and
 	# motion events from a finger but leaves `DisplayServer.mouse_get_position()`
@@ -2357,8 +2376,55 @@ func lingo_sprite_rect(channel: int) -> Rect2:
 	return Rect2()
 
 
+## The playhead, in the runtime's own **0-based** index space.
+##
+## `director_labels.gd` states the rule this obeys — "frames are 1-based in the
+## chunk and 0-based everywhere in the runtime" — and everything that indexes the
+## score (`_score.frame`, `_frame_script`, `_sprite_script`, the save state)
+## speaks this space. **Lingo does not**: `the frame`, `go`, `play frame`,
+## `label()` and `marker()` are 1-based, and `lingo_frame_number` /
+## `lingo_frame_index` below are the only two places the two spaces meet.
 func current_frame() -> int:
 	return _index
+
+
+## An index in the runtime's space as Lingo numbers it, and back again.
+##
+## **Director's frame numbers start at 1** — `score.cpp:97` initialises
+## `_curFrameNumber` to 1, `lingo-the.cpp:638` answers `the frame` with it, and
+## `lingo-funcs.cpp:110` feeds the same number straight back to
+## `setCurrentFrame`. One space, one origin, no conversion anywhere inside the
+## reference.
+##
+## This port indexes from 0, so the conversion has to happen somewhere, and it
+## used to happen in **two of the four** places that needed it: `lingo_go_movie`
+## and `lingo_play_push` both subtract one, while `the frame` and the `go`
+## builtin passed the raw index through untouched. Same-movie `go` and `the
+## frame` cancelled each other out and looked right, which is why it survived;
+## the two that do not cancel are what it cost:
+##
+## - `play frame the frame` — Itamar Park's arcade loop, `BehaviorScript 24`'s
+##   `on exitFrame` — read `the frame` as the raw index and then had one
+##   subtracted from it, so the game's own hold loop walked the playhead
+##   *backwards* one frame per tick. Measured: at index 24 (`AntPlay`) it landed
+##   on 23 (`Ant`, the world's explanation frame, which carries a full-stage
+##   overlay sprite), the score advanced back to 24, and the two alternated for
+##   ever with the `play` stack growing by one entry per tick. In the reference
+##   `func_play` *calls* `func_goto` (`lingo-funcs.cpp:213`), so the two cannot
+##   land on different frames by construction.
+## - `go(1)` — 32 sites in `reference/lingo/` alone, plus 6 of `go(2)` — landed
+##   on the second frame of the score instead of the first. `go(1, "movie")`
+##   next to it landed on the first, because that path converts.
+##
+## Named rather than inlined so that the four sites read as one decision. A
+## number below 1 is still clamped by `lingo_go_frame`, which is where every
+## out-of-range destination has always been resolved.
+static func lingo_frame_index(number: int) -> int:
+	return number - 1
+
+
+static func lingo_frame_number(index: int) -> int:
+	return index + 1
 
 
 ## What the frame the playhead is on actually shows, in channel order.
@@ -2445,6 +2511,165 @@ func note_pointer(at: Vector2) -> void:
 ## never ran, is still down, and a movie asking mid-handler must be told so.
 func mouse_button_down() -> bool:
 	return _mouse_down_seen or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+
+
+## True while `lingo_breathe` is pumping the OS queue from inside a handler.
+##
+## Everything `_input` would normally *do* is suspended for the duration, and
+## that is Director's rule rather than a shortcut: Lingo is not re-entrant, so a
+## press arriving while a handler is running raises no second handler. It is
+## queued and answered when the first one returns.
+var _lingo_breathing := false
+## The button and key events that arrived during a breathe, waiting for the
+## handler to finish. Replayed by `_process`, in arrival order.
+var _deferred_input: Array[InputEvent] = []
+
+
+## Give the platform its turn from inside a spinning Lingo `repeat`.
+##
+## **What this fixes, measured.** `itamar-magichat`'s screen-item framework ends
+## its `mouseDown` handler with Director's standard drag loop
+## (`objects.cst`, `Screen items functions`, lines 108-117):
+##
+##     t = the ticks
+##     repeat while the mouseDown and ((the ticks - t) < 10)
+##     end repeat
+##     if the mouseDown then
+##       repeat while the mouseDown
+##         ItemObj.ItemMouseStilldown(...)
+##       end repeat
+##
+## In Director both loops end when the player lets go, because `the mouseDown`
+## is a read of the hardware -- ScummVM's `lingo-the.cpp:865` answers it from
+## `g_system->getEventManager()->getButtonState()`. Here the handler is running
+## on the main thread inside `_input`, and Godot's `Input` state is written by
+## the main loop that the handler is blocking: the release could not be observed
+## at all. The first loop therefore always fell out on its 10-tick timeout with
+## the button still reading down, the second one always ran, and it ran until
+## `MAX_STEPS` aborted the handler -- 400,000 steps, 16.4 seconds measured on
+## this machine, with `SendMessageTimeout(WM_NULL, SMTO_ABORTIFHUNG)` against
+## the game window returning 0 for every one of those seconds. Every click on
+## the title's main menu froze the application, and the freeze ended only when
+## the interpreter gave up.
+##
+## `DisplayServer.process_events()` is the whole of the fix: it pumps the
+## platform's queue, so the button state, the pointer and the modifier keys are
+## current the next time the loop asks. On the headless driver it does nothing,
+## which is the right answer there -- a harness has no queue to pump.
+##
+## **The events it pumps are queued rather than dispatched, and the button ones
+## have to be rebuilt from the state.** Two separate facts, both measured here:
+##
+## 1. `_input` refuses to *act* on anything that arrives during a breathe, and
+##    that is Director's rule rather than a shortcut -- Lingo is not re-entrant,
+##    so a press landing while a handler runs raises no second handler. It is
+##    queued and answered when the first one returns (`_flush_deferred_input`).
+## 2. **Godot drops a nested dispatch, so `_input` never sees them at all.**
+##    Measured, and it is the reason this function is not four lines: with a
+##    print at the top of `_input` and another around the pump, a click on the
+##    album button logged `breathe: live button true -> false` -- the pump had
+##    taken the `WM_LBUTTONUP` and updated `Input`'s mask -- and logged no
+##    `_input` call for it, before or after. The event was consumed and thrown
+##    away, and `mouseUp` never reached the movie: the run's exit report counted
+##    `mouseDown: 1` and no `mouseUp` at all. That trades a freeze for a menu
+##    that does nothing, which is not a fix.
+##
+## So the buttons are reconstructed from the mask instead. It is the same
+## information the OS event carried -- which button, up or down, and where the
+## pointer is -- and it is the information Director's own `the mouseDown` is a
+## read of, so nothing is being invented. See `_queue_button_changes`.
+##
+## **Not everything survives: a key pressed during a spinning loop is lost.**
+## There is no mask to rebuild it from, and Godot has already discarded the
+## event. Director would deliver it after the handler returned, so this is a
+## real divergence and is written down rather than hidden. It costs a keystroke
+## during a drag, which no title in this corpus reads.
+##
+## `_mouse_down_seen` is cleared here for the same reason it exists. It is a
+## latch that keeps a press visible to the score for one step (see the field),
+## and a loop that has *watched* the button come up has better information than
+## the latch's guess.
+func lingo_breathe() -> void:
+	# **The stage does the pumping, even when a window's script asked.** A
+	# Movie-In-A-Window has its input processing switched off (`preview/boot.gd`)
+	# and never sees an event, so a queue filled on a window node would be
+	# replayed into a `_input` that the routing does not start from. Its own
+	# `the mouseDown` latch is still its own and is cleared here.
+	var stage: Node = stage_preview()
+	if stage != self:
+		stage.lingo_breathe()
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_mouse_down_seen = false
+		return
+	if _lingo_breathing:
+		return
+	_lingo_breathing = true
+	var before := Input.get_mouse_button_mask()
+	var already := _deferred_input.size()
+	DisplayServer.process_events()
+	var after := Input.get_mouse_button_mask()
+	_lingo_breathing = false
+	if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_mouse_down_seen = false
+	if before != after:
+		_queue_button_changes(before, after, already)
+
+
+## Rebuild the button events the pump consumed, from the mask it left behind.
+##
+## One synthetic `InputEventMouseButton` per button whose bit changed across the
+## pump, queued for `_flush_deferred_input` exactly as a real one would have
+## been. `from` is how long `_deferred_input` was *before* the pump: anything
+## appended during it came from `_input` and is the genuine event, so a button
+## already represented there is skipped rather than doubled. That path is live —
+## a breathe from a loop inside `on exitFrame` is not nested in a dispatch and
+## does deliver — so both halves happen in the same session.
+##
+## The position is the live pointer, because that is where the button is: the
+## consumed event carried the same point, and on a machine with a cursor
+## `stage_mouse()` would answer from the DisplayServer for this frame anyway.
+func _queue_button_changes(before: int, after: int, from: int) -> void:
+	for button in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
+		var bit: int = 1 << (button - 1)
+		if (before & bit) == (after & bit):
+			continue
+		var seen := false
+		for i in range(from, _deferred_input.size()):
+			var queued := _deferred_input[i] as InputEventMouseButton
+			if queued != null and queued.button_index == button:
+				seen = true
+				break
+		if seen:
+			continue
+		var event := InputEventMouseButton.new()
+		event.button_index = button as MouseButton
+		event.pressed = (after & bit) != 0
+		event.button_mask = after
+		# Viewport coordinates, which is what a real event carries and what
+		# `_input` puts back through `make_input_local`. Built from
+		# `stage_mouse()` rather than from the viewport's own mouse position so
+		# that the touch answer is right: on a machine with a cursor the two are
+		# the same read, and on one without, `stage_mouse()` is the *only* source
+		# — a finger leaves `DisplayServer.mouse_get_position()` wherever it was.
+		event.position = get_global_transform_with_canvas() * stage_mouse()
+		event.global_position = event.position
+		_deferred_input.append(event)
+
+
+## Hand the events a breathe collected to the input path they were meant for.
+##
+## Called from the top of `_process`, ahead of every guard in it: a movie that is
+## paused or stopped still has to receive the click, because a click is how a
+## player leaves a pause. Emptied before the replay so that a handler which
+## breathes *again* while answering one of these queues into a fresh list rather
+## than into the one being iterated.
+func _flush_deferred_input() -> void:
+	if _deferred_input.is_empty():
+		return
+	var queued := _deferred_input
+	_deferred_input = []
+	for event in queued:
+		_input(event)
 
 
 func lingo_hold() -> void:
@@ -3205,7 +3430,7 @@ func lingo_play_push(args: Array) -> void:
 	elif typeof(where) == TYPE_STRING:
 		lingo_go_label(str(where))
 	elif where != null:
-		lingo_go_frame(int(where) - 1)
+		lingo_go_frame(lingo_frame_index(int(where)))
 
 
 ## `play done` â€” return to whatever called `play`, and let that handler finish.
@@ -3453,11 +3678,18 @@ func _trace(line: String) -> void:
 ## â€” the marker at or before where the playhead is â€” which is a different
 ## question with the same spelling, and the reason a room's `whereami` gate takes
 ## a dead branch if it is answered by position instead.
+##
+## **Both answer a Lingo frame number**, not a runtime index, because what a
+## script does with the answer is `go(label("x"))` — and `go` converts. An
+## unknown name is the one case that is not a frame at all: Director answers 0
+## and 0 is not frame 1, so the miss is carried through as 0 rather than being
+## put through `lingo_frame_number` with everything else.
 func lingo_label(which: Variant) -> int:
 	if _labels == null:
 		return 0
 	if typeof(which) == TYPE_STRING:
-		return int(_labels.labels.get(str(which).to_lower(), 0))
+		var found := int(_labels.labels.get(str(which).to_lower(), -1))
+		return 0 if found < 0 else lingo_frame_number(found)
 	return lingo_marker(int(which))
 
 
@@ -3471,7 +3703,7 @@ func lingo_marker(offset: int) -> int:
 		else:
 			break
 	var target := clampi(here + offset, 0, _labels.markers.size() - 1)
-	return int(_labels.markers[target]["frame"])
+	return lingo_frame_number(int(_labels.markers[target]["frame"]))
 
 
 func lingo_stop_sound(channel: int) -> void:
