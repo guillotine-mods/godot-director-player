@@ -272,7 +272,16 @@ for t in ${WANTED:-$ALL}; do
     RED=$((RED + 1))
   else
     printf '%-26s %s\n' "$t" "${r:0:4}"
-    [ "${r:0:4}" = PASS ] || RED=$((RED + 1))
+    if [ "${r:0:4}" != PASS ]; then
+      RED=$((RED + 1))
+      # The failing checks, indented, and this exists for CI rather than for a
+      # developer. A run on this machine can be repeated by hand; a run at 03:00
+      # on a runner that no longer exists cannot, and until this line the whole
+      # of what a nightly failure reported was the four characters above it.
+      # `lingo_surface_audit` went red on both platforms and the log could not
+      # say which of its eleven checks it was.
+      printf '%s\n' "$out" | grep -E "^FAIL" | head -6 | sed 's/^/    /'
+    fi
   fi
 done
 
