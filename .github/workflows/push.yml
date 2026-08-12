@@ -50,8 +50,24 @@ jobs:
       # `gate_require_pack` needs the 3D title or it warns into the diagnostic
       # grep this job now fails on. The other five corpora are several GB this
       # job never reads.
+      #
+      # The credential is configured here rather than relied on from `checkout`.
+      # That step leaves an extraheader in the PARENT repo's config, and a
+      # submodule is a fresh `git clone` that does not inherit it -- run
+      # 31590840586 failed with "could not read Username for
+      # 'https://github.com'" for exactly that reason. `checkout`'s own
+      # `submodules:` option does its own auth, which is why release.yml never
+      # hit this; it is only reachable when fetching submodules by hand.
+      #
+      # Removed again immediately: the corpora are private, and nothing after
+      # this step does git work.
       - name: Fetch only the two submodules this job reads
-        run: git submodule update --init --depth 1 games/piposh2 titles/piposh-3d
+        env:
+          PAT: ${{ secrets.SUBMODULES_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${PAT}@github.com/".insteadOf "https://github.com/"
+          git submodule update --init --depth 1 games/piposh2 titles/piposh-3d
+          git config --global --remove-section url."https://x-access-token:${PAT}@github.com/" || true
 
       - name: Resolve the piposh-3d commit
         id: pack
