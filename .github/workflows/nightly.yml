@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      entries:
+        description: "Harness names to run instead of the whole suite, space-separated. Empty runs all 78."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -137,8 +142,31 @@ jobs:
         run: |
           "$GODOT" --headless --path . --import
 
+      # Read through `env:` and charset-checked before it reaches the command
+      # line, the same way `release.yml` handles its version input. Only somebody
+      # with write access can dispatch this, so it is not untrusted in the
+      # fork-PR sense, but it is still a string a human types straight into a
+      # shell word.
+      #
+      # Unquoted on purpose: several names have to word-split into several
+      # arguments, which is what `gate.sh` takes. The charset guard is what makes
+      # that safe. `:@,.-` are allowed because an ALL entry can carry its own
+      # arguments, as in `mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1`.
       - name: Run the gate
-        run: bash gate.sh
+        env:
+          ENTRIES: ${{ inputs.entries }}
+        run: |
+          case "${ENTRIES:-}" in
+            '') ;;
+            *[!A-Za-z0-9_\ :@,./-]*)
+              echo "Refusing entries '$ENTRIES': it must match [A-Za-z0-9_ :@,./-]+" >&2
+              exit 1
+              ;;
+          esac
+          if [ -n "${ENTRIES:-}" ]; then
+            echo "running a subset: $ENTRIES"
+          fi
+          bash gate.sh $ENTRIES
 
       - name: Check disk space (after the run)
         if: always()
