@@ -1144,9 +1144,20 @@ func _parse_chunk_ordinal() -> Dictionary:
 	if not _eat_kw("of") and not _eat_kw("in"):
 		return _fail("%s chunk needs `of`" % kind, _ln())
 	var source := _parse_expr(Grammar.BINARY_LEVELS.size() - 1)
+	# **The count is the same node `the number of <kind>s in x` produces.** It was
+	# written here as `{"node": "the", "prop": "number", "of": …}`, which no arm of
+	# `_eval` has ever handled -- so `the last char in x` parsed, compiled, and
+	# then failed at run time with `unknown expression the`, once per evaluation,
+	# into an `errors` array nothing read until today.
+	#
+	# Itamar Park is where it showed. `cleanEdges` trims a trailing character with
+	#
+	#     repeat while the last char in myLine = myChar
+	#
+	# and the whole comparison answered VOID, so the loop never ran and every
+	# string it was asked to clean came back with its padding still on.
 	var count: Dictionary = {
-		"node": "the", "prop": "number", "of": kind + "s",
-		"target": source, "line": line,
+		"node": "count", "unit": kind, "source": source, "line": line,
 	}
 	var start: Dictionary = {"node": "int", "value": 1, "line": line}
 	if ordinal == "last":
