@@ -1,0 +1,132 @@
+name: push
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.1-stable
+
+concurrency:
+  group: push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suites:
+    name: tools/ci suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run the tools/ci suites
+        run: |
+          bash tools/ci/stamp_version_test.sh
+          bash tools/ci/check_asset_size_test.sh
+          bash tools/ci/check_macho_signed_test.sh
+          bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
+
+  structure:
+    name: check.sh
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Credentials are kept, unlike every other checkout in this repository,
+      # because the next step fetches submodules by hand and needs the header
+      # this configures. There is no pull_request trigger here or in
+      # release.yml, so this is not reachable from a fork.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.SUBMODULES_PAT }}
+
+      # Two of seven. `check.sh --root piposh2` needs that one corpus, and
+      # `gate_require_pack` needs the 3D title or it warns into the diagnostic
+      # grep this job now fails on. The other five corpora are several GB this
+      # job never reads.
+      - name: Fetch only the two submodules this job reads
+        run: git submodule update --init --depth 1 games/piposh2 titles/piposh-3d
+
+      - name: Resolve the piposh-3d commit
+        id: pack
+        run: echo "sha=$(git -C titles/piposh-3d rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # restore/save split for the same reason as nightly.yml: this job can fail
+      # on a red, and the combined action would then skip its save.
+      - name: Restore Godot and export templates
+        id: godot-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ hashFiles('tools/ci/install_godot.sh') }}
+
+      - name: Install Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: tools/ci/install_godot.sh "$GODOT_VERSION" "$HOME/godot-bin"
+
+      - name: Save Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: ${{ steps.godot-cache.outputs.cache-primary-key }}
+
+      - name: Point check.sh at Godot
+        run: |
+          echo "GODOT=$(cat "$HOME/godot-bin/.godot-path")" >> "$GITHUB_ENV"
+          echo "GODOT_TEMPLATES=$(cat "$HOME/godot-bin/.templates-path")" >> "$GITHUB_ENV"
+
+      - name: Verify Godot and its templates
+        run: |
+          version=$("$GODOT" --version)
+          if [ -z "$version" ]; then
+            echo "'$GODOT' produced no output." >&2
+            exit 1
+          fi
+          echo "godot: $version"
+          if [ -z "$(find "$GODOT_TEMPLATES" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "No export templates in $GODOT_TEMPLATES." >&2
+            exit 1
+          fi
+
+      # Keyed on the submodule commit, which is the same thing
+      # `gate_require_pack` compares its stamp against.
+      - name: Restore the piposh-3d pack
+        id: pack-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            titles/piposh3d.pck
+            titles/piposh3d.pck.stamp
+          key: piposh3d-pack-${{ steps.pack.outputs.sha }}
+
+      - name: Import
+        run: |
+          "$GODOT" --headless --path . --import
+
+      # Builds the pack itself, through gate_require_pack, on a cache miss.
+      - name: Run the structural gate
+        run: bash check.sh --root piposh2
+
+      # `always()` so a red still banks the pack it just spent minutes building,
+      # and the stamp guard so a FAILED build is never cached: build_pack.sh
+      # writes the stamp only on success, so its absence means the .pck beside
+      # it is not to be trusted.
+      - name: Save the piposh-3d pack
+        if: always() && steps.pack-cache.outputs.cache-hit != 'true' && hashFiles('titles/piposh3d.pck.stamp') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            titles/piposh3d.pck
+            titles/piposh3d.pck.stamp
+          key: ${{ steps.pack-cache.outputs.cache-primary-key }}

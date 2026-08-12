@@ -2878,6 +2878,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `milliseconds` | system | live | 0 sites; read only |
 | `modal` | system | live | 0 sites; read+write |
 | `mousecast` | system | live | 0 sites; read only |
+| `mouseloc` | system | live | 0 sites; read only; the pair form of `the mouseH`/`the mouseV`, bound by `4b2e9371`. 0 sites is a fact about these six corpora and not about the name: `test-games/itamar-park` drives its software cursor with `set the loc of sprite CursorCh to the mouseLoc` from `on idle`, and that corpus is not one this audit scans |
 | `mousemember` | system | live | 0 sites; read only |
 | `mouseup` | system | live | 0 sites; read only |
 | `mouseupscript` | system | live | 0 sites; read+write |

@@ -16,7 +16,7 @@
 - **`GODOT_VERSION: 4.7.1-stable`** — the workflow's pinned version. Author the preset with the same version locally.
 - **The preset's `include_filter` is copied verbatim from the other four:** `games/*,director_game.cfg,data/*.json,titles/*.pck`
 - **Its `exclude_filter` likewise:** `*.md,docs/*,android/*.keystore,reference/*,saves/*,.snapshots/*,build/*,test-games/*`
-- **`bash gate.sh` before landing, and grep the output for `FAIL`.** The script exits 0 on a red. `palette_members` is a standing failure from a gitignored fixture and is not yours.
+- **`bash gate.sh` before landing.** ~~The script exits 0 on a red, so grep the output for `FAIL`; `palette_members` is a standing failure from a gitignored fixture and is not yours.~~ **Superseded 2026-08-12:** `gate.sh` exits 1 on any red, so use the exit code; `palette_members` is no longer in `ALL`, and the suite is green at 77 entries. Any red is yours.
 - **Push directly to `main`.** No branches, no PRs in this repo.
 - **Do not edit `README.md`.** It has mixed CRLF/CR/LF line endings, so any edit normalises the whole file into a whole-file diff.
 - **Commit after every task.**
@@ -461,7 +461,7 @@ Nothing above has run a Linux export. The template is not installed locally and 
 bash gate.sh 2>&1 | tee /tmp/gate.log; grep FAIL /tmp/gate.log
 ```
 
-Expected: the only `FAIL` lines are `palette_members`, which is a standing red from a gitignored fixture. Any other `FAIL` is yours. **Do not trust the exit code** — `gate.sh` exits 0 on a red.
+~~Expected: the only `FAIL` lines are `palette_members`, which is a standing red from a gitignored fixture. Any other `FAIL` is yours. **Do not trust the exit code** — `gate.sh` exits 0 on a red.~~ **Superseded 2026-08-12:** trust the exit code, and expect no `FAIL` at all — `palette_members` left `ALL` and the suite is green at 77 entries.
 
 - [ ] **Step 2: Push to main**
 

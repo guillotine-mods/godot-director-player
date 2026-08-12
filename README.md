@@ -48,6 +48,7 @@ Boot path: `strtgame` → New Game → `EXODUS` → `DAY1`. Load Game → `SAVEL
 | `bugs.md` | Open defects with reproductions. Closed ones in `docs/bugs-closed.md` |
 | `gate.sh`, `check.sh`, `gate_env.sh` | The verification gates, and the one copy of what they need to know about the machine |
 | `build_pack.sh` | Builds `titles/piposh3d.pck` out of the `titles/piposh-3d` submodule. Run once per checkout; without it the 3D title is missing from the launcher and four autoloads error on every run |
+| `.github/workflows/` | `nightly.yml` runs `gate.sh` on macOS and Windows every night; `push.yml` runs the cheap checks on every push to `main`; `release.yml` builds a tagged release, and dry-runs itself weekly |
 
 Not committed, but present after a real run: `.godot/` (editor cache, see below),
 `.traces/` (ScummVM trace logs from `tools/capture_scummvm_trace.sh`),
@@ -216,11 +217,14 @@ check that reads the framebuffer back has to run windowed. See the note under
 
 There is no test suite.
 
-**`bash gate.sh` is the authority.** Its `ALL` list is the set of harnesses that
+**`bash gate.sh` is the authority**, and it exits 1 when any entry does not pass,
+so a script and a human read the same verdict. TIMEOUT, EMPTY and ERROR count as
+failures alongside FAIL: a run that hung, asserted nothing, or died before it
+could report has not passed. Its `ALL` list is the set of harnesses that
 actually run against the live player and are expected to pass, and as of a
-whole-suite run on 4.7.1 on 2026-08-10 **every entry passes and none fail** --
-including `debug_bindings`, which was config rather than code and whose config
-moved, and `boot_state`, the long-standing red this paragraph used to name. A
+whole-suite run on 4.7.1 on macOS on 2026-08-12 **all 78 entries pass** --
+including `debug_bindings`, which was config rather than code and whose
+config moved, and `boot_state`, the long-standing red this paragraph used to name. A
 green `play_suspends` is a result rather than one sample: it *was* the
 fixed-frame-count flake of `bugs.md` 41, and `b8466abb` closed it by waiting on
 the resumed global under a 600-frame ceiling instead of counting six frames.
@@ -233,9 +237,9 @@ long run of tools listed here rotted exactly that way and was deleted; see
 "Retired" at the end of this section.
 
 ```
-bash gate.sh                                        # the whole suite, ~10 min
+bash gate.sh                                        # the whole suite, ~17 min; exits 1 on any red
 bash gate.sh hotspots trails                        # named harnesses only
-bash check.sh                                       # fast structural gate: parses, surface resolves
+bash check.sh                                       # fast structural gate: parses, surface resolves; exits 1 on a red
 ```
 
 Both run on macOS and on Windows git-bash, from wherever the checkout is. What
@@ -331,7 +335,8 @@ godot --script tools/save_state.gd                  # a save state reproduces th
 godot --headless --script tools/text_codepage.gd    # which single-byte codepage the corpus was authored in, measured against the candidates; the decode/encode round trip over every authored string; a Hebrew name written by one process and read by another, pass/fail (`--all` for every root)
 godot --headless --script tools/builtin_load.gd     # the player's own route to a saved game — menu, Load, the slot list, a slot, the stage resuming in the room it recorded, pass/fail (`--real` drives the frame clock instead of stepping the score)
 godot --headless --script tools/palette_survey.gd -- --all  # what names a palette: CLUT chunks, palette members, clut ids, the score channel
-godot --headless --script tools/palette_members.gd -- --root res://test-games/itamar-park  # custom palettes as the renderer uses them: a CLUT read entry 0 first, a bitmap naming its own palette, the member's table reaching the decoder, pass/fail — fails on a corpus with no palettes rather than passing over nothing
+godot --headless --script tools/palette_corpus.gd  # palettes across ALL six titles, no --root: 651 containers, 118,991 bitmaps, that every built-in and member-named palette resolves and that a dangling name falls back to the stage default. In gate.sh's ALL
+godot --headless --script tools/palette_members.gd -- --root piposh-ru  # custom palettes as the renderer uses them: a CLUT read entry 0 first, a bitmap naming its own palette, the member's table reaching the decoder, pass/fail — fails on a corpus with no palettes rather than passing over nothing. NOT in gate.sh's ALL: only piposh-ru of the six has CLUT chunks (3) and it reaches 7 of 9, because no bitmap there names a palette member. Run it by hand when touching palettes
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
 godot --headless --script tools/audio_index.gd      # the sounds the game names resolve and load, pass/fail
 godot --headless --script tools/sound_survey.gd -- --all  # whether the score itself ever plays a sound, pass/fail

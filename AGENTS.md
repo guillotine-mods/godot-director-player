@@ -107,14 +107,39 @@ the opposite and had been available from the first minute. Read
 ## Environment
 
 - **There is no test suite.** `gate.sh`'s `ALL` list is the authoritative set of
-  harnesses that run and are expected to pass — measured by a whole-suite run on
-  4.7.1, 2026-08-11: **every entry passes except `palette_members`, and that one
-  fails for want of a corpus that is not in this repository.** Its `ALL` entry
-  names `res://test-games/itamar-park`, which is untracked, not a submodule and
-  not ignored — simply absent, so it fails on any clean clone rather than on this
-  machine. Pointed at no palettes it is *designed* to fail rather than pass over
-  nothing, so this is the harness working; it is the corpus that is missing.
-  Do not read it as a regression, and do not fix it by weakening the assert.
+  harnesses that run and are expected to pass, and **`gate.sh` exits 1 when any
+  of them does not** — TIMEOUT, EMPTY and ERROR count as failures alongside FAIL,
+  because a run that hung, asserted nothing, or died before it could report has
+  not passed. Measured by a whole-suite run on 4.7.1 on macOS, 2026-08-12:
+  **all 78 entries pass.** The suite is green, and that is new — it is worth
+  keeping that way, because a suite with a standing red teaches everyone to read
+  past reds. `.github/workflows/nightly.yml` runs it on macOS and Windows every
+  night, so a red is now something that arrives rather than something somebody
+  has to go looking for.
+  - `lingo_surface_audit` was red and is fixed. It failed for one reason and it
+    was documentation, not code: `4b2e9371` bound `the mouseLoc` and never added
+    it to §19's claim table, and this harness's rule is that every name the
+    engine binds is recorded there. Fixed by adding the row. If it goes red
+    again, read which of its 11 checks failed before assuming the engine moved.
+  - `palette_members` was the other red and **is no longer in `ALL`**, on the
+    grounds that its subject is not this project: the only corpus whose bitmaps
+    name palette *members* is `test-games/itamar-park`, which is not a submodule,
+    not tracked, ignored at `.gitignore:73`, and never shipped with the six
+    titles this engine is for. An entry that can only pass against a corpus
+    outside the project gates nothing here.
+    `tools/palette_corpus.gd` replaced it and is in `ALL`: 14 checks over all six
+    roots, 651 containers and 118,991 bitmaps, versus 9 over one title nobody
+    has. The one thing only `palette_members` asserts is that a bitmap's own
+    named palette reaches the decoder and changes the pixels, which no shipped
+    title can express; run it by hand against `piposh-ru` (7 of 9) for that.
+- **A harness must assert what this port controls, not what a 1990s cast got
+  right.** `palette_corpus`'s first version failed, correctly-looking, on
+  `piposh-dream`'s 167 bitmaps naming member 154, which is a type-2 member. That
+  is bad authoring in a shipped title: the container states file version `0x57E`,
+  so the D5 layout the reader uses is right, and the reference resolves the same
+  pair to the same non-palette. The engine already falls back to the stage
+  default, which is what the check asserts now. Asserting the data instead would
+  have gated this project on files it cannot fix.
   Both of the two that this line used to name as standing failures now pass,
   and neither was fixed by
   changing what they assert: `debug_bindings` was config rather than code and the

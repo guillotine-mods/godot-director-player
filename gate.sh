@@ -5,6 +5,11 @@
 # written. There is no expected failure any more, so any red is a regression and
 # needs no triage against a list of excuses.
 #
+# That set is now enforced rather than only recorded: anything other than PASS
+# exits 1. The alternative was a tracked file of expected statuses for CI to diff
+# against, which is precisely the list of excuses the paragraph above records
+# having escaped from, so it was not built.
+#
 # How many entries that is on the day you read it is deliberately not written
 # here, for the reason README.md gives and the paragraph below demonstrates: the
 # set is uniform, so the count says nothing the sentence above does not, and it
@@ -109,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_members:--root@res://test-games/itamar-park audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts play_suspends sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -179,14 +184,39 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # subject is the tables and the transforms, which need no corpus at all, plus
 # `GATE_ROOT`'s one authored palette frame (`strtgame` f38).
 #
-# `palette_members` names `test-games/itamar-park` for the same reason
-# `cursor_cross_cast` names `rating`: `GATE_ROOT` cannot express its subject at
-# all. Not one of the six shipped titles carries a single `CLUT` chunk or a
-# single palette cast member, so every custom-palette path in the engine was
-# unexercised by every gate entry -- and had been wrong in two places for as long
-# as it had existed, in a way no run over this corpus could have shown. Pointed
-# at a corpus with no palettes the harness fails and says so, rather than passing
-# over nothing.
+# `palette_members` is **deliberately not in this list**, and the reason is about
+# what this project is rather than about the harness, which is fine.
+#
+# It needs a corpus whose bitmaps name palette *members*, and `test-games/itamar-park`
+# is the only one that does -- 655 of its 657. That title is not part of this
+# project: it is not a submodule, it is not tracked, `test-games/` is ignored at
+# `.gitignore:73`, and it never shipped with the six titles this engine is for. An
+# entry that can only pass against a corpus outside the project is not a gate on
+# this project, so it gated nothing and reported red for ever.
+#
+# **Two claims that used to live here were measured and are false**, so they are
+# recorded rather than repeated. "Not one of the six shipped titles carries a
+# single `CLUT` chunk or a single palette cast member": `piposh-ru` carries three
+# of each, in `Texts.cst`, `pipdata/Texts.cst` and `pipdata/Textold.cst`, and the
+# harness scores 7 of 9 against it. And the argument that the gap was only the
+# missing corpus: `piposh-ru` cannot reach 9 of 9 either, for reasons that are
+# facts about its art rather than defects. No bitmap there names a palette member,
+# and the Mac and Windows D5 tables agree at 142 of 256 indices -- so a member
+# that decodes the same under both provably uses only those, which is what
+# "decoding through it changes the pixels" reads as a failure.
+#
+# Removing it would have left the CLUT read path ungated, which is how
+# `palette_cycle` above came to carry four reds nobody saw, so `palette_corpus`
+# was written to cover what the six shipped titles CAN answer. That is 14 checks
+# over 6 roots, 651 containers and 118,991 bitmaps, against `palette_members`'s
+# 9 over one title -- more coverage than was lost, not less, and all of it on
+# data this project owns.
+#
+# What is still only in `palette_members`: that a bitmap's own named palette
+# reaches the decoder and *changes the pixels*. No shipped title can express it.
+# `piposh-ru` is the corpus to run it against by hand, at 7 of 9:
+#
+#   godot --headless --script tools/palette_members.gd -- --root piposh-ru
 # A name given on the command line picks up the arguments its ALL entry carries.
 # Without this, `bash gate.sh mouse_poll` runs it bare against the boot movie,
 # which is not the subject it was written for -- it reported FAIL twice for that
@@ -204,7 +234,10 @@ for name in "$@"; do
   esac
 done
 
+RED=0
+TOTAL=0
 for t in ${WANTED:-$ALL}; do
+  TOTAL=$((TOTAL + 1))
   extra=""
   case "$t" in *:*) extra=$(printf %s "${t#*:}" | tr "@" " "); t="${t%%:*}";; esac
   # `--root` first, so an ALL entry that names its own wins: the override takes
@@ -216,6 +249,7 @@ for t in ${WANTED:-$ALL}; do
   # from the shim that stands in for it.
   if [ "$status" -eq 124 ]; then
     printf '%-26s TIMEOUT  (%ss ceiling; raise GATE_TIMEOUT or close the editor)\n' "$t" "${GATE_TIMEOUT:-900}"
+    RED=$((RED + 1))
     continue
   fi
   r=$(printf '%s' "$out" | grep -E "^(PASS|FAIL)" | tail -1)
@@ -229,12 +263,34 @@ for t in ${WANTED:-$ALL}; do
   checks=$(printf '%s' "$r" | grep -oE '\([0-9]+ checks' | grep -oE '[0-9]+')
   if [ -n "$checks" ] && [ "$checks" -eq 0 ]; then
     echo "$(printf %-26s "$t") EMPTY  (passed with 0 checks -- give it a subject)"
+    RED=$((RED + 1))
     continue
   fi
   if [ -z "$r" ]; then
     printf '%-26s ERROR\n' "$t"
     printf '%s\n' "$out" | grep -iE "parse error|script error|Invalid|Cannot|nonexistent" | head -3
+    RED=$((RED + 1))
   else
     printf '%-26s %s\n' "$t" "${r:0:4}"
+    [ "${r:0:4}" = PASS ] || RED=$((RED + 1))
   fi
 done
+
+# Counted rather than short-circuited, so a red does not stop the run: the whole
+# table is the finding, and a suite that stopped at the first FAIL would hide
+# every entry after it behind one.
+#
+# Every non-PASS branch above increments, so this covers TIMEOUT, EMPTY and ERROR
+# and not only FAIL. A run that hung, asserted nothing, or died before it could
+# report has not passed, and an exit code counting only FAIL would call all three
+# clean -- `EMPTY` especially, which exists precisely because four harnesses have
+# silently passed over an empty set.
+#
+# 1 and not 2: `exit 2` above is "another run holds the lock", a refusal to
+# measure rather than a measurement. A caller needs to tell "the gate says no"
+# from "the gate did not run".
+if [ "$RED" -gt 0 ]; then
+  echo "gate: $RED of $TOTAL did not pass."
+  exit 1
+fi
+echo "gate: all $TOTAL passed."

@@ -16,9 +16,25 @@ name: release
 # as a GitHub pre-release, `v1.x` and later (eventually `vX.Y`) are official
 # releases. `stamp_version.sh` strips the leading `v` before it reaches the
 # Android version name.
+#
+# `schedule` is a weekly dry run, and it needs no new guard -- which is the
+# whole reason it is one line rather than a workflow of its own. On a schedule
+# `github.ref` is `refs/heads/main`, so every `startsWith(github.ref,
+# 'refs/tags/')` condition below is ALREADY false: no draft is opened, no asset
+# is uploaded, and `finalize` is skipped by its own `if:`. The version resolves
+# to `main` through `${DISPATCH_VERSION:-$GITHUB_REF_NAME}` and passes the
+# charset guard unchanged.
+#
+# It catches export rot between tags rather than during one: a Godot asset that
+# moved, a preset that stopped matching the project, an asset that crossed the
+# 2 GiB ceiling. It does NOT exercise `finalize`, because skipping `finalize` is
+# exactly what makes it safe to run weekly -- so the asset-count gate below
+# stays untested by this.
 on:
   push:
     tags: ["v*"]
+  schedule:
+    - cron: "0 4 * * 0"
   workflow_dispatch:
     inputs:
       version:

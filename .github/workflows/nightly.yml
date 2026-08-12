@@ -1,0 +1,119 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.1-stable
+  # Lower than gate.sh's 900s default. This job is expected to fail, so what it
+  # is worth is the whole table; a few hangs at 900s each would push the tail of
+  # it past the job ceiling and lose the part nobody has seen yet.
+  GATE_TIMEOUT: 600
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Gate ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-latest
+          - platform: windows
+            runner: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          token: ${{ secrets.SUBMODULES_PAT }}
+          persist-credentials: false
+
+      - name: Check disk space (job start)
+        run: df -h
+
+      # restore/save split rather than the combined action, and this job is the
+      # reason the distinction matters. The combined action saves in a post step
+      # that does not run when the job failed -- and this job is EXPECTED to
+      # fail, every night, for as long as any entry is red. It would have
+      # re-downloaded Godot and ~1 GB of templates on both runners forever,
+      # which is a slow tax with nothing pointing back at its cause.
+      - name: Restore Godot and export templates
+        id: godot-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/godot-bin
+            ~/Library/Application Support/Godot/export_templates
+            ~/AppData/Roaming/Godot/export_templates
+          key: godot-${{ runner.os }}-${{ env.GODOT_VERSION }}-${{ hashFiles('tools/ci/install_godot.sh') }}
+
+      - name: Install Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: tools/ci/install_godot.sh "$GODOT_VERSION" "$HOME/godot-bin"
+
+      # Before the gate, not after it. Placed here the save never depends on the
+      # gate's verdict at all, which is simpler than making it conditional on
+      # one.
+      - name: Save Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/godot-bin
+            ~/Library/Application Support/Godot/export_templates
+            ~/AppData/Roaming/Godot/export_templates
+          key: ${{ steps.godot-cache.outputs.cache-primary-key }}
+
+      # Written by the installer into the bindir, so a cache hit that skipped
+      # the install still resolves both.
+      - name: Point the gate at Godot
+        run: |
+          echo "GODOT=$(cat "$HOME/godot-bin/.godot-path")" >> "$GITHUB_ENV"
+          echo "GODOT_TEMPLATES=$(cat "$HOME/godot-bin/.templates-path")" >> "$GITHUB_ENV"
+
+      # A restored cache entry is never exercised before this, and `cache-hit`
+      # can be true for a partial one. Both halves have a specific failure they
+      # prevent: an empty --version means the non-console Windows build got
+      # installed, which makes every harness read ERROR with no output; and
+      # missing templates make build_pack.sh's --export-pack fail, which
+      # gate_require_pack is deliberately never fatal about, so the run would
+      # continue with twelve autoload errors inside all 78 entries.
+      - name: Verify Godot and its templates
+        run: |
+          version=$("$GODOT" --version)
+          if [ -z "$version" ]; then
+            echo "'$GODOT' produced no output. On Windows that means the non-console build was installed." >&2
+            exit 1
+          fi
+          echo "godot: $version"
+          if [ -z "$(find "$GODOT_TEMPLATES" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+            echo "No export templates in $GODOT_TEMPLATES." >&2
+            echo "Cache keys are immutable, so re-running restores the same entry; delete it or change the key." >&2
+            exit 1
+          fi
+
+      - name: Import
+        run: |
+          "$GODOT" --headless --path . --import
+
+      - name: Run the gate
+        run: bash gate.sh
+
+      - name: Check disk space (after the run)
+        if: always()
+        run: df -h
