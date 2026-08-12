@@ -288,6 +288,30 @@ for t in ${WANTED:-$ALL}; do
       # `lingo_surface_audit` went red on both platforms and the log could not
       # say which of its eleven checks it was.
       printf '%s\n' "$out" | grep -E "^FAIL" | head -6 | sed 's/^/    /'
+      # And then the whole of what the harness said. The lines above are the
+      # verdict; this is the evidence, and it was being thrown away.
+      #
+      # Six FAIL lines are enough to name the check and never enough to explain
+      # it. `puppet_persists` fails on every macOS runner and passes on Windows
+      # and on a developer Mac, and every measurement that could tell those
+      # apart -- the per-room trace, `builtins reached`, the audio index, the
+      # detail on the checks that *passed* -- is in here and was being dropped.
+      # Four hypotheses were formed and three were wrong from those six lines,
+      # at a round trip of eight minutes each, which is the cost this line is
+      # weighed against.
+      #
+      # Under a red only. A passing entry's output says nothing a reader needs
+      # and there are 78 of them.
+      #
+      # Capped, and the cap says what it dropped rather than trimming quietly:
+      # a sweep harness prints thousands of lines into a log shared with 77
+      # other entries. 400 is over twice the longest failing entry measured, so
+      # the note below is the unusual case rather than the normal one.
+      spilled=$(printf '%s\n' "$out" | wc -l | tr -d ' ')
+      printf '%s\n' "$out" | head -400 | sed 's/^/    | /'
+      if [ "$spilled" -gt 400 ]; then
+        echo "    | ... and $((spilled - 400)) more line(s); run this entry alone for them."
+      fi
     fi
   fi
 done
