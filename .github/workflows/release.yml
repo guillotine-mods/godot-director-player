@@ -205,6 +205,8 @@ jobs:
             preset: macOS
           - target: android
             preset: Android
+          - target: linux
+            preset: Linux
     env:
       RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
     steps:
@@ -441,6 +443,51 @@ jobs:
           # The extracted copy is ~3.4 GB of .pck and is not needed again. Left in
           # place it would roughly double this job's peak disk for no purpose.
           rm -rf "$work"
+
+      # The only target that is not cross-compiled: this runner IS the target
+      # platform. That buys nothing extra here on purpose -- the artifact is not
+      # executed, because no other leg executes its artifact and this one is not
+      # a different shape from the others. See the design doc.
+      - name: Export Linux
+        if: ${{ matrix.target == 'linux' }}
+        run: |
+          mkdir -p build/linux
+          godot --headless --path . --export-release "${{ matrix.preset }}" build/linux/GodotDirectorPlayer.x86_64
+          # Same corpus check and size instrumentation as Windows: with
+          # `embed_pck=false` the .pck is where `games/*` actually lands, so a
+          # 40 MB .pck instead of multiple GB means the export did not take the
+          # paths the preset names.
+          ls -lh build/linux/
+          # Two files that must travel together, and a mode that must survive.
+          ( cd build/linux && zip -qr "../GodotDirectorPlayer-Linux-${RELEASE_NAME}.zip" . )
+          echo "ASSET=build/GodotDirectorPlayer-Linux-${RELEASE_NAME}.zip" >> "$GITHUB_ENV"
+
+      # Modelled on the Android pack check rather than on the macOS signing
+      # check: the failure mode is a missing archive member, not a malformed
+      # binary, so it needs `unzip` and not a parser.
+      - name: Verify the Linux archive is complete and runnable
+        if: ${{ matrix.target == 'linux' }}
+        run: |
+          listing="${{ runner.temp }}/linux-listing.txt"
+          if ! unzip -Z "$ASSET" >"$listing"; then
+            echo "unzip could not list $ASSET -- the archive itself is missing or corrupt, not merely incomplete." >&2
+            exit 1
+          fi
+          # `binary_format/embed_pck=false`, so the binary alone is inert.
+          if ! grep -q 'GodotDirectorPlayer\.pck$' "$listing"; then
+            echo "GodotDirectorPlayer.pck is not in $ASSET -- the binary would start and find no engine data." >&2
+            cat "$listing" >&2
+            exit 1
+          fi
+          # `zip` preserves the mode, so this asserts something that should
+          # already be true. Nothing else in the pipeline would notice if it
+          # stopped being true, and the player's symptom is "Permission denied"
+          # with nothing to suggest the download is at fault.
+          if ! awk '/GodotDirectorPlayer\.x86_64$/ && $1 ~ /^-rwx/ {f=1} END {exit !f}' "$listing"; then
+            echo "GodotDirectorPlayer.x86_64 is not executable inside $ASSET -- the player would have to chmod +x it to launch." >&2
+            cat "$listing" >&2
+            exit 1
+          fi
 
       # Release rather than debug: a debug export enables the remote debugger and
       # is larger. The three env vars override the export menu at export time, so
