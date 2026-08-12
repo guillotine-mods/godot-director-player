@@ -287,9 +287,63 @@ func run_compiled(compiled: Dictionary) -> bool:
 	return true
 
 
-func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Variant:
+## The script object a sprite behaviour runs on, one per (channel, script).
+##
+## **A behaviour is an instance, not a script**, and this port ran them as
+## scripts with `me` null for its whole life. Everything about that reads as
+## working: the handler is found, it runs, and only a handler that says `me`
+## notices. What it costs is the two things a behaviour instance is *for* --
+## its `property` declarations have nowhere to live, and `me.spriteNum` is VOID.
+##
+## Magic Hat is where the second one bites. Its buttons are ordinary Director
+## screen items whose script is one line:
+##
+##     on mouseUp me
+##       ItemMouseUp(me.spriteNum, (the mouseLoc)[1], (the mouseLoc)[2])
+##
+## With `me` null that call passed VOID, `GetScreenItem(VOID)` answered VOID,
+## and the guard right after it exited -- so every button in the title
+## highlighted, played its sound and did nothing at all. Nothing was reported,
+## because nothing failed: a handler ran to completion and took an early exit
+## the movie itself wrote.
+##
+## Cached per channel and per script, because that is what an instance is: two
+## sprites sharing one behaviour have two independent property bags, and the
+## same sprite must get the *same* object every tick or a property written in
+## `mouseDown` is gone by `mouseUp`. The cache needs no clearing of its own:
+## `preview/boot.gd` builds a fresh `LingoInterpreter` per movie and carries only
+## the globals across, so these die with the movie that made them -- which is
+## also Director's lifetime for a behaviour instance.
+##
+## `spriteNum` is declared on the instance whether or not the script names it.
+## Director's behaviours all have it -- it is how a behaviour knows which sprite
+## it is on -- and a script is free to read it without declaring anything.
+func behaviour_instance(script: Dictionary, channel: int) -> Variant:
+	if channel <= 0 or script.is_empty():
+		return null
+	var key := "%d:%s" % [channel, str(script.get("script", ""))]
+	if not _behaviours.has(key):
+		var made := LingoObject.new(script, str(script.get("cast", "")))
+		made.call("declare", "spritenum")
+		made.call("set_slot", "spritenum", channel)
+		_behaviours[key] = made
+	return _behaviours[key]
+
+
+## Live behaviour instances, keyed `<channel>:<script name>`. See above.
+var _behaviours: Dictionary = {}
+
+
+func call_handler(name: String, args: Array = [], script: Dictionary = {},
+		channel: int = 0) -> Variant:
 	_running += 1
-	var value: Variant = _resolve_and_call(name, args, script)
+	## A behaviour is delivered its own instance as `me`, both as the first
+	## argument (which is how `on mouseUp me` binds it) and on the frame (which
+	## is how a handler that omits the parameter still reads it).
+	var on_object: Variant = behaviour_instance(script, channel)
+	if on_object != null and args.is_empty():
+		args = [on_object]
+	var value: Variant = _resolve_and_call(name, args, script, on_object)
 	_running -= 1
 	# The outermost dispatch is where a suspended chain leaves the interpreter.
 	# Every entry point funnels through here -- the frame loop, the mouse, the
@@ -311,14 +365,18 @@ func call_handler(name: String, args: Array = [], script: Dictionary = {}) -> Va
 ##
 ## Same `_running`/`_park` discipline as `call_handler`, because a handler
 ## reached this way can `play` or `go` exactly like any other.
-func call_in_script(name: String, script: Dictionary) -> bool:
+func call_in_script(name: String, script: Dictionary, channel: int = 0) -> bool:
 	var key := name.to_lower()
 	for value in script.get("handlers", []):
 		var handler: Dictionary = value
 		if str(handler.get("name", "")).to_lower() != key:
 			continue
 		_running += 1
-		_invoke(handler, [], script)
+		# The queued sprite tier reaches a behaviour through here rather than
+		# through `call_handler`, so the instance has to be offered at both
+		# doors or a mouse event sees a `me` a frame event does not.
+		var on_object: Variant = behaviour_instance(script, channel)
+		_invoke(handler, [on_object] if on_object != null else [], script, on_object)
 		_running -= 1
 		if _running == 0:
 			_park()
@@ -345,14 +403,20 @@ func call_movie_handler(name: String) -> bool:
 	return true
 
 
-func _resolve_and_call(name: String, args: Array, script: Dictionary) -> Variant:
+func _resolve_and_call(name: String, args: Array, script: Dictionary,
+		on_object: Variant = null) -> Variant:
 	## Resolution order is Director's, narrowed to what this port needs: the
 	## script that owns the event first, then any movie script.
+	##
+	## `on_object` is the behaviour instance when the caller named a channel. It
+	## goes only to the script's own handler: a *movie* handler reached through
+	## the fallback belongs to no sprite, and handing it a `me` would make
+	## `me.spriteNum` answer a channel it has nothing to do with.
 	var key := name.to_lower()
 	if not script.is_empty():
 		for handler in script.get("handlers", []):
 			if str(handler.get("name", "")).to_lower() == key:
-				return _invoke(handler, args, script)
+				return _invoke(handler, args, script, on_object)
 	if _movie_handlers.has(key):
 		var entry: Dictionary = _movie_handlers[key]
 		var owner := find_script(str(entry.get("cast", "")), str(entry.get("script", "")))
@@ -903,18 +967,46 @@ func _broadcast(target: Variant, message: String, args: Array,
 	var entry: Array = (recipient as Object).call("resolve", message)
 	if entry.is_empty():
 		return null
-	var full: Array = [entry[0]]
+	## **`me` is the object the message was sent to, not the ancestor that
+	## happens to define the handler.**
+	##
+	## `resolve` answers `[owner, handler]` after walking the chain, and this
+	## passed the *owner* as the first argument -- so an inherited handler ran
+	## with `me` bound to the ancestor. Every `me.Something()` inside it then
+	## dispatched from the ancestor, which is exactly backwards: the whole point
+	## of the chain is that a base handler calls forward into the offspring's
+	## override.
+	##
+	## Magic Hat's menus are that pattern end to end. `MainMenuObject.new` does
+	## `ancestor = script("BasicMenuObject").new(MenuName)`, and the base class
+	## registers each button with `SetInfo(#menu, me)` from an inherited handler
+	## -- so every button stored the *BasicMenuObject* as its menu. A click then
+	## reached `BasicMenuObject.MenuMouseUp`, whose entire body is `nothing()`,
+	## instead of `MainMenuObject.MenuMouseUp` and its `case … "hatsgame":`
+	## dispatch. The buttons highlighted, played their sound and went nowhere.
+	##
+	## The property half already worked and is what makes this safe: `slot_owner`
+	## walks the same chain, so an ancestor's `property` read by its bare name
+	## inside its own handler still finds the ancestor's slot even though `me` is
+	## now the offspring.
+	var full: Array = [recipient]
 	full.append_array(args)
-	return _invoke_on(entry[0], entry[1], full)
+	return _invoke_on(entry[0], entry[1], full, recipient)
 
 
 ## Run one handler *on* an object, with the same `_running`/`_park` discipline
 ## every other entry point uses: a handler reached this way may `play` or `go`
 ## exactly like one reached from the frame loop, and a chain that is not parked
 ## is a conversation that never returns.
-func _invoke_on(obj: Variant, handler: Dictionary, args: Array) -> Variant:
+## `me_on_frame` is the receiver when it differs from the handler's owner, which
+## is every inherited message: the *code* comes from the owner and `me` is the
+## object the message was sent to. Defaults to the owner for the one caller where
+## they are the same object, `new`.
+func _invoke_on(obj: Variant, handler: Dictionary, args: Array,
+		me_on_frame: Variant = null) -> Variant:
 	_running += 1
-	var value: Variant = _invoke(handler, args, (obj as Object).get("ast"), obj)
+	var receiver: Variant = me_on_frame if me_on_frame != null else obj
+	var value: Variant = _invoke(handler, args, (obj as Object).get("ast"), receiver)
 	_running -= 1
 	if _running == 0:
 		_park()

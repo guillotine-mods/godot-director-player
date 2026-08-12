@@ -241,7 +241,10 @@ static func run(host, interpreter, handler: String, elements: Array) -> int:
 		if is_movie:
 			interpreter.call_movie_handler(handler)
 		else:
-			interpreter.call_in_script(handler, script)
+			# The element's channel makes this a behaviour *instance* rather than a
+			# script -- see `LingoInterpreter.behaviour_instance`. Only the sprite
+			# tier carries one; a cast script's element has channel 0 and gets none.
+			interpreter.call_in_script(handler, script, int(el.get("channel", 0)))
 		if host._host != null:
 			host._host.current_sprite_num = outer
 		if (host._frozen_lingo as Array).size() > parked:

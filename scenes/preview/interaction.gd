@@ -382,7 +382,7 @@ static func dispatch_sprite_only(host, handler: String, channel: int) -> bool:
 		return false
 	host._tally(host._sent, handler)
 	host._tally(host._ran, handler)
-	host._interpreter.call_handler(handler, [], script)
+	host._interpreter.call_handler(handler, [], script, channel)
 	return true
 
 
