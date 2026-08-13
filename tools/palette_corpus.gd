@@ -47,6 +47,8 @@ const MIN_BUILTIN_SITES := 5000
 const MIN_CLUT_CHUNKS := 1
 const MIN_PALETTE_MEMBERS := 1
 const MIN_DEFAULTS := 20
+## Measured 81, in `piposh-dream`'s six movies declaring the Windows D5 default.
+const MIN_DANGLING_OFF_MAC := 40
 
 ## Both ink passes treat "every channel at or above this" as paper, the same
 ## number `palette_members.gd` and `director_bitmaps.gd` use.
@@ -80,6 +82,11 @@ func _init() -> void:
 	var naming_member := 0
 	var naming_dangling := 0
 	var dangling_wrong: Array[String] = []
+	var dangling_wrong_count := 0
+	# Of the dangling ones, those in a movie whose stage is *not* system Mac.
+	# These are the only members the fallback rule can be observed on, so a floor
+	# on them is what stops the check below passing over nothing.
+	var dangling_off_mac := 0
 
 	# Bitmaps naming a built-in, and whether the engine can build it.
 	var naming_builtin := 0
@@ -119,12 +126,21 @@ func _init() -> void:
 			containers += 1
 			clut_chunks += movie.ids_of("CLUT").size()
 
+			# The stage this movie actually starts on, which is what a member whose
+			# own palette does not resolve is drawn against if the fallback is
+			# wrong. Read per movie rather than assumed, because six of
+			# `piposh-dream`'s movies declare the Windows D5 table and the rest
+			# declare system Mac -- and a check handed system Mac as the stage
+			# cannot tell the two fallbacks apart at all.
+			var stage_id := Palette.SYSTEM_MAC
 			var config = Config.new()
 			if config.read(movie):
 				defaults += 1
 				var d := int(config.default_palette)
+				stage_id = d
 				if d < 0 and not Palette.can_build(d):
 					default_unbuildable.append("%s -> %d" % [path.get_file(), d])
+			var stage_table := Palette.builtin(stage_id)
 
 			var table := CastTable.new()
 			if not table.open(movie, paths):
@@ -178,13 +194,30 @@ func _init() -> void:
 					if owner.is_empty() or int(owner.get("type", 0)) != Palette.MEMBER_TYPE:
 						naming_dangling += 1
 						# The engine's obligation, and the only part of this that
-						# is the port's to get right.
+						# is the port's to get right: the reference substitutes
+						# **system Mac** for a palette it has not loaded, not the
+						# palette the stage happens to be holding
+						# (`castmember/bitmap.cpp:484`).
+						#
+						# **Handed this movie's own stage, not system Mac.** For as
+						# long as this passed `system` as the stage it could not
+						# fail: both readings return the same bytes when the stage
+						# *is* system Mac, so the check agreed with itself while
+						# 81 members drew in the Windows table (`bugs.md` 104).
 						var fallback := PaletteView.table_for_member(
-							m, table, system, Palette.SYSTEM_MAC)
+							m, table, stage_table, stage_id)
+						if stage_id != Palette.SYSTEM_MAC:
+							dangling_off_mac += 1
 						if fallback != system:
+							# Counted apart from the examples: the list is capped,
+							# and a capped list read as a count is how two tools in
+							# this repo reported 12 of 66 differences as if 12 were
+							# the whole of it.
+							dangling_wrong_count += 1
 							if dangling_wrong.size() < 8:
-								dangling_wrong.append("%s #%d -> lib %d member %d" % [
-									path.get_file(), n, lib, clut])
+								dangling_wrong.append(
+									"%s #%d -> lib %d member %d, stage %d" % [
+										path.get_file(), n, lib, clut, stage_id])
 
 				# Whatever the renderer resolves for this member has to be a
 				# table the decoder can use. A member that resolves to nothing,
@@ -270,10 +303,22 @@ func _init() -> void:
 		naming_member > 0,
 		"if this reaches 0 the clut field stopped being read, which is how it "
 			+ "failed before: reading the cast library instead answers -1 everywhere")
+	# The floor is what makes the check below mean anything: the rule is only
+	# observable on a member whose movie is on some *other* palette, and handing
+	# system Mac in as the stage is how the previous version of this passed while
+	# the engine had it wrong.
 	h.check(
-		"a bitmap naming a member that is not a palette falls back to the stage default",
+		"%d dangling member(s) sit in a movie not on system Mac (floor %d)"
+			% [dangling_off_mac, MIN_DANGLING_OFF_MAC],
+		dangling_off_mac >= MIN_DANGLING_OFF_MAC,
+		"piposh-dream's six Windows-default movies hold these; with none of them "
+			+ "reached, the fallback check agrees with itself and proves nothing")
+	h.check(
+		"a bitmap naming a member that is not a palette falls back to system Mac",
 		dangling_wrong.is_empty(),
-		"%d do not: %s" % [dangling_wrong.size(), ", ".join(dangling_wrong.slice(0, 4))])
+		"%d of %d fall back to the stage instead, first %d: %s"
+			% [dangling_wrong_count, naming_dangling, dangling_wrong.size(),
+				", ".join(dangling_wrong)])
 	h.complete("every palette a bitmap names is one the engine can produce")
 
 	# -------------------------------------------------------- movie defaults

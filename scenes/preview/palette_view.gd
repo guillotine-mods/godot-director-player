@@ -13,10 +13,12 @@ extends RefCounted
 ## swaps a CLUT and the same pixels mean new colours. It costs nothing until
 ## something actually switches.
 ##
-## **Unexercised by the six shipped titles**, which ship no palette member and no
-## `CLUT` chunk at all (`tools/palette_survey.gd`), and cycle zero times.
-## `itamar-park` exercises all of it: 162 `CLUT` chunks, 145 palette members, and
-## a palette named by 655 of its 657 bitmap members.
+## **Barely exercised by the six shipped titles, but not unexercised**, which is
+## what this said and what `tools/palette_survey.gd` was read as proving. Measured
+## over all six by `tools/palette_corpus.gd`: `piposh-ru` ships **3 `CLUT` chunks
+## and 3 palette members**, and they cycle zero times. `itamar-park` exercises the
+## rest of it: 162 `CLUT` chunks, 145 palette members, and a palette named by 655
+## of its 657 bitmap members.
 
 const Palette := preload("res://director/director_palette.gd")
 
@@ -104,18 +106,64 @@ static func table_for(id: int, table, prefer_lib: int = 0) -> PackedByteArray:
 ## **The stage table still wins when the member names the palette the stage is
 ## already on**, and that is what keeps §11's fades and cycles visible: they
 ## mutate the stage table in place under an unchanged id, so a member naming that
-## same id has to see the mutation. It is also why the six shipped titles do not
-## move — every one of their bitmaps names system Mac, which is the id their
-## stage is on from the first frame to the last.
+## same id has to see the mutation.
 ##
-## A palette this port cannot build — `itamar-magichat`'s 881 members naming the
-## Windows D5 table, `piposh-dream`'s 167 naming a member no cast in that title
-## holds — falls back to the stage table rather than to a guess, which is the
-## same substitution `DirectorPalette.builtin` makes and for the same reason.
+## **It is not true that every bitmap in the six shipped titles names system Mac**,
+## which this paragraph used to claim as the reason none of them could move. Of
+## 118,991 bitmaps, 118,747 name system Mac, **244 name the Windows D5 table** and
+## **167 name a member that is not a palette** (`tools/palette_corpus.gd`). The
+## last group is what `bugs.md` 104 was.
+##
+## **A palette that does not resolve falls back to system Mac, not to the stage.**
+## This returned `stage` until `bugs.md` 104, and its own docstring carried the
+## contradiction: it said the substitution was "the same one
+## `DirectorPalette.builtin` makes and for the same reason", and `builtin`
+## substitutes system Mac.
+##
+## The reference is unambiguous and it is one line —
+## `castmember/bitmap.cpp:484`, `getDitherImg` case 8:
+##
+##     CastMemberID palIndex = pals.contains(castPaletteId)
+##         ? castPaletteId : CastMemberID(kClutSystemMac, -1);
+##
+## `srcPal` is what turns the member's indices into RGB, and on a true-colour
+## stage (`targetBpp != 1`) that branch is entered for every 8-bit bitmap. So a
+## member naming a palette the engine has not loaded is drawn through system Mac
+## whatever the stage is holding. The 4-bit case at `:461` says the same thing
+## again, and `movie.cpp:290` and `builtin()` both substitute system Mac for the
+## same reason: it is Director's own default, so it is the one guess that is not
+## a guess.
+##
+## **Measured, on the report that found it.** `piposh-dream/dinner1.dir` #87 is a
+## 738x439 close-up of Piposh and names palette member 154, which is a film loop
+## in that cast — so it does not resolve. Six of that title's movies declare the
+## Windows D5 table as their default (`-102`), and `director_palette_state.reset`
+## starts the stage there, so entering one of them anywhere but its frame 0 left
+## #87 drawn through Win D5: skin `#a0a0a4`, which is Win D5 index 8 and is not
+## in system Mac at all, against `#ffcc99` at the same index in system Mac. The
+## player's screenshot carried 214,739 pixels of `#a0a0a4`. Falling back here is
+## what fixes it, and **not** the -102 default, which is read correctly and which
+## the reference keeps too: `movie.cpp:287` substitutes only when it does *not*
+## have the palette, and it has that one.
+##
+## Corpus-wide this reaches 167 members, all in `piposh-dream`, of which the 81
+## in a Windows-default movie change colour and the other 86 do not — their stage
+## was already system Mac. `itamar-magichat`'s 881 members naming the Windows D5
+## table are no longer in this population at all: `data/director_palettes.json`
+## supplies -102, so they resolve.
+##
+## One consequence worth stating so it does not get "fixed" back: a member in
+## this state no longer sees a running fade or cycle, because it is no longer
+## reading the stage's mutating table. That is the reference's behaviour — in
+## true colour the dither branch runs regardless of `isColorCycling` — and the
+## `id == stage_id` short-circuit above is what still carries §11's effects to
+## every member that names the palette the stage is actually on.
 static func table_for_member(m: Dictionary, table, stage: PackedByteArray,
 		stage_id: int) -> PackedByteArray:
 	var id := int(m.get("palette_id", Palette.SYSTEM_MAC))
 	if id == stage_id:
 		return stage
 	var own := table_for(id, table, int(m.get("palette_lib", 0)))
-	return own if own.size() == Palette.TABLE_BYTES else stage
+	if own.size() == Palette.TABLE_BYTES:
+		return own
+	return Palette.builtin(Palette.SYSTEM_MAC)

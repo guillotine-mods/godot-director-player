@@ -58,7 +58,9 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 		return textures[key]
 
 	# A bitmap's indices are numbers in *its own* palette; see
-	# `palette_view.gd:table_for_member`, which falls back to the stage's table.
+	# `palette_view.gd:table_for_member`, which falls back to system Mac when that
+	# palette does not resolve -- not to the stage's table, which is what drew
+	# `piposh-dream`'s Piposh grey (`bugs.md` 104).
 	# It has to be resolved before the colours below, because the keying compares
 	# the paper colour against the pixels this table produced -- resolving the
 	# paper through a different table is how a matte stops matching anything.

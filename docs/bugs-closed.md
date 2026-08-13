@@ -4310,3 +4310,98 @@ eligibility makes sprites absorb clicks that used to fall through:
 816,344 sprite records is **identical** on all four measured lines — 155,432 records
 answer a click, 12,153 frames have at least one, 2,401 sprite intervals resolve to a
 script and 281 do not.
+
+---
+
+## 104. A bitmap whose named palette does not resolve fell back to the stage table instead of system Mac, so Piposh's face drew grey in Piposh Dream
+
+**Status:** FIXED · **Area:** `scenes/preview/palette_view.gd:table_for_member` ·
+found from a player's "piposh color is wrong from time to time, its blue instead
+of the right one", with `.snapshots/2026-08-13T23-02-08.png`
+
+`piposh-dream/dinner1.dir` #87 is the 738x439 close-up of Piposh pointing. It names
+palette member **154**, and 154 in that cast is a **type-2 film loop** named `fds` —
+no cast the movie can reach holds a palette member at all. So the palette does not
+resolve, and `table_for_member` handed the decoder the **stage** table.
+
+Six of that title's 52 movies declare the **Windows D5** table as their default
+(`config.default_palette` = -102; the other 46 declare system Mac), and
+`director_palette_state.reset` starts the stage on the movie default with
+`cached_id` cleared. `dinner1.dir` writes -1 to the palette channel on frames 0,
+1405, 1830 and 1845 only, so a linear play from frame 0 puts the stage on system Mac
+and the art is right — and entering the movie anywhere between 1406 and 1811, which
+is where the reported frame 1776 and its `New Marker` sit, leaves the stage on Win
+D5. **That is the "from time to time": the same member, two entry paths, two
+palettes.**
+
+The fingerprint that identified it before any code was read. Skin is index 8:
+
+```
+index 8   system Mac #ffcc99      Win D5 #a0a0a4
+```
+
+`#a0a0a4` is not in the system Mac table at any index — it is not a multiple of 51
+and not on any of the four ramps — and the player's screenshot carries **214,739
+pixels of it**, its third most common colour. Decoding #87 under each table and
+looking at the two images settled it in one step: system Mac gives peach skin, pink
+eyelids and a blue shirt; Win D5 gives grey skin, magenta eyebrows and a green
+mouth, which is the screenshot.
+
+**The reference falls back to system Mac, not to the stage** —
+`castmember/bitmap.cpp:484`, `getDitherImg` case 8:
+
+```cpp
+CastMemberID palIndex = pals.contains(castPaletteId)
+    ? castPaletteId : CastMemberID(kClutSystemMac, -1);
+```
+
+`srcPal` is what turns indices into RGB, and on a true-colour stage
+(`targetBpp != 1`) that branch runs for every 8-bit bitmap. The 4-bit case at `:461`
+is the same line again.
+
+**The competing fix is ruled out by the reference too.** "-102 is misread, the stage
+should be system Mac" would also have whitened the screenshot, and it is wrong:
+`movie.cpp:287` substitutes system Mac for the movie default only when it does
+**not** have that palette, and it has -102. The port's config read matches
+`cast.cpp:592` byte for byte, including the `member -= 1` offset. So the reference's
+stage is Win D5 for `dinner1.dir` as well, and it *still* draws #87 through system
+Mac. Only the member fallback was wrong.
+
+Fixed in one expression: `table_for_member` returns
+`Palette.builtin(Palette.SYSTEM_MAC)` rather than `stage` when the member's own
+palette does not build. The `id == stage_id` short-circuit above it is untouched,
+which is what still carries §11's fades and cycles to every member naming the
+palette the stage is actually on.
+
+Measured through `SpriteArt.texture_for`, on `dinner1.dir` #87 with the stage on the
+movie's own declared default, before and after:
+
+```
+stage id -102 in both runs, table[8] = #a0a0a4
+
+           before      after     what it is
+#a0a0a4 -> #ffcc99     18,374 px  skin
+#cc00ff -> #ff9999      1,020 px  eyebrows
+#008000 -> #222222        443 px  mouth patch
+#f0f0f0 -> #eeeeee      1,512 px  highlight
+unchanged: #66ccff 52,833  #000000 22,774  #3399ff 11,516  #cc9900 5,739  #666699 456
+```
+
+Five of the nine colours are the same RGB at the same index in both tables, which is
+why the picture read as "mostly plausible, wrong in places" rather than as a corrupt
+decode.
+
+Corpus-wide the change reaches **167 members, all in `piposh-dream`**: the 81 in a
+Windows-default movie change colour, the other 86 do not, because their stage was
+already system Mac. Nothing in the other five titles moves — `piposh`, `piposh-en`,
+`rating` have no dangling-palette bitmaps at all, and `piposh-ru`/`piposh2` have
+none either.
+
+**Covered by `tools/palette_corpus.gd`, which had this check and could not fail
+it.** It asserted the fallback while passing `system` in as the stage, so
+"fall back to the stage" and "fall back to system Mac" returned the same bytes and
+the check agreed with itself over 651 containers. It now passes each movie its own
+`config.default_palette` and floors the population the rule is observable on
+(`MIN_DANGLING_OFF_MAC`, measured 81), so it cannot go vacuous again. Verified both
+ways, headless: **FAIL at 81 of 167 without the fix, PASS with it**, 15 checks where
+there were 14. `ALL` is unchanged at 89 entries.

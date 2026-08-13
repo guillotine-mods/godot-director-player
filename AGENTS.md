@@ -163,9 +163,18 @@ the opposite and had been available from the first minute. Read
   `piposh-dream`'s 167 bitmaps naming member 154, which is a type-2 member. That
   is bad authoring in a shipped title: the container states file version `0x57E`,
   so the D5 layout the reader uses is right, and the reference resolves the same
-  pair to the same non-palette. The engine already falls back to the stage
-  default, which is what the check asserts now. Asserting the data instead would
-  have gated this project on files it cannot fix.
+  pair to the same non-palette. What the engine does with that is the port's to
+  get right, and it is what the check asserts now. Asserting the data instead
+  would have gated this project on files it cannot fix.
+  **The first version of that check then passed while the engine had it wrong**,
+  which is the more useful half of the story: it handed system Mac in as the
+  stage, so "fall back to the stage" and "fall back to system Mac" returned the
+  same bytes and the check agreed with itself. The reference falls back to system
+  Mac (`castmember/bitmap.cpp:484`) and the engine fell back to the stage, which
+  drew 81 of those 167 members — Piposh's own face among them — in the Windows D5
+  table on the six `piposh-dream` movies that declare it. `bugs.md` 104. A check
+  whose two readings cannot disagree on the data it is given is the shape to
+  watch for; this one now passes each movie its own declared default.
   Both of the two that this line used to name as standing failures now pass,
   and neither was fixed by
   changing what they assert: `debug_bindings` was config rather than code and the
