@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg go_movie_arg:--root@res://test-games/itamar-magichat@--boot@magichat.dir drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_fallback:--root@res://test-games/itamar-magichat@--boot@magichat.dir avi_decode:--root@res://test-games/itamar-magichat video_plugin:--root@res://test-games/itamar-magichat@--boot@magichat.dir lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -131,15 +131,34 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # text_and_shapes` is ambiguous, where it takes the bare piposh2 entry because it
 # comes first. Name the fixture directly to get the other one.
 #
-# `go_movie_arg` appears twice for the same reason, and the second entry names the
-# corpus the report came from. The rule it asserts -- that `go`'s movie argument is
-# found by position and type rather than by looking like a filename
-# (`lingo-builtins.cpp:b_go`) -- is title-agnostic and the piposh2 entry proves it
-# there. What only `itamar-magichat` has is a movie that *depends* on it:
-# `logo/logo.dir` hands over with `go(1, GetMoviePath(CDpath() & DirChar() &
-# "magichat"))`, whose second argument carries no extension at all, and before
-# `bugs.md` 95 that argument was dropped and the logo replayed itself for ever. A
-# rule with one corpus behind it is a rule nobody notices narrowing again.
+# `go_movie_arg` runs **once**, bare. The rule it asserts -- that `go`'s movie
+# argument is found by position and type rather than by looking like a filename
+# (`lingo-builtins.cpp:b_go`) -- is title-agnostic, and `GATE_ROOT` proves it.
+#
+# It had a second entry naming `res://test-games/itamar-magichat`, where the report
+# came from: `logo/logo.dir` hands over with `go(1, GetMoviePath(CDpath() &
+# DirChar() & "magichat"))`, whose second argument carries no extension at all, and
+# before `bugs.md` 95 that argument was dropped and the logo replayed itself for
+# ever. **That entry is gone, and so are the three other `test-games/` ones, for a
+# reason that has nothing to do with what they asserted: the corpus is not in the
+# repository.** `test-games/` is ignored at `.gitignore:73`, no file under it has
+# ever been committed on any branch, and it is not a submodule -- so a clean
+# checkout, a fresh worktree and both nightly runners have no such directory. What
+# those entries did on every machine but the one they were written on was
+# `no such container: magichat.dir`, which `go_movie_arg` and `video_plugin`
+# reported as a failed assertion: 2 reds in a 92-entry suite, neither of them about
+# the engine.
+#
+# This is `palette_members`' argument (below, and in `AGENTS.md`) reaching a second
+# group of entries: **an entry that can only pass against a corpus outside the
+# project gates nothing here.** The distinction worth keeping is that the other
+# entries on that corpus -- `video_fallback` and `avi_decode` bare, and
+# `sprite_lifetime`'s fourth case -- say out loud that they found nothing and assert
+# nothing, which is why they stayed green throughout. Asserting against an absent
+# fixture instead is what turned a data gap into a red.
+#
+# Point them at it by hand when somebody has it. That is what a `--root` flag is
+# for, and `tools/video_census.gd --roots` still knows the path.
 #
 # `sprite_collision` checks the engine rule against whatever `GATE_ROOT` is;
 # `cannon_hit` names its own root because it plays Piposh 1's cannon round, the
@@ -221,37 +240,44 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # `palette_cycle` carrying four reds nobody saw, and a nightly that names the
 # cause beside the symptom is one line instead of another investigation.
 #
-# `video_fallback` and `avi_decode` run twice each, and the second of each pair is
-# the one with the subject in it -- the `text_and_shapes` precedent above.
+# `video_fallback` and `avi_decode` run **once each, bare**, and this is the honest
+# statement of what that costs. Bare on `GATE_ROOT` they say out loud that the
+# corpus holds no video and assert nothing about it -- and `tools/video_census.gd`
+# measured **four** video members across all eight corpora, every one of them
+# `itamar-magichat`'s, which is not in the repository (see the `go_movie_arg`
+# paragraph above). So there is no shipped corpus these two can be pointed at.
 #
-# Bare on `GATE_ROOT` they say out loud that the corpus holds no video and assert
-# nothing about it, which is honest but proves nothing: `tools/video_census.gd`
-# measured **four** video members in all eight corpora and every one of them is
-# `itamar-magichat`'s. So the fixture entries name it.
-#
-# What they guard is specific. `video_fallback` catches a `the duration of member`
-# that answers confidently while `the movieTime` stays frozen -- that turns Magic
-# Hat's clean one-tick skip into `go(the frame)` for ever, which is a hang rather
-# than a wrong picture. `avi_decode` is the other half: it is the only thing that
-# would notice MS-RLE producing wrong pixels, or a backward seek not reproducing
+# **The video decode path therefore has no gate on it, and that is a hole rather
+# than a decision.** What is unguarded is specific: `video_fallback` catches a
+# `the duration of member` that answers confidently while `the movieTime` stays
+# frozen -- which turns Magic Hat's clean one-tick skip into `go(the frame)` for
+# ever, a hang rather than a wrong picture -- and `avi_decode` is the only thing
+# that would notice MS-RLE producing wrong pixels, a backward seek not reproducing
 # frame 0 byte for byte, or the decode falling below the file's own frame rate.
 #
-# Added the same day the decoder was, deliberately. `palette_cycle` spent its
-# whole life outside this list and rotted into a record of what the engine used
-# to do, carrying four failures nobody saw; a decoder is a worse thing to leave
-# unguarded than a palette.
+# The alternative was to leave four entries red on every machine but one, which
+# `palette_cycle` already showed the end of: it spent its whole life outside this
+# list and rotted into a record of what the engine used to do, carrying four
+# failures nobody saw. A red nobody can act on rots the same way. Closing this
+# properly wants a video fixture the project actually owns -- a few frames of
+# MS-RLE committed under `games/` or a small generated container -- and until one
+# exists these two are a bare honest "nothing here" and `bugs.md` should be read
+# rather than this suite for what the decoder is known to do.
 #
-# `video_plugin` is the third of that group and appears **once**, on the same
-# fixture, because its subject is the same corpus: it is the only one that holds
-# media a decoder extension would be installed for. It guards the one thing the
-# other two structurally cannot -- that the extension arm is *absent* when no
-# extension is. Two of its checks are a source scan (no engine file `preload`s an
-# addon path, which is a parse error and would take down every entry above this
-# line before a movie opened) and the rest are the adapter's gate and the
-# `getPlaybackEvent` VOID contract. All of them are corpus-independent, which is
-# why one entry rather than two: a bare run on `GATE_ROOT` would assert the same
-# five things and add only "piposh2 has no media", which `video_fallback` bare
-# already says.
+# `video_plugin` is the third of that group and appears **once, bare** -- and unlike
+# the two above it loses almost nothing by it, on its own comment's evidence. It
+# guards the one thing the other two structurally cannot: that the extension arm is
+# *absent* when no extension is. Two of its checks are a source scan (no engine file
+# `preload`s an addon path, which is a parse error and would take down every entry
+# above this line before a movie opened) and the rest are the adapter's gate and the
+# `getPlaybackEvent` VOID contract. **All of those are corpus-independent**, which
+# the version of this paragraph written for the fixture entry already said: a bare
+# run "would assert the same five things and add only piposh2 has no media".
+#
+# Measured, which is why it is bare rather than deleted with its siblings: pointed
+# at the absent corpus it reported five `ok` lines and then one `FAIL  the preview
+# has a host`, the host check being the only one that needed a movie to open. Bare,
+# the five that matter run on every machine.
 #
 # It found its own first bug on its first run. `ResourceLoader
 # .get_recognized_extensions_for_type("VideoStream")` answers `tres, res` on

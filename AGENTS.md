@@ -139,6 +139,25 @@ the opposite and had been available from the first minute. Read
     has. The one thing only `palette_members` asserts is that a bitmap's own
     named palette reaches the decoder and changes the pixels, which no shipped
     title can express; run it by hand against `piposh-ru` (7 of 9) for that.
+  - **Four `test-games/itamar-magichat` entries are gone from `ALL` for exactly that
+    reason**, and the rule is worth stating as a rule now that it has caught two
+    groups: `go_movie_arg`, `video_fallback` and `avi_decode`'s fixture entries, and
+    `video_plugin`, which is bare now because its own five checks are
+    corpus-independent. `test-games/` is ignored at `.gitignore:73`, **no file under
+    it has ever been committed on any branch**, and it is not a submodule — so a
+    clean checkout, a fresh worktree and both nightly runners have no such
+    directory, and what those entries did there was
+    `no such container: magichat.dir` reported as a failed assertion. Measured: 2
+    reds in a 92-entry run, neither about the engine.
+    The honest cost is recorded in `gate.sh` beside the entries rather than smoothed
+    over: **the video decode path now has no gate on it at all.** Every video member
+    in all eight corpora is that corpus's, so MS-RLE pixels, backward seek and the
+    frozen-`movieTime` hang are unguarded until the project owns a fixture of its
+    own. That is a hole, not a decision, and it is the argument for committing a few
+    frames of video under `games/` rather than for putting the entries back.
+    The pattern that stayed green throughout is the one to copy when a harness needs
+    a corpus it may not have: `video_fallback` bare and `sprite_lifetime`'s fourth
+    case both say out loud that they found nothing and assert nothing.
 - **A harness must assert what this port controls, not what a 1990s cast got
   right.** `palette_corpus`'s first version failed, correctly-looking, on
   `piposh-dream`'s 167 bitmaps naming member 154, which is a type-2 member. That
