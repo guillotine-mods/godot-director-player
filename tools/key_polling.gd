@@ -6,13 +6,27 @@ extends SceneTree
 ##   godot --headless --script tools/key_polling.gd
 ##   godot --headless --script tools/key_polling.gd -- --root rating --file BATZEGOZ.dir
 ##
-## **Run it windowed for the second half.** The headless half drives
-## `_dispatch_key` directly, which proves the rule and nothing about the wiring;
-## headless Godot has no keyboard focus, so it cannot show that pressing a key
-## reaches the movie at all. The windowed half feeds real `InputEventKey`s
-## through `Input.parse_input_event` -- the player's own path, through `_input`
-## and `preview/input_router.gd` -- and reads the answer back out of the host the
-## way `the key` compiles to. `tools/editable_text.gd` is the same shape.
+## **Two paths, and the difference is the point.** Most of this drives
+## `_dispatch_key` directly, which proves the *rule* and nothing about the
+## wiring. The last section feeds `InputEventKey`s through
+## `Input.parse_input_event` -- the player's own route, through `_input`,
+## `autoload/input_router.gd` and `preview/input_router.gd` -- and reads the
+## answer back out of the host the way `the key` compiles to.
+## `tools/editable_text.gd` is the same shape.
+##
+## **That section used to be gated on a window and no longer is.** The gate was
+## justified by headless Godot having no keyboard focus, which is true of a
+## physical keypress and beside the point: the injection happens at the Input
+## singleton, below focus, and the event travels the same nodes either way.
+## Measured -- H, S, space and all four arrows report identical codes headless
+## and windowed. Gating it meant `gate.sh`, which runs headless, asserted nothing
+## about the only path a player actually uses.
+##
+## **What still nothing here can reach** is the layer below the injection: the OS
+## and Godot's platform code turning a physical key into an `InputEvent`. A key
+## lost *there* looks exactly like a key lost in the engine, and no harness in
+## this repo can tell the two apart. Say so rather than concluding from a green
+## run that a player's keyboard works.
 ##
 ## **What this is for.** Polling the keyboard from `exitFrame` or `idle` is a
 ## documented Director idiom -- §8.6 lists it first, "several games poll these
@@ -247,11 +261,24 @@ func _init() -> void:
 	# key a *player* presses gets there: that path is `_input` ->
 	# `preview/input_router.gd` -> the movie, and it needs a window with keyboard
 	# focus, which headless Godot does not have.
-	if windowed:
-		var window := preview.get_window()
-		window.grab_focus()
-		DisplayServer.window_move_to_foreground()
-		await process_frame
+	# **This section runs headless too, and that is a correction.** The paragraph
+	# at the top of this file used to gate the whole thing on a window, on the
+	# grounds that headless Godot has no keyboard focus. That is true of a
+	# *physical* keypress and irrelevant to what is actually being asserted:
+	# `Input.parse_input_event` injects at the Input singleton and the event then
+	# travels `_input` -> `autoload/input_router.gd` -> `preview/input_router.gd`
+	# -> `_dispatch_key` exactly as it does with a window. Measured both ways --
+	# every key below reports the same code headless and windowed -- so gating it
+	# left the one path nothing else covers unasserted in `gate.sh`, which runs
+	# headless. What no run here can exercise is the layer *below* the injection:
+	# the platform turning a physical key into an `InputEvent`. That is the honest
+	# boundary and it is stated in the header rather than implied by a skip.
+	if true:
+		if windowed:
+			var window := preview.get_window()
+			window.grab_focus()
+			DisplayServer.window_move_to_foreground()
+			await process_frame
 		preview.call("_dispatch_key", _key(KEY_Q))
 		h.begin("a real keypress reaches the movie through `_input`")
 		Input.parse_input_event(_key(KEY_H))
@@ -263,6 +290,27 @@ func _init() -> void:
 			"'%s'" % _the_key(host))
 		h.check("`the keyCode` came with it",
 			_the_code(host) == int(Keys.MAC_CODES[KEY_H]), str(_the_code(host)))
+		# **The four arrows, through the same real path.** Everything above and
+		# the arrow block earlier in this file went in through `_dispatch_key`,
+		# which skips `_input` and both routers -- so until now no assertion
+		# anywhere covered an arrow arriving the way a player sends one, and the
+		# corpus reads arrows more than any other key: all ~60 arrow sites test
+		# `the keyCode`, and `piposh-dream` alone tests 123/124/125/126 at 147
+		# sites. A player's report of "letters work, arrows do not" is exactly the
+		# shape this would have caught and did not, which is why it is here.
+		#
+		# Poisoned before each one so a stale read is visible rather than
+		# plausible: with the field left alone, an arrow that never arrives reads
+		# as the *previous* arrow and three of the four still pass.
+		for pair in [[KEY_LEFT, 123], [KEY_RIGHT, 124], [KEY_UP, 126], [KEY_DOWN, 125]]:
+			var code: Key = pair[0]
+			host.set("key_code", -999)
+			Input.parse_input_event(_key(code))
+			await process_frame
+			await process_frame
+			h.check("%s reaches the movie through `_input` as %d"
+					% [OS.get_keycode_string(code), int(pair[1])],
+				_the_code(host) == int(pair[1]), str(_the_code(host)))
 		# And the preview's own bindings did not swallow it on the way past. F10
 		# is the case with a history: Rating tests `the keyCode = 109` at 48 sites
 		# and the pause binding sat on it, so the key that leaves a timed room
@@ -275,9 +323,6 @@ func _init() -> void:
 			and _the_code(host) == int(Keys.MAC_CODES[KEY_F10]),
 			"paused %s, keyCode %d" % [str(preview.get("_paused")), _the_code(host)])
 		h.complete("a real keypress reaches the movie through `_input`")
-	else:
-		print("")
-		print("headless: the `_input` wiring is unasserted -- rerun without --headless")
 
 	print("")
 	print("`the key`     : '%s'" % _the_key(host))
