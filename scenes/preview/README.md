@@ -43,6 +43,8 @@ the Godot lifecycle; the modules own the rules.
 | a save state comes back missing something, or a field isn't carried | `save_state.gd` |
 | a save goes to the wrong place, or a stale save loads silently | `save_files.gd` |
 | a debug key, outline or overlay shows up in a build | `debug_keys.gd` (`enabled`) |
+| a video draws nothing, or plays the wrong file, or its playhead is stuck | `video.gd` |
+| `the duration`, `the mediaReady` or `getPlaybackEvent` answers wrongly | `media.gd` (the surface) then `video.gd` (what is behind it) |
 
 `sprite_state.gd` is the six questions the node asks about a channel;
 `channel.gd` is the answers. That split is the model — one `Channel` per score

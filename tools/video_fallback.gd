@@ -32,6 +32,15 @@ extends SceneTree
 ## reason and is not this file's subject; a frame that parks with a video sprite
 ## on it, no reason, and no way out is.
 ##
+## **A video that is actually playing is one of those reasons**, and it was
+## missing from that list until the third backend arrived. It is not on the
+## *clock's* list and cannot be: a video runs on the engine tick, outside the
+## score step, exactly so that a movie sitting on `go(the frame)` can wait for it.
+## An 87-second intro that plays is a frame held for 87 seconds for the best
+## possible reason, and this harness scored it `parked-on-video` — it passed only
+## because Magic Hat's frames record several states while they skip. `_visit`
+## carries the condition and the argument.
+##
 ## ## How a target is found
 ##
 ## Not by playing the title from the start and hoping to arrive. The score is read
@@ -319,8 +328,9 @@ func _sweep(h: Harness) -> void:
 ##
 ##   left              the playhead moved off the frame, or the video sprite left
 ##                     the stage. The healthy answer and the only common one.
-##   held              it stayed, and the clock had a reason every tick -- a tempo
-##                     delay, a transition, `pause`, a sound. Not a finding.
+##   held              it stayed, and every tick had a reason -- a tempo delay, a
+##                     transition, `pause`, a sound on the clock, or a video whose
+##                     playhead advanced. Not a finding.
 ##   parked-on-video   it stayed, a video sprite stayed with it, and nothing
 ##                     explained either. The failure.
 ##   no-open           `go to movie` loaded no score.
@@ -358,6 +368,11 @@ func _visit(preview: Node, target: Dictionary, settle: int, ticks: int) -> Dicti
 	var rate_seen := 0.0
 	var time_low := -1
 	var time_high := 0
+	## The previous tick's playhead, so that "advancing" is something this harness
+	## measured rather than something it asked the engine to confirm. -1 until the
+	## first sample, because the first tick has nothing to compare against and a
+	## video that starts at 0 is not yet evidence of anything.
+	var time_last := -1
 	while int(preview.get("_ticks")) - began < ticks \
 			and Time.get_ticks_msec() - start < WATCH_CAP_MS:
 		await process_frame
@@ -374,15 +389,46 @@ func _visit(preview: Node, target: Dictionary, settle: int, ticks: int) -> Dicti
 			int(preview.call("current_frame"))]] = true
 		if _video_on_stage(preview):
 			video_ticks += 1
+		var rate_now := 0.0
+		var at_now := -1
 		if host != null:
-			rate_seen = maxf(rate_seen,
-				absf(float(host.get_sprite_prop(channel, "movierate"))))
-			var at := int(host.get_sprite_prop(channel, "movietime"))
-			time_low = at if time_low < 0 else mini(time_low, at)
-			time_high = maxi(time_high, at)
+			rate_now = absf(float(host.get_sprite_prop(channel, "movierate")))
+			rate_seen = maxf(rate_seen, rate_now)
+			at_now = int(host.get_sprite_prop(channel, "movietime"))
+			time_low = at_now if time_low < 0 else mini(time_low, at_now)
+			time_high = maxi(time_high, at_now)
 		var reason := "" if clock == null else str(clock.call("hold_reason"))
 		if host != null and (bool(host.playback_paused) or bool(host.stopped)):
 			reason = "pause/halt"
+		# **A playing video is a reason, and it was not on the list.**
+		#
+		# `hold_reason` is the *clock's* — a tempo delay, a transition, `pause`, a
+		# sound in flight — and a video is none of those: it runs on the engine
+		# tick, outside the score step, precisely so that a movie sitting on
+		# `go(the frame)` can wait for it (`preview/video.gd`'s header). So a frame
+		# that legitimately waits out an 87-second intro had **nothing** on the
+		# clock every tick and scored `parked-on-video`, which is this harness
+		# calling a working feature a hang.
+		#
+		# It has never fired, and that is luck rather than design: today all three
+		# of Magic Hat's video frames record several *states* while they walk their
+		# region, so `frames.size() > 1` returns `left` before this code is
+		# reached. A movie that settled on a video frame -- which is what the third
+		# backend makes possible for the intro and the twenty album clips -- would
+		# have turned this green harness red on the day the feature started
+		# working.
+		#
+		# The condition is the narrow one, and every part of it is measured here
+		# rather than asked of the engine: **a non-zero rate and a playhead that
+		# moved since the previous tick.** Not `getPlaybackEvent`, which is the
+		# engine's own answer and would make this check circular; and not a
+		# non-zero rate alone, because a rate against a *frozen* playhead is
+		# exactly the hang the third check below exists to name, and excusing it
+		# here would delete that check's subject.
+		if reason == "" and time_last >= 0 and at_now > time_last \
+				and not is_zero_approx(rate_now):
+			reason = "video playing"
+		time_last = at_now
 		if reason != "":
 			explained += 1
 

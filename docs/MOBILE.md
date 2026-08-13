@@ -51,6 +51,31 @@ cannot start without.
 Matching is case-insensitive, so `*.dir` matches `MASTER.CST`. Given the mixed-case
 tree, that is a mercy rather than a detail.
 
+## A decoder GDExtension is optional, and staying optional is the whole design
+
+`scenes/preview/video.gd` has a third video backend that uses a decoder
+GDExtension **if one is installed**, and `docs/DIGITAL_VIDEO.md` §8 is the
+account. Read this before anyone installs one, because that is the moment the
+paragraph above about native code stops being hypothetical.
+
+- **Nothing here ships one, requires one, or downloads one.** The gate is
+  `ClassDB.class_exists`, never a `preload` of an addon path — a `preload` of a
+  missing script is a *parse* error and would take the engine down on every
+  platform. With no extension in the tree the mobile export is exactly the export
+  described below, and `tools/video_plugin.gd` is in `gate.sh`'s `ALL` asserting
+  that.
+- **If one is installed, it is per-ABI native code and it is the export's
+  problem.** EIRTeam.FFmpeg 1.1.4 — the intended one — declares Android
+  `arm64` binaries and **nothing else**: no `arm32`, no `x86_64`, and no iOS
+  entry at all. `ANDROID.md` already builds `arm64-v8a` only, so the Android
+  case happens to line up; the x86_64 emulator and any iOS export do not, and
+  the failure is at extension load, before any Godot code runs and therefore
+  before any fallback this engine has can decline it.
+- **The six shipped titles hold no video at all** (`DIGITAL_VIDEO.md` §1: 0
+  members, 0 sprites, 0 media files), so there is no reason to put a native
+  dependency into a phone build of any of them. The extension is for a desktop
+  developer looking at `test-games/itamar-magichat`.
+
 ## What it weighs
 
 Measured over `games/piposh2/`:

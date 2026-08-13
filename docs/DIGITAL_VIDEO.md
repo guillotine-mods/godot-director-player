@@ -23,6 +23,20 @@ recommends.
 > Everything below is the census and the costing as they were written, and they
 > are still what the decision rests on -- read §3 before touching `the duration`.
 
+> **Update, later: D was taken and B was dropped.** The owner has ruled out the
+> transcode route and asked for a decoder plugin instead, which reverses §5's
+> ordering of the last two options — not its costing of them, which stands and is
+> why §8 opens with the licensing paragraph. §4D's four objections are all still
+> true of *installing* an extension; none is true of being able to use one, and
+> that split is the whole of what landed. **`scenes/preview/video.gd` now has a
+> third backend, gated on `ClassDB.class_exists` rather than on a `preload` of an
+> addon path, and with nothing installed the engine is byte for byte the engine
+> below.** §8 is the install steps, the Android per-ABI blocker, what breaks if
+> the plugin's Godot floor rises, and — named separately from the rest — which
+> parts of the plugin's API were read from its source and which are inference.
+> The §4B sidecar path is untouched and still works; it is now step 3 of five
+> rather than step 2 of four.
+
 **The short version.** Four cast members in eight corpora play video. All four
 are in `test-games/itamar-magichat`. **The six shipped Piposh titles hold no
 digital video member, no video Xtra, and not one byte of video media on disc**, so
@@ -339,6 +353,12 @@ to any MPEG-1 disc that arrives later.
 
 ### D. Use a Godot plugin
 
+> **This is the option that was taken; §8 is what landed.** Everything below is
+> the costing as it was written and every objection in it still stands — which is
+> why §8 ships no binary, requires none, and downloads none. What §8 adds is the
+> engine code that *uses* one when the owner installs it, gated so that an
+> uninstalled one changes nothing.
+
 The FFmpeg-backed GDExtensions (EIRTeam.FFmpeg, and the older `godot-videodecoder`
 lineage) provide a `VideoStream` implementation that decodes MPEG-1, AVI/MS-RLE and
 QuickTime alike.
@@ -362,6 +382,14 @@ lines of engine glue as B.
 ---
 
 ## 5. The recommendation
+
+> **Superseded on the last two items, and §8 is why.** A and C1 were taken and
+> are still right. B was taken and has been *demoted*: the owner ruled out the
+> transcode route, and the sidecar path survives as a fallback rather than as the
+> answer. D was taken in the only form that does not pay §4D's costs — the engine
+> can use a decoder extension, and ships none. The reasoning below is what that
+> decision was weighed against and is unchanged; read item 3 in particular, since
+> it is the argument §8 had to answer rather than one §8 overturned.
 
 **Take A now. Take C1 next if anybody wants the logo. Do not take C2 or D, and
 take B only if the owner decides Magic Hat's album is worth changing what the
@@ -415,11 +443,19 @@ census. Neither needs a decoder.
   yield. A member with no width, height or registration point is also `bugs.md` 82's
   and 84's shared shape, and it is why a video sprite has no size even before it
   has no picture.
-- **The Xtra sprite surface.** `sprite(N).play()`, `.stop()` and
-  `.getPlaybackEvent` are Xtra sprite methods and none is bound. Building them is
-  worthwhile — but read §3 first: `getPlaybackEvent` must **not** answer 1 while
-  there is nothing behind it, because 1 is the arm that loops for ever. The correct
-  unbound answer today is the one it already gives.
+- **The Xtra sprite surface.** ~~`sprite(N).play()`, `.stop()` and
+  `.getPlaybackEvent` are Xtra sprite methods and none is bound.~~ **Done**, and
+  the §3 rule survived intact: all three are in `preview/media.gd:SPRITE_PROPS`
+  and answered off the same per-channel playhead as `the movieTime`, so a movie
+  that starts a clip with `play()` and reads it back through the properties sees
+  one position. `getPlaybackEvent` answers **1 only while a reader is open, the
+  rate is non-zero and the playhead is short of the end**, `0` when stopped or
+  finished, and **VOID when there is no media at all**
+  (`preview/video.gd:playback_event`) — VOID rather than 0 because that is what
+  the name answered when it was bound to nothing, and it is what all three of
+  Magic Hat's video frames leave on today. What follows is the warning as it was
+  written, and it is still the thing not to get wrong: 1 with nothing behind it
+  is the arm that loops for ever.
 
 ## 7. Reproducing all of it
 
@@ -436,6 +472,12 @@ G="/c/Program Files/Godot_v4.7.1/Godot_v4.7.1-stable_mono_win64_console.exe"
 "$G" --headless --audio-driver Dummy --path . --script tools/video_fallback.gd -- \
     --root piposh2 --boot strtgame.dir
 
+# the decoder-extension gate: what is installed, and that absence changes nothing
+"$G" --headless --audio-driver Dummy --path . --script tools/video_plugin.gd -- \
+    --root res://test-games/itamar-magichat --boot magichat.dir
+"$G" --headless --audio-driver Dummy --path . --script tools/video_plugin.gd -- \
+    --root res://test-games/itamar-magichat --list
+
 # the Xtra members, by symbol and by rect -- where the 352x288 / 320x240 pair comes from
 "$G" --headless --audio-driver Dummy --path . --script tools/xtra_members.gd -- \
     --roots res://test-games/itamar-magichat --list
@@ -446,3 +488,244 @@ G="/c/Program Files/Godot_v4.7.1/Godot_v4.7.1-stable_mono_win64_console.exe"
 "$G" --headless --audio-driver Dummy --path . --script tools/director_extract.gd -- \
     --root res://test-games/itamar-magichat --file magichat.dir --out <dir>
 ```
+
+---
+
+## 8. Option D, taken: a decoder extension, gated on it being installed
+
+> **Update.** §4D refused a plugin and §5.5 restated the refusal. The owner has
+> since ruled out the transcode route (§4B) instead, and asked for a decoder
+> plugin. §4D's four objections are all still true — they are the reasons the
+> extension is **not shipped in this repository**, is not downloaded by anything
+> here, and is not required by anything here. What landed is the engine-side half:
+> the code that *uses* one when the owner installs it, and that is bit-for-bit
+> inert when they have not.
+>
+> This section is what the owner must do, in order, and what breaks if a step is
+> skipped. §4D's costing above is unchanged and is still the argument for reading
+> the licensing paragraph before the install one.
+
+### 8.1 What was built
+
+Three files and one harness:
+
+| file | what it is |
+|---|---|
+| `director/director_plugin_video.gd` | the **adapter** — the only file that names a plugin class; decides whether one is installed, hands it a path, exposes `duration_ms` |
+| `director/director_ogg.gd` | gained `video_stream()`, the seam the two push backends meet at |
+| `scenes/preview/video.gd` | a third arm in the resolution order, and one `_is_push` predicate replacing three copies of a Theora test |
+| `tools/video_plugin.gd` | the gate's harness — in `gate.sh`'s `ALL` |
+
+The resolution order is now, in the order it is tried:
+
+1. the member's own name, resolved against the disc (`video.gd:media_path`);
+2. **a decoder extension**, if one is installed *and* it takes this container;
+3. a fresh Ogg Theora sidecar, if the cache has one;
+4. the original bytes through the MS-RLE AVI reader;
+5. nothing.
+
+Step 2 is before step 3 because the extension plays the **original** media and
+the sidecar plays a copy, and the engine's premise is that it reads the original
+containers at run time; an owner who installs a decoder is asking for exactly
+that. Step 3 survives because it works, costs nothing to keep, and an owner who
+has already spent an afternoon of `ffmpeg` on 197 MB should not lose it the day a
+plugin lands.
+
+**`getPlaybackEvent` keeps its contract exactly**, and none of the three
+backends changed it (`video.gd:playback_event`): `1` only when a reader is open,
+the rate is non-zero and the playhead is short of the end; `0` when stopped or
+finished; **VOID when there is no media**. §3 is the account of why the third of
+those is the one that matters — the other arm of `BehaviorScript 134` is
+`go(the frame)` and never ends.
+
+### 8.2 The rule that makes absence free
+
+**Nothing in the engine may `preload` an addon path.** A `preload` of a script
+that is not there is a GDScript *parse* error, and a parse error in a file the
+preview preloads takes the whole engine down before a movie opens — every gate
+entry and every title, over a decoder for one unshipped test title. So the only
+questions asked are `ClassDB.class_exists`, `ClassDB.can_instantiate` and
+`ClassDB.instantiate`, all three of which answer honestly at run time for a class
+that was never registered.
+
+`tools/video_plugin.gd` asserts that as a **source scan** over `director/`,
+`scenes/`, `lingo/`, `autoload/` and `scripts/`, because the failure it guards
+happens at parse time where no runtime check can reach it.
+
+Measured with nothing installed, `4.7.1`, Windows, `--audio-driver Dummy`:
+
+```
+decoder extension : none installed
+ok    no `preload("res://addons/…")` under res://director, res://scenes, res://lingo, res://autoload, res://scripts
+ok    `available()` is false with no extension installed
+ok    `handles()` is false for all 22 container extensions
+ok    no non-stock loader claims the VideoStream type
+ok    all 8 declined, every one of them on the class gate
+ok    no reader the engine opened is on the plugin backend
+ok    `getPlaybackEvent` of a channel with no media is VOID
+PASS  (7 checks, 0 failed)
+```
+
+and `video_fallback` on both roots is unchanged: `piposh2` asserts nothing and
+says so, `itamar-magichat` still reports `1 with media / 1 without`, all three
+video frames leaving, and the one started video advancing.
+
+### 8.3 Installing EIRTeam.FFmpeg 1.1.4 — what the owner must do
+
+The engine looks for the class **`FFmpegVideoStream`**. That is EIRTeam.FFmpeg's,
+and it is the only name in `director_plugin_video.gd:CLASSES`.
+
+1. **Decide the licensing question first.** An FFmpeg build is LGPL or GPL
+   depending on how it was configured, and the plugin's binaries embed one.
+   Shipping them changes this project's distribution terms. The plugin's own code
+   is MIT; the FFmpeg inside it is not, and that is the part that travels. This is
+   the owner's decision and no code here can make it.
+2. **Get the release.** `eirteam-ffmpeg-1.1.4.zip`, the asset on the
+   `autobuild-2025-11-12-13-44` tag of `github.com/EIRTeam/EIRTeam.FFmpeg`
+   (commit `270e661`). Nothing in this repository downloads it.
+3. **Unzip into `addons/`**, so the layout is what the `.gdextension` already
+   declares:
+
+   ```
+   addons/ffmpeg/ffmpeg.gdextension
+   addons/ffmpeg/win64/libgdffmpeg.windows.template_{debug,release}.x86_64.dll
+   addons/ffmpeg/win64/{avcodec,avfilter,avformat,avutil,swresample,swscale}-*.dll
+   addons/ffmpeg/linux64/libgdffmpeg.linux.template_{debug,release}.x86_64.so
+   addons/ffmpeg/macos/libgdffmpeg.macos.template_{debug,release}.framework
+   addons/ffmpeg/android/libgdffmpeg.android.template_{debug,release}.arm64.so
+   ```
+
+   The paths inside `ffmpeg.gdextension` are absolute `res://addons/ffmpeg/...`,
+   so the directory name is not negotiable: unzipping to `addons/EIRTeam.FFmpeg/`
+   leaves an extension that loads nothing and reports nothing.
+4. **`project.godot` needs no edit.** A `.gdextension` anywhere under `res://` is
+   scanned and loaded at startup; it is not an EditorPlugin and has no
+   `enabled_plugins` entry. Nothing has to be ticked in Project Settings, and
+   `director/video/extra_stream_classes` — the setting the adapter reads for
+   *other* plugins — stays absent.
+5. **Open the editor once, then close it.** The extension's classes must be in
+   the editor's class database before a headless run resolves them, and this
+   project already requires that step for `global_script_class_cache.cfg`
+   (`AGENTS.md`, Environment).
+6. **Verify with the harness, not by playing:**
+
+   ```bash
+   "$G" --headless --audio-driver Dummy --path . --script tools/video_plugin.gd -- \
+       --root res://test-games/itamar-magichat --boot magichat.dir
+   ```
+
+   It should name `FFmpegVideoStream`, print the extensions the loader claims,
+   and report the MPEG-1 clips opening with real durations. Then
+   `tools/video_fallback.gd` on the same root, which is the one that would catch
+   a member reporting ready with a frozen playhead.
+
+### 8.4 What breaks, and where
+
+- **Android needs one binary per ABI, and 1.1.4 ships one.** The `.gdextension`
+  declares `android.template_debug.arm64` and `android.template_release.arm64`
+  and **nothing else** — no `arm32`, no `x86_64`. So an APK built with the
+  extension in the tree runs on 64-bit ARM devices and on nothing else: 32-bit
+  devices and the x86_64 emulator get a missing-library failure at extension load,
+  which is before any Godot code runs and therefore before any fallback this
+  engine has can decline. `docs/ANDROID.md` and `docs/MOBILE.md` have to absorb
+  that **before** an export is attempted, not after. iOS has no entry in the
+  `.gdextension` at all, so an iOS export with this addon is not a per-ABI problem
+  but an absent one.
+- **Size.** An FFmpeg build is tens of megabytes per platform, against 197 MB of
+  MPEG-1 the owner already has and a 1.7 MB AVI this port decodes in GDScript.
+  Every platform's binaries ship in every export unless the export presets are
+  told otherwise.
+- **A compatibility floor above 4.7.1 is a hard stop, not a warning.**
+  1.1.4 declares `compatibility_minimum = 4.1`, so 4.7.1 is fine today. If a
+  future release raises it *above* the project's Godot version, Godot refuses to
+  load the extension: the classes are never registered,
+  `ClassDB.class_exists("FFmpegVideoStream")` answers false, and — this is the
+  design working — the engine falls straight back to the sidecar, the AVI reader
+  and nothing. The videos stop playing and **nothing else changes**. The failure
+  is loud in the console and silent in the game, which is the right way round.
+  The other direction is the real trap: an extension built against a *newer*
+  Godot than the one running it is the case Godot cannot always detect, and it
+  crashes rather than declines. Match the build to the engine.
+- **A plugin that is installed but declines the file** is a normal state, not a
+  bug: a stripped FFmpeg build without the MPEG-1 demuxer says so through
+  `ResourceLoader.get_recognized_extensions_for_type("VideoStream")`, and the
+  adapter's `handles()` reads exactly that list.
+
+### 8.5 What is confirmed from the plugin's source, and what is not
+
+The plugin could not be run here — it is not installed and nothing was
+downloaded — so its API was read from source on `raw.githubusercontent.com` at
+commit `270e661`. Reading text is not installing a binary.
+
+**Confirmed** (`register_types.cpp`, `ffmpeg_video_stream.h`,
+`video_stream_ffmpeg_loader.cpp`, `gdextension_build/ffmpeg.gdextension`):
+
+- `FFmpegVideoStream` is registered with `GDREGISTER_CLASS` — concrete and
+  script-instantiable — and is `GDCLASS(FFmpegVideoStream, VideoStream)`.
+- It declares **no** `set_file`/`get_file`; it uses the `VideoStream` base
+  class's, which is stock Godot's scripting API. So the adapter's one call into
+  it is Godot's, not the addon's.
+- `FFmpegVideoStreamPlayback` implements `play`, `stop`, `set_paused`,
+  `is_paused`, `is_playing`, `seek`, `update`, `get_length`,
+  `get_playback_position`, `get_texture`, `get_mix_rate`, `get_channels` — which
+  is exactly the set `VideoStreamPlayer` drives, and is why the existing Theora
+  playback path in `video.gd` works against it unchanged.
+- The loader handles type `"VideoStream"` and takes its extensions from
+  `av_demuxer_iterate()`, i.e. whatever the linked FFmpeg build demuxes.
+- Entry symbol `ffmpeg_init`, `compatibility_minimum = 4.1`, Android `arm64`
+  only.
+
+**Not confirmed, and isolated in the adapter with the uncertainty in its
+docstring:**
+
+1. **That `VideoStreamPlayer.get_stream_length()` answers before `play()`.** This
+   is how `the duration of member` is learned. If the inference is wrong the
+   answer is 0, and **0 is refused** — `open()` returns false and the member falls
+   through to the sidecar, the AVI reader and nothing, which is today's
+   behaviour. A wrong guess therefore costs a clip that does not play, never a
+   movie that hangs, which is the split §3 is entirely about.
+2. **That the sound track's rate and channel count cannot be read.** Godot
+   exposes no script accessor and the plugin's are on `VideoStreamPlayback`, which
+   scripts cannot reach. So `the sampleRate`, `the sampleSize` and `the
+   channelCount of member` answer 0 on this backend and `trackCount` counts the
+   video track alone. `director_ogg.gd` reads both out of the Vorbis
+   identification header; there is no equivalent parse for an arbitrary container,
+   and answering `44100` would be exactly the plausible invention §3 forbids.
+3. **That a different plugin can be named rather than coded for.**
+   `director/video/extra_stream_classes` is a comma-separated project setting of
+   further class names. It works for any extension that registers a *concrete*
+   `VideoStream` subclass driven by the base-class `file` property. An extension
+   shaped differently — one whose player is a `Node` of its own — cannot be made
+   to work by naming it, and the adapter type-checks what `ClassDB.instantiate`
+   returns and declines anything that is not a `VideoStream`.
+
+**And one thing this backend gives up on purpose.** `director_ogg.gd`'s header
+argues that the property surface must not be answered by asking the thing that
+plays the file, because a duration out of the player cannot be used to check the
+player. That is why the Theora backend has a parser beside it. It cannot be
+honoured here and pretending otherwise would be worse than saying so: there is no
+single format to parse — the point of a decoder extension is that the set of
+formats is open-ended, so a parser covering them would *be* the decoder. What
+keeps it safe is not an independent parse but the refusal in item 1.
+
+### 8.6 Also fixed here, because it is one condition and it guards this feature
+
+`tools/video_fallback.gd:_visit` counted a frame as "held for a reason" only when
+the **clock** had one — a tempo delay, a transition, `pause`, a sound. A playing
+video was not on that list, and it cannot be: a video runs on the engine tick,
+*outside* the score step, precisely so that a movie sitting on `go(the frame)`
+can wait for it.
+
+It passed only by luck. All three of Magic Hat's video frames record several
+states while they walk their region today, so `frames.size() > 1` returns `left`
+before the hold logic is reached. A movie that **settled** on a video frame —
+which is what this feature makes possible for the 87-second intro and the twenty
+album clips — would have been reported `parked-on-video`: the harness calling a
+working feature a hang, on the day the feature started working.
+
+The condition added is the narrow one, and every part of it is measured by the
+harness rather than asked of the engine: **a non-zero `the movieRate` and a
+`the movieTime` that moved since the previous tick.** Deliberately not
+`getPlaybackEvent`, which is the engine's own answer and would make the check
+circular; and deliberately not a non-zero rate alone, because a rate against a
+*frozen* playhead is exactly the hang the harness's third check exists to name.

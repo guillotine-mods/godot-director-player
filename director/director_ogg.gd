@@ -289,6 +289,23 @@ func backend() -> String:
 	return BACKEND
 
 
+## The `VideoStream` `preview/video.gd` should put on a channel's player.
+##
+## Stock Godot's own Theora loader answers this, which is the whole reason the
+## sidecar format is Ogg: `ResourceLoader.load(path, "VideoStream")` needs no
+## addon, no GDExtension and no native code.
+##
+## **It is a method on the reader rather than a line in `preview/video.gd`**, and
+## that moved here when `director/director_plugin_video.gd` arrived. There are now
+## two push backends and they obtain their stream differently — this one from the
+## `ResourceLoader`, the plugin one by instantiating a class `ClassDB` names — so
+## a caller that constructed the stream itself would need a backend test at the
+## one call site whose job is not to have one. `video.gd:_stream` asks the reader
+## and does not know which answered.
+func video_stream() -> VideoStream:
+	return ResourceLoader.load(path, "VideoStream")
+
+
 ## Nothing to release: `open` reads two windows of the file and closes the handle
 ## before it returns, because everything this reader answers is in the headers
 ## and the last page. Present so that `preview/video.gd:release` can close every

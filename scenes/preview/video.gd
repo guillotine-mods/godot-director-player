@@ -83,12 +83,35 @@ extends RefCounted
 ##     sidecar for a file this port *can* decode is the owner deliberately
 ##     overriding that, and doing what they asked is the right answer to it.
 ##
-## ## Two backends, one playhead
+## ## The third backend: a decoder GDExtension, if one is installed
+##
+## The owner has since said plainly that the transcode route is not what they
+## want, and `docs/DIGITAL_VIDEO.md` §8 is option D becoming real: when a decoder
+## extension registering a `VideoStream` subclass is installed, the 22 MPEG-1
+## files play from the original bytes and nothing is transcoded at all.
+##
+## **The entire feature is conditional on a class existing at run time**, and the
+## condition is asked with `ClassDB.class_exists`, never with a `preload` of an
+## addon path — a `preload` of a script that is not there is a *parse* error, and
+## a parse error in a file this one preloads takes the engine down before a movie
+## opens, for every title and every gate entry. `director/director_plugin_video.gd`
+## is the adapter, it is the only file that names a plugin class, and its header
+## separates what was read from the plugin's source from what is inference.
+##
+## With nothing installed the arm declines in one comparison and the resolution
+## order below is byte for byte the one that existed before it, which is what
+## `tools/video_plugin.gd` asserts.
+##
+## ## Three backends, one playhead
 ##
 ## The AVI reader is a **pull** decoder: `frame_at(n)` returns a picture and the
 ## soundtrack is one `AudioStreamWAV` on an `AudioStreamPlayer` this file drives.
-## Theora is a **push** decoder: Godot's `VideoStreamPlayer` owns the clock, the
-## pictures and the Vorbis audio, and hands back a texture that changes under it.
+## Theora and the plugin are **push** decoders: Godot's `VideoStreamPlayer` owns
+## the clock, the pictures and the audio, and hands back a texture that changes
+## under it. The two push backends differ only in where the `VideoStream` comes
+## from — the `ResourceLoader` for a sidecar, `ClassDB.instantiate` for the
+## plugin — and each reader answers `video_stream()` for its own, so `_stream`
+## below has no backend test in it.
 ##
 ## `the movieTime` is computed the same way for both regardless — from the
 ## engine's own scaled delta, in `advance` — and the Theora player is *corrected*
@@ -120,6 +143,11 @@ extends RefCounted
 
 const Avi := preload("res://director/director_avi.gd")
 const Ogg := preload("res://director/director_ogg.gd")
+## The plugin **adapter**, which is a file in this repository and is always
+## present; the decoder extension it looks for is not preloaded, is not named by
+## path, and may be absent. That distinction is the whole of requirement 1 —
+## see the adapter's header.
+const Plugin := preload("res://director/director_plugin_video.gd")
 const Sidecar := preload("res://director/director_sidecar.gd")
 const VideoXtra := preload("res://director/director_video_xtra.gd")
 const LingoValue := preload("res://lingo/lingo_value.gd")
@@ -198,16 +226,29 @@ static func reader_for(host, where: Array, table) -> RefCounted:
 ##
 ##   1. the member's own name, resolved against the disc the way Director
 ##      resolved a linked media file (`media_path`);
-##   2. a **fresh Ogg Theora sidecar** for that file, if the cache has one
+##   2. the original bytes through a **decoder GDExtension**, if one is installed
+##      and it takes this container (`director_plugin_video.gd`);
+##   3. a **fresh Ogg Theora sidecar** for that file, if the cache has one
 ##      (`director_sidecar.gd:fresh_for`, which answers `""` for absent, stale,
 ##      and for a source that is not on the disc at all);
-##   3. the original bytes through the MS-RLE AVI reader;
-##   4. nothing.
+##   4. the original bytes through the MS-RLE AVI reader;
+##   5. nothing.
 ##
-## Step 4 is not a failure path bolted on the end — it is the behaviour every one
+## Step 5 is not a failure path bolted on the end — it is the behaviour every one
 ## of Magic Hat's video frames is written against, and `docs/DIGITAL_VIDEO.md` §2
 ## measures all three of them leaving cleanly because of it. So each step that
 ## declines says why through `host._trace` and moves on, and none of them raises.
+##
+## **The plugin is tried before the sidecar, and the sidecar still exists.** The
+## order is deliberate in both directions. Before, because the plugin plays the
+## *original* media and the sidecar plays a copy, and the engine's stated premise
+## is that it reads the original containers at run time — an owner who installs a
+## decoder is asking for exactly that, and a cache entry left over from an
+## experiment should not quietly override it. Still there, because it works, it
+## costs nothing to keep, and a user who has already spent an afternoon of ffmpeg
+## on 197 MB should not lose it the day a plugin lands. With no extension
+## installed step 2 is one `ClassDB.class_exists` that answers false, and steps 3
+## to 5 are the file as it stood.
 ##
 ## **A sidecar that will not parse is a decline, not a substitution.**
 ## `director_ogg.gd:open` refuses a file with no last granule position, which is
@@ -215,6 +256,12 @@ static func reader_for(host, where: Array, table) -> RefCounted:
 ## through to the AVI reader and to null exactly as if the cache were empty. A
 ## half-written sidecar therefore costs a skip, which is the state the movie
 ## already handles, rather than a member that reports ready and never advances.
+##
+## The plugin arm follows the same rule and `director_plugin_video.gd:open`
+## enforces it: a stream that opens but reports no duration is refused, because a
+## reader that comes back from here makes the member answer `the mediaReady` TRUE
+## and a member that is ready with a duration of 0 is the hang
+## `docs/DIGITAL_VIDEO.md` §3 is about.
 static func _open(host, wanted: String):
 	if wanted == "":
 		return null
@@ -222,6 +269,17 @@ static func _open(host, wanted: String):
 	if resolved == "":
 		host._trace("video %s: not found" % wanted)
 		return null
+	if Plugin.available():
+		var plugin = Plugin.new()
+		if plugin.open(resolved):
+			host._trace("video %s: playing through %s (%.2fs)" % [
+				wanted, plugin.stream_class, plugin.duration_ms / 1000.0])
+			return plugin
+		# Named rather than silent, and this is the line that separates "no
+		# extension installed" from "the extension declined this file" — two
+		# states that look identical from the movie's side and want completely
+		# different answers from whoever is reading the trace.
+		host._trace("video %s: %s" % [wanted, str(plugin.error)])
 	var sidecar := Sidecar.fresh_for(resolved)
 	if sidecar != "":
 		var ogg = Ogg.new()
@@ -236,9 +294,15 @@ static func _open(host, wanted: String):
 		return avi
 	# Named rather than silent, and this is the line a reader follows when a clip
 	# does not play: an MPEG-1 file reports the AVI reader's "not a RIFF file",
-	# which is correct and is the cue to run `tools/video_sidecar.gd`.
-	host._trace("video %s: %s (no sidecar in %s)" % [
-		wanted, str(avi.error), Sidecar.CACHE_DIR])
+	# which is correct and is the cue to install a decoder extension
+	# (`docs/DIGITAL_VIDEO.md` §8) or to run `tools/video_sidecar.gd`. Which of
+	# the two is missing is stated rather than left to be inferred, because the
+	# whole point of having three backends is that "it did not play" is now three
+	# different diagnoses.
+	host._trace("video %s: %s (decoder extension: %s; no sidecar in %s)" % [
+		wanted, str(avi.error),
+		Plugin.installed_class() if Plugin.available() else "none installed",
+		Sidecar.CACHE_DIR])
 	return null
 
 
@@ -570,7 +634,7 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 	if reader == null:
 		return null
 	var channel := int(sprite.get("channel", 0))
-	if str(reader.backend()) == Ogg.BACKEND:
+	if _is_push(reader):
 		return _stream_texture(host, channel, reader,
 			Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1)))
 	var state: Dictionary = host._host.media_channels.get(channel, {})
@@ -605,9 +669,10 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 	return texture
 
 
-# ======================================================= the Theora backend
+# ================================================== the two push backends
 #
-# One `VideoStreamPlayer` per channel, off screen, driven by this file.
+# One `VideoStreamPlayer` per channel, off screen, driven by this file, for
+# **both** the Theora sidecar and the decoder extension.
 #
 # ## Why Godot's node and not a decoder here
 #
@@ -618,6 +683,18 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 # GDExtension, no native code and no new dependency, which is the entire
 # constraint this approach exists to satisfy. So the sidecar is not "a format we
 # like better", it is *the* format the engine already has.
+#
+# ## Why the extension re-uses every line of it
+#
+# A decoder GDExtension of the shape §8 describes registers a `VideoStream`
+# subclass, which means Godot's own `VideoStreamPlayer` drives it through exactly
+# the four entry points used below — `play()`, `paused`, `stream_position`,
+# `get_video_texture()`. Confirmed against EIRTeam.FFmpeg's
+# `ffmpeg_video_stream.h` at commit 270e661, where `FFmpegVideoStreamPlayback`
+# implements `play`, `stop`, `set_paused`, `is_playing`, `seek`, `get_length`,
+# `get_playback_position` and `get_texture`. So the third backend cost this
+# section nothing: only `_stream`'s first two lines differ, and they moved onto
+# the readers as `video_stream()`.
 #
 # ## Why it is a hidden node rather than something drawn
 #
@@ -648,16 +725,25 @@ static func _stream(host, channel: int, reader) -> VideoStreamPlayer:
 	var streams: Dictionary = host._host.video_streams
 	var existing = streams.get(channel, null)
 	if existing != null and is_instance_valid(existing) \
-			and str((existing as Node).get_meta("ogv_path", "")) == str(reader.path):
+			and str((existing as Node).get_meta("stream_path", "")) == str(reader.path):
 		return existing
 	if existing != null and is_instance_valid(existing):
 		(existing as Node).queue_free()
-	var stream: VideoStream = ResourceLoader.load(str(reader.path), "VideoStream")
+	# Asked of the **reader**, which is the seam between the two push backends: a
+	# sidecar answers with `ResourceLoader.load(path, "VideoStream")` and the
+	# plugin adapter with the class `ClassDB` named, and this function is not
+	# allowed to know which. Before the plugin landed the `ResourceLoader` call
+	# was inline here, and leaving it inline would have meant a backend test in
+	# the one function whose whole job is to be backend-agnostic.
+	var stream: VideoStream = reader.video_stream()
 	if stream == null:
-		# The header parse said this is Theora and the loader disagrees. Reported
-		# rather than retried, and the caller draws nothing — which is the same
+		# For Theora: the header parse said this is Theora and the loader
+		# disagrees. For the plugin: the extension opened the file for the
+		# duration probe and has nothing to hand over now. Either way it is
+		# reported rather than retried, and the caller draws nothing — the same
 		# clean skip a member with no media gets, arriving one step later.
-		host._trace("video: %s did not load as a VideoStream" % str(reader.path))
+		host._trace("video: %s did not yield a VideoStream (%s backend)" % [
+			str(reader.path), str(reader.backend())])
 		return null
 	var player := VideoStreamPlayer.new()
 	player.name = "VideoStream%d" % channel
@@ -666,7 +752,7 @@ static func _stream(host, channel: int, reader) -> VideoStreamPlayer:
 	player.visible = false
 	player.expand = true
 	player.stream = stream
-	player.set_meta("ogv_path", str(reader.path))
+	player.set_meta("stream_path", str(reader.path))
 	host.add_child(player)
 	streams[channel] = player
 	return player
@@ -712,7 +798,7 @@ const SYNC_SLOP := 0.25
 
 
 static func _sync_stream(host, channel: int, reader, at_units: int) -> void:
-	if host == null or host._host == null or str(reader.backend()) != Ogg.BACKEND:
+	if host == null or host._host == null or not _is_push(reader):
 		return
 	var player = host._host.video_streams.get(channel, null)
 	if player == null or not is_instance_valid(player):
@@ -799,10 +885,30 @@ static func _release_stream(host, channel: int) -> void:
 ## — Godot's player owns that stream.
 static func _begin_media(host, channel: int, reader, member: Dictionary,
 		from_units: int) -> void:
-	if str(reader.backend()) == Ogg.BACKEND:
+	if _is_push(reader):
 		_start_stream(host, channel, reader, member, from_units)
 		return
 	_start_audio(host, channel, reader, member, from_units)
+
+
+## Does this reader hand its pictures to a `VideoStreamPlayer`, or does this file
+## pull frames out of it?
+##
+## The one place the question is asked, so that a third push backend was a row
+## here rather than three `==` comparisons in three functions that could come to
+## disagree — which is exactly what the plugin backend would have found, since
+## `advance`, `texture_for` and `_begin_media` each carried their own copy of the
+## Theora test before it landed.
+##
+## Written against the backend names rather than against `has_method
+## ("video_stream")`, because a reader that grew that method by accident would
+## silently change which path it is driven down, and the failure would be a video
+## that decodes into a texture nothing draws.
+static func _is_push(reader) -> bool:
+	if reader == null:
+		return false
+	var kind := str(reader.backend())
+	return kind == Ogg.BACKEND or kind == Plugin.BACKEND
 
 
 static func _start_audio(host, channel: int, reader, member: Dictionary,

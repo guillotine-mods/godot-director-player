@@ -199,10 +199,19 @@ not:
 - **`the media of member`** is deliberately still absent: Director hands back a
   duplicate of the member's media as an object assignable into another member,
   and that needs the mutable cast below.
-- **Still no decoder for QuickTime or MPEG-1**, and `docs/DIGITAL_VIDEO.md` §4
-  costs both and recommends against: each needs a native, per-ABI dependency in a
-  project that is pure GDScript against stock Godot, for one unshipped test
-  title's intro.
+- **Still no decoder for QuickTime or MPEG-1 in this project**, and
+  `docs/DIGITAL_VIDEO.md` §4 costs both: each needs a native, per-ABI dependency
+  in a project that is pure GDScript against stock Godot, for one unshipped test
+  title's intro. **What changed is that the engine can now use one it did not
+  ship.** `scenes/preview/video.gd` has a third backend behind
+  `director/director_plugin_video.gd`, gated on `ClassDB.class_exists` rather
+  than on a `preload` of an addon path, so a decoder GDExtension the owner
+  installs plays the 22 MPEG-1 clips from the original bytes and an absent one
+  changes nothing at all — `tools/video_plugin.gd` in `gate.sh`'s `ALL` asserts
+  the second half. `docs/DIGITAL_VIDEO.md` §8 is the install, the Android
+  per-ABI blocker, and which parts of the plugin's API are confirmed from its
+  source versus inferred. Nothing here ships, requires or downloads one, so this
+  line stays: out of the box there is still no decoder for either format.
 
 Two smaller things sit beside it. The tempo channel's video waits are **built on
 the clock side and unwired on this one**: `director_score.gd` decodes
