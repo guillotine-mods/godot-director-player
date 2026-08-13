@@ -94,17 +94,47 @@ static func run_primary_script(host, interpreter, compiled: Dictionary,
 ## by handler name across every loaded cast rather than by being a particular
 ## script, so it has no `script` dictionary to carry.
 ##
-## `channel` is what `the currentSpriteNum` reads while this element runs, and it
-## is on the element rather than on the chain because only **one** tier of the
-## five is a sprite behaviour. Director answers the property from the sprite whose
-## *behaviour* is executing and 0 from every other tier -- so a cast script, a
-## frame script and a movie script all read 0 during the same click that a
-## behaviour read its own channel from. Carrying it on the chain would answer the
-## behaviour's channel for all four.
+## `channel` is the **behaviour instance** this element runs as, and `sprite` is
+## what `the currentSpriteNum` reads while it runs. They are two fields because
+## the two tiers that belong to a sprite need different halves of the answer:
+## only a behaviour is an instance (`LingoInterpreter.behaviour_instance`), but a
+## cast script is still running *for* a sprite and has no other way to learn
+## which. A frame script and a movie script belong to no sprite and read 0.
+##
+## **The cast tier reading its channel departs from the reference, deliberately,
+## and this is the measurement.** ScummVM sets `_currentSpriteNum` only in
+## `processEvent`'s `kScoreScript` arm and zeroes it between queued elements
+## (`lingo-events.cpp:773,806`), and a mouse chain queues the cast, frame and
+## movie tiers with `channelId = 0` (`queueEvent` only fills `channelId` from
+## `targetId` for a key event), so on the reference a cast script reads 0.
+##
+## The corpus says that cannot be what Director did. **All 12 reads of `the
+## currentSpriteNum` in the six titles are in cast scripts on bitmap members, and
+## 0 are in behaviours** -- members 3, 103 and 105 of `hex1`/`hex2`/`hex3`, the
+## Hexxagon board's piece, its "step here" tile and its "jump here" tile. Every
+## one of the three is `jumpFrom = the currentSpriteNum` deciding which of the 58
+## board channels was clicked, and with 0 there `lightUp1Hex(0)` matches no `case`
+## arm, no tile lights, and the board cannot be played at all -- which is the
+## player report this closes. A shipped title does not ship a minigame that never
+## worked in the authoring tool.
+##
+## The design argument agrees: a behaviour already knows its channel from `me`
+## (`the spriteNum of me`), so a property that answered only inside a behaviour
+## would be redundant with one the language already has. What has no other way to
+## ask is exactly a cast script, and that is what these twelve sites are.
+##
+## Reversible in one place if a D6 test ever says otherwise: pass 0 for `sprite`
+## at the cast call in `build`.
+##
+## `sprite` defaults to **`channel`**, not to 0, so that every caller that builds
+## a sprite element the way it always did still reads its own channel -- there are
+## two in `tools/media_surface.gd` and a default of 0 would have quietly answered
+## 0 in both. Only a tier where the two genuinely differ passes it.
 static func element(tier: String, script: Dictionary, pass_by_default: bool,
-		movie := false, channel := 0) -> Dictionary:
+		movie := false, channel := 0, sprite := -1) -> Dictionary:
 	return {
 		"tier": tier, "script": script, "channel": channel,
+		"sprite": channel if sprite < 0 else sprite,
 		"pass_by_default": pass_by_default, "movie": movie,
 	}
 
@@ -140,7 +170,11 @@ static func build(host, channel: int, member: Dictionary) -> Array:
 		var cast_script: Dictionary = host._script_in_lib(
 			int(member.get("lib", 0)), int(member.get("id", 0)))
 		if not cast_script.is_empty():
-			out.append(element("cast", cast_script, false))
+			# Channel 0 so this stays a script rather than becoming a behaviour
+			# instance, and `sprite` so `the currentSpriteNum` still answers the
+			# channel it is running for -- see `element`'s note for why the two
+			# come apart here and nowhere else.
+			out.append(element("cast", cast_script, false, false, 0, channel))
 	var frame: Dictionary = host._frame_script(host._index)
 	if not frame.is_empty():
 		out.append(element("frame", frame, false))
@@ -237,7 +271,7 @@ static func run(host, interpreter, handler: String, elements: Array) -> int:
 		var outer := 0
 		if host._host != null:
 			outer = int(host._host.current_sprite_num)
-			host._host.current_sprite_num = int(el.get("channel", 0))
+			host._host.current_sprite_num = int(el.get("sprite", 0))
 		if is_movie:
 			interpreter.call_movie_handler(handler)
 		else:

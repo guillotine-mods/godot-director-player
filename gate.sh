@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -204,6 +204,17 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # `piposh2` have none between them, so four of the six roots would run this over an
 # empty set. The harness asserts its own population first for that reason, but the
 # flag is what stops it being asserted and vacuous.
+#
+# `cast_script_sprite` names `piposh-dream` for the same reason and the population
+# is even narrower: **all 12 reads of `the currentSpriteNum` in the six titles are
+# in one corpus**, as cast scripts on bitmap members in `hex1`/`hex2`/`hex3`, and 0
+# are in behaviours. Bare on `GATE_ROOT` it would have no subject at all. It plays
+# the Hexxagon board rather than reading the property back: a click on a piece must
+# light tiles and a click on a lit tile must land the piece, because a getter
+# agreeing with a setter passes while `lightUp1Hex(0)` still matches no `case` arm.
+# 12s, and `--play` walks the movie's whole 200-frame spoken intro instead of
+# landing in the score before the init -- same board, 74s, which is what makes the
+# short path legitimate rather than convenient.
 #
 # `film_loop_cast` sits two entries away and **passed throughout the bug this
 # catches**, which is why this is a new entry rather than a fourth check in that

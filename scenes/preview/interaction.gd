@@ -968,11 +968,30 @@ static func script_for_click(host, channel: int, sprites: Array,
 		if script.is_empty():
 			for sprite in sprites:
 				if int(sprite["channel"]) == channel:
-					# Same rule as the eligibility test: the member's own library
-					# decides, or a click runs a handler belonging to a different
-					# cast's member of the same number.
+					# **The member the channel is displaying, not the one the score
+					# gave it.** `preview/event_chain.gd:member_on` reads the live
+					# channel here and this read the score record, so the two
+					# disagreed the moment a script swapped a member -- and the
+					# disagreement is invisible except in the report, because
+					# `_dispatch` runs the chain and this only decides what the click
+					# record *says*. `bugs.md` 101 is the same fault in the other
+					# direction and cost four hypotheses; this one cost a session.
+					#
+					# Measured: `piposh-dream/hex1.dir`'s board is 58 channels the
+					# score fills with member 56 and the movie's own init swaps to
+					# member 3 (a piece), whose cast script declares `mouseUp`. A
+					# click on a piece ran that handler and the record said
+					# `movie script none  mouseUp:NO HANDLER`, which reads exactly
+					# like a dead hotspot and is the opposite of what happened.
+					#
+					# Same rule as the eligibility test for *which* library: the
+					# member's own, or a click runs a handler belonging to a
+					# different cast's member of the same number.
+					var live: Dictionary = host._effective(sprite)
+					if live.is_empty():
+						break
 					var member_script: Dictionary = host._script_in_lib(
-						int(sprite["cast_lib"]), int(sprite["cast_id"])
+						int(live["cast_lib"]), int(live["cast_id"])
 					)
 					if _answers_any(host, member_script, events):
 						script = member_script

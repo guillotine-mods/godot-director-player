@@ -55,27 +55,32 @@ var unbound: Dictionary = {}
 ## Set by the interpreter's caller before a mouse message.
 var click_sprite := 0
 
-## `the currentSpriteNum` — the channel whose **behaviour** is running, 0 when
-## nothing's is.
+## `the currentSpriteNum` — the channel the script now running belongs to, 0 when
+## it belongs to none.
 ##
 ## §7.1 calls it synthesised rather than stored, and it is: Director has no such
-## field on the movie either, it is set as each queued sprite behaviour is
-## entered and cleared as it leaves, so the property is a read of "where am I"
-## rather than of anything the score holds. A behaviour is the *only* tier that
-## answers a channel — a cast script, a frame script and a movie script all read
-## 0 during the same click, because none of them belongs to a sprite.
+## field on the movie either, it is set as each queued element is entered and put
+## back as it leaves, so the property is a read of "where am I" rather than of
+## anything the score holds. **Two of the five tiers belong to a sprite** — its
+## behaviour and the cast script of the member it displays — and both answer the
+## channel; a frame script and a movie script read 0.
 ##
 ## It is here rather than on `preview/event_chain.gd` because two unrelated paths
-## enter a behaviour and both have to agree: the event queue, and `sendSprite` /
+## write it and both have to agree: the event queue, and `sendSprite` /
 ## `sendAllSprites`, which the reference brackets with a save and a restore
 ## exactly so that a behaviour messaging another sprite reads its own channel
 ## again afterwards. Both write this one field, and both restore what they found.
 ##
-## Piposh Dream's hex board is the corpus site, 12 of them across `hex1`, `hex2`
-## and `hex3`: one behaviour is attached to every tile, and `jumpFrom = the
-## currentSpriteNum` is how the tile it is on tells itself apart from the other
-## fifty. Answering 0 there is not a missing value, it is every tile claiming to
-## be the same tile.
+## **This comment used to say a behaviour was the only tier that answers, and the
+## corpus is the other way round.** Piposh Dream's hex board is the site and all
+## 12 reads in the six titles are **cast scripts on bitmap members** — 0 are
+## behaviours: members 3, 103 and 105 of `hex1`/`hex2`/`hex3`, where
+## `jumpFrom = the currentSpriteNum` is how the clicked tile tells itself apart
+## from the other fifty-seven. So 0 was answered at every site that exists, which
+## is not a missing value, it is every tile claiming to be the same tile — and it
+## is why the Hexxagon board answered no click at all. The argument for the cast
+## tier, the reference it departs from and how to reverse it are on
+## `preview/event_chain.gd:element`; `tools/cast_script_sprite.gd` asserts it.
 var current_sprite_num := 0
 ## `the clickLoc` — the stage point of the last mouse-down.
 var click_loc := Vector2.ZERO
