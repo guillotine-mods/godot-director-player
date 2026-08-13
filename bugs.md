@@ -3483,3 +3483,55 @@ all when the argument already names a container this engine can resolve, and wha
 `CDpath()` answers when the ini's `CDPATH` is blank — the recovered
 `magichat.ini` blanks it deliberately so paths resolve against the tree wherever
 it sits, which is the condition this reduces under.
+
+## 96. SKIP walks marker to marker, so pressing it inside a gameplay segment jumps past that segment's own initialiser and on into its ending
+
+**Status:** open · **Area:** `scenes/director_preview.gd:skip_to_end` · found
+while chasing a "the fritz game does not start" report that turned out to be the
+movie's own click gate, not a fault
+
+`skip_to_end` takes "the marker after the playhead" as the start of the next
+scene. That holds for a cutscene and does not hold for a segment a player *plays*:
+Director markers label positions, not scenes, and the function's own comment
+already concedes that nothing in `VWLB` distinguishes the two.
+
+Measured on `piposh-dream`'s `COMEIN.dir`, standing in the idle loop the pot game
+waits in, calling `skip_to_end` five times:
+
+```
+standing on f173
+press 1 -> f179   return1   (the game's init: plantcounter, puppetSprite 27-29, keyUpScript)
+press 2 -> f180   f1        (the pot drop -- the init above is now SKIPPED)
+press 3 -> f192   f2        (the you-were-hit animation)
+press 4 -> f209   fritzend  (the lose scene)
+press 5 -> f226   fritzwin  (the win scene)
+```
+
+Press 1 is right and every press after it is not. Landing on `f1` without `return1`
+gives the pot game with no `plantcounter`, no puppeted pot channels and no
+`keyUpScript` — a screen where the arrows do nothing and no pot is ever cleared,
+which reads as "the game is broken" rather than as "SKIP was pressed twice". Two
+more presses and the player is in the lose scene. Every character's segment in
+that movie has the same layout (`enterdoc`/`y1`/`y2`/`docend`/`docwin`,
+`enterkrupnik`/`y4`/`y5`/`krupend`/`krupwin`), so this is not one room.
+
+**`_skip_sent` bounds it and does not fix it.** `e3a78651` stopped SKIP revisiting
+a marker, which is what closed the Rating `MAINMENU` cycle; the diff shows the
+forward walk above is unchanged by it. What it adds is that `179` is burned after
+press 1, so a player who has walked past the init can never SKIP back to it and
+gets `skip: nothing further to skip to` instead.
+
+Reproduce: drive `skip_to_end` directly, because **no existing harness can press
+SKIP** — `route_press` is the movie's path and the hotspot is tested in `_input`
+(`InputRouter.mouse_button`'s `skip_rect` argument), so `scene_probe --clicks`
+falls through to the movie and reports `ch0 / mouseUp:NO HANDLER` whatever
+`--debug-ui` says. Stand a preview on `COMEIN.dir` f173 and call
+`skip_to_end` in a loop, printing `current_frame()` and `_skip_sent` after each.
+
+Two fixes were considered and both trade away a case already fixed. "Do not cross
+a frame whose script has not run" refuses the legitimate EXODUS skip, where every
+frame of a fresh cutscene is unrun. "Re-arm `_skip_sent` when the movie itself
+moves the playhead back" reintroduces the Rating cycle, which is the movie moving
+back over burned markers by design. Anything attempted here should be measured
+with `tools/skip_state.gd`, which already covers the EXODUS and MURDER1
+mis-landings, before and after.
