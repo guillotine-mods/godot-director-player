@@ -298,7 +298,10 @@ python3 tools/dump_sprite_scripts.py                # sprite -> script attachmen
 python3 tools/dump_fields.py                        # Director fields + member names
 python3 tools/add_cast_script_names.py              # linked-cast member names
 godot --headless --script tools/film_loop_cast.gd   # a film-loop child draws out of the cast its own container named, whole corpus, pass/fail
-godot --headless --script tools/film_loop_scale.gd  # a loop squeezed onto a smaller sprite keeps its children inside it, whole corpus, pass/fail
+godot --headless --script tools/film_loop_scale.gd  # a loop squeezed onto a smaller sprite keeps its children inside it — and, one level down, so does a nested loop's own children against the nested loop's rect, whole corpus, pass/fail
+godot --headless --script tools/film_loop_nesting.gd -- --root piposh-dream  # a film loop nested inside a film loop draws the inner loop's artwork — played, not staged, pass/fail
+godot --headless --script tools/film_loop_restart.gd -- --root piposh-dream  # a loop re-shown on a channel animates from its first frame instead of its last, pass/fail
+godot --headless --script tools/puppet_members.gd -- --root piposh-dream --file COMEIN.dir  # which members a movie's scripts puppet onto channels, per scripted scene derived from its own markers and score: the channels each init claims, the members its handlers assign (literals and `<int> + <var>` offsets alike), which are film loops and which of those have film-loop children. `--play <scene>` then enters the scene the way the movie does — a derived hotspot click or a walk-in — and says what reached the painter. A survey, not in gate.sh's ALL
 godot --headless --script tools/drawn_size_stability.gd # no unstretched sprite resizes while its picture and its place hold still, whole corpus, pass/fail
 godot --headless --script tools/reg_point.gd         # writing `the regPoint of member` moves every sprite drawn from it, and reads back what was written, pass/fail
 godot --headless --script tools/cursor_preview.gd -- --file PIP2DATA/MAP.DIR  # cursorfunk's cursor per channel, pass/fail

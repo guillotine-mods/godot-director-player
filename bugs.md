@@ -3535,3 +3535,154 @@ moves the playhead back" reintroduces the Rating cycle, which is the movie movin
 back over burned markers by design. Anything attempted here should be measured
 with `tools/skip_state.gd`, which already covers the EXODUS and MURDER1
 mis-landings, before and after.
+
+---
+
+## 99. A squeezed film loop positions its children as if scaled and draws them at full size, because `drawn_size` discards a scaled child's size unless the child carries the stretch flag
+
+**Status:** OPEN · **Area:** `scenes/preview/sprite_geometry.gd:drawn_size`,
+`scenes/preview/film_loop_view.gd:child_sprite` · found while implementing nested
+film loops (`docs/bugs-closed.md` 98), not from a report
+
+A loop drawn at a size other than its `initialRect` scales everything inside it by
+`drawn / natural` — the child positions **and the children themselves** (§1.6).
+`film_loop_view.child_sprite` does the second half: it resolves the child's size and
+then multiplies it by `child_scale`'s factor. `Geometry.drawn_size` then throws that
+away.
+
+Measured directly, on a 72x72 member with a loop squeezed to a quarter on each axis:
+
+```
+stretch=false   child_sprite -> 18x18, drawn_size -> (72.0, 72.0)
+stretch=true    child_sprite -> 10x10, drawn_size -> (10.0, 10.0)
+```
+
+`drawn_size`'s branches are the whole story: with the stretch flag clear it returns
+the **member's natural size**, because the sprite's own width and height are treated
+as authoring residue — which is correct for a score sprite and wrong for a film-loop
+child, whose record was just *computed* rather than read off the disc. So the flag
+that decides whether a rect is residue is being asked about a rect that cannot be
+residue.
+
+The consequence reaches the artwork and the anchor together. `film_loop_view.draw`
+takes the child's registration offset from `Geometry.scaled_reg(cm,
+texture.get_size())`, and that texture came back at the natural size, so the offset
+is unscaled too. `place_child` still scales the offset *inside the loop*. Net: the
+contents are placed by scaled coordinates and drawn at full size. That is half of
+§16.8 — the half the surviving renderer was said to have gained — still missing for
+every non-stretch child, and `child_sprite`'s own docstring measures that population
+as the large one: of the 2,053 children in this corpus carrying the flag, none has a
+rect equal to its member's natural size, so the flag is rare by construction.
+
+`PIPDATA/DISKSHOT.dir` is the site whose numbers make it visible: the clay pigeons
+are sprites of about 26x7 and the `diskblow` loop they swap to is 287x279 with its
+child at (320,240). Before the position scaling landed, the explosion drew full-size
+in the middle of the stage. It now draws full-size **on the disk** — closer, and
+still wrong by the same factor. *Not measured on screen*; the mechanism above is
+measured, the visible result is inferred from it and should be confirmed with a
+screenshot before anyone claims a size.
+
+**Why the gate is green over it.** `tools/film_loop_scale.gd` asserts exactly this
+rule and cannot see this failure, because it takes `child_sprite`'s own answer as the
+drawn size (`kid_size`, `tools/film_loop_scale.gd:223`) rather than asking
+`drawn_size` the way the painter does. So the harness measures the quantity the fix
+computes instead of the quantity the renderer uses — a harness passing over the wrong
+noun, which is the shape `porting-fidelity-verification` is about.
+
+Reproduce: swap `kid_size` for `Geometry.drawn_size(drawn, cm)` in
+`tools/film_loop_scale.gd:_case` and run
+
+```
+godot --headless --path . --script tools/film_loop_scale.gd
+godot --headless --path . --script tools/film_loop_scale.gd -- --root piposh-dream
+```
+
+Measured, on all three roots, and it goes red on every one: with `kid_size` read from
+`Geometry.drawn_size(drawn, cm)` — the size the painter's texture really comes back
+at — the harness reports **41,816 regressed and 6,934 held** over 1,400 of 1,400
+loops that really scaled in `piposh2` (86 containers), **26,746 regressed and 1,004
+held** over 1,502 of 1,502 loops in `piposh-dream` (79 containers), and **2,077
+regressed and 501 held** over 230 of 230 loops in `rating` (118 containers).
+"Regressed" is this harness's own noun: a child that was inside its box when the loop
+was drawn at its own size and is outside it once the loop is squeezed to a quarter.
+So 85.8%, 96.4% and 80.6% of the children that had anything to prove fail; why the
+rest hold is *not* measured here, only counted. `hezsave.dir`'s 30x27 `invright` is
+one child of it: child 15 draws 25x24, and squeezed to 7x6 it still comes back 25x24
+— four times the box, with its top-left 8.2px left and 9px above the box's.
+
+The three controls did not move, which is what says that number is the bug rather
+than the edit. The natural-size line stays at 96 of 48,846 children in `piposh2`, 463
+of 28,213 in `piposh-dream` and 214 of 2,792 in `rating`: at natural size
+`child_scale` returns exactly 1, and with a scale of 1 `drawn_size` agrees with
+`child_sprite` on every branch, so the swap is a no-op on the baseline leg. The
+nested check stays green too, at 0 regressed over 4,044 and 1,394 grandchildren,
+because `paint_loop` takes the recursive call's size straight off `child_sprite`'s
+record and never asks `drawn_size` — only the leaf branch does, through
+`SpriteArt.texture_for`. And the tolerance was **left** derived from `child_sprite`'s
+scaled answer instead of being recomputed against the new `kid_size`: recomputing it
+would have made the allowance `0.75 × natural` and cancelled the bug exactly, while
+as it stands it is under a pixel against an error of a factor of four.
+
+**Do not fix it by making `drawn_size` trust a non-stretch record's size**, which
+would reintroduce `bugs.md` 31 for score sprites — reading residue is what that
+entry closed. The narrower reading is that a film-loop child's record is not a score
+record and should say so: `child_sprite` could set the flag it has already earned by
+computing the size, or carry `size_from_script`, which `drawn_size` already honours
+for exactly this reason. Either changes what six titles draw wherever a loop is
+squeezed, so it wants a before/after over the corpus rather than a one-line edit, and
+`tools/film_loop_scale.gd` needs its `kid_size` reading fixed in the same change or
+it will keep agreeing with whichever answer the code gives.
+
+---
+
+## 100. Piposh Dream's `doc` minigame ends before it throws anything, because a hit registers on the first pass against a channel its own init never claimed
+
+**Status:** OPEN, and deliberately not concluded · **Area:** `COMEIN.dir` script
+`1:193` versus `1:147`/`1:181`, or `the visible of sprite N` on an undressed channel
+· found by `tools/puppet_members.gd --play doc`
+
+`COMEIN.dir` holds one minigame per character and five of the six play. `doc`
+(`return2`, f295) is entered correctly — walked into, not jumped to; its init runs,
+`puppetSprite` is reached 8 times and `keyUpScript:dockeys` fires — and then channels
+27, 28 and 29 are **never dressed** with `187`/`188`/`189` over 20,000 process
+frames. Nothing is ever thrown.
+
+The playhead says why. It walks f293..f308 and jumps straight to **f315 `y2`**, which
+is the branch `1:195` takes only on
+
+```lingo
+((sprite(27).visible = 1) or (sprite(3).visible = 1)) and (sprite(5).visible = 1)
+```
+
+Channel 27 was never dressed, so the term that read true is `sprite(3)`: a hit
+registers at `plantcounter = 7` on the very first pass and the scene leaves for
+`docend` before a spear exists.
+
+**Two anomalies sit under it, both unique to `1:193` among the six inits**, which is
+what makes it a lead rather than a coincidence. It omits the `puppetSprite(3, 1)`,
+`puppetSprite(4, 1)` and `sprite(3).visible = 0` that `1:147` (hat) and `1:181` (poz)
+all carry — while its own handlers go on to dress channels 3 and 4 exactly as theirs
+do — and it is the only one of the six written `on enterFrame` rather than
+`on exitFrame`.
+
+**Not concluded, on the rule that "not a bug" needs more evidence than a bug does,
+which cuts the same way in reverse.** Two readings are live: an authoring slip in a
+1997 container, or this port answering `the visible of sprite 3` where Director
+answered otherwise for a channel no `puppetSprite` claimed. The score does place
+member 187 on channel 3 from f295, so the sprite is *there* — but a score record
+carries no visible bit at all (visibility is `preview/channel.gd`'s runtime concept),
+so the score cannot settle it. Settling it needs the reference: what Director returns
+for `the visible of sprite N` on a channel the score placed and no script puppeted.
+`bugs.md` 34's open half is the same question from the other end.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream --file COMEIN.dir --play doc
+```
+
+The survey's static half flags it mechanically without playing anything: `doc`'s line
+reads `handlers also dress [3, 4], unclaimed`, uniquely among the six scenes. That
+comparison of claimed-versus-dressed channels was added to keep a docstring honest
+and surfaced this as a side effect, which is the argument for printing both numbers
+rather than the one the tool was written for.

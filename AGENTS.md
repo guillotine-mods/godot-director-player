@@ -110,10 +110,17 @@ the opposite and had been available from the first minute. Read
   harnesses that run and are expected to pass, and **`gate.sh` exits 1 when any
   of them does not** — TIMEOUT, EMPTY and ERROR count as failures alongside FAIL,
   because a run that hung, asserted nothing, or died before it could report has
-  not passed. Measured by a whole-suite run on 4.7.1 on macOS, 2026-08-12:
-  **all 78 entries pass.** The suite is green, and that is new — it is worth
+  not passed. Measured by whole-suite runs on 4.7.1 on macOS: **every entry in
+  `ALL` passes.** The suite is green, and that is new — it is worth
   keeping that way, because a suite with a standing red teaches everyone to read
-  past reds. `.github/workflows/nightly.yml` runs it on macOS and Windows every
+  past reds.
+  **The count is deliberately not written here**, which is the rule the paragraph
+  below states and this line used to break: it said "all 78 entries pass" while
+  `ALL` held 88, a drift of ten that nobody noticed because a sentence carrying a
+  number reads as measured whether or not anybody re-measured it. The set is
+  uniform, so the count adds nothing the sentence above does not. If you want it:
+  `sed -n 's/^ALL="\(.*\)"$/\1/p' gate.sh | wc -w`, anchored at the line start
+  because the obvious `grep -o` form matches its own occurrence in a comment. `.github/workflows/nightly.yml` runs it on macOS and Windows every
   night, so a red is now something that arrives rather than something somebody
   has to go looking for.
   - `lingo_surface_audit` was red and is fixed. It failed for one reason and it

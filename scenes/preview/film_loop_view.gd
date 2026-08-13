@@ -3,7 +3,9 @@ extends RefCounted
 ##
 ## A loop occupies a single channel on the stage and layers where the score put
 ## it, but inside itself it has its own channels, its own frames and its own
-## clock. Children stack among themselves by their mini-score channel.
+## clock. Children stack among themselves by their mini-score channel, and a child
+## may itself be a film loop -- `paint_loop` is the recursion, and its docstring
+## carries which frame a nested loop is shown at and why.
 ##
 ## Nearly all of this module is placement arithmetic, and that is the part worth
 ## isolating, because getting it wrong does not fail -- it draws the animation
@@ -206,8 +208,74 @@ static func place_child(origin: Vector2, space: Vector2, child: Dictionary,
 	return origin + (at - space) * scale - child_reg
 
 
+## How far a nested loop's own content scale is derived, when the loop is drawn as
+## another loop's child.
+##
+## `child_scale` cannot answer this, and the reason is a *separate* bug rather than
+## a limitation: it asks `Geometry.drawn_size`, and `drawn_size` ignores a size that
+## is not the member's own unless the record carries the stretch flag. A film-loop
+## child's record does not carry it in the general case -- `child_sprite`'s
+## docstring above records that of the 2,053 children in this corpus carrying the
+## flag, none has a rect equal to its member's natural size -- so a nested loop
+## drawn 18x18 out of a 72x72 member has `drawn_size` answer 72x72 and
+## `child_scale` therefore return `Vector2.ONE`, dropping the parent's squeeze for
+## every grandchild. Measured directly: `child_sprite(child, lib, member,
+## Vector2(0.25, 0.25))` on a 72x72 member with the flag clear returns 18x18 and
+## `Geometry.drawn_size` on that record returns 72x72. That miss is `bugs.md` 99;
+## here it means the ratio has to be taken from the size the child is really drawn
+## at.
+##
+## Load-bearing at both sizes, which is worth stating because "compose the squeeze"
+## sounds like it only matters to a squeezed loop. Measured by replacing this call
+## with `Vector2.ONE` -- exactly what `child_scale` would answer for an unflagged
+## loop child -- and running `tools/film_loop_scale.gd -- --root piposh-dream`:
+## **3,764 of 4,044 grandchildren leave their box**, and 280 of those fail at the
+## parent's *natural* size too, because a nested loop's own record carries a rect of
+## its own and is routinely drawn at a size that is not the member's.
+##
+## `drawn` is `child_sprite`'s own answer, which is what `tools/film_loop_scale.gd`
+## already treats as the authoritative drawn size of a loop's child. So the
+## composition is exact rather than approximate: `child_sprite` returns
+## `(natural or the child's own rect) * parent_scale`, and dividing that by the
+## nested member's natural size folds the parent's squeeze in exactly once -- with
+## the child's own stretch, when it carries one, multiplied on top of it.
+##
+## The identity case returns `Vector2.ONE` exactly, the same care `child_scale`
+## takes and for the same reason: an unsqueezed nested loop must go through the
+## arithmetic it always did rather than through a multiply by a computed 1.0.
+static func nested_scale(drawn: Vector2, member: Dictionary) -> Vector2:
+	var natural := Vector2(int(member.get("width", 0)), int(member.get("height", 0)))
+	if natural.x <= 0.0 or natural.y <= 0.0:
+		return Vector2.ONE
+	if drawn == natural:
+		return Vector2.ONE
+	return Vector2(drawn.x / natural.x, drawn.y / natural.y)
+
+
+## How deep the painter will descend into nested loops before it gives up.
+##
+## A guard against a loop that contains itself, which the container format permits
+## and nothing in it forbids: `paint_loop` would otherwise recurse until the stack
+## goes, and the `loops` cache does not save it -- the cache stops the *parse* from
+## repeating, not the descent. **Breadth is the real cost, not depth**: ten
+## loop-children each with ten loop-children is a hundred paints at depth 2, so a
+## generous depth cap is cheap and a cap on the total is what would actually bound
+## the work.
+##
+## The guard is `depth > MAX_DEPTH` and `depth` starts at 0, so this paints depths
+## 0..5 -- **six levels**, not five. The corpus's own maximum is 2
+## (`tools/film_loop_nesting.gd` records the census), so that is four levels more
+## than anything here needs, and still a bound.
+const MAX_DEPTH := 5
+
+
 ## Draw a film-loop sprite by drawing its children. False when the member is not
 ## a film loop, so the caller falls through to the bitmap path.
+##
+## True for a loop whether or not anything came out, which is the same contract
+## `director_preview.gd:_draw_text` states: the sprite *is* a film loop, and
+## falling through would only ask the cast for bitmap artwork a type-2 member does
+## not have.
 static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 		ticks: int, loop_start: Dictionary) -> bool:
 	var lib := int(sprite["cast_lib"])
@@ -216,46 +284,157 @@ static func draw(host, sprite: Dictionary, table, loops: Dictionary,
 	if m.is_empty() or int(m.get("type", 0)) != 2:
 		return false
 
-	var key := "%d:%d" % [lib, id]
-	if not loops.has(key):
-		loops[key] = open_loop(lib, m, table)
-	var loop = loops[key]
-	if loop == null:
-		host._tally_loop("loop unparsed")
-		return true # a film loop that will not parse still draws no bitmap
-	host._tally_loop("loop drawn")
-
-	var origin := stage_origin(sprite, m)
-	var space := loop_origin(m)
-	var scale := child_scale(sprite, m)
-
 	# Counted from when this loop arrived on the channel, not from the movie
 	# clock: a loop entered a second time starts at its first frame rather than
 	# resuming wherever the previous one left off.
 	var since := maxi(0, ticks - int(loop_start.get(int(sprite["channel"]), 0)))
-	var kids: Array = loop.children(since)
-	host._tally_loop("children offered")
+	paint_loop(host, lib, id, m, stage_origin(sprite, m), child_scale(sprite, m),
+		table, loops, since, Ink.blend_alpha(sprite), 0)
+	return true
+
+
+## One loop, painted at a known place on the stage -- and its loop children with it.
+##
+## Director nests: a film loop's child may itself be a film loop, and the child's
+## whole mini-score expands inline at the parent's position in the parent's order
+## (DIRECTOR_ENGINE.md §1.6, §6.3). Nothing here descended before, so a nested loop
+## was skipped whole and tallied `"child has no art"` -- `host._texture_for` is
+## bitmap-and-shape only and answers null for a type-2 member.
+##
+## Measured in `piposh-dream`'s `COMEIN.dir`, on Hatuli's projectile game entered at
+## f720, over a window bounded at **30 top-level loop paints** -- `"loop drawn"` at
+## depth 0 is the one tally that counts the same thing with this recursion and
+## without it, where a window counted in process frames does not, because the two
+## states do different work per frame. Before: `child drawn 11`, `child has no art
+## 19`, and **all 19 were member `1:167`**, the `stone` loop itself. After:
+## `child drawn 30`, `child has no art 0`, `nested loop drawn 28`.
+##
+## So the residue is 0 rather than small, and the 1x1 blank `1:168` that a nested
+## loop's siblings also carry is **not** a source of it: it drew 9 times in the
+## pre-fix window and reaches the texture cache like any other bitmap. The hole was
+## the type-2 child and only ever the type-2 child. The window does not hold the
+## ball loop's own frame fixed, though -- it bounds how much top-level painting
+## happens, not which of the 21 frames each paint sees -- so which *bitmap* siblings
+## come up varies between the two runs and only the `1:167` column is a like-for-like
+## comparison. The player-visible symptom was that the game has no projectiles in it.
+##
+## Everything the recursion needs is a parameter and nothing is a field on the
+## preview node, deliberately: a new `_` field there would have to be classified in
+## `preview/save_state.gd`'s `ACCOUNTED` manifest, carried through
+## `preview/movie_session.gd` and asserted in `tools/preview_surface.gd`, and none
+## of those has anything to say about a value that does not outlive one paint. The
+## one thing that *is* shared is the `loops` parse cache, keyed `"lib:id"`, which is
+## also what makes a self-nesting loop hit the cache rather than re-parse per level.
+##
+## `origin` is the loop's top-left on the stage, threaded in rather than re-derived.
+## The top level computes it with `stage_origin`; each recursive call computes it
+## with the same `place_child` expression a bitmap child gets. One placement path
+## and no second derivation, which is the whole point of the shape: a nested loop
+## placed by a rule of its own would drift from its siblings the first time either
+## rule changed.
+##
+## ## Which frame a nested loop is on
+##
+## `counter` is the parent's **already-wrapped** frame index, not the parent's raw
+## `ticks - loop_start[channel]`. A nested loop has no channel, so it has no
+## `_loop_start` entry and no counter of its own; it takes its parent's frame index
+## and wraps that again by its own `frame_count` and its own `looping` flag
+## (`director_film_loop.gd:frame_index`).
+##
+## **The corpus's own `looping` flags decide it**, and they decide it the same way at
+## both sites that have one. COMEIN's ball loops are `looping=false` over 21 frames
+## nesting a `looping=true` `stone` over 8: pass the raw counter down and the stone
+## goes on spinning for ever after the ball has clamped on its last frame, which is a
+## landed stone still rotating. `rating/blatack1.dir`'s `grnd2`..`grnd5` are the
+## mirror -- `looping=true` over 16 frames nesting a `looping=false` `explode1` over
+## 17 -- and with the raw counter the explosion freezes on its last frame after one
+## cycle while the ground animation keeps going. The wrapped reading is right at
+## both; the raw reading is wrong at both.
+##
+## The reference agrees in shape rather than in code: `getSubChannels(bbox, frame)`
+## is a pure function of `frame`, so what a film loop shows at frame N is a function
+## of N alone, and extended recursively the frame a nested loop expands at is the
+## parent's own frame index. It also makes "a non-looping loop holds on its last
+## frame" mean the whole composite holds, which is what holding ought to mean.
+##
+## **This is reference-derived and unverified against real Director**, because
+## ScummVM does not implement nesting at all and so cannot be asked. `window.cpp:218`
+## expands sub-channels exactly one level and blits each without ever asking
+## `hasSubChannels()`; `score.cpp:952` advances `_filmLoopFrame` only over main-score
+## channels, and `getSubChannels` builds every sub-channel as a fresh `Channel` whose
+## `_filmLoopFrame` is 0 (`channel.cpp:61`). So a nested loop there would freeze on
+## its own frame 0 even if it were expanded, and there is no answer in it to copy.
+##
+## ## The tallies
+##
+## Depth 0 keeps every existing key unchanged, so numbers recorded before this
+## function existed stay comparable; depth 1 and below take a `"nested "` prefix.
+## The two leaf keys are shared at every depth on purpose: `"child drawn"` and
+## `"child has no art"` are facts about a leaf rather than about a level, and
+## `"child drawn"` rising is what this change landing looks like.
+static func paint_loop(host, lib: int, id: int, member: Dictionary, origin: Vector2,
+		scale: Vector2, table, loops: Dictionary, counter: int, alpha: float,
+		depth: int) -> void:
+	if depth > MAX_DEPTH:
+		# Reported rather than returned quietly. This module's whole ethos is that
+		# nothing should be able to say a half is missing without saying so, and a
+		# silent cap is exactly that: the art stops appearing and the report is clean.
+		host._tally_loop("nested loop past depth %d" % MAX_DEPTH)
+		return
+
+	var key := "%d:%d" % [lib, id]
+	if not loops.has(key):
+		loops[key] = open_loop(lib, member, table)
+	var loop = loops[key]
+	if loop == null:
+		host._tally_loop(_tag(depth, "loop unparsed"))
+		return # a film loop that will not parse still draws no bitmap
+	host._tally_loop(_tag(depth, "loop drawn"))
+
+	var space := loop_origin(member)
+	var index: int = loop.frame_index(counter)
+	var kids: Array = loop.children(index)
+	host._tally_loop(_tag(depth, "children offered"))
 	if kids.is_empty():
-		host._tally_loop("loop has no children this tick")
+		host._tally_loop(_tag(depth, "loop has no children this tick"))
 	for child in kids:
 		var kid_lib := child_lib(child, lib, table)
 		if kid_lib < 0:
-			host._tally_loop("child unresolved cast=%s" % str(child["cast_name"]))
+			host._tally_loop(_tag(depth, "child unresolved cast=%s" % str(child["cast_name"])))
 			continue
 		var cm: Dictionary = table.get_member(kid_lib, int(child["cast_id"]))
+		# A child carries its own ink and its own blend, and the loop's alpha
+		# multiplies through: a blended loop dims everything inside it, and with a
+		# nested loop that composes per level rather than only over the two.
+		var kid_alpha := alpha * Ink.blend_alpha(child)
+		if int(cm.get("type", 0)) == 2:
+			var record := child_sprite(child, kid_lib, cm, scale)
+			var size := Vector2(int(record["width"]), int(record["height"]))
+			# `kid_lib`, never `lib`. A nested loop's children index the **nested
+			# loop's own container's** `ccl ` list, and `open_loop` takes that list
+			# from the library it is handed; handing it the parent's is the failure
+			# `director/director_film_loop.gd`'s docstring is built around -- a real
+			# member out of an unrelated cast, drawn, with nothing reporting it.
+			paint_loop(host, kid_lib, int(child["cast_id"]), cm,
+				place_child(origin, space, child, Geometry.scaled_reg(cm, size), scale),
+				nested_scale(size, cm), table, loops, index, kid_alpha, depth + 1)
+			continue
 		var texture: Texture2D = host._texture_for(
 			child_sprite(child, kid_lib, cm, scale))
 		if texture == null:
 			host._tally_loop("child has no art")
 			continue
 		host._tally_loop("child drawn")
-		# A child carries its own ink and its own blend, and the loop's alpha
-		# multiplies through: a blended loop dims everything inside it.
 		host._draw_sprite_texture(
 			texture,
 			place_child(origin, space, child,
 				Geometry.scaled_reg(cm, texture.get_size()), scale),
 			child,
-			Color(1, 1, 1, Ink.blend_alpha(child) * Ink.blend_alpha(sprite))
+			Color(1, 1, 1, kid_alpha)
 		)
-	return true
+
+
+## A tally key, told apart by level. Depth 0's keys are the ones this module has
+## always printed, so a figure quoted in an older commit still means what it said.
+static func _tag(depth: int, key: String) -> String:
+	return key if depth == 0 else "nested " + key

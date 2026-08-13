@@ -53,6 +53,69 @@ extends SceneTree
 ## thousands of regressions; delete the size scaling in `child_sprite` and it goes
 ## red on the children that no longer fit their shrunken box.
 ##
+## ### One level down, for the same reason
+##
+## `paint_loop` recurses: a film-loop child expands inline, and its own children are
+## placed by `nested_scale()` and a second `Geometry.scaled_reg`. **Neither of those
+## was asserted anywhere**, so a nested loop drawn at the wrong size or the wrong
+## offset passed every gate in the suite — the nesting harness
+## (`tools/film_loop_nesting.gd`) asks whether the inner artwork reaches the painter
+## at all, which is a different question from whether it lands in the right place.
+##
+## So the same comparison is applied one level down, and **the box changes with it**:
+## a grandchild's box is the *nested loop's own rect on the stage*, not the top-level
+## sprite's. That distinction is the whole care of the extension. The nested rect is
+## `Rect2(place_child(...), child_sprite(...))` — the same two expressions
+## `paint_loop` uses to recurse, read from the same functions — and using the sprite's
+## box instead would assert something strictly stronger than this file's own
+## reasoning allows, failing on exactly the population the header above spends
+## fifteen lines explaining is already outside its box at natural size.
+##
+## The invariant is unchanged: a grandchild inside its nested loop's box at natural
+## size must still be inside it when the *top-level* loop is squeezed.
+##
+## **Measured negative control**, because a new check that cannot go red is worth
+## nothing: replace `nested_scale(box.size, member)` with `Vector2.ONE` — which is
+## precisely the bug `nested_scale` exists to fix, since `child_scale` answers `ONE`
+## for an unflagged loop child — and this reports **3,764 regressed of 4,044** over
+## `--root piposh-dream`. Note that 280 of them fail at *natural* top-level size too,
+## which is the useful surprise: a nested loop is routinely drawn at a size other than
+## its own even when nothing above it is squeezed, because the child record carries a
+## rect of its own. So `nested_scale` is load-bearing at both sizes and not only under
+## a squeeze.
+##
+## **And what it does not catch, stated rather than left to be discovered.** Dropping
+## the nested `Geometry.scaled_reg` — the second half of the recursive `place_child`
+## in `paint_loop` — does *not* turn this red: it shifts the artwork by the
+## registration offset, which pushes 1,689 of the 4,044 outside their box **at natural
+## size**, and the comparison discipline then excludes exactly those from the squeezed
+## comparison. The remaining 2,355 stay inside both and the check passes. That
+## exclusion is the same rule the 248-of-4,901 paragraph above defends and it is right
+## to keep, so the offset shows up here as a **number and not an assertion**: the
+## natural-size line prints 0 of 4,044 outside for `piposh-dream` and 0 of 1,394 for
+## `rating`, and a run where either becomes non-zero has moved something even though
+## nothing went red. Asserting that zero outright is what this file declines to do, on
+## `AGENTS.md`'s rule that a harness must assert what the port controls rather than
+## what a 1990s cast got right — the count is a property of those two casts' authoring
+## as much as of this arithmetic, and a third title may legitimately carry a loop whose
+## rect is not the union of its contents. `tools/film_loop_nesting.gd` is the entry
+## that would notice the artwork going missing; nothing yet notices it going one
+## registration offset sideways.
+##
+## The tolerance compounds and is derived rather than chosen, the same way the
+## depth-1 allowance is: the nested loop's own drawn size is an integer, so its box
+## misses the exact scaled box by up to a pixel, and the grandchild inside it misses
+## again. Both misses come from `child_sprite`'s own answers, so neither can drift
+## from the rule it is allowing for.
+##
+## **The population lives in two roots and not in `gate.sh`'s.** Over all six
+## corpora there are exactly 10 nested sites, in `piposh-dream` and `rating`;
+## `piposh2`, which `gate.sh` pins, has none. So the nested check asserts zero
+## regressions unconditionally and asserts a non-empty population only when the sweep
+## found one at all — and prints which case it is, so a pinned run cannot be mistaken
+## for a run that proved something. Measure the real population with
+## `--root piposh-dream` and `--root rating`.
+##
 ## Title-agnostic: it names no movie, member or channel of its own and sweeps
 ## whatever `director_game.cfg` (or `--root`) points at.
 
@@ -94,10 +157,13 @@ func _init() -> void:
 			containers.append(str(rel))
 
 	h.begin("squeezing a loop puts none of its children outside the sprite")
+	h.begin("squeezing a loop puts none of a nested loop's children outside it")
 
 	var tally := {
 		"loops": 0, "children": 0, "natural_outside": 0, "regressed": 0,
 		"scaled_loops": 0, "inside_both": 0,
+		"nested_loops": 0, "grandchildren": 0, "nested_natural_outside": 0,
+		"nested_regressed": 0, "nested_inside_both": 0,
 	}
 	var lines: Array[String] = []
 	for rel in containers:
@@ -110,6 +176,9 @@ func _init() -> void:
 	print("     %d of %d children already sit outside their loop's rect at natural"
 		% [int(tally["natural_outside"]), int(tally["children"])]
 		+ " size — a separate question, see the header")
+	print("     %d of %d grandchildren likewise, over %d nested loop site(s)"
+		% [int(tally["nested_natural_outside"]), int(tally["grandchildren"]),
+			int(tally["nested_loops"])])
 
 	# The population is asserted beside the failures. "0 regressed" is also what a
 	# sweep that found no loops prints, and this file's whole subject is a case
@@ -124,6 +193,27 @@ func _init() -> void:
 			int(tally["scaled_loops"]), int(tally["loops"])]
 		+ "(1/%d on each axis) across %d containers" % [SQUEEZE, containers.size()])
 	h.complete("squeezing a loop puts none of its children outside the sprite")
+
+	# Two claims in one check, and deliberately asymmetric. **Zero regressions is
+	# asserted unconditionally**, because a corpus with no nested loop in it cannot
+	# regress and must not fail for that. The population half is conditional on there
+	# being a population: `gate.sh` pins `piposh2`, which has none of the corpus's 10
+	# nested sites, so a bare `grandchildren > 0` would take this entry red on the one
+	# root the suite actually runs. What keeps that from being a hole is the detail
+	# line — it says which of the two cases the run is, so "0 regressed" over 0
+	# grandchildren cannot be read as a result. `--root piposh-dream` and
+	# `--root rating` are where the number is.
+	var deep := int(tally["grandchildren"])
+	h.check("a grandchild inside its nested loop's box at natural size is still inside"
+		+ " it when the loop above is squeezed",
+		int(tally["nested_regressed"]) == 0
+			and (deep == 0 or int(tally["nested_inside_both"]) > 0),
+		"%d regressed, %d held, over %d grandchild(ren) in %d nested site(s)"
+			% [int(tally["nested_regressed"]), int(tally["nested_inside_both"]),
+				deep, int(tally["nested_loops"])]
+			+ (" — this corpus nests nothing, so nothing here was exercised"
+				if deep == 0 else ""))
+	h.complete("squeezing a loop puts none of a nested loop's children outside it")
 
 	quit(h.finish("a film loop's contents follow the sprite it is drawn as"))
 
@@ -164,8 +254,36 @@ func _sweep(paths, rel: String, tally: Dictionary, lines: Array[String]) -> void
 			var scaled := small != natural
 			if scaled:
 				tally["scaled_loops"] = int(tally["scaled_loops"]) + 1
-			var was_in := _case(lib, number, m, loop, table, natural, false)
-			var now_in := _case(lib, number, m, loop, table, small, true)
+			var was_deep := {}
+			var now_deep := {}
+			var was_in := _case(lib, number, m, loop, table, natural, false, was_deep)
+			var now_in := _case(lib, number, m, loop, table, small, true, now_deep)
+
+			# The nested level, compared the same way and against its own box. Counted
+			# per parent loop rather than per grandchild, because "how many sites nest"
+			# is what says whether this half of the file ran at all.
+			if not was_deep.is_empty():
+				tally["nested_loops"] = int(tally["nested_loops"]) + 1
+			for key in was_deep:
+				tally["grandchildren"] = int(tally["grandchildren"]) + 1
+				var deep_was: Dictionary = was_deep[key]
+				if not bool(deep_was["inside"]):
+					tally["nested_natural_outside"] = int(
+						tally["nested_natural_outside"]) + 1
+				if not scaled or not now_deep.has(key) or not bool(deep_was["inside"]):
+					continue
+				var deep_now: Dictionary = now_deep[key]
+				if bool(deep_now["inside"]):
+					tally["nested_inside_both"] = int(tally["nested_inside_both"]) + 1
+					continue
+				tally["nested_regressed"] = int(tally["nested_regressed"]) + 1
+				if _verbose or lines.size() < 60:
+					lines.append("%s  %d:%d %s NESTED %s: %s in %s at %dx%d, %s in %s at %dx%d"
+						% [rel, lib, number, str(m.get("name", "")), str(key),
+							str(deep_was["art"]), str(deep_was["box"]),
+							int(natural.x), int(natural.y),
+							str(deep_now["art"]), str(deep_now["box"]),
+							int(small.x), int(small.y)])
 
 			for key in was_in:
 				tally["children"] = int(tally["children"]) + 1
@@ -193,8 +311,14 @@ func _sweep(paths, rel: String, tally: Dictionary, lines: Array[String]) -> void
 ## One loop drawn at one size: `"frame N child M"` -> is its artwork inside the
 ## sprite's own rect. Placed through the renderer's own functions, so what is
 ## measured is what the player sees rather than a second reading written here.
+##
+## `deep` is filled with the same answer for the children of any child that is itself
+## a film loop, keyed `"frame N loop L frame J child M"` and measured against the
+## *nested* loop's rect rather than the sprite's — see the header. It is an out
+## parameter rather than a second return so that the depth-1 map keeps the shape every
+## line of the caller already reads.
 func _case(lib: int, number: int, m: Dictionary, loop, table,
-		size: Vector2, squeezed: bool) -> Dictionary:
+		size: Vector2, squeezed: bool, deep: Dictionary = {}) -> Dictionary:
 	# The stretch flag is what makes `drawn_size` honour a size that is not the
 	# member's own, exactly as an authored sprite record does.
 	var sprite := {
@@ -245,4 +369,58 @@ func _case(lib: int, number: int, m: Dictionary, loop, table,
 				"inside": room.encloses(Rect2(at, kid_size)),
 				"art": Rect2(at, kid_size), "box": box,
 			}
+			if int(cm.get("type", 0)) == LOOP_TYPE:
+				# `at` and `kid_size` are already `paint_loop`'s own recursive
+				# arguments -- the origin it threads down and the size it derives
+				# `nested_scale` from -- so the nested box is read off the recursion
+				# rather than recomputed beside it.
+				_nested(kid_lib, kid, cm, table, Rect2(at, kid_size), missed, i, deep)
 	return out
+
+
+## The children of one nested loop, measured against **that loop's** rect.
+##
+## `box` is where the nested loop itself landed and how big it was drawn, which is
+## exactly what `paint_loop` passes down: `place_child(...)` for the origin and
+## `child_sprite(...)`'s size for the scale. So the question asked here is the same
+## one the outer level asks, one level in, and it is the only level at which
+## `nested_scale()` is exercised at all.
+##
+## `parent_missed` is the truncation the nested loop's own drawn size already carries.
+## It is added to the allowance because a box computed from a truncated integer size is
+## *smaller* than the exact scaled box, so leaving it out would report a rounding as a
+## placement failure. Both halves of the allowance come from `child_sprite`'s own
+## answers rather than from a tolerance chosen to keep the corpus quiet.
+func _nested(lib: int, child: Dictionary, member: Dictionary, table, box: Rect2,
+		parent_missed: Vector2, at_frame: int, deep: Dictionary) -> void:
+	var inner = FilmLoopView.open_loop(lib, member, table)
+	if inner == null:
+		return
+	var scale: Vector2 = FilmLoopView.nested_scale(box.size, member)
+	var space: Vector2 = FilmLoopView.loop_origin(member)
+	var slack := box.grow(1.0).grow_individual(
+		parent_missed.x, parent_missed.y, parent_missed.x, parent_missed.y)
+	for j in inner.frame_count:
+		for kid in inner.children(j):
+			var kid_lib: int = FilmLoopView.child_lib(kid, lib, table)
+			if kid_lib < 0:
+				continue
+			var cm: Dictionary = table.get_member(kid_lib, int(kid["cast_id"]))
+			if cm.is_empty():
+				continue
+			var drawn: Dictionary = FilmLoopView.child_sprite(kid, kid_lib, cm, scale)
+			var kid_size := Vector2(int(drawn["width"]), int(drawn["height"]))
+			var reg: Vector2 = Geometry.scaled_reg(cm, kid_size)
+			var at: Vector2 = FilmLoopView.place_child(
+				box.position, space, kid, reg, scale)
+			var base: Dictionary = FilmLoopView.child_sprite(kid, kid_lib, cm)
+			var missed := Vector2(
+				absf(kid_size.x - int(base["width"]) * scale.x),
+				absf(kid_size.y - int(base["height"]) * scale.y))
+			var room := slack.grow_individual(
+				missed.x, missed.y, missed.x, missed.y)
+			deep["frame %d loop %d frame %d child %d" % [
+					at_frame, int(child["cast_id"]), j, int(kid["cast_id"])]] = {
+				"inside": room.encloses(Rect2(at, kid_size)),
+				"art": Rect2(at, kid_size), "box": box,
+			}

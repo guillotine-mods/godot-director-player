@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg go_movie_arg:--root@res://test-games/itamar-magichat@--boot@magichat.dir drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_fallback:--root@res://test-games/itamar-magichat@--boot@magichat.dir avi_decode:--root@res://test-games/itamar-magichat video_plugin:--root@res://test-games/itamar-magichat@--boot@magichat.dir lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg go_movie_arg:--root@res://test-games/itamar-magichat@--boot@magichat.dir drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_fallback:--root@res://test-games/itamar-magichat@--boot@magichat.dir avi_decode:--root@res://test-games/itamar-magichat video_plugin:--root@res://test-games/itamar-magichat@--boot@magichat.dir lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -176,6 +176,24 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # into a coin toss. The sweep prints what it skipped. Run it without the flag,
 # and against the other roots, when something is suspected: `bugs.md` 58 was
 # found in `piposh-dream`, which no gate entry has ever loaded.
+#
+# `film_loop_nesting` names `piposh-dream` for the reason `cursor_cross_cast` names
+# `rating`: the subject does not exist in `GATE_ROOT`. A census of all six roots
+# found exactly **10 sites where a film loop's child is itself a film loop, in 2
+# titles** -- three in `piposh-dream/comein.dir`, one in its `hatul1.dir`, one in its
+# `show.dir`, five in `rating/blatack1.dir`. `piposh`, `piposh-en`, `piposh-ru` and
+# `piposh2` have none between them, so four of the six roots would run this over an
+# empty set. The harness asserts its own population first for that reason, but the
+# flag is what stops it being asserted and vacuous.
+#
+# `film_loop_cast` sits two entries away and **passed throughout the bug this
+# catches**, which is why this is a new entry rather than a fourth check in that
+# one. It asks whether a loop's child resolves to the right cast -- a question about
+# the `ccl ` list, answered off the disc -- and a child resolved perfectly and then
+# drawn as nothing answers it correctly. Nothing in the suite asked whether a
+# loop-child could *draw*, so a type-2 child fell through `_texture_for`, tallied
+# `"child has no art"`, and took its whole inner mini-score with it. The
+# player-visible shape was Hatuli's projectile game with no projectiles in it.
 #
 # `sprite_lifetime` runs against the pinned corpus and asserts three things about
 # `beginSprite`/`endSprite` that hold for any movie: the record of what has begun

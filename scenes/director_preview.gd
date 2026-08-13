@@ -4084,7 +4084,7 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	# never changed, and the loop resumes at whatever the movie clock has reached.
 	#
 	# COMEIN's flowerpots are that, and it is player-visible: a pot is a 14-frame
-	# non-looping loop, `director_film_loop.gd:_wrap` clamps past-the-end to the
+	# non-looping loop, `director_film_loop.gd:frame_index` clamps past-the-end to the
 	# last frame, and the drop handler blanks all three pot channels to member 87
 	# while they are hidden before dressing one. So the **first** pot in each of the
 	# three lanes fell and every later pot in a lane that had already shown that

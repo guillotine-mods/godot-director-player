@@ -3810,3 +3810,201 @@ anywhere but frame one. Verified in both directions: without the fix, 6 of 9 dro
 start at frames 27-282 and it exits 1; with it, 9 drops over 3 lanes, all three
 repeated, every one at frame 0. It also refuses to pass on a run that produced no
 repeat, so a lucky sequence of lanes cannot make it green for nothing.
+
+---
+
+## 98. A film loop whose child is itself a film loop drew nothing, so Piposh Dream's projectile game had no projectiles in it
+
+**Status:** FIXED · **Area:** `scenes/preview/film_loop_view.gd:paint_loop`,
+`director/director_film_loop.gd:frame_index` · found from a player-visible report
+("there are no projectiles here") and confirmed against the painter's own tallies
+
+`film_loop_view.draw` drew a loop's children by building a sprite record per child
+and asking `host._texture_for` for it. That path is **bitmap-and-shape only**
+(`preview/sprite_art.gd:texture_for` returns null for every other type), so a
+type-2 child — a film loop nested inside a film loop — answered null, was tallied
+`"child has no art"`, and the whole inner loop was skipped. No recursion existed.
+
+Director nests: a loop's sub-channels expand inline at the parent's position in the
+parent's order (`DIRECTOR_ENGINE.md` §1.6, §6.3). So this was a hole rather than a
+limitation, and any title with a loop inside a loop had an invisible element.
+
+`piposh-dream`'s `COMEIN.dir` is the site. Hatuli's projectile game throws one of
+three 21-frame `looping=false` ball loops (`1:156`..`1:158`), each of which nests
+the 8-frame `looping=true` `stone` (`1:167`), and `stone`'s own eight children
+(`1:159`..`1:166`) are the picture on screen. Measured over 30 top-level loop
+paints, entered at f720 and bounded on depth-0 `"loop drawn"` rather than on
+process frames, because the two states do different work per frame:
+
+```
+                                  before   after
+loop drawn / children offered      30/30   30/30
+nested loop drawn / offered            -   28/28
+child drawn                           11      30
+child has no art                      19       0
+stone's 8 frames in the texture cache  0       8
+```
+
+**All 19 misses were member `1:167` itself** — the nested loop, skipped whole —
+and the residue after the fix is 0 rather than small. The eight projectile bitmaps
+are reachable by no other route: `1:159`..`1:166` appear in no score record and are
+nobody's depth-1 child, so before this they could not be drawn at all.
+
+Scope is small and was measured rather than assumed. Over all six roots, every film
+loop, every child resolved through `child_lib` and its member type read: **10 nested
+sites in 2 titles.** `piposh-dream`'s `comein.dir` (3), `hatul1.dir` (`1:119`
+→ `1:71`) and `show.dir` (`1:29` → `1:25`); `rating`'s `blatack1.dir` (`1:77`,
+`1:79`..`1:82` → `1:76`). `piposh`, `piposh-en`, `piposh-ru` and `piposh2` have
+**none**, which is why no gate entry pinned to `GATE_ROOT` could ever have caught
+this. The deepest nesting anywhere is 2 and nothing nests itself.
+
+**Which of the six games it hit, derived from the movie rather than from a table.**
+`COMEIN.dir` holds one minigame per character, and `tools/puppet_members.gd` recovers
+them structurally: a frame script calling `puppetSprite(N, 1)` claims a channel and
+is therefore an init. COMEIN has 15 frame scripts mentioning `puppetSprite` — **6
+claim and 9 release** — so counting mentions would have reported fifteen games, the
+nine extras all being ending and win screens. The six, with the members their
+handlers actually assign:
+
+| scene | init | channels | film loops | nests |
+|---|---|---|---|---|
+| fritz | `return1` f179 | 27,28,29 | 84,85,86 `plant1..3` 14f | no |
+| doc | `return2` f295 | 27,28,29 | 187,188,189 `spear1..3` 18f | no |
+| krup | `return3` f450 | 27,28,29 | 84,85,86 | no |
+| raf | `return4` f587 | 27,28,29 | 84,85,86 | no |
+| **hat** | `return5` f723 | 3,4,27,28,29 | 156,157,158 `ball1..3` 21f | **yes, all three** |
+| poz | `return6` f895 | 3,4,27,28,29 | 187,188,189 | no |
+
+So **exactly one of the six games was affected** — Hatuli's. `plantcounter` matches
+each game's loop length throughout (14/18/14/14/21/18), which is the movie's own
+confirmation that the element loops are the ones tabulated. All six were entered and
+played; `hat` is the end-to-end confirmation, with all three ball loops dressed onto
+their channels and all 8 of `1:167`'s own children reaching the texture cache
+(`nested loop drawn 51`).
+
+Worth recording because it cost a session's worth of confusion: an earlier hand-made
+table of this game listed "init member 80, drop 81, collision 88" as the elements.
+**Those are the script members, not the elements** — which is why its numbers never
+overlapped the census's `1:156`/`1:157`/`1:158`.
+
+### Which frame a nested loop is on
+
+A nested loop has no channel, so it has no entry in `_loop_start` and no counter of
+its own. The reading implemented is that **it takes its parent's already-wrapped
+frame index and wraps that again by its own `frame_count` and its own `looping`
+flag** — not the parent's raw `ticks - loop_start[channel]`.
+
+**The corpus's own `looping` flags decide it, and they decide it the same way at
+both sites that have one.** COMEIN's ball loops are `looping=false` over 21 frames
+nesting a `looping=true` stone over 8: pass the raw counter down and the stone goes
+on spinning for ever after the ball has clamped on its last frame, which is a landed
+stone still rotating. `rating/blatack1.dir`'s `grnd2`..`grnd5` are the mirror —
+`looping=true` over 16 frames nesting a `looping=false` `explode1` over 17 — and
+with the raw counter the explosion freezes on its last frame after one cycle while
+the ground animation keeps going. The wrapped reading is right at both; the raw
+reading is wrong at both. It also makes "a non-looping loop holds on its last frame"
+mean the whole composite holds, which is what holding ought to mean.
+
+**Reference-derived and unverified against real Director, because ScummVM has this
+same gap and cannot be asked.** `window.cpp:218` expands sub-channels exactly one
+level and blits each without ever asking `hasSubChannels()`; `score.cpp:952`
+advances `_filmLoopFrame` only over main-score channels; and `getSubChannels` builds
+every sub-channel as a fresh `Channel` whose `_filmLoopFrame` is 0
+(`channel.cpp:61`), so a nested loop there would freeze on its own frame 0 even if
+it were expanded. What the reference does supply is the *shape*:
+`getSubChannels(bbox, frame)` is a pure function of `frame`, so what a loop shows at
+frame N is a function of N alone, and extended recursively the frame a nested loop
+expands at is the parent's own index.
+
+### Three things the shape of the fix is careful about
+
+**Nothing was added to the preview node.** Everything the recursion needs is a
+parameter, because a new `_` field would have to be classified in
+`preview/save_state.gd`'s `ACCOUNTED` manifest, cleared in
+`preview/movie_session.gd` and asserted by `tools/preview_surface.gd`, and none of
+those has anything to say about a value that does not outlive one paint. The one
+thing shared is the existing `loops` parse cache, keyed `"lib:id"` — which is also
+what makes a self-nesting loop hit the cache instead of re-parsing per level.
+
+**The nested `open_loop` is handed the child's resolved library, never the
+parent's.** A nested loop's children index the *nested loop's own container's*
+`ccl ` list, and `open_loop` takes that list from the library it is given; handing
+it the parent's is exactly the failure `director/director_film_loop.gd`'s docstring
+is built around — a real member out of an unrelated cast, drawn, with nothing
+reporting it (entry 34).
+
+**The top-left is threaded in rather than re-derived.** The top level computes it
+with `stage_origin`; each recursive call computes it with the same `place_child`
+expression a bitmap child already gets. One placement path, so a nested loop cannot
+drift from its siblings the first time either rule changes. `nested_scale` composes
+the squeeze and deliberately does **not** go through `Geometry.drawn_size`, for the
+reason `bugs.md` 99 records.
+
+`MAX_DEPTH` bounds a loop that contains itself, and the cap tallies a key rather
+than returning quietly. Depth 0 keeps every tally key it always printed, so figures
+quoted in older commits still mean what they said; deeper levels take a `"nested "`
+prefix. The two leaf keys are shared at every depth, because `"child drawn"` and
+`"child has no art"` are facts about a leaf rather than about a level.
+
+### Coverage
+
+`tools/film_loop_nesting.gd`, in `gate.sh`'s `ALL` as
+`film_loop_nesting:--root@piposh-dream`:
+
+```
+godot --headless --path . --script tools/film_loop_nesting.gd -- --root piposh-dream
+```
+
+It **plays** the game rather than staging it. Landing on `return5` (f723), the
+game's own init marker, skips the `puppetSprite` and the globals and produces a
+convincing dead screen — so the playhead is put down at f720, inside the speech that
+precedes the game, and the movie runs f722, f723 and f724 itself.
+
+What it asserts is that a member reachable **only** through a nested loop appears in
+the node's `_textures` cache, which is the painter asking the cast to decode it. Not
+that a new tally key exists: a counter reading zero before a fix only because the
+key had not been invented yet asserts that the new code ran and nothing about the
+engine. The "only through a nested loop" set is derived rather than named — the
+container's loops are walked as a graph, a loop that is nobody's child is a root, and
+a member is claimed only if every route to it is two levels deep or more *and* the
+score never places it directly. For `COMEIN` that recovers exactly
+`1:159`..`1:166`. Beside it, and in `tools/film_loop_scale.gd`'s idiom, a population
+guard asserts that a loop with a film-loop child really was painted, so a run that
+never reached the game fails as a run that proved nothing rather than passing over an
+empty set.
+
+Verified in both directions, headless. With only the two engine files reverted and
+the same harness in the tree: both guards green, the leaf check red with `no key for
+any of ["1:159"..."1:166"] in the texture cache`, exit 1 — an assertion failure and
+not a compile error. That control needed the harness to stop reading
+`FilmLoopView.MAX_DEPTH`, which does not exist at HEAD and would have made the revert
+a parse error before the first assertion, which is the silent-hang failure mode
+AGENTS.md warns about; it carries its own `DEPTH_CAP` for exactly that reason.
+
+`tools/film_loop_scale.gd` covers the other half — that the composed placement is
+*right*, not merely present. It descends one level and applies its existing
+comparison to grandchildren, measured against the nested loop's own rect on stage
+rather than against the top-level sprite's box, which would be stronger than that
+file's own reasoning allows and would fail on the 248-of-4,901 children its header
+defends. 4,044 grandchildren over 5 nested sites in `piposh-dream` and 1,394 over 5
+in `rating`, 0 regressed; `piposh2` nests nothing, so its population guard is
+conditional and its detail line says which of the two cases a run is. Negative
+control measured: replacing `nested_scale` with `Vector2.ONE` regresses **3,764 of
+4,044**, and 280 of those fail at natural size too.
+
+**One gap in that coverage, stated rather than left to be found: nothing notices a
+nested loop going one registration offset sideways.** Dropping the nested
+`Geometry.scaled_reg` does not turn `film_loop_scale` red — it pushes 1,689 of 4,044
+grandchildren outside their box *at natural size*, and the comparison discipline then
+excludes exactly those, leaving the remaining 2,355 inside both. Asserting
+natural-size containment outright would close it (measured 0 of 4,044 and 0 of 1,394)
+and was declined on AGENTS.md's rule about asserting what the port controls rather
+than what a 1990s cast got right: that count is a property of those casts' authoring,
+and a third title may legitimately carry a loop whose rect is not the union of its
+contents. It is printed as a number instead.
+
+**`film_loop_cast` passed throughout this bug and that is not a defect in it.** It
+asks whether a child resolves to the right *cast* — a question about the `ccl ` list,
+answered off the disc — and a child that resolved perfectly and then drew nothing
+answers it correctly. A green gate is not coverage of a question nobody asked, which
+is why this needed a new entry rather than an extra check in an old one.

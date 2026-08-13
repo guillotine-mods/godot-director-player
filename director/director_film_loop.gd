@@ -92,7 +92,7 @@ func children(index: int) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if _score == null or frame_count <= 0:
 		return out
-	var frame: Dictionary = _score.frame(_wrap(index))
+	var frame: Dictionary = _score.frame(frame_index(index))
 	for sprite in frame.get("sprites", []):
 		# `cast_lib_raw`, not `cast_lib`: the folded field cannot tell "my own
 		# cast" from "`ccl ` entry 1", and this is the one reader that needs to.
@@ -129,7 +129,17 @@ func children(index: int) -> Array[Dictionary]:
 
 
 ## A loop that does not loop holds on its last frame rather than restarting.
-func _wrap(index: int) -> int:
+##
+## Public because a *nested* loop needs the answer without also asking for the
+## children: a loop drawn as another loop's child has no channel of its own, so it
+## has no entry in the painter's `_loop_start` table and no counter of its own to
+## wrap. `preview/film_loop_view.gd:paint_loop` threads the parent's **wrapped**
+## index down into the child instead, which is this function's answer for the
+## parent, and the child then wraps it again by its own `frame_count` and its own
+## `looping` flag. Applying it twice is harmless -- `x % n % n == x % n` and
+## `mini(mini(x, k), k) == mini(x, k)` -- which is what lets `children` keep taking
+## a raw counter while the recursion takes a wrapped one.
+func frame_index(index: int) -> int:
 	if frame_count <= 0:
 		return 0
 	if looping:

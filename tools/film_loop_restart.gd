@@ -18,7 +18,7 @@ extends SceneTree
 ## ## What the number means
 ##
 ## A film loop's drawn frame is `_ticks - _loop_start[channel]`, and
-## `director_film_loop.gd:_wrap` clamps a non-looping loop to its last frame. So a
+## `director_film_loop.gd:frame_index` clamps a non-looping loop to its last frame. So a
 ## loop whose counter was not restarted does not animate *slightly* wrong -- it
 ## draws its final frame from the moment it appears. For a 14-frame fall that is
 ## the difference between watching a flowerpot drop and finding it already smashed
