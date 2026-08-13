@@ -28,23 +28,38 @@ extends RefCounted
 ## these games play is an external `.aif` reached by `sound playFile`), which is a
 ## statement about the corpus and not about the code.
 ##
-## **A digital video member has no media at all.** There is no QuickTime or AVI
-## decoder in this port and Godot supplies none, so the bytes behind a
-## `#digitalVideo` member cannot be opened. That is not worked around here and it
-## is not hidden: `the mediaReady of member` answers **FALSE**, the duration is 0,
-## there are no cue points and there are no
-## tracks — which is exactly what Director answers for a digital video whose file
-## is missing or whose codec is not installed, and it is the branch every
-## defensive script in the language was written for. The alternative, answering
-## the numbers a working video would have, is the shape this whole port's §19
-## exists to catch: a caller cannot tell a confident wrong answer from a right
-## one.
+## **A digital video member has media when something can decode it, and answers
+## that it has none when nothing can.** This paragraph twice said the second half
+## alone — first "there is no QuickTime or AVI decoder in this port and Godot
+## supplies none", which stopped being true when `director/director_avi.gd`
+## landed, and it is worth recording that a header claiming *less* than the code
+## does is as misleading as one claiming more: it sends the next reader to build
+## what is already there.
 ##
-## So a movie can **drive** a video sprite here — set its rate, its in and out
-## points, its volume, and read every one of them back — and no picture and no
-## sound will come out, because there is nothing to play. Director behaves the
-## same way with an unloadable movie, down to `the movieTime` staying where it
-## was put.
+## Two things can be behind a video member now:
+##
+##   * `director/director_avi.gd`, the MS-RLE reader, for the one AVI in the
+##     tree; and
+##   * an **Ogg Theora sidecar** under `user://`, for media in a format nothing
+##     here decodes — the 22 MPEG-1 files behind Magic Hat's intro and album.
+##     `director/director_sidecar.gd` says where one lives and
+##     `preview/video.gd` says when it is used.
+##
+## When neither answers — no sidecar, not an AVI, or the file is not on the disc
+## at all — nothing is worked around and nothing is hidden: `the mediaReady of
+## member` answers **FALSE**, the duration is 0, there are no cue points and
+## there are no tracks. That is exactly what Director answers for a digital video
+## whose file is missing or whose codec is not installed, and it is the branch
+## every defensive script in the language was written for. The alternative,
+## answering the numbers a working video would have, is the shape this whole
+## port's §19 exists to catch: a caller cannot tell a confident wrong answer from
+## a right one.
+##
+## So a movie can still **drive** a video sprite whose media will not open — set
+## its rate, its in and out points, its volume, and read every one of them back —
+## and no picture and no sound will come out, because there is nothing to play.
+## Director behaves the same way with an unloadable movie, down to
+## `the movieTime` staying where it was put.
 ##
 ## ## The authoring flags are defaults, and that is said rather than implied
 ##
@@ -70,6 +85,10 @@ const LingoValue := preload("res://lingo/lingo_value.gd")
 ## advances it and draws it. See its header for the split and for the two rules
 ## `docs/DIGITAL_VIDEO.md` §3 lays down about answering a duration.
 const Video := preload("res://scenes/preview/video.gd")
+## Which cast members play video — cast type 10 and the type-15 Xtras whose
+## symbol names a video player. One table, read by this module, by
+## `preview/video.gd` and by `preview/stage_paint.gd`.
+const VideoXtra := preload("res://director/director_video_xtra.gd")
 
 ## Director's tick, which is what `the duration of member` reports a **sound**
 ## member in. A digital video reports in its own `timeScale` units instead, which
@@ -115,6 +134,24 @@ const SPRITE_PROPS := [
 	"mostrecentcuepoint", "trackenabled", "settrackenabled", "tracktext",
 	"tracknextkeytime", "tracknextsampletime", "trackpreviouskeytime",
 	"trackprevioussampletime",
+	# The **video Xtra's** three names, which are not Director's own and are here
+	# for exactly that reason: an Xtra sprite's surface is whatever DLL is behind
+	# it, and the two members in this tree carry Visible Light's OnStage Media —
+	# `play()`, `stop()` and `getPlaybackEvent`. Answered from the same
+	# per-channel playhead as the fourteen above, so a movie that starts a clip
+	# with `play()` and then reads `the movieTime` of the same sprite is looking
+	# at one position rather than two.
+	#
+	# `play` and `stop` are **methods**, not properties, and they arrive here as
+	# property reads. `lingo/lingo_interpreter.gd:_call` resolves `sprite(N).x()`
+	# by evaluating the callee, and a callee whose target is a `sprite_ref`
+	# resolves to `get_sprite_prop(N, "x")` with the argument list dropped — which
+	# is right for `member(x).name()` and is the shape every zero-argument sprite
+	# method inherits. Both of these take no arguments in Director, so nothing is
+	# lost; a sprite method that took one would need the interpreter to keep the
+	# reference alive through the call, and that is a parser change rather than
+	# something to approximate here.
+	"getplaybackevent", "play", "stop",
 ]
 
 ## Director's dialog defaults for the authoring flags this port cannot decode.
@@ -177,10 +214,23 @@ const VIDEO_FLAG_KEYS := {
 ## Magic Hat uses both — `logo.dir`'s `startMovie` writes `fileName` on a type-10
 ## member and `magichat.dir`'s album writes `mediaFilename` on a type-15 one.
 ## Both are bound here so that the two spellings cannot come to mean two
-## different files, and the write reaches only a member this module owns: a
-## `mediaFilename` written to an Xtra is still reported and dropped, because
-## there is no player behind that Xtra and storing the path would look bound from
-## every direction.
+## different files.
+##
+## **The write now reaches a video Xtra too, and that sentence used to say the
+## opposite.** It read: "a `mediaFilename` written to an Xtra is still reported
+## and dropped, because there is no player behind that Xtra and storing the path
+## would look bound from every direction". That was the right call while nothing
+## could play an MPEG-1 file — a stored path with no player behind it is a
+## binding that answers from every direction and does nothing. There is a player
+## behind it now (`preview/video.gd`'s Theora backend, when a sidecar exists), so
+## the write is stored, and the twenty clips `AlbumMenuObject.MenuMouseUp`
+## repoints one member at are twenty different files rather than one name that
+## went nowhere.
+##
+## What has *not* changed is what a stored path buys with no sidecar: nothing.
+## `reader_for` resolves the name, finds no decodable media, and the member goes
+## on answering exactly what it did. The write being real does not make the media
+## real, and those are two separate questions.
 const FILE_PROPS := ["filename", "mediafilename"]
 
 ## `the volume of sprite` before anything writes it.
@@ -194,6 +244,20 @@ const FILE_PROPS := ["filename", "mediafilename"]
 const DEFAULT_VOLUME := 255
 
 
+## Does this module own the member's property surface?
+##
+## **Deliberately still "sound or cast type 10", with the video Xtras left out**,
+## now that `preview/video.gd` can play one. The two are different questions and
+## conflating them would bind names Director never gave an Xtra: `the mediaReady`,
+## `the duration`, `the cuePointNames` and the authoring flags are the
+## *`#digitalVideo` member's* surface, and a type-15 member's surface is whatever
+## its DLL publishes — `docs/LINGO_SURFACE.md` gives it `interface` and
+## `mediaBusy` instead, and neither is bound. `tools/video_fallback.gd` skips the
+## Xtra members for exactly this reason and says so at the skip.
+##
+## What a video Xtra *does* get is `the mediaFilename` (see `FILE_PROPS`) and the
+## three sprite names in `SPRITE_PROPS`, both of which are the Xtra's own and are
+## reached through `is_playable` rather than through this.
 static func is_media(member: Dictionary) -> bool:
 	var kind := str(member.get("type_name", ""))
 	return kind == SOUND_TYPE or kind == VIDEO_TYPE
@@ -201,6 +265,14 @@ static func is_media(member: Dictionary) -> bool:
 
 static func is_video(member: Dictionary) -> bool:
 	return str(member.get("type_name", "")) == VIDEO_TYPE
+
+
+## Can something play this member — cast type 10, or a type-15 Xtra whose symbol
+## is a video player's? One predicate, in `director/director_video_xtra.gd`, so
+## that the answer here and the answer `preview/video.gd` opens a reader on
+## cannot drift.
+static func is_playable(member: Dictionary) -> bool:
+	return VideoXtra.is_video(member)
 
 
 # =============================================================== the member half
@@ -215,9 +287,26 @@ static func is_video(member: Dictionary) -> bool:
 static func read_member(host, where: Array, prop: String, table) -> Variant:
 	var member: Dictionary = table.get_member(int(where[0]), int(where[1]))
 	if not is_media(member):
+		# A video Xtra gets `the mediaFilename` and nothing else — see `is_media`
+		# for why the rest of this surface is not an Xtra's. Read through the same
+		# override store the write below puts it in, so the two spellings and the
+		# two member types share one answer.
+		if is_playable(member) and FILE_PROPS.has(prop):
+			return _linked_file(host, where, member)
 		return null
 	if not MEMBER_PROPS.has(prop):
 		return null
+	if FILE_PROPS.has(prop):
+		# **Both spellings read the one key the write stores under**, which is what
+		# the write's own comment claims and what this arm did not do. A
+		# `mediaFilename` write landed on `"filename"` and a `mediaFilename` read
+		# asked for `"mediafilename"`, missed, and fell through to the *authored*
+		# link — so `member("x").mediaFilename = f` followed by
+		# `put member("x").mediaFilename` answered the name in the cast record and
+		# not `f`. The playback path was never affected (`video.gd:_wanted_file`
+		# reads the stored key directly), which is why it survived: the only
+		# visible symptom was a property that would not read back.
+		return _linked_file(host, where, member)
 	var written: Variant = _member_override(host, where, prop)
 	if written != null:
 		return written
@@ -259,24 +348,20 @@ static func read_member(host, where: Array, prop: String, table) -> Variant:
 			#
 			# `#other` when nothing opened, which is Director's third value and
 			# the one it used for a video it could not identify. That is still
-			# the answer for every QuickTime and MPEG-1 member in the tree, and
-			# for `logo.dir` #27 `prelogo`, whose file is not on the disc.
-			if bool(facts["ready"]):
-				return &"videoForWindows"
-			return &"other"
-		"filename", "mediafilename":
-			# The linked media file, for a member that has one. **Null for a sound
-			# member**, so `preview/members.gd` falls through to its own answer --
-			# the container the member lives in, which is right for an internal
-			# member and is what every member in the six shipped titles is.
+			# the answer for `logo.dir` #27 `prelogo`, whose file is not on the
+			# disc.
 			#
-			# A script's write reaches this before the match does
-			# (`_member_override`), so what comes back here is the *authored* link:
-			# `logo` records `logo.avi` in item 3 of its info block, which is where
-			# Director stored the name of the file it imported from.
-			if not is_video(member):
-				return null
-			return str(member.get("link_filename", ""))
+			# **Decided by the name the member carries, not by what is actually
+			# being decoded**, now that the decoded stream can be an Ogg Theora
+			# sidecar standing in for media this port has no decoder for.
+			# `preview/video.gd:_declared_type` is the one place that rule lives.
+			# Answering `#other` for an AVI that happens to be playing through a
+			# sidecar, or inventing a fourth symbol for Ogg, would each tell a
+			# movie something Director never said — and every script that reads
+			# this was written against Director's three answers.
+			if bool(facts["ready"]):
+				return facts.get("dv_type", &"other")
+			return &"other"
 	if VIDEO_FLAG_KEYS.has(prop) and member.has(str(VIDEO_FLAG_KEYS[prop])):
 		# The authoring flags, out of the member's own specific block.
 		#
@@ -305,7 +390,12 @@ static func read_member(host, where: Array, prop: String, table) -> Variant:
 ## says and a script cannot argue with them.
 static func write_member(host, where: Array, prop: String, value: Variant, table) -> bool:
 	var member: Dictionary = table.get_member(int(where[0]), int(where[1]))
-	if not is_media(member) or not (MEMBER_DEFAULTS.has(prop) or FILE_PROPS.has(prop)):
+	# A video Xtra takes the file write and nothing else. `is_media` is the
+	# `#digitalVideo` and `#sound` surface and stays that; `is_playable` is "can
+	# something behind this member play", which is the only question
+	# `the mediaFilename` asks.
+	var takes := is_media(member) or (is_playable(member) and FILE_PROPS.has(prop))
+	if not takes or not (MEMBER_DEFAULTS.has(prop) or FILE_PROPS.has(prop)):
 		return false
 	if host == null or host._host == null:
 		return false
@@ -436,6 +526,26 @@ static func _member_default(prop: String) -> Variant:
 	return 0
 
 
+## `the fileName` / `the mediaFilename` of a member that links to media: what a
+## script last wrote, else the link the cast record itself carries.
+##
+## **Null for a sound member**, so `preview/members.gd` falls through to its own
+## answer — the container the member lives in, which is right for an internal
+## member and is what every member in the six shipped titles is.
+##
+## The authored link is `logo`'s `logo.avi`, out of item 3 of its info block,
+## which is where Director stored the name of the file it imported from. One
+## reader for the type-10 member and the type-15 Xtra, and one storage key for
+## both spellings, so that the four combinations cannot answer four things.
+static func _linked_file(host, where: Array, member: Dictionary) -> Variant:
+	if not is_playable(member):
+		return null
+	var written: Variant = _member_override(host, where, FILE_PROPS[0])
+	if written != null:
+		return written
+	return str(member.get("link_filename", ""))
+
+
 static func _member_override(host, where: Array, prop: String) -> Variant:
 	var store: Dictionary = _member_store(host)
 	var entry: Dictionary = store.get("%d:%d" % [int(where[0]), int(where[1])], {})
@@ -468,6 +578,25 @@ static func _facts_store(host) -> Dictionary:
 static func read_sprite(host, channel: int, prop: String) -> Variant:
 	if not SPRITE_PROPS.has(prop):
 		return null
+	# The Xtra's three, before the playhead state is even touched. `play` and
+	# `stop` are commands and must run for their effect rather than answer a
+	# value, and `getPlaybackEvent` has to be able to answer VOID — which is the
+	# one answer `channel_state`'s "create on first touch" would quietly turn into
+	# a live channel with a rate of 0.
+	match prop:
+		"getplaybackevent":
+			return Video.playback_event(host, channel)
+		"play", "stop":
+			# Created before the command runs, because a `play()` on a channel no
+			# script has touched yet is the ordinary opening move: `init intro`'s
+			# `enterFrame` calls `sprite(1).play()` before anything has read or
+			# written a single playhead property on channel 1.
+			channel_state(host, channel)
+			Video.command(host, channel, prop)
+			# VOID, because a Lingo command is a statement and not an expression.
+			# A movie that wrote `if sprite(1).play() then` would be asking a
+			# question Director has no answer to either.
+			return null
 	var state: Dictionary = channel_state(host, channel)
 	match prop:
 		"movierate":
@@ -555,6 +684,14 @@ static func write_sprite(host, channel: int, prop: String, value: Variant) -> bo
 			# rather than a property, and the property spelling addresses a track
 			# that does not exist here. Accepted and dropped, which is what
 			# enabling a track of a video with no tracks does.
+			return true
+		"getplaybackevent", "play", "stop":
+			# The Xtra's surface: one report and two commands, none of them
+			# assignable. Taken and dropped rather than refused, for the reason
+			# `SPRITE_READ_ONLY` gives about the derived rectangle — falling
+			# through would store the value in the channel's override table, where
+			# the read above can never see it, and a value a script can set but
+			# not read back is worse than one it cannot set.
 			return true
 	return true
 

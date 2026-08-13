@@ -47,6 +47,58 @@ extends RefCounted
 ## same argument the port already makes for `idle` and for the timeout clock
 ## (`preview/frame_loop.gd:send_idle`) applies unchanged.
 ##
+## ## The second backend: an Ogg Theora sidecar, for the media nothing here can
+## ## decode
+##
+## `docs/DIGITAL_VIDEO.md` §1 counts 22 MPEG-1 files, 197.3 MB, behind the two
+## `VisibleLightOnStageMedia` Xtra members (cast type 15) that Magic Hat's intro
+## and album are built on. §4C2 costs an MPEG-1 decoder in GDScript at 2.5
+## Mpix/s of IDCT and refuses it; §4D refuses a plugin because it is a per-ABI
+## native dependency and a licensing decision. What is left is §4B, a transcode,
+## and this file is the half of it that runs at play time.
+##
+## The rule is one sentence: **the member names its media; if a decodable copy of
+## that media exists and is at least as new as it, play the copy; otherwise do
+## exactly what this file did before.** `director/director_sidecar.gd` owns where
+## the copy lives (under `user://`, never under `games/` or `test-games/`) and
+## `director/director_ogg.gd` reads what it says about itself.
+##
+## Three properties of that rule are the ones worth defending:
+##
+##   * **A missing sidecar is not an error.** `fresh_for` answers `""` for
+##     absent, stale, and for a source that is not on the disc at all, and every
+##     one of those falls through to the AVI reader and then to `null`. Nothing
+##     is transcoded on demand, nothing is downloaded, and a corpus with no cache
+##     behaves byte for byte as it did before this paragraph was written — which
+##     is what keeps `tools/video_fallback.gd` green on a fresh machine.
+##   * **The original is still what the engine reads.** The container, the cast
+##     member, the member's own `the fileName` / `the mediaFilename` and the
+##     resolution of that name against the disc are all unchanged; the
+##     substitution is of the *media stream* alone, at the point where Director
+##     would have handed the bytes to a codec it did not have. `prelogo` still
+##     has no media, because its source file was never shipped.
+##   * **The sidecar is consulted before the AVI reader, not instead of it.**
+##     For the one MS-RLE file in the tree there is no sidecar and never needs to
+##     be one, so `logo.avi` goes on being decoded from the original bytes. A
+##     sidecar for a file this port *can* decode is the owner deliberately
+##     overriding that, and doing what they asked is the right answer to it.
+##
+## ## Two backends, one playhead
+##
+## The AVI reader is a **pull** decoder: `frame_at(n)` returns a picture and the
+## soundtrack is one `AudioStreamWAV` on an `AudioStreamPlayer` this file drives.
+## Theora is a **push** decoder: Godot's `VideoStreamPlayer` owns the clock, the
+## pictures and the Vorbis audio, and hands back a texture that changes under it.
+##
+## `the movieTime` is computed the same way for both regardless — from the
+## engine's own scaled delta, in `advance` — and the Theora player is *corrected*
+## towards it rather than read from. That is not an accident of implementation:
+## every guard in this corpus reads `the movieTime`, so a port where the number's
+## meaning depended on which file format the member happened to point at would
+## have two behaviours for one property. It also keeps the fast-forward key
+## working, since `advance` gets the scaled delta and a `VideoStreamPlayer` does
+## not.
+##
 ## ## What this does not do
 ##
 ##   * **No `directToStage`.** `logo` sets the bit, and Director's meaning of it
@@ -67,6 +119,9 @@ extends RefCounted
 ##     `the movieTime` needs.
 
 const Avi := preload("res://director/director_avi.gd")
+const Ogg := preload("res://director/director_ogg.gd")
+const Sidecar := preload("res://director/director_sidecar.gd")
+const VideoXtra := preload("res://director/director_video_xtra.gd")
 const LingoValue := preload("res://lingo/lingo_value.gd")
 
 ## The units `the movieTime` and `the duration` of a digital video are counted
@@ -110,7 +165,7 @@ static func reader_for(host, where: Array, table) -> RefCounted:
 	var lib := int(where[0])
 	var slot := int(where[1])
 	var member: Dictionary = table.get_member(lib, slot)
-	if str(member.get("type_name", "")) != "digitalVideo":
+	if not VideoXtra.is_video(member):
 		return null
 	var store: Dictionary = host._host.video_readers
 	var wanted := _wanted_file(host, where, member)
@@ -125,18 +180,82 @@ static func reader_for(host, where: Array, table) -> RefCounted:
 	var previous = entry.get("reader", null)
 	if previous != null:
 		previous.close()
-	var reader = null
-	var resolved := media_path(host, wanted)
-	if resolved != "":
-		var avi = Avi.new()
-		if avi.open(resolved):
-			reader = avi
-		else:
-			host._trace("video %s: %s" % [wanted, str(avi.error)])
-	elif wanted != "":
-		host._trace("video %s: not found" % wanted)
-	store[key] = {"wanted": wanted, "reader": reader, "path": resolved}
+	# The channel's own player belongs to whatever was playing; a member repointed
+	# at another file is another movie and must not go on showing the last one's
+	# pictures. Released here rather than in `_open`, because this is the one
+	# place that knows the file changed.
+	_release_stream(host, _channel_showing(host, lib, slot))
+	var reader = _open(host, wanted)
+	store[key] = {
+		"wanted": wanted, "reader": reader,
+		"path": "" if reader == null else str(reader.path),
+	}
 	return reader
+
+
+## The resolution order, in the order it is tried, and it is the whole of the
+## sidecar feature at play time.
+##
+##   1. the member's own name, resolved against the disc the way Director
+##      resolved a linked media file (`media_path`);
+##   2. a **fresh Ogg Theora sidecar** for that file, if the cache has one
+##      (`director_sidecar.gd:fresh_for`, which answers `""` for absent, stale,
+##      and for a source that is not on the disc at all);
+##   3. the original bytes through the MS-RLE AVI reader;
+##   4. nothing.
+##
+## Step 4 is not a failure path bolted on the end — it is the behaviour every one
+## of Magic Hat's video frames is written against, and `docs/DIGITAL_VIDEO.md` §2
+## measures all three of them leaving cleanly because of it. So each step that
+## declines says why through `host._trace` and moves on, and none of them raises.
+##
+## **A sidecar that will not parse is a decline, not a substitution.**
+## `director_ogg.gd:open` refuses a file with no last granule position, which is
+## what a truncated or still-being-written transcode has, and this then falls
+## through to the AVI reader and to null exactly as if the cache were empty. A
+## half-written sidecar therefore costs a skip, which is the state the movie
+## already handles, rather than a member that reports ready and never advances.
+static func _open(host, wanted: String):
+	if wanted == "":
+		return null
+	var resolved := media_path(host, wanted)
+	if resolved == "":
+		host._trace("video %s: not found" % wanted)
+		return null
+	var sidecar := Sidecar.fresh_for(resolved)
+	if sidecar != "":
+		var ogg = Ogg.new()
+		if ogg.open(sidecar):
+			host._trace("video %s: playing sidecar %s (%.2fs)" % [
+				wanted, sidecar.get_file(), ogg.duration_ms / 1000.0])
+			return ogg
+		host._trace("video %s: sidecar %s unusable: %s" % [
+			wanted, sidecar.get_file(), str(ogg.error)])
+	var avi = Avi.new()
+	if avi.open(resolved):
+		return avi
+	# Named rather than silent, and this is the line a reader follows when a clip
+	# does not play: an MPEG-1 file reports the AVI reader's "not a RIFF file",
+	# which is correct and is the cue to run `tools/video_sidecar.gd`.
+	host._trace("video %s: %s (no sidecar in %s)" % [
+		wanted, str(avi.error), Sidecar.CACHE_DIR])
+	return null
+
+
+## Which channel, if any, is currently showing a given member — so that a
+## `mediaFilename` write can release that channel's player.
+##
+## Answered from the playhead table rather than by walking the score, because a
+## channel only has a playhead once something drove it, and those are exactly the
+## channels that can be holding a stream.
+static func _channel_showing(host, lib: int, slot: int) -> int:
+	if host == null or host._host == null:
+		return 0
+	for key in host._host.media_channels.keys():
+		var where := member_of_channel(host, int(key))
+		if where.size() == 2 and int(where[0]) == lib and int(where[1]) == slot:
+			return int(key)
+	return 0
 
 
 ## The file a member is pointed at: what a script last wrote, else the link the
@@ -168,9 +287,37 @@ static func _wanted_file(host, where: Array, member: Dictionary) -> String:
 ## Separators are normalised first. A Director path may be written with `:`
 ## (Mac), `\` (Windows) or `/`, and the same title mixes them — `AudioDirector`
 ## carries the same rule for sounds and the same measurement behind it.
+##
+## ## An already-absolute name is taken as one, and that is not a special case
+##
+## **This function silently mangled every path a script built from `the
+## moviePath`**, which is how Magic Hat names all 22 of its MPEG-1 clips:
+##
+##     member("IntroRetroVideo").mediaFilename = the moviePath & Language() & "\mainmenu\intro.mpg"
+##
+## `the moviePath` answers `res://test-games/itamar-magichat/` here, so the name
+## arrives as `res://test-games/itamar-magichat/heb\mainmenu\intro.mpg` — and the
+## Mac-separator rule below turns *every* colon into a slash, including the one
+## in `res://`. The result was `res///test-games/...`, joined onto the movie's own
+## directory, and no candidate existed. Measured after the sidecar landed and the
+## intro still would not play: the member's write was stored correctly, the file
+## was on the disc, the sidecar was in the cache, and this line was the only
+## reason the reader came back null.
+##
+## The type-10 member never showed it because `logo.dir` writes a bare
+## `"prelogo.avi"`, which has no colon in it and no absolute prefix — so the one
+## sample this function had been measured against was the one shape that cannot
+## reach the bug.
 static func media_path(host, name: String) -> String:
 	if name == "":
 		return ""
+	# Godot's own prefixes and a Windows drive letter, recognised **before** the
+	# colon is normalised away. A name that already says where it is needs no
+	# search: Director resolved an absolute path by using it, and joining it onto
+	# the movie's directory would produce a path that cannot exist.
+	var direct := _absolute(name)
+	if direct != "":
+		return direct
 	var tail := name.replace(":", "/").replace("\\", "/")
 	while tail.begins_with("/"):
 		tail = tail.substr(1)
@@ -205,6 +352,31 @@ static func media_path(host, name: String) -> String:
 	return ""
 
 
+## The file an already-absolute name points at, or `""` when the name is not
+## absolute or the file is not there.
+##
+## Three spellings count as absolute, and no more: Godot's `res://` and `user://`
+## — which is what `the moviePath` and `the pathName` answer in this port — and a
+## Windows drive letter. A bare leading `/` is deliberately **not** one, because
+## a Mac Director path (`Disk:folder:file`) normalises into exactly that shape
+## and is a *relative* name once the volume is dropped, which is what the search
+## below is for.
+##
+## The case-insensitive retry is the same rule the relative search uses and is
+## here for the same measured reason: a disc that ships `INTRO.MPG` and a script
+## that spells `intro.mpg` work on Windows and fail on Linux, and the port is
+## meant to run on both.
+static func _absolute(name: String) -> String:
+	var normal := name.replace("\\", "/")
+	var is_godot := normal.begins_with("res://") or normal.begins_with("user://")
+	var is_drive := normal.length() >= 3 and normal[1] == ":" and normal[2] == "/"
+	if not is_godot and not is_drive:
+		return ""
+	if FileAccess.file_exists(normal):
+		return normal
+	return _case_insensitive(normal.get_base_dir(), normal.get_file())
+
+
 static func _case_insensitive(base: String, tail: String) -> String:
 	var dir_part := tail.get_base_dir()
 	var want := tail.get_file().to_lower()
@@ -223,6 +395,11 @@ static func _case_insensitive(base: String, tail: String) -> String:
 ## Zero and FALSE when nothing opened, which is the whole of §3's first rule.
 static func fill_facts(host, where: Array, table, facts: Dictionary) -> void:
 	facts["time_scale"] = TIME_SCALE
+	var member: Dictionary = table.get_member(int(where[0]), int(where[1]))
+	# The name the *member* carries, kept beside the decoded numbers so that the
+	# type below is decided by what the movie asked for. A member playing a
+	# sidecar is still a member that named `intro.mpg`.
+	facts["wanted_file"] = _wanted_file(host, where, member)
 	var reader = reader_for(host, where, table)
 	if reader == null:
 		return
@@ -234,6 +411,32 @@ static func fill_facts(host, where: Array, table, facts: Dictionary) -> void:
 	facts["sample_rate"] = reader.audio_rate
 	facts["sample_size"] = reader.audio_bits
 	facts["channels"] = reader.audio_channels
+	# `the digitalVideoType`, decided by what the **member named** rather than by
+	# what is actually being decoded. That distinction only exists once a sidecar
+	# can be playing, and answering from the sidecar would be this port telling a
+	# movie its QuickTime clip is an Ogg file — a format Director had no symbol
+	# for and no script can have been written against. `#videoForWindows` for an
+	# AVI, `#quickTime` for a QuickTime container, and `#other` for everything
+	# else, which is Director's own third value and is what it answered for a
+	# video it could not identify. See `media.gd`'s own arm for why the file's
+	# extension is a better witness than the member's flag word.
+	facts["dv_type"] = _declared_type(str(facts.get("wanted_file", "")))
+
+
+## `#videoForWindows`, `#quickTime` or `#other`, from the extension of the file
+## the member named.
+##
+## Director's three answers, and the third is not a fallback for "we did not
+## look" — it is the value it gave for a video whose type it could not
+## establish, which is the honest answer for an MPEG-1 stream played through an
+## Xtra that owned its own format.
+static func _declared_type(wanted: String) -> StringName:
+	match wanted.get_extension().to_lower():
+		"avi":
+			return &"videoForWindows"
+		"mov", "qt", "moov":
+			return &"quickTime"
+	return &"other"
 
 
 # ================================================================== the playhead
@@ -268,7 +471,14 @@ static func advance(host, delta: float) -> void:
 		var rate := float(state.get("rate", 0.0))
 		if is_zero_approx(rate):
 			_stop_audio(host, channel)
+			# A `VideoStreamPlayer` is paused rather than stopped, because Director's
+			# `the movieRate` of 0 is a pause: the playhead keeps its position and a
+			# later non-zero rate resumes from it. `stop()` in Godot rewinds to the
+			# start, which would make `sprite(N).stop()` followed by `play()` restart
+			# the clip -- and Magic Hat's album loop does exactly that pair.
+			_pause_stream(host, channel, true)
 			continue
+		_pause_stream(host, channel, false)
 		var member: Dictionary = host._table.get_member(int(where[0]), int(where[1]))
 		var total := to_units(reader.duration_ms)
 		var stop := int(state.get("stop", 0))
@@ -292,7 +502,7 @@ static func advance(host, delta: float) -> void:
 				# `rewindVideo` does — `seekMovie(_channel->_startTime)` — and not
 				# to zero, so a movie that trimmed the clip loops the trim.
 				moved = int(state.get("start", 0))
-				_start_audio(host, channel, reader, member, moved)
+				_begin_media(host, channel, reader, member, moved)
 			else:
 				# Clamped rather than run past, which is the reference's own
 				# `MIN(ticks, getMovieTotalTime())` in `getMovieCurrentTime`. A
@@ -301,9 +511,20 @@ static func advance(host, delta: float) -> void:
 				# position the media does not have.
 				moved = last
 				_stop_audio(host, channel)
+				# The last picture stays on the stage, which is what Director
+				# leaves when a video reaches its end without looping — and what
+				# `getPlaybackEvent` reports as finished on the next poll.
+				_pause_stream(host, channel, true)
 		elif moved < int(state.get("start", 0)):
 			moved = int(state.get("start", 0))
 		state["time"] = moved
+		# The Theora backend's own clock is Godot's and runs on wall time; this
+		# one is the engine's and runs on the scaled delta. They agree until the
+		# process drops frames or the fast-forward key is held, and then they do
+		# not. `the movieTime` stays the authority and the player is nudged back
+		# to it, which is the only arrangement where the number a script reads and
+		# the picture a player sees are the same position.
+		_sync_stream(host, channel, reader, moved)
 
 
 ## `[library, slot]` for whatever a channel is showing, or `[]`.
@@ -343,12 +564,15 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 	var lib := int(sprite.get("cast_lib", 0))
 	var slot := int(sprite.get("cast_id", 0))
 	var member: Dictionary = table.get_member(lib, slot)
-	if str(member.get("type_name", "")) != "digitalVideo":
+	if not VideoXtra.is_video(member):
 		return null
 	var reader = reader_for(host, [maxi(lib, 1), slot], table)
 	if reader == null:
 		return null
 	var channel := int(sprite.get("channel", 0))
+	if str(reader.backend()) == Ogg.BACKEND:
+		return _stream_texture(host, channel, reader,
+			Vector2i(maxi(int(size.x), 1), maxi(int(size.y), 1)))
 	var state: Dictionary = host._host.media_channels.get(channel, {})
 	var at_ms := to_ms(int(state.get("time", 0)))
 	var index: int = reader.frame_index_at(at_ms)
@@ -381,6 +605,175 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 	return texture
 
 
+# ======================================================= the Theora backend
+#
+# One `VideoStreamPlayer` per channel, off screen, driven by this file.
+#
+# ## Why Godot's node and not a decoder here
+#
+# Theora is a transform codec — the same shape of problem as MPEG-1, and
+# `docs/DIGITAL_VIDEO.md` §4C2 is right that GDScript cannot do one at 2.5
+# Mpix/s. The difference is that Godot already ships the decoder: `VideoStream`
+# with an `.ogv` is the one video format stock Godot 4 plays with no addon, no
+# GDExtension, no native code and no new dependency, which is the entire
+# constraint this approach exists to satisfy. So the sidecar is not "a format we
+# like better", it is *the* format the engine already has.
+#
+# ## Why it is a hidden node rather than something drawn
+#
+# `VideoStreamPlayer` is a `Control` and draws itself where it sits. This port's
+# stage is composited by `preview/stage_paint.gd` in channel order, so a video
+# that painted itself would land outside that order — over everything, or under
+# it, depending on tree position, and never in its own channel. The node is
+# therefore hidden and used only as a decoder: `get_video_texture()` is the
+# picture, and `preview/stage_paint.gd` draws it as an ordinary sprite.
+#
+# **Measured, because it is the assumption the whole backend rests on**: with
+# `visible = false` and the engine started `--headless --audio-driver Dummy`, the
+# player still advances and `get_video_texture()` still yields new frames —
+# `tools/video_sidecar.gd`'s `--play` check reads pixels out of it. Godot drives
+# playback from internal process notifications rather than from drawing, so
+# hiding the node costs the decode nothing. Had that not held, the alternative
+# was a node parked at a large negative offset, which works and is uglier.
+
+
+## The `VideoStreamPlayer` a channel decodes on, created on first use.
+##
+## Under the preview node, so it dies with the movie exactly as the audio players
+## do, and named per channel so a session's tree is readable when something has
+## gone wrong.
+static func _stream(host, channel: int, reader) -> VideoStreamPlayer:
+	if host == null or host._host == null:
+		return null
+	var streams: Dictionary = host._host.video_streams
+	var existing = streams.get(channel, null)
+	if existing != null and is_instance_valid(existing) \
+			and str((existing as Node).get_meta("ogv_path", "")) == str(reader.path):
+		return existing
+	if existing != null and is_instance_valid(existing):
+		(existing as Node).queue_free()
+	var stream: VideoStream = ResourceLoader.load(str(reader.path), "VideoStream")
+	if stream == null:
+		# The header parse said this is Theora and the loader disagrees. Reported
+		# rather than retried, and the caller draws nothing — which is the same
+		# clean skip a member with no media gets, arriving one step later.
+		host._trace("video: %s did not load as a VideoStream" % str(reader.path))
+		return null
+	var player := VideoStreamPlayer.new()
+	player.name = "VideoStream%d" % channel
+	# Hidden for the reason the section header gives, and `expand` set so that the
+	# node's own zero size cannot constrain the decode.
+	player.visible = false
+	player.expand = true
+	player.stream = stream
+	player.set_meta("ogv_path", str(reader.path))
+	host.add_child(player)
+	streams[channel] = player
+	return player
+
+
+## Start, or resume, the stream behind a channel at a given playhead position.
+static func _start_stream(host, channel: int, reader, member: Dictionary,
+		from_units: int) -> void:
+	var player := _stream(host, channel, reader)
+	if player == null:
+		return
+	# `the sound of member` is the member's own tick box, and it is honoured by
+	# muting rather than by refusing to play: the video track and the sound track
+	# are one stream here, so "no sound" cannot be expressed by not starting it.
+	var state: Dictionary = host._host.media_channels.get(channel, {})
+	var level := clampf(float(state.get("volume", 255)) / 255.0, 0.0, 1.0)
+	player.volume = 0.0 if not bool(member.get("sound", true)) else level
+	if not player.is_playing():
+		player.play()
+	player.paused = false
+	player.stream_position = to_ms(from_units) / 1000.0
+
+
+## Hold the picture where it is without losing it, which is `the movieRate` of 0.
+static func _pause_stream(host, channel: int, paused: bool) -> void:
+	if host == null or host._host == null:
+		return
+	var player = host._host.video_streams.get(channel, null)
+	if player != null and is_instance_valid(player):
+		(player as VideoStreamPlayer).paused = paused
+
+
+## Nudge the decoder back onto `the movieTime`, which is the authority.
+##
+## **Only when it has drifted past `SYNC_SLOP`**, and that threshold is the whole
+## design of this function. Seeking a Theora stream costs a decode from the
+## previous key frame, so correcting a two-millisecond difference every tick
+## would re-decode a group of pictures sixty times a second and turn a 320x240
+## clip into a stall. Half a frame at 25 fps is 20 ms and is invisible; a quarter
+## of a second is not, and is what a dropped-frame burst or the fast-forward key
+## produces. The slop is set between the two.
+const SYNC_SLOP := 0.25
+
+
+static func _sync_stream(host, channel: int, reader, at_units: int) -> void:
+	if host == null or host._host == null or str(reader.backend()) != Ogg.BACKEND:
+		return
+	var player = host._host.video_streams.get(channel, null)
+	if player == null or not is_instance_valid(player):
+		return
+	var want := to_ms(at_units) / 1000.0
+	var stream_player := player as VideoStreamPlayer
+	if not stream_player.is_playing():
+		return
+	if absf(stream_player.stream_position - want) > SYNC_SLOP:
+		stream_player.stream_position = want
+
+
+## The picture a Theora-backed channel is showing.
+##
+## The player's own texture is handed straight back when the sprite is drawn at
+## the media's own size, which is every case in this corpus: the two Xtra members'
+## `xtraRect`s are 352x288 and 320x240 and the MPEG-1 encodes behind them are
+## 352x288 and 320x240, measured independently (`docs/DIGITAL_VIDEO.md` §1). No
+## copy, no allocation, no per-frame work at all.
+##
+## A sprite stretched to some other size falls back to a resized copy, for the
+## same reason the AVI path resizes: `preview/stage_paint.gd` draws a texture at
+## its natural size, so a picture handed over unscaled would be drawn at the
+## media's size inside a sprite rect of another, and the hit test — which uses the
+## rect — would stop agreeing with the pixels. That path costs an `Image.resize`
+## per frame and is unexercised here; it is written because a score is free to
+## stretch a video sprite and a port that silently ignored it would be wrong in a
+## way nothing reported.
+static func _stream_texture(host, channel: int, reader, wanted: Vector2i) -> Texture2D:
+	var player := _stream(host, channel, reader)
+	if player == null:
+		return null
+	var texture := player.get_video_texture()
+	if texture == null:
+		return null
+	if texture.get_size() == Vector2(wanted):
+		return texture
+	var image: Image = texture.get_image()
+	if image == null:
+		return null
+	image.resize(wanted.x, wanted.y, Image.INTERPOLATE_BILINEAR)
+	var store: Dictionary = host._host.video_frames
+	var entry: Dictionary = store.get(channel, {})
+	var scaled: ImageTexture = entry.get("texture", null)
+	if scaled == null or scaled.get_size() != Vector2(wanted):
+		scaled = ImageTexture.create_from_image(image)
+	else:
+		scaled.update(image)
+	store[channel] = {"frame": -1, "member": 0, "size": wanted, "texture": scaled}
+	return scaled
+
+
+static func _release_stream(host, channel: int) -> void:
+	if host == null or host._host == null or channel <= 0:
+		return
+	var player = host._host.video_streams.get(channel, null)
+	if player != null and is_instance_valid(player):
+		(player as Node).queue_free()
+	host._host.video_streams.erase(channel)
+
+
 # =================================================================== the sound
 
 
@@ -395,6 +788,23 @@ static func texture_for(host, sprite: Dictionary, table, size: Vector2) -> Textu
 ## that.
 ##
 ## Refused when `the sound of member` is off, which is the member's own tick box.
+## Start whichever kind of playback this channel's reader is — the one seam the
+## two backends meet at.
+##
+## Written as a dispatcher rather than as a `backend()` test inside each of the
+## two functions, because the call sites (`advance`'s loop rewind and
+## `rate_written`) do not care which is which and a test duplicated into both
+## halves is how one of them comes to be missing. `_start_audio` below would
+## reach for `reader.audio_stream()` on a Theora reader, which does not have one
+## — Godot's player owns that stream.
+static func _begin_media(host, channel: int, reader, member: Dictionary,
+		from_units: int) -> void:
+	if str(reader.backend()) == Ogg.BACKEND:
+		_start_stream(host, channel, reader, member, from_units)
+		return
+	_start_audio(host, channel, reader, member, from_units)
+
+
 static func _start_audio(host, channel: int, reader, member: Dictionary,
 		from_units: int) -> void:
 	if not bool(member.get("sound", true)):
@@ -456,9 +866,10 @@ static func rate_written(host, channel: int, rate: float) -> void:
 		return
 	if is_zero_approx(rate):
 		_stop_audio(host, channel)
+		_pause_stream(host, channel, true)
 		return
 	var state: Dictionary = host._host.media_channels.get(channel, {})
-	_start_audio(host, channel, reader,
+	_begin_media(host, channel, reader,
 		host._table.get_member(int(where[0]), int(where[1])),
 		int(state.get("time", 0)))
 
@@ -480,3 +891,128 @@ static func release(host) -> void:
 		if player_value != null and is_instance_valid(player_value):
 			(player_value as Node).queue_free()
 	host._host.video_players.clear()
+	# The Theora players go with them, and for a reason the audio players do not
+	# have: each holds an open `.ogv` and a decoded frame buffer, and a
+	# `go to movie` that left one behind would keep both for the session *and*
+	# go on decoding a clip nothing can see.
+	for stream_value in host._host.video_streams.values():
+		if stream_value != null and is_instance_valid(stream_value):
+			(stream_value as Node).queue_free()
+	host._host.video_streams.clear()
+
+
+# ============================================== the Xtra sprite, and its surface
+
+
+## Draw a video **Xtra** sprite — cast type 15 with a video player's symbol.
+##
+## `preview/stage_paint.gd` calls this immediately after
+## `director_preview.gd:_draw_video`, which is the same function for cast type
+## 10. **They are two calls because this pass did not own that file**, not
+## because the two member types want different treatment: everything below the
+## type gate is shared, `texture_for` answers for both, and the right shape is
+## one call whose gate is `VideoXtra.is_video`. Merging them is a two-line change
+## the next session to touch `director_preview.gd` should make.
+##
+## True when the sprite was a video Xtra, whether or not a picture came out —
+## the same contract `_draw_video` states, and for the same reason: the sprite
+## *is* a video, so falling through would ask the cast for bitmap artwork a
+## type-15 member does not have, and `sprite_art.texture_for` would answer null
+## after doing the work of finding that out. A video Xtra with no sidecar
+## therefore draws nothing and consumes the sprite, which is what Director did
+## when the Xtra was not installed.
+static func draw_xtra(host, sprite: Dictionary, table) -> bool:
+	if host == null or table == null:
+		return false
+	var member: Dictionary = table.get_member(
+		int(sprite.get("cast_lib", 0)), int(sprite.get("cast_id", 0)))
+	if not VideoXtra.is_xtra(member):
+		return false
+	var placed: Rect2 = host._stage_rect(sprite)
+	var texture: Texture2D = texture_for(host, sprite, table, placed.size)
+	if texture != null:
+		host._draw_sprite_texture(texture, placed.position, sprite, Color(1, 1, 1, 1))
+	return true
+
+
+## `sprite(N).getPlaybackEvent` — the property Magic Hat's intro and album both
+## poll, and the one `docs/DIGITAL_VIDEO.md` §3 forbids answering carelessly.
+##
+## ## The trap, restated because it is the whole of this function
+##
+## `BehaviorScript 134 - video intro retro loop` is:
+##
+##     if sprite(1).getplaybackevent <> 1 then QuitIntroRetro(1, 1) else go(the frame)
+##
+## and `BehaviorScript 38 - video loop` is the same shape on channel 25. **One of
+## those two arms never ends.** `1` means "still playing, come back next tick",
+## and every other value means "done, move on". So:
+##
+##   * answering 1 with nothing behind it is an infinite loop — the movie waits
+##     for a video that will never finish, and the title is lost;
+##   * answering anything else with a video genuinely playing cuts the clip off
+##     on its first tick.
+##
+## The rule this implements is therefore: **1 only while there is real media,
+## the rate is non-zero, and the playhead has not reached the end.** Every one of
+## those three is a fact this file can check rather than assume, and the first is
+## the one that keeps the no-sidecar case identical to the behaviour
+## `tools/video_fallback.gd` asserts today.
+##
+## ## Why VOID and not 0 when there is no media
+##
+## VOID is what the name answered before it was bound to anything, and
+## `VOID <> 1` is what all three of Magic Hat's video frames leave on today. `0`
+## would take the same arm and look the same in these two movies — and would be
+## a different value to `voidP()`, to `ilk()`, and to any handler in a title
+## nobody has run yet that distinguishes "the Xtra is not installed" from "the
+## Xtra says the clip has stopped". Director answers the former by not binding
+## the name at all, so that is what an absent player answers here.
+static func playback_event(host, channel: int) -> Variant:
+	if host == null or host._host == null or host._table == null:
+		return null
+	var where := member_of_channel(host, channel)
+	if where.is_empty():
+		return null
+	var reader = reader_for(host, where, host._table)
+	if reader == null:
+		return null
+	var state: Dictionary = host._host.media_channels.get(channel, {})
+	if is_zero_approx(float(state.get("rate", 0.0))):
+		return 0
+	var total := to_units(reader.duration_ms)
+	var stop := int(state.get("stop", 0))
+	var last: int = stop if stop > 0 and stop < total else total
+	return 1 if int(state.get("time", 0)) < last else 0
+
+
+## `sprite(N).play()` and `sprite(N).stop()` — the Xtra sprite's two commands.
+##
+## `play` rewinds to the in point and sets the rate to 1; `stop` sets the rate to
+## 0 and leaves the playhead where it is. Both go through the same per-channel
+## state `the movieRate` and `the movieTime` are stored in, so a movie that
+## drives a clip with the commands and reads it back through the properties sees
+## one playhead — which is the arrangement Director has, and the one a port
+## breaks by giving the Xtra a private position.
+##
+## **`play` rewinds and `stop` does not**, and the asymmetry is the album's:
+## `AlbumMenuObject.MenuMouseUp` repoints one member at a new clip and jumps to
+## the `video` marker, and `BehaviorScript 38` calls `stop()` before leaving.
+## A `play` that resumed from wherever the previous clip ended would start every
+## clip after the first somewhere in the middle; a `stop` that rewound would make
+## `the movieTime` after it report a position the player never saw.
+static func command(host, channel: int, what: String) -> void:
+	if host == null or host._host == null or host._table == null:
+		return
+	var state: Dictionary = host._host.media_channels.get(channel, {})
+	if state.is_empty():
+		return
+	if what == "stop":
+		state["rate"] = 0.0
+		state["frac"] = 0.0
+		rate_written(host, channel, 0.0)
+		return
+	state["time"] = int(state.get("start", 0))
+	state["frac"] = 0.0
+	state["rate"] = 1.0
+	rate_written(host, channel, 1.0)

@@ -61,6 +61,14 @@ extends RefCounted
 
 const SoundMember := preload("res://director/director_sound.gd")
 
+## Which playback path `preview/video.gd` drives this reader with — this one
+## decodes a frame at a time on demand and hands its soundtrack over as one
+## `AudioStreamWAV`, where the Theora reader beside it (`director_ogg.gd`) only
+## reads headers and leaves both to Godot's own `VideoStreamPlayer`. Named on the
+## reader rather than tested with `is` at the call site, because a caller that
+## asked "is this an `Avi`" would have to preload both files to ask about either.
+const BACKEND := "avi"
+
 ## `dwFlags` bit 4 of an `idx1` entry: this chunk is a key frame. ScummVM calls
 ## it `AVIIF_INDEX` (`video/avi_decoder.h`); the AVI documentation calls it
 ## `AVIIF_KEYFRAME`. Same bit, and the reference's own comment — "the first frame
@@ -225,6 +233,10 @@ func close() -> void:
 
 func is_open() -> bool:
 	return _file != null
+
+
+func backend() -> String:
+	return BACKEND
 
 
 ## Which frame is on screen at `ms` into the movie.

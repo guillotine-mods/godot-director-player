@@ -2845,6 +2845,7 @@ Two shapes account for most of that list, and neither is a missing name:
 | `currenttime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `editable` | sprite | live | 0 sites; merged by effective() |
 | `forecolor` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
+| `getplaybackevent` | sprite | live | 0 sites here, 2 in test-games/itamar-magichat; preview_lingo_host.gd -> media.gd -> video.gd; the video Xtra's own name, 1 while a clip is playing and VOID with no media |
 | `height` | sprite | live | 0 sites; merged by effective() |
 | `immediate` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `ink` | sprite | live | 0 sites; read from the score record; a write reaches nothing |
@@ -2856,12 +2857,14 @@ Two shapes account for most of that list, and neither is a missing name:
 | `movietime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `name` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `pattern` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
+| `play` | sprite | live | 0 sites here, 2 in test-games/itamar-magichat; preview_lingo_host.gd -> media.gd -> video.gd; a video Xtra sprite method, reached as a property read (see media.gd SPRITE_PROPS) |
 | `right` | sprite | live | 0 sites; stored in _overrides, consumed by nothing |
 | `scorecolor` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptinstancelist` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `scriptnum` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `settrackenabled` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `starttime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
+| `stop` | sprite | live | 0 sites here, 2 in test-games/itamar-magichat; preview_lingo_host.gd -> media.gd -> video.gd; a video Xtra sprite method, reached as a property read (see media.gd SPRITE_PROPS) |
 | `stoptime` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |
 | `stretch` | sprite | inert | 0 sites; stored in _overrides, consumed by nothing |
 | `trackenabled` | sprite | live | 0 sites; preview_lingo_host.gd -> media.gd, the playhead |

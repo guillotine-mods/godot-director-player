@@ -17,6 +17,7 @@ const Ink := preload("res://director/director_ink.gd")
 const Trails := preload("res://scenes/preview/trails.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 const Paint := preload("res://director/director_paint.gd")
+const Video := preload("res://scenes/preview/video.gd")
 
 
 ## Arm the clip rectangle. Returns the rect it set, for the node to record.
@@ -89,6 +90,14 @@ static func paint_frame(host, table, stage: Vector2i) -> void:
 		# "decode the member's chunk", and each consumes the sprite whether or not
 		# anything came out.
 		if host._draw_video(sprite):
+			continue
+		# And a video **Xtra** sprite -- cast type 15 with a video player's symbol,
+		# which is what Magic Hat's intro, retro film and twenty album clips are.
+		# Same playback path, same texture-per-tick reason for being here rather
+		# than in `_texture_for`; two calls only because the type-10 gate lives in
+		# `director_preview.gd` and the pass that added this one did not own that
+		# file. `preview/video.gd:draw_xtra` carries the note to merge them.
+		if Video.draw_xtra(host, sprite, table):
 			continue
 		var texture: Texture2D = host._texture_for(sprite)
 		if texture == null:
