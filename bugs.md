@@ -3626,3 +3626,57 @@ godot --headless --path . --script tools/click_chain.gd -- --root piposh-dream -
 
 and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
 `_lib_keys.clear()` at `:469` removed.
+
+---
+
+## 105. `tools/hotspots.gd` reports the score's members on a frame only the movie's init reaches, and says nothing about it
+
+**Status:** OPEN · **Area:** `tools/hotspots.gd` · found while diagnosing the hex
+board, after the tool's false reading had already cost a session
+
+The tool `_advance`s from frame 0 and pins `_index`, and it warns only when it
+**fails** to arrive. On `piposh-dream/hex1.dir` frame 216 it arrives, prints no
+caveat, and reports all 58 board channels as `1:56` /
+`no behaviour, member script declares none  [1:104 unresolved]`, concluding
+"4 of 71 sprites can answer a click". Played into the same board, six of those
+channels hold members 2 and 3 and three are eligible through
+`member script declares mouseDown/mouseUp`:
+
+```
+cold:  36    1:56   (278,412) 77x43   8  pixel  no   no behaviour, member script declares none  [1:104 unresolved]
+live:  ch36  score 1:56  live 1:3  (284,412) 65x42  why='member script declares mouseDown/mouseUp'
+```
+
+So **the instrument said the board was dead about a board with three clickable
+pieces on it**, and that reading was the starting point for the absorption
+hypothesis and four wrong turns in one session — after `tools/hotspots.gd` had
+already, correctly, been cited as the authority on the `eat.dir` question that
+became `docs/bugs-closed.md` 101. A tool that is right about a cold score and
+silent about the difference is worse than one that refuses, because its output is
+quoted as the state of the frame.
+
+`_effective` **is** applied per sprite, so this is not the score-versus-effective
+split fixed in `interaction.gd:script_for_click`. It is that arriving at a frame
+through `_advance` is not the same as reaching it by playing: the init that swaps
+member 56 for member 3 on 58 channels never ran.
+
+Reproduce, and compare the two:
+
+```
+godot --headless --path . --script tools/hotspots.gd -- --root piposh-dream --file hex1.dir --frame 216
+godot --headless --path . --script tools/cast_script_sprite.gd -- --root piposh-dream
+```
+
+Minimum honest fix: print the caveat whenever the walk cannot show that the
+frame's own initialisers ran, not only when the playhead stops short. The wider
+version is a `--play` mode, which `tools/puppet_members.gd` already has and which
+is what made the difference visible here.
+
+**Measured and explicitly not a bug, so nobody re-opens it:** the 58 tiles each
+carry sprite behaviour `1:104`, a script member named `spriteClicked` with
+`script_id = 0`, `data_chunk_id = -1`, no source and no `Lscr` chunk — empty in
+the container, identically in all three hex movies. The tiles are therefore
+correctly not click targets in their unlit state, and
+`behaviour_scripts`'s decision to drop unresolved attachments is right here.
+`e1ca332b`'s sourceless-script census is **not** contradicted: it counted
+`script_id != 0`, and this member is 0, so it was never in that population.
