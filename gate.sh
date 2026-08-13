@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_fallback:--root@res://test-games/itamar-magichat@--boot@magichat.dir avi_decode:--root@res://test-games/itamar-magichat lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -193,6 +193,26 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # `palette_cycle` carrying four reds nobody saw, and a nightly that names the
 # cause beside the symptom is one line instead of another investigation.
 #
+# `video_fallback` and `avi_decode` run twice each, and the second of each pair is
+# the one with the subject in it -- the `text_and_shapes` precedent above.
+#
+# Bare on `GATE_ROOT` they say out loud that the corpus holds no video and assert
+# nothing about it, which is honest but proves nothing: `tools/video_census.gd`
+# measured **four** video members in all eight corpora and every one of them is
+# `itamar-magichat`'s. So the fixture entries name it.
+#
+# What they guard is specific. `video_fallback` catches a `the duration of member`
+# that answers confidently while `the movieTime` stays frozen -- that turns Magic
+# Hat's clean one-tick skip into `go(the frame)` for ever, which is a hang rather
+# than a wrong picture. `avi_decode` is the other half: it is the only thing that
+# would notice MS-RLE producing wrong pixels, or a backward seek not reproducing
+# frame 0 byte for byte, or the decode falling below the file's own frame rate.
+#
+# Added the same day the decoder was, deliberately. `palette_cycle` spent its
+# whole life outside this list and rotted into a record of what the engine used
+# to do, carrying four failures nobody saw; a decoder is a worse thing to leave
+# unguarded than a palette.
+
 # `behaviour_me` names `PIP2DATA/DAY1.dir` and the flag is the entry, not a
 # detail of it: `bugs.md` 93 is about whether a behaviour is one *object* for
 # every message it receives, and `GATE_ROOT`'s boot movie carries no

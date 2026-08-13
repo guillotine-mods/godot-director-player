@@ -343,11 +343,23 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 			# state a script can change in this port today.
 			return 1 if host._field_text.has(host._field_key(
 				int(where[0]), int(where[1]))) else 0
-		"filename":
-			# The container the member lives in. For a *linked* member Director
-			# answers the external file; every member in this corpus is internal,
-			# and the container is then the honest answer to "where does this come
-			# from".
+		"filename", "mediafilename":
+			# The container the member lives in -- **unless the member is linked**,
+			# and a digital video is the one type in this tree that is. Director
+			# answers the external file for a linked member, and `logo.dir` #28
+			# carries `logo.avi` in item 3 of its info block; `startMovie` also
+			# writes the property by hand, which is the same answer arriving from
+			# the other direction.
+			#
+			# `the mediaFilename of member` is the media Xtras' spelling of the same
+			# question, bound here so that a title writing one and reading the other
+			# cannot see two files. It reaches `preview/media.gd` only for a member
+			# that module owns: for a type-15 Xtra it falls through to the container
+			# path, which is what `the fileName of member` has always answered and
+			# is not a claim that anything can play it.
+			var linked: Variant = Media.read_member(host, where, prop, table)
+			if linked != null:
+				return linked
 			return table.container_path_of(int(where[0]))
 		"scripttext":
 			# The member's own Lingo, as the author typed it. `director_cast.gd`

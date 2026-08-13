@@ -430,6 +430,26 @@ func _parse_info(info: PackedByteArray, out: Dictionary) -> void:
 	# items has not been measured, and a decode that depends on the answer would be
 	# resting on an assumption. This one does not. A member with a long table and no
 	# use for these keys simply carries them.
+	# Items 2 and 3 are the **linked file** a member draws its media from: the
+	# directory it was imported from and the file's own name, both Pascal strings
+	# (`cast.cpp:loadCastInfo`, `ci->directory` and `ci->fileName`, ScummVM
+	# 805f259a). Positional in exactly the same way as the three below, so they
+	# are read here for any member whose table is long enough, and consumed only
+	# where they mean something -- `preview/media.gd` reads them for a
+	# `#digitalVideo`.
+	#
+	# Only the **filename** is usable, and the directory deliberately is not:
+	# `logo.dir` #28 records `G:\magic\logo`, which is the drive letter of the
+	# machine the title was authored on. Director resolved linked media the way it
+	# resolved a linked movie -- beside the movie that named it, then along the
+	# search path -- and `DirectorPaths` is that rule. The directory is carried
+	# rather than dropped because it is evidence, not because anything follows it.
+	var directory: PackedByteArray = item.call(2)
+	if directory.size() >= 1 and int(directory[0]) + 1 <= directory.size():
+		out["link_directory"] = _text(directory.slice(1, 1 + int(directory[0])))
+	var link: PackedByteArray = item.call(3)
+	if link.size() >= 1 and int(link[0]) + 1 <= link.size():
+		out["link_filename"] = _text(link.slice(1, 1 + int(link[0])))
 	var guid: PackedByteArray = item.call(9)
 	if guid.size() == 16:
 		out["xtra_guid"] = guid.hex_encode()
@@ -587,6 +607,84 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			# on catching clicks.
 			out["line_thickness"] = spec[15]
 			out["line_direction"] = spec[16]
+		10:
+			# A digital video member: eight bytes of rect and one flag word, and
+			# that is the whole record.
+			#
+			# `castmember/digitalvideo.cpp:DigitalVideoCastMember()` reads exactly
+			# that -- `Movie::readRect(stream)` then `stream.readUint32()` -- and
+			# its own `getCastDataSize()` states the D5..D10 size as `8 + 4`.
+			# Cited at ScummVM 805f259a.
+			#
+			# **Measured, on the two samples `docs/ENGINE_TODO.md` was waiting
+			# for.** `test-games/itamar-magichat/logo/logo.dir` #27 `prelogo` and
+			# #28 `logo` both carry a specific block of exactly 12 bytes, and both
+			# decode to top 0, left 0, bottom 480, right 640. Three things outside
+			# this decode agree with that size and none of them is derived from it:
+			#
+			#   * the media. `logo.avi`'s `BITMAPINFOHEADER` says 640x480, and so
+			#     do `avih`'s `dwWidth`/`dwHeight` and the video stream's `rcFrame`
+			#     (`tools/avi_decode.gd`).
+			#   * the score. `logo.dir` channel 3 places member 28 with a recorded
+			#     width and height of 640x480.
+			#   * the stage. That sprite's `loc` is (400,300) on an 800x600 stage,
+			#     which is its centre -- and the reference registers a digital
+			#     video at the **centre** of its rect
+			#     (`DigitalVideoCastMember::getRegistrationOffset`: `width / 2`,
+			#     `height / 2`), so a 640x480 picture anchored there lands at
+			#     (80,60) and fills the middle of the stage exactly. A corner
+			#     registration would put its top-left at (400,300) and hang three
+			#     quarters of it off the bottom-right.
+			#
+			# A wrong offset into these twelve bytes does not produce four
+			# agreements.
+			if spec.size() < 12:
+				return
+			var dt := _be_i16(spec, 0)
+			var dl := _be_i16(spec, 2)
+			var db := _be_i16(spec, 4)
+			var dr := _be_i16(spec, 6)
+			out["width"] = dr - dl
+			out["height"] = db - dt
+			out["initial_rect"] = {"top": dt, "left": dl, "bottom": db, "right": dr}
+			# The centre, per the reference's override above. Stored as an offset
+			# from the rect's own origin, which is this port's convention for every
+			# type (see `set_reg_point`), so it is half the size rather than half
+			# the size plus the origin.
+			out["reg_offset_x"] = int((dr - dl) / 2.0)
+			out["reg_offset_y"] = int((db - dt) / 2.0)
+			var vflags := _be_u32(spec, 8)
+			out["video_flags"] = vflags
+			# The Digital Video dialog's tick boxes, one bit each, in the
+			# reference's own order and with its own polarity -- `video` and `crop`
+			# are stored **inverted**, and reproducing that is the difference
+			# between "crop to the sprite rect" and "scale to it" for every member
+			# of the type. `logo` reads 0x2A: directToStage on, sound on, video on,
+			# scale to fit, no controller, no loop, not paused at start, no
+			# preload.
+			#
+			# These are the eleven names `preview/media.gd:MEMBER_DEFAULTS` has
+			# been answering Director's *dialog defaults* for, with its own header
+			# saying so and saying it could not do better without a sample. It can
+			# now: a member the author changed reads back what the author set.
+			out["dv_frame_rate"] = (vflags >> 24) & 0xFF
+			# Bit 0x0800 says the frame-rate byte means something; without it the
+			# member plays at the media's own rate, which is the reference's
+			# `kFrameRateDefault`. The two bits above it choose between Director's
+			# fixed, maximum and synchronised modes.
+			out["dv_frame_rate_type"] = \
+				((vflags & 0x3000) >> 12) if (vflags & 0x0800) != 0 else 0
+			out["dv_quicktime"] = (vflags & 0x8000) != 0
+			out["dv_avi"] = (vflags & 0x4000) != 0
+			out["preload"] = (vflags & 0x0400) != 0
+			out["video"] = (vflags & 0x0200) == 0
+			out["paused_at_start"] = (vflags & 0x0100) != 0
+			out["controller"] = (vflags & 0x0040) != 0
+			out["direct_to_stage"] = (vflags & 0x0020) != 0
+			out["looping"] = (vflags & 0x0010) != 0
+			out["sound"] = (vflags & 0x0008) != 0
+			out["crop"] = (vflags & 0x0002) == 0
+			out["center"] = (vflags & 0x0001) != 0
 		11:
 			if spec.size() >= 2:
 				out["script_type"] = _be_u16(spec, 0)

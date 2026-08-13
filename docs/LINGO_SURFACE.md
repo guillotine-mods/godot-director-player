@@ -3026,7 +3026,8 @@ Two shapes account for most of that list, and neither is a missing name:
 | `channelcount` | member | live | 0 sites; members.gd read_prop -> media.gd; decoded from a sound member's stream; 0 for a video |
 | `samplerate` | member | live | 0 sites; members.gd read_prop -> media.gd; as `channelcount` |
 | `samplesize` | member | live | 0 sites; members.gd read_prop -> media.gd; as `channelcount` |
-| `filename` | member | live | 0 sites; members.gd read_prop |
+| `filename` | member | live | 0 sites; members.gd read_prop; the linked media file for a digital video, else the container the member lives in |
+| `mediafilename` | member | live | 2 sites; members.gd read_prop -> media.gd; the media Xtras' spelling of `filename`, and the same cell -- Magic Hat writes this on its two video Xtra members and `fileName` on its type-10 one |
 | `filled` | member | live | 0 sites; members.gd read_prop |
 | `fontsize` | member | live | 0 sites; members.gd read_prop |
 | `fontstyle` | member | live | 0 sites; members.gd read_prop |

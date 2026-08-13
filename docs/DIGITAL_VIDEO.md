@@ -11,6 +11,18 @@ than a bug someone can pick up. What follows is what the corpus actually holds,
 what each title loses today, the four ways out, and which one this document
 recommends.
 
+> **Update, same day: C1 was taken.** `director/director_avi.gd` (the RIFF walk
+> and the MS-RLE decoder), `scenes/preview/video.gd` (the reader per member, the
+> playhead per channel, the frame the sprite draws) and
+> `director/director_cast.gd`'s type-10 arm landed together, and Magic Hat's logo
+> movie now plays its ten seconds and then proceeds. Measured:
+> **16.2 ms per decoded frame** for 640x480 against a 90 ms budget at the file's
+> own 11.11 fps (`tools/avi_decode.gd`), and **10.08 s** of wall clock from
+> `movieTime` 0 to the member's own 6,048-unit duration. §6's first item is done;
+> §6's second (the Xtra sprite methods) is not, and C2 and D are still refused.
+> Everything below is the census and the costing as they were written, and they
+> are still what the decision rests on -- read §3 before touching `the duration`.
+
 **The short version.** Four cast members in eight corpora play video. All four
 are in `test-games/itamar-magichat`. **The six shipped Piposh titles hold no
 digital video member, no video Xtra, and not one byte of video media on disc**, so
@@ -388,10 +400,14 @@ The reasoning, in the order it should be weighed:
 Two items are Director's own, are still missing, and are now unblocked by this
 census. Neither needs a decoder.
 
-- **The type-10 specific block.** `director_cast.gd:_parse_specific` has no arm for
-  it, so `the controller`, `directToStage`, `video`, `sound`, `crop`, `center`,
-  `scale`, `frameRate`, `pausedAtStart`, `loop` and `preLoad` all answer Director's
-  dialog defaults, and a member the author changed reads back wrong.
+- **The type-10 specific block.** ~~`director_cast.gd:_parse_specific` has no arm
+  for it~~ **Done.** Twelve bytes -- a rect and one flag word -- decoded against
+  both samples, so `the controller`, `directToStage`, `video`, `sound`, `crop`,
+  `center`, `frameRate`, `pausedAtStart`, `loop` and `preLoad` now come out of the
+  member rather than out of Director's dialog defaults, and the member reports its
+  own 640x480 size and its centre registration point. `the scale` is the one that
+  still answers a default and is D7's, which no D5 block carries. What follows is
+  the argument as it was written.
   `docs/ENGINE_TODO.md` records that this "cannot get [an arm] honestly today: no
   member in any of the six titles is a digital video, so there is no sample to
   measure a layout against". **There are now two samples** — `logo.dir` #27 and

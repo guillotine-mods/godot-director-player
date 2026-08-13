@@ -71,6 +71,21 @@ FILES=(
 
   # Trace sources the oracle work reads.
   "debugger.cpp"                  # Console commands incl. the channel dump
+
+  # Digital video. The member's specific block and its playback state machine,
+  # then the two files `director/director_avi.gd` reproduces: the RIFF/AVI
+  # container walk and the Microsoft RLE expansion.
+  "castmember/digitalvideo.cpp"   # Specific block layout, getRegistrationOffset, movieTime
+)
+
+# The same revision, from outside engines/director/. These three are ScummVM's
+# shared video and image code rather than the Director engine's, so they take a
+# different prefix and cannot go in the list above.
+SHARED=(
+  "video/avi_decoder.cpp"         # parseNextChunk, handleStreamHeader, readOldIndex
+  "video/avi_decoder.h"
+  "image/codecs/msrle.cpp"        # MSRLEDecoder::decode8 -- the whole of MS-RLE
+  "image/codecs/msrle.h"
 )
 
 mkdir -p "$DEST"
@@ -83,6 +98,16 @@ for entry in "${FILES[@]}"; do
   mkdir -p "$(dirname "$out")"
   if ! curl -fsSL "$BASE/engines/director/$rel" -o "$out"; then
     echo "FAILED: engines/director/$rel at $SCUMMVM_REV" >&2
+    exit 1
+  fi
+  count=$((count + 1))
+done
+
+for rel in "${SHARED[@]}"; do
+  out="$DEST/$rel"
+  mkdir -p "$(dirname "$out")"
+  if ! curl -fsSL "$BASE/$rel" -o "$out"; then
+    echo "FAILED: $rel at $SCUMMVM_REV" >&2
     exit 1
   fi
   count=$((count + 1))

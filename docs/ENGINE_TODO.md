@@ -146,13 +146,22 @@ movieRate`, the in and out points, `the volume`, read every one back, ask a
 member for its duration, its cue points, its sample rate -- and get Director's
 answers. `docs/LINGO_SURFACE.md` §19 carries the rows.
 
-**What is still missing is the media, and it is the larger half.** There is no
-QuickTime or AVI decoder in this port and Godot supplies none, so the bytes
-behind a `#digitalVideo` member cannot be opened. That is *reported* rather than
-papered over: `the mediaReady of member` answers FALSE for a video, the duration
-is 0, there are no cue points and there are no tracks -- which is exactly what
-Director answers for a video whose file is missing or whose codec is not
-installed. Nothing plays and nothing draws.
+**One format of media now opens, and the rest still does not.**
+`director/director_avi.gd` is a RIFF AVI reader and a Microsoft RLE (`mrle`,
+`BI_RLE8`) decoder in GDScript -- `docs/DIGITAL_VIDEO.md` option C1, the one piece
+of decoder work that document recommends -- and **both** `#digitalVideo` members in
+all eight corpora point at that format. So a type-10 member whose file is an
+MS-RLE AVI answers a real duration, plays, and draws its frames
+(`scenes/preview/video.gd`); `tools/avi_decode.gd` measures it at **16.2 ms per
+frame mean** for `logo.avi`'s 640x480, against a 90 ms budget at its own 11.11 fps.
+
+QuickTime and MPEG-1 still cannot be opened, and neither can an AVI whose file is
+missing. That is *reported* rather than papered over, and it is the same fallback
+it always was: `the mediaReady of member` answers FALSE, the duration is 0, there
+are no cue points and there are no tracks -- which is exactly what Director
+answers for a video whose file is missing or whose codec is not installed.
+`logo.dir` #27 `prelogo` is that state and stays in it, because `startMovie`
+repoints it at a `prelogo.avi` that is not on the disc.
 
 **That is a settled decision now rather than an open one, and
 [`docs/DIGITAL_VIDEO.md`](DIGITAL_VIDEO.md) is where it is written down** -- the
@@ -165,35 +174,35 @@ recommendation is to leave the MPEG-1 decoder alone and build the two items that
 are Director's own and need no decoder -- the specific block below, and the Xtra
 sprite methods.
 
-Three things are open under it, each of which needs the decoder first:
+Two of the three things that were open under it have closed, and the third has
+not:
 
-- **The playhead never advances.** `the movieRate` is stored and read back and
-  moves nothing, because there is no media to run. The one line that gates it is
-  `media.gd`'s `ready` flag, which is where a decoder lands.
-- **The authoring flags are Director's dialog defaults, not the member's.** `the
-  controller`, `directToStage`, `video`, `sound`, `crop`, `center`, `scale`,
-  `frameRate`, `pausedAtStart`, `loop` and `preLoad` live in the `#digitalVideo`
-  member's **specific block**, and `director/director_cast.gd:_parse_specific`
-  has no arm for type 10. So each answers its default until a script writes it --
-  right for a member left as authored, wrong for one the author changed, and there
-  is no way to tell which from inside this port. Inventing offsets would answer
-  with the same confidence and be wrong invisibly.
+- **The playhead advances now, for media that opened.**
+  `scenes/preview/video.gd:advance` steps every playing channel by real time once
+  per engine tick -- not per score step, because the movie that needs it is
+  standing still on `go(the frame)` while it waits. It stays frozen for a member
+  with no media, which is what makes Magic Hat's `Check avi` skip rather than
+  hang. Both halves are asserted by `tools/video_fallback.gd`.
+- **The authoring flags come out of the member's own specific block.** `the
+  controller`, `directToStage`, `video`, `sound`, `crop`, `center`, `frameRate`,
+  `pausedAtStart`, `loop` and `preLoad` are decoded by
+  `director/director_cast.gd:_parse_specific`'s type-10 arm -- twelve bytes, a
+  rect and one flag word, per `castmember/digitalvideo.cpp` -- and read back
+  through `preview/media.gd:VIDEO_FLAG_KEYS`. Measured against `logo.dir` #27 and
+  #28, whose 640x480 rect agrees with the media's own `BITMAPINFOHEADER`, with the
+  score's recorded sprite size, and with the centre registration the sprite's
+  `loc` implies.
 
-  **The "there is no sample" half of that has expired.** This used to say the arm
-  could not be written honestly because no member in any of the six titles is a
-  digital video. Measured over all eight corpora by `tools/video_census.gd`
-  (2026-08-12) that is still true of the six and false of the tree:
-  `test-games/itamar-magichat/logo/logo.dir` holds **two** -- #27 `prelogo` and
-  #28 `logo` -- and `reference/scummvm/castmember/digitalvideo.h` names every
-  field the block has to yield (`_vflags`, `_looping`, `_pausedAtStart`,
-  `_enableVideo`, `_enableSound`, `_crop`, `_center`, `_preload`,
-  `_scaleX`/`_scaleY`, `_showControls`, `_directToStage`, `_frameRate`,
-  `_videoType`). Two samples and a field list is what this item was waiting for.
-  It is now an ordinary decode job and **it needs no decoder**; `bugs.md` 84 and
-  `docs/DIGITAL_VIDEO.md` §6 carry it.
+  **`the scale of member` is the one that still answers a default**, and it is
+  not the same gap: it is D7's playback-size percentage pair, it lives in no D5
+  specific block, and 1.0 is the unscaled size the member actually has.
 - **`the media of member`** is deliberately still absent: Director hands back a
   duplicate of the member's media as an object assignable into another member,
   and that needs the mutable cast below.
+- **Still no decoder for QuickTime or MPEG-1**, and `docs/DIGITAL_VIDEO.md` §4
+  costs both and recommends against: each needs a native, per-ABI dependency in a
+  project that is pure GDScript against stock Godot, for one unshipped test
+  title's intro.
 
 Two smaller things sit beside it. The tempo channel's video waits are **built on
 the clock side and unwired on this one**: `director_score.gd` decodes

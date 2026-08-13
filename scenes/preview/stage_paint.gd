@@ -82,6 +82,14 @@ static func paint_frame(host, table, stage: Vector2i) -> void:
 		# A field draws glyphs, not pixels.
 		if host._draw_text(sprite):
 			continue
+		# A digital video draws the frame its own playhead is on, which changes
+		# under a texture key that does not -- so it cannot go through
+		# `_texture_for`'s cache. Beside the film loop and the field for the same
+		# reason all three are here: each is a member type whose picture is not
+		# "decode the member's chunk", and each consumes the sprite whether or not
+		# anything came out.
+		if host._draw_video(sprite):
+			continue
 		var texture: Texture2D = host._texture_for(sprite)
 		if texture == null:
 			continue

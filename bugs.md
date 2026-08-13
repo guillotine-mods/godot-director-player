@@ -3439,3 +3439,47 @@ frame whose behaviour-channel script declares both `beginSprite` and `exitFrame`
 and compare the object identity `me` binds to in each. `magichat.dir` frame 42's
 `BehaviorScript 34 - album loop` declares `enterFrame`, `exitFrame`, `mouseUp` and
 `endSprite`, which is four of the five doors in one script.
+
+---
+
+## 95. `logo.dir` restarts itself instead of entering the title, because `GetMoviePath(CDpath() & DirChar() & "magichat")` resolves back to the container it is already in
+
+**Status:** open · **Area:** `scenes/director_preview.gd:lingo_go_movie` /
+`director/director_paths.gd:resolve` · found while implementing digital video,
+and **only visible because the logo now plays**
+
+`logo/logo.dir` frame 6 is `run movie`'s `on exitFrame / QuitLogo`, which is
+
+```lingo
+go(1, GetMoviePath(CDpath() & DirChar() & "magichat"))
+```
+
+Measured: the playhead reaches frame 5, then 6, then **frame 1 of `logo.dir`**,
+and plays the ten-second logo again, indefinitely. `CDpath()` is one of
+`utils.cst`'s 93 movie handlers and answers empty here, so the argument reduces
+to something `resolve` matches back to the container it is already in rather than
+to `magichat.dir` at the corpus root.
+
+**This is a path fault, not a video one, and it predates the decoder.** It was
+invisible while the movie skipped the logo in one tick, because the same loop ran
+then too — a two-tick cycle reads as "nothing happened" and a ten-second cycle
+reads as a bug. That is the whole reason it is filed today rather than earlier:
+making a thing work is how you find what was wrong behind it.
+
+`magichat.ini` has `startfile=CD$\logo\logo`, so in the original this **is** the
+boot path — the logo plays once and hands over to the title. A player is not
+affected today: `run-itamar-magichat.bat` boots `magichat.dir` directly, so a
+normal launch never enters `logo.dir` at all.
+
+Reproduce:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/liveness_sweep.gd -- \
+    --root res://test-games/itamar-magichat --boot magichat.dir --only logo/logo.dir --verbose
+```
+
+Worth checking together with it: whether `GetMoviePath` should be consulted at
+all when the argument already names a container this engine can resolve, and what
+`CDpath()` answers when the ini's `CDPATH` is blank — the recovered
+`magichat.ini` blanks it deliberately so paths resolve against the tree wherever
+it sits, which is the condition this reduces under.

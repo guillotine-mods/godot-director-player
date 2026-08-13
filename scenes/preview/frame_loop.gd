@@ -35,6 +35,10 @@ const Transition := preload("res://director/director_transition.gd")
 ## The per-frame callouts and the timeout clock, which are the two things this
 ## loop owes Lingo on a clock rather than on a score event. See its header.
 const Actors := preload("res://scenes/preview/actors.gd")
+## The digital-video playheads, stepped once per engine tick beside the two
+## above. See the call site in `tick` for why they cannot be stepped per score
+## step.
+const Video := preload("res://scenes/preview/video.gd")
 
 
 ## Director's `pause` — the movie's own, not the debug key's `_paused`.
@@ -207,6 +211,22 @@ static func tick(host, delta: float) -> void:
 	# fade ramp they interact with is stepped by `AudioDirector` itself, one
 	# process priority earlier.
 	host._pump_sound(delta)
+	# Every playing digital video, on the engine's clock and **before** the frame
+	# clock is asked anything -- the same placement, and the same argument, as
+	# `idle` and the timeout above.
+	#
+	# It has to be here rather than in the step loop below because the movie that
+	# needs it is standing still: Magic Hat's `Check avi` runs `go(the frame)`
+	# until `sprite(3).movieTime >= FilmLen`, so the score takes no step at all for
+	# the ten seconds the logo plays. A playhead carried by the step would never
+	# move, the guard would never come true, and `the duration` becoming real would
+	# have converted a clean skip into a hang -- which is exactly the regression
+	# `tools/video_fallback.gd` exists to catch.
+	#
+	# The **scaled** delta, so the fast-forward key speeds a video up with the rest
+	# of the movie instead of leaving one sprite running at wall-clock speed inside
+	# a score that is not.
+	Video.advance(host, delta)
 	# Before the clock, because a cycle or a fade is what the clock is *holding*
 	# the playhead for: stepping it after would advance the frame that the effect
 	# is the reason for, and the last step of a fade would land on the next one.

@@ -46,17 +46,38 @@ extends SceneTree
 ## "is any movie stuck". It cannot answer this one: it plays from each movie's
 ## own opening frame, and the frames here are not reachable from there.
 ##
-## ## The second half: the fallback answers are the honest ones
+## ## The second half: the answers are the honest ones, whichever way they go
 ##
-## A skip is only correct because the property surface tells the truth. `the
-## mediaReady of member` must answer FALSE and `the duration of member` 0 for a
-## video with no media, because those are the two values every one of these
-## movies' guards actually reads -- Magic Hat's `Check avi` is
-## `if sprite(3).movieTime >= FilmLen`, and it exits precisely because `FilmLen`
-## is 0. A port that answered a confident duration would turn the clean skip into
-## the hang. So both are asserted here against **real** members: `media.gd`'s own
-## docstring says no member in the six shipped titles is a digital video, and
-## `logo.dir` is the sample it was waiting for.
+## A skip is only correct because the property surface tells the truth, and the
+## truth is now two different answers rather than one. `the mediaReady of member`
+## and `the duration of member` are the two values every one of these movies'
+## guards actually reads -- Magic Hat's `Check avi` is
+## `if sprite(3).movieTime >= FilmLen` -- and this asserts them against a witness
+## from **outside** the property surface: whether the file the member names is on
+## the disc.
+##
+##   * media on the disc  -> `the mediaReady` TRUE and a duration above 0
+##   * no media           -> `the mediaReady` FALSE and a duration of 0
+##
+## That split is the whole subject of this file since `director/director_avi.gd`
+## landed. `logo.dir` #28 `logo` names `logo.avi`, which is beside it, so it is
+## the first member in eight corpora that answers ready; #27 `prelogo` is
+## repointed at `prelogo.avi` by `startMovie` and that file does not exist, so it
+## answers exactly what it always did. **Neither answer is a default** -- one is
+## earned by a decoder opening the file and the other by it declining.
+##
+## ## The third half, and the reason this file was rewritten rather than relaxed
+##
+## Making `the duration` real is only safe if `the movieTime` moves. `Check avi`'s
+## other arm is `go(the frame)`, so a port that answered a confident duration and
+## left the playhead where it was put would convert a clean one-tick skip into an
+## **infinite loop** -- the exact failure this file exists to catch, arriving
+## through the change that was supposed to be an improvement.
+##
+## So the watch now samples `the movieRate` and `the movieTime` of the target
+## channel every tick, and a frame whose movie *started* a video that *has* media
+## must show the playhead advancing. A frozen playhead is reported by name rather
+## than as a timeout twenty seconds later.
 ##
 ## Title-agnostic: it names no game, no channel and no member.
 
@@ -134,15 +155,17 @@ func _sweep(h: Harness) -> void:
 	root.add_child(preview)
 	await process_frame
 
-	var case := "%s: a video with no media answers `not ready`, not a guess" % corpus
+	var case := "%s: a video answers what its media is, not a guess" % corpus
 	h.begin(case)
+	var playable: Dictionary = {}
 	if members.is_empty():
 		h.check(
 			"this corpus holds no video member, so the surface is not exercised here",
 			true,
 			"run --root res://test-games/itamar-magichat for the only corpus that does")
 	else:
-		var checked := 0
+		var with_media := 0
+		var without := 0
 		var wrong: Array[String] = []
 		for record_value in members:
 			var m: Dictionary = record_value
@@ -159,23 +182,52 @@ func _sweep(h: Harness) -> void:
 			var host = preview.get("_host")
 			if host == null:
 				continue
-			checked += 1
 			var ready: Variant = host.get_member_prop(
 				int(m["number"]), int(m["lib"]), "mediaready")
 			var duration: Variant = host.get_member_prop(
 				int(m["number"]), int(m["lib"]), "duration")
-			if int(ready) != 0:
-				wrong.append("%s #%d mediaReady=%s" % [
-					str(m["file"]), int(m["number"]), str(ready)])
-			if int(duration) != 0:
-				wrong.append("%s #%d duration=%s" % [
-					str(m["file"]), int(m["number"]), str(duration)])
+			# The witness, and it is deliberately not the property surface: the
+			# member says which file it wants and the *filesystem* says whether
+			# that file is there. Read after `go to movie` so a `startMovie` that
+			# repoints the member has already run -- which is exactly what
+			# `logo.dir` does to `prelogo`, and without it this would expect a
+			# member to be ready because the name in its cast record happens to
+			# exist.
+			var wanted := str(host.get_member_prop(
+				int(m["number"]), int(m["lib"]), "filename"))
+			var on_disc := _media_on_disc(str(m["movie"]), paths, wanted)
+			if on_disc:
+				with_media += 1
+				playable["%s#%d" % [str(m["movie"]), int(m["number"])]] = true
+				if int(ready) == 0:
+					wrong.append("%s #%d names %s, which is on the disc, and answers "
+						% [str(m["file"]), int(m["number"]), wanted]
+						+ "mediaReady FALSE")
+				if int(duration) <= 0:
+					wrong.append("%s #%d names %s and answers duration %s" % [
+						str(m["file"]), int(m["number"]), wanted, str(duration)])
+			else:
+				without += 1
+				if int(ready) != 0:
+					wrong.append("%s #%d names %s, which is not on the disc, and "
+						% [str(m["file"]), int(m["number"]), wanted]
+						+ "answers mediaReady=%s" % str(ready))
+				if int(duration) != 0:
+					wrong.append("%s #%d names %s and answers duration=%s" % [
+						str(m["file"]), int(m["number"]), wanted, str(duration)])
 		h.check(
-			"%d digital-video member(s) answer mediaReady FALSE and duration 0" % checked,
-			checked > 0 and wrong.is_empty(),
+			"%d with media answer ready and a real duration, %d without answer 0"
+				% [with_media, without],
+			with_media + without > 0 and wrong.is_empty(),
 			("; ".join(wrong) if not wrong.is_empty() else "")
-				if checked > 0 else "no digital-video member was read, so this "
-				+ "asserted nothing")
+				if with_media + without > 0 else "no digital-video member was read, "
+				+ "so this asserted nothing")
+		# Both halves have to be *present* or the check above is one of them
+		# passing while the other is a claim nobody tested. Said out loud rather
+		# than asserted: a corpus with only one kind is a fact about the corpus.
+		if with_media == 0 or without == 0:
+			print("  (this corpus exercises only one half: %d with media, %d without)"
+				% [with_media, without])
 	h.complete(case)
 
 	# ------------------------------------------------------------- the playhead
@@ -192,19 +244,40 @@ func _sweep(h: Harness) -> void:
 
 	var findings: Array[String] = []
 	var thin: Array[String] = []
+	var frozen: Array[String] = []
+	var moved := 0
 	for target_value in targets:
 		var target: Dictionary = target_value
 		var seen: Dictionary = await _visit(preview, target, settle, ticks)
+		var played: Dictionary = seen.get("played", {})
 		var line := "%-20s frame %-5d ch%-3d %-18s -> %s%s" % [
 			str(target["movie"]), int(target["frame"]), int(target["channel"]),
 			str(target["name"]), str(seen["verdict"]),
 			"" if str(seen["detail"]) == "" else "  (%s)" % str(seen["detail"])]
+		if float(played.get("rate", 0.0)) != 0.0:
+			line += "  [rate %.2f, playhead +%d]" % [
+				float(played["rate"]), int(played.get("advanced", 0))]
 		if verbose or str(seen["verdict"]) == "parked-on-video":
 			print("  " + line)
 		if str(seen["verdict"]) == "parked-on-video":
 			findings.append(line)
 		elif str(seen["verdict"]) == "thin":
 			thin.append(line)
+		# The other half of the bargain `docs/DIGITAL_VIDEO.md` §3 strikes. A
+		# frame whose movie **started** a video whose media **is on the disc** must
+		# show the playhead move: `Check avi` is `movieTime >= FilmLen`, and a real
+		# duration against a frozen playhead is `go(the frame)` for ever.
+		#
+		# Conditioned on both halves rather than on the target being a video,
+		# because neither implies the other. A movie that never sets the rate is
+		# not playing anything and has nothing to advance; a member with no media
+		# is Director with no codec, and a playhead that moved there would be this
+		# port inventing a position.
+		if playable.has("%s#%d" % [str(target["movie"]), int(target["number"])]) 				and float(played.get("rate", 0.0)) != 0.0:
+			if int(played.get("advanced", 0)) > 0:
+				moved += 1
+			else:
+				frozen.append(line)
 
 	if not thin.is_empty():
 		print("")
@@ -225,6 +298,14 @@ func _sweep(h: Harness) -> void:
 		"every watch made enough ticks to judge",
 		thin.is_empty(),
 		"%d of %d did not" % [thin.size(), targets.size()])
+	h.check(
+		"%d started video(s) with media all advanced their playhead" % moved,
+		frozen.is_empty(),
+		"; ".join(frozen) if not frozen.is_empty()
+			else ("a real duration against a frozen playhead turns Magic Hat's "
+				+ "one-tick skip into `go(the frame)` for ever"
+				if moved > 0 else "no target both had media and was started, so "
+				+ "this asserted nothing about playback"))
 	h.complete(park_case)
 	preview.queue_free()
 
@@ -250,7 +331,8 @@ func _visit(preview: Node, target: Dictionary, settle: int, ticks: int) -> Dicti
 	for _i in OPEN_FRAMES:
 		await process_frame
 	if preview.get("_score") == null:
-		return {"verdict": "no-open", "detail": "no score after `go to movie`"}
+		return {"verdict": "no-open", "detail": "no score after `go to movie`",
+			"played": {"rate": 0.0, "advanced": 0}}
 	await _run_ticks(preview, settle, OPEN_CAP_MS)
 
 	# `lingo_go_frame` is 0-based (`current_frame` returns `_index`); the score's
@@ -268,6 +350,14 @@ func _visit(preview: Node, target: Dictionary, settle: int, ticks: int) -> Dicti
 	var video_ticks := 0
 	var explained := 0
 	var samples := 0
+	# The playhead of the *video*, which is a different clock from the score's and
+	# is the one `Check avi` reads. Sampled every tick so that "the movie started a
+	# video and the video never moved" is a named finding rather than a hang the
+	# caller has to diagnose from a timeout twenty seconds later.
+	var channel := int(target["channel"])
+	var rate_seen := 0.0
+	var time_low := -1
+	var time_high := 0
 	while int(preview.get("_ticks")) - began < ticks \
 			and Time.get_ticks_msec() - start < WATCH_CAP_MS:
 		await process_frame
@@ -284,25 +374,38 @@ func _visit(preview: Node, target: Dictionary, settle: int, ticks: int) -> Dicti
 			int(preview.call("current_frame"))]] = true
 		if _video_on_stage(preview):
 			video_ticks += 1
+		if host != null:
+			rate_seen = maxf(rate_seen,
+				absf(float(host.get_sprite_prop(channel, "movierate"))))
+			var at := int(host.get_sprite_prop(channel, "movietime"))
+			time_low = at if time_low < 0 else mini(time_low, at)
+			time_high = maxi(time_high, at)
 		var reason := "" if clock == null else str(clock.call("hold_reason"))
 		if host != null and (bool(host.playback_paused) or bool(host.stopped)):
 			reason = "pause/halt"
 		if reason != "":
 			explained += 1
 
+	# What the video did while the watch ran, carried on every verdict so the
+	# caller can ask "did it play" separately from "did the playhead leave".
+	var played := {"rate": rate_seen, "advanced": time_high - maxi(time_low, 0)}
 	if samples < 4:
-		return {"verdict": "thin", "detail": "%d sample(s) in %d ms" % [
-			samples, Time.get_ticks_msec() - start]}
+		return {"verdict": "thin", "played": played,
+			"detail": "%d sample(s) in %d ms" % [
+				samples, Time.get_ticks_msec() - start]}
 	if frames.size() > 1:
-		return {"verdict": "left", "detail": "%d state(s)" % frames.size()}
+		return {"verdict": "left", "played": played,
+			"detail": "%d state(s)" % frames.size()}
 	if video_ticks == 0:
 		# One state, and no video on it -- the sprite left even though the
 		# playhead did not, which is `puppetSprite 0` or a script hiding it. The
 		# player is not looking at a dead video.
-		return {"verdict": "left", "detail": "video sprite left the stage"}
+		return {"verdict": "left", "detail": "video sprite left the stage",
+			"played": played}
 	if explained >= samples:
-		return {"verdict": "held", "detail": "the clock had a reason every tick"}
-	return {"verdict": "parked-on-video",
+		return {"verdict": "held", "detail": "the clock had a reason every tick",
+			"played": played}
+	return {"verdict": "parked-on-video", "played": played,
 		"detail": "%d tick(s) on one frame, %d with a video sprite on stage, "
 			% [samples, video_ticks] + "%d explained" % explained}
 
@@ -325,6 +428,41 @@ func _video_on_stage(preview: Node) -> bool:
 		if m.is_empty():
 			continue
 		if _kind_of(m) != "":
+			return true
+	return false
+
+
+## Is the file a member names actually on the disc?
+##
+## The witness the property surface is checked against, and it is deliberately
+## **not** `preview/video.gd:media_path` -- asking the engine's own resolver
+## whether the engine can find the file would assert nothing. This is the plain
+## rule instead: beside the container that names it, then at the corpus root,
+## with the separators Director allowed normalised. If the two ever disagree,
+## this one is wrong and the check fails, which is the right way round -- a
+## harness that follows the code it is testing cannot fail.
+static func _media_on_disc(movie: String, paths: Paths, wanted: String) -> bool:
+	if wanted == "":
+		return false
+	var tail := wanted.replace(":", "/").replace("\\", "/")
+	while tail.begins_with("/"):
+		tail = tail.substr(1)
+	# `the fileName of member` answers a container path for a member with no link
+	# (`preview/members.gd`), so an answer that is itself a container is "no media
+	# file", not a media file that happens to be a movie.
+	if ContainerName.ALL.has(tail.get_extension().to_lower()):
+		return false
+	var container := paths.resolve(movie)
+	var bases: Array[String] = []
+	if container != "":
+		bases.append(container.get_base_dir())
+	bases.append(str(paths.root))
+	for base in bases:
+		if base == "":
+			continue
+		if FileAccess.file_exists(base.path_join(tail)):
+			return true
+		if FileAccess.file_exists(base.path_join(tail.get_file())):
 			return true
 	return false
 
@@ -452,6 +590,13 @@ func _scan(paths: Paths) -> Dictionary:
 						targets.append({
 							"movie": str(entry), "frame": i + 1, "channel": channel,
 							"name": str(m.get("name", "")), "kind": _kind_of(m),
+							# The member, so the watch can ask whether this target
+							# is one of the ones the property surface said has
+							# media. Without it the playback check would have to
+							# re-derive that from the name, and two members can
+							# share one.
+							"lib": int(sprite["cast_lib"]),
+							"number": int(sprite["cast_id"]),
 						})
 		table.close()
 		f.close()

@@ -330,9 +330,21 @@ const Media := preload("res://scenes/preview/media.gd")
 ##   `media_channels`  channel -> the playhead: rate, time, in/out, volume, cue
 ##   `media_members`   "lib:id" -> the authoring flags a script has written
 ##   `media_facts`     "lib:id" -> what the member's own bytes say, decoded once
+##   `video_readers`   "lib:id" -> `{wanted, reader, path}` — the open AVI
+##   `video_frames`    channel -> `{frame, member, size, texture}` — the picture
+##   `video_players`   channel -> the `AudioStreamPlayer` its soundtrack runs on
+##
+## The three video entries are the decoder's, and they die with the movie for a
+## fourth reason on top of the three above: each holds an open file handle and a
+## 1.2 MB RGBA buffer, and a `go to movie` that left them behind would keep both
+## for a session. `preview/video.gd:release` is what closes them and
+## `preview/boot.gd` is what calls it.
 var media_channels: Dictionary = {}
 var media_members: Dictionary = {}
 var media_facts: Dictionary = {}
+var video_readers: Dictionary = {}
+var video_frames: Dictionary = {}
+var video_players: Dictionary = {}
 
 ## `the digitalVideoTimeScale` — the units per second Director converts a video
 ## sprite's `movieTime` into when a movie asks for one time scale across members

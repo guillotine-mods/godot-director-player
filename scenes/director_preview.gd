@@ -60,6 +60,10 @@ const Members := preload("res://scenes/preview/members.gd")
 ## `docs/ENGINE_TODO.md`'s digital-video block). Here for the *write* half of the
 ## member flags; the read half reaches it through `preview/members.gd`.
 const Media := preload("res://scenes/preview/media.gd")
+## The moving half of the same subject: the AVI reader behind a `#digitalVideo`
+## member, the playhead that runs on the engine's clock, and the frame the sprite
+## draws. `preview/media.gd` answers *about* a video and this one plays it.
+const Video := preload("res://scenes/preview/video.gd")
 const MovieSession := preload("res://scenes/preview/movie_session.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
@@ -1978,6 +1982,33 @@ func _draw_text(sprite: Dictionary) -> bool:
 ## other sprite.
 func _draw_film_loop(sprite: Dictionary) -> bool:
 	return FilmLoopView.draw(self, sprite, _table, _loops, _ticks, _loop_start)
+
+
+## A digital video sprite, delegated to `preview/video.gd`. True when this sprite
+## was one, whether or not a picture came out.
+##
+## **True even with nothing drawn**, which is the same contract `_draw_text`
+## states one function up and for the same reason: the sprite *is* a video, and
+## falling through to `_texture_for` would only ask the cast for bitmap artwork a
+## type-10 member does not have. A video whose media will not open therefore
+## draws nothing and consumes the sprite, which is what Director did with no
+## codec installed.
+##
+## The texture cache is the module's and not `_textures`, because that one is
+## keyed by (member, ink, drawn size) and a video's picture changes eleven times
+## a second under a key that does not move -- it would hand back frame 0 for the
+## whole clip.
+func _draw_video(sprite: Dictionary) -> bool:
+	var m: Dictionary = _table.get_member(
+		int(sprite.get("cast_lib", 0)), int(sprite.get("cast_id", 0)))
+	if str(m.get("type_name", "")) != "digitalVideo":
+		return false
+	var placed: Rect2 = _stage_rect(sprite)
+	var texture: Texture2D = Video.texture_for(self, sprite, _table, placed.size)
+	if texture != null:
+		_draw_sprite_texture(texture, placed.position, sprite,
+			Color(1, 1, 1, Ink.blend_alpha(sprite)))
+	return true
 
 
 func _child_lib(child: Dictionary, owner_lib: int) -> int:
@@ -4373,7 +4404,8 @@ func _set_member_prop_at(where: Array, prop: String, value: Variant) -> void:
 				LingoValue.to_str(value)
 			queue_redraw()
 		"controller", "directtostage", "video", "sound", "crop", "center", \
-		"scale", "framerate", "pausedatstart", "loop", "preload":
+		"scale", "framerate", "pausedatstart", "loop", "preload", \
+		"filename", "mediafilename":
 			# The digital-video authoring flags, stored by `preview/media.gd` so
 			# that the write and the read consult one table. Only the flags are
 			# writable: `the duration`, `the sampleRate` and the cue points are

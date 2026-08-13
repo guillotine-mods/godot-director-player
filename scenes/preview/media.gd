@@ -66,6 +66,10 @@ extends RefCounted
 
 const SoundMember := preload("res://director/director_sound.gd")
 const LingoValue := preload("res://lingo/lingo_value.gd")
+## The moving half. This module answers *about* a video; that one opens it,
+## advances it and draws it. See its header for the split and for the two rules
+## `docs/DIGITAL_VIDEO.md` §3 lays down about answering a duration.
+const Video := preload("res://scenes/preview/video.gd")
 
 ## Director's tick, which is what `the duration of member` reports a **sound**
 ## member in. A digital video reports in its own `timeScale` units instead, which
@@ -98,7 +102,7 @@ const MEMBER_PROPS := [
 	"controller", "directtostage", "video", "sound", "crop", "center", "scale",
 	"framerate", "pausedatstart", "loop", "preload", "digitalvideotype",
 	"timescale", "cuepointnames", "cuepointtimes", "channelcount", "samplerate",
-	"samplesize",
+	"samplesize", "filename", "mediafilename",
 ]
 
 ## The sprite properties this module owns. `volume` is here and not in
@@ -140,6 +144,44 @@ const MEMBER_DEFAULTS := {
 	"loop": 0,
 	"preload": 0,
 }
+
+## Which key of the parsed member each authoring flag comes out of.
+##
+## The names differ on both sides and deliberately so: the left is Lingo's
+## spelling, lowercased the way every property reaches this module, and the right
+## is `director_cast.gd`'s, which follows the reference's field names
+## (`castmember/digitalvideo.h`). One table rather than a `match` because the read
+## above needs to ask "is this one of them" before it asks "which".
+##
+## **`scale` is not here.** It is D7's playback-size percentage pair and lives in
+## no D5 specific block, so a D5 member has nothing to read and `MEMBER_DEFAULTS`
+## answers 1.0 — which is the unscaled size and is right. `preload` and
+## `framerate` are, and both come out of the same flag word as the tick boxes.
+const VIDEO_FLAG_KEYS := {
+	"controller": "controller",
+	"directtostage": "direct_to_stage",
+	"video": "video",
+	"sound": "sound",
+	"crop": "crop",
+	"center": "center",
+	"framerate": "dv_frame_rate",
+	"pausedatstart": "paused_at_start",
+	"loop": "looping",
+	"preload": "preload",
+}
+
+## The member properties that name the *file* rather than describe it.
+##
+## `the fileName of member` is Director's spelling for a digital video and
+## `the mediaFilename of member` is the media Xtras' spelling for the same idea;
+## Magic Hat uses both — `logo.dir`'s `startMovie` writes `fileName` on a type-10
+## member and `magichat.dir`'s album writes `mediaFilename` on a type-15 one.
+## Both are bound here so that the two spellings cannot come to mean two
+## different files, and the write reaches only a member this module owns: a
+## `mediaFilename` written to an Xtra is still reported and dropped, because
+## there is no player behind that Xtra and storing the path would look bound from
+## every direction.
+const FILE_PROPS := ["filename", "mediafilename"]
 
 ## `the volume of sprite` before anything writes it.
 ##
@@ -208,11 +250,51 @@ static func read_member(host, where: Array, prop: String, table) -> Variant:
 			# answers Director's tick, which is the scale its duration is in.
 			return int(facts["time_scale"])
 		"digitalvideotype":
-			# `#quickTimeMovie` or `#videoForWindows`, decided by reading the
-			# file's own header. Nothing here can open one, so the honest answer is
-			# Director's third value — the one it uses for a video it cannot
-			# identify — rather than a guess between the two it can.
+			# `#quickTime` or `#videoForWindows`, decided by reading the file's
+			# own header rather than by trusting the member's own flag word: the
+			# member is the author's claim and the file is the fact, and this
+			# corpus has the two disagreeing — `logo`'s `vflags` sets neither
+			# `0x8000` (QuickTime) nor `0x4000` (AVI), while the media behind it
+			# is unambiguously RIFF AVI.
+			#
+			# `#other` when nothing opened, which is Director's third value and
+			# the one it used for a video it could not identify. That is still
+			# the answer for every QuickTime and MPEG-1 member in the tree, and
+			# for `logo.dir` #27 `prelogo`, whose file is not on the disc.
+			if bool(facts["ready"]):
+				return &"videoForWindows"
 			return &"other"
+		"filename", "mediafilename":
+			# The linked media file, for a member that has one. **Null for a sound
+			# member**, so `preview/members.gd` falls through to its own answer --
+			# the container the member lives in, which is right for an internal
+			# member and is what every member in the six shipped titles is.
+			#
+			# A script's write reaches this before the match does
+			# (`_member_override`), so what comes back here is the *authored* link:
+			# `logo` records `logo.avi` in item 3 of its info block, which is where
+			# Director stored the name of the file it imported from.
+			if not is_video(member):
+				return null
+			return str(member.get("link_filename", ""))
+	if VIDEO_FLAG_KEYS.has(prop) and member.has(str(VIDEO_FLAG_KEYS[prop])):
+		# The authoring flags, out of the member's own specific block.
+		#
+		# **This is the paragraph at the top of this file that stopped being
+		# true.** The header said the block was not decoded and that every one of
+		# these therefore answered Director's dialog default — right for a member
+		# left as authored, wrong for one the author changed, with no way to tell
+		# which from inside the port. `director_cast.gd`'s type-10 arm decodes it
+		# now, against the two samples `logo.dir` supplies, so a member the author
+		# changed reads back what the author set.
+		#
+		# The defaults below are still reached and still needed: a `#sound` member
+		# has no such block at all, and neither has a digital video whose specific
+		# block is shorter than the twelve bytes the D5 record needs.
+		var carried: Variant = member[str(VIDEO_FLAG_KEYS[prop])]
+		if typeof(carried) == TYPE_BOOL:
+			return 1 if bool(carried) else 0
+		return int(carried)
 	return _member_default(prop)
 
 
@@ -223,13 +305,26 @@ static func read_member(host, where: Array, prop: String, table) -> Variant:
 ## says and a script cannot argue with them.
 static func write_member(host, where: Array, prop: String, value: Variant, table) -> bool:
 	var member: Dictionary = table.get_member(int(where[0]), int(where[1]))
-	if not is_media(member) or not MEMBER_DEFAULTS.has(prop):
+	if not is_media(member) or not (MEMBER_DEFAULTS.has(prop) or FILE_PROPS.has(prop)):
 		return false
 	if host == null or host._host == null:
 		return false
 	var store: Dictionary = _member_store(host)
 	var key := "%d:%d" % [int(where[0]), int(where[1])]
 	var entry: Dictionary = store.get(key, {})
+	if FILE_PROPS.has(prop):
+		# Both spellings land on one key, so `member("x").mediaFilename = f`
+		# followed by `put the fileName of member "x"` answers `f`. Two keys is how
+		# a movie comes to set one and read the other -- the same argument
+		# `the movieTime` / `the currentTime` gets on the sprite side.
+		#
+		# The reader is *not* reopened here. `preview/video.gd:reader_for` keys its
+		# cache on the wanted filename and notices on the next read, which is what
+		# lets Magic Hat's album repoint one member at twenty clips without this
+		# module knowing a decoder exists.
+		entry["filename"] = LingoValue.to_str(value)
+		store[key] = entry
+		return true
 	if prop == "scale":
 		entry[prop] = value if typeof(value) == TYPE_ARRAY else [
 			float(LingoValue.to_num(value)), float(LingoValue.to_num(value))]
@@ -272,6 +367,18 @@ static func facts_of(host, where: Array, table) -> Dictionary:
 	}
 	if str(member.get("type_name", "")) == SOUND_TYPE:
 		_decode_sound(member, table, int(where[0]), facts)
+	elif str(member.get("type_name", "")) == VIDEO_TYPE:
+		# **The `"ready": false` above is still the answer for every video whose
+		# media will not open**, and that is the whole of `docs/DIGITAL_VIDEO.md`
+		# §3's first rule. What changed is that one format can now open: MS-RLE
+		# AVI, which is what both `#digitalVideo` members in eight corpora point
+		# at. QuickTime and MPEG-1 still cannot, and `logo.dir` #27 `prelogo`
+		# still cannot, because `prelogo.avi` is not on the disc.
+		#
+		# So this is not "the fallback was replaced". It is the same fallback with
+		# a decoder in front of it, and the fallback is still what a member gets
+		# when the decoder declines.
+		Video.fill_facts(host, where, table, facts)
 	# `_facts_store` answers a throwaway when there is no host to keep it on --
 	# a harness holding the table alone -- and caching into that is harmless and
 	# pointless. Written unconditionally rather than guarded, because the guard
@@ -408,10 +515,20 @@ static func write_sprite(host, channel: int, prop: String, value: Variant) -> bo
 		"movierate":
 			# 0 is paused, 1 is forward at the movie's own rate, -1 is backwards,
 			# and a fraction is a proportion of it — so this is a float and not an
-			# integer. Stored, and consulted by nothing, because there is no media
-			# to run: a movie that sets the rate and polls `the movieTime` sees the
-			# playhead stay put, which is Director with an unloadable video.
+			# integer.
+			#
+			# It is the **only** property that decides whether anything is playing,
+			# which is why the soundtrack is started and stopped from here rather
+			# than from the per-tick advance: hanging the transition off the tick
+			# would put up to one engine frame of silence at the start of every
+			# clip, and Director's `setMovieRate` starts the decoder inside the
+			# write (`castmember/digitalvideo.cpp`).
+			#
+			# For a member with no media `rate_written` finds no reader and does
+			# nothing, so this stays exactly what it was: a value that round-trips
+			# and moves no playhead, which is Director with an unloadable video.
 			state["rate"] = float(LingoValue.to_num(value))
+			Video.rate_written(host, channel, float(state["rate"]))
 		"movietime", "currenttime":
 			state["time"] = _clamp_time(state, LingoValue.to_int(value))
 		"starttime":

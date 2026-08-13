@@ -27,6 +27,8 @@ const PreviewHost := preload("res://scenes/preview_lingo_host.gd")
 const SaveState := preload("res://scenes/preview/save_state.gd")
 const SaveFiles := preload("res://scenes/preview/save_files.gd")
 const GameConfig := preload("res://director/game_config.gd")
+## Only for `release`: the video decoders hang off the host this file replaces.
+const Video := preload("res://scenes/preview/video.gd")
 
 
 ## The stage: resolve the boot movie from the config and the command line, load
@@ -259,6 +261,13 @@ static func start_lingo(host, path: String) -> void:
 	if host._host != null:
 		carried_host_globals = host._host.globals
 
+	# Every open AVI, decoded frame and video audio player, closed before the host
+	# holding them is replaced. They are keyed by `(library, slot)` and by channel,
+	# and both name something different in the next movie -- but the reason this is
+	# a call and not "the dictionaries go away with the host" is the file handle
+	# and the 1.2 MB RGBA buffer inside each reader, plus an `AudioStreamPlayer`
+	# that is a *child of the node* and would otherwise outlive its movie playing.
+	Video.release(host)
 	var movie := path.get_file().get_basename().to_upper()
 	host._interpreter = Interpreter.new()
 	host._host = PreviewHost.new()
