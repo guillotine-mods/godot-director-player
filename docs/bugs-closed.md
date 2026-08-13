@@ -3738,3 +3738,75 @@ through to its page-turning default, and clicking the close button ran
 a `rect(l,t,r,b)`. Director's `value()` evaluates a whole Lingo expression, so
 neither is a special case there; these two are the constructors that turn up as
 data.
+
+## 97. A film loop re-shown on a channel resumed past its own end, so the first flowerpot in each of Piposh Dream's three lanes fell and every later one arrived already smashed on the ground
+
+**Status:** FIXED · **Area:** `scenes/director_preview.gd:lingo_set_sprite_prop`,
+`_assigned_member` · found from a player's report and two screenshots, after two
+wrong theories of my own
+
+A film loop's drawn frame is `_ticks - _loop_start[channel]`, and `_loop_start`
+was set from exactly one place: `preview/stage_paint.gd`, which calls
+`_note_member` for every sprite it **draws**. A hidden sprite is not drawn --
+`_effective` answers `{}` for one -- so the painter cannot see a member the
+channel held while it was invisible.
+
+COMEIN's pot game is that case, written by an author who had no reason to avoid
+it. The drop handler blanks all three pot channels and then dresses one:
+
+```lingo
+set the member of sprite 27 to member(87, 1)   -- and 28, and 29, all hidden
+...
+sprite(26 + x).visible = 1
+set the member of sprite (26 + x) to member(83 + x, 1)
+```
+
+So a channel goes `84 -> 87 -> 84`. The 87 is never painted, `_last_member` still
+reads 84, the re-assignment looks like no change, `note_member` takes its early
+return, and the loop is never restarted. The pot is a **14-frame non-looping**
+loop, so `director_film_loop.gd:_wrap` clamps every phase past the end to the last
+frame -- the pot already smashed.
+
+Measured, the loop frame each pot was on at the moment it became visible:
+
+```
+ch29 member 86  frame 0     <- falls
+ch29 member 86  frame 28    <- arrives landed
+ch28 member 85  frame 0     <- falls
+ch28 member 85  frame 28
+ch28 member 85  frame 56
+ch29 member 86  frame 196
+ch27 member 84  frame 0     <- falls
+```
+
+**The shape is the diagnosis.** The first drop into each lane puts a genuinely new
+member on that channel, so the paint-path reset does fire and that pot falls. Three
+lanes, three good falls, then nothing for the rest of the game -- which the player
+reported as "at the beginning everything works as expected" and "I see the pots
+once they hit the ground but I don't see them falling". A theory that only
+explained "pots do not fall" would not have predicted the three.
+
+Fixed by noticing the member where a script **assigns** it as well as where the
+painter draws it. Director restarts a loop from `setCast` rather than from the
+painter, so the assignment is the honest event; that reading is from the reference
+and is not measured against Director running.
+
+**The first attempt was wrong and the gate caught it, which is worth recording.**
+It reused `note_member`, which writes `_last_member` -- and `tools/update_stage.gd`
+uses that dictionary as its probe for *what the painter drew*, to prove
+`updateStage` paints inside a handler. Writing it from the assignment path made the
+paint appear to have seen a value assigned after it: 87 PASS, 1 FAIL, and the FAIL
+was the harness whose whole subject is that distinction. The assignment now keeps
+its own record in `_assigned_member`, `_last_member` keeps meaning what was drawn,
+and only the start tick is shared. That field is cleared with the rest of the
+per-movie state in `preview/movie_session.gd` and registered in
+`preview/save_state.gd`'s manifest, which requires a disposition for every field.
+
+Covered by `tools/film_loop_restart.gd`, in `gate.sh`'s `ALL`. It plays the game
+rather than staging it -- rings the doorbell the way a player does, because
+arriving at the next marker skips the `puppetSprite` init, and presses the arrows
+on the movie's own clock -- and it fails a lane that takes a second drop starting
+anywhere but frame one. Verified in both directions: without the fix, 6 of 9 drops
+start at frames 27-282 and it exits 1; with it, 9 drops over 3 lanes, all three
+repeated, every one at frame 0. It also refuses to pass on a run that produced no
+repeat, so a lucky sequence of lanes cannot make it green for nothing.

@@ -405,6 +405,11 @@ var _last_member: Dictionary = {}
 ## first frame when the member genuinely changes; counting from the movie clock
 ## instead makes a loop entered a second time resume wherever the first left off.
 var _loop_start: Dictionary = {}
+## channel -> the member a script last *assigned* it, which is not the same
+## question as `_last_member`'s "what did the painter last draw". A member
+## assigned to a hidden channel is never painted, so only this notices it — see
+## `lingo_set_sprite_prop` for the pot that arrived already smashed.
+var _assigned_member: Dictionary = {}
 ## The channel being dragged, and the offset from the cursor to its position.
 ## Decodes the artwork of frames the playhead has not reached yet, so a first
 ## appearance does not cost its milliseconds inside the step that draws it.
@@ -4089,6 +4094,40 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 			_write_position(channel, "loch", point[0])
 			_write_position(channel, "locv", point[1])
 		return
+	# **A film loop restarts when a script assigns it, not when the painter sees it.**
+	#
+	# `_loop_start` is what makes a loop begin at its first frame, and it was set
+	# only from `preview/stage_paint.gd`, which calls `_note_member` per *drawn*
+	# sprite. That cannot see a member the channel held while it was **hidden**:
+	# `_effective` answers `{}` for a hidden sprite and the paint loop skips it. So
+	# a channel that goes `84 -> 87 -> 84` with the 87 never painted looks like it
+	# never changed, and the loop resumes at whatever the movie clock has reached.
+	#
+	# COMEIN's flowerpots are that, and it is player-visible: a pot is a 14-frame
+	# non-looping loop, `director_film_loop.gd:_wrap` clamps past-the-end to the
+	# last frame, and the drop handler blanks all three pot channels to member 87
+	# while they are hidden before dressing one. So the **first** pot in each of the
+	# three lanes fell and every later pot in a lane that had already shown that
+	# member arrived already smashed on the ground -- measured at loop frames 0, 28,
+	# 56 and 196 on successive drops into one lane. Three good falls, then none, for
+	# the rest of the game (`bugs.md` 97).
+	#
+	# **Tracked apart from `_last_member` on purpose.** That dictionary is the
+	# record of what the *painter* drew, and `tools/update_stage.gd` uses it as its
+	# probe for exactly that -- it proves `updateStage` paints inside a handler by
+	# checking the paint saw the member as it was at the call. Writing it from here
+	# makes the paint appear to have seen a value assigned after it, which is the
+	# fault that harness exists to catch, and it caught it. So the assignment keeps
+	# its own record and the painter keeps its own.
+	#
+	# Compared before storing, so a script that assigns the same member every frame
+	# -- which is how this corpus walks its characters -- does not pin its loop at
+	# frame one.
+	if SpriteProps.canonical(prop) == "membernum":
+		var slot := LingoValue.to_int(value) % Members.LIB_STRIDE
+		if int(_assigned_member.get(channel, -1)) != slot:
+			_assigned_member[channel] = slot
+			_loop_start[channel] = _ticks
 	SpriteProps.write(
 		channel, prop, value, _overrides, frame_sprites(), _channel_constraints)
 

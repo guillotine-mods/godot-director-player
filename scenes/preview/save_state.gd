@@ -104,6 +104,7 @@ const ACCOUNTED := {
 	"_channel_constraints": "saved",
 	"_last_member": "saved",
 	"_loop_start": "saved",
+	"_assigned_member": "saved: with the loop start it decides",
 	"_play_stack": "saved",
 	# Saved, and then re-arbitrated. `text_focus.gd:arbitrate` re-decides the pair
 	# from the frame's editable sprites on every paint and *keeps* them when they
@@ -285,6 +286,7 @@ static func capture(host) -> Dictionary:
 		"channel_constraints": encode(host._channel_constraints),
 		"last_member": encode(host._last_member),
 		"loop_start": encode(host._loop_start),
+		"assigned_member": encode(host._assigned_member),
 		"skip_sent": encode(host._skip_sent),
 		"begun_sprites": encode(host._begun_sprites),
 		"play_stack": encode(host._play_stack),
@@ -485,6 +487,7 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	_fill_int_keyed(host._channel_constraints, decode(data.get("channel_constraints", {})))
 	_fill_int_keyed(host._last_member, decode(data.get("last_member", {})))
 	_fill_int_keyed(host._loop_start, decode(data.get("loop_start", {})))
+	_fill_int_keyed(host._assigned_member, decode(data.get("assigned_member", {})))
 	_fill_int_keyed(host._skip_sent, decode(data.get("skip_sent", {})))
 	_fill_int_keyed(host._begun_sprites, decode(data.get("begun_sprites", {})))
 	host._play_stack = decode(data.get("play_stack", []))

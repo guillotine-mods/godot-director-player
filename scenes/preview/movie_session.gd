@@ -132,6 +132,7 @@ static func forget_previous(host, previous_path: String) -> void:
 	# negative frame.
 	host._last_member.clear()
 	host._loop_start.clear()
+	host._assigned_member.clear()
 	host._index = 0
 	host._ticks = 0
 	host._held = true
