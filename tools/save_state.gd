@@ -236,7 +236,7 @@ func _round_trip(h: Harness, preview: Node) -> void:
 	for key in ["interpreter_globals", "host_globals", "overrides", "field_text",
 			"channel_cursors", "channel_constraints", "play_stack", "clock",
 			"palette", "score_sound", "focus", "hooks", "flags", "counters",
-			"skip_sent", "loop_start", "last_member", "windows", "index"]:
+			"loop_start", "last_member", "windows", "index"]:
 		h.check("%s changed when it was written to" % key, reached.has(key),
 			"the capture did not see the write")
 	h.complete("the mutation reaches the record")
@@ -279,7 +279,6 @@ func _mutate(preview: Node, tag: String) -> void:
 	(preview.get("_channel_constraints") as Dictionary)[7] = salt
 	(preview.get("_last_member") as Dictionary)[8] = 40 + salt
 	(preview.get("_loop_start") as Dictionary)[9] = 500 * salt
-	(preview.get("_skip_sent") as Dictionary)[3 * salt] = true
 	(preview.get("_field_text") as Dictionary)["gate:1"] = "%s text" % tag
 	(preview.get("_member_editable") as Dictionary)["gate:1"] = salt == 1
 	preview.set("_play_stack", [{"movie": "%s.dir" % tag, "frame": salt}])

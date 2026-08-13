@@ -9,12 +9,17 @@ extends SceneTree
 ## **145.7 ms** in one step and DAY1 frame 39 spent **105.5 ms**, against a step
 ## budget of 66 ms at 15 fps and 125 ms at 8.
 ##
-## That is bad twice over. The stall itself is a dropped frame, and then the
-## clock is owed the time and replays up to `MAX_CATCHUP_STEPS` in one paint --
-## so the movie stops and then lurches. It lands exactly where new artwork
-## appears: the first frame of a menu's background loop, or a full-screen bitmap
-## arriving. From the player's chair it reads as the animation jumping, not as
-## the engine loading, which is why it went unattributed for so long.
+## The stall is a dropped frame, and it lands exactly where new artwork appears:
+## the first frame of a menu's background loop, or a full-screen bitmap arriving.
+## From the player's chair it reads as the animation jumping, not as the engine
+## loading, which is why it went unattributed for so long.
+##
+## It used to be bad twice over -- the clock was then *owed* the time and replayed
+## up to four steps in one paint, so the movie stopped and then lurched. That half
+## is gone: `FrameClock.tick` re-arms the next step's due time absolutely and
+## drops what it could not afford, which is `Score::updateNextFrameTime`'s own
+## arithmetic. The ceiling below is unchanged, because the stall it measures is
+## the half that was always the engine's fault.
 ##
 ## This drives the real preview node and times each step's texture work the way
 ## `_draw` would, so what it measures is what the player waits for. The gate is a
@@ -26,7 +31,9 @@ const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 
 ## A step at 8 fps has 125 ms. Half of that is a stall a player would not notice
-## against the frame it lands on; beyond it the clock starts owing catch-up.
+## against the frame it lands on; beyond it the frame it lands on is visibly
+## long, and — since the clock drops rather than repays — the movie has simply
+## lost that time out of its own tempo.
 const WORST_STEP_MS := 60.0
 
 

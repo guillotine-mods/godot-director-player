@@ -49,12 +49,19 @@ const ENGINE_HZ := 60.0
 
 ## How far a measured tick count may sit from the rate asked for.
 ##
-## The clock carries a fractional remainder across ticks (`_owed`) and a
-## measurement inherits whatever the boot frames left in it, so the first and
-## last step of a second can land either side of the boundary. Three, measured:
-## a movie at 8 fps counts 7 or 8 depending on where the second starts. Anything
-## wider than that is the rate not being applied, and the gap this has to
-## discriminate is 8 against 60.
+## The clock carries the time left before the next step across ticks (`_due_in`)
+## and a measurement inherits whatever the boot frames left in it, so the first
+## and last step of a second can land either side of the boundary. Three,
+## measured: a movie at 8 fps counts 7 or 8 depending on where the second starts.
+## Anything wider than that is the rate not being applied, and the gap this has
+## to discriminate is 8 against 60.
+##
+## **60 is the ceiling and not a coincidence**, which is why this drives
+## `_process` at exactly `ENGINE_HZ`. The clock takes one score step per tick and
+## drops the rest, as `Score::update` does, so a fast-forward configured above
+## the engine's own frame rate is silently clamped to it -- and the check below
+## that the toggle is "faster" is the one that would notice a config asking for
+## 200. See `FrameClock.tick`.
 const TOLERANCE := 3
 
 

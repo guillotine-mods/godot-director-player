@@ -362,8 +362,63 @@ func _scan(dir_path: String, prefix: String) -> void:
 ## "beside the movie". Both mean the same thing here, since resolution is
 ## already relative, so they are normalised away rather than interpreted.
 func _strip_decoration(name: String) -> String:
-	var out := name.strip_edges()
+	var out := _drop_root_prefix(name.strip_edges())
 	out = out.replace("\\", "/").replace(":", "/")
 	while out.begins_with("@/") or out.begins_with("/"):
 		out = out.substr(out.find("/") + 1)
 	return out
+
+
+## A reference that already names the game root drops it and becomes root-relative.
+##
+## **The engine hands the movie absolute paths, and the movie hands them back.**
+## `the moviePath` and `the pathName` both answer `preview.movie_path()`, which is
+## a `res://` path, and Lingo concatenates onto it: `go(1, the moviePath &
+## "tennis.dir")` is written 8 times in `reference/lingo/`, and Magic Hat's
+## `utils.cst` stores the same string in `gCDpath` whenever the ini's `CDPATH=` is
+## blank -- which the recovered `magichat.ini` blanks deliberately -- so
+## `CDpath() & DirChar() & "magichat"` measures as
+## `res://test-games/itamar-magichat/\magichat`.
+##
+## Without this those still resolved, and that is the danger rather than the
+## reassurance: `_strip_decoration` turns the `:` of `res://` into a separator, so
+## the whole absolute path became a tail no index key could match and the answer
+## came out of `_by_name`, the **bare filename** last resort. That resort exists
+## for linked casts naming an authoring path that no longer exists
+## (`macintosh hd:pip2 full:master.cst`), where the filename is genuinely all that
+## survives; reaching it with a path that is exactly right is how `MASTER.CST` at
+## the root and `MASTER.CST` under `PIP2DATA` become a coin toss with a
+## `push_warning` on it. Dropping the prefix first makes the fully-qualified case
+## resolve through `_index` on its own key, which is the one lookup that cannot
+## pick the wrong copy.
+##
+## **This is the port's `findAbsolutePath`, and the reference puts it first for
+## the same reason.** `util.cpp:findPath` tries `findAbsolutePath(testPath)`
+## before it searches the current folder, the game root or any search path -- a
+## reference that already says where it is is not a partial match to be fuzzed.
+##
+## **The ambiguity half is unverified against this corpus and implemented anyway.**
+## Five of the eight roots ship a duplicated container basename
+## (`master.cst` in `piposh`, `piposh-en`, `piposh-ru`, `piposh2`; `texts.cst` in
+## two of those; `same.cst` in `itamar-magichat`), and every one of them is a
+## *cast*, while the fully-qualified references measured today (`the moviePath &
+## "<movie>"`, 8 sites in `reference/lingo/`) all name movies that are unique. So
+## no shipped title currently resolves the wrong copy. The path that would --
+## `SetCastsFileName`'s `castLib(N).fileName = ConvertToPath(str)`, where
+## `ConvertToPath` expands `CD$` to exactly the engine path this function strips
+## -- is one `[CAST]` section in one ini away, and is dead only because the
+## recovered `magichat.ini` has no such section.
+##
+## Case-insensitive and separator-insensitive for the same reason the index is:
+## the caller's spelling comes from a Lingo string built out of `DirChar()`, so it
+## may well arrive with backslashes where `root` has forward ones. A name that
+## does not begin with the root is returned untouched, so every relative reference
+## -- which is nearly all of them -- reaches the rest of the pipeline unchanged.
+func _drop_root_prefix(name: String) -> String:
+	if root == "":
+		return name
+	var base := root.replace("\\", "/").trim_suffix("/").to_lower()
+	var probe := name.replace("\\", "/").to_lower()
+	if not probe.begins_with(base + "/"):
+		return name
+	return name.substr(base.length() + 1)

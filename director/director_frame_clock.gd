@@ -11,7 +11,14 @@ extends RefCounted
 ## sound waits, and this decides what the playhead does about them. The rate is
 ## read here, from the raw cell, for the reason below.
 ##
-## Three properties of Director that are easy to lose in a port:
+## Four properties of Director that are easy to lose in a port:
+##
+## **A step the engine could not afford is dropped, not owed back.** The next
+## frame's due time is recomputed from *now* once per update cycle, so a cycle
+## that ran long makes that one frame longer and leaves nothing behind it. This
+## is the property a port loses by writing the obvious accumulator, and it is
+## the whole subject of `tick`, which carries the reference lines and the
+## measurement.
 ##
 ## **A wait is a state polled every tick, not a sleep** (§9.2). The movie keeps
 ## rendering and keeps taking input through one — which is the only way a
@@ -69,16 +76,6 @@ const DEFAULT_FPS := 15.0
 ## the number. See `rate_from_tempo`. The reference's threshold, in its own
 ## file-version numbering — the same word `DirectorConfig.version` reads.
 const FILE_VERSION_D6 := 0x4C2
-## The most score ticks one real frame may be asked to make up.
-##
-## Not a Director rule. Director recomputes the next frame's due time from *now*
-## once per update, so a tick that runs late makes that one frame longer and no
-## debt survives; a port that accumulates `delta` instead owes every millisecond
-## it lost. The compile-and-open pause at movie start is around half a second,
-## which at 15 fps is seven frames of walk-state-machine owed in a single burst
-## the moment the first frame is drawn. The cap keeps ordinary jitter smoothed —
-## which the accumulator is there for — and refuses to replay a stall.
-const MAX_CATCHUP_STEPS := 4
 ## The numbering a `puppetTempo` argument is read in, whatever the movie's own
 ## file version is.
 ##
@@ -119,8 +116,10 @@ const REASON_PALETTE := "palette"
 ## The rate the score last asked for. Carried forward across frames, as Director
 ## does: a frame with no tempo keeps the rate the last one set.
 var fps := DEFAULT_FPS
-## Seconds of score time owed but not yet stepped.
-var _owed := 0.0
+## Seconds of the movie's own clock still to run before the next score step is
+## due. Counted down by `tick` and **re-armed by assignment**, never by addition;
+## that one word is the whole of Director's dropped-step rule. See `tick`.
+var _due_in := 0.0
 ## Milliseconds left on a timed hold — a tempo delay, or a transition.
 var _hold_ms := 0.0
 ## Why, for the HUD and for the harnesses. "" when nothing is holding.
@@ -231,7 +230,10 @@ var movie_file_version := 0
 
 func reset(rate: float = 0.0) -> void:
 	fps = rate if rate > 0.0 else movie_default_fps
-	_owed = 0.0
+	# Zero, so the first tick of a movie steps rather than waiting out a period.
+	# `Score::startPlay` sets `_nextFrameTime = 0` (`score.cpp:299`), which its
+	# `millis < _nextFrameTime` test reads as "due now".
+	_due_in = 0.0
 	_hold_ms = 0.0
 	_transition_ms = 0.0
 	_hold_reason = ""
@@ -613,14 +615,74 @@ func hold_reason() -> String:
 	return _hold_reason
 
 
-## Score ticks due after `delta` seconds of real time.
+## `delta` seconds of the movie's clock have passed: is a score step due?
 ##
-## Ticks are counted whether or not the playhead is held, because they are the
-## movie's clock and not the playhead's: film loops animate through a wait the
-## same way they animate through a room that is holding itself still, which is
-## what a character talking on a wait-for-click frame looks like. The caller
-## asks `playhead_held()` separately to decide whether to run the frame step.
-func tick(delta: float) -> int:
+## **At most one, and time the engine could not afford is dropped rather than
+## owed back.** That is `Score::updateNextFrameTime` (`score.cpp:531-632`), which
+## ends every arm with `_nextFrameTime = g_system->getMillis() + 1000/rate` — an
+## *absolute* re-arm from the moment the step's work finished, assigned and never
+## accumulated — and `Score::update` calls it exactly once per cycle, including
+## the "loading the same frame" path a room holding itself with `go to the frame`
+## takes (`score.cpp:443-528`, `:640-711`). `isWaitingForNextFrame` then refuses
+## the next step while `millis < _nextFrameTime` (`score.cpp:433-434`), so an
+## update that ran long makes *that one frame* longer and leaves no debt behind
+## it. Director drops score steps it cannot afford and never repays them.
+##
+## This counts down to the same instant instead of comparing against a wall
+## clock, because the seconds handed in here are the *movie's* and not the
+## machine's: `director_preview.gd:_fast_forward_delta` scales them, and a clock
+## reading `Time.get_ticks_msec()` would ignore the toggle entirely. `_due_in` is
+## therefore `_nextFrameTime - getMillis()` carried as a countdown, and the line
+## that matters is the assignment — `_due_in = period`, discarding the overshoot,
+## where the accumulator this replaces wrote `_owed -= period` and kept it.
+##
+## **What the accumulator cost, measured.** It banked `delta` and drained up to
+## four steps in one rendered tick. Measured on Itamar Park's arcade — the movie
+## `bugs.md` 86 was filed from, `torfim.dir` frame 20 `[Ant]`, 80 fps tempo, with
+## `Engine.max_fps` pinned to 60 to stand for a display
+## (`tools/scratch/playrate.gd -- --root res://test-games/itamar-park --file
+## torfim/torfim.dir --max-fps 60 --steps 1200 --clicks "play+10:11" --at 600
+## --sample 60`), over 60 rendered ticks:
+##
+##   accumulator   136 score steps in 1.73 s — 78.7/s, **2.27 steps per paint**,
+##                 and the paint rate itself down to 34.7 Hz because each one
+##                 carried 2.27 `exitFrame`s of Lingo
+##   this          58 score steps in 1.04 s — 56.0/s, **0.97 steps per paint**,
+##                 at 57.7 Hz
+##
+## The accumulator hit the movie's stated 80 fps and the player saw a third of
+## it: two of every three states were stepped and never drawn. Director cannot
+## do that — one `Score::update`, one step, one render — and this now cannot
+## either. `exitFrame` tracked the step count exactly in both runs, which also
+## disposes of `bugs.md` 86's second suspect: nothing was re-entering the frame
+## inside a step, the burst was the drain and only the drain.
+##
+## The cold-art case is worse still and is what the cap made invisible: at 12.5 ms
+## a step, any rendered tick costing 50 ms reached the ceiling, so a 200 ms tick
+## returned 4 where 16 were owed — a quarter of the tempo — and then burst as the
+## art warmed. `discount` existed only to take the preloader's own milliseconds
+## back out of that debt and is gone with it: there is no debt left to subtract
+## from, and pushing `_due_in` forward instead would make the movie run *slower*
+## than Director, which spends the same milliseconds and simply arrives late.
+##
+## **A tempo above the rate the host loop turns over at is not reached, and that
+## is Director's answer too.** The reference takes one score step per turn of
+## `DirectorEngine::run`'s loop, which ends in `delayMillis(10)`
+## (`director.cpp:370-405`), so it cannot exceed about 100 steps a second whatever
+## the score asks for and drops the difference. Here the loop turn is the rendered
+## `_process` frame, so a movie at 80 fps on a 60 Hz display plays at 60. Raising
+## the ceiling by draining a queue is precisely the accumulator, and the same
+## title says why it does not matter: `torfim.dir`'s scroll is regulated against
+## `the ticks`, not against the frame rate, which is how a 1990s title survived
+## machines that could not hit 80 either.
+##
+## Returned as "a step is due" rather than a count, because a count is a promise
+## this cannot keep: the caller's loop over it was where the burst was spent.
+## Whether the playhead may *use* the step is a separate question — a hold does
+## not stop the movie's clock, because film loops animate through a wait exactly
+## as they animate through a room holding itself still — so the caller asks
+## `playhead_held()` for that and counts this either way.
+func tick(delta: float) -> bool:
 	if delta > 0.0:
 		_hold_ms = maxf(0.0, _hold_ms - delta * 1000.0)
 		# The transition's own share runs down with it, and first: Director spends
@@ -629,36 +691,15 @@ func tick(delta: float) -> int:
 		_transition_ms = maxf(0.0, _transition_ms - delta * 1000.0)
 		if _hold_ms <= 0.0:
 			_hold_reason = ""
-	var step := 1.0 / maxf(fps, 0.001)
-	_owed = minf(_owed + delta, step * MAX_CATCHUP_STEPS)
-	var due := 0
-	while _owed >= step:
-		_owed -= step
-		due += 1
-	return due
-
-
-## Forget time the movie spent loading rather than playing.
-##
-## The catch-up in `tick` is right for the case it was written for: a step that
-## runs long because the machine was busy should not slow the movie down, so the
-## debt is replayed and wall-clock pacing holds. It is wrong for a step that ran
-## long because the engine was *decoding artwork*, because Director would not
-## have been decoding then at all -- it preloads -- and replaying four steps to
-## make the time back turns a one-frame stall into a visible jump.
-##
-## Measured, before `director_preloader.gd` existed: `strtgame` frame 38 spent
-## 145.7 ms decoding inside one step and DAY1 frame 39 spent 105.5 ms, against a
-## 66 ms step at 15 fps. Each of those bought a multi-step burst on the frame
-## after it, which is what a menu background loop "jumping at the end" was.
-##
-## The preloader is the fix; this is the guard for what it cannot cover -- a
-## marker jump straight onto cold art, or the first frame after a movie change.
-## Called with the seconds actually spent, and discounts them from the debt.
-func discount(seconds: float) -> void:
-	if seconds <= 0.0:
-		return
-	_owed = maxf(0.0, _owed - seconds)
+	_due_in -= maxf(delta, 0.0)
+	if _due_in > 0.0:
+		return false
+	# `<= 0` rather than `< 0` above, and assignment rather than `+=` here. A movie
+	# whose tempo divides the tick exactly -- 60 fps against a 60 Hz process loop,
+	# which is what the fast-forward toggle asks for -- leaves `_due_in` at exactly
+	# zero, and a strict test would refuse every step it ever offered.
+	_due_in = 1.0 / maxf(fps, 0.001)
+	return true
 
 
 ## Everything a save state has to carry, and nothing derived.
@@ -676,7 +717,11 @@ func discount(seconds: float) -> void:
 func state() -> Dictionary:
 	return {
 		"fps": fps,
-		"owed": _owed,
+		# The phase, not a debt. An old save carrying the retired `owed` key is
+		# read as zero here, which means "a step is due on the first tick after
+		# the restore" -- at most one step early, where honouring the debt it
+		# recorded would replay up to four.
+		"due_in": _due_in,
 		"hold_ms": _hold_ms,
 		"transition_ms": _transition_ms,
 		"hold_reason": _hold_reason,
@@ -699,7 +744,7 @@ func restore_state(from: Dictionary) -> void:
 	if from.is_empty():
 		return
 	fps = float(from.get("fps", fps))
-	_owed = float(from.get("owed", 0.0))
+	_due_in = float(from.get("due_in", 0.0))
 	_hold_ms = float(from.get("hold_ms", 0.0))
 	_transition_ms = float(from.get("transition_ms", 0.0))
 	_hold_reason = str(from.get("hold_reason", ""))

@@ -238,7 +238,7 @@ static func mouse_button(host, event: InputEventMouseButton, at: Vector2,
 	# Before the window routing too: it is the preview's own control and it is
 	# drawn over everything, including a window.
 	if skip_rect.has_point(at):
-		host.skip_to_end()
+		host.skip_release()
 		return
 	# **`route_press`, not `route_click`.** `route_click` is press *and* release
 	# back to back, and calling it from the button-down branch meant the entire

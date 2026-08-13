@@ -1637,6 +1637,25 @@ During a wait, **video keeps playing
 and the window keeps rendering**. Wait-for-click also drives the alternating
 cursor and is cleared by the mouse-down handler, not by the score.
 
+**A step the engine cannot afford is dropped, never owed back**, and this is the
+fourth arm's other half. `updateNextFrameTime` ends every arm by *assigning*
+`_nextFrameTime = getMillis() + 1000/rate` (`score.cpp:531-632`) — absolute, from
+the moment the cycle's work finished — and `Score::update` calls it once per
+cycle, the "loading the same frame" path a `go to the frame` room takes included.
+So an update that ran long makes **that one frame** longer and leaves nothing
+behind it: Director never replays lost time, and a port that accumulates `delta`
+instead owes every millisecond it lost and pays it as a burst of score steps
+inside one paint. `bugs.md` 86 was that burst measured and misread.
+
+It follows that **a tempo above the rate the host loop turns over at is simply
+not reached**. One `Score::update` is one score step, and the projector's loop
+ends in `delayMillis(10)` (`director.cpp:370-405`), so the reference cannot
+exceed about 100 steps a second whatever the score asks for, and a machine whose
+loop turns over 30 times a second runs a 30 fps movie and no faster. The excess
+is dropped by the same assignment, not queued. `director/director_frame_clock.gd:
+tick` carries this rule and the measurement behind it; `tools/step_rate.gd`
+checks it against each movie's own stated tempo across a corpus.
+
 `the delay` is separate and **latched**: only the first `delay` in a run of
 `exitFrame` iterations takes effect, because the score loops on `exitFrame` and
 would otherwise re-arm it every pass.

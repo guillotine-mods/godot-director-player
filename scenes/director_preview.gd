@@ -128,10 +128,6 @@ var _palette_state = PaletteState.new()
 ## to a stream and handing it to the mixer.
 var _score_sound = ScoreSound.new()
 var _index := 0
-## Frames SKIP has already sent the playhead to, in this movie. A marker list is
-## not a list of scenes -- see `skip_to_end` -- and without this the button can
-## cycle. Cleared with the rest of the per-movie state.
-var _skip_sent: Dictionary = {}
 ## Tempo, delays, wait-for-click and the time a transition takes. See
 ## `director/director_frame_clock.gd`; this node owns only the phase order.
 var _clock = FrameClock.new()
@@ -2282,119 +2278,103 @@ func _sprite_rect(sprite: Dictionary) -> Rect2:
 	return _stage_rect(sprite)
 
 
-## Jump to the last frame of the movie currently playing.
+## SKIP -- stop whatever the frame is waiting for, and move the playhead nowhere.
 ##
-## Deliberately blunt: it cuts the voice, drops whatever the frame is waiting on
-## and moves the playhead. Whatever the room was holding for â€” a line of speech,
-## a walk â€” is abandoned rather than unwound, so the frame is entered with
-## whatever state the skipped frames never got to set. That is fine for looking at
-## a movie's end and would not be fine in the game.
-func skip_to_end() -> void:
+## **A debug affordance, not an engine feature.** Director has no skip, so there
+## is nothing to be faithful to: this is a judgement about a button, and
+## `debug_keys.enabled()` keeps it out of a release build. That freedom is why
+## the answer is allowed to be "do less".
+##
+## It cuts the voice on channel 1 and drops every hold the clock is carrying --
+## a tempo delay, a transition, a wait-for-click, a wait-for-sound, a
+## wait-for-video. Then it returns. The playhead is left exactly where the movie
+## put it, and the movie's own scripts drive on from there.
+##
+## ## Why it no longer jumps
+##
+## It used to walk to the next marker, falling back to the last frame. That cost
+## four separate reports (`bugs.md` 32, 37, 96 and `docs/bugs-closed.md` 42), and
+## each one is the same mistake wearing different clothes: **a marker labels a
+## position, and nothing in a `VWLB` says which positions are scenes.** No
+## title-agnostic rule can recover that, which is what makes the walk
+## unpatchable rather than merely buggy:
+##
+## - MURDER1's last frame (883) runs `go("conect2")`, and `conect2` is frame 790
+##   -- so the fallback jumped *backwards* into the tail being skipped and
+##   replayed 94 frames. From the player's chair SKIP did nothing, so they
+##   pressed it again.
+## - DAY1's last frame (2783) runs `play "done"` with nothing on the stack, and
+##   it is also the last frame, so the score's own advance had nowhere to go
+##   either. The playhead never moved again. A whole session went into "the
+##   cursor never comes back", which was the cursor recomputing correctly over a
+##   dead playhead (`bugs.md` 32).
+## - Rating's `MAINMENU.dir` parks its CD drive-letter probe (`option1`..
+##   `option6`) after the playable strip, each frame ending in `go(2)`. Every
+##   jump was forward and correct and the *cycle* 14 -> 46 -> 504 -> 587 -> 2
+##   belonged to the movie (`bugs.md` 37).
+## - `piposh-dream`'s `COMEIN.dir` lays every character's segment out as
+##   `<init>` / `<play>` / `<hit>` / `<lose>` / `<win>`, all five marked. Pressing
+##   SKIP twice from the pot game's idle loop landed on `f1` without `return1`,
+##   which is the segment with no `plantcounter`, no puppeted pot channels and no
+##   `keyUpScript` -- a game whose arrows do nothing, reported as "the fritz game
+##   is broken" (`bugs.md` 96).
+##
+## `_skip_sent` used to bound the cycle by refusing to revisit a marker. It
+## closed the Rating loop and left the walk itself untouched, and it added a
+## failure of its own: a player who had already walked past a segment's
+## initialiser could never get back to it. It is gone with the walk.
+##
+## ## Why releasing is enough now, when it was not before
+##
+## Releasing alone *was* tried first and was rejected, on two measurements that
+## are both still true and neither of which argues for a jump any more:
+##
+## **"A frame that is simply playing holds nothing, so SKIP did nothing at all in
+## EXODUS."** True -- and a linear cutscene running at its own tempo is what the
+## fast-forward toggle is for. `_fast_forward_fps` (PageDown,
+## `debug_keys.gd:fast_forward`) scales the frames *and* the tempo delays and
+## transitions off the same delta, so it runs EXODUS out through its own scripts
+## instead of over them. That is strictly better than the jump on the one case
+## the jump was kept for: the scripts between here and the scene's end are the
+## ones that puppet the sprites and set the globals the next scene reads, and
+## running them fast is the difference between arriving and teleporting. Adding a
+## second button that skips the same frames is how the marker walk was justified
+## in the first place.
+##
+## **"A `go to the frame` with a wait on it re-arms the wait on the very next
+## entry, so the release is consumed by one step."** Also true, and correct
+## Director behaviour (`bugs.md` 60). But a frame that re-arms its own wait every
+## step is a frame whose *script* decides when to leave, and the thing it is
+## usually deciding on is the sound -- which is the third lever, below, not the
+## jump. Where the script is waiting on a click instead, one press of SKIP
+## clearing the wait and the frame re-arming it is the honest outcome: the movie
+## is asking the player for something, and a debug button should not answer for
+## them.
+##
+## **Channel 1 only.** Piposh gates every line of speech on the sound rather than
+## on a wait -- `if not soundBusy(1) then go(marker(1)) else go(marker(0) + 1)` --
+## which no clock release can reach. Measured in BRJDAY1 from a settled talk, on
+## the movie's own clock: untouched, the segment is left after 1334 ms when the
+## voice ends; jumping alone left it in 18 ms with the voice still playing, so
+## the next segment simply re-waited; **stopping the channel leaves it in 35 ms
+## with the voice cut, by the movie's own `go(marker(1))`** -- the movie's exit,
+## not the button's. 1 is the voice and 2 is the score's background song
+## (`songs\strtgame\songa.aif`), which these movies stop themselves when they mean
+## to (`sound stop 2`, six times in DAY1); counted over the piposh scripts the
+## gate is `soundBusy(1)` 28 times against `soundBusy(2)` once, so stopping 2 as
+## well would silence the music for the rest of the movie to release a wait that
+## is almost never on it.
+##
+## So what is left is exactly the three levers that release the movie *into its
+## own scripts*, and nothing that moves the playhead behind their back. The
+## invariant that buys is the one `bugs.md` 96 asks for and no marker rule could
+## give: **SKIP can never land the playhead on a frame whose segment initialiser
+## has not run, because SKIP does not land the playhead anywhere.**
+func skip_release() -> void:
 	if _score == null or _score.frame_count <= 0:
 		return
-	# Two stages, and which one runs depends on whether the frame is waiting.
-	#
-	# **If something is holding the playhead, release it and stop.** That is a
-	# wait-for-click, a tempo delay, a wait-for-sound or a transition, and what
-	# the player means by SKIP there is "stop waiting" -- not "leave the scene".
-	# Releasing is enough; the movie's own scripts carry on from where they are.
-	#
-	# **If nothing is holding it, jump to the next marker.** A Director movie is
-	# a strip of independently labelled segments, so the marker after the
-	# playhead is the start of the next scene and is what "skip this bit" means.
-	# EXODUS has 15 markers across 448 frames, MURDER1 34 across 884.
-	#
-	# The last frame is the fallback and only the fallback, because **a movie's
-	# last frame is not its ending** -- it is only the last *segment's* last
-	# frame, and entering it from here runs a script that was written to be
-	# reached from somewhere else. `tools/skip_state.gd` measures the two ways
-	# that goes wrong: MURDER1's f883 runs `go("conect2")` at frame 790, so a
-	# jump there goes *backwards* into the tail being skipped and replays 94
-	# frames -- which is why SKIP looked like it did nothing and got pressed
-	# again -- and DAY1's f2783 runs `play "done"` with nothing on the stack, so
-	# the playhead never moves again and every symptom downstream reads as a
-	# different bug. Most of a session went into "the cursor never comes back",
-	# which was the cursor recomputing correctly over a dead playhead.
-	#
-	# Releasing alone was the previous attempt and it is not enough: a frame that
-	# is simply playing holds nothing, so SKIP did nothing at all in EXODUS.
-	# Releasing alone was the first attempt and it is not enough, in two separate
-	# ways that both present as "the button does nothing". A frame that is simply
-	# playing holds nothing, so there was nothing to release -- that was EXODUS.
-	# And a cutscene frame that *is* waiting is typically `go to the frame` with a
-	# wait on it, so it **re-arms the wait on the very next entry**: the release is
-	# consumed by one step and the playhead is held again before anything is
-	# drawn. That was MURDER1. So releasing is paired with a move rather than
-	# tried first and returned on.
-	#
-	# **And what holds the frame is not always the clock.** Piposh 1 gates every
-	# line of speech on the sound rather than on a wait, which `_clock.release()`
-	# cannot reach:
-	#
-	#     on exitFrame
-	#       if not soundBusy(1) then go(marker(1)) else go(marker(0) + 1)
-	#
-	# The `else` is the hold -- the segment loops on itself until the voice
-	# finishes -- so the release had nothing to release and the jump landed on a
-	# segment that ran the same test against the same still-playing sound and
-	# waited it out again. The playhead moved and the player heard the identical
-	# line to its end, which is why this reads as "SKIP does nothing, ever" rather
-	# than as the mis-landings entries 32 and 37 describe. Measured in BRJDAY1
-	# from a settled talk, on the movie's own clock: untouched, the segment is left
-	# after 1334 ms when the voice ends; jumping alone leaves it in 18 ms **with
-	# the voice still playing**, so the next segment re-waits; stopping the channel
-	# leaves it in 35 ms with the voice cut, by the movie's own `go(marker(1))`.
-	#
-	# So the stop is *added* to the release and the jump rather than replacing
-	# them, because the corpus needs both levers and neither covers the other.
-	# EXODUS is the proof that the jump has to stay: it is not gated on a sound at
-	# all, and stopping the channel there moves it 7649 ms against a 7793 ms
-	# baseline -- nothing. Both together are what leaves either movie promptly and
-	# quietly, 50 ms in EXODUS and 17 ms in BRJDAY1.
-	#
-	# **Channel 1 only.** 1 is the voice and 2 is the score's background song
-	# (`songs\strtgame\songa.aif`), which these movies stop themselves when they
-	# mean to -- `sound stop 2` appears in DAY1 six times. Counted over the piposh
-	# scripts the gate is `soundBusy(1)` 28 times to `soundBusy(2)` once in
-	# STRTGAME and 4 to 0 in BRJDAY1, so stopping 2 as well would silence the music
-	# for the rest of the movie to release a wait that is almost never on it. A
-	# scene that does wait on 2 still has the jump behind it.
 	lingo_stop_sound(1)
 	_clock.release_all()
-	var target := -1
-	if _labels != null:
-		for marker in _labels.markers:
-			var at := int(marker.get("frame", -1))
-			if at > _index and not _skip_sent.has(at):
-				target = at
-				break
-	if target < 0 and not _skip_sent.has(_score.frame_count - 1):
-		target = _score.frame_count - 1
-	if target < 0 or target <= _index:
-		# Every marker ahead has already been skipped to once. Stop rather than
-		# wrap, because wrapping is how this becomes a loop the player cannot leave
-		# -- and a marker list is not a list of scenes.
-		#
-		# Rating's `MAINMENU.dir` is the case. Its markers run past the menu into
-		# `option1`..`option6`, a CD drive-letter probe entered only by name whose
-		# frames end in `go(2)`. SKIP from the menu lands on 587, the probe sends
-		# the playhead back to frame 2, and pressing again cycles
-		# 14 -> 46 -> 504 -> 587 -> 2 for ever. Each jump is forward and correct;
-		# the cycle belongs to the movie, not to the button.
-		#
-		# Nothing in a `VWLB` says which markers are scenes, so no title-agnostic
-		# rule can tell `option1` from `mainscreen` by looking. Refusing to send the
-		# playhead to the same marker twice needs no such rule and bounds it.
-		print("skip: nothing further to skip to in %s" % movie_name())
-		return
-	_skip_sent[target] = true
-	_index = target
-	_held = false
-	_clock.reset()
-	_pending_enter = null
-	# Entered by the next step, the way any jump from outside the step loop is:
-	# that step skips `exitFrame`, renders, and sends `enterFrame`.
-	_jump_queued = true
 	queue_redraw()
 
 

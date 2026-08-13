@@ -1,5 +1,5 @@
 extends RefCounted
-## One step of the movie, and the tick that decides how many steps are owed.
+## One step of the movie, and the tick that decides whether one is due.
 ##
 ## Two orderings live here and both are load-bearing, so they are stated once at
 ## the top rather than rediscovered inside the functions.
@@ -174,8 +174,8 @@ static func begin_transition(host, frame: Dictionary, table) -> bool:
 	return true
 
 
-## One tick of the movie: release what can be released, then take whatever steps
-## the clock says are due.
+## One tick of the movie: release what can be released, then take the one score
+## step the clock owes, if it owes one.
 static func tick(host, delta: float) -> void:
 	# The player's button, sampled at the *engine's* rate rather than the score's.
 	# A click is 40-100 ms and a score step here is 125-250 ms, so a movie that
@@ -233,48 +233,54 @@ static func tick(host, delta: float) -> void:
 	if host._palette_state.effect_running() and host._palette_state.step(delta * 1000.0):
 		host._palette_applied()
 	# Pay for the artwork of frames not yet reached, before asking the clock for
-	# work. Time-boxed, so this cannot become the stall it exists to prevent --
-	# and measured *and discounted*, because a movie should not owe catch-up
-	# steps for time Director would have spent preloading.
+	# work. Time-boxed, so this cannot become the stall it exists to prevent.
+	#
+	# It used to be measured and handed to `FrameClock.discount`, on the argument
+	# that a movie should not owe catch-up steps for time Director would have spent
+	# preloading. There is no debt left to discount from: the clock re-arms
+	# absolutely and drops what it could not afford, which is
+	# `Score::updateNextFrameTime`'s own arithmetic, so the preloader's
+	# milliseconds now cost exactly what every other millisecond in the tick costs
+	# -- the frame they land on is longer, and the frame after it is not shorter.
 	if host._preloader != null:
-		var loading := Time.get_ticks_usec()
 		host._preloader.run(host._index, host._preload_one, host._effective_ahead)
-		host._clock.discount((Time.get_ticks_usec() - loading) / 1000000.0)
-	var due: int = host._clock.tick(delta)
-	if due <= 0:
+	# **One score step per tick at most, and no queue behind it.** The loop that
+	# used to be here is the half of `bugs.md` 86 that was real: measured on that
+	# entry's own movie, `torfim.dir` frame 20 at 80 fps against a 60 Hz cap, it
+	# took 2.27 score steps per paint and dragged the paint rate down to 34.7 Hz
+	# doing it, so two of every three states the movie stepped through were never
+	# drawn. `Score::update` takes one score step per call and the projector's loop
+	# calls it once per turn (`score.cpp:640-711`, `director.cpp:370-405`); see
+	# `FrameClock.tick` for both numbers and for what this does to a movie whose
+	# tempo is above the loop's own rate.
+	if not host._clock.tick(delta):
 		return
-	for _i in due:
-		# Director's `pause` freezes the film loops with the playhead and a *hold*
-		# does not: `Score::incrementFilmLoops` returns early on `_playbackPaused`
-		# and runs straight through a wait-for-click. So this is tested ahead of the
-		# tick count rather than beside the hold below -- `host._ticks` is the film
-		# loops' clock, and a paused room whose characters keep talking is what
-		# skipping it looks like. The rest of what `pause` suspends is one guard in
-		# `director_preview.gd:_advance`.
-		if paused(host):
-			continue
+	# Director's `pause` freezes the film loops with the playhead and a *hold*
+	# does not: `Score::incrementFilmLoops` returns early on `_playbackPaused`
+	# and runs straight through a wait-for-click. So this is tested ahead of the
+	# tick count rather than beside the hold below -- `host._ticks` is the film
+	# loops' clock, and a paused room whose characters keep talking is what
+	# skipping it looks like. The rest of what `pause` suspends is one guard in
+	# `director_preview.gd:_advance`.
+	if not paused(host):
 		# Counted before the hold is tested, not after: a wait-for-click frame
 		# with a character talking on it must not freeze the character.
 		host._ticks += 1
-		if host._clock.playhead_held():
-			continue
-		if host._pending_enter != null:
-			# The transition has finished arriving; the frame it revealed gets its
-			# `enterFrame` now.
-			var resumed: Dictionary = host._pending_enter
-			host._pending_enter = null
-			host._dispatch("enterFrame", resumed)
-			continue
-		host._advance()
-		# The press has now been offered to a step, so it stops being owed. What
-		# the button is *still* doing it says for itself, which is why this is the
-		# live state and not `false`: a held button keeps reading down, and
-		# `if the mouseDown then go(marker(1)) else go(marker(0))` -- the
-		# charge-and-fire idiom -- needs both halves to be honest. Cleared here
-		# rather than at the top of the tick because the steps of one tick run
-		# back to back with no sample between them, so only the first of a
-		# catch-up burst may see a press that is already over.
-		host._mouse_down_seen = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		if not host._clock.playhead_held():
+			if host._pending_enter != null:
+				# The transition has finished arriving; the frame it revealed gets its
+				# `enterFrame` now.
+				var resumed: Dictionary = host._pending_enter
+				host._pending_enter = null
+				host._dispatch("enterFrame", resumed)
+			else:
+				host._advance()
+				# The press has now been offered to a step, so it stops being owed.
+				# What the button is *still* doing it says for itself, which is why
+				# this is the live state and not `false`: a held button keeps reading
+				# down, and `if the mouseDown then go(marker(1)) else go(marker(0))`
+				# -- the charge-and-fire idiom -- needs both halves to be honest.
+				host._mouse_down_seen = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	# `stage_redraw` rather than `queue_redraw`: this is the *movie's* repaint and
 	# `the updateLock` suppresses it. The engine's own repaints -- a resize, a
 	# debug overlay, a palette change -- still call `queue_redraw` directly,

@@ -333,6 +333,11 @@ const Media := preload("res://scenes/preview/media.gd")
 ##   `video_readers`   "lib:id" -> `{wanted, reader, path}` — the open AVI
 ##   `video_frames`    channel -> `{frame, member, size, texture}` — the picture
 ##   `video_players`   channel -> the `AudioStreamPlayer` its soundtrack runs on
+##   `video_streams`   channel -> the hidden `VideoStreamPlayer` a Theora sidecar
+##                     decodes on. Separate from `video_players` because the two
+##                     hold different node types for different backends and a
+##                     dictionary that held either would need a type test at
+##                     every use.
 ##
 ## The three video entries are the decoder's, and they die with the movie for a
 ## fourth reason on top of the three above: each holds an open file handle and a
@@ -345,6 +350,7 @@ var media_facts: Dictionary = {}
 var video_readers: Dictionary = {}
 var video_frames: Dictionary = {}
 var video_players: Dictionary = {}
+var video_streams: Dictionary = {}
 
 ## `the digitalVideoTimeScale` — the units per second Director converts a video
 ## sprite's `movieTime` into when a movie asks for one time scale across members
@@ -1509,6 +1515,39 @@ func _go(args: Array) -> Variant:
 	if movie == "" and spoken.has("movie") and where != null:
 		movie = str(where)
 		where = null
+	# **The two-argument function form is positional, and nothing above covers
+	# it when the name carries no extension.** `lingo-builtins.cpp:b_go` pops the
+	# last argument first and branches on its *type*, not on how it is spelled: a
+	# STRING there is the movie and the remaining argument is the frame; an INT
+	# there means the first argument is the frame and the rest is discarded. No
+	# extension is consulted anywhere -- `Window::setNextMovie` is handed the raw
+	# string and `findMoviePath` appends the extensions itself.
+	#
+	# Recognising the movie by its extension alone is therefore a narrower rule
+	# than Director's, and the corpus reaches past it. Magic Hat's `logo.dir`
+	# frame 6 is
+	#
+	#     go(1, GetMoviePath(CDpath() & DirChar() & "magichat"))
+	#
+	# and `GetMoviePath` (`utils.cst`, the movie's own handler) hands back its
+	# argument unchanged when the ini has no `[MOVIE]` section -- so the second
+	# argument is a path with **no extension at all**. Nothing looked like a
+	# container, nothing said the word `movie`, and the loop above had already
+	# taken the `1` as the destination, so the path was dropped on the floor and
+	# the statement degraded to `go(1)`. Measured before this line: the playhead
+	# ran f4, f5, then **f0 of logo.dir**, replaying the ten-second logo for ever
+	# (`bugs.md` 95). It was never a path-resolution fault -- `resolve` was not
+	# reached with the name at all.
+	#
+	# Ordered after the two rules above rather than replacing them, because those
+	# two also serve the *command* spellings (`go to movie "x"`,
+	# `go to frame "y" of movie "x.dir"`), whose word stripping leaves the values
+	# in an order the stack rule was never written for. This only adds the case
+	# they both decline, which is exactly the case `b_go` handles by position.
+	if movie == "" and not spoken.has("movie") and values.size() == 2 \
+			and typeof(values[1]) == TYPE_STRING:
+		movie = str(values[1])
+		where = values[0]
 	if movie != "":
 		preview.lingo_go_movie(movie, where)
 		request_suspend("go")
@@ -2856,6 +2895,25 @@ func get_sprite_prop(which: int, prop: String) -> Variant:
 		"trackpreviouskeytime", "trackprevioussampletime":
 			var answer: Variant = Media.read_sprite(preview, which, low)
 			return answer if answer != null else 0
+
+		# ------------------------------------------- the video Xtra's own surface
+		#
+		# `sprite(N).getPlaybackEvent`, `sprite(N).play()` and `sprite(N).stop()`
+		# — not Director's names but the media Xtra's, and the ones Magic Hat's
+		# intro and album are driven by. `preview/media.gd` says why the two
+		# commands arrive as property reads.
+		#
+		# **`null` is passed through here rather than folded to 0**, which is the
+		# one difference from the arm above and is the whole reason this is a
+		# separate arm. `docs/DIGITAL_VIDEO.md` §3 forbids answering
+		# `getPlaybackEvent` with a plausible value while nothing can play, and
+		# VOID is what the name answered when it was bound to nothing at all —
+		# so a member with no media goes on producing exactly the value all three
+		# of that title's video frames already skip on. Folding it to 0 would take
+		# the same branch in these two movies and be a different value to
+		# `voidP()` in any title nobody has run yet.
+		"getplaybackevent", "play", "stop":
+			return Media.read_sprite(preview, which, low)
 	return preview.lingo_sprite_prop(which, low)
 
 

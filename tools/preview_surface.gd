@@ -46,7 +46,7 @@ const FIELDS := [
 	"_overrides", "_palette", "_palette_state", "_paused", "_pending_enter",
 	"_play_stack", "_preloader", "_puppet_transition", "_ran", "_repaints",
 	"_score", "_score_sound", "_sel_end",
-	"_sel_start", "_sent", "_show_boxes", "_skip_sent", "_table", "_text_drawn",
+	"_sel_start", "_sent", "_show_boxes", "_table", "_text_drawn",
 	"_textures", "_ticks", "_traced", "_trail_image", "_transitions_played",
 	"_update_stage_calls", "_window_type", "_windows",
 ]
@@ -64,7 +64,7 @@ const MAY_BE_EMPTY := [
 	# off the node makes the save silently stop carrying it.
 	"_channel_constraints", "_field_text", "_last_click", "_last_member",
 	"_last_save", "_loop_start", "_loop_stats", "_member_editable",
-	"_play_stack", "_skip_sent", "_traced",
+	"_play_stack", "_traced",
 ]
 
 

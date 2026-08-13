@@ -109,20 +109,58 @@ func _clock_cases(h) -> void:
 	ticking.enter_frame({"fps": 15.0, "delay_ms": 1000, "wait_click": false})
 	var ticks := 0
 	for _i in 30:
-		ticks += ticking.tick(TICK)
+		if ticking.tick(TICK):
+			ticks += 1
 	h.check("ticks accrue through the hold", ticks > 0, "%d tick(s) in 500 ms" % ticks)
 	h.check("but the playhead is still held", ticking.playhead_held(), ticking.status())
 	h.complete("the movie clock keeps ticking while the playhead is held")
 
-	# A stall must not be replayed as a burst of frames the moment it ends: seven
-	# steps of a walk state machine in one paint is a teleport.
-	h.begin("a long stall is not owed back all at once")
+	# **Time the engine could not afford is dropped, never owed back.**
+	# `Score::updateNextFrameTime` assigns `_nextFrameTime = getMillis() +
+	# 1000/rate` at the end of every update cycle (`score.cpp:531-632`), so a cycle
+	# that ran long makes that one frame longer and leaves no debt; the accumulator
+	# this replaced banked `delta` and drained up to four steps in one paint, which
+	# is four `exitFrame`s against one render and, at a tempo above the display's
+	# rate, a fifth of the steps the score asked for.
+	#
+	# Asserted in both directions, because either half alone passes with the rule
+	# deleted: a two-second stall must yield **one** step and not a burst, and the
+	# tick after it must not still be paying the stall off.
+	var case := "a stall is dropped rather than owed back"
+	h.begin(case)
 	var stalled = Clock.new()
 	stalled.enter_frame({"fps": 15.0, "delay_ms": 0, "wait_click": false})
-	var burst := stalled.tick(2.0)
-	h.check("a two-second stall yields at most the cap",
-		burst <= Clock.MAX_CATCHUP_STEPS, "%d steps" % burst)
-	h.complete("a long stall is not owed back all at once")
+	h.check("a two-second stall at 15 fps yields one step, not thirty",
+		stalled.tick(2.0), "due")
+	var repaid := 0
+	for _i in 3:
+		if stalled.tick(0.001):
+			repaid += 1
+	h.check("and the ticks after it owe nothing", repaid == 0,
+		"%d step(s) replayed" % repaid)
+	# The other end of the same rule: a tempo above the rate the host loop turns
+	# over at is not reached, it is clamped, and the excess is dropped rather than
+	# queued. The reference is bounded the same way by its own 10 ms loop
+	# (`director.cpp:370-405`) -- see `FrameClock.tick`.
+	var quick = Clock.new()
+	quick.enter_frame({"fps": 80.0, "delay_ms": 0, "wait_click": false})
+	var fast := 0
+	for _i in 60:
+		if quick.tick(1.0 / 60.0):
+			fast += 1
+	h.check("an 80 fps movie on a 60 Hz loop steps 60 times a second, not 80",
+		fast == 60, "%d step(s) in 60 tick(s)" % fast)
+	# And the ordinary case it must not break: a movie slower than the loop steps
+	# at its own rate, which is every movie in both corpora.
+	var slow = Clock.new()
+	slow.enter_frame({"fps": 8.0, "delay_ms": 0, "wait_click": false})
+	var paced := 0
+	for _i in 60:
+		if slow.tick(1.0 / 60.0):
+			paced += 1
+	h.check("and an 8 fps movie still steps 8 times a second",
+		absi(paced - 8) <= 1, "%d step(s) in 60 tick(s)" % paced)
+	h.complete(case)
 
 	_puppet_tempo_cases(h)
 	_video_wait_cases(h)

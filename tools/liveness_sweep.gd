@@ -143,9 +143,16 @@ extends SceneTree
 ## The ceiling on that is **aliasing**, and it is the sampler's own failure mode:
 ## two score ticks between two samples turn a period-2 ping-pong into a constant,
 ## and the detector then reports the shape it exists to find as a healthy park.
-## `MAX_CATCHUP_STEPS` lets one process frame take four score steps, so a machine
-## that falls behind aliases whatever `--ff` says. Rather than trust a number
-## measured on one machine, every sample carries the **stride** it was taken at
+## The clock takes at most one score step per process frame now -- it re-arms
+## absolutely and drops what it could not afford, as `Score::updateNextFrameTime`
+## does -- so a sampler that reads once per process frame can no longer skip a
+## tick, and the stride below should read 1 throughout. It used to take four in
+## one frame whenever the machine fell behind, which aliased whatever `--ff`
+## said. The machinery is kept rather than deleted because the property it
+## guards is the sampler's and not the clock's: a sample taken every *other*
+## process frame would alias again, and a harness that can only be right while
+## another file behaves is the shape this repo keeps being bitten by. Every
+## sample carries the **stride** it was taken at
 ## and a sample that skipped a tick *clears the window* exactly as a hold does --
 ## so aliasing can cost a finding and can never invent one. What it cannot do is
 ## go unnoticed: the coverage (contiguously sampled ticks over ticks watched) is
@@ -748,9 +755,12 @@ func _run_ticks(preview: Node, count: int, cap_ms: int) -> void:
 ##
 ## The rate is **adaptive**, which is the only thing that makes the sweep usable
 ## on an art-heavy movie. A frame that spends 200 ms decoding a 2 MB backdrop
-## leaves the clock owing three or four score steps, `MAX_CATCHUP_STEPS` pays all
-## of them in one process frame, and the sampler sees one state where four
-## happened. Measured before this existed: `piposh-dream`'s three `hatul` rooms
+## used to leave the clock owing three or four score steps and pay all of them in
+## one process frame, so the sampler saw one state where four had happened; the
+## clock drops them now, and what is left is the cost itself -- an `--ff` of 60
+## against a movie painting at three frames a second still asks for a step the
+## sampler will not see for twenty frames. Measured before this existed:
+## `piposh-dream`'s three `hatul` rooms
 ## came back at 0% coverage and were reported clean over a movie nobody had
 ## looked at. So the requested `--ff` is a *ceiling*: it is halved on any sample
 ## that skipped a tick and crept back up while none does, down to `FF_FLOOR`,
@@ -832,8 +842,8 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 ## reaches the hit-pixel path, and asking it of every sprite of every sample cost
 ## a factor of nine: the sweep ran at 6.5 score ticks a second where the
 ## fast-forward had asked for 60, and, worse, the process loop then fell so far
-## behind the clock that `MAX_CATCHUP_STEPS` was taking four score steps between
-## two samples. A period-2 ping-pong sampled every four steps reads as a
+## behind the clock that the accumulator of the day was taking four score steps
+## between two samples. A period-2 ping-pong sampled every four steps reads as a
 ## *constant*, so the cost was not just slowness -- it blinded the detector to its
 ## own subject. The stride carried on every sample is what caught it, and that is
 ## why it is carried.

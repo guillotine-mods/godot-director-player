@@ -19,6 +19,13 @@ extends RefCounted
 ## movie can pay for its artwork before it needs it. This is that, without the
 ## authored hints: walk ahead of the playhead and decode what is coming.
 ##
+## The burst half of that measurement is gone independently of this file:
+## `FrameClock.tick` re-arms absolutely now and drops the time it could not
+## afford, as `Score::updateNextFrameTime` does, so a 145 ms step costs one long
+## frame and no longer buys a four-step replay on the frame after it. The stall
+## is still real and still this file's subject -- a dropped frame where new art
+## appears is exactly as visible as it ever was.
+##
 ## Two properties matter more than the lookahead distance:
 ##
 ## **It is time-boxed.** Preloading that itself overruns a step has moved the
