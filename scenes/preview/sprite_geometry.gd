@@ -39,6 +39,33 @@ const Ink := preload("res://director/director_ink.gd")
 ## `interaction.gd`'s hit test, which is `stage_rect().has_point()`.
 const KEEPS_ITS_OWN_SIZE := [8]  # shape
 
+## "This record's width and height were computed, not read off the disc."
+##
+## The one thing `drawn_size` below is deciding is whether a rect is *authoring
+## residue*, and that question only exists for a record that came out of a score.
+## A film-loop child's record is built in
+## `film_loop_view.child_sprite` a moment before it is drawn -- its size is the
+## member's own natural size scaled by the loop's squeeze (§1.6) -- so there is no
+## residue for the stretch flag to be asked about, and asking anyway is what
+## `bugs.md` 99 was: the child positions scaled and the children themselves did
+## not.
+##
+## **A separate key from `size_from_script` on purpose**, though `drawn_size`
+## honours both in the same breath. That one means "a Lingo write set this"
+## (`channel.gd:429`, the `size` kind, `the width of sprite N` and its `height`
+## twin) and it has a release rule and a puppet story attached to it. This one
+## means "the caller already did the arithmetic". They coincide in what
+## `drawn_size` does with them and in nothing else. `bugs.md` 80 makes the same
+## argument for a third cause that is coming -- a field grown by its own laid-out
+## text -- and turns it down as a reader of `size_from_script` for precisely this
+## reason: a size that sticks because a script wrote it and a size that sticks
+## because somebody computed it are different facts, and a `drawn_size` that
+## cannot tell them apart cannot be reasoned about later.
+##
+## It deliberately does **not** enter `texture_key`: it changes the drawn size,
+## which that key already carries, and not the pixels.
+const SIZE_COMPUTED := "size_computed"
+
 
 ## How big the sprite is drawn.
 ##
@@ -71,10 +98,22 @@ const KEEPS_ITS_OWN_SIZE := [8]  # shape
 ## film-loop children in `film_loop_view.child_sprite` behave "the opposite way":
 ## they never did -- the main score was the odd one out.
 ##
-## Three things keep their stated size: a sprite whose stretch flag is set, a
+## Four things keep their stated size: a sprite whose stretch flag is set, a
 ## sprite a script has resized (`sprite_state.effective` marks it, because
-## Director's `setWidth` makes the size stick without touching the flag), and a
-## shape, which has no natural size to reset to.
+## Director's `setWidth` makes the size stick without touching the flag), a record
+## carrying `SIZE_COMPUTED` — a film-loop child, whose rect was computed rather
+## than read off a score and so cannot be residue — and a shape, which has no
+## natural size to reset to.
+##
+## **`SIZE_COMPUTED` is tested above the shape and field branches, and that order
+## is the load-bearing half of `bugs.md` 99's fix rather than a tidiness.** A
+## squeezed loop's field child must be drawn at `natural * scale` like everything
+## else inside the loop, and `_field_size`'s `MAX(bbox, initialRect, maxHeight)`
+## would take it straight back up to the member's own size — the one answer that
+## is certainly wrong for a child of a loop drawn at a quarter size. The two
+## degenerate guards above it cannot swallow such a record either: `child_sprite`
+## clamps a scaled size to `maxi(1, ...)` in the same branch that sets the marker,
+## so a marked record always states at least 1x1.
 ##
 ## **A field is not one of them, and used to be.** `setCast` does except text
 ## from the dimension reset, but that is only the first half of what the
@@ -119,7 +158,8 @@ static func drawn_size(sprite: Dictionary, member: Dictionary) -> Vector2:
 		return Vector2(w, h)
 	if w <= 0 or h <= 0:
 		return natural
-	if bool(sprite.get("stretch", false)) or bool(sprite.get("size_from_script", false)):
+	if bool(sprite.get("stretch", false)) or bool(sprite.get("size_from_script", false)) \
+			or bool(sprite.get(SIZE_COMPUTED, false)):
 		return Vector2(w, h)
 	if KEEPS_ITS_OWN_SIZE.has(int(member.get("type", 0))):
 		return Vector2(w, h)

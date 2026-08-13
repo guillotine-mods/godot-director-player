@@ -28,7 +28,8 @@ extends SceneTree
 ## 145x257 and its child 220 draws 104x257 starting 61px in, so it hangs 20px off
 ## the right. Either the rect is not the union of the contents for those loops or
 ## the child's drawn size is not the one it was authored at (the child stretch
-## flag, `tools/film_loop_stretch.gd`'s subject). That is a real and separate
+## flag, whose populations `tools/film_loop_stretch.gd` separated before it was
+## deleted with the retired renderer's harnesses). That is a real and separate
 ## question, it is reported here as a number, and asserting on it would make this
 ## file fail for a reason that has nothing to do with scale.
 ##
@@ -52,6 +53,36 @@ extends SceneTree
 ## Delete the `* scale` from `film_loop_view.place_child` and this goes red with
 ## thousands of regressions; delete the size scaling in `child_sprite` and it goes
 ## red on the children that no longer fit their shrunken box.
+##
+## ### Which size is asked for, which is the third negative control
+##
+## The drawn size read here is **`Geometry.drawn_size(child_sprite(...), member)`**,
+## not `child_sprite`'s own answer, because that is the size the painter's leaf
+## branch really draws at: the artwork arrives from `host._texture_for`, which asks
+## `drawn_size`, and the registration offset comes off `texture.get_size()`. Asking
+## `child_sprite` instead measured the quantity the scaling *computes* rather than
+## the one the renderer *uses*, and the two disagreed by the whole squeeze:
+## `drawn_size` returned the member's natural size for any record without
+## the stretch flag, which is every film-loop child in the general case. That is
+## `docs/bugs-closed.md` 99, and this file passed over it — a harness green on the
+## wrong noun, which is the shape `porting-fidelity-verification` is about.
+##
+## So it is now a measured control rather than a story. Revert that fix — both
+## halves, since `child_sprite` names the constant `drawn_size` reads — and this
+## reports **41,816 regressed of 48,750** over `piposh2`, **26,746 of 27,750** over
+## `piposh-dream` and **2,077 of 2,578** over `rating`, while all three
+## natural-size lines and both nested lines stay exactly where they are.
+##
+## The **tolerance** stays derived from `child_sprite`'s scaled answer, and
+## `_case`'s comment says why at length: recomputing it against the new reading
+## would make the allowance `0.75 x natural` at this squeeze and report 0 regressed
+## by cancelling the bug instead of by its absence. That is the one edit here that
+## would look like tidying and would silently disarm the file.
+##
+## The **nested** leg keeps reading `child_sprite`'s answer, because `paint_loop`'s
+## type-2 branch does: it threads the record's own size into both `scaled_reg` and
+## `nested_scale` and never asks `drawn_size` at all. Two branches in the painter,
+## two readings here, and neither is a preference.
 ##
 ## ### One level down, for the same reason
 ##
@@ -345,7 +376,16 @@ func _case(lib: int, number: int, m: Dictionary, loop, table,
 			if cm.is_empty():
 				continue
 			var drawn: Dictionary = FilmLoopView.child_sprite(kid, kid_lib, cm, scale)
-			var kid_size := Vector2(int(drawn["width"]), int(drawn["height"]))
+			# Two sizes, because the painter reads two. A leaf's artwork comes back
+			# from `host._texture_for` at `Geometry.drawn_size`'s answer and its
+			# registration offset is taken from `texture.get_size()`, so that pair is
+			# what the containment test below has to be built from. `child_sprite`'s
+			# own answer is what `paint_loop` threads into the recursion instead, so
+			# that is what the nested box is built from, and what the tolerance is
+			# derived against. The two agreed trivially while only one of them was
+			# ever read here, and the day they stopped agreeing was `bugs.md` 99.
+			var scaled := Vector2(int(drawn["width"]), int(drawn["height"]))
+			var kid_size: Vector2 = Geometry.drawn_size(drawn, cm)
 			var reg: Vector2 = Geometry.scaled_reg(cm, kid_size)
 			var at: Vector2 = FilmLoopView.place_child(origin, space, kid, reg, scale)
 			# A child's drawn size is an integer, so it misses the exact scaled
@@ -357,12 +397,21 @@ func _case(lib: int, number: int, m: Dictionary, loop, table,
 			# rather than a number chosen to make the corpus quiet: `arcade2`'s
 			# `gunup` overshoots by 0.18px and `ultrablow`'s 1x1 marker by 0.006.
 			#
-			# The unscaled size comes from `child_sprite`'s own answer rather than
-			# from the size rule restated here, so this cannot drift from it.
+			# Both halves come from `child_sprite`'s own answers -- the scaled one and
+			# the unscaled one -- rather than from the size rule restated here, so the
+			# allowance cannot drift from the rule it is allowing for.
+			#
+			# **Deliberately not recomputed against `kid_size`**, which is the trap
+			# this line reads like an oversight of. `kid_size` is now `drawn_size`'s
+			# answer, so a tolerance taken against it would be the whole difference
+			# between the two -- an allowance of `0.75 x natural` at this squeeze --
+			# and it would report 0 regressed by cancelling the bug rather than by the
+			# bug being absent. The truncation being allowed for is `child_sprite`'s
+			# own `int()`, and that is where it stays.
 			var base: Dictionary = FilmLoopView.child_sprite(kid, kid_lib, cm)
 			var missed := Vector2(
-				absf(kid_size.x - int(base["width"]) * scale.x),
-				absf(kid_size.y - int(base["height"]) * scale.y))
+				absf(scaled.x - int(base["width"]) * scale.x),
+				absf(scaled.y - int(base["height"]) * scale.y))
 			var room := slack.grow_individual(
 				missed.x, missed.y, missed.x, missed.y)
 			out["frame %d child %d" % [i, int(kid["cast_id"])]] = {
@@ -370,11 +419,18 @@ func _case(lib: int, number: int, m: Dictionary, loop, table,
 				"art": Rect2(at, kid_size), "box": box,
 			}
 			if int(cm.get("type", 0)) == LOOP_TYPE:
-				# `at` and `kid_size` are already `paint_loop`'s own recursive
-				# arguments -- the origin it threads down and the size it derives
-				# `nested_scale` from -- so the nested box is read off the recursion
-				# rather than recomputed beside it.
-				_nested(kid_lib, kid, cm, table, Rect2(at, kid_size), missed, i, deep)
+				# `paint_loop`'s type-2 branch reads `child_sprite`'s size, not
+				# `drawn_size`'s -- it threads the record's own width and height into
+				# both `Geometry.scaled_reg` and `nested_scale` -- so the nested box is
+				# built from `scaled` and from its own `place_child`, which is that
+				# branch written out. Reading `kid_size` here instead would assert the
+				# leaf branch's arithmetic one level up, where the painter never uses
+				# it. The two answers coincide once a scaled record is honoured; the
+				# nested leg is on the record's side of that either way.
+				var nested_reg: Vector2 = Geometry.scaled_reg(cm, scaled)
+				_nested(kid_lib, kid, cm, table,
+					Rect2(FilmLoopView.place_child(origin, space, kid, nested_reg, scale),
+						scaled), missed, i, deep)
 	return out
 
 

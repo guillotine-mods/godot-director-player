@@ -3937,8 +3937,13 @@ reporting it (entry 34).
 with `stage_origin`; each recursive call computes it with the same `place_child`
 expression a bitmap child already gets. One placement path, so a nested loop cannot
 drift from its siblings the first time either rule changes. `nested_scale` composes
-the squeeze and deliberately does **not** go through `Geometry.drawn_size`, for the
-reason `bugs.md` 99 records.
+the squeeze and does **not** go through `Geometry.drawn_size`, which when this landed
+was forced rather than chosen: `drawn_size` discarded a scaled child's size, and that
+is **entry 99 in this file, now fixed**. So a reader arriving here should not carry
+the old reason away — with the marker honoured, `child_scale` on the same record
+answers exactly what `nested_scale` answers. The two stay apart because one is a
+function of a size and the other of a whole sprite record, and `nested_scale`'s own
+docstring carries that.
 
 `MAX_DEPTH` bounds a loop that contains itself, and the cap tallies a key rather
 than returning quietly. Depth 0 keeps every tally key it always printed, so figures
@@ -4008,3 +4013,168 @@ asks whether a child resolves to the right *cast* — a question about the `ccl 
 answered off the disc — and a child that resolved perfectly and then drew nothing
 answers it correctly. A green gate is not coverage of a question nobody asked, which
 is why this needed a new entry rather than an extra check in an old one.
+
+---
+
+## 99. A squeezed film loop scaled where its children go and not how big they are, so Hatuli's thrown stones flew in perspective at a constant size
+
+**Status:** FIXED · **Area:** `scenes/preview/sprite_geometry.gd:drawn_size`,
+`scenes/preview/film_loop_view.gd:child_sprite` · found at the unit level while
+implementing nested film loops (entry 98) and **reported from play** as "the balls
+in Hatuli's game aren't shrinking when moving", which is what got it fixed
+
+A loop drawn at a size other than its `initialRect` scales everything inside it by
+`drawn / natural` — the child positions **and the children themselves** (§1.6).
+`child_sprite` did the second half: it resolved the child's size and multiplied it
+by `child_scale`'s factor. `Geometry.drawn_size` then threw that away, because with
+the stretch flag clear it returned the member's **natural** size.
+
+```
+stretch=false   child_sprite -> 18x18, drawn_size -> (72.0, 72.0)
+stretch=true    child_sprite -> 10x10, drawn_size -> (10.0, 10.0)
+```
+
+So the flag that decides whether a rect is authoring residue was being asked about
+a rect that cannot be residue: a film-loop child's record is built in `child_sprite`
+a moment before it is drawn. Net effect, the contents were placed by scaled
+coordinates and drawn at full size — and the anchor went with the artwork, because
+`film_loop_view.draw`'s leaf branch takes the child's registration offset from
+`Geometry.scaled_reg(cm, texture.get_size())` and that texture came back unscaled.
+
+**The player's half, measured off the disc.** In `games/piposh-dream/COMEIN.dir`,
+Hatuli's projectile game throws the ball loops `1:156`..`1:158` (21 frames each),
+which nest the `stone` loop `1:167` (8 frames), whose own frames are the bitmaps
+`1:159`..`1:166`:
+
+```
+member 1:156 "ball1(21)" 539x481 type=2
+  f0   child 1:167  rect  72x72  stretch=false loc( 645,-116)
+  f8   child 1:167  rect  69x69  stretch=true  loc( 442, 256)
+  f14  child 1:167  rect  52x53  stretch=true  loc( 267, 303)
+  f20  child 1:167  rect  20x21  stretch=true  loc( 152, 292)
+member 1:167 "stone" 72x72 type=2
+  f0..f7  children 1:159..1:166, 69x64 .. 72x71, all stretch=false
+```
+
+The ball loop *authors* the shrink and the engine read it — the shrinking frames
+carry `stretch=true`, and `nested_scale` turned it into a shrinking factor for the
+nested loop correctly. The failure was one level further down: the stone's eight
+grandchild bitmaps all carry `stretch=false`, so `child_sprite` scaled them and
+`drawn_size` discarded it. The stone's position scaled and its pixels never did.
+
+**Why it looked correct.** `child_sprite`'s docstring separated the two populations
+on the flag — of the 2,053 children in this corpus carrying it, zero have a rect
+equal to their member's natural size, so with the flag clear the *recorded* rect
+really is residue. That argument is true and it is about which rect to start from.
+It was silently doing a second job it cannot do, because the size in question after
+a squeeze is not on the disc at all.
+
+### The fix, and the two fixes refused
+
+`child_sprite` now marks the record with `Geometry.SIZE_COMPUTED` when the scale is
+not `Vector2.ONE`, and `drawn_size` honours that marker alongside `stretch` and
+`size_from_script`.
+
+**Refused: making `drawn_size` trust a bare non-stretch record's size.** That is
+entry 31 reintroduced for score sprites, and reading residue is exactly what 31
+closed — `WRESTLE.dir` channel 9's constant foreign 556x438, `INVENTOR.dir`'s 1x1
+`dot` on two channels of 92x17 and 78x14.
+
+**Refused: carrying it on `size_from_script`.** Justified by grep rather than by
+taste: that key has exactly **one writer** (`preview/channel.gd:429`, the `size`
+kind, which is `the width of sprite N` and its `height` twin) and **one reader**
+(`drawn_size`), and it means "a Lingo write set this" — a claim with a release rule
+and an auto-puppet story attached. `bugs.md` 80 turns the same key down for a third
+cause, a field grown by its own laid-out text, on the same grounds. A `drawn_size`
+that cannot tell the three apart cannot be reasoned about later, and nothing else in
+the port — `channel.gd`'s `FIELDS`, `sprite_props`, `save_state`, `tools/` — reads
+either key at all.
+
+**The marker is tested above the shape and field branches**, which is load-bearing
+rather than tidy: a squeezed loop's field child must be drawn at `natural * scale`
+like everything else inside the loop, and `_field_size`'s
+`MAX(bbox, initialRect, maxHeight)` would take it straight back to the member's own
+size. The degenerate-rect guards above it cannot swallow a marked record either,
+because `child_sprite` clamps a scaled size to `maxi(1, …)` in the same branch that
+sets the marker.
+
+### The blast radius is the population that was wrong
+
+At natural size `child_scale` returns `Vector2.ONE` exactly, so `child_sprite`
+scales nothing, marks nothing, and produces the record it always did. Confirmed by
+measurement rather than by argument: every natural-size control in
+`tools/film_loop_scale.gd` is unchanged to the child — 96 of 48,846 children in
+`piposh2`, 463 of 28,213 in `piposh-dream`, 214 of 2,792 in `rating`, before and
+after.
+
+The registration offset now scales with the artwork, which is intended and is what
+`place_child`'s docstring already described: scaling both is what makes either
+correct. The nested branch is unaffected — it passes `Geometry.scaled_reg(cm, size)`
+from `child_sprite`'s record, and with the marker set `drawn_size` returns that same
+size.
+
+### Before and after
+
+`tools/film_loop_scale.gd` asserted this rule and could not see the failure, because
+it read `child_sprite`'s own answer as the drawn size instead of asking `drawn_size`
+the way the painter does — a harness green over the wrong noun. Its `_case` now
+reads both, one per painter branch, so it is a permanent reading rather than a
+temporary experiment. With that reading and the fix reverted:
+
+| root | before | after | natural-size control | nested |
+|---|---|---|---|---|
+| `piposh2` | 41,816 regressed, 6,934 held | **0 regressed, 48,750 held** | 96 / 48,846 both ways | 0 over 0 sites |
+| `piposh-dream` | 26,746 regressed, 1,004 held | **0 regressed, 27,750 held** | 463 / 28,213 both ways | 0 over 4,044 both ways |
+| `rating` | 2,077 regressed, 501 held | **0 regressed, 2,578 held** | 214 / 2,792 both ways | 0 over 1,394 both ways |
+
+over 1,400 of 1,400 loops that really scale in `piposh2` (86 containers), 1,502 of
+1,502 in `piposh-dream` (79) and 230 of 230 in `rating` (118). "Regressed" is that
+harness's own noun: a child inside its box at natural size and outside it once the
+loop is squeezed to a quarter. So 85.8%, 96.4% and 80.6% of the children that had
+anything to prove failed, and now none does — the held column absorbs exactly the
+regressed one.
+
+**The tolerance was deliberately left derived from `child_sprite`'s scaled answer.**
+Recomputing it against the new reading makes the allowance `0.75 × natural` at that
+squeeze and reports 0 regressed by cancelling the bug rather than by its absence.
+That is the one edit in the file that would read as tidying and would disarm it,
+and `_case` now says so at the site.
+
+### What covers the player's report
+
+`tools/film_loop_nesting.gd` asserted that a nested loop's leaf artwork reaches the
+painter and said nothing about its size, which is this bug. It now also asserts that
+one leaf member is decoded at **more than one size** across the throw, read off the
+node's `_textures` cache — keyed by `Geometry.texture_key`, whose fourth field is
+the drawn size, so several keys for one member is the observable and nothing here
+recomputes an expected size. Measured on `--root piposh-dream`:
+
+```
+after   1:159 69x64 -> 66x61,  1,343 of 12,000 process frames, 33 score frames f721..f753
+before  every one of the eight leaves at a single size,
+        12,000 of 12,000 process frames, 49 score frames f722..f771
+```
+
+The control fails on that check alone with the two above it green, which is the
+useful shape — the artwork was arriving all along and only its size was wrong — and
+it is not a budget failure: the failing run got *more* score frames than the passing
+one and still saw one size per leaf.
+
+### Still not measured on screen
+
+`PIPDATA/DISKSHOT.dir` is the other site — clay pigeons of about 26x7 swapping to
+the 287x279 `diskblow` loop whose child sits at (320,240) — and the open entry's
+claim that the explosion "now draws full-size on the disk" was inferred from the
+mechanism rather than seen. It should be right now for the same reason the stone is,
+and nobody has taken the screenshot.
+
+### Left behind
+
+`nested_scale` and `child_scale` are now the same rule twice: with the marker
+honoured, `child_scale(record, member)` would answer exactly what `nested_scale`
+answers for every record `paint_loop` hands it. They are not merged because
+`nested_scale` is a function of a size, which is what the recursion has, while
+`child_scale` wants a sprite record with a `loc_h`, a channel and a member
+reference — folding them would mean synthesising a fake record per level. The
+equivalence is written into `nested_scale`'s docstring so that a third branch on
+either side is noticed.

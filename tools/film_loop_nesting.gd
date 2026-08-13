@@ -78,6 +78,52 @@ extends SceneTree
 ## deep or more *and* the score never places it directly. For `COMEIN` that is
 ## exactly `1:159`..`1:166`, and `1:167` itself is excluded because it is a child.
 ##
+## ## And that it arrives at the right *size*, which was a second bug
+##
+## Reaching the painter is not the same as being drawn correctly, and the gap between
+## the two was `docs/bugs-closed.md` 99: the ball loops `1:156`..`1:158` shrink their
+## `stone` child across the throw -- the score's own records take it 72x72, 69x69,
+## 52x53, 20x21 over 21 frames -- and `nested_scale` turned that into a shrinking
+## factor for the stone's own eight bitmaps, which `Geometry.drawn_size` then threw
+## away because their records carry no stretch flag. The stone's *position* scaled
+## and its pixels never did. A player reported it as the balls in Hatuli's game not
+## shrinking as they fly, and this harness was green throughout, because it only ever
+## asked whether the artwork appeared.
+##
+## So the size is asserted too, and the observable is already in the cache: the
+## node's `_textures` is keyed by `Geometry.texture_key`, which carries the drawn
+## size, so **one leaf member under two or more distinct sizes** is the fix and one
+## size for all of them is the bug. Nothing here computes an expected size -- that
+## would be this file re-deriving the arithmetic it is checking -- it asserts only
+## that the size is not constant across a throw, which is the player-visible claim
+## and cannot be satisfied by a loop that ignores its parent's squeeze.
+##
+## Two distinct sizes and not more, deliberately: the run breaks at the first leaf
+## that has two, so what it costs is bounded by the first shrink rather than by the
+## whole throw. Measured on `--root piposh-dream`, `1:159` comes back **69x64 and
+## 66x61** after 1,343 of the 12,000 process frames, over score frames f721..f753.
+##
+## The negative control is the fix reverted, and it fails **on this check alone**
+## with the two above it still green -- the useful shape, because it says the
+## artwork was arriving all along and only its size was wrong. It is also not a
+## budget failure, which is the reading a FAIL on a played harness always has to
+## rule out: that run played its whole 12,000 frames and got **more** score frames
+## than the passing one, 49 over f722..f771 against 33, and still reports one size
+## for every one of the eight leaves. More opportunity, no shrink.
+##
+## Both halves of the fix have to come out for the control, and not because either
+## is optional: `film_loop_view.child_sprite` names
+## `Geometry.SIZE_COMPUTED`, so reverting `sprite_geometry.gd` alone is a parse
+## error in `_init` and reports as a run with no output rather than as a FAIL --
+## the same trap `DEPTH_CAP` below is written the way it is to avoid.
+##
+## Where the slack is, on a check whose evidence arrives at the *end* of a pass: the
+## game throws one ball per pass over f724..f753 and the texture cache accumulates
+## across passes, so a machine slow enough to get fewer score frames per process
+## frame still collects sizes -- it collects them over more passes. And the failure
+## line prints every leaf with every size it was seen at, so a run that genuinely
+## ran out is told from a run that saw a constant size by reading it.
+##
 ## Beside it, and in the style of `tools/film_loop_scale.gd`'s population guard --
 ## "0 wrong is also what a check with nothing left to look at prints" -- the run
 ## asserts that a loop with a film-loop child really was painted. That guard reads
@@ -163,6 +209,7 @@ func _init() -> void:
 
 	var painted := ""     # the first nesting loop the painter parsed
 	var decoded := ""     # the first inner-loop-only member it asked to decode
+	var sizes: Dictionary = {}  # "lib:id" -> {"WxH": true} every size it decoded at
 	var frames: Dictionary = {}
 	# 12000 rather than 3000, and it costs nothing on the happy path because the loop
 	# below breaks on the condition rather than playing the budget out: this entry
@@ -182,19 +229,26 @@ func _init() -> void:
 				if parents.has(str(key)):
 					painted = str(key)
 					break
-		if decoded == "":
-			for key in preview.get("_textures") as Dictionary:
-				for member in only:
-					if str(key).begins_with("%s:" % str(member)):
-						decoded = str(key)
-						break
-				if decoded != "":
-					break
+		# Every size each leaf member was decoded at, not just the first key seen. The
+		# cache is keyed by `Geometry.texture_key`, whose fourth field is the drawn
+		# size, so one leaf member appearing under several keys *is* the observation --
+		# see `_shrinking` and the header.
+		for key in preview.get("_textures") as Dictionary:
+			for member in only:
+				if not str(key).begins_with("%s:" % str(member)):
+					continue
+				if decoded == "":
+					decoded = str(key)
+				var parts: PackedStringArray = str(key).split(":")
+				if parts.size() > 3:
+					if not sizes.has(str(member)):
+						sizes[str(member)] = {}
+					(sizes[str(member)] as Dictionary)[parts[3]] = true
 		# Stopped on the answer rather than after a fixed window. The game throws one
 		# ball per pass over f724..f753, so how many passes a run gets through varies
 		# with the machine; waiting for the invariant turns that into a difference in
 		# how long the run takes instead of a difference in what it finds.
-		if painted != "" and decoded != "":
+		if painted != "" and decoded != "" and not _shrinking(sizes).is_empty():
 			break
 
 	var visited: Array = frames.keys()
@@ -210,6 +264,12 @@ func _init() -> void:
 		decoded != "",
 		"%s" % decoded if decoded != "" else
 			"no key for any of %s in the texture cache" % str(only))
+	var shrank: Array = _shrinking(sizes)
+	h.check("the nested loop's leaf artwork is drawn at more than one size, so the"
+		+ " squeeze on the loop above reaches the pixels",
+		not shrank.is_empty(),
+		"%s" % ", ".join(shrank) if not shrank.is_empty()
+			else "every leaf held one size: %s" % _sizes_line(sizes))
 	h.complete("a nested film loop's artwork reaches the painter")
 
 	print("")
@@ -217,12 +277,57 @@ func _init() -> void:
 		spent, ticks, visited.size(),
 		str(visited[0]) if visited.size() > 0 else "?",
 		str(visited[-1]) if visited.size() > 0 else "?"])
+	print("leaf sizes : %s" % _sizes_line(sizes))
 	var stats: Dictionary = preview.get("_loop_stats")
 	var keys: Array = stats.keys()
 	keys.sort()
 	for key in keys:
 		print("loop tally : %-38s %d" % [key, int(stats[key])])
 	quit(h.finish("a film loop nested in a film loop is drawn"))
+
+
+## Every leaf member the painter decoded at more than one size, largest first, as
+## `"1:159 69x64 -> 17x16"` -- the observation that the squeeze reached the pixels.
+##
+## The comparison is by area rather than per axis because the two axes shrink
+## together here and one number reads as a shrink where two read as a table. A
+## member is claimed only on **two distinct sizes**, which is what the assertion
+## turns on; the arrow is presentation.
+func _shrinking(sizes: Dictionary) -> Array:
+	var out: Array = []
+	var members: Array = sizes.keys()
+	members.sort()
+	for member in members:
+		var seen: Array = (sizes[member] as Dictionary).keys()
+		if seen.size() < 2:
+			continue
+		seen.sort_custom(func(a, b): return _area(str(a)) > _area(str(b)))
+		out.append("%s %s -> %s" % [str(member), str(seen[0]), str(seen[-1])])
+	return out
+
+
+## `WxH` as an area, for ordering. 0 for anything that does not parse, which cannot
+## happen for a key this file built the string from and is not worth a branch above.
+func _area(size: String) -> int:
+	var parts: PackedStringArray = size.split("x")
+	if parts.size() != 2:
+		return 0
+	return int(parts[0]) * int(parts[1])
+
+
+## Every leaf and every size it was decoded at, printed whether the run passed or
+## failed. On a failure it is the evidence -- one size per member is exactly what a
+## leaf drawn at a constant size looks like -- and on a pass it is the record of how
+## far the ball actually got before the loop broke.
+func _sizes_line(sizes: Dictionary) -> String:
+	var members: Array = sizes.keys()
+	members.sort()
+	var parts: Array = []
+	for member in members:
+		var seen: Array = (sizes[member] as Dictionary).keys()
+		seen.sort_custom(func(a, b): return _area(str(a)) > _area(str(b)))
+		parts.append("%s[%s]" % [str(member), ",".join(seen)])
+	return "none" if parts.is_empty() else " ".join(parts)
 
 
 ## The container's nesting, read off the disc.

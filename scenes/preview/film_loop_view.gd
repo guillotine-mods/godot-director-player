@@ -76,8 +76,10 @@ static func open_loop(lib: int, member: Dictionary, table):
 ## A film-loop child as a sprite record the rest of the renderer understands.
 ##
 ## The size rule here is the same one the main score gets, and always was the
-## right one. `tools/film_loop_stretch.gd` separates the two populations on the
-## flag: of the 2,053 children carrying it, **zero** have a rect equal to their
+## right one. `tools/film_loop_stretch.gd` separated the two populations on the
+## flag -- **that tool is deleted**, with the rest of the retired renderer's
+## harnesses, so the figure below is a record rather than something to re-run:
+## of the 2,053 children carrying it, **zero** have a rect equal to their
 ## member's natural size, so with the flag clear the recorded rect really is
 ## authoring residue and the child draws at its member's size. This used to carry
 ## a note that the main score behaved oppositely and deliberately; it did not --
@@ -88,12 +90,30 @@ static func open_loop(lib: int, member: Dictionary, table):
 ## dictionary of its own until the caller resolves one, and it has no cast type to
 ## except on.
 ##
+## **That population argument is about which rect to start from, and it was
+## quietly doing a second job it cannot do.** It says the *recorded* rect is
+## residue when the flag is clear, which is a fact about the disc — and the size
+## this function returns after a squeeze is not on the disc, it is arithmetic done
+## here. `Geometry.drawn_size` was asking the flag about that computed rect too and
+## therefore answering the member's natural size for every unflagged child, so the
+## scale below reached the child's *position* and never its pixels: a stone thrown
+## in perspective at a constant 69x64, which is `bugs.md` 99 and what a player
+## reported as the balls in Hatuli's game not shrinking. The record now carries
+## `Geometry.SIZE_COMPUTED` to say which of the two rects it is holding, and that
+## key's own docstring carries why it is not spelled `size_from_script`.
+##
 ## `scale` is the loop's own squeeze (`child_scale`), and it applies after that
 ## resolution rather than instead of it: a child is sized by its own rule first
 ## and then shrunk with everything else in the loop. A scaled size is clamped to
 ## one pixel rather than allowed to reach zero, because a zero-sized decode is an
 ## error and Director's answer here is unknown — ScummVM does not scale child
-## sizes at all (DIRECTOR_ENGINE.md §18), so there is nothing to copy.
+## sizes at all (DIRECTOR_ENGINE.md §18), so there is nothing to copy. The clamp
+## is also why a marked record always states at least 1x1, which is what keeps
+## `drawn_size`'s degenerate-rect guards from reaching one.
+##
+## At `Vector2.ONE` the marker is false and every value in the record is what it
+## has always been, so a loop drawn at its own size is untouched by all of this —
+## the identity case `child_scale` and `nested_scale` both return exactly.
 static func child_sprite(child: Dictionary, lib: int, member: Dictionary,
 		scale := Vector2.ONE) -> Dictionary:
 	var w := int(member.get("width", 0))
@@ -101,7 +121,8 @@ static func child_sprite(child: Dictionary, lib: int, member: Dictionary,
 	if bool(child["stretch"]) and int(child["width"]) > 0 and int(child["height"]) > 0:
 		w = int(child["width"])
 		h = int(child["height"])
-	if scale != Vector2.ONE:
+	var computed := scale != Vector2.ONE
+	if computed:
 		w = maxi(1, int(w * scale.x))
 		h = maxi(1, int(h * scale.y))
 	# The rendering attributes come across too. `texture_for` keys on the ink and
@@ -112,6 +133,9 @@ static func child_sprite(child: Dictionary, lib: int, member: Dictionary,
 		"cast_lib": lib, "cast_id": int(child["cast_id"]),
 		"ink": int(child["ink"]), "stretch": bool(child["stretch"]),
 		"width": w, "height": h,
+		# Only when the size really was computed, so a loop drawn at its own size
+		# still produces exactly the record it always did -- see the docstring.
+		Geometry.SIZE_COMPUTED: computed,
 		"flip_h": bool(child.get("flip_h", false)),
 		"flip_v": bool(child.get("flip_v", false)),
 		"has_blend": bool(child.get("has_blend", false)),
@@ -211,19 +235,30 @@ static func place_child(origin: Vector2, space: Vector2, child: Dictionary,
 ## How far a nested loop's own content scale is derived, when the loop is drawn as
 ## another loop's child.
 ##
-## `child_scale` cannot answer this, and the reason is a *separate* bug rather than
-## a limitation: it asks `Geometry.drawn_size`, and `drawn_size` ignores a size that
-## is not the member's own unless the record carries the stretch flag. A film-loop
-## child's record does not carry it in the general case -- `child_sprite`'s
-## docstring above records that of the 2,053 children in this corpus carrying the
-## flag, none has a rect equal to its member's natural size -- so a nested loop
-## drawn 18x18 out of a 72x72 member has `drawn_size` answer 72x72 and
-## `child_scale` therefore return `Vector2.ONE`, dropping the parent's squeeze for
-## every grandchild. Measured directly: `child_sprite(child, lib, member,
-## Vector2(0.25, 0.25))` on a 72x72 member with the flag clear returns 18x18 and
-## `Geometry.drawn_size` on that record returns 72x72. That miss is `bugs.md` 99;
-## here it means the ratio has to be taken from the size the child is really drawn
-## at.
+## This takes the ratio from the size the child is really drawn at, and asks the
+## record for nothing else. **`child_scale` could not be used here, and the reason
+## it could not was `bugs.md` 99 rather than a limitation of nesting**: it asks
+## `Geometry.drawn_size`, which ignored any size that was not the member's own
+## unless the record carried the stretch flag, and a film-loop child does not carry
+## it in the general case -- of the 2,053 children in this corpus that do, none has
+## a rect equal to its member's natural size. So a nested loop drawn 18x18 out of a
+## 72x72 member had `drawn_size` answer 72x72 and `child_scale` therefore return
+## `Vector2.ONE`, dropping the parent's squeeze for every grandchild.
+##
+## That miss is fixed (`docs/bugs-closed.md` 99): `child_sprite` marks a computed
+## size with `Geometry.SIZE_COMPUTED` and `drawn_size` honours it, so
+## `child_scale(record, member)` would now answer exactly what this function does
+## for every record `paint_loop` hands it -- with the marker set `drawn_size`
+## returns the record's own size, and without it both sides are the natural size and
+## both return `Vector2.ONE`. **The two are not merged**, and that is a decision
+## rather than an omission: this one is a function of a size, which is what the
+## recursion has, while `child_scale` is a function of a *sprite* record with a
+## `loc_h`, a channel and a member reference that a nested loop has no equivalent
+## of. Folding them would mean synthesising a fake sprite record per level to ask
+## the question with, which is more machinery than the four lines it would delete.
+## What the equivalence *does* buy is that the two rules can no longer disagree
+## about a squeeze, which is the drift `sprite_geometry.gd`'s module docstring is
+## about, and it is worth re-checking here if either ever grows a third branch.
 ##
 ## Load-bearing at both sizes, which is worth stating because "compose the squeeze"
 ## sounds like it only matters to a squeezed loop. Measured by replacing this call
