@@ -25,6 +25,19 @@ a decompile reads oddly: ProjectorRays is a decompiler, not an oracle.
 `MASTER` is the shared cast that owns the globals (`objectsfield`, `Dprocess`,
 `points`) and the inventory HUD, so its 40 scripts matter far beyond their count.
 
+**And `games/piposh2` ships two different `MASTER.CST`s, so for some members this
+directory is not the copy that runs.** `MASTER.CST` at the corpus root is 481,764
+bytes and `PIP2DATA/MASTER.CST` is 483,150, different md5. Member 97 -- one of the
+drop handlers listed under Key findings below -- differs between them: the
+`PIP2DATA` copy tests `the clickon > 102` five times and the root copy never does,
+which is the inventory-slot test (sprites 103-110 are the slots). Each copy's own
+`Lscr` bytecode matches its own source, so neither is corrupt; they are two saves
+of one cast. This reference was decompiled from the copy matching the **root**
+file, while `director_paths.gd:resolve` prefers a container beside the movie that
+named it -- and every Piposh 2 movie lives in `PIP2DATA/`. So the engine loads the
+guarded copy and this directory shows the unguarded one. Check both before
+concluding what a `MASTER` handler does.
+
 ## Provenance
 
 Merged from two independent ProjectorRays runs over the same originals:
