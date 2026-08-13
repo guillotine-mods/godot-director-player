@@ -103,6 +103,19 @@ func _init() -> void:
 			int(click.get("frame", -1)), clicked_on, moved_on])
 	h.check("it says whether a handler exists at all",
 		typeof(click.get("handler")) == TYPE_BOOL)
+	# **Which message the handler flag is about.** `interaction.gd:press` tests it
+	# against `click_events(right)[1]`, so it is `rightMouseUp` for a right click --
+	# and this line printed the word `mouseUp` unconditionally until a player's
+	# snapshot of a right click on `piposh-dream`'s `eat.dir` read
+	# `mouseUp:NO HANDLER` about a sprite behaviour that declares `mouseUp` and
+	# would have run it. Nothing was wrong with the routing; a whole session went
+	# into the mouse-up hierarchy on the strength of the label. The four facts are
+	# worth nothing if one of them names the wrong event.
+	h.check("it names the message it tested for",
+		str(click.get("event", "")) == "mouseUp",
+		"answered %s" % JSON.stringify(str(click.get("event", ""))))
+	h.check("and the line says so", Snapshot.click_line(click).contains("mouseUp:"),
+		Snapshot.click_line(click))
 	h.complete("the copied click is the click that happened")
 
 	h.begin("the copied text carries the four facts")
@@ -123,6 +136,20 @@ func _init() -> void:
 	else:
 		print("clipboard round-trip unavailable here; the copy itself is not asserted")
 	h.complete("the copied text carries the four facts")
+
+	# After the text checks above, because this replaces `_last_click` with a
+	# record of its own and those compare against the left click's line.
+	h.begin("a right click is reported as the right pair")
+	preview.call("route_right_button", at, true)
+	preview.call("route_right_button", at, false)
+	var right_click: Dictionary = preview.get("_last_click")
+	h.check("the record names `rightMouseUp`",
+		str(right_click.get("event", "")) == "rightMouseUp",
+		Snapshot.click_line(right_click))
+	h.check("and the line does not claim `mouseUp:`",
+		not Snapshot.click_line(right_click).contains("  mouseUp:"),
+		Snapshot.click_line(right_click))
+	h.complete("a right click is reported as the right pair")
 
 	# Directly, rather than via a synthetic key event: `_input` is Godot's to
 	# call and a headless run has no window to deliver one to.

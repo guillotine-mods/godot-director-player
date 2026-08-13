@@ -30,8 +30,19 @@ const DIRECTORY := "res://.snapshots"
 
 ## The record `_click` hands over, and the one line it prints. Built here so the
 ## printed line and the copied line cannot drift: they are the same string.
+##
+## **`event` is the message the handler test was made against, and the line has to
+## say which one it was.** This used to print the word `mouseUp` unconditionally
+## while `interaction.gd:press` computed the flag against `click_events(right)[1]`
+## -- so a *right* click reported `mouseUp:NO HANDLER` about a `rightMouseUp` that
+## nothing in any of the six titles declares a handler for. That is the reported
+## bug for this file's own subject: a snapshot of a right click on
+## `eat.dir`/ch19 read as a `mouseUp` failing to reach a behaviour that declares
+## one, and the whole of the investigation it started was about the mouse-up
+## hierarchy, which was working. A debug line that names the wrong message costs
+## more than no line at all.
 static func note_click(at: Vector2, frame: int, channel: int, tier: String,
-		script: Dictionary, has_handler: bool) -> Dictionary:
+		script: Dictionary, has_handler: bool, event := "mouseUp") -> Dictionary:
 	return {
 		"at": at,
 		"frame": frame,
@@ -39,6 +50,7 @@ static func note_click(at: Vector2, frame: int, channel: int, tier: String,
 		"tier": tier,
 		"script": str(script.get("script", "none")),
 		"handler": has_handler,
+		"event": event,
 	}
 
 
@@ -46,9 +58,13 @@ static func click_line(click: Dictionary) -> String:
 	if click.is_empty():
 		return "no click yet this session"
 	var at: Vector2 = click["at"]
-	return "clicked (%d,%d) frame %d  ch%d  %s script %s  mouseUp:%s" % [
+	# Defaulted rather than indexed, because a record can outlive this key: the
+	# save-state gate builds one by hand and a restored session decodes whatever
+	# the file held.
+	return "clicked (%d,%d) frame %d  ch%d  %s script %s  %s:%s" % [
 		int(at.x), int(at.y), int(click["frame"]), int(click["channel"]),
 		str(click["tier"]), str(click["script"]),
+		str(click.get("event", "mouseUp")),
 		"yes" if bool(click["handler"]) else "NO HANDLER",
 	]
 

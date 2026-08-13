@@ -626,8 +626,13 @@ static func press(host, at: Vector2, right := false) -> void:
 		or host._interpreter.has_handler(str(events[1]))
 	# Kept, not just printed: the snapshot key reports the click that went wrong,
 	# and by the time anyone presses it the score has moved on several frames.
+	#
+	# **The message the flag was tested against travels with it.** It is
+	# `rightMouseUp` for a right click, and a record that says `mouseUp` about it
+	# describes a failure that never happened -- see `snapshot.gd:note_click`.
 	host._last_click = Snapshot.note_click(
-		at, host._index, channel, str(chosen[1]), script, has_up)
+		at, host._index, channel, str(chosen[1]), script, has_up,
+		"rightMouseUp" if right else "mouseUp")
 	print(Snapshot.click_line(host._last_click))
 	# Held for the release, which uses it only for the *log* and the snapshot now
 	# that the chain is queued: `_dispatch` runs the queue and ignores this

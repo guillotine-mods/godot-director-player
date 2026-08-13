@@ -3589,3 +3589,40 @@ reads `handlers also dress [3, 4], unclaimed`, uniquely among the six scenes. Th
 comparison of claimed-versus-dressed channels was added to keep a docstring honest
 and surfaced this as a side effect, which is the argument for printing both numbers
 rather than the one the tool was written for.
+
+---
+
+## 103. `start_lingo` clears the script casts but not the library keys, so a movie inherits the previous movie's cast-library names
+
+**Status:** OPEN, no symptom measured · **Area:** `scenes/preview/boot.gd:start_lingo`
+· found while tracing entry 102's cast resolution
+
+`boot.gd:start_lingo` clears `_script_casts` (`:282`) and does not clear
+`_lib_keys` (`:321`). So entering `eat.dir` from `dinner1.dir` leaves
+`{2: "DINNER1/doc", 3: "DINNER1/hezi", 5, 7, 8, 10, 13: …}` alive under a movie
+whose only library is 1. A script naming `castLib 7` there would resolve into the
+movie the playhead has left.
+
+**The evidence that this is real rather than theoretical is that two harnesses work
+around it**: `tools/click_eligibility.gd:127` and `tools/click_chain.gd:469` both
+call `_lib_keys.clear()` themselves before measuring. A tool clearing engine state
+by hand is a statement that the engine did not.
+
+No player-visible symptom has been measured, and that is why it is filed rather
+than fixed: library 1 *is* re-keyed on every movie load (verified live —
+`lib_keys={1: "EAT/internal", 2: "DINNER1/doc", …}` after the real
+`dinner1.dir → eat.dir` handover), and library 1 is what this corpus's scripts
+actually name. So the stale entries are unreachable in the six titles as authored,
+and the bug is a loaded gun rather than a wound. It is one line beside the existing
+`clear()`, and the reason to do it deliberately rather than casually is that
+`bugs.md` 34's whole family — a member number resolving in the wrong library returns
+a stranger rather than nothing — is what stale keys would produce.
+
+Reproduce the state:
+
+```
+godot --headless --path . --script tools/click_chain.gd -- --root piposh-dream --file dinner1.dir
+```
+
+and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
+`_lib_keys.clear()` at `:469` removed.

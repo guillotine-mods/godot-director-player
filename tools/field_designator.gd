@@ -83,6 +83,7 @@ func _init() -> void:
 	await _open_a_movie_with_fields(h)
 	_library_checks(h)
 	_property_checks(h)
+	_number_checks(h)
 
 	if Args.flag(args, "survey"):
 		await _survey()
@@ -261,6 +262,137 @@ func _property_checks(h: Harness) -> void:
 	h.check("and the text it was not addressing is untouched",
 		after == "the quick brown fox", JSON.stringify(after))
 	h.complete(case)
+
+
+# ------------------------------------------ the numeric half (§11.8, §9.3)
+
+
+## `field 122` is member 122; `field "122"` is a member *named* `122`.
+##
+## Director resolves a designator by number or by name according to the
+## subscript's **type**, and this port flattened the two: the interpreter
+## stringified the subscript before the host saw it and the host resolves a string
+## as a name (`preview/members.gd:resolve_ref`), so every numeric field reference
+## in every title resolved to nothing -- the write dropped, the read "".
+##
+## The corpus spells it with a variable rather than a literal, which is why the
+## fault survived: `repeat with i = 122 to 130 / put value(the text of field i) - 1
+## into field i` is `piposh-dream`'s `eat.dir` counting nine timers down, and there
+## are 134 such sites across the six roots against 0 literal `field <digits>`. With
+## the timers frozen the click handler's `value(the text of field ("chara" & n))
+## <= 4` gate never opened and its `< 0` gameover arm never fired: nine clickable
+## characters that answered every click by doing nothing, and a scene that could
+## be neither won nor lost.
+##
+## So both spellings are asserted, and the negative with them -- a name that
+## happens to be digits must **not** resolve to the member at that number, or the
+## fix has merely moved the collapse in the other direction.
+##
+## **An unqualified numeric designator resolves in library 1** (`resolve_ref`
+## defaults the library) and a member number is per cast, so the fixture decides
+## which spelling can be stated here: a named field in the movie's own cast gets
+## the bare form -- `eat.dir`'s own -- and a movie whose only named fields are in a
+## linked library gets `field <number> of castLib <n>`, which asks the same
+## question of the library the member is actually in. **Neither arm may be a
+## failure**: which one applies is a fact about a 1990s cast, and a harness that
+## reds because a movie keeps its fields in an external cast is asserting the data
+## (AGENTS.md). The one data-dependent assertion in this file stays the fixture
+## check above.
+func _number_checks(h: Harness) -> void:
+	var case := "`field <number>` is the member at that number, not one named for it"
+	h.begin(case)
+	var table = _preview.get("_table")
+	var found: Dictionary = _find_field_in_own_cast(table)
+	var qualifier := ""
+	if found.is_empty():
+		found = _find_field(table, false)
+		if found.is_empty():
+			h.check("the movie carries a named field to state this about", false)
+			h.complete(case)
+			return
+		qualifier = " of castLib %d" % int(found["lib"])
+		print("no named field in library 1 here, so the number is asked for%s"
+			% qualifier)
+	var name := str(found["name"])
+	var id := int(found["id"])
+
+	_run("put \"17\" into field %d%s" % [id, qualifier])
+	var by_name := str(_value("the text of field \"%s\"" % name))
+	h.check("a write by number lands on the member the name names",
+		by_name == "17", "`field \"%s\"` answered %s" % [name, JSON.stringify(by_name)])
+	var by_number := str(_value("the text of field %d%s" % [id, qualifier]))
+	h.check("and reads back by number", by_number == "17", JSON.stringify(by_number))
+	var bare := str(_value("field %d%s" % [id, qualifier]))
+	h.check("the bare designator answers the text too", bare == "17",
+		JSON.stringify(bare))
+
+	# The corpus's own spelling: a variable holding the number, which is what
+	# `repeat with i = 122 to 130` produces.
+	_run("nn = %d\n  put \"23\" into field nn%s" % [id, qualifier])
+	var through_var := str(_value("the text of field \"%s\"" % name))
+	h.check("a variable holding the number resolves the same way",
+		through_var == "23", JSON.stringify(through_var))
+
+	# The negative, and the reason it is guarded rather than asserted flat: it is
+	# only a statement about *this* corpus that no cast holds a member called
+	# "%d", and a harness that asserts what the data happens not to contain is
+	# asserting the data.
+	if _member_named(table, str(id)):
+		print("a member is actually named %d here; the name/number split is not"
+			% id + " assertable in this movie")
+	else:
+		var as_name: Variant = _preview.call("_resolve_field", str(id), "")
+		h.check("the same digits as a *name* resolve to nothing",
+			(as_name as Array).is_empty(), "answered %s" % str(as_name))
+	# The bound on what the change can reach, asserted rather than argued: a
+	# numeric designator naming a member that is not a field still answers
+	# nothing, because `text_art.gd:resolve` takes the by-number answer only when
+	# it really is a field and then walks the *names* for the digits. So a
+	# `repeat with i` spanning a cast's bitmaps writes nowhere, exactly as before.
+	var not_a_field := _find_non_field_in_own_cast(table)
+	if not_a_field <= 0:
+		print("library 1 is all fields here; the non-field bound is not assertable")
+	else:
+		var refused: Variant = _preview.call("_resolve_field", not_a_field, "")
+		h.check("a number naming a member that is not a field answers nothing",
+			(refused as Array).is_empty(),
+			"member %d answered %s" % [not_a_field, str(refused)])
+	h.complete(case)
+
+
+## The first named field member of the movie's own cast, or `{}`.
+func _find_field_in_own_cast(table) -> Dictionary:
+	var cast = table.cast_for(1)
+	if cast == null:
+		return {}
+	for number in cast.member_numbers():
+		var m: Dictionary = cast.member(int(number))
+		if int(m.get("type", 0)) != Ink.TYPE_FIELD:
+			continue
+		if str(m.get("name", "")) == "":
+			continue
+		return {"name": str(m.get("name", "")), "lib": 1, "id": int(number)}
+	return {}
+
+
+## A member of the movie's own cast that is **not** a field, or 0.
+static func _find_non_field_in_own_cast(table) -> int:
+	var cast = table.cast_for(1)
+	if cast == null:
+		return 0
+	for number in cast.member_numbers():
+		var m: Dictionary = cast.member(int(number))
+		if int(m.get("type", 0)) != Ink.TYPE_FIELD and int(m.get("type", 0)) > 0:
+			return int(number)
+	return 0
+
+
+static func _member_named(table, name: String) -> bool:
+	for lib in table.cast_libs:
+		var cast = table.cast_for(int(lib))
+		if cast != null and cast.number_of(name) > 0:
+			return true
+	return false
 
 
 # ------------------------------------------------------------- the survey

@@ -4178,3 +4178,135 @@ answers for every record `paint_loop` hands it. They are not merged because
 reference — folding them would mean synthesising a fake record per level. The
 equivalence is written into `nested_scale`'s docstring so that a third branch on
 either side is noticed.
+
+---
+
+## 101. A right click reported itself as a failed `mouseUp`, and the label sent a diagnosis into the wrong half of the engine
+
+**Status:** FIXED · **Area:** `scenes/preview/snapshot.gd:click_line`,
+`scenes/preview/interaction.gd:press` · found from a player's snapshot, and from
+the wrong theory it produced
+
+`interaction.gd:press` decides whether a handler exists by asking against the
+**pair being sent** — `click_events(right)` answers `rightmouseup` for the right
+button — while `snapshot.gd:click_line` printed the word `mouseUp`
+unconditionally. So a player's snapshot of a right click on
+`piposh-dream/eat.dir` frame 22 read:
+
+```
+clicked (135,376) frame 22  ch19  frame script BehaviorScript 115  mouseUp:NO HANDLER
+```
+
+about a sprite whose behaviour `1:121` — shared by all nine characters in that
+scene — declares `mouseUp` and runs it correctly on a left click. Same point, same
+frame, same run:
+
+```
+clicked (135,376) frame 22  ch19  sprite script BehaviorScript 121  mouseUp:yes
+   ran mouseUp@sprite: 0 -> 1
+```
+
+**The routing was never wrong.** `script_for_click` resolves the chain against the
+pair being dispatched, `1:121` declares only `mouseUp`, so no tier answers
+`rightMouseUp` and the message correctly falls through to the frame script — which
+`BehaviorScript 115` genuinely is on that one frame (`frame ch0 frames 22..22`;
+120 covers 4..21). And `interaction.gd:2229` already records **0**
+`rightMouseDown`/`rightMouseUp` handlers across all six titles, so a right click on
+any authored hotspot in this corpus does nothing, everywhere, by authoring.
+
+**What this entry is really about is the cost of the label.** `tools/hotspots.gd`
+was run on the frame and reported the truth — ch19 eligible, `[1:121 mouseUp]`
+attached — and the two facts together were read as "a behaviour that declares
+`mouseUp` was skipped", which sent a session into `scripts.gd`'s message hierarchy
+looking for a dispatch bug that does not exist. Four hypotheses were built on a
+word. The engine's own report is not a neutral observation when it hardcodes the
+question it claims to have asked.
+
+Fixed by carrying the tested message in the record, so a right click reports
+`rightMouseUp:`. Reproduce the old reading with `route_right_button(at, true)` /
+`(at, false)`.
+
+Asserted now in three places, all in entries already in `gate.sh`'s `ALL`, so the
+count did not move: `tools/snapshot_check.gd` (15 → 19 checks) that a right click is
+reported as the right pair; `tools/mouse_events.gd` (50 → 56) that a click on a
+sprite whose behaviour declares `mouseUp` reaches it, with the subject **found**
+rather than named — 270 such (frame, channel) pairs in `strtgame.dir` and 216 in
+`eat.dir` — plus the right-click half of the same rule.
+
+**`tools/click_chain.gd` was measured blind to this whole path**, which is why the
+new checks went where they did: with the sprite tier skipped in `script_for_click`,
+`mouse_events` fails 3 and reproduces the player's snapshot line exactly, while
+`click_chain` passes 30 of 30. Break the *delivery* path instead and `click_chain`
+does fail — so it gates what a behaviour receives and never what the record says
+answered.
+
+---
+
+## 102. A numeric field designator resolved to nothing in both directions, so Piposh Dream's plate game could be neither won nor lost
+
+**Status:** FIXED · **Area:** `lingo/lingo_interpreter.gd:_field_designator` and
+the host surface it calls · found while chasing 101, from a player's "the
+characters are not clickable"
+
+`field 122` and `field "122"` are different references: the first is member number
+122, the second a member *named* `122`, which no cast here has. The interpreter
+stringified the subscript of every `field` designator, and the whole host surface
+then typed it `String` — so `preview/members.gd:resolve_ref`, where INT means a
+member number and String means a member name, searched for a member called `122`.
+Reads answered `""` and writes were dropped.
+
+Measured in isolation:
+
+```
+named read before                              : 6
+named read after `put "3" into field 122`      : 6      <- write dropped
+named read after `put "7" into field "chara5"` : 7      <- same member, works
+`the text of field 122`      ->
+`the text of field "chara5"` -> 7
+```
+
+**`eat.dir`'s plate game is the measured cost.** `BehaviorScript 120` (frames
+4..21) counts nine countdown fields down with
+
+```lingo
+repeat with i = 122 to 130
+  put value(the text of field i) - 1 into field i
+```
+
+and `BehaviorScript 121`, the behaviour on all nine characters, gates the pass on
+`value(the text of field ("chara" & n)) <= 4`. Members 122–130 are the fields named
+`chara5`…`chara21`. Frozen at 10 on every frame, the gate never opened **and** the
+`< 0 → go("gameover")` arm never fired: nine characters that answer every click by
+doing nothing, in a scene with no win and no loss, playhead pinned to frames 4..22.
+Exactly the report.
+
+Fixed by keeping the subscript's type: int and float stay numbers (a float because
+`field (i + 1)` after a division is still a number Director resolves by number),
+everything else stringifies. The type is destroyed in the interpreter and
+re-destroyed by the host signatures, so the fix spans both — `_field_designator` at
+all four sites, `Variant` through `preview_lingo_host.gd`'s four field methods and
+`director_preview.gd`'s five, and `str(name)` in `text_art.gd:resolve`'s name walk.
+
+It names no movie, member or channel: it is one type-preservation rule in the
+language surface, and it fixes every numeric field reference in every title
+identically. **Before: 0 of 8 plates delivered over 4,000 frames. After: 8 of 8,
+`chara5` counts 10 → 0, and the movie leaves the loop and reaches `win`.**
+
+Reach, so nobody reads "0 uses" off a literal search: there are **0** literal
+`field <digits>` anywhere in the corpus, which is why this survived — the corpus
+spells it with a variable. `field <var>` occurrences are 81 / 17 / 6 / 15 / 15 / 0
+for piposh2 / piposh / piposh-dream / piposh-en / piposh-ru / rating (upper bounds;
+a linked cast's scripts appear in both the movie and the standalone export).
+
+Bounded and asserted rather than argued: a numeric designator naming a **non-field**
+member still resolves to nothing, because `text_art.gd:resolve` accepts the
+by-number answer only when the type is `TYPE_FIELD` and otherwise walks names.
+
+Gated by `tools/field_designator.gd` (13 → 19 checks), already in `ALL`. With the
+interpreter arm reverted it fails 4, naming `a write by number lands on the member
+the name names`. Click routing is untouched, which matters because widening
+eligibility makes sprites absorb clicks that used to fall through:
+`tools/click_eligibility.gd` run before and after over 61 movies, 61,371 frames and
+816,344 sprite records is **identical** on all four measured lines — 155,432 records
+answer a click, 12,153 frames have at least one, 2,401 sprite intervals resolve to a
+script and 281 do not.

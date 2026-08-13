@@ -1697,7 +1697,7 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 			var set_prop := str(target.get("prop", "")).to_lower()
 			if host != null and host.has_method("set_field_prop"):
 				_host_call("set_field_prop", [
-					LingoValue.to_str(_eval(target.get("name", {}), frame)),
+					_field_designator(target, frame),
 					_cast_of(target, frame), set_prop, value,
 				])
 				return
@@ -1953,12 +1953,46 @@ func _set_var(name: String, value: Variant, frame: Dictionary) -> void:
 	(frame["locals"] as Dictionary)[name] = value
 
 
+## `put x into field <designator>`.
+##
+## **The designator keeps its type.** `field 122` and `field "122"` are two
+## different references in Director -- the first is member number 122, the second
+## is a member *named* `122`, which no cast in this corpus has -- and stringifying
+## the subscript here collapsed the first onto the second. The host resolves a
+## String as a name (`preview/members.gd:resolve_ref`), so every numeric field
+## reference resolved to nothing: the write was dropped and the matching read
+## answered "".
+##
+## `eat.dir`'s plate game is what that cost. Its frame script counts nine
+## countdown fields down with `repeat with i = 122 to 130 / put value(the text of
+## field i) - 1 into field i`, and the click handler on the nine characters gates
+## the pass on `value(the text of field ("chara" & n)) <= 4`. The countdown never
+## moved, so the gate never opened and the `< 0` arm that ends the game never
+## fired either: clicking a character did nothing and the scene could be neither
+## won nor lost.
 func _set_field_node(node: Dictionary, text: String, frame: Dictionary) -> void:
 	_host_call("set_field", [
-		LingoValue.to_str(_eval(node.get("name", {}), frame)),
+		_field_designator(node, frame),
 		_cast_of(node, frame),
 		text,
 	])
+
+
+## The subscript of a `field` designator, **unstringified**.
+##
+## A number stays a number and everything else becomes its string, which is what
+## `resolve_ref` reads: `field ("chara" & n)` is a name and has always worked,
+## and it is the same expression node as `field 122`. Only the type tells them
+## apart, so only the type may be thrown away.
+func _field_designator(node: Dictionary, frame: Dictionary) -> Variant:
+	var value: Variant = _eval(node.get("name", {}), frame)
+	if typeof(value) == TYPE_INT:
+		return value
+	# A float subscript is a number Lingo happens to hold as one -- `field (i + 1)`
+	# where `i` came from a division -- and Director resolves it by number too.
+	if typeof(value) == TYPE_FLOAT:
+		return int(value)
+	return LingoValue.to_str(value)
 
 
 func _cast_of(node: Dictionary, frame: Dictionary) -> String:
@@ -2020,8 +2054,10 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			var source := _chunk_source_text(expr.get("source", {}), frame)
 			return LingoValue.count_of(source, unit, item_delimiter)
 		"field":
+			# Unstringified, for the reason `_field_designator` gives: `field 122`
+			# is a member number and `field "122"` is a member name.
 			return _host_call("get_field", [
-				LingoValue.to_str(_eval(expr.get("name", {}), frame)),
+				_field_designator(expr, frame),
 				_cast_of(expr, frame),
 			])
 		"field_prop":
@@ -2037,7 +2073,7 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 			## The fallback is for a host that predates the pair — `lingo_host.gd`
 			## and the stub hosts in `tools/` bind `get_field` alone, and for them
 			## `the text of field "x"` is still the whole of what they can answer.
-			var field_name := LingoValue.to_str(_eval(expr.get("name", {}), frame))
+			var field_name: Variant = _field_designator(expr, frame)
 			var field_cast := _cast_of(expr, frame)
 			if host != null and host.has_method("get_field_prop"):
 				return _host_call("get_field_prop", [

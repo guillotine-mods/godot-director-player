@@ -44,6 +44,10 @@ const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
 const InputRouter := preload("res://scenes/preview/input_router.gd")
+## For the one line that says what a click resolved to, rather than a second
+## spelling of it here: the printed line, the copied line and the line a failure
+## message quotes are one string (`preview/snapshot.gd`).
+const Snapshot := preload("res://scenes/preview/snapshot.gd")
 
 ## §8.1's input events, and §6's mouse properties. Listed rather than tested one
 ## by one so that adding a name to the engine without adding it here is visible
@@ -101,6 +105,55 @@ func _busiest_frame(preview: Node) -> int:
 			most = count
 			best = i
 	return best
+
+
+## `[frame, channel, point]` for a sprite the hit test reaches **whose own
+## authored behaviour declares a mouse handler**, or `[]`.
+##
+## The subject `_clickable` finds is the one the *mouse* can reach, and on most
+## frames it is eligible through §4.3's other clauses -- a `moveableSprite` this
+## harness set itself, in the fallback. That is the right subject for the message
+## vocabulary and the wrong one for the question below it, which is about the
+## *recipient*: does a click on a sprite carrying a real `on mouseUp` reach that
+## behaviour, or does it fall through to the frame script?
+##
+## Found rather than named, and it is found in every title: 270 (frame, channel)
+## pairs in `piposh2`'s `strtgame.dir` (the gate's own root) and 216 in
+## `piposh-dream`'s `eat.dir`.
+func _authored_behaviour(preview: Node) -> Array:
+	var score = preview.get("_score")
+	var was := int(preview.get("_index"))
+	var pixels: bool = preview.get("_hit_pixels")
+	# Whole-rect for the search only, as `snapshot_check` does: decoding artwork
+	# for every candidate over a thousand frames is minutes, which reads as a hung
+	# harness rather than a slow one.
+	preview.set("_hit_pixels", false)
+	var found: Array = []
+	for index in mini(int(score.frame_count), 1400):
+		preview.set("_index", index)
+		for raw in preview.call("frame_sprites"):
+			var sprite: Dictionary = preview.call("_effective", raw)
+			if sprite.is_empty():
+				continue
+			var channel := int(sprite["channel"])
+			var behaviour: Dictionary = preview.call("_sprite_script", channel, index)
+			if not Interaction.declares_mouse_handler(
+					behaviour, preview.get("_interpreter")):
+				continue
+			var rect: Rect2 = preview.call("_sprite_rect", sprite)
+			if rect.size.x < 8.0 or rect.size.y < 8.0:
+				continue
+			var at := _point_on(preview, rect, channel)
+			if at.x < 0.0:
+				continue
+			found = [index, channel, at, str(behaviour.get("script", "?"))]
+			break
+		if not found.is_empty():
+			break
+	preview.set("_hit_pixels", pixels)
+	if found.is_empty():
+		preview.set("_index", was)
+	return found
 
 
 ## A stage point the hit test answers `channel` for, or (-1,-1). The centre is
@@ -922,4 +975,99 @@ func _init() -> void:
 		await _drop_over_a_higher_channel(preview, h, host, channel, true)
 		h.complete("a real drop over a higher channel leaves `the clickOn` alone")
 
+	_check_authored_recipient(preview, h)
 	quit(h.finish("Director's mouse event vocabulary"))
+
+
+## **The player-visible invariant: a click on a sprite whose behaviour declares
+## `mouseUp` reaches that behaviour.**
+##
+## `tools/click_chain.gd` asserts the same rule against a behaviour it *compiles*
+## into the score's own attachment, which is the right way to state §6.3's five
+## tiers and their `pass` flag. What nothing asserted until now is the same thing
+## on a movie's **own authored** behaviour, over the engine's real resolution path
+## -- `interaction.gd:script_for_click` and `preview/scripts.gd:for_sprite`, keyed
+## on the score's interval entries and resolved in the library the interval names.
+## Any of those answering wrongly sends the click to the frame script, and the
+## symptom is a hotspot that answers by doing nothing.
+##
+## That is what a player reported against `piposh-dream`'s `eat.dir`, where nine
+## characters share `BehaviorScript 1:121`. The routing was right and the *report*
+## was mislabelled (see `preview/snapshot.gd:note_click`), but the invariant had no
+## gate on real data either way, so a real regression here would have read exactly
+## the same from the player's chair.
+##
+## **The right button is asserted with it, and it is the same rule.** §4.3 makes a
+## sprite with any D6+ behaviour a click target whatever that behaviour declares,
+## so the descent stops here for a right click too -- and `script_for_click`
+## resolves against the *pair* being sent, so a behaviour declaring only `mouseUp`
+## must NOT answer `rightMouseUp` and the click falls to the frame. 0 of the six
+## titles declare `rightMouseDown` or `rightMouseUp` anywhere, so a right click on
+## an authored hotspot doing nothing is Director, not a fault. Asserting both
+## directions is what keeps a future "make the right button work" change honest.
+func _check_authored_recipient(preview: Node, h) -> void:
+	var case := "a click on a sprite whose behaviour declares `mouseUp` reaches it"
+	h.begin(case)
+	var subject := _authored_behaviour(preview)
+	if subject.is_empty():
+		# Said out loud and asserted over nothing, which is this file's own
+		# convention for a rule the loaded title cannot express (see
+		# `mouseUpOutSide` above). Every title in this repo can: the smallest count
+		# measured is 216 pairs.
+		print("      no sprite in this movie carries an authored mouse behaviour the"
+			+ " hit test reaches; the recipient rule is not stated here")
+		h.complete(case)
+		return
+	var frame := int(subject[0])
+	var channel := int(subject[1])
+	var at: Vector2 = subject[2]
+	var named := str(subject[3])
+	print("      subject: frame %d, channel %d, %s" % [frame + 1, channel, named])
+
+	var movie := str(preview.call("movie_name"))
+	var ran := _ran(preview, "mouseUp@sprite")
+	preview.call("route_press", at)
+	# The press-time record, which is where the routing decision is: the tier and
+	# the script `script_for_click` chose. Read before the release, because a
+	# handler is allowed to navigate and this must not depend on it.
+	var click: Dictionary = preview.get("_last_click")
+	h.check("the press resolves to the sprite tier, not the frame",
+		str(click.get("tier", "")) == "sprite",
+		"tier %s, script %s" % [str(click.get("tier", "")), str(click.get("script", ""))])
+	h.check("and to that sprite's own behaviour",
+		str(click.get("script", "")) == named,
+		"answered %s, wanted %s" % [str(click.get("script", "")), named])
+	h.check("and the record says a handler for the message exists",
+		bool(click.get("handler", false)), Snapshot.click_line(click))
+	preview.call("route_release", at)
+	# A `go to movie` inside the handler is proof the handler ran, and it also
+	# takes the counters with it -- so the delta is asserted only where the movie
+	# stood still, and the other case is reported rather than turned into a red.
+	if str(preview.call("movie_name")) != movie:
+		print("      the handler navigated to %s, which is itself proof it ran;"
+			% str(preview.call("movie_name"))
+			+ " the tally delta is not assertable across the jump")
+	else:
+		h.check("the behaviour's own `mouseUp` ran, at the sprite tier",
+			_ran(preview, "mouseUp@sprite") == ran + 1,
+			"mouseUp@sprite %d, wanted %d" % [_ran(preview, "mouseUp@sprite"), ran + 1])
+
+	# The right pair on the same sprite. Only where the movie is still the one the
+	# subject was found in; after a jump there is no such sprite to press.
+	if str(preview.call("movie_name")) == movie:
+		var right_ran := _ran(preview, "rightMouseUp@sprite")
+		preview.call("route_right_button", at, true)
+		var right_click: Dictionary = preview.get("_last_click")
+		h.check("a right click on it does NOT resolve to the behaviour",
+			str(right_click.get("tier", "")) != "sprite",
+			Snapshot.click_line(right_click))
+		preview.call("route_right_button", at, false)
+		h.check("and no `rightMouseUp` handler ran at the sprite tier",
+			_ran(preview, "rightMouseUp@sprite") == right_ran,
+			"rightMouseUp@sprite %d, was %d" % [
+				_ran(preview, "rightMouseUp@sprite"), right_ran])
+	h.complete(case)
+
+
+func _ran(preview: Node, key: String) -> int:
+	return int((preview.get("_ran") as Dictionary).get(key, 0))

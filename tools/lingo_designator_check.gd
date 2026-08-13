@@ -70,10 +70,14 @@ class StubHost extends RefCounted:
 			return "" if args.is_empty() else str(args[0]).get_file().get_basename()
 		return 0
 
-	func set_field(name: String, cast: String, text: String) -> void:
-		fields.append({"name": name, "cast": cast, "text": text})
+	# `name` is a Variant because the designator is: `field 122` reaches a host as
+	# the number 122 and `field "x"` as a string, and the interpreter no longer
+	# flattens the two (`lingo_interpreter.gd:_field_designator`). A stub typed
+	# `String` would raise on the numeric form.
+	func set_field(name: Variant, cast: String, text: String) -> void:
+		fields.append({"name": str(name), "cast": cast, "text": text})
 
-	func get_field(_name: String, _cast: String) -> Variant:
+	func get_field(_name: Variant, _cast: String) -> Variant:
 		return ""
 
 	func set_system_prop(prop: String, value: Variant) -> void:

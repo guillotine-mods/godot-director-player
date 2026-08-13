@@ -78,7 +78,13 @@ static func key_for(lib: int, number: int, table) -> String:
 ## error. `first` already carries the named library's verdict, because
 ## `members.gd:resolve_ref` refuses to leave a library it was given -- so the
 ## whole of the rule here is *not walking*.
-static func resolve(name: String, first: Array, table, qualified := false) -> Array:
+##
+## `name` is the designator as the script spelled it, so it may be a **number** --
+## `field 122`, and `field i` inside a `repeat with` (see
+## `lingo_interpreter.gd:_field_designator`). `first` has already resolved that by
+## number; the walk below is the name half and asks for its string, which is what
+## `number_of` takes.
+static func resolve(name: Variant, first: Array, table, qualified := false) -> Array:
 	if table == null:
 		return []
 	if not first.is_empty() and int(first[1]) > 0 \
@@ -93,7 +99,7 @@ static func resolve(name: String, first: Array, table, qualified := false) -> Ar
 		var cast = table.cast_for(int(lib))
 		if cast == null:
 			continue
-		var number: int = cast.number_of(name)
+		var number: int = cast.number_of(str(name))
 		if number <= 0:
 			continue
 		if int(cast.member(number).get("type", 0)) == Ink.TYPE_FIELD:

@@ -3005,7 +3005,12 @@ func set_sound_prop(channel: int, prop: String, value: Variant) -> void:
 		preview.lingo_set_sound_prop(channel, prop.to_lower(), value)
 
 
-func get_field(name: String, cast: Variant) -> Variant:
+## `field <designator>`. **The designator is a Variant, not a String**, because a
+## number and a name are two different references: `field 122` is member 122 and
+## `field "122"` is a member named `122`. Typed `String` here, every numeric field
+## reference in the corpus arrived as a name nothing holds -- see
+## `lingo_interpreter.gd:_field_designator`.
+func get_field(name: Variant, cast: Variant) -> Variant:
 	if preview == null:
 		return ""
 	return preview.lingo_field(name, str(cast))
@@ -3015,7 +3020,7 @@ func get_field(name: String, cast: Variant) -> Variant:
 ## fields: the value went nowhere, `field "y"` read back the authored placeholder,
 ## and the screen showed nothing either way. With fields rendered, dropping the
 ## write is the difference between a live score and one frozen at `000`.
-func set_field(name: String, cast: Variant, value: Variant) -> void:
+func set_field(name: Variant, cast: Variant, value: Variant) -> void:
 	if preview != null:
 		preview.lingo_set_field(name, str(cast), LingoValue.to_str(value))
 
@@ -3029,13 +3034,13 @@ func set_field(name: String, cast: Variant, value: Variant) -> void:
 ## `getTheField`/`setTheField` resolve the designator to a member and then read
 ## or write *that member's* property. `preview.lingo_field_prop` therefore lands
 ## on the same code `the <prop> of member` does.
-func get_field_prop(name: String, cast: Variant, prop: String) -> Variant:
+func get_field_prop(name: Variant, cast: Variant, prop: String) -> Variant:
 	if preview == null:
 		return ""
 	return preview.lingo_field_prop(name, str(cast), prop.to_lower())
 
 
-func set_field_prop(name: String, cast: Variant, prop: String, value: Variant) -> void:
+func set_field_prop(name: Variant, cast: Variant, prop: String, value: Variant) -> void:
 	if preview != null:
 		preview.lingo_set_field_prop(name, str(cast), prop.to_lower(), value)
 

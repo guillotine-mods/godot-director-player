@@ -4212,14 +4212,14 @@ func _write_position(channel: int, prop: String, value: Variant) -> void:
 ## references 214 times across the six roots, 170 of them in Piposh 2 alone --
 ## `field "objectsfield" of castLib "master"` is the inventory and is written on
 ## every pickup.
-func lingo_field(name: String, cast: String) -> Variant:
+func lingo_field(name: Variant, cast: String) -> Variant:
 	var where := _resolve_field(name, cast)
 	if where.is_empty():
 		return ""
 	return _field_text_of(_table.get_member(int(where[0]), int(where[1])))
 
 
-func lingo_set_field(name: String, cast: String, text: String) -> void:
+func lingo_set_field(name: Variant, cast: String, text: String) -> void:
 	var where := _resolve_field(name, cast)
 	if where.is_empty():
 		return
@@ -4250,11 +4250,11 @@ func lingo_set_field(name: String, cast: String, text: String) -> void:
 ##
 ## Routed through the member-property path rather than reimplementing it, so a
 ## property cannot answer one thing through `member` and another through `field`.
-func lingo_field_prop(name: String, cast: String, prop: String) -> Variant:
+func lingo_field_prop(name: Variant, cast: String, prop: String) -> Variant:
 	return _member_prop_at(_resolve_field(name, cast), prop)
 
 
-func lingo_set_field_prop(name: String, cast: String, prop: String,
+func lingo_set_field_prop(name: Variant, cast: String, prop: String,
 		value: Variant) -> void:
 	var where := _resolve_field(name, cast)
 	if where.is_empty():
@@ -4280,7 +4280,7 @@ func lingo_set_field_prop(name: String, cast: String, prop: String,
 ## of the defect this closes; a library name that resolves to nothing falls back
 ## to the unqualified walk, which is this port's own reading and is recorded here
 ## as such rather than left to look like the reference.
-func _resolve_field(name: String, cast: String = "") -> Array:
+func _resolve_field(name: Variant, cast: String = "") -> Array:
 	if _table == null:
 		return []
 	return TextArt.resolve(name, _resolve_member_ref(name, cast), _table,
