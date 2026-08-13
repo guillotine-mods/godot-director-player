@@ -452,6 +452,35 @@ sound and preload work landed, and re-checked on 2026-08-07 after the player was
 split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
 the short list of what has no implementation at all.
 
+**Compiled Lingo (`Lscr`) is not decoded, and the corpus proves it costs nothing.**
+The port runs Lingo from the **source text** stored in each cast member's info
+block (`director_cast.gd`, info item 0); nothing reads the `Lscr` bytecode
+Director actually executed, nor `Lctx`/`Lnam` beside it. Measured over all six
+roots on 2026-08-13: **38,474 members carry a script, 64 of them carry a
+`script_id` with no source text, and 0 of those 64 have a single handler.** Their
+script chunks are 92-byte headers with empty tables -- empty script members an
+author left behind, which Director runs as nothing too. Verified twice and from
+outside this pipeline: `reference/lingo/BYAIR/External/BehaviorScript 60.ls` and
+its `.lasm` are both 0 bytes, ProjectorRays reading the same bytecode; and
+`DOCROOM.dir`, whose member 245 the score attaches as a sprite behaviour across
+twelve spans on channel 35, holds 109 `Lscr` chunks of which exactly one has
+`handlersCount == 0` (u16 at offset 72) and it is 92 bytes.
+
+So no behaviour in any of the six titles is missing for want of this decoder, and
+that is the reason it is not built rather than an oversight. **Do not re-run the
+census to find out** -- it is the sixth thing this gap has been re-investigated
+as, and the numbers above are the answer. The count of zero-handler chunks is
+*not* an invariant to assert: `piposh-dream` has 369 of them against 0 sourceless
+members, because a member with source can compile to a handler-less script.
+
+Where it would be required: a **protected** movie (`.dxr`/`.cxt`/`.dcr`) ships
+bytecode with the source stripped, and for one of those this port would have no
+Lingo at all. Every container under `games/` is an unprotected `.dir`/`.cst`,
+which is why the source text is there to read -- but the Movie-In-A-Window code
+names `window("joke.dxr")`, so the original discs shipped protected builds and
+one will eventually be handed to this engine. `tools/fetch_scummvm_reference.sh`
+now fetches `lingo/lingo-bytecode.cpp`, which is the layout's specification.
+
 **Tempo: the pre-D6 numbering is implemented and cannot be exercised.** §9.1.
 Both the rate (`director_frame_clock.gd:rate_for`) and the one-shot meanings
 (`director_score.gd:tempo_waits`) branch on the movie's file version, which is

@@ -67,6 +67,8 @@ FILES=(
   "lingo/lingo-funcs.cpp"         # func_goto, func_play, func_label, frame navigation
   "lingo/lingo-builtins.cpp"      # b_updateStage, b_puppetSprite and the builtin table
   "lingo/lingo-code.cpp"          # Opcode implementations, property get/set paths
+  "lingo/lingo-bytecode.cpp"      # Lscr/Lctx/Lnam layout: addCodeV4, the header and handler offsets
+  "lingo/lingo-bytecode.h"        # LingoV4Bytecode and LingoV4TheEntity record shapes
   "lingo/lingo-object.cpp"        # Object property dispatch
 
   # Trace sources the oracle work reads.
