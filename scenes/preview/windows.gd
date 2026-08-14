@@ -123,13 +123,153 @@ static func draw_chrome(host, size: Vector2, window_type: int,
 
 # ------------------------------------------------------------- the stack
 
+## **The stage's own place in the stacking order.**
+##
+## Director does not have a stage and a separate list of windows on top of it:
+## the stage *is* a window (§14), it sits in the same window list as every
+## Movie-In-A-Window, and `moveToFront(the stage)` raises it over them exactly as
+## `moveToFront(window "x")` raises a window over the stage. That is the whole
+## reason `moveToFront` was a gap worth closing rather than a name to bind to a
+## no-op: without a place for the stage in the order there is nothing for the
+## call to mean.
+##
+## `""` is the key `window("")` and `the stage` already resolve to
+## (`preview_lingo_host.gd:stage_handle`), so this is that same name rather than
+## a new sentinel, and `_windows` never holds it -- the stage is the node the
+## windows are parented to.
+##
+## **Absent from `_window_order` means the stage is at the bottom**, which is both
+## the state every title starts in and the truth about this port's node tree: a
+## window here is a child of the stage node, and a child draws over its parent.
+## So a movie that never moves the stage has a `_window_order` byte-for-byte
+## identical to what it had before any of this existed, and the code below walks
+## it identically.
+const STAGE_KEY := ""
+
+
+## Where the stage sits, or -1 for "at the bottom, implicitly".
+static func stage_index(owner) -> int:
+	return owner._window_order.find(STAGE_KEY)
+
+
+## Put the stage into the order at the place it already implicitly occupies, so
+## that a move can be expressed as a list operation. Idempotent.
+static func _materialise_stage(owner) -> void:
+	if owner._window_order.find(STAGE_KEY) < 0:
+		owner._window_order.insert(0, STAGE_KEY)
+
+
+## Make the node tree say what `_window_order` says.
+##
+## Godot draws a `CanvasItem`'s children over the item itself, in child order, so
+## "in front of the stage" is a later child and "behind the stage" is
+## `show_behind_parent` -- the one flag that puts a child under its parent's own
+## drawing. There is no other way round it: the stage paints into its *own*
+## canvas item, and a parent's item is always beneath its children unless the
+## child says otherwise.
+##
+## Idempotent, and cheap enough to call from every read of the stack: it is a
+## walk of a list this corpus never grows past two entries. It is called from the
+## readers rather than only from the movers because **`lingo_open_window` reorders
+## `_window_order` without going through here** -- it does its own
+## erase/append/`move_child` triple -- so a window that was sent behind the stage
+## and later reopened would keep a stale `show_behind_parent` until something
+## asked about the stack. The real fix for that is one line in
+## `director_preview.gd:lingo_open_window`: call `Windows.move_to_front(self, key)`
+## instead of the triple, which is the same three operations plus this.
+static func restack(owner) -> void:
+	var stage_at: int = owner._window_order.find(STAGE_KEY)
+	var above: Array[Node] = []
+	var below: Array[Node] = []
+	for i in owner._window_order.size():
+		var key := str(owner._window_order[i])
+		if key == STAGE_KEY:
+			continue
+		var node: Node = owner._windows.get(key)
+		if node == null:
+			continue
+		# Annotated rather than inferred: `owner` is untyped, so the loop variable
+		# over its list has no type for `:=` to infer through and the whole module
+		# fails to compile.
+		var behind: bool = stage_at >= 0 and int(i) < stage_at
+		node.show_behind_parent = behind
+		if behind:
+			below.append(node)
+		else:
+			above.append(node)
+	# Front-most last for the above group, because `move_child` to the final index
+	# in list order leaves the last one on top; and reversed for the below group,
+	# because repeatedly moving to index 0 in list order would invert it.
+	for i in range(below.size() - 1, -1, -1):
+		owner.move_child(below[i], 0)
+	for node in above:
+		owner.move_child(node, owner.get_child_count() - 1)
+
+
+## `moveToFront` (§7.4). Raise a window -- or the stage -- over everything else.
+##
+## The reference's `m_moveToFront` (`lingo/lingo-object.cpp:1027`) does three
+## things: make sure the window's movie is loaded, make it the window manager's
+## active window, and send it `openWindow` if it was not already active.
+## The first two are here. **The third is deliberately not**, and the reason is
+## consistency rather than laziness: this port dispatches no window event at all
+## -- `openWindow`, `closeWindow`, `activateWindow` and `deactivateWindow` are
+## listed in `docs/LINGO_SURFACE.md` §6 and bound nowhere, and `lingo_open_window`
+## itself does not send one either. Sending it from *this* call alone would mean
+## `moveToFront` raised an event that `open` does not, which is a stranger state
+## than not having the event.
+##
+## Returns false for a name that is not a window, so a caller can tell "raised"
+## from "there was nothing to raise" -- `moveToFront(window "jokes.dxr")` on a
+## disc with no such file must not silently read as success.
+static func move_to_front(owner, key: String) -> bool:
+	if key != STAGE_KEY and not owner._windows.has(key):
+		return false
+	_materialise_stage(owner)
+	owner._window_order.erase(key)
+	owner._window_order.append(key)
+	restack(owner)
+	owner.queue_redraw()
+	return true
+
+
+## `moveToBack` (§7.4). Send a window -- or the stage -- behind everything else.
+##
+## **The reference stubs this** (`lingo/lingo-object.cpp:1022`,
+## `printSTUBWithArglist`), so it is built from what the window list means rather
+## than copied: the back of the list is the back of the list, and with the stage
+## in that list a window sent to the back goes *behind the stage* and is no longer
+## visible. That reading is what the corpus's only use asks for --
+## `torfim.dir on stopMovie` says `moveToBack(StudyWindow)` and then
+## `forget(StudyWindow)`, which is "hide it, then destroy it" and is pointless if
+## `moveToBack` only reorders windows among themselves when there is one window.
+##
+## Unverified against Director running, for the reason above: there is no
+## reference implementation to check it against and no title here opens two
+## windows at once.
+static func move_to_back(owner, key: String) -> bool:
+	if key != STAGE_KEY and not owner._windows.has(key):
+		return false
+	_materialise_stage(owner)
+	owner._window_order.erase(key)
+	owner._window_order.insert(0, key)
+	restack(owner)
+	owner.queue_redraw()
+	return true
+
+
 ## The open windows, back to front. `the windowList`.
 ##
 ## Director's list holds window references and a script may add to or remove from
 ## it; here it is read-only, because a window in this port exists only as the
 ## movie behind it and there is nothing to put in the list that `window(...)` has
 ## not already created. Unverified: no site in this corpus reads it.
+##
+## The stage's entry is not one of them -- `the windowList` is the *windows*, and
+## `_windows` has no node under `STAGE_KEY` anyway, so this skips it by
+## construction rather than by a test.
 static func keys(owner) -> Array:
+	restack(owner)
 	var out: Array = []
 	for key in owner._window_order:
 		var node: Node = owner._windows.get(key)
@@ -140,9 +280,19 @@ static func keys(owner) -> Array:
 
 ## The front-most open window, or null. Director's active window, which is where
 ## a keypress goes when the pointer is not over anything.
+##
+## **Null also means "the stage is in front"**, which is a new answer and the same
+## answer: every caller already reads null as "there is no window, so the stage
+## has it". Walking down from the top and stopping at the stage's entry is what
+## makes `moveToFront(the stage)` mean anything -- without it the keypress would
+## still go to a window the script just put underneath.
 static func front(owner) -> Node:
+	restack(owner)
 	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
+		var key := str(owner._window_order[i])
+		if key == STAGE_KEY:
+			return null
+		var node: Node = owner._windows.get(key)
 		if node != null and node._window_shown:
 			return node
 	return null
@@ -153,9 +303,20 @@ static func front(owner) -> Node:
 ## A modal window blocks its parent. Input only -- the movie underneath keeps
 ## running, which is why this gates the click and key routing and not `_process`.
 ## Unverified: nothing in this corpus sets `the modal of window`.
+##
+## **Deliberately does not stop at the stage**, unlike `front` and `at`. Modality
+## is a lock on input, not a fact about drawing, and there is no reference
+## behaviour to copy for "a modal window that was sent behind the stage": D5's
+## own documentation describes the modal flag as blocking the movie underneath
+## with no reference to the stacking order. Answering the narrower question here
+## would silently unblock a movie a script has locked, which is the direction
+## that breaks a title rather than the direction that draws one wrongly.
 static func modal(owner) -> Node:
 	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
+		var key := str(owner._window_order[i])
+		if key == STAGE_KEY:
+			continue
+		var node: Node = owner._windows.get(key)
 		if node != null and node._window_shown and node._modal:
 			return node
 	return null
@@ -166,9 +327,17 @@ static func modal(owner) -> Node:
 ## Director hit-tests windows before sprites, and the front window takes the
 ## click whether or not anything in it answers. The whole frame counts, chrome
 ## included -- a click on a title bar belongs to the window it titles.
+##
+## Stops at the stage's entry for the same reason `front` does: a window the
+## script put behind the stage is behind it for the mouse as well as for the eye,
+## and a click that lands where it used to be belongs to the stage.
 static func at(owner, point: Vector2) -> Node:
+	restack(owner)
 	for i in range(owner._window_order.size() - 1, -1, -1):
-		var node: Node = owner._windows.get(owner._window_order[i])
+		var key := str(owner._window_order[i])
+		if key == STAGE_KEY:
+			return null
+		var node: Node = owner._windows.get(key)
 		if node == null or not node._window_shown:
 			continue
 		var frame: Rect2 = node.window_frame()

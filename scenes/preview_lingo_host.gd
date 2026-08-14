@@ -31,6 +31,11 @@ const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 ## the reason `windows.gd` and `sound.gd` are theirs: it needs its own dispatch
 ## path, and the last entity that did not have one lost every write it was given.
 const CastLibs := preload("res://scenes/preview/cast_libs.gd")
+## The window stack, for `moveToFront`/`moveToBack`. The lifecycle calls below
+## (`window`, `open`, `forget`) go through the node because creating a window is
+## node manipulation; ordering is a rule about the stack and lives in the module
+## that owns it.
+const Windows := preload("res://scenes/preview/windows.gd")
 ## §7.3's Xtra registry entry, and the one Xtra this player implements.
 const LingoXtra := preload("res://lingo/lingo_xtra.gd")
 const FileIO := preload("res://lingo/lingo_fileio.gd")
@@ -576,7 +581,7 @@ const HANDLED := [
 	"go", "sound", "puppetsound", "puppetsprite", "cursor",
 	"beep", "delay", "starttimer",
 	"set", "alert", "halt", "quit", "pause", "continue",
-	"window", "open", "close", "forget", "savemovie",
+	"window", "open", "close", "forget", "movetofront", "movetoback", "savemovie",
 	"pass", "dontpassevent", "stopevent",
 	"xtra",
 	# BuddyAPI, whose names are global builtins rather than methods on an
@@ -1120,6 +1125,60 @@ func call_builtin(name: String, args: Array) -> Variant:
 			var to_shut := _first_window_name(args)
 			if to_shut != "":
 				preview.lingo_forget_window(to_shut, low == "forget")
+			return 0
+		"movetofront", "movetoback":
+			## §7.4's two ordering methods. `moveToFront(window "x")` raises a
+			## window over everything; `moveToFront(the stage)` raises the *stage*
+			## over the windows, because in Director the stage is a window in the
+			## same list (§14) and there is no separate notion of "on top of the
+			## stage" for it to be excluded from.
+			##
+			## **Why this was worth writing rather than binding to a no-op.**
+			## `windows.gd` parents every window above the stage unconditionally,
+			## so the one arrangement Itamar Park asks for is the one it already
+			## got, and the four `moveToFront` calls it makes were invisible in
+			## `builtins unbound` rather than visible on screen. A title that opens
+			## *two* windows had no way to say which was in front, and the symptom
+			## then is not an error message but a window drawn behind the one it
+			## was raised over -- a drawing bug that is really a missing binding.
+			## `bugs.md` 107.
+			##
+			## The stacking rule itself is `preview/windows.gd`: the order is
+			## `_window_order` with the stage in it, and the node tree is made to
+			## agree through `show_behind_parent`. Reached on the **stage** node,
+			## because there is one window stack and a `tell window("x")` body
+			## calling `moveToFront` must reorder that one and not start a second.
+			if preview == null or args.is_empty():
+				return 0
+			var stage_node = preview.stage_preview()
+			if stage_node == null:
+				return 0
+			# A handle is unambiguous and `""` inside one is the stage, which is a
+			# real target rather than a miss -- so this cannot go through
+			# `_first_window_name`, whose "" means "nothing recognisable".
+			var target := ""
+			var named := false
+			for value in args:
+				if is_window_ref(value):
+					target = window_key_of(value)
+					named = true
+					break
+			if not named:
+				# A bare name, keyed the way `_windows` is keyed. `_first_window_name`
+				# answers the *name* on purpose (`bugs.md` 55) because `open` and
+				# `forget` re-resolve it against the disc; nothing is being created
+				# here, so it is keyed once and looked up.
+				var spelled := _first_window_name(args)
+				if spelled == "":
+					return 0
+				target = str(preview.window_key(spelled))
+				named = target != ""
+			if not named:
+				return 0
+			if low == "movetofront":
+				Windows.move_to_front(stage_node, target)
+			else:
+				Windows.move_to_back(stage_node, target)
 			return 0
 		"windowpresent":
 			# `windowPresent("map.dxr")` -- does that window exist right now. The

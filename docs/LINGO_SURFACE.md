@@ -2792,6 +2792,8 @@ Two shapes account for most of that list, and neither is a missing name:
 | `log` | builtin | live | 0 sites; lingo_builtins.gd |
 | `max` | builtin | live | 0 sites; lingo_builtins.gd |
 | `min` | builtin | live | 0 sites; lingo_builtins.gd |
+| `movetoback` | builtin | live | 0 sites; host arm — §7.4; the stage is in the stack, so this can send a window behind it |
+| `movetofront` | builtin | live | 0 sites; host arm — §7.4; `moveToFront(the stage)` is a real target and Itamar Park uses it |
 | `numberofchars` | builtin | live | 0 sites; lingo_builtins.gd |
 | `numberofitems` | builtin | live | 0 sites; lingo_builtins.gd |
 | `numberoflines` | builtin | live | 0 sites; lingo_builtins.gd |
