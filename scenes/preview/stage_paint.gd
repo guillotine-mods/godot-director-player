@@ -143,6 +143,47 @@ static func paint_frame(host, table, stage: Vector2i) -> void:
 				"at": top_left,
 			})
 	Trails.settle(host, placed_now, to_stamp)
+	draw_transition(host, stage)
+
+
+## The transition, over the top of the frame that has just been painted.
+##
+## §10: "the transition renders the *new* frame progressively over the *old*", so
+## what is on the stage during one is a composite of two whole frames and not a
+## frame with an effect applied to it.
+## `director/director_transition.gd:Play` holds that composite; this is the whole
+## of what puts it on screen.
+##
+## **The frame underneath is still painted, and the composite covers it.** The
+## cheaper arrangement is to skip the sprite loop entirely while a transition is
+## running, and it is wrong for a reason that has nothing to do with pixels: that
+## loop is where `_note_member`, the `_text_drawn` record the focus arbitration
+## reads and the trails layer are maintained, so a frame that skipped it would
+## spend the whole of the transition telling the rest of the engine that nothing
+## is on stage. The cost is one overdrawn paint per tick for the length of a wipe.
+##
+## Nothing is drawn when the play degraded to a cut -- which is every headless
+## run, because there was no framebuffer to capture the two frames from
+## (`director_preview.gd:_grab_stage`). The playhead is held for the same duration
+## either way, so a build with no screen behaves exactly as this port did before
+## the drawing existed.
+static func draw_transition(host, stage: Vector2i) -> void:
+	var play = host._transition_play
+	if play == null or not play.draws():
+		return
+	# Rebuilt per paint rather than cached against the play: the compose surface is
+	# a different `Image` object on every dissolve step -- it is republished from
+	# the byte buffer the cells are written into -- so a texture holding on to the
+	# old one would freeze the transition on its first subframe while the play went
+	# on stepping underneath it.
+	var texture := ImageTexture.create_from_image(play.surface)
+	if texture == null:
+		return
+	# Over the movie's own rect, at stage scale. The two frames were cropped and
+	# resized into stage pixels for the reason `_grab_stage` gives, so this is a
+	# 1:1 blit rather than a stretch.
+	Paint.texture_rect(host, texture, Rect2(Vector2.ZERO, Vector2(stage)),
+		false, Color(1, 1, 1, 1))
 
 
 ## The preview's own affordances: the SKIP button and the status line.

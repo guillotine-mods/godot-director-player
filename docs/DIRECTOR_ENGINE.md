@@ -1734,14 +1734,45 @@ bug. The thing that must not be skipped is the **time**: a transition consumes
 its duration and scripts time against it, so rendering transitions instantly runs
 the following frames early.
 
-*This port:* the **time**, in full; the **drawing**, not at all — a transition
-cuts. `director/director_transition.gd` decodes the transition cast member and
-resolves the three sources in the order above; `director/director_frame_clock.gd`
-holds the playhead for the duration, and the frame's `enterFrame` is deferred to
-the end of it because §6.2 puts the transition inside `renderFrame`. Events keep
-being pumped throughout, because the hold is a state polled per tick and Godot's
-input is untouched by it. See §16.7 for what the corpus actually asks for, which
-is five frames and four seconds.
+The transition cast member's own record is 6 bytes
+(`castmember/transition.cpp`): `transTime`, `chunkSize`, `transType`, `flags`,
+then a big-endian `durationMillis`. **The change area is bit 0 of the flags,
+inverted** — `area = !(flags & 1)`, so a clear bit means the changed rectangle
+and a set bit means the whole stage. Two further adjustments are made to the
+duration before anything reads it: `playTransition` clamps it *up* to 250 ms,
+and `initTransParams` resets the two "fast" dissolves (23, 50) *down* to 250 ms
+however long the file says.
+
+*This port:* the **time** and the **drawing**, both. All 52 numbered types are
+implemented over the reference's thirteen algorithms, with the chunk size and the
+change area that govern them; `director/director_transition.gd` carries the
+resolution order, the member decode, `initTransParams`' step arithmetic and a
+`Play` object that composes the departing and arriving frames into the surface
+for one step. `director/director_frame_clock.gd` holds the playhead for the
+duration; `scenes/preview/frame_loop.gd:advance_transition` steps the play from
+elapsed time against that same hold, once per engine tick rather than once per
+score step, so the last step lands on the tick the hold releases;
+`scenes/preview/stage_paint.gd` draws the composite over the frame. The frame's
+`enterFrame` is deferred to the end because §6.2 puts the transition inside
+`renderFrame`. Events keep being pumped throughout, because the hold is a state
+polled per tick and Godot's input is untouched by it.
+
+Two honest limits, both stated at their code. **The two frames are captured from
+the framebuffer**, so a build with no screen — every headless run, and therefore
+every gate run — holds the playhead for the full duration and draws a cut, which
+is what this port did for every transition before the drawing existed.
+`tools/transition_render.gd` covers the algorithms themselves against synthetic
+frames, which is where the direction assertions live. And **types 47/48 (zoom)
+draw their outlines by inverting the pixels under them** rather than through the
+ink pipeline, because there is no sprite to ink; the reference's `kInkTypeReverse`
+has the same visible effect.
+
+§16.7 records what the corpus asks for, and it is not the five frames and four
+seconds this section used to cite. Re-measured with `tools/transition_survey.gd`:
+all six shipped roots play **12** distinct types across **125** frames totalling
+**140.5 s**, where the old census recorded two types across five frames and 4.0 s
+— `rating` alone accounts for 94.5 s of it and is the only source of types 24, 25
+and 28.
 
 ---
 
@@ -2253,17 +2284,59 @@ is not cheap to remove: Godot paints at the end of the process frame rather than
 where `renderFrame` sits, so what `enterFrame` writes lands in the same painted
 frame instead of the next one.
 
-**16.7 Nothing implements transitions. (Neither side.)** §10. **Partly done**, and
-the measurement is the point. `tools/transition_survey.gd` over all 61 containers
-(61,371 frames) finds **3** transition cast members, **5** frames that name one,
-**2** distinct types (11 push left ×4, 52 dissolve bits ×1), durations of 600/700/
-1000 ms, and **4.0 s** of transition in the whole game; `reference/lingo/` calls
-`puppetTransition` **zero** times. So the time is implemented in full —
-`director/director_transition.gd` decodes the member, resolves §10's three
-sources in order, and `director/director_frame_clock.gd` holds the playhead for
-the duration with `enterFrame` deferred to the end of it — and the *drawing* is
-deliberately a cut, per §10's own advice, rather than thirteen algorithms for
-five frames.
+**16.7 Nothing implements transitions. (Done.)** §10. All 52 numbered types draw,
+over the reference's thirteen algorithms, with the chunk size and change area
+that govern them; `director/director_transition.gd:Play` is the compositor and
+`scenes/preview/frame_loop.gd:advance_transition` steps it inside the hold
+`director/director_frame_clock.gd` was already running. `tools/transition_render.gd`
+is the gate, and it asserts direction rather than change — see its header for why
+"the stage differs from both endpoints" is a check every algorithm passes,
+including the wrong one.
+
+**The measurement that used to be the argument for stopping at the hold is
+recorded here as the thing that was wrong with it.** This entry said the corpus
+was "all 61 containers (61,371 frames)", 3 transition members, 5 frames, 2 types
+(11 and 52) and 4.0 s, and concluded that the drawing was better spent elsewhere.
+The corpus is 651 containers across six roots. Re-measured with
+`tools/transition_survey.gd --root <r> --all`:
+
+| root | movies | type-14 members | frames playing one | held | types |
+|---|---|---|---|---|---|
+| root | movies | type-14 members | frames playing one | held | types |
+|---|---|---|---|---|---|
+| `rating` | 81 | 42 | 52 | 94.5 s | 24, 25, 26, 28, 32, 33, 51, 52 |
+| `piposh-dream` | 52 | 88 | 35 | 21.5 s | 4, 26, 27, 32, 33, 51, 52 |
+| `piposh` | 99 | 4 | 17 | 8.9 s | 5, 51, 52 |
+| `piposh-en` | 94 | 4 | 8 | 5.8 s | 5, 51, 52 |
+| `piposh-ru` | 95 | 4 | 8 | 5.8 s | 5, 51, 52 |
+| `piposh2` † | 61 | 3 | 5 | 4.0 s | 11, 52 |
+| **all six** | **482** | **145** | **125** | **140.5 s** | **12 distinct types** |
+
+† `piposh2`'s row was the old census's own figures for as long as this table had
+one, carried over rather than re-measured. It has since been swept independently
+and came back with the same 5 frames and the same types 11 and 52 — so the mark
+now records that the number was *checked* and agreed, which is a different claim
+from the one it started as and the more useful of the two.
+
+Twelve: 4, 5, 11, 24, 25, 26, 27, 28, 32, 33, 51 and 52. **Every record in every
+root is `changed area`.**
+
+`rating` is the root that matters and it is the one that went unswept longest. It
+is the largest contributor twice over — 52 of the 125 frames, and **94.5 s of the
+140.5 s**, which is more than the other five roots put together — it is the only
+source of types 24, 25 and 28, and its `EGOZROO1.dir` cycles patterns, random
+columns, boxy squares, dissolve pixels and boxy rectangles through a single room
+at 2000 ms each. 44 of its 52 frames are 2000 ms.
+
+Type **27 (random rows) is `piposh-dream`'s alone**, two frames of it, and is the
+thinnest evidence for any type in the table.
+
+`test-games/itamar-park` was swept and holds **0** type-14 members over 3 movies;
+`itamar-magichat` is the one corpus not swept and
+`tools/member_type_census.gd` puts a single type-14 member in it. Both sets of numbers were honest when taken; the
+conclusion drawn from the first was not, because `AGENTS.md` is explicit that
+measurement decides order and never scope. What the corpus asks for still decides
+which types were proved against real frames, and that is §18's list.
 
 Measured alongside it, and much larger: the tempo channel's **delays** and
 **wait-for-click** frames, which the preview also took no time over. The corpus
@@ -2419,7 +2492,7 @@ destination-reading inks.
 | Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** | `director_score.gd`; `director_frame_clock.gd` |
 | Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
 | Tempo: wait-for-video | **nothing** | — |
-| Transitions | **timed**, not drawn: 5 frames and 4.0 s corpus-wide | `director_transition.gd`; `director_frame_clock.gd` |
+| Transitions | **done**: all 52 types over 13 algorithms, chunk size and change area; drawn from two captured frames, so a headless build holds the duration and cuts | `director_transition.gd:Play`; `preview/frame_loop.gd:advance_transition`; `preview/stage_paint.gd:draw_transition`; `tools/transition_render.gd` |
 | Palette resolution / cycling / fades | **done, unverified**: resolution order, cycling, fades and a CLUT reader, on a corpus that cycles 0 times; five built-in tables are authored data this port does not have | `director_palette_state.gd`; `director_palette.gd` |
 | Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
 | Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |
@@ -2514,14 +2587,27 @@ destination-reading inks.
   0x132c, 0x69ba, 0x69b4, 0x402c, 0x406b. Two of those differ between adjacent
   frames naming the *same* member, so it is not a parameter of the transition.
   Nothing reads it and nothing depends on it.
-- **Which of the transition member's bytes 0 and 3 is the flags byte and which is
-  the change area.** Byte 0 is 0 and byte 3 is 2 in all three members in this
-  corpus, so a constant column cannot tell them apart. Both are carried through
-  unread.
-- **Whether `enterFrame` really is deferred past a transition.** §6.2 puts the
-  transition inside `renderFrame` and §6.1 puts `enterFrame` after it, which is
-  the reading implemented; ScummVM's own `playTransition` was not read line by
-  line to confirm no `enterFrame` is dispatched inside it.
+- ~~**Which of the transition member's bytes 0 and 3 is the flags byte and which
+  is the change area.**~~ **Settled**, from `castmember/transition.cpp`, and both
+  halves of the guess were wrong: byte 0 is `transTime` (D3's tick count,
+  superseded), byte 3 is the flags, and the change area is not a byte at all but
+  `!(flags & 1)`. A constant column really could not tell them apart; a reference
+  could. Every transition member in every root has byte 3 = 2, so **every
+  transition in this corpus is a changed-area transition** — which the old
+  reading would have got backwards had anything consumed it.
+- ~~**Whether `enterFrame` really is deferred past a transition.**~~ Confirmed by
+  reading `playTransition`, `dissolveTrans`, `dissolvePatternsTrans`,
+  `transMultiPass` and `transZoom` line by line: the only Lingo any of them
+  dispatches is `executePerFrameHook`, once per subframe. No `enterFrame`.
+- **Every transition type except 4, 5, 11, 24, 25, 26, 27, 28, 32, 33, 51 and 52
+  has never been drawn against a real Director frame.** Those twelve are what all
+  six shipped roots play (§16.7); the other forty are implemented from
+  `transitions.cpp` and asserted against synthetic frames by
+  `tools/transition_render.gd`. Only the two Itamar corpora are unswept and they
+  hold one type-14 member between them, so this list will barely move again.
+- **Type 36 (cover up right) is implemented against the geometry rather than
+  against the reference**, which trims the same source edge for 35 and 36. The
+  derivation is at the case in `director_transition.gd`.
 - **Sound restart semantics below D6** were read only in outline.
 - **The exact D6 tempo cue-point encoding** was read but not reasoned about.
 - **`the timer` / `startTimer`** are described from the tick base and the timeout

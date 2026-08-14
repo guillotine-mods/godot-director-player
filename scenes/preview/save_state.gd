@@ -195,6 +195,13 @@ const ACCOUNTED := {
 	"_caret_since": "rebuilt: the blink phase restarts, which is what a keystroke does",
 
 	# ------------------------------------------------------------- excluded
+	"_transition_play": "excluded: two whole framebuffers and the step a wipe has"
+		+ " reached, all three of them mid-flight. The *hold* the transition is"
+		+ " running inside is saved -- it is the frame clock's, and `_clock` carries"
+		+ " it -- so a session saved during a wipe comes back on the arriving frame"
+		+ " with the rest of the wipe's time still owed, which is the same movie a"
+		+ " tick later rather than a different one. Carrying it would mean two"
+		+ " 640x480 images per save for a picture the next paint replaces.",
 	"_trail_image": "excluded: an accumulation of past paints. No script can read"
 		+ " it (`the picture of window` is unimplemented, §16.25), and embedding a"
 		+ " 640x480 PNG per save buys pixels nothing can act on. The sidecar PNG"
@@ -239,6 +246,11 @@ const ACCOUNTED := {
 	"_status": "excluded: the HUD line, rebuilt from the state around it",
 	"_picker": "excluded: the container picker is closed by loading, deliberately —"
 		+ " it takes every key while open and a restored session must take none",
+	"_key_overlay": "excluded: whether this *machine* has no keyboard, read once"
+		+ " from `KeyAffordance.enabled()`. A fact about the device the save is"
+		+ " loaded on, not about the movie — carrying it would let a save taken on"
+		+ " a phone put a touch control on a desktop, and one taken on a desktop"
+		+ " take it away on a phone.",
 }
 
 ## Keys `capture` always writes. `tools/save_state.gd` asserts the record carries

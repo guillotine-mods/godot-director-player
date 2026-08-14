@@ -244,14 +244,34 @@ builtins read the argument as a **sprite channel**, which is the form every one
 of Director's own examples uses; a member-side call needs the reference to
 survive the argument, which is a parser change.
 
-**The sound-member half of the same surface is real and is unexercised.** `the
-duration`, `the cuePointNames`, `the cuePointTimes`, `the sampleRate`, `the
+**The sound-member half of the same surface is real, and is exercised now.**
+`the duration`, `the cuePointNames`, `the cuePointTimes`, `the sampleRate`, `the
 sampleSize`, `the channelCount` and `the mediaReady` of a `#sound` member are
 computed from the member's own bytes through `director/director_sound.gd`, which
-decodes all three shapes Director wrote. No cast in any of the six titles holds a
-sound member -- every sound these games play is an external `.aif` reached by
-`sound playFile` -- so that path is written from the decoder and confirmed by
-nothing. The first title that ships a sound member is what will check it.
+decodes all three shapes Director wrote.
+
+**This said "No cast in any of the six titles holds a sound member", and that was
+wrong.** The corpus holds **204** (`tools/member_type_census.gd`): 87 in
+`itamar-magichat`, 66 in `itamar-park`, 17 each in `piposh`, `piposh-en` and
+`piposh-ru`. Piposh 2 has none, and that one title's zero was written down here,
+in AGENTS.md and in `scenes/preview/media.gd` as a fact about all of them --
+which is how a decoder stays "confirmed by nothing" while its input sits in the
+tree. The first title that ships a sound member shipped in 1997.
+
+Handed the real ones the decoder failed twice, and both are fixed:
+`director_cast.gd` preferred a **zero-length `snd ` chunk** sitting beside the
+real `sndH`/`sndS` pair, where `castmember/sound.cpp:load()` returns on the pair
+before the `snd ` resource is opened; and `_from_header_and_samples` had been
+written to a guess -- that a `sndH` opens with the Mac sound header -- which the
+synthesised fixture was built to satisfy. A `sndH` is the MOA sound format
+record, a flat run of `int32`s named by `sound.cpp:MoaSoundFormatDecoder`.
+`tools/sound_member_census.gd` decodes every sound member in reach and asserts
+against the corpus rather than against a count.
+
+Still not implemented, and now visible: **the linked-file fallback.** The
+reference reads a zero-byte payload as "the audio is an external file" and loads
+it from the path in the member's info block. `director_cast.gd` reports the state
+as `sound_linked_empty` and nothing consumes it yet.
 
 **Score recording (8 builtins).** `beginRecording`, `endRecording`,
 `updateFrame`, `insertFrame`, `deleteFrame`, `duplicateFrame`, `clearFrame`, and
@@ -474,6 +494,70 @@ Corrected against the code on 2026-08-06, after the windows, palette, trails,
 sound and preload work landed, and re-checked on 2026-08-07 after the player was
 split into `scenes/preview/`. `DIRECTOR_ENGINE.md` §17 is the full table; this is
 the short list of what has no implementation at all.
+
+**Transitions: all 52 types draw, and a headless build still cuts.** §10. This
+list had **no transition entry at all** until 2026-08-14, while
+`director/director_transition.gd` named all 52 types in a table and drew none of
+them and `AGENTS.md` named "the transition wipe algorithms" as one of the four
+calls already made the wrong way. A gap list that is silent about the gap the
+standing rules name is the failure mode this file's last section is about, so the
+entry is written here even though most of it landed in the same pass.
+
+*What landed.* All 52 numbered types over the reference's thirteen algorithms,
+with the chunk size and the change area that govern them:
+`director_transition.gd:Play` is `playTransition` plus `initTransParams`,
+`dissolveTrans`, `dissolvePatternsTrans`, `transMultiPass` and `transZoom`,
+composing a departing frame and an arriving frame into one surface per step.
+`preview/frame_loop.gd:advance_transition` steps it from elapsed time against the
+hold `director_frame_clock.gd` was already running -- after the clock in the tick
+rather than before it, which is what makes the last step land on the tick the hold
+releases -- and `preview/stage_paint.gd:draw_transition` puts the surface on the
+stage. `tools/transition_render.gd` is in `gate.sh`'s `ALL`, and its 53 checks
+assert direction rather than change: a push moves a named pixel by the step
+distance, a wipe leaves it alone, a cover holds it still while the arriving frame
+slides over, a reveal moves it and fills what it vacated, and a dissolve is the
+only one that puts both pictures inside one 8x8 window. Each of those five is
+false for the other four, which "the stage differs from both endpoints" is not.
+
+*What is still missing, and it is the join rather than the algorithms.* **The two
+frames are captured from the framebuffer** (`director_preview.gd:_grab_stage`,
+`_grab_arriving`), and headless Godot never paints -- so on every gate run, every
+CI run and any build without a screen, the play is created, holds the playhead for
+exactly its duration and **draws a cut**, which is what this port did for every
+transition before the drawing existed. What that costs is not the algorithms, which
+are asserted against synthetic frames on every run; it is the join between them and
+the real renderer: nothing automated has ever seen this port composite two frames
+*of an actual movie*. Closing it needs an offscreen render of the stage that does
+not go through the window -- every draw in this port is issued to one canvas item
+through `director/director_paint.gd`, and a second `SubViewport` that the same
+painter could target would give both frames without a framebuffer. That is the
+change, and it is worth more than any further transition type.
+
+*What is unverified.* Twelve types are played by the six shipped roots (§16.7's
+table) -- 4, 5, 11, 24, 25, 26, 27, 28, 32, 33, 51 and 52 -- and the other forty
+are drawn by nothing anybody has looked at. They are implemented from
+`transitions.cpp` and covered by the harness against synthetic frames, which is
+an honest state and not the same as absent. Every shipped root has been swept and
+so has `test-games/itamar-park` (0 type-14 members); only `itamar-magichat` is
+outstanding and `tools/member_type_census.gd` puts one type-14 member in it, so
+this list will barely move again: what is left unverified is unverified because
+no title in the corpus uses it, not because nobody has looked.
+
+Two of the twelve rest on very little and should not be read as firmly covered:
+**27 (random rows) is two frames of `piposh-dream` and nothing else**, and 32/33
+are one frame each in `rating` on top of `piposh-dream`'s three.
+
+The multipass family is the whole of the unverified weight worth caring about --
+venetian and vertical blinds, the checkerboard and the eight strip builds, eleven
+types that nothing plays. If a title ever does, `transMultiPass` is the one loop
+in this file whose rect lists have never been checked against anything but their
+own arithmetic. Two named divergences, both at their
+code: type 36 is derived from the destination geometry rather than copied from the
+reference, whose case 36 trims the same source edge as case 35; and types 50/52 at
+chunk sizes below 8 collapse onto chunk 8's grid, because the reference's finer
+grids blend the *bits of a palette index* inside one byte and this port composes
+32-bit RGBA, where a byte is not a pixel. The corpus asks for chunk 8 and chunk 1
+and nothing between.
 
 **Compiled Lingo (`Lscr`) is not decoded, and the corpus proves it costs nothing.**
 The port runs Lingo from the **source text** stored in each cast member's info
@@ -1097,9 +1181,14 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   teleport the sprite to (0,0).
 
 - **Trails**, on a corpus where 0 of 816,318 records set the flag.
-- **Score sound channels, `snd ` decoding, cue points and fades** -- no cast in
-  this game holds a sound member, so all of it is proved against synthesised
-  bytes only.
+- **Score sound channels, cue points and fades** -- still proved against
+  synthesised bytes only. **Member decoding is no longer in this list**: the
+  corpus holds 204 sound members and all of `piposh`'s 17 now decode from their
+  own bytes (`tools/sound_member_census.gd`). Cue points remain unexercised for a
+  reason that is about the format rather than the corpus -- they are read out of
+  an embedded AIFF's marker chunk, and Director 6 puts them in a separate `cupt`
+  child chunk that nothing here reads yet
+  (`castmember/sound.cpp:load()`, the `MKTAG('c','u','p','t')` arm).
 - **Flip** is decoded and applied -- `scenes/preview/sprite_art.gd` mirrors the
   draw with a negative extent and mirrors the hit-test sample with it, so the
   clickable pixels are not the mirror image of the visible ones. Unverified

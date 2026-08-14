@@ -30,6 +30,7 @@ the Godot lifecycle; the modules own the rules.
 | the wrong colours after a palette change | `palette_view.gd` |
 | a room runs too fast or too slow, a wait never releases | `frame_loop.gd` |
 | a `pause`d room is on the wrong frame, or a click cannot lift the pause | `frame_loop.gd` |
+| a transition cuts, wipes the wrong way, or runs past its frame | `../../director/director_transition.gd`, `frame_loop.gd:advance_transition` |
 | a sound doesn't play, or the room moves on before speech ends | `sound.gd` |
 | a handler doesn't run, or the *wrong* handler runs | `scripts.gd` |
 | `stepFrame` never arrives, or an idle `timeOut` fires when it shouldn't | `actors.gd` |
@@ -38,6 +39,7 @@ the Godot lifecycle; the modules own the rules.
 | a `go to movie` loses state it should keep, or keeps state it should drop | `movie_session.gd` |
 | a save does not survive a restart, or `saveMovie` writes the wrong file | `movie_save.gd` |
 | a key goes to the wrong movie, or a debug binding eats a game key | `input_router.gd` |
+| a scene on a phone needs a key nobody can press, or the wrong keys are offered | `key_affordance.gd` |
 | the movie doesn't start, or globals are empty at boot | `boot.gd` |
 | the `L` report is missing something | `debug_report.gd` |
 | a save state comes back missing something, or a field isn't carried | `save_state.gd` |

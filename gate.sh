@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling key_overlay:--root@rating@--boot@arcade1.dir key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator field_designator:--root@piposh lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling key_overlay:--root@rating@--boot@arcade1.dir key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir movie_tempo transition_render script_compile_check script_compile_check:--root@piposh parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock idle_clock:--root@piposh@--boot@PIPDATA/DAY1.dir new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -185,6 +185,28 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # the clock only where there is one. `new_game_reset` names `rating` for the
 # opposite reason -- the tables it checks are that title's, and there is nothing
 # in `piposh2` for it to measure.
+#
+# **The three `--root piposh` entries beside it are one finding each, and each
+# one is invisible on `GATE_ROOT`.**
+#
+# `idle_clock:--root piposh --boot PIPDATA/DAY1.dir` is Piposh 1's own clock. Its
+# `on idle` calls `ClockScript1`, which lives in `MASTER.CST` and is one of five
+# near-identical handlers that did not parse, so `GlobalSecond` stayed 0 and the
+# on-screen `GlobalTime` field stayed at `08:00` for the whole game. The bare
+# entry cannot see it: `piposh2` has an `on idle` of its own and it compiles.
+# Measured with the parser fix reverted: `GlobalSecond 0 -> 0 over 12 tick(s)`,
+# and with it, `0 -> 12` and the field reading `08:12`.
+#
+# `script_compile_check:--root piposh` is what caught those five. The bare entry
+# is 3,307 of 3,307 and has been for a long time, which is exactly why it says
+# nothing about the language -- `piposh2` is the corpus this parser was written
+# against. `piposh` was 8,742 of 8,754 and is 8,754 now (`bugs.md` 39).
+#
+# `field_designator:--root piposh` covers the typed name lookup. The check finds
+# its own fixture -- a library that gives one name to a field and to an earlier
+# member of another type -- and `piposh2` has none, so there it prints "nothing
+# asserted here" and only `piposh` exercises it (`SLOTMACH.dir`, `credit`: the
+# Xtra at 83 that hid the field at 97).
 #
 # `liveness_sweep` carries `--limit 12` and that number is the whole reason it can
 # be here at all: the full sweep of one corpus is 20-30 minutes, because an

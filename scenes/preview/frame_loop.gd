@@ -144,18 +144,27 @@ static func sync_frame_entry(host) -> void:
 	host._begin_transition(frame)
 
 
-## Resolve this frame's transition and hold the playhead for as long as it takes.
+## Resolve this frame's transition, hold the playhead for as long as it takes,
+## and start the drawing that fills the hold.
 ##
 ## Three sources in order: a puppet transition set from Lingo, which is one-shot
 ## and consumed here; the frame's own, which in a D5 score is a reference to a
-## transition cast member; or nothing. Only the *time* is reproduced -- the new
-## frame cuts in rather than wiping -- because a cut reads as a stylistic choice
-## while a wrong wipe reads as a bug, and the duration is the part scripts are
-## timed against.
+## transition cast member; or nothing. `score.cpp:renderTransition`.
 ##
-## `tools/transition_survey.gd` says this corpus spends 4.0 s in transitions
-## across five frames of three movies, against 74.0 s in tempo delays across
-## thirty-six. Both were being skipped entirely.
+## **The hold and the drawing are armed together and from the same number**, and
+## that is the whole of what keeps them in step. Director plays the transition
+## synchronously inside `renderFrame` and the frame is not finished arriving
+## until the last subframe has been drawn, so the duration is simultaneously how
+## long the playhead stands still and how long the wipe has to cross the stage.
+## Splitting them -- arming a hold here and starting a wipe somewhere else -- is
+## how a transition ends up running past the frame it belongs to or finishing
+## early over a playhead that is still waiting, and the movie's own scripts are
+## timed against the first of those two numbers.
+##
+## The two frames come from `_grab_stage`, which needs a framebuffer and does not
+## have one headless. The play is created either way: a play with nothing to
+## compose still counts its steps against the hold, so the wiring is the same
+## code on both, and only the pixels are missing.
 static func begin_transition(host, frame: Dictionary, table) -> bool:
 	var puppet: Dictionary = host._puppet_transition
 	host._puppet_transition = {}
@@ -170,8 +179,66 @@ static func begin_transition(host, frame: Dictionary, table) -> bool:
 		return false
 	host._transitions_played += 1
 	host._clock.hold(Transition.hold_ms(transition), FrameClock.REASON_TRANSITION)
-	host._trace("f%d transition %s" % [host._index, Transition.describe(transition)])
+	# Dropped before the grabs, not after them. A transition that is still
+	# running is drawn *by the paint* `_grab_arriving` performs, so leaving it in
+	# place would capture the previous wipe's half-composited surface as the new
+	# transition's arriving frame -- and two transitions back to back is the
+	# normal case at a scene change, not a corner one.
+	host._transition_play = null
+	# Grabbed in this order and no other: the departing frame is whatever is
+	# still on screen, so it has to be taken before anything repaints, and the
+	# arriving frame is a paint of the frame the playhead has already moved to.
+	var departing: Image = host._grab_stage()
+	var arriving: Image = host._grab_arriving() if departing != null else null
+	host._transition_play = Transition.Play.new(
+		transition, host.stage_size(), departing, arriving)
+	host._trace("f%d transition %s" % [host._index, host._transition_play.status()])
 	return true
+
+
+## Step the transition that is playing, if one is.
+##
+## **Once per engine tick, and the one thing in the tick that runs *after* the
+## clock rather than before it.** Everything above the clock -- `idle`, the
+## timeout, the video playheads, the palette effect -- is there because it can
+## release a hold this tick and would cost a frame if it were evaluated after the
+## clock had already decided the tick holds. This is the opposite case: it is
+## driven *by* the hold rather than able to end one, and the clock's first act in
+## `tick` is to take this tick's delta off the transition's remaining time. Asked
+## before it, "is the transition still running" answers for a tick ago and the
+## play lands one tick late; asked after it, the last step and the release of the
+## hold are the same tick.
+##
+## Still per engine tick and not per score step: the score step below it is
+## refused on most ticks at any ordinary tempo, and a wipe drawn at 4 fps is a
+## cut with extra steps.
+##
+## The step index is derived from **elapsed time against the step duration**,
+## not incremented once per call. `Score::playTransition` sleeps the remainder of
+## `stepDuration` after each subframe and lets a slow step eat the next one's
+## budget, so a transition is `steps` subframes spread over `duration`
+## milliseconds however many of them the machine can afford -- and this port's
+## engine tick is not Director's 1/60 s. Counting calls instead would make every
+## transition as long as the frame rate happened to make it.
+##
+## The elapsed clock is the *same* `delta` the frame clock is running the hold
+## down with, so the last step lands on the tick the hold releases rather than
+## near it. `tools/transition_render.gd` asserts exactly that.
+static func advance_transition(host, delta: float) -> void:
+	var play = host._transition_play
+	if play == null:
+		return
+	if not host._clock.holding_transition():
+		# The hold has gone -- the transition finished, or a `go` cancelled the
+		# frame it belonged to. Either way the arriving frame is what is on screen
+		# now, so the play lands on its last step and is dropped.
+		play.advance_to(play.steps)
+		host._transition_play = null
+		return
+	play.elapsed_ms += maxf(delta, 0.0) * 1000.0
+	play.advance_to(int(ceilf(play.elapsed_ms / maxf(play.step_duration, 0.001))))
+	if play.finished:
+		host._transition_play = null
 
 
 ## One tick of the movie: release what can be released, then take the one score
@@ -253,7 +320,21 @@ static func tick(host, delta: float) -> void:
 	# calls it once per turn (`score.cpp:640-711`, `director.cpp:370-405`); see
 	# `FrameClock.tick` for both numbers and for what this does to a movie whose
 	# tempo is above the loop's own rate.
-	if not host._clock.tick(delta):
+	var step_due: bool = host._clock.tick(delta)
+	# **After the clock, and this is the one thing in the tick that is.** The
+	# clock takes this tick's delta off the transition's remaining hold as its
+	# first act, so asking it here is asking whether the transition is still
+	# running *now* rather than whether it was running a tick ago -- and that is
+	# what makes the play's last step land on the tick the hold releases instead
+	# of the tick after it. See `advance_transition`.
+	advance_transition(host, delta)
+	if not step_due:
+		# A transition draws at the engine's rate, not the score's. Everything
+		# below is the score step, and at 4 fps this returns on fourteen ticks out
+		# of fifteen -- so without this a 1,000 ms wipe would be composed sixty
+		# times and painted four, which is a cut with extra steps.
+		if host._transition_play != null:
+			host.stage_redraw()
 		return
 	# Director's `pause` freezes the film loops with the playhead and a *hold*
 	# does not: `Score::incrementFilmLoops` returns early on `_playbackPaused`

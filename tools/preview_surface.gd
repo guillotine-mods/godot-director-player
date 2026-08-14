@@ -50,7 +50,8 @@ const FIELDS := [
 	"_play_stack", "_preloader", "_puppet_transition", "_ran", "_repaints",
 	"_score", "_score_sound", "_sel_end",
 	"_sel_start", "_sent", "_show_boxes", "_table", "_text_drawn",
-	"_textures", "_ticks", "_traced", "_trail_image", "_transitions_played",
+	"_textures", "_ticks", "_traced", "_trail_image", "_transition_play",
+	"_transitions_played",
 	"_update_stage_calls", "_window_type", "_windows",
 ]
 
@@ -59,6 +60,9 @@ const FIELDS := [
 ## asserted; only the non-null test is relaxed.
 const MAY_BE_EMPTY := [
 	"_clip_rect", "_pending_enter", "_text_drawn", "_trail_image", "_windows",
+	# Null except while a transition is actually being drawn, which is never on a
+	# cold boot and never at all headless.
+	"_transition_play",
 	"_channel_cursors", "_overrides",
 	# The save state's half of the surface: `tools/save_state.gd` reads all of
 	# these, and every one of them is legitimately empty on a cold boot -- no

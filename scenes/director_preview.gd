@@ -39,6 +39,7 @@ const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
 const Snapshot := preload("res://scenes/preview/snapshot.gd")
 const Toast := preload("res://scenes/preview/toast.gd")
 const ContainerPicker := preload("res://scenes/preview/container_picker.gd")
+const KeyAffordance := preload("res://scenes/preview/key_affordance.gd")
 const TextArt := preload("res://scenes/preview/text_art.gd")
 const TextFocus := preload("res://scenes/preview/text_focus.gd")
 const MovieSave := preload("res://scenes/preview/movie_save.gd")
@@ -194,6 +195,17 @@ var _pending_enter = null
 ## transition priority over the frame's own and consumes it at the next frame
 ## change.
 var _puppet_transition: Dictionary = {}
+## The transition currently being drawn -- a `director_transition.gd:Play`, or
+## null between transitions. It holds the frame that was on screen, the frame
+## that is arriving, and the composite of the two at the step it has reached;
+## `preview/frame_loop.gd:advance_transition` steps it against the hold the clock
+## is already running and `preview/stage_paint.gd` draws it.
+##
+## Null whenever there is no framebuffer to capture the two frames from, which is
+## every headless run: the play is still created and still counts its steps, so
+## the timing is unchanged, but `Play.degraded` says why there is nothing to
+## draw. See `_grab_stage`.
+var _transition_play = null
 ## Transitions actually played, for `_report`.
 var _transitions_played := 0
 ## Synchronous repaints -- `repaint_now`, which is what `updateStage` reaches.
@@ -382,6 +394,12 @@ var _toast_until := 0
 ## open, what has been typed, and which entry is selected. Closed by default and
 ## consulted only while open -- see `input_router.gd:key_event`.
 var _picker: Dictionary = {"open": false}
+## Whether this machine has no keyboard, so the touch key overlay is wanted
+## (`preview/key_affordance.gd`). A fact about the **device**, read once: it cannot
+## change while the process runs, and asking per paint would put a static call to a
+## module with static caches on the paint path of every title — see `_paint` for
+## what that costs at engine teardown.
+var _key_overlay := KeyAffordance.enabled()
 ## channel -> the cursor a script set on it. Kept apart from `_overrides` on
 ## purpose: `the cursor of sprite` lives on the channel, is not part of the frame
 ## delta, and survives frame changes and member swaps â€” where `_overrides` is
@@ -1589,6 +1607,73 @@ func _begin_transition(frame: Dictionary) -> bool:
 	return FrameLoop.begin_transition(self, frame, _table)
 
 
+## The two frames a transition composes, as stage-sized images.
+##
+## The departing one is whatever was last **presented** — the caller grabs it
+## before painting anything, because Godot's viewport texture is the last frame
+## that reached the screen. The arriving one is this node's own paint, forced
+## through the renderer **without a buffer swap**: `force_draw(false)` updates the
+## viewport texture and does not present, so the frame the transition is going to
+## wipe *to* never flashes up whole before the wipe starts. With the default swap
+## it does, for one vsync, at the start of every transition in the movie.
+##
+## Returns null when there is nothing to grab, which is every headless run
+## (`preview/snapshot.gd:grab` — a dummy renderer paints nothing). The transition
+## then holds the playhead for its full duration and draws a cut, which is what
+## this port did for every transition before the drawing existed.
+##
+## Cropped to the movie's own rectangle and resized to stage pixels: the viewport
+## is the letterboxed window, and a transition's chunk size, strip count and step
+## distance are all in Director's pixels. Composing at window resolution would
+## scale every one of them by the letterbox factor.
+func _grab_stage() -> Image:
+	# Asked before the grab rather than after it, because a dummy renderer does
+	# not answer "nothing rendered" — it raises `texture_2d_get: Parameter "t" is
+	# null` from inside `ViewportTexture.get_image` and *then* returns nothing.
+	# One engine `ERROR` per transition in a log whose job is to say which
+	# harnesses are clean, for a question the display server can answer directly.
+	if DisplayServer.get_name() == "headless":
+		return null
+	var image: Image = Snapshot.grab(self)
+	if image == null:
+		return null
+	var stage := stage_size()
+	if stage.x <= 0 or stage.y <= 0:
+		return null
+	var placed := get_global_transform_with_canvas() * Rect2(Vector2.ZERO, Vector2(stage))
+	var region := Rect2i(placed.abs()).intersection(Rect2i(Vector2i.ZERO, image.get_size()))
+	if region.size.x <= 0 or region.size.y <= 0:
+		return null
+	var cropped := image.get_region(region)
+	if cropped.get_size() != stage:
+		# Nearest, not bilinear: at the integral scales the letterbox usually
+		# lands on this is exact, and where it is not, a resampled edge would
+		# invent colours that neither frame holds — which the harness's own
+		# "which picture did this pixel come from" test would then read as a third
+		# picture.
+		cropped.resize(stage.x, stage.y, Image.INTERPOLATE_NEAREST)
+	if cropped.get_format() != Image.FORMAT_RGBA8:
+		cropped.convert(Image.FORMAT_RGBA8)
+	return cropped
+
+
+## Paint the frame that is arriving and grab it, without showing it.
+func _grab_arriving() -> Image:
+	if not is_inside_tree() or not is_visible_in_tree():
+		return null
+	# `the updateLock`'s rule, borrowed from `repaint_now` rather than reasoned
+	# about again: while it is set the movie's own paints are suppressed, and this
+	# is a paint of the movie's frame. Under a lock the transition has nothing to
+	# wipe *to* that the movie is willing to show, so it holds the playhead and
+	# cuts -- which is what the lock is asking for.
+	if _host != null and _host.update_lock:
+		return null
+	RenderingServer.canvas_item_clear(get_canvas_item())
+	_paint()
+	RenderingServer.force_draw(false)
+	return _grab_stage()
+
+
 func _advance() -> Dictionary:
 	# Director's `pause`: a step does not begin on a movie that is already paused —
 	# no `exitFrame`, no playhead move, no `prepareFrame`, no `enterFrame`.
@@ -1763,6 +1848,15 @@ func _input(event: InputEvent) -> void:
 			# `the rollOver` = 4, the channel it had last touched.
 			InputRouter.aim_pointer(self, at)
 			if button.button_index == MOUSE_BUTTON_LEFT:
+				# The touch key overlay is tested before the hit test for the same
+				# reason SKIP is: it is the preview's own control, drawn over the
+				# movie, and a hotspot underneath would otherwise eat the tap. It
+				# claims only a press that lands inside a button it actually drew,
+				# and `_key_overlay` is false on every machine with a keyboard --
+				# so on a desktop this whole line is one bool test and the routing
+				# below is what it always was.
+				if _key_overlay and button.pressed and KeyAffordance.press(self, at):
+					return
 				# An empty rect contains no point, so a build with the debug layer
 				# off has no SKIP hotspot either — the control is not drawn and the
 				# corner it used to occupy goes back to the movie. Passed rather
@@ -1911,6 +2005,25 @@ func _paint() -> void:
 	# the frames that actually have a focused widget on them.
 	if _focus_channel > 0:
 		queue_redraw()
+	# **Above the debug gate on purpose.** The touch key overlay is a *player*
+	# affordance, not a developer one: a shipped build on a phone still has a
+	# player who cannot reach a keyboard, and everything below the next line is
+	# switched off in exactly that build. It draws nothing on a frame whose
+	# scripts ask for no key, which is 88.9% of the corpus's scenes.
+	#
+	# **The flag, rather than letting the module answer for itself**, is not an
+	# optimisation. `key_affordance.gd` holds `static var` caches, and Godot clears
+	# a script's statics during engine teardown while `_draw` is still firing — so
+	# a call to it from here after `quit()` reports `Nonexistent function 'draw'`
+	# once per paint. Measured on `tools/key_overlay.gd` against
+	# `PIPDATA/ROULLETE.dir`: 1,556 of them appended to a run that had already
+	# printed PASS, in a 6.5 MB log, and a gate whose log is megabytes of a
+	# scary-looking error is a gate nobody reads. `StagePaint` two lines up has no
+	# statics and is untouched by the same teardown, which is what identified it.
+	# With the flag false — every desktop, so every harness — the call is never
+	# reached and no harness sees anything.
+	if _key_overlay:
+		KeyAffordance.draw(self, stage)
 	# Everything below this line exists for us and not for the movie, so it is all
 	# behind the one switch (`preview/debug_keys.gd:enabled`). A shipped build
 	# draws the movie and nothing else: no outlines over the artwork, no SKIP
