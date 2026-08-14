@@ -1757,15 +1757,51 @@ score step, so the last step lands on the tick the hold releases;
 `renderFrame`. Events keep being pumped throughout, because the hold is a state
 polled per tick and Godot's input is untouched by it.
 
-Two honest limits, both stated at their code. **The two frames are captured from
-the framebuffer**, so a build with no screen — every headless run, and therefore
-every gate run — holds the playhead for the full duration and draws a cut, which
-is what this port did for every transition before the drawing existed.
-`tools/transition_render.gd` covers the algorithms themselves against synthetic
-frames, which is where the direction assertions live. And **types 47/48 (zoom)
-draw their outlines by inverting the pixels under them** rather than through the
-ink pipeline, because there is no sprite to ink; the reference's `kInkTypeReverse`
-has the same visible effect.
+**The two frames no longer need a framebuffer.** They used to: `_grab_stage` read
+the viewport back, so a build with no screen — every headless run, and therefore
+every gate run and every CI run — created the play, held the playhead for the full
+duration and drew a cut. Nothing automated had ever seen this port composite two
+frames of an actual movie. `director/director_paint.gd:Surface` closes it: the
+four primitives every draw in this port goes through now write to a stage-sized
+`Image` as well as to the canvas item, and `director_preview.gd:paint_capture`
+arms one whenever there is no framebuffer. `_grab_stage` reads the last completed
+paint off it — already in Director's pixels, so with none of the crop and resample
+the viewport path needs — and `_grab_arriving` reads the paint it just made,
+which also removes the buffer-swap suppression the old path depended on.
+
+*Not a `SubViewport`, and `ENGINE_TODO.md` proposed one.* The headless display
+server registers exactly one rendering driver, the dummy one, whatever
+`--rendering-driver` says. Measured on 4.7.1 with a `SubViewport` at
+`UPDATE_ALWAYS`, a `Node2D` inside it, rects issued through `RenderingServer` and
+a `force_draw(false)`: `vulkan`, `opengl3` and `d3d12` all answer
+`texture_2d_get: Parameter "t" is null` and return no image. There is nothing to
+read back because nothing rasterises. What the same probe showed is the other
+half of the answer: `ImageTexture.get_image` *does* survive the dummy renderer —
+the dummy texture storage hands back the `Image` it was given — and so does the
+font glyph atlas, so a CPU rasteriser has both the artwork and the glyphs.
+
+Two honest limits of the surface, both counted rather than assumed
+(`Surface.approximated`): a tiled `texture_rect` is not tiled, and glyphs
+rasterise at 1:1 rather than at the viewport oversampling `Paint.text` passes the
+GPU — which is the right answer for a surface whose coordinates are Director's
+pixels and is still a difference from the screen. Nothing in this port passes
+`tile = true`.
+
+`tools/transition_render.gd` still covers the algorithms against synthetic frames,
+which is where the direction assertions live, and now covers a **real** one as
+well: it arms each transition `rating`'s `EGOZROO1.dir` declares, keeps the widest
+(frame 227, type 26, 2,000 ms, chunk 4, clip 626x468 — the narrowest is 8x10,
+because every transition member in the corpus is a changed-area one), and asserts
+the composite against both endpoints in the direction a dissolve specifies: no
+pixel holds a colour neither frame holds, both pictures are on the stage halfway
+through, most 8x8 windows hold both — and a wipe over the *same two real frames*
+does not, which is what stops that from being a statement about any two pictures.
+The composite is also read back off the stage rather than out of the play object,
+so `stage_paint.gd:draw_transition` is asserted too.
+
+And **types 47/48 (zoom) draw their outlines by inverting the pixels under them**
+rather than through the ink pipeline, because there is no sprite to ink; the
+reference's `kInkTypeReverse` has the same visible effect.
 
 §16.7 records what the corpus asks for, and it is not the five frames and four
 seconds this section used to cite. Re-measured with `tools/transition_survey.gd`:
@@ -2492,7 +2528,7 @@ destination-reading inks.
 | Tempo: fps, delay, wait-for-click | **decoded** in the score, **honoured** | `director_score.gd`; `director_frame_clock.gd` |
 | Tempo: wait-for-sound | **done, unverified** — no frame in this corpus writes one: the tempo cell holds only 246, 247 or 248 over 61,371 frames | `director_frame_clock.gd`; `tools/sound_survey.gd` |
 | Tempo: wait-for-video | **nothing** | — |
-| Transitions | **done**: all 52 types over 13 algorithms, chunk size and change area; drawn from two captured frames, so a headless build holds the duration and cuts | `director_transition.gd:Play`; `preview/frame_loop.gd:advance_transition`; `preview/stage_paint.gd:draw_transition`; `tools/transition_render.gd` |
+| Transitions | **done**: all 52 types over 13 algorithms, chunk size and change area, composed from two real frames on **every** build — a headless one included, since `director_paint.gd:Surface` gives the painter an offscreen target to be read back from | `director_transition.gd:Play`; `preview/frame_loop.gd:advance_transition`; `preview/stage_paint.gd:draw_transition`; `director_paint.gd:Surface`; `tools/transition_render.gd` |
 | Palette resolution / cycling / fades | **done, unverified**: resolution order, cycling, fades and a CLUT reader, on a corpus that cycles 0 times; five built-in tables are authored data this port does not have | `director_palette_state.gd`; `director_palette.gd` |
 | Trails | **done, unverified**: accumulation layer driven by per-channel dirtiness, on a corpus where 0 of 816,318 records set the flag | `director_preview.gd:_settle_trails`; `tools/trails.gd` |
 | Blend / alpha | **done**: ink 32 and the has-blend flag, amount is an inverted 0-255 byte at record offset 21 | `director_ink.gd:blend_alpha`; `director_score.gd:_snapshot` |

@@ -201,11 +201,38 @@ var _puppet_transition: Dictionary = {}
 ## `preview/frame_loop.gd:advance_transition` steps it against the hold the clock
 ## is already running and `preview/stage_paint.gd` draws it.
 ##
-## Null whenever there is no framebuffer to capture the two frames from, which is
-## every headless run: the play is still created and still counts its steps, so
-## the timing is unchanged, but `Play.degraded` says why there is nothing to
-## draw. See `_grab_stage`.
+## Was null on every headless run, because there was no framebuffer to capture
+## the two frames from and the play degraded to a cut. `paint_capture` below is
+## what closed that; `_grab_stage` carries the account.
 var _transition_play = null
+## The offscreen half of the painter: a `director_paint.gd:Surface` this node's
+## draws are composed into as well as issued to the canvas item, or null when
+## nothing needs one.
+##
+## **This is the only thing a build with no screen can read a frame back from.**
+## §10's transition composes two whole frames of the movie, and both used to come
+## out of the framebuffer -- so every headless run, every gate run and every CI
+## run created the play, held the playhead for its duration and drew a cut.
+## `docs/ENGINE_TODO.md` proposed a `SubViewport` for this and it cannot work:
+## the headless display server registers only the dummy rendering driver, so a
+## SubViewport rasterises nothing and reads back null under `vulkan`, `opengl3`
+## and `d3d12` alike (measured; `director_paint.gd`'s header carries the probe).
+## The surface is a CPU rasteriser fed by the same four primitives instead.
+##
+## Deliberately **not** an `_` field: it is a painter target rather than session
+## state, `preview/save_state.gd:ACCOUNTED` has nothing to say about a value that
+## does not outlive one paint, and a harness on a machine with a screen turns it
+## on through `force_paint_capture`.
+var paint_capture = null
+## True once something has asked for the surface explicitly, so a run on a
+## machine that *has* a framebuffer can still compare the two backends.
+##
+## Spelled without a leading underscore for the same reason `paint_capture` is,
+## and it is not cosmetic: `preview/save_state.gd:ACCOUNTED` names **every** `_`
+## field on this node as saved, rebuilt or excluded-and-why, and
+## `tools/save_state.gd` fails when the two disagree in either direction. Neither
+## of these two outlives a paint, so neither belongs in a manifest of the session.
+var paint_capture_forced := false
 ## Transitions actually played, for `_report`.
 var _transitions_played := 0
 ## Synchronous repaints -- `repaint_now`, which is what `updateStage` reaches.
@@ -1627,6 +1654,19 @@ func _begin_transition(frame: Dictionary) -> bool:
 ## distance are all in Director's pixels. Composing at window resolution would
 ## scale every one of them by the letterbox factor.
 func _grab_stage() -> Image:
+	# The offscreen surface first, because where there is one it is a strictly
+	# better answer than the framebuffer: it is already in stage pixels, so it
+	# skips the crop and the resample below, and it is the frame this node
+	# painted rather than whatever the compositor last put on the screen.
+	#
+	# It holds the *last completed* paint, which is exactly what the departing
+	# frame is: `frame_loop.gd:begin_transition` grabs it after the playhead has
+	# already moved, so re-running `_paint` would produce the arriving frame and
+	# not this one. A back-to-back transition therefore departs from the previous
+	# wipe's half-composite, which is what is on screen and what the framebuffer
+	# path also answers.
+	if paint_capture != null:
+		return paint_capture.snapshot()
 	# Asked before the grab rather than after it, because a dummy renderer does
 	# not answer "nothing rendered" — it raises `texture_2d_get: Parameter "t" is
 	# null` from inside `ViewportTexture.get_image` and *then* returns nothing.
@@ -1670,8 +1710,49 @@ func _grab_arriving() -> Image:
 		return null
 	RenderingServer.canvas_item_clear(get_canvas_item())
 	_paint()
+	# With a surface the paint above *is* the readback, and the buffer swap that
+	# the framebuffer path has to suppress never happens at all -- so the arriving
+	# frame cannot flash up whole before the wipe starts, by construction rather
+	# than by remembering to pass `false`.
+	if paint_capture != null:
+		return paint_capture.snapshot()
 	RenderingServer.force_draw(false)
 	return _grab_stage()
+
+
+## Turn the offscreen surface on for a run that would not have armed one.
+##
+## The automatic rule is "arm it when there is no framebuffer", which is every
+## headless run and no ordinary play session. A harness on a machine with a
+## screen wants both backends live at once so it can compare them, and that is
+## the only caller: `tools/transition_render.gd`'s cross-check case, which says
+## out loud that it found no screen and asserts nothing when it did not.
+func force_paint_capture(on: bool) -> void:
+	paint_capture_forced = on
+	if not on:
+		paint_capture = null
+
+
+## Create or resize the surface, once per paint and before anything draws.
+##
+## Sized from `stage_size()` for the stage and from `window_size()` for a
+## Movie-In-A-Window, which is the rectangle each one's `clip_to_stage` arms and
+## the rectangle its own transition composes over. A movie that changes stage size
+## through `go to movie` rebuilds it here rather than anywhere having to remember
+## to, for the same reason `stage_size` is derived rather than cached.
+func _arm_paint_capture() -> void:
+	if not paint_capture_forced and DisplayServer.get_name() != "headless":
+		# A build with a screen reads the framebuffer, which is free. Composing a
+		# second copy of every frame on the CPU for it would be pure cost.
+		paint_capture = null
+		return
+	var wanted := Vector2i(window_size()) if _window_key != "" else stage_size()
+	if wanted.x <= 0 or wanted.y <= 0:
+		paint_capture = null
+		return
+	if paint_capture == null or paint_capture.size() != wanted:
+		paint_capture = Paint.Surface.new(wanted)
+	paint_capture.begin()
 
 
 func _advance() -> Dictionary:
@@ -1978,6 +2059,7 @@ func stage_redraw() -> void:
 ## `CanvasItem.draw_*` -- those assert `drawing`, which is raised only inside
 ## `NOTIFICATION_DRAW`.
 func _paint() -> void:
+	_arm_paint_capture()
 	_clip_to_stage()
 	# The stage colour, which is what every non-trails repaint fills with. Over
 	# the movie's own rect only: the chrome around a window is painted by
@@ -2028,8 +2110,25 @@ func _paint() -> void:
 	# printed PASS, in a 6.5 MB log, and a gate whose log is megabytes of a
 	# scary-looking error is a gate nobody reads. `StagePaint` two lines up has no
 	# statics and is untouched by the same teardown, which is what identified it.
-	# With the flag false — every desktop, so every harness — the call is never
-	# reached and no harness sees anything.
+	#
+	# **"With the flag false — every desktop, so every harness" was true when it
+	# was written and is not true now**, which is exactly the shape `AGENTS.md`
+	# warns a comment carrying a scope can go stale in. `--touch-input` (`ca3f2f72`)
+	# forces the flag on for a desktop run precisely so a phone layout can be
+	# tested without one, and **four entries in `gate.sh`'s `ALL` pass it** — the
+	# `key_overlay:` group, one of which is the `PIPDATA/ROULLETE.dir` run this
+	# paragraph measured. So the flag is true for the length of those runs and the
+	# call *is* reached.
+	#
+	# It costs nothing now, and that is a measurement rather than a hope.
+	# `bugs.md` 112 filed a ~1,200-line residue of the same error on that very
+	# entry; re-measured on 4.7.1 on Windows it does not reproduce — four runs of
+	# `key_overlay --root piposh --boot PIPDATA/ROULLETE.dir --touch-input`, 0
+	# occurrences each, whole log 49 lines. Nor does it reproduce when the flag is
+	# deliberately left armed through `quit()` rather than cleared by
+	# `key_overlay.gd:_restore`, which was the obvious remaining route: 0
+	# occurrences again. Whatever closed it, it is closed here; the flag is worth
+	# keeping for the argument above it and not for a symptom it no longer stops.
 	if _key_overlay:
 		KeyAffordance.draw(self, stage)
 	# Everything below this line exists for us and not for the movie, so it is all

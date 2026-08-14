@@ -133,6 +133,50 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	return textures[key]
 
 
+## Why `texture_for` answered null, in the words a report can print.
+##
+## **`texture_for` returns null for two entirely different things and nothing
+## downstream could tell them apart**, which is `bugs.md` 110. `plane1.dir`'s
+## flyer tallied `{"child drawn": 29, "child has no art": 8}` in two independent
+## runs, and "no art" reads as artwork that failed — a decode bug, a cast-library
+## bug, something to fix. It is neither. All eight are film-loop children whose
+## member is **type 15 with the Xtra symbol `vectorShape`**: Director 7 vector art
+## whose pixels are produced by a native Xtra, which this port does not draw and
+## `castmember/` in the reference does not draw either. Decoded off the disc:
+## `plane1.dir` holds 15 film loops whose children are 11 distinct type-15
+## members (88, 103-105, 113-117, 132, 150), every one of them `vectorShape`, and
+## no `ccl ` chunk at all — so cast resolution, the closed nested-loop cause and
+## every decode path are ruled out by the container itself.
+##
+## So the fix is not to make eight become zero. `tools/xtra_members.gd` states the
+## rule this follows: *drawing nothing for an unregistered Xtra is correct
+## behaviour; not knowing what the member is, is not.* The engine now says which,
+## and a member type that genuinely failed to decode no longer hides in the same
+## bucket as one there was never anything to draw for.
+##
+## Empty when the member is one this renderer draws — in which case `texture_for`
+## returning null is a real failure and the caller should say so.
+static func decline_reason(sprite: Dictionary, table) -> String:
+	var lib := int(sprite.get("cast_lib", 0))
+	var id := int(sprite.get("cast_id", 0))
+	if table == null:
+		return "no cast table"
+	var m: Dictionary = table.get_member(lib, id)
+	if m.is_empty():
+		return "member %d:%d is not in the cast" % [lib, id]
+	var type_code := int(m.get("type", 0))
+	if type_code == Ink.TYPE_BITMAP or type_code == Ink.TYPE_SHAPE:
+		return ""
+	# The member's own name for its type, and for an Xtra the symbol that says
+	# *which* Xtra — the difference between "we do not draw Xtras" and "we do not
+	# draw vectorShape", which is the difference between a rule and a gap.
+	var named := str(m.get("type_name", "type%d" % type_code))
+	var symbol := str(m.get("xtra_symbol", ""))
+	if symbol != "":
+		return "%s(%s) has no renderer" % [named, symbol]
+	return "%s has no renderer" % named
+
+
 ## Draw a sprite's artwork at `at`, mirrored if the score asks for a flip.
 ##
 ## Flip is bits 0x20 and 0x40 of the thickness byte. Director supports it. The

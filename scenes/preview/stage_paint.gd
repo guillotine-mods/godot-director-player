@@ -162,11 +162,14 @@ static func paint_frame(host, table, stage: Vector2i) -> void:
 ## spend the whole of the transition telling the rest of the engine that nothing
 ## is on stage. The cost is one overdrawn paint per tick for the length of a wipe.
 ##
-## Nothing is drawn when the play degraded to a cut -- which is every headless
-## run, because there was no framebuffer to capture the two frames from
-## (`director_preview.gd:_grab_stage`). The playhead is held for the same duration
-## either way, so a build with no screen behaves exactly as this port did before
-## the drawing existed.
+## Nothing is drawn when the play degraded to a cut. **That used to be every
+## headless run** -- there was no framebuffer to capture the two frames from, so
+## the gate, CI and any build without a screen held the playhead for the duration
+## and cut. It is not any more: `director_preview.gd:paint_capture` composes the
+## frame on the CPU through the same four primitives, so a headless run has both
+## frames and composites them. What is left for `degraded` is what the reference
+## also declines to play -- a type outside the table, and a changed-area
+## transition on a frame that changed nothing.
 static func draw_transition(host, stage: Vector2i) -> void:
 	var play = host._transition_play
 	if play == null or not play.draws():

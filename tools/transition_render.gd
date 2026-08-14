@@ -67,6 +67,7 @@ func _init() -> void:
 	_blinds_are_stripes(h)
 	_change_area_confines_it(h)
 	await _steps_inside_the_hold(h)
+	await _composites_a_real_movie(h)
 	quit(h.finish("transition drawing, direction by direction"))
 
 
@@ -497,18 +498,24 @@ func _change_area_confines_it(h) -> void:
 ## The wiring: the play is stepped *by* the hold the clock is already running,
 ## and lands on its last step exactly when the hold releases.
 ##
-## Headless there is no framebuffer to capture the two frames from
-## (`preview/snapshot.gd:grab`), so the play degrades to a cut and draws nothing
-## -- and it still counts its steps, which is what this case reads. That is the
-## honest limit of what a gate can assert here: the arithmetic that decides *when*
-## a step happens is covered, the pixels are covered by every case above, and the
-## join between them is exercised only on a machine with a screen.
+## This used to be the *only* case that booted the player, and it had to say that
+## headless there was no framebuffer to capture the two frames from, so the play
+## degraded to a cut and only its step arithmetic could be read. That is no longer
+## true -- `director_preview.gd:paint_capture` composes the frame on the CPU
+## through the same four primitives -- and the two cases below are what the gate
+## can assert now that it is not.
 func _steps_inside_the_hold(h) -> void:
 	h.begin("the play advances through the hold and lands on its last step")
 	var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
 	root.add_child(preview)
 	await process_frame
 	await process_frame
+	# A gate run is always headless, where the surface arms itself. Run by hand on
+	# a machine with a screen it does not -- a build with a framebuffer reads that
+	# instead and composing a second copy of every frame on the CPU for it would be
+	# pure cost -- so the cases below force it on rather than asserting differently
+	# on the two, which is how a harness ends up measuring the display server.
+	_arm_surface(preview)
 	# 1000 ms of `wipe right`, armed the one way a script can arm one. The
 	# duration argument is in quarter-seconds -- see `lingo_puppet_transition`.
 	preview.lingo_puppet_transition([1, 8, 4, 0])
@@ -524,8 +531,41 @@ func _steps_inside_the_hold(h) -> void:
 		bool(clock.call("holding_transition")), str(clock.call("status")))
 	var steps: int = play.steps
 	h.check("it has more than one step to take", steps > 1, "%d steps" % steps)
+	# **The join, and the check that fails outright with `paint_capture` removed.**
+	# This is the movie's own arming path -- `puppetTransition` through
+	# `_begin_transition` through the clock -- and before there was an offscreen
+	# surface it produced a play with no frames in it on every headless run. That
+	# is what "the port has never composited a real frame" meant, and it is one
+	# boolean.
+	h.check("the play has both frames of the real movie rather than degrading to a cut",
+		str(play.degraded) == "", str(play.degraded))
+	# Both frames are the movie's pixels rather than a blank stage. Deliberately
+	# *not* "the two differ": a `puppetTransition` armed here is armed on a
+	# standing playhead, so the departing and arriving frames are two paints of
+	# the same frame and are equal by construction. The real-movie case below is
+	# the one that composes two different frames.
+	h.check("and both of them are the movie's own pixels",
+		play.before != null and play.after != null
+			and not _uniform(play.before, Rect2i(Vector2i.ZERO, play.before.get_size())),
+		"%s" % (str(play.before.get_size()) if play.before != null else "null"))
 	var midway := -1
 	var guard := 0
+	# **`stage_paint.gd:draw_transition` asserted from the outside.** The play
+	# holding a composite and the composite being on the stage are two different
+	# claims, and only the second is what a player sees. Sampled once, part-way
+	# through, by forcing a paint and comparing the offscreen surface against the
+	# play's own -- `draw_transition` blits it 1:1 over the movie's rect, so the
+	# two are equal wherever nothing is drawn on top.
+	#
+	# The band excludes the SKIP button (y 8..30) and the HUD line (the last 30
+	# rows), which `draw_overlays` paints *after* the composite and which exist for
+	# us rather than for the movie.
+	var on_stage := false
+	var stage_note := "never sampled"
+	var band := Rect2i(0, 40, W, H)
+	var stage: Vector2i = preview.call("stage_size")
+	if stage.y > 80:
+		band = Rect2i(0, 40, stage.x, stage.y - 70)
 	# Real awaited frames, never a synthetic tick loop -- `AGENTS.md` "Fixing
 	# something", and the reason is that the clock this is measuring runs on them.
 	while bool(clock.call("holding_transition")) and guard < 600:
@@ -533,12 +573,458 @@ func _steps_inside_the_hold(h) -> void:
 		await process_frame
 		if midway < 0 and int(play.applied) > 0 and int(play.applied) < steps:
 			midway = int(play.applied)
+			preview.call("repaint_now")
+			var surface = preview.get("paint_capture")
+			if surface == null:
+				stage_note = "no offscreen surface to read the stage back from"
+			else:
+				on_stage = _same_region(surface.snapshot(), play.surface, band)
+				stage_note = "step %d of %d over %s" % [midway, steps, str(band)]
 	h.check("it was part-way through while the hold was running",
 		midway > 0 and midway < steps, "step %d of %d" % [midway, steps])
+	h.check("the composite the play holds also reached the stage",
+		on_stage, stage_note)
 	h.check("it is on its last step when the hold releases",
 		int(play.applied) == steps, "step %d of %d" % [int(play.applied), steps])
 	h.check("the hold really did release", guard < 600, "%d frames" % guard)
 	h.check("and the play is dropped once it has",
 		preview.get("_transition_play") == null)
+	# Here rather than in the real-movie case because this one runs on every
+	# entry: the case below returns early on a movie that declares no score
+	# transition, and this question is about the painter rather than about
+	# transitions at all.
+	_two_backends_agree(h, preview)
 	preview.queue_free()
 	h.complete("the play advances through the hold and lands on its last step")
+
+
+# ---------------------------------------------------------------------------
+# Real frames of a real movie
+#
+# Everything above this line runs on two images this file made up. That covered
+# the algorithms and covered them well, and it could not say one thing: that the
+# compositor is ever handed two frames of an actual Director movie. It was not --
+# `_grab_stage` read the framebuffer, headless Godot has none, and so every gate
+# run since the drawing landed created the play, held the playhead for its
+# duration and drew a cut. The cases below are the join, and they fail with
+# `paint_capture` removed for exactly that reason: `Play.degraded` comes back
+# `"no frames to compose"` and there is nothing to assert against.
+# ---------------------------------------------------------------------------
+
+
+## Which picture a pixel came from. **The whole method of the synthetic cases,
+## carried onto frames nobody authored for the purpose.**
+##
+## Those frames encoded their own coordinates, so `_origin` could say "this pixel
+## came from there". A real movie's frames encode nothing, and the two of them
+## agree over most of the stage -- a transition usually changes part of a picture.
+## So a pixel is only evidence where the two endpoints *differ*, and there it is
+## conclusive: the composite either holds the departing value or the arriving one.
+##
+##   1  the arriving frame
+##  -1  the departing frame
+##   0  the two frames agree here, so this pixel says nothing
+##   2  neither -- a colour no endpoint holds, which is a blend or a resample and
+##      is a failure, because a Director transition only ever chooses between two
+##      pictures (`transitions.cpp`; nothing in the table interpolates)
+static func _source_at(surface: Image, departing: Image, arriving: Image,
+		x: int, y: int) -> int:
+	var was := departing.get_pixel(x, y)
+	var now := arriving.get_pixel(x, y)
+	if was == now:
+		return 0
+	var here := surface.get_pixel(x, y)
+	if here == now:
+		return 1
+	if here == was:
+		return -1
+	return 2
+
+
+## `{decided, arrived, alien}` over a grid inside `area`, at `step` pixels.
+##
+## Subsampled rather than exhaustive: a 640x480 stage is 307,200 `get_pixel`
+## calls per sample point and this case takes several per transition, which is
+## minutes rather than seconds. Every count below is therefore a count of samples
+## and the checks are written as proportions of `decided`.
+static func _census(surface: Image, departing: Image, arriving: Image,
+		area: Rect2i, step: int = 3) -> Dictionary:
+	var decided := 0
+	var arrived := 0
+	var alien := 0
+	var y := area.position.y
+	while y < area.end.y:
+		var x := area.position.x
+		while x < area.end.x:
+			match _source_at(surface, departing, arriving, x, y):
+				1:
+					decided += 1
+					arrived += 1
+				-1:
+					decided += 1
+				2:
+					decided += 1
+					alien += 1
+			x += step
+		y += step
+	return {"decided": decided, "arrived": arrived, "alien": alien}
+
+
+## How many 8x8 windows hold both pictures at once, over windows that have enough
+## discriminating pixels to answer. The dissolve family's own signature, and the
+## one every sweeping algorithm fails away from its moving boundary.
+static func _mixed_windows(surface: Image, departing: Image, arriving: Image,
+		area: Rect2i, cap: int = 240) -> Dictionary:
+	var mixed := 0
+	var usable := 0
+	var y := area.position.y
+	while y + 8 <= area.end.y and usable < cap:
+		var x := area.position.x
+		while x + 8 <= area.end.x and usable < cap:
+			var old_here := false
+			var new_here := false
+			var decided := 0
+			for dy in 8:
+				for dx in 8:
+					match _source_at(surface, departing, arriving, x + dx, y + dy):
+						1:
+							new_here = true
+							decided += 1
+						-1:
+							old_here = true
+							decided += 1
+			# A window the two frames agree across cannot say anything about
+			# scatter, and counting it either way is how this test stops
+			# discriminating. Eight of sixty-four is the floor: two consecutive
+			# frames of a real movie agree over most of the stage, so a higher one
+			# throws away the windows that carry the answer.
+			if decided >= 8:
+				usable += 1
+				if old_here and new_here:
+					mixed += 1
+			x += 8
+		y += 8
+	return {"mixed": mixed, "usable": usable}
+
+
+static func _uniform(image: Image, area: Rect2i) -> bool:
+	if image == null:
+		return true
+	var first := image.get_pixel(area.position.x, area.position.y)
+	var y := area.position.y
+	while y < area.end.y:
+		var x := area.position.x
+		while x < area.end.x:
+			if image.get_pixel(x, y) != first:
+				return false
+			x += 7
+		y += 7
+	return true
+
+
+## The one this whole change exists for: the movie's own transition record, the
+## movie's own two frames, and the composite asserted in the direction the type
+## specifies.
+##
+## **Driven by arming the frame's own transition rather than by waiting for the
+## score to reach it**, which is deterministic and uses no less of the real
+## thing: `_begin_transition` is the engine's own entry point, the record comes
+## out of the score, and the two frames are two real paints of two real frames of
+## the movie. Waiting instead would make the case a race against a 2,000 ms hold
+## and would assert the same pixels.
+##
+## `EGOZROO1.dir` is the richest site in the corpus -- five transitions at 2,000 ms
+## each, types 26, 28, 25, 51 and 24 -- and every one of the twelve types the six
+## shipped roots play is in the dissolve family, so the dissolve signature is what
+## a real frame can be held to. The wipe run at the bottom of the case is the
+## control that keeps that from being a tautology: the *same two real frames*,
+## composed by a sweeping algorithm, must fail the window test the dissolve passes.
+func _composites_a_real_movie(h) -> void:
+	var case := "a real movie's own transition composites its own two frames"
+	h.begin(case)
+	var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
+	root.add_child(preview)
+	await process_frame
+	await process_frame
+	_arm_surface(preview)
+	var score = preview.get("_score")
+	if not h.check("the movie loaded a score", score != null
+			and int(score.frame_count) > 1,
+			"%d frame(s)" % (int(score.frame_count) if score != null else -1)):
+		h.complete(case)
+		preview.queue_free()
+		return
+	h.check("the painter armed an offscreen surface",
+		preview.get("paint_capture") != null,
+		"display server %s" % DisplayServer.get_name())
+
+	# Every frame of this movie that names a transition member. Collected rather
+	# than assumed so the case says out loud when it is pointed at a movie with
+	# none, instead of asserting nothing and passing.
+	var armed: Array[int] = []
+	for index in range(1, int(score.frame_count)):
+		if int(score.frame(index).get("transition_member", 0)) > 0:
+			armed.append(index)
+	if armed.is_empty():
+		# **Said out loud and asserted over, rather than failed.** Not every movie
+		# has a score transition -- `GATE_ROOT`'s own boot movie, `strtgame.dir`,
+		# has 0 across 1,375 frames, and its two transition members are reached
+		# some other way. Failing here would be `gate.sh`'s own "asserting against
+		# an absent fixture" mistake, which turns a data gap into a red. The
+		# entry that carries this case is the one that names `rating`; the puppet
+		# case above already asserted the composite on whatever movie this is.
+		h.check("this movie declares no score transition, so there is nothing here"
+			+ " to compose (the `rating` entry is the one that does)",
+			true, "0 of %d frame(s)" % int(score.frame_count))
+		h.complete(case)
+		preview.queue_free()
+		return
+	h.check("the movie declares at least one transition", true,
+		"%d frame(s) of %d" % [armed.size(), int(score.frame_count)])
+
+	# Every candidate is armed and the **widest** one kept, which is not a
+	# convenience. Every transition member in the corpus carries flags byte 2, so
+	# `area = !(flags & 1)` is 1 and the play is confined to the rectangle that
+	# changed -- and most of these frames change a caption or a button, so the
+	# first candidate on `EGOZROO1.dir` composes over an 8x10 clip. That is a
+	# correct transition and it is four discriminating pixels, which is not enough
+	# to tell a dissolve from a wipe. The distribution is printed either way, so a
+	# movie whose transitions are all small says so rather than looking thin.
+	#
+	# A transition over a frame that changed nothing degrades to a cut by the
+	# reference's own rule (`_change_area_confines_it`) and is not a failure.
+	var play = null
+	var chosen := -1
+	var clips: Array[String] = []
+	for index in armed:
+		preview.set("_index", maxi(0, index - 1))
+		preview.call("repaint_now")
+		preview.set("_index", index)
+		preview.call("_begin_transition", score.frame(index))
+		var candidate = preview.get("_transition_play")
+		if candidate == null or str(candidate.degraded) != "" or candidate.steps < 2:
+			clips.append("f%d cut" % index)
+			continue
+		var box: Rect2i = candidate.clip
+		clips.append("f%d t%d %dx%d" % [index, int(candidate.type), box.size.x, box.size.y])
+		if play == null or box.size.x * box.size.y > int(play.clip.size.x) * int(play.clip.size.y):
+			play = candidate
+			chosen = index
+	if not h.check("one of them composes two frames that differ",
+			play != null, "%d candidate frame(s): %s" % [armed.size(), str(clips)]):
+		h.complete(case)
+		preview.queue_free()
+		return
+
+	var departing: Image = play.before
+	var arriving: Image = play.after
+	var area: Rect2i = play.clip
+	h.check("frame %d armed type %d over %d step(s)" % [
+		chosen, int(play.type), int(play.steps)], true,
+		"%.0f ms, chunk %d, clip %s" % [play.duration, int(play.chunk_size), str(area)])
+	# Anti-vacuity, and it is the assertion that fails with `paint_capture`
+	# reverted rather than merely reading differently: with no offscreen surface
+	# both frames are null, the play degrades and the case has already returned
+	# above. With the surface but a painter that drew nothing into it, both frames
+	# are the opaque black `Surface.begin` fills with, and these two checks are
+	# what catch that.
+	h.check("the departing frame is a picture and not a blank stage",
+		not _uniform(departing, area))
+	h.check("the arriving frame is a picture too", not _uniform(arriving, area))
+	# A proportion of the clip rather than a flat count, because the clip is the
+	# rectangle the movie changed and the movie decides how big that is. Flat was
+	# wrong: `EGOZROO1.dir`'s widest is 640x108 and its narrowest is 8x10, and a
+	# threshold that suits one is either unmeetable or vacuous on the other.
+	var sampled := int(ceilf(area.size.x / 3.0)) * int(ceilf(area.size.y / 3.0))
+	var start := _census(departing, departing, arriving, area)
+	# Absolute and proportional, and the absolute one is what carries it: two
+	# consecutive frames of a real movie share most of their picture -- 2,819 of
+	# 32,604 samples on `EGOZROO1.dir` frame 227, which is 8.6% and is thousands
+	# of pixels. A quarter-of-the-clip threshold read as a failure on a frame that
+	# is perfectly readable.
+	h.check("the two frames disagree over enough of the clip to read",
+		int(start["decided"]) > 200 and int(start["decided"]) * 50 > sampled,
+		"%d of %d sample(s)" % [int(start["decided"]), sampled])
+
+	var stage: Vector2i = preview.call("stage_size")
+	var spec := {
+		"transition_type": int(play.type), "chunk_size": int(play.chunk_size),
+		"duration_ms": play.duration, "change_area": 1 if play.area else 0,
+	}
+	h.check("step 0 is the departing frame exactly",
+		_same(play.surface, departing))
+	var mid := maxi(1, int(play.steps) / 2)
+	play.advance_to(mid)
+	var half := _census(play.surface, departing, arriving, area)
+	h.check("halfway, no pixel holds a colour neither frame holds",
+		int(half["alien"]) == 0, "%d of %d" % [int(half["alien"]), int(half["decided"])])
+	var fraction := float(half["arrived"]) / maxf(1.0, float(half["decided"]))
+	h.check("halfway, both pictures are on the stage",
+		fraction > 0.15 and fraction < 0.85, "%.2f arrived" % fraction)
+	# The direction assertion, on this play, before any step index is passed. Both
+	# controls below get their **own** play for the same reason: `advance_to` is
+	# incremental -- the dissolve families walk a shift register forward and
+	# cannot be rewound -- so asking one play for step 32 after step 64 answers
+	# with step 64 and the case silently measures the arriving frame. That mistake
+	# reported `0 of 240 windows` for a dissolve that scatters perfectly.
+	var scatter := _mixed_windows(play.surface, departing, arriving, area)
+	h.check("the dissolve scatters both pictures through most 8x8 windows",
+		int(scatter["usable"]) > 8
+			and int(scatter["mixed"]) * 2 > int(scatter["usable"]),
+		"%d of %d window(s)" % [int(scatter["mixed"]), int(scatter["usable"])])
+	# The control that stops the line above from being a tautology: the **same two
+	# real frames**, composed by a sweeping algorithm instead, must fail the test
+	# the dissolve passes.
+	var wipe := Transition.Play.new({
+		"transition_type": 1, "chunk_size": int(play.chunk_size),
+		"duration_ms": play.duration, "change_area": 1 if play.area else 0,
+	}, stage, departing, arriving)
+	wipe.advance_to(maxi(1, wipe.steps / 2))
+	var swept := _mixed_windows(wipe.surface, departing, arriving, area)
+	h.check("a wipe over the same two frames does not",
+		int(swept["mixed"]) * 4 < int(swept["usable"]) or int(swept["usable"]) < 8,
+		"%d of %d window(s)" % [int(swept["mixed"]), int(swept["usable"])])
+
+	# Monotone, on its own play walked one step at a time from the beginning.
+	var rise = Transition.Play.new(spec, stage, departing, arriving)
+	var falling := -1
+	var seen := 0.0
+	for step in range(1, int(rise.steps) + 1):
+		rise.advance_to(step)
+		var now := float(_census(rise.surface, departing, arriving, area, 9)["arrived"])
+		if now < seen - 0.5:
+			falling = step
+			break
+		seen = now
+	h.check("it only ever adds arriving pixels", falling < 0, "fell at step %d" % falling)
+	h.check("the last step is the arriving frame exactly",
+		_same(rise.surface, arriving))
+	preview.set("_transition_play", null)
+	preview.queue_free()
+	h.complete(case)
+
+
+## The one thing a gate run cannot ask: does the offscreen surface hold what the
+## screen holds?
+##
+## The surface is not a second painter -- it is a second backend of the same four
+## primitives, fed the same arguments in the same order by the same `_paint` -- so
+## the only place the two can disagree is inside `director_paint.gd`, and two are
+## known and counted there. But "cannot disagree by construction" is the argument
+## `AGENTS.md` says to distrust, so the comparison is written down and run where
+## it can be.
+##
+## **Headless it says so and asserts nothing**, which is the shape `gate.sh`
+## records as the one that stayed green when a corpus was missing: asserting
+## against an absent framebuffer is how a data gap becomes a red. Run the harness
+## without `--headless` on a machine with a screen to get the number.
+## Arm the offscreen surface whatever the display server is.
+static func _arm_surface(preview: Node) -> void:
+	preview.call("force_paint_capture", true)
+	preview.call("repaint_now")
+
+
+## ## This is red on a desktop run, and the red is a finding
+##
+## It compares blurred rather than exact, because the framebuffer arm crops the
+## letterboxed viewport and resizes it back to Director's pixels with
+## `INTERPOLATE_NEAREST` at whatever non-integral scale the window is -- so
+## "differs exactly" is the expected answer for any detailed artwork and always
+## was. Blurring both to a 64x48 thumbnail throws that away and keeps the question
+## worth asking: are these the same picture, laid out the same way?
+##
+## **They are not.** Measured on 4.7.1 on Windows against `rating`'s
+## `EGOZROO1.dir` frame 227, window 2880x1690, stage 640x480: mean channel drift
+## **107/255 blurred**, and the two saved side by side say why. The offscreen
+## surface is the whole frame -- room, television, three lines of Hebrew, the HUD.
+## The framebuffer answer is the **top-left corner of the stage with the letterbox
+## still in it**, magnified to fill 640x480.
+##
+## The crop arithmetic is not what is wrong: `get_global_transform_with_canvas()`
+## answers `scale 1.5646, origin (139, 0)` and `_grab_stage` duly crops
+## `(139, 0, 1001, 751)` out of a 2880x1690 viewport. The *drawing* is not at that
+## scale -- 1001x751 is far short of the window, and what comes back is the
+## fraction of the stage that rectangle actually covers. So the node's transform
+## and the transform the frame was rendered with disagree, and it is not a settling
+## artifact: 200 awaited frames give the same picture as 30.
+##
+## What that means is that **on a machine with a screen a transition has been
+## composing two wrong pictures** -- and it is a defect in the path that predates
+## the offscreen surface, which is only how it became visible. It has no effect on
+## the gate, which is headless and reads the surface, and this case is the whole
+## of what reports it. Do not "fix" it by loosening the threshold.
+static func _two_backends_agree(h, preview: Node) -> void:
+	if DisplayServer.get_name() == "headless":
+		h.check("the two paint backends can only be compared with a screen"
+			+ " (run without --headless for the number)", true,
+			"display server headless")
+		return
+	preview.call("force_paint_capture", true)
+	preview.call("repaint_now")
+	var surface = preview.get("paint_capture")
+	if surface == null:
+		h.check("forcing the surface on with a screen armed one", false)
+		return
+	var offscreen: Image = surface.snapshot()
+	var approximated := int(surface.approximated)
+	# And the framebuffer, through the path a build with a screen actually uses.
+	preview.call("force_paint_capture", false)
+	preview.call("repaint_now")
+	var framebuffer: Image = preview.call("_grab_stage")
+	if framebuffer == null or framebuffer.get_size() != offscreen.get_size():
+		h.check("the framebuffer path answered at the same size", false,
+			"%s vs %s" % [
+				str(framebuffer.get_size()) if framebuffer != null else "null",
+				str(offscreen.get_size())])
+		preview.call("force_paint_capture", true)
+		return
+	var size := offscreen.get_size()
+	var differing := 0
+	for y in range(0, size.y, 2):
+		for x in range(0, size.x, 2):
+			if offscreen.get_pixel(x, y) != framebuffer.get_pixel(x, y):
+				differing += 1
+	var samples := int(ceilf(size.x / 2.0)) * int(ceilf(size.y / 2.0))
+	# Compared **blurred down**, for the reason in the docstring: an exact
+	# comparison is a measurement of the framebuffer arm's nearest-neighbour
+	# downscale and not of either painter. Averaging both to a 64x48 thumbnail
+	# throws that away and keeps what the assertion is actually about -- that the
+	# two are the same picture, laid out the same way, in the same colours.
+	var a_small := Image.create_from_data(size.x, size.y, false,
+		Image.FORMAT_RGBA8, offscreen.get_data())
+	var b_small := Image.create_from_data(size.x, size.y, false,
+		Image.FORMAT_RGBA8, framebuffer.get_data())
+	a_small.resize(64, 48, Image.INTERPOLATE_BILINEAR)
+	b_small.resize(64, 48, Image.INTERPOLATE_BILINEAR)
+	var drift := 0.0
+	for y in 48:
+		for x in 64:
+			var a := a_small.get_pixel(x, y)
+			var b := b_small.get_pixel(x, y)
+			drift += absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b)
+	var mean := drift * 255.0 / (64.0 * 48.0 * 3.0)
+	h.check("the offscreen surface and the framebuffer are the same picture"
+		+ " (red here means `_grab_stage`'s framebuffer arm, not the surface"
+		+ " -- read this case's docstring before touching anything)",
+		mean < 24.0, "mean channel drift %.1f/255 blurred to 64x48"
+			% mean
+			+ ", %d of %d sample(s) differ exactly" % [differing, samples]
+			+ ", %d approximated primitive(s)" % approximated)
+	preview.call("force_paint_capture", true)
+
+
+## Do two whole images agree over one rectangle? Row by row as byte ranges, which
+## is one native comparison per row rather than a `get_pixel` per pixel.
+static func _same_region(a: Image, b: Image, area: Rect2i) -> bool:
+	if a == null or b == null or a.get_size() != b.get_size():
+		return false
+	var width := a.get_width()
+	var pa := a.get_data()
+	var pb := b.get_data()
+	var left := area.position.x * 4
+	var right := area.end.x * 4
+	for y in range(area.position.y, area.end.y):
+		var row := y * width * 4
+		if pa.slice(row + left, row + right) != pb.slice(row + left, row + right):
+			return false
+	return true

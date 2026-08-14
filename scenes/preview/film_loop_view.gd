@@ -21,6 +21,7 @@ extends RefCounted
 const Ink := preload("res://director/director_ink.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 
 
 ## The movie's cast-library number for a child's named cast, or the loop's own.
@@ -454,10 +455,23 @@ static func paint_loop(host, lib: int, id: int, member: Dictionary, origin: Vect
 				place_child(origin, space, child, Geometry.scaled_reg(cm, size), scale),
 				nested_scale(size, cm), table, loops, index, kid_alpha, depth + 1)
 			continue
-		var texture: Texture2D = host._texture_for(
-			child_sprite(child, kid_lib, cm, scale))
+		var record := child_sprite(child, kid_lib, cm, scale)
+		var texture: Texture2D = host._texture_for(record)
 		if texture == null:
+			# The count that has always been printed, kept exactly so a figure
+			# quoted in an older commit still means what it said.
 			host._tally_loop("child has no art")
+			# And **why**, which is `bugs.md` 110 and the whole of what was
+			# missing. "No art" was one bucket holding two unrelated things: a
+			# member whose artwork failed to decode, which is a defect, and a
+			# member type this renderer is *right* not to draw, which is not.
+			# `plane1.dir`'s eight are all the second -- `vectorShape` Xtras --
+			# and there was nothing in the report able to say so, so the number
+			# read as eight broken animations for as long as it stood.
+			# `sprite_art.gd:decline_reason` carries the decode and the argument.
+			var reason: String = SpriteArt.decline_reason(record, table)
+			host._tally_loop("child not drawn: "
+				+ (reason if reason != "" else "artwork did not decode"))
 			continue
 		host._tally_loop("child drawn")
 		host._draw_sprite_texture(
