@@ -87,6 +87,9 @@ var _cast_chunk: Dictionary = {}
 var _owned: Dictionary = {}
 var _members: Dictionary = {}
 var _names_lower: Dictionary = {}
+## "name:type" -> lowest member number of that name *and* type. The reference's
+## second name key; see `number_of_type`.
+var _names_typed: Dictionary = {}
 ## Whether `_build_names` has run, which is **not** the same question as whether
 ## it found anything.
 ##
@@ -214,6 +217,33 @@ func number_of(name: String) -> int:
 	return int(_names_lower.get(name.to_lower(), 0))
 
 
+## The same lookup restricted to one cast type, or 0.
+##
+## **A name is unique per type in Director, not per library.** The reference
+## keeps two keys per named member -- `name` and `name:type` -- and
+## `getCastMemberByNameAndType` picks between them on the type the caller asked
+## for (`reference/scummvm/cast.cpp:174-186`, `rebuildCastNameCache` at 2448).
+## `Movie::getCastMemberIDByNameAndType` is what every typed designator goes
+## through, so `field "x"` asks for `x:3` and a member of another type sharing
+## the name is simply not a candidate.
+##
+## Without this a typed designator has only the untyped answer to work with, and
+## the untyped answer is the *lowest-numbered* member of that name whatever its
+## type. `SLOTMACH.dir` is what that costs: member 83 is an Xtra named `credit`
+## and member 97 is the field named `credit` the machine's own score draws, so
+## `field "credit"` resolved to the Xtra, failed the type test and answered
+## nothing. The handle then read `value(the text of field "credit")` as 0 on
+## every pull and told the player they had not inserted a coin, while the coin
+## slot's `put value(the text of field "credit") + 1 into field "credit"` wrote
+## into the same nothing.
+##
+## Lowest number wins within the type, which is the reference's rule and the
+## same one `_build_names` already applies untyped.
+func number_of_type(name: String, type_code: int) -> int:
+	_build_names()
+	return int(_names_typed.get("%s:%d" % [name.to_lower(), type_code], 0))
+
+
 ## number -> lowercased name, for every member that has one.
 func names() -> Dictionary:
 	_build_names()
@@ -248,6 +278,13 @@ func _build_names() -> void:
 			var key := name.to_lower()
 			if not _names_lower.has(key):
 				_names_lower[key] = number
+			# The second key the reference keeps, for the typed designators.
+			# Built in the same walk because the walk is the expensive half:
+			# `_build_names` parses every `CASt` record in the library, and doing
+			# it twice would double the cost this cache exists to avoid.
+			var typed := "%s:%d" % [key, int(m.get("type", 0))]
+			if not _names_typed.has(typed):
+				_names_typed[typed] = number
 
 
 # ------------------------------------------------------------------ CASt
@@ -318,21 +355,65 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 	# A sound member owns its audio under one of three tags depending on how the
 	# movie was authored: `snd ` is the Mac resource Director 3 and 4 wrote,
 	# `sndS` the samples of the D4+ header/samples pair, and `sndH` that pair's
-	# header. Taken in that order and reported as `sound_header_chunk_id`
-	# alongside, so `director/director_sound.gd` can tell which shape it has.
+	# header. `sound_header_chunk_id` is reported alongside so
+	# `director/director_sound.gd` can tell which shape it has.
 	#
-	# **Unexercised by this corpus and therefore unverified**: this game has no
-	# sound cast member at all, in any of its 86 containers — every sound it
-	# plays is an external file (`tools/sound_survey.gd`). Present because the
-	# score's sound channels name members and had no way to be handed one.
+	# **The `sndH`/`sndS` pair wins over a `snd ` child, and the order used to be
+	# the other way round.** `castmember/sound.cpp:SoundCastMember::load()` walks
+	# *all* the children for D6+: a `sndH` and a `sndS` are loaded into one
+	# decoder, and `if (sndFormat) { _audio = sndFormat; return; }` returns on the
+	# pair before the `snd ` resource is ever opened. Only when no pair was seen
+	# does it fall through to `getResource(tag, sndId)`, and only then does the
+	# empty-payload branch below matter.
+	#
+	# This was `["snd ", "sndS", "sndH"]`, first match wins, and it cost the port
+	# every sound member it has. Piposh 1's containers carry a **zero-length
+	# `snd ` chunk beside a real pair**, so the engine took the empty one and the
+	# member decoded to nothing: `PIANO.dir` #8 `PIANOKEY` has 16,384 bytes of
+	# samples under `sndS` and answered 0, and `DAY1.dir`'s `ATTIC_DO`,
+	# `SHOWER_O` and `POURING_` have 126,600, 138,538 and 342,934. All 17 of that
+	# title's sound members failed, in the same way, for the same reason
+	# (`tools/sound_member_census.gd`).
+	#
+	# **The claim that this was unexercised was about Piposh 2, not about the
+	# corpus.** It read "this game has no sound cast member at all, in any of its
+	# 86 containers", and the same sentence is in AGENTS.md, `ENGINE_TODO.md` and
+	# `scenes/preview/media.gd`. Piposh 2 has none; the corpus has **204**
+	# (`tools/member_type_census.gd`): 87 in `itamar-magichat`, 66 in
+	# `itamar-park`, 17 each in `piposh`, `piposh-en` and `piposh-ru`. A
+	# measurement of one title written down as a fact about eight is how a decoder
+	# stays unexercised while its input sits in the tree.
+	#
+	# A zero-byte payload is not corruption. The reference treats
+	# `sndData->size() == 0` as "the audio is a **linked** file" and loads it from
+	# the path in the member's info block. That fallback is not implemented here
+	# yet, so the empty tag is skipped rather than preferred, which is the half of
+	# the rule that can be got right without it; `sound_linked_empty` records that
+	# the member is in that state so nothing downstream reads the miss as silence.
 	if type_code == 6:
 		var sound_owned: Dictionary = _owned.get(chunk_id, {})
-		for tag in ["snd ", "sndS", "sndH"]:
-			if sound_owned.has(tag):
-				out["data_chunk_id"] = int(sound_owned[tag])
-				out["sound_tag"] = tag
-				break
-		out["sound_header_chunk_id"] = int(sound_owned.get("sndH", -1))
+		var header_id := int(sound_owned.get("sndH", -1))
+		var samples_id := int(sound_owned.get("sndS", -1))
+		var resource_id := int(sound_owned.get("snd ", -1))
+		# Size, not presence: a tag whose chunk is empty is not a payload. Asking
+		# the container costs one `mmap` lookup and is the only thing that
+		# separates this corpus's real pair from the empty `snd ` sitting beside
+		# it.
+		var empty_resource := resource_id >= 0 and _chunk_is_empty(resource_id)
+		if samples_id >= 0:
+			out["data_chunk_id"] = samples_id
+			out["sound_tag"] = "sndS"
+		elif resource_id >= 0 and not empty_resource:
+			out["data_chunk_id"] = resource_id
+			out["sound_tag"] = "snd "
+		elif header_id >= 0:
+			out["data_chunk_id"] = header_id
+			out["sound_tag"] = "sndH"
+		elif resource_id >= 0:
+			out["data_chunk_id"] = resource_id
+			out["sound_tag"] = "snd "
+		out["sound_header_chunk_id"] = header_id
+		out["sound_linked_empty"] = empty_resource and samples_id < 0
 	# A rich text member owns *three* chunks rather than one, so it cannot go
 	# through `want` above. `castmember/richtext.cpp:load()` names them: `RTE0` is
 	# the Paige editor document and is authoring-tool data with no runtime use,
@@ -959,6 +1040,19 @@ func _read_stxt_style(chunk_id: int) -> Dictionary:
 
 ## `KEY*` maps an owning chunk id to the chunks it owns. Its body follows the
 ## container's byte order, unlike the cast chunks it points at.
+## Does this chunk id address a payload of no bytes?
+##
+## Read from the memory map rather than by loading the chunk, because the only
+## caller asks it about every sound member in a library and the answer is one
+## field of a record `director_file.gd` already parsed at open time. A missing or
+## out-of-range id counts as empty: the caller is choosing between payloads, and
+## one it cannot address is not a payload it can choose.
+func _chunk_is_empty(id: int) -> bool:
+	if id < 0 or id >= file.chunks.size():
+		return true
+	return int(file.chunks[id].get("size", 0)) <= 0
+
+
 func _read_key_table() -> void:
 	_owned.clear()
 	var ids: Array = file.ids_of("KEY*")

@@ -21,12 +21,25 @@ extends RefCounted
 ##
 ## **A sound member is real here.** `director/director_sound.gd` decodes all
 ## three shapes Director ever wrote — an embedded AIFF or WAVE file, a Mac `snd `
-## resource, and the D4+ `sndH`/`sndS` pair — so a sound member's duration,
+## resource, and the D6+ `sndH`/`sndS` pair — so a sound member's duration,
 ## sample rate, sample size, channel count and cue points are computed from the
-## member's own bytes rather than assumed. That decoder is unexercised by this
-## corpus (no cast in any of the six titles holds a sound member; every sound
-## these games play is an external `.aif` reached by `sound playFile`), which is a
-## statement about the corpus and not about the code.
+## member's own bytes rather than assumed.
+##
+## **This paragraph used to end "that decoder is unexercised by this corpus (no
+## cast in any of the six titles holds a sound member)", and that was false.**
+## The corpus holds **204** of them (`tools/member_type_census.gd`): 87 in
+## `itamar-magichat`, 66 in `itamar-park`, 17 each in `piposh`, `piposh-en` and
+## `piposh-ru`. Piposh 2 has none, which is where the sentence came from — a
+## measurement of one title, written down as a fact about eight, and then
+## repeated in AGENTS.md and `docs/ENGINE_TODO.md` in the same words.
+##
+## It cost exactly what an unexercised decoder costs. Handed its first real
+## member the decoder failed twice: `director_cast.gd` preferred a zero-length
+## `snd ` chunk sitting beside the real `sndH`/`sndS` pair, and the `sndH` decode
+## had been written to a guess about the layout that the synthesised fixture was
+## built to satisfy. `tools/sound_member_census.gd` is the instrument that hands
+## the decoder the real ones, and it asserts against the corpus rather than
+## against a count.
 ##
 ## **A digital video member has media when something can decode it, and answers
 ## that it has none when nothing can.** This paragraph twice said the second half

@@ -57,6 +57,8 @@ FILES=(
   "castmember/bitmap.cpp"         # Bitmap bbox, regX/regY, matte generation
   "castmember/bitmap.h"
   "castmember/filmloop.cpp"       # Film loop advance and its channel expansion
+  "castmember/sound.cpp"          # Which child chunk a sound member's audio is in
+  "castmember/sound.h"
 
   # Lingo host surface: dispatch, suspension, properties, builtins.
   "lingo/lingo.cpp"               # Lingo::execute, LingoState freeze/thaw

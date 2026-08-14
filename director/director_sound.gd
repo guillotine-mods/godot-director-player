@@ -184,21 +184,111 @@ static func _from_sound_header(data: PackedByteArray, at: int, error: Array) -> 
 
 # ------------------------------------------------------------------ sndH/sndS
 
-## Director's own split of the same information: `sndH` describes the samples and
-## `sndS` is the samples. The header opens with the sound header the `snd `
-## resource embeds, at a fixed offset, so the two shapes share their decode once
-## the samples have been pointed at the other chunk.
+## Field offsets in a `sndH`, all big-endian 32-bit signed.
+##
+## This is not the Mac sound header. It is the **MOA sound format record**, a
+## flat run of `int32`s that Director 6 writes ahead of the samples, and
+## `sound.cpp:MoaSoundFormatDecoder::loadHeaderStream` reads them in this order:
+## `offset`, `size`, `playbackStart`, `playbackStartFrame`, `loopStart`,
+## `loopStartFrame`, `loopEnd`, `loopEndFrame`, `playbackEnd`,
+## `playbackEndFrame`, `numFrames`, `frameRate`, `byteRate`, a 16-byte
+## `compressionType`, `bitsPerSample`, `bytesPerSample`, `numChannels`,
+## `bytesPerFrame`, a 16-byte `soundHeaderType`, then `platformData[63]` and
+## `bytesPerBlock`.
+##
+## **The corpus's headers are 100 bytes and stop at the end of
+## `soundHeaderType`**, so the last two fields are off the end of the chunk and
+## nothing here reads them. That is the file's length, not a truncated read.
+const SNDH_SIZE := 4
+const SNDH_LOOP_START_FRAME := 20
+const SNDH_LOOP_END_FRAME := 28
+const SNDH_NUM_FRAMES := 40
+const SNDH_FRAME_RATE := 44
+const SNDH_BITS_PER_SAMPLE := 68
+const SNDH_NUM_CHANNELS := 76
+## Everything above lies inside this many bytes.
+const SNDH_MIN := 80
+
+
+## Director's own split: `sndH` describes the samples and `sndS` *is* the samples.
+##
+## **This used to concatenate the two and hand the result to the Mac `snd `
+## decoder**, on the reading that a `sndH` "opens with the sound header the
+## `snd ` resource embeds, at a fixed offset". It does not — the two formats
+## share nothing — and the mistake was invisible because the only `sndH` this
+## decoder had ever seen was one the harness synthesised to match the belief.
+## Against the real thing it read the rate out of `loopStartFrame` and got 0, and
+## refused all 17 of Piposh 1's sound members with "snd header claims rate 0".
+##
+## The layout is settled twice over. `sound.cpp:MoaSoundFormatDecoder` names the
+## fields, and two members of different sizes pin them independently:
+##
+##   PIANO.dir #8  `PIANOKEY`  size 16384   numFrames 16384   frameRate 22000
+##   DAY1.dir #142 `ATTIC_DO`  size 126600  numFrames 126600  frameRate 22000
+##
+## `size` equals the `sndS` chunk's own length in both, which is the check that
+## says the field is what it is called rather than a coincidence at one offset.
+## `bitsPerSample` 8, `bytesPerSample` 1, `numChannels` 1 and `bytesPerFrame` 1
+## are constant across the corpus and so are *not* distinguished by it — the four
+## are told apart by the reference alone, which is why the offsets above are
+## quoted from it rather than derived here.
+##
+## 8-bit MOA samples are **unsigned** and 16-bit are big-endian signed, the same
+## pair as the `snd ` resource: `getAudioStream` sets `FLAG_UNSIGNED` when
+## `bitsPerSample == 8` and never sets `FLAG_LITTLE_ENDIAN`.
 static func _from_header_and_samples(header: PackedByteArray, samples: PackedByteArray,
 		error: Array) -> AudioStreamWAV:
-	if header.size() < 22:
-		error.append("sndH is %d bytes" % header.size())
+	if header.size() < SNDH_MIN:
+		error.append("sndH is %d bytes, need %d" % [header.size(), SNDH_MIN])
 		return null
-	# The samples live in `sndS`, so the header is decoded with an empty tail and
-	# the payload substituted. Concatenating is what keeps one decoder rather
-	# than two that must be kept in step.
-	var joined := header.duplicate()
-	joined.append_array(samples)
-	var stream := _from_sound_header(joined, 0, error)
+	var rate := _be_i32(header, SNDH_FRAME_RATE)
+	var bits := _be_i32(header, SNDH_BITS_PER_SAMPLE)
+	var channels := _be_i32(header, SNDH_NUM_CHANNELS)
+	if rate <= 0 or channels <= 0:
+		error.append("sndH claims rate %d, %d channel(s)" % [rate, channels])
+		return null
+
+	# `size` is what the header says the samples are; the chunk is what they
+	# actually are. They agree everywhere in this corpus, and where they would not
+	# the chunk wins -- reading past it is the one outcome that is never right,
+	# and a header claiming *less* than the chunk holds is how a sound gets
+	# silently truncated. The disagreement is reported either way, because a
+	# header that does not describe its own samples is a decode fact worth having.
+	var declared := _be_i32(header, SNDH_SIZE)
+	var stop := samples.size()
+	if declared > 0 and declared != samples.size():
+		error.append("sndH declares %d sample bytes, sndS holds %d"
+			% [declared, samples.size()])
+		stop = mini(declared, samples.size())
+	if stop <= 0:
+		error.append("sndS holds no samples")
+		return null
+
+	var stream := AudioStreamWAV.new()
+	stream.mix_rate = rate
+	stream.stereo = channels >= 2
+	var payload := samples.slice(0, stop)
+	if bits == 8:
+		stream.format = AudioStreamWAV.FORMAT_8_BITS
+		stream.data = _unsigned_to_signed(payload)
+	elif bits == 16:
+		stream.format = AudioStreamWAV.FORMAT_16_BITS
+		stream.data = _swap16(payload)
+	else:
+		error.append("%d-bit sndH samples are not supported" % bits)
+		return null
+
+	# Director loops a member between these two, in frames, and treats an end at
+	# or before the start as "loop the whole thing" —
+	# `MoaSoundFormatDecoder::getAudioStream` picks `LoopingAudioStream` over
+	# `SubLoopingAudioStream` on exactly that test. Both are zero across this
+	# corpus, so the sub-loop arm is carried and unexercised.
+	var loop_start := _be_i32(header, SNDH_LOOP_START_FRAME)
+	var loop_end := _be_i32(header, SNDH_LOOP_END_FRAME)
+	if loop_end > loop_start:
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = loop_start
+		stream.loop_end = loop_end
 	return stream
 
 
@@ -281,6 +371,15 @@ static func _be_u16(d: PackedByteArray, o: int) -> int:
 
 static func _be_u32(d: PackedByteArray, o: int) -> int:
 	return (d[o] << 24) | (d[o + 1] << 16) | (d[o + 2] << 8) | d[o + 3]
+
+
+## Every field of a `sndH` is a *signed* 32-bit, and the sign is load-bearing:
+## the reference reads them with `readSint32BE` and the decode branches on
+## `rate <= 0` and `loopEnd > loopStart`, both of which a two-billion-and-change
+## unsigned reading would turn into the wrong answer rather than a rejection.
+static func _be_i32(d: PackedByteArray, o: int) -> int:
+	var raw := _be_u32(d, o)
+	return raw - 0x100000000 if raw >= 0x80000000 else raw
 
 
 static func _le_u16(d: PackedByteArray, o: int) -> int:
