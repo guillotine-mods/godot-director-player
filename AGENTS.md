@@ -67,12 +67,45 @@ against real data -- both are worth doing and this port has been repeatedly save
 by them. Then build the rest anyway. Where the corpus cannot exercise something,
 implement it from the reference and say in the comment that it is unverified;
 that is an honest state, and it is not the same as absent. The calls already made
-the wrong way, and worth revisiting: score sound channels, the transition wipe
-algorithms, `beginSprite`/`endSprite`/`stepFrame`/`timeout`, sprite trails.
+the wrong way, and worth revisiting: score sound channels,
+`beginSprite`/`endSprite`/`stepFrame`/`timeout`, sprite trails. The transition
+wipe algorithms were on that list and came off it on 2026-08-14; how they read
+before they did is the worked example below.
 
 This is the counterweight to the rule above it, not a contradiction of it. The
 engine stays ignorant of *this game's* rooms and channels; it does not stay
 ignorant of Director's features.
+
+**A "measured zero" in this repository is usually a measurement of Piposh 2.**
+This is the specific way the rule above has been broken, over and over, and it is
+worth knowing as a fact about the files rather than as a principle. Piposh 2 is
+the corpus the port was built on and the one `director_game.cfg` points at, so a
+survey run without arguments measures it and nothing else. Several such numbers
+were then written into comments, into `AGENTS.md` and into `docs/` as statements
+about *the corpus* or *the engine*, and the sentence gives no sign of which it
+is. Three found in one day:
+
+- "no cast in this game holds a sound member, so all of it is proved against
+  synthesised bytes only" -- in three files, in those words. Piposh 2 has none;
+  the corpus has **204**, and neither of the two defects between them and the
+  speaker had ever run.
+- "thirteen transition algorithms would be thirteen pieces of dead code for this
+  title, and four seconds of held playhead is the whole of what is missing" --
+  measured at 2 types over 5 frames. The corpus plays **12 types over 125 frames
+  and 140 seconds**, and `rating`, never swept, is more than the other five
+  titles together.
+- "the score's own sound channels are empty in all 61 movies" -- carried in
+  `preview_lingo_host.gd`. This one is the adjacent failure rather than the same
+  one, and it is worth seeing beside them: 61 is Piposh 2's movie count, so it
+  reads as measured, and the score decoder did not read those bytes at all at the
+  time. A number that names a scope is not evidence that anything counted it.
+
+So: **a number is about the roots it was run over, and the sentence must say
+which those were.** `tools/member_type_census.gd` walks every root under `games/`
+and `test-games/` in one pass and is the cheapest way to find out whether a "this
+corpus has none" is true; most surveys take `--root <name>` and many take `--all`.
+If you are about to write "this corpus does not ..." into a comment, either run it
+over all eight roots or write down the one you ran.
 
 **The reference documents are the specification.** `docs/DIRECTOR_ENGINE.md` is
 everything the engine does without a script; `docs/LINGO_SURFACE.md` is the
