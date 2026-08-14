@@ -325,6 +325,7 @@ godot --headless --script tools/qa_walk.gd -- --sweep  # the same detectors over
 godot --headless --script tools/bitmap_geometry.gd # every bitmap member's row stride is at least one row long, whole corpus, pass/fail
 godot --headless --script tools/audio_coverage.gd  # every file whose bytes say it is a sound resolves through AudioDirector, and resolves to itself rather than to another take, whole corpus, pass/fail
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
+godot --headless --script tools/transition_render.gd  # all 52 transition types draw, and draw in the direction their name says, pass/fail
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise
 godot --headless --script tools/sprite_record_bytes.gd -- --all  # what each of the 48 bytes of a sprite record holds, pass/fail
 godot --headless --script tools/sprite_size_survey.gd -- --all  # score rect versus the member's natural size, and rects that change mid-span

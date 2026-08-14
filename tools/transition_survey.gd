@@ -4,10 +4,21 @@ extends SceneTree
 ##   godot --headless --script tools/transition_survey.gd -- --all
 ##   godot --headless --script tools/transition_survey.gd -- --file PIP2DATA/DAY1.dir
 ##
-## Written before implementing transitions, to find out whether there was
-## anything to implement. `docs/DIRECTOR_ENGINE.md` §10 describes about fifty
-## numbered types over thirteen algorithms; this asks how many of them a real
-## title reaches for, and the answer decided how much of §10 got built.
+## Written before implementing transitions to find out whether there was anything
+## to implement, and **that is the question it should never have been asked.**
+## The answer -- 3 members and 5 frames in one title -- was used to decide that
+## the drawing was not worth building, which `AGENTS.md` rejects by name:
+## measurement is for prioritisation and verification, never for scope. All 52
+## types are implemented now (`director/director_transition.gd`), and what this
+## survey decides is which of them can be *proved* against real frames and which
+## are marked unverified.
+##
+## Re-run over the whole corpus rather than one root, it also says the old answer
+## was wrong on its own terms. `piposh-dream` alone plays seven distinct types --
+## 4, 26, 27, 32, 33, 51 and 52 -- of which the original census listed none.
+## `--root <name> --all` is how to ask one root; there is no all-roots mode,
+## because `director_game.cfg` names one game at a time and this tool may not
+## know which games exist.
 ##
 ## It reports the three sources §10 lists, as far as a container can answer them:
 ##
