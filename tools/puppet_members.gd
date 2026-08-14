@@ -13,6 +13,9 @@ extends SceneTree
 ##                say what drew. `--play all` walks every scene it derived.
 ##   --ticks N    process frames to give one played scene (default 4000)
 ##   --no-input   press nothing: the control run every input claim needs
+##   --avoid L    channels `--play` must not click, comma-separated, on top of the ones
+##                derived. For a back-to-the-menu button kept as a *cast* script, which
+##                the derivation cannot see — `hex2.dir`'s ch90 is the measured case.
 ##   --source     print each script's handler text under its findings
 ##   --verbose    print every element of every game, not the first 12
 ##
@@ -253,12 +256,17 @@ const KEYCODE_CASE := "(?i)case\\s+the\\s+keycode\\s+of"
 
 var _verbose := false
 var _show_source := false
+## Channels `--play` must not click, on top of the ones `_hotspots` derives. See
+## `_live_hotspots` for why a derived set is not enough.
+var _avoid := {}
 
 
 func _init() -> void:
 	var args := Args.parse()
 	_verbose = Args.flag(args, "verbose")
 	_show_source = Args.flag(args, "source")
+	for text in Args.text(args, "avoid", "").split(",", false):
+		_avoid[int(text)] = true
 
 	var paths = Paths.new()
 	if not paths.load_config():
@@ -689,6 +697,14 @@ func _centre_of(entry: String) -> Vector2:
 ## Which visible channels the engine's own click descent would send a `mouseUp` to on this
 ## frame, minus the ones that leave the movie. Asked of `interaction.gd:script_for_click`
 ## rather than derived, so what is clicked is what a click reaches.
+##
+## `_hotspots` derives the leaves-the-movie set from **sprite behaviours** only, and it says
+## so; a back-to-the-menu button kept as a *cast* script is invisible to it and the click
+## descent answers for one exactly as it does for a game piece. Measured on
+## `piposh-dream/hex2.dir`: ch90's `CastScript 306` ends the run on `mainmenu.dir` after seven
+## clicks, so the scene's own outcome frames can never be reached and criterion 4 fails for a
+## reason that is this file's rather than the engine's. `--avoid` is the manual half, for the
+## channels a scan cannot find.
 func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 	var out: Array = []
 	var sprites: Array = preview.call("frame_sprites")
@@ -696,6 +712,8 @@ func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 		var raw: Dictionary = value
 		var channel := int(raw["channel"])
 		if (scene["avoid_channels"] as Array).has(channel) or out.has(channel):
+			continue
+		if _avoid.has(channel):
 			continue
 		if (preview.call("_effective", raw) as Dictionary).is_empty():
 			continue
