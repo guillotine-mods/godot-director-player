@@ -227,6 +227,16 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # empty set. The harness asserts its own population first for that reason, but the
 # flag is what stops it being asserted and vacuous.
 #
+# **`tools/puppet_members.gd` is not here and should not be, which is worth
+# writing down because it has been reported as a coverage gap once already.** It
+# makes **zero** `Harness.check` calls in either of its modes -- it is the
+# diagnostic that was written to *find* the nested-loop bug, printing which scenes
+# claim which channels and which of their film loops have film-loop children. Run
+# against `GATE_ROOT` it reports `0 of 0 scene(s)`, and `gate.sh` calls that ERROR,
+# correctly: a run that asserted nothing has not passed. Its subject is covered by
+# the entry above, which asserts the same four things about the same corpus. Adding
+# it would mean writing assertions it does not have, not moving a name into `ALL`.
+#
 # `cast_script_sprite` names `piposh-dream` for the same reason and the population
 # is even narrower: **all 12 reads of `the currentSpriteNum` in the six titles are
 # in one corpus**, as cast scripts on bitmap members in `hex1`/`hex2`/`hex3`, and 0
