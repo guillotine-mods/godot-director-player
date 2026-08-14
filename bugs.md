@@ -695,52 +695,53 @@ probe region, and nothing measured here parks it in either.
 
 ---
 
-## 39. Every title except Piposh 2 still has scripts that do not compile
+## 39. One script in two roots still does not compile, and it may be malformed rather than unparsed
 
 **Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · found by
 `tools/script_compile_check.gd`, which is why it is a number and not an
 impression
 
-**Re-measured 2026-08-14 at `85b06dd3`, all six roots. Every row moved and one
-went green**, so the table below is replaced rather than annotated:
+**Re-measured 2026-08-14 at `02844f93`, after the two parser fixes that commit
+carries. Four roots are green and the remainder is one script**, so the table and
+the diagnosis below are both replaced rather than annotated:
 
-| root | compiled | was |
-|---|---|---|
-| `piposh2` | 3,307 of 3,307 | 3,307 of 3,307 |
-| `piposh` | 8,742 of 8,754 | 8,738 |
-| `piposh-en` | 9,408 of 9,422 | 9,406 |
-| `piposh-ru` | 9,712 of 9,726 | 9,710 |
-| `rating` | 5,440 of 5,441 | 5,437 |
-| `piposh-dream` | **1,746 of 1,746** | 1,725 |
+| root | compiled | before the fix | before that |
+|---|---|---|---|
+| `piposh2` | **3,307 of 3,307** | 3,307 | 3,307 |
+| `piposh` | **8,754 of 8,754** | 8,742 | 8,738 |
+| `piposh-dream` | **1,746 of 1,746** | 1,746 | 1,725 |
+| `rating` | **5,441 of 5,441** | 5,440 | 5,437 |
+| `piposh-en` | 9,420 of 9,422 | 9,408 | 9,406 |
+| `piposh-ru` | 9,724 of 9,726 | 9,712 | 9,710 |
 
-`piposh-dream` is the interesting row: 21 failures to none, so whatever the
-`unexpected "\n"` family was, it is parsed now. `rating` is down to one. The three
-Piposh 1 localisations lose 12-14 each and are the bulk of what is left. Nobody has
-re-read *which* scripts fail since the numbers moved, so the diagnosis below is
-against the old set and the shared-failure list may no longer be shared.
+The two defects that closed the rest were both in `end`-swallowing. A one-line
+`if x then <stmt>` consumed a following `end if` that belonged to an enclosing
+block, so the handler ran off the end of its own source and reported `expected
+end` at the last line -- pointing nowhere near the cause, which is why the five
+CLOCK SCRIPTs stayed undiagnosed through several passes. And `end` only swallowed
+a trailing word when it matched the handler name, so `on idle / ClockScript1 /
+end if` was dropped. Both are in `02844f93`; the visible consequence was Piposh
+1's in-game clock never advancing, which had been reported as an Android bug.
 
-Piposh 2 is the corpus this parser was written against, which is exactly why its
-green says nothing about the language. Each Piposh 1 localisation used to fail 16
-and they were not the same 16 — the shared ones were `MASTER.CST`'s five CLOCK
-SCRIPTs and `MovieScript 34`, plus `POOLWAR` 66 and `ROULLETE` 149:
+The recovered Itamar corpora move with them: `magichat.dir` is 124 of 124, and
+what is left there is `hats.dir` 111 of 112 and `torfim.dir` 64 of 65, neither
+re-read since the numbers moved.
+
+**What remains is one script, in two roots, and it may not be a parser bug at
+all.** `Texts.cst CastScript 98 - day4doc2` in `piposh-en` and `piposh-ru`, "line
+5: expected end", counted twice in each because the cast is reached twice. It is
+an `on mouseUp` with **no `end` at all** -- the member's source stops after
+`go to frame "doc1b"`. So the question is not how to parse it but whether
+Director closes an unterminated final handler at EOF, and nobody has measured
+that. Guessing either way silently changes what every malformed script in the
+corpus does, so it stays open until it is answered from the reference.
+
+The Hebrew build is unaffected. The cost of the remaining two is that one click
+in the day-4 doctor dialogue is dead in both localisations.
 
 ```
-godot --headless --path . --script tools/script_compile_check.gd -- --root piposh --verbose
+godot --headless --path . --script tools/script_compile_check.gd -- --root piposh-en --verbose
 ```
-
-Two spellings account for most of them, and both are ordinary Lingo:
-
-- `set the editable of member ("save" & i - 27) of castLib 1 to 0`
-  (`MAINMENU.dir` 112 and 145 in `piposh`, `MANAEGOZ.dir` 99 and 109 in
-  `rating`) reports "set needs `to`", so the target parse is swallowing the `to`
-  rather than the `=` this time. That is the save/load screen's field enabling,
-  so `docs/bugs-closed.md` 34's neighbourhood.
-- `expected end` at the last line of five near-identical CLOCK SCRIPTs, and
-  `unexpected "\n"` in eleven more across `piposh-dream` and `rating`. Not
-  diagnosed.
-
-Nothing here is title-specific: they are language surface this parser does not
-have yet, and every one is a handler that silently does not run.
 
 ---
 
@@ -1546,91 +1547,6 @@ there is nothing here to bind.
 
 ---
 
-## 90. `soundBusy` is paced by the audio device and not by the sound, so every speech wait in the corpus stretches by whatever the device is slow by
-
-**Status:** open · **Area:** `autoload/audio_director.gd`
-
-`sound_busy` is one line — `return player.playing` — and `playing` is retired by
-the **audio server**, when its mix thread has consumed the stream. So the flag
-measures the output device's throughput, not the sound's length. On hardware the
-two are the same number to within a fraction of a percent, which is why this can
-sit unnoticed: it looks like an identity rather than like a choice.
-
-They come apart where there is no hardware. Measured on one 0.63s file
-(`fx/bang`), by `tools/sound_rate.gd`:
-
-```
-   Windows runner    <= 1.00x real time   (passes a 1.0x tolerance)
-   developer Mac        1.12x             (0.71s for 0.63s)
-   macOS runner         2.09x             (1.32s for 0.63s, over 67 polls)
-```
-
-A movie cannot observe this as a sound that is slow, because it never asks how
-long a sound is. It asks `soundBusy`, and this corpus's speech is built on
-`BehaviorScript 250`'s shape:
-
-```lingo
-on exitFrame
-  if soundBusy(1) then go(marker(0))
-end
-```
-
-The talking animation loops back to its own marker for as long as the channel is
-busy. So a `soundBusy` that runs at half speed does not make the speech slow — it
-makes the **playhead** loop twice as many times, and the player watches a mouth
-move for twice as long as the line it is speaking. Every frame budget downstream
-of a speech wait is wrong by the same factor.
-
-This is what `puppet_persists` had been failing on, on every macOS runner, while
-passing on Windows and on a developer Mac. `exitforest3`'s `dnzclicktalk` returns
-in 295 score ticks here and needs more than 400 there; with `--ticks 700` the
-macOS runner passes. The harness was right and its budget was right: the two
-machines' score-tick *rate* is identical (7.7/sec vs 7.8/sec), and the clip's
-pacing per marker jump is 14 ticks on both. What differs is how many jumps the
-wait takes — 27 markers in 400 ticks and still inside the clip, against 19 in the
-295 it takes here.
-
-Three things this was mistaken for first, each measured and none of them it:
-
-- **a wall-clock guard.** The watch's `--watch-ms` was blamed and doubled; the
-  failing run spent 52s of 480,000ms.
-- **machine speed.** Score ticks are tempo-gated, so the rate is the same on any
-  machine. The engine's *frame* rate is not the same — 11.3 process frames per
-  score tick on the runner against 23.7 here — but nothing in the clip is paced
-  by frames, and the `idle` tally that shows it is a red herring.
-- **a missing audio device.** `--audio-driver Dummy` on the runner fails too, and
-  Dummy passes here, so the driver is not the variable. The runner is slow with
-  both.
-
-The audio index is identical on both machines — 3142 files, 315 ambiguous tails —
-so this is not a data gap and not a case-sensitivity difference in path
-resolution.
-
-`tools/sound_wait.gd` cannot catch it and is not wrong for that: it asserts that a
-channel is busy if and only if a sound the script asked for is playing on it,
-which is the *logic* of `soundBusy` and is correct on every machine. The clock is
-a separate rule, and `tools/sound_rate.gd` is what asserts it.
-
-The fix is a ceiling rather than a replacement: record the stream's own length
-when `_start` plays it, and answer `player.playing and now < that`. Nothing
-changes where the device is honest; a device that lags can no longer hold a
-movie. Two details make it cheap here — nothing in this engine's audio path loops
-a stream or touches `stream_paused`, and `_start` is the single funnel both
-`play_file` and `play_stream` go through. `take_cues_passed` reads
-`get_playback_position`, so on a slow device it would still lag behind a
-wall-clock `soundBusy`; no script in the corpus names a cue point, so that is
-recorded rather than solved.
-
-Reproduce:
-
-```
-godot --headless --path . --script tools/sound_rate.gd -- --tolerance 1.0
-gh workflow run nightly.yml --ref main \
-    -f entries='sound_rate:--tolerance@1.0 puppet_persists:--label@exitforest3'
-```
-
----
-
 ## 100. Piposh Dream's `doc` minigame ends before it throws anything, because a hit registers on the first pass against a channel its own init never claimed
 
 **Status:** **not an engine bug — concluded 2026-08-14 from the reference**, and
@@ -1796,3 +1712,167 @@ correctly not click targets in their unlit state, and
 `behaviour_scripts`'s decision to drop unresolved attachments is right here.
 `e1ca332b`'s sourceless-script census is **not** contradicted: it counted
 `script_id != 0`, and this member is 0, so it was never in that population.
+
+---
+
+## 107. `moveToFront` and `moveToBack` are unbound, so a title with two windows cannot order them
+
+**Status:** OPEN · **Area:** `scenes/preview_lingo_host.gd`, `scenes/preview/windows.gd`
+
+`docs/LINGO_SURFACE.md` §7.4 lists both among the window methods. Nothing binds
+either. Every Itamar Park boot prints them in `builtins unbound`:
+
+```
+builtins unbound : {"movetofront":2, ...}
+```
+
+Park calls `moveToFront` four times and `moveToBack` twice.
+
+**Currently masked, and that is the reason to file it rather than to shrug.**
+`windows.gd` parents a window above the stage unconditionally, so the one
+arrangement Park asks for is the one it already gets. A title that opens *two*
+windows has no way to say which is in front, and the symptom then is not an error
+but a window drawn behind the one it was raised over — which reads as a drawing
+bug and is a binding that was never written.
+
+Reproduce:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/scratch/deepplay.gd -- --root res://test-games/itamar-park --file torfim/torfim.dir --settle 12
+```
+
+---
+
+## 108. Itamar Park's study section is unreachable: the book hotspot is drawn, visible and answers no click
+
+**Status:** OPEN · **Area:** `scenes/preview/interaction.gd` or the hit test
+
+Channel 94 at `AntPlay` holds `bookpas-NRM`, member 3:1, rect (266,416) 50x39.
+It draws, it is visible, and three separate points inside it all resolve to
+channel 0:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/scratch/deepplay.gd -- \
+  --root res://test-games/itamar-park --file torfim/torfim.dir --settle 12 --steps 560 \
+  --do "play+10=ch11;Ant+30=code:49;AntPlay+50=xy:280,430"
+# clicked (280,430) frame 24  ch0  frame script BehaviorScript 24 - play frame  mouseUp:NO HANDLER
+```
+
+**The discriminator is that its neighbours work.** Channels 71 (telephone) and 72
+(ball) are hotspots on the same frame, behind the same `frameLabel contains
+"play"` guard, and both resolve correctly in the same run — 71 reaches `AntTele`
+and 72 reaches `AntLevels`. So this is not the guard, and not the frame: it is
+the hit test or the eligibility rule, for one channel that differs from its
+neighbours in some way nobody has named yet.
+
+Everything behind it is unreachable — `AntStudy` and the whole of `study/`.
+
+**What the next session needs first is an instrument, not a hypothesis.**
+`tools/hotspots.gd` is what would say whether channel 94 is eligible at all, and
+it cannot reach `AntPlay`: getting there needs the space key, because
+`BehaviorScript 23` holds the world-explanation frame with `play frame the frame`
+until its own `on keyDown` matches keyCode 123-126 or 49. A mouse-only walk sits
+there for ever — measured at 596 ticks with every later step unfired. Either
+`hotspots.gd` gains a way to press a key on the way in, or this is answered by
+`deepplay.gd` alone, which is a driver and not an instrument.
+
+---
+
+## 109. `film_loop_cast` is red on `piposh-dream`, and the gate only ever runs it pinned to `piposh2`
+
+**Status:** OPEN · **Area:** `director/director_film_loop.gd`, `gate.sh`
+
+2 of 4 checks fail. `meet5.dir Internal:37`, children 89-93: *wants `psyco(2)`,
+resolved `Internal(1)`*, plus one `ccl` entry naming no library.
+
+```
+godot --headless --path . --script tools/film_loop_cast.gd -- --root piposh-dream --verbose
+```
+
+`ALL` carries `film_loop_cast` bare, which is `GATE_ROOT` — `piposh2`, where it
+passes. `film_loop_restart`, `film_loop_nesting` and `cast_script_sprite` are all
+already pinned to `piposh-dream` for exactly this reason, so the pattern for
+fixing the coverage half is established and beside it. **Both halves are the
+entry**: the resolution bug, and a suite that could not see it.
+
+---
+
+## 110. `plane1.dir`: 8 of 37 film-loop children draw nothing, and it is not the closed nested-loop cause
+
+**Status:** OPEN · **Area:** `scenes/preview/film_loop_view.gd` or `director/director_film_loop.gd`
+
+Reproduced in two independent runs of `tools/minigame_probe.gd`:
+
+```
+{"child drawn":29,"child has no art":8,"children offered":37}
+```
+
+The flyer plays — it initialises `vertnum`, `horznum`, `hellfire` and `borderx`
+and its HUD fields update — so this is art and not logic. It is the **only**
+movie in the minigame corpus with a non-zero miss, which is what makes it worth a
+number rather than a sweep.
+
+**Explicitly not the Hatuli projectile bug.** `plane1.dir` is not one of the ten
+nested-loop sites `docs/bugs-closed.md` enumerates, so whatever this is, it is a
+second cause and closing it against that entry would be wrong.
+
+---
+
+## 111. `--root <name>` alone raises a raw Nil error on `rating` instead of refusing
+
+**Status:** OPEN · **Area:** `scenes/director_preview.gd:860`, `lingo_go_movie`
+
+`--root rating` without `--boot` leaves the boot movie coming from the config
+(`strtgame.dir`, which is not rating's), the preview holds no movie, and the next
+`go to movie` raises:
+
+```
+Invalid access to property 'path' on a base object of type 'Nil'
+```
+
+Five of rating's minigames read as `no-open` through that route and **none of
+them is broken** — `--boot MAINMENU.dir` reaches all five. So the cost is not the
+five, it is that a tool reports "cannot open" for a configuration error and a
+session spends its time on the wrong question.
+
+Two things are wrong and only one of them is this entry's: rating needs its own
+boot movie named, which is documentation; and `lingo_go_movie` dereferences a
+null movie rather than refusing with a sentence, which is the engine. A `go to
+movie` with no movie loaded is a state the engine can be in, and it should say so.
+
+---
+
+## 112. A roulette teardown prints ~1,200 `Nonexistent function 'draw'` lines after the run has passed
+
+**Status:** OPEN · **Area:** `scenes/preview/sprite_art.gd`, `film_loop_view.gd`, via `StagePaint.paint_frame`
+
+Seen at the end of `key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir`,
+*after* it prints PASS. The reported site is `scenes/director_preview.gd:2002`,
+which is `StagePaint.paint_frame` — reached through `SpriteArt.draw` /
+`FilmLoopView.draw` while the tree is being torn down and the callee is already
+freed.
+
+Harmless to the assertion and not harmless to the suite: 1,200 lines of engine
+error after a green verdict is how a real error stops being read. It is a
+teardown ordering fault — the painter runs one more time on a frame whose
+children have gone — rather than anything about roulette.
+
+---
+
+## 113. Piposh 2's chess board is reached and offers no click in 900 ticks, and nobody has separated "dead" from "the intro had not finished"
+
+**Status:** OPEN · **Area:** unknown; needs an instrument before a diagnosis
+
+`ches1` frames 138-144 draw the board — 16 pieces, 5 of 17 channels swapping
+member — and across 900 ticks **0 offered a hotspot** (`tools/minigame_probe.gd`).
+Piposh Dream's `hex1` is the same shape from the other side: its intro cycles to
+frame 148 and the board is at 216, so 900 ticks never arrived at all.
+
+**Both are measured at a tick budget, and a tick budget cannot tell a dead board
+from a long intro.** `bugs.md` 105 already records that the hex board *does* have
+three eligible tiles when it is played into properly, which is the reason to
+distrust the chess reading rather than to file it as a fault.
+
+What is missing is a probe that waits on a **marker** rather than on a tick
+count. That is the entry: until it exists neither of these is diagnosable, and
+both will keep being re-reported.
