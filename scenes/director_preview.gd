@@ -1851,11 +1851,12 @@ func _input(event: InputEvent) -> void:
 				# The touch key overlay is tested before the hit test for the same
 				# reason SKIP is: it is the preview's own control, drawn over the
 				# movie, and a hotspot underneath would otherwise eat the tap. It
-				# claims only a press that lands inside a button it actually drew,
-				# and `_key_overlay` is false on every machine with a keyboard --
-				# so on a desktop this whole line is one bool test and the routing
-				# below is what it always was.
-				if _key_overlay and button.pressed and KeyAffordance.press(self, at):
+				# claims only a press inside the stick, a button or the mode chip
+				# it actually drew — and the matching release, so a steer that ends
+				# does not also land on whatever is under the finger. On every
+				# machine with a keyboard `_key_overlay` is false, so this whole
+				# line is one bool test and the routing below is what it was.
+				if _key_overlay and KeyAffordance.pointer(self, button.pressed, at):
 					return
 				# An empty rect contains no point, so a build with the debug layer
 				# off has no SKIP hotspot either — the control is not drawn and the
@@ -1873,6 +1874,13 @@ func _input(event: InputEvent) -> void:
 		# the event either: a moveable sprite (§7.6) is dragged with the same
 		# button, and `TextFocus.drag` declines every motion that is not
 		# extending a selection it started.
+		# The touch stick owns the motion while a finger is steering it, or the same
+		# drag would also drag a moveable sprite (§7.6) underneath. It claims only a
+		# drag that began inside the control it drew, so every other motion — which
+		# is all of them on a desktop, where `_key_overlay` is false — reaches the
+		# two lines below exactly as before.
+		if _key_overlay and KeyAffordance.motion(self, at):
+			return
 		TextFocus.drag(self, at)
 		InputRouter.mouse_motion(self, at)
 		return

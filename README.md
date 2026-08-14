@@ -557,16 +557,37 @@ scenes start, draw correctly and cannot be played — the expensive failure, bec
 nothing reports it.
 
 `scenes/preview/key_affordance.gd` answers it **from the movie**, with no per-title
-data anywhere: the frame's own attached scripts say which keys they test, the
-score says on which frames they are attached, and the module draws one button per
-*action* — `(the keyCode = 126) or (the keyCode = 13)` is one control, not two —
-and synthesises the key through `Input`, the path a real key takes. It draws
-nothing unless the device has a touchscreen and no mouse.
+data anywhere: the frame's own attached scripts say which keys they test, the score
+says on which frames they are attached, and the module offers whichever of two
+controls the scene can use. Everything it draws is one *action* —
+`(the keyCode = 126) or (the keyCode = 13)` is one control, not two — and every key
+goes out through `Input`, the path a real key takes.
+
+- **A stick** where every action the scene needs is a direction (86 scenes across
+  the eight corpora). A stick pushed over is a key *held down*, so it repeats on a
+  keyboard's own timings — which is what makes an arcade steer rather than step
+  once per push. Press-and-hold on it, then drag, moves it; that cannot be confused
+  with driving, because a drive commits the moment the finger leaves the dead zone
+  and the pick-up only arms if it has not.
+- **A row of labelled buttons** for everything else, because a gesture cannot
+  express "Escape" and half a control is worse than a whole one of the other kind.
+- Where a stick is possible the player can still choose the row, from a chip on
+  screen rather than a setting behind a restart. The choice and the stick's
+  position survive a room change.
+
+Nothing is drawn unless the device is mobile, or has a touchscreen and no mouse, or
+**`--touch-input`** forces it. That flag is what makes any of it testable: it turns
+the whole path on from a desktop, and the path is driven by ordinary mouse events —
+which is exactly what Godot's own emulation turns a finger into — so a mouse drag
+across the stick is the same event sequence a thumb produces, through the same code.
 
 - `tools/key_demand.gd` is the census: it runs the *shipping* functions over every
   root and reports, scene by scene (a marker-delimited span), which of seven shapes
   the demand is. `--all --scenes` for the listing, `--csv` for the rows.
-- `tools/key_overlay.gd` is the gate, on the two scenes the owner was stopped by.
+- `tools/key_overlay.gd` is the gate, on all three arms: the stick
+  (`piposh2 PIP2DATA/ARCADE2.dir`), the button row (`rating arcade1.dir`, which
+  needs three directions *and* Escape) and the typed-text decline
+  (`piposh PIPDATA/ROULLETE.dir`).
 - `tools/key_script_survey.gd` still answers the coarser question — which keys a
   *title* touches anywhere — which is what `debug_bindings` needs and is a union
   no scene is described by.

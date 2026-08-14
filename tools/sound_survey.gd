@@ -290,9 +290,9 @@ func _init() -> void:
 		# `bugs.md` 105 is the same lesson from the other direction, where an
 		# instrument reported a board dead and was quoted as the state of the frame.
 		print("")
-		print("no score was read, so nothing below is asserted: "
-			+ "`--root` names a folder under `games/` and this tool cannot reach "
-			+ "`test-games/`.")
+		print("no score was read, so nothing below is asserted. A bare `--root "
+			+ "<name>` resolves under `games/`; a corpus anywhere else needs its "
+			+ "whole path, as `--root res://test-games/itamar-magichat`.")
 		h.complete("the score's own sound channels are measured, not assumed")
 		quit(h.finish("score sound channels across the corpus"))
 		return
