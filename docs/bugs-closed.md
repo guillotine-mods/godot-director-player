@@ -6839,3 +6839,63 @@ caught by hashing, and both are worth avoiding by name: `git stash -q push --
 `EXIT` trap running `git checkout HEAD -- channel.gd` destroyed the fix mid-session
 so several "with the fix" runs were really at HEAD. Whole-file `cp` aside and back,
 verified with `shasum`, is the only method this entry would trust.
+
+---
+
+## 106. `tools/preview_surface.gd` matched `p.call(` inside any identifier, so a harness with a local named `interp` turned the safety net red about a method that was never on the node
+
+**Status:** FIXED · **Area:** `tools/preview_surface.gd:_method_names`,
+`_receiver_starts_here` · found while diagnosing 105, by two agents disagreeing
+about a red
+
+The tool derives its method list by scraping every `.gd` under `tools/` rather
+than maintaining a copy, and it matched by plain substring over
+`RECEIVERS := ["preview", "p", "node", "w"]`. So `p` matched inside `interp`,
+`temp` and `heap`, and `node` and `w` matched the tails of other identifiers —
+`w` matches inside `preview` itself. A scratch harness holding
+`interp.call("call_in_script", …)` reported `call_in_script`, which lives on
+`lingo/lingo_interpreter.gd` and has never been on the preview node.
+
+**Fixed by requiring a word boundary before the receiver**, in a new
+`_receiver_starts_here`: a match counts only at the start of a line or where the
+preceding character is not `[A-Za-z0-9_]`. A rejected match advances one
+character rather than past the string literal, so a real receiver later on the
+same line is still found. `RECEIVERS` is untouched.
+
+**Leading underscores are boundary, not name**, and this is the half that a
+literal reading of the filed fix would have got wrong. `tools/update_stage.gd`
+and `tools/lingo_movie_surface.gd` hold the preview in `_preview`, and a strict
+boundary drops `_paint` and `_field_key` — which are scraped from nowhere else,
+so the gate would have gone quietly blind to two methods while looking greener.
+Measured by replaying both matching rules over `tools/*.gd` outside the engine:
+73 names at HEAD, 71 under a strict boundary, 73 under the shipped one, with an
+empty diff against HEAD in both directions.
+
+Evidence, one entry, four runs:
+
+```
+clean tree            preview_surface  PASS   rc=0
++ tools/_scratch_106_probe.gd
+                      preview_surface  FAIL   rc=1
+                      FAIL  no method name has moved  (no_such_method_xyz)
++ fix                 preview_surface  PASS   rc=0
+- probe               preview_surface  PASS   rc=0
+```
+
+The probe was one line, `interp.call("no_such_method_xyz")` behind a null guard,
+and the baseline run is what makes the red attributable to it.
+
+**The first draft of the fix failed the gate about its own comment.** The new
+docstring spelled the needles out in full, so the scrape read them out of this
+very file and reported two method names made of comment fragments. The needles
+are written without their opening quote there now. `gate.sh`'s header records the
+same shape one layer up, where `grep -o 'ALL="…"'` matched its own occurrence in
+a comment; a tool that reads the tree it lives in is inside its own input.
+
+**Two of the three things the entry proposed were deliberately not done.**
+Dropping the one-letter receivers `p` and `w` was out of scope for this change —
+`RECEIVERS` was to be left as filed — and the boundary makes them safe rather
+than merely narrow. The in-harness fixture check (a line containing
+`interp.call(` that must not be scraped) is **not** built: the regression is
+guarded by nothing but this entry, and anyone who wants it has the probe above
+written out in full.

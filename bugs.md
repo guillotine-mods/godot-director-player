@@ -21,8 +21,9 @@ touches only `scenes/preview/channel.gd` and one harness.) They are now in `docs
 whose defect was fixed and whose entry was never moved, and 18 whose *subject was
 deleted* with the retired renderer and which therefore cannot be re-measured at
 all. Seven more were narrowed in place, and one — 100 — was answered from the
-reference and reclassified as not a bug. What is left below is 17 open entries,
-7 narrowed ones and 4 not-a-bug signposts.
+reference and reclassified as not a bug. What is left below is 16 open entries,
+7 narrowed ones and 4 not-a-bug signposts, one fewer than the sweep left because
+106 has since been fixed and moved.
 
 Two rules came out of it, and both are cheaper to follow than to rediscover:
 
@@ -1795,65 +1796,3 @@ correctly not click targets in their unlit state, and
 `behaviour_scripts`'s decision to drop unresolved attachments is right here.
 `e1ca332b`'s sourceless-script census is **not** contradicted: it counted
 `script_id != 0`, and this member is 0, so it was never in that population.
-
----
-
-## 106. `tools/preview_surface.gd` matches `p.call("` inside any identifier, so a harness with a local named `interp` turns the safety net red about a method that was never on the node
-
-**Status:** OPEN · **Area:** `tools/preview_surface.gd:_method_names`, `RECEIVERS`
-· found while diagnosing 105, by two agents disagreeing about a red
-
-The tool derives its method list by scraping **every** `.gd` under `tools/` rather
-than maintaining a copy, which is the right design and the reason it works at all.
-But it matches by plain substring over `RECEIVERS := ["preview", "p", "node", "w"]`:
-
-```gdscript
-for receiver in RECEIVERS:
-    var needle: String = '%s.call("' % receiver
-    var at := line.find(needle)
-```
-
-so `p.call("` matches inside `interp.call("`, `temp.call("` and `heap.call("`, and
-`node` and `w` match the tails of other identifiers. A throwaway harness containing
-
-```gdscript
-interp.call("call_in_script", "mouseup", cast_script, 0)
-```
-
-makes the gate report
-
-```
-FAIL  no method name has moved  (call_in_script)
-FAIL  the reflective surface the harnesses depend on (2 checks, 1 failed)
-```
-
-about `call_in_script`, which lives on `lingo/lingo_interpreter.gd:479` and has
-never been on the preview node. Deleting the scratch file made it green with
-nothing in the engine changed.
-
-**Why this is an entry and not a shrug.** This is the one gate whose entire
-purpose is catching a *silently* moved field: `scenes/preview/README.md` states
-that "a harness that reads null reports zero rather than failing, so the safety
-net goes dark without going red". A false positive here is the same failure from
-the other side — it spends a reader's trust on a red that is not about the engine,
-and the natural next move is to go hunting in `event_chain.gd` or `interaction.gd`
-for a method that was never there. It cost a cross-check between two agents in one
-session, and it arrived in the same hour as 105, which is the same lesson about
-instruments: a tool that is confidently wrong is more expensive than one that
-refuses to answer.
-
-Fix: require a word boundary before the receiver — reject a match whose preceding
-character is alphanumeric or `_` — and consider dropping the one-letter receivers
-`p` and `w` in favour of naming those locals, since a one-character receiver
-cannot be matched safely by substring at all. The regression check is cheap and
-belongs in the harness itself: a fixture line containing
-`interp.call("not_a_method"` must not be scraped.
-
-**Cross-reference, kept because it is the trap and not the task.** 93 is closed
-(`038b79a4`, now in `docs/bugs-closed.md`) and it was *not* fixed by widening the
-instance channel. `scenes/preview/event_chain.gd` separates the two channel notions
-— the channel a behaviour runs *as an instance* (`channel`) and the channel an
-element runs *for* (`sprite`), see `docs/bugs-closed.md` 104's neighbour, the
-`currentSpriteNum` fix — and widening the first would silently turn cast scripts
-into behaviour instances, which is precisely what that split exists to prevent.
-Anyone touching the dispatcher again meets the same fork.

@@ -31,6 +31,9 @@ const Harness := preload("res://tools/lib/harness.gd")
 ## picks up calls on `AudioDirector`, on a `Score`, and on the harness itself.
 const RECEIVERS := ["preview", "p", "node", "w"]
 
+## What may not precede a receiver. See `_receiver_starts_here`.
+const IDENT_CHARS := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
 ## Fields the harnesses read. A null answer means the field moved and the
 ## reflective read is now silently returning nothing.
 ##
@@ -118,6 +121,12 @@ func _method_names() -> PackedStringArray:
 				var needle: String = '%s.call("' % receiver
 				var at := line.find(needle)
 				while at >= 0:
+					if not _receiver_starts_here(line, at):
+						# Only the tail of a longer identifier. Step one character
+						# rather than past the string literal, so a real receiver
+						# later on the same line is still found.
+						at = line.find(needle, at + 1)
+						continue
 					var start := at + needle.length()
 					var stop := line.find('"', start)
 					if stop > start:
@@ -139,3 +148,24 @@ func _method_names() -> PackedStringArray:
 		out.append(str(key))
 	out.sort()
 	return out
+
+
+## Whether the receiver at `at` is a whole identifier rather than the tail of a
+## longer one. `find()` alone matches the `p` of `interp.call(` and the `w` of
+## `preview.call(`, so one scratch harness holding a local named `interp` turned
+## this gate red about `call_in_script`, which lives on the interpreter and has
+## never been on the preview node (bugs.md 106). A false red here costs the same
+## trust as the silent miss this file exists to catch.
+##
+## The needles are spelled without their opening quote everywhere in this comment
+## on purpose: written in full they are scraped out of this file like any other
+## call site, and the first draft of it failed the gate about itself.
+##
+## Leading underscores count as boundary and not as name: `tools/update_stage.gd`
+## and `tools/lingo_movie_surface.gd` hold the preview in `_preview`, and
+## `_paint` and `_field_key` are scraped from nowhere else. Anything further back
+## is a different identifier.
+func _receiver_starts_here(line: String, at: int) -> bool:
+	while at > 0 and line[at - 1] == "_":
+		at -= 1
+	return at == 0 or not IDENT_CHARS.contains(line[at - 1])
