@@ -12,6 +12,7 @@ extends SceneTree
 ##   --play S     after the static report, enter scene S the way the movie does and
 ##                say what drew. `--play all` walks every scene it derived.
 ##   --ticks N    process frames to give one played scene (default 4000)
+##   --no-input   press nothing: the control run every input claim needs
 ##   --source     print each script's handler text under its findings
 ##   --verbose    print every element of every game, not the first 12
 ##
@@ -124,16 +125,27 @@ extends SceneTree
 ##
 ## `--play` then uses it: a scene with a click entry is entered by putting the
 ## playhead inside the idle span and pressing the derived point, and a scene without
-## one by putting the playhead a little before its span and letting the movie walk in.
+## one by landing `LEAD_IN` before its init — or before the movie's own `action*` marker
+## where it has one, which `_landing` explains and which two different scenes measured the
+## hard way.
 ## **Neither ever jumps to the init marker**, and that is not superstition — landing on
 ## the init means the score's own arrival at that frame is what would have run the
 ## `puppetSprite`, the globals and the `keyUpScript`, and skipping it leaves a scene
 ## whose channels were never claimed. Frames are awaited, never ticked in a loop, for
 ## `AGENTS.md`'s reason: a synthetic tick advances the runtime clock and not the audio
 ## server's, so every `soundBusy` gate holds for ever and the speech before a scene
-## never ends. The arrow keys are pressed on the movie's *score ticks* rather than per
+## never ends. Keys are pressed on the movie's *score ticks* rather than per
 ## process frame, because these scenes read them through a `keyUpScript` and a press per
 ## frame pins the playhead (`tools/film_loop_restart.gd`'s `PRESS_EVERY`).
+##
+## **Which** keys is the scene's own business and is derived, not chosen: the handlers its
+## init installs (`set the keyUpScript to "westup"`), and the `the keyCode = N` tests and
+## `case the keyCode of` arms inside those handlers. A scene that installs none is a mouse
+## scene and is driven with the mouse instead, on whichever visible channels
+## `interaction.gd:script_for_click` — the click descent itself — says a `mouseUp` would
+## reach. `--no-input` presses nothing, which is the control every claim about input needs:
+## the difference between the two runs is the only thing that says a change came from the
+## player rather than from the score.
 ##
 ## Measured on COMEIN: **one** of the six scenes is behind such a loop —
 ## `fritz`, whose f178 runs `go(marker(0))` and whose channel 36 carries
@@ -143,33 +155,31 @@ extends SceneTree
 ## *not* repeat, and a survey that assumed it did would have gone looking for five
 ## hotspots that are not there.
 ##
-## ## A lead this survey turned up and did not settle
+## ## A lead this survey turned up, filed as `bugs.md` 100, and got wrong
 ##
-## Five of the six scenes dress their lanes and draw. **`doc` does not**, and the shape
-## is specific rather than vague: entered by walking in from f292, its init at f295 runs
-## (`enterFrame` ran 1, `puppetsprite` reached 8 times, its `keyUpScript` fired 7), and
-## then over a 20,000-frame window channels 27, 28 and 29 are never dressed with
-## 187/188/189 at all. What the playhead does instead is the measurement: it walks
-## f293..f308 and jumps straight to **f315, `y2`** — the branch `1:195` takes only on
-## `((sprite(27).visible = 1) or (sprite(3).visible = 1)) and (sprite(5).visible = 1)`.
-## Channel 27 was sampled at member 0 throughout, so the term that read true is
-## `sprite(3)`, and the scene registers a hit at `plantcounter = 7` on its first pass
-## and leaves for `docend` before anything is ever thrown.
+## This section said `doc` was the one of the six that never dresses its lanes: "over a
+## 20,000-frame window channels 27, 28 and 29 are never dressed with 187/188/189 at all",
+## and it built a two-anomaly case about `1:193` on top of that. **The measurement was
+## this file's own doing.** It pressed `KEY_RIGHT` and `KEY_LEFT` unconditionally, and of
+## COMEIN's six dodge handlers `dockeys` is the only one that reads `the keyCode = 125` and
+## `= 126` — Down and Up. The other five read 123 and 124. So the one scene with vertical
+## controls was played with the two keys its handler ignores, and a scene that is never
+## given its throw key never throws.
 ##
-## Two script-level facts sit under that, both readable with `--source`. `1:193` is the
-## only one of the six inits that omits `puppetSprite(3, 1)`, `puppetSprite(4, 1)` and
-## `sprite(3).visible = 0` — `1:147` (hat) and `1:181` (poz) both have all three, and
-## their handlers dress 3 and 4 exactly as `doc`'s do. And `1:193` is the only init
-## written `on enterFrame` rather than `on exitFrame`. Two anomalies in one script,
-## which is what makes it a lead rather than a coincidence.
+## With the keys derived from `dockeys` itself, the same entry (f293, walked in) dresses all
+## three: `ch 27 <- 187`, `ch 28 <- 188`, `ch 29 <- 189`, each "dressed onto ch [...] after
+## the init". `--no-input`, same landing, reproduces the old reading exactly — nothing
+## dressed, all three loops "never dressed onto a claimed channel" — so the attribution is
+## the keys and nothing else.
 ##
-## **It is deliberately not concluded here.** Either reading is available — an authoring
-## slip in a 1997 container, or this port answering `the visible of sprite 3` where
-## Director answered otherwise — and `AGENTS.md`'s rule is that "not a bug" needs more
-## evidence than a bug does, which cuts the same way in reverse. The score's own record
-## puts member 187 on channel 3 from f295, so the sprite is *there*; whether it was
-## visible is a runtime question and the score cannot answer it. Settling this needs the
-## reference, not another run of this file.
+##   godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream --file COMEIN.dir --play doc
+##   godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream --file COMEIN.dir --play doc --no-input
+##
+## Which lanes a given run dresses is a coin toss either way — the throw handler picks with
+## `random(5)` and only three of five values throw — so read the set over runs, not one row.
+## What is *not* settled: whether `doc` still leaves for `docend` earlier than it should on
+## the `sprite(3).visible` branch of `1:195`. That was the second half of the same report and
+## it needs the reference, not another run of this file.
 
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
@@ -179,6 +189,7 @@ const Score := preload("res://director/director_score.gd")
 const Labels := preload("res://director/director_labels.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+const Interaction := preload("res://scenes/preview/interaction.gd")
 
 ## How many score ticks apart the synthetic arrow presses are. Three, for
 ## `film_loop_restart.gd`'s measured reason: a press per tick holds the playhead on the
@@ -190,6 +201,18 @@ const PRESS_EVERY := 3
 const LEAD_IN := 2
 
 const LOOP_TYPE := 2
+
+## Mac virtual key code -> Godot keycode, the inverse of `director_keys.gd`'s own table.
+const MAC_TO_GODOT := {
+	49: KEY_SPACE, 123: KEY_LEFT, 124: KEY_RIGHT, 125: KEY_DOWN, 126: KEY_UP,
+	36: KEY_ENTER, 48: KEY_TAB, 51: KEY_BACKSPACE, 53: KEY_ESCAPE,
+	0: KEY_A, 11: KEY_B, 8: KEY_C, 2: KEY_D, 14: KEY_E, 3: KEY_F, 5: KEY_G,
+	4: KEY_H, 34: KEY_I, 38: KEY_J, 40: KEY_K, 37: KEY_L, 46: KEY_M, 45: KEY_N,
+	31: KEY_O, 35: KEY_P, 12: KEY_Q, 15: KEY_R, 1: KEY_S, 17: KEY_T, 32: KEY_U,
+	9: KEY_V, 13: KEY_W, 7: KEY_X, 16: KEY_Y, 6: KEY_Z,
+	18: KEY_1, 19: KEY_2, 20: KEY_3, 21: KEY_4, 23: KEY_5, 22: KEY_6, 26: KEY_7,
+	28: KEY_8, 25: KEY_9, 29: KEY_0,
+}
 
 ## `puppetSprite N, 1` and `puppetSprite(N, 1)` are the same call; Director's
 ## parentheses are optional on a command. The flag is captured rather than assumed
@@ -222,6 +245,11 @@ const HOLDS := "(?i)go\\s*(?:to\\s*)?\\(?\\s*(?:marker\\s*\\(\\s*0\\s*\\)|the\\s
 const SOUND_GATED := "(?i)soundbusy"
 ## A behaviour that answers the mouse and moves the playhead is the way out of one.
 const MOUSE_GO := "(?i)^\\s*on\\s+mouse(up|down)\\b"
+## `set the keyDownScript to "westdown"`, naming the handler a scene reads its controls
+## through. The EMPTY form is deliberately not matched: it is how a scene *ends*.
+const KEY_INSTALL := "(?i)set\\s+the\\s+key(?:down|up)script\\s+to\\s+\"([^\"]+)\""
+const KEYCODE_TEST := "(?i)the\\s+keycode\\s*=\\s*([0-9]+)"
+const KEYCODE_CASE := "(?i)case\\s+the\\s+keycode\\s+of"
 
 var _verbose := false
 var _show_source := false
@@ -336,7 +364,8 @@ func _init() -> void:
 	for scene in scenes["list"]:
 		if play != "all" and str(scene["name"]) != play:
 			continue
-		await _play(rel, scene, table, Args.number(args, "ticks", 4000))
+		await _play(rel, scene, table, Args.number(args, "ticks", 4000),
+			Args.flag(args, "no-input"))
 	f.close()
 	table.close()
 	quit(0)
@@ -355,7 +384,7 @@ func _init() -> void:
 ## `_last_member` is deliberately not touched. It is the painter's record of what it
 ## painted and `tools/update_stage.gd` uses it as a probe that `updateStage` paints
 ## inside a handler, so writing it from a harness makes that entry assert nothing.
-func _play(rel: String, scene: Dictionary, table, ticks: int) -> void:
+func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) -> void:
 	var run: Array = scene["run"]
 	print("-".repeat(78))
 	print("scene      : %s" % str(scene["name"]))
@@ -387,12 +416,11 @@ func _play(rel: String, scene: Dictionary, table, ticks: int) -> void:
 		how = "clicked (%d, %d) from f%d, inside the idle span" % [
 			int(centre.x), int(centre.y), at]
 	else:
-		var at2: int = maxi(0, int(run[0]) - LEAD_IN)
+		var at2: int = int(scene["land"])
 		preview.set("_index", at2)
 		for i in 8:
 			await process_frame
-		how = "playhead put at f%d, %d before the span, and left to walk in" % [
-			at2, LEAD_IN]
+		how = "playhead put at f%d, %s" % [at2, str(scene["land_by"])]
 	print("  entered  : %s" % how)
 
 	# The elements this scene is expected to put on a channel, and the channels the
@@ -416,11 +444,27 @@ func _play(rel: String, scene: Dictionary, table, ticks: int) -> void:
 	var baseline: Dictionary = {}
 	var on_channel: Dictionary = {}
 	var init_seen := false
-	var right := true
 	var spent := 0
+	var left_for := ""
+	var here_movie := str(preview.call("movie_name"))
+	var pressed := 0
+	var clicks := {}
+	# The keys this scene's own primary handlers test, or none for a control run. Left and
+	# Right were hardcoded here, which is right for COMEIN and wrong for five of the six
+	# other minigames in this title: `westup` fires on space, `mazekey` reads all four
+	# arrows, and `planeup` reads nothing else at all.
+	var press_keys: Array = [] if no_input else (scene["keys"] as Array)
 	for tick in ticks:
 		await process_frame
 		spent = tick + 1
+		# **Stop if a click took the movie somewhere else.** The scene's own back-to-the-menu
+		# button is excluded by name where it is a sprite behaviour, but `hex1.dir` keeps one
+		# as a *cast* script and the click descent answers for it exactly as it does for a
+		# board piece. Carrying on would sample another movie's channels under this scene's
+		# name, and the frame numbers would silently be someone else's.
+		if str(preview.call("movie_name")) != here_movie:
+			left_for = str(preview.call("movie_name"))
+			break
 		var here := int(preview.call("current_frame"))
 		frames[here] = true
 		if here == int(scene["init"]) and not init_seen:
@@ -430,10 +474,25 @@ func _play(rel: String, scene: Dictionary, table, ticks: int) -> void:
 		if here != last:
 			last = here
 			since += 1
-			if since >= PRESS_EVERY:
+			if since >= PRESS_EVERY and not press_keys.is_empty():
 				since = 0
-				right = not right
-				_press(preview, KEY_RIGHT if right else KEY_LEFT)
+				pressed += 1
+				_press(preview, press_keys[pressed % press_keys.size()])
+			# A mouse scene is driven with the mouse, every score frame and on every live
+			# hotspot at once. `eat.dir`'s plate only passes while the hungry guest's own
+			# counter reads 4 or less -- a five-frame window on one of nine channels -- so a
+			# rotation loses the game by construction and a key-only driver reports a scene
+			# whose every control is a click as one where nothing changed. It is faster than
+			# a player, and a scene that answers only under it is worth saying so about.
+			if press_keys.is_empty() and not no_input:
+				for channel in _live_hotspots(preview, scene):
+					var at3 := _centre_of_channel(preview, int(channel))
+					if at3 == Vector2.ZERO:
+						continue
+					preview.call("route_press", at3)
+					preview.call("route_release", at3)
+					pressed += 1
+					clicks[int(channel)] = int(clicks.get(int(channel), 0)) + 1
 			# Sampled once per *score* frame and on every one of them, not only on the
 			# rising edge of `visible`. The rising edge misses a channel that was
 			# already dressed when the sampler first looked, which showed up as `doc`
@@ -487,13 +546,23 @@ func _play(rel: String, scene: Dictionary, table, ticks: int) -> void:
 
 	var visited: Array = frames.keys()
 	visited.sort()
+	print("  pressed  : %d %s %s" % [pressed,
+		"key(s)" if not press_keys.is_empty() else "click(s)",
+		"(control run: nothing pressed)" if no_input
+			else (str(scene["key_names"]) if not press_keys.is_empty()
+				else "on channel(s) %s" % str(clicks))])
 	print("  played   : %d process frame(s), %d distinct frame(s) f%s..f%s" % [
 		spent, visited.size(),
 		str(visited[0]) if visited.size() > 0 else "?",
 		str(visited[-1]) if visited.size() > 0 else "?"])
 	if _verbose:
 		print("  frames   : %s" % str(visited))
-	var reached_init := frames.has(int(scene["init"]))
+	# At or past, not equal. The eight process frames awaited after the landing can carry
+	# the playhead past the init before the sampling starts, and `eat.dir`, whose init is
+	# its own frame 0, then read `init ran: NO` on a run where it demonstrably had.
+	var reached_init := init_seen
+	if left_for != "":
+		print("  LEFT     : a click sent the movie to %s; the run stops there" % left_for)
 	print("  init ran : %s (f%d %s in the frames played)" % [
 		"yes" if reached_init else "NO", int(scene["init"]),
 		"is" if reached_init else "is NOT"])
@@ -592,6 +661,43 @@ func _centre_of(entry: String) -> Vector2:
 	return Vector2(int(hit.get_string(1)), int(hit.get_string(2)))
 
 
+## Which visible channels the engine's own click descent would send a `mouseUp` to on this
+## frame, minus the ones that leave the movie. Asked of `interaction.gd:script_for_click`
+## rather than derived, so what is clicked is what a click reaches.
+func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
+	var out: Array = []
+	var sprites: Array = preview.call("frame_sprites")
+	for value in sprites:
+		var raw: Dictionary = value
+		var channel := int(raw["channel"])
+		if (scene["avoid_channels"] as Array).has(channel) or out.has(channel):
+			continue
+		if (preview.call("_effective", raw) as Dictionary).is_empty():
+			continue
+		var answer: Array = Interaction.script_for_click(preview, channel, sprites)
+		if answer.size() < 2 or (answer[0] as Dictionary).is_empty():
+			continue
+		if str(answer[1]) != "sprite":
+			continue
+		out.append(channel)
+	return out
+
+
+## The middle of what a channel is drawing, so a click lands on the artwork rather than on
+## the corner of a score rect a swapped member does not fill.
+func _centre_of_channel(preview: Node, channel: int) -> Vector2:
+	for value in preview.call("frame_sprites"):
+		var raw: Dictionary = value
+		if int(raw["channel"]) != channel:
+			continue
+		var live: Dictionary = preview.call("_effective", raw)
+		if live.is_empty():
+			return Vector2.ZERO
+		var rect: Rect2 = preview.call("_sprite_rect", live)
+		return rect.get_center()
+	return Vector2.ZERO
+
+
 func _press(preview: Node, code: Key) -> void:
 	var down := InputEventKey.new()
 	down.keycode = code
@@ -671,6 +777,13 @@ func _report(scene: Dictionary, table, score, labels, cover: Dictionary) -> bool
 		print("  UNBOUND  : %s" % str(note))
 
 	print("  entry    : %s" % str(scene["entry"]))
+	# Printed beside the entry rather than inside it, because they are two different
+	# statements and one used to carry the other's number: the entry says *how* a player
+	# gets in, and this says where `--play` puts the playhead to reproduce it. When
+	# `_entry` spelled a frame of its own the two drifted apart the moment `_landing`
+	# changed, and a survey whose static half and played half disagree about the frame is
+	# a survey nobody can quote.
+	print("  landing  : f%d, %s" % [int(scene["land"]), str(scene["land_by"])])
 	if _show_source:
 		for key in scene["sources"]:
 			print("  --- script %s" % str(key))
@@ -890,14 +1003,167 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 					chans["values"], how)
 
 	var exits := _exits(sources, labels, int(run[0]), int(run[-1]))
+	var hotspots := _hotspots(table, score, run)
+	var landing := _landing(labels, run, init)
+	var controls := _controls(table, _source(table, int(init_script.split(":")[0]),
+		int(init_script.split(":")[1])))
 	return {
 		"name": _name_of(labels, init, exits),
+		"land": int(landing["frame"]), "land_by": str(landing["why"]),
+		"keys": controls["keys"], "key_names": controls["names"],
+		"avoid_channels": hotspots["avoid"],
 		"run": run, "init": init, "init_script": init_script,
 		"claimed": claimed, "scripts": order, "exits": exits,
 		"elements": elements, "assigned_channels": assigned,
 		"unbounded": unbounded, "sources": sources,
 		"entry": _entry(table, score, cover, run, init),
 	}
+
+
+## Which channels of this scene a click must **not** go to: the ones whose behaviour names
+## another container. Those are the way back to the menu, and clicking one ends the run on a
+## screen that reads exactly like a freeze (`director-qa-playthrough`'s first named false
+## finding).
+##
+## What a click *may* go to is not derived here, because the engine answers it better than a
+## scan can. `interaction.gd:script_for_click` is the click descent itself, and it resolves
+## the sprite's behaviour **or the live member's cast script** — which is where this title
+## keeps its board games: `hex1.dir`'s pieces carry no behaviour at all and member 3's own
+## cast script is the handler. A scan of `member["source"]` finds nothing for those, because
+## a bitmap's cast script is a separate script member.
+func _hotspots(table, score, run: Array) -> Dictionary:
+	var mouse := RegEx.create_from_string(MOUSE_GO)
+	var leaves := RegEx.create_from_string("(?i)\\.(dxr|dir)\"")
+	var avoid := {}
+	for interval in score.intervals():
+		if str(interval["kind"]) != "sprite":
+			continue
+		if int(interval["end"]) < int(run[0]) or int(interval["start"]) > int(run[-1]):
+			continue
+		var src := _source(table, _lib(int(interval["script_cast_lib"])),
+			int(interval["script_member"]))
+		if src == "" or mouse.search(src) == null or leaves.search(src) == null:
+			continue
+		avoid[int(interval["channel"])] = true
+	var list: Array = avoid.keys()
+	list.sort()
+	return {"avoid": list}
+
+
+## Where to put the playhead for a walk-in entry, and why.
+##
+## **As late as the movie allows and never on the init**, which is two rules pulling in
+## opposite directions and one answer.
+##
+## Landing on the init is the entry `AGENTS.md` forbids: the score's own arrival at that
+## frame is what runs the `puppetSprite`s, and jumping there leaves a scene whose channels
+## were never claimed. So `LEAD_IN` frames before it.
+##
+## Landing at the *span's* start -- which is what this file did -- is wrong in both
+## directions. Too late for `MAZE1.dir`, which sets `psilot`, the lives its maze reads on
+## every collision, in the frame script under its own `actionbegins` marker at f117 and
+## arms the maze at f123: a landing at f121 runs the second and not the first, and a
+## measured run then reported `psilot` unset for its whole length. Too *early* for
+## `hex1.dir`, whose covered run reaches back into 70 frames of `soundBusy`-gated speech
+## before the board's init at f202 -- real audio time, minutes of it -- so a 4,000-frame
+## run landing at f127 never arrived at the init at all.
+##
+## The answer is the `action*` marker where the movie has one at or before the init (six of
+## this title's minigames do, and it is the movie's own statement of where its game
+## begins), else `LEAD_IN` before the init. `tools/cast_script_sprite.gd` reached the same
+## number for `hex1` by hand and measured that it produces the same board as walking the
+## whole intro.
+func _landing(labels, run: Array, init: int) -> Dictionary:
+	var action := -1
+	var re := RegEx.create_from_string("(?i)action")
+	for marker in labels.markers:
+		var frame := int(marker["frame"])
+		if frame > init or re.search(str(marker["name"])) == null:
+			continue
+		if frame > action:
+			action = frame
+	if action >= 0 and action < init:
+		return {"frame": maxi(0, action - LEAD_IN),
+			"why": "%d before the movie's own `action*` marker at f%d, and left to walk in"
+				% [LEAD_IN, action]}
+	return {"frame": maxi(0, init - LEAD_IN),
+		"why": "%d before the init, and left to walk in" % LEAD_IN}
+
+
+## Which keys a scene wants, read out of the primary key handlers its init installs.
+##
+## `set the keyUpScript to "westup"` names a handler; that handler's `the keyCode = N`
+## tests and its `case the keyCode of` arms are the control scheme. The arms are only
+## counted inside a `case` on `the keyCode` -- `westup` also has
+## `case the memberNum of sprite ... of` whose arms are 36, 37 and 43, and counting those
+## makes this report a gunfight played with Enter, L and Comma.
+func _controls(table, init_source: String) -> Dictionary:
+	var handlers := {}
+	for hit in RegEx.create_from_string(KEY_INSTALL).search_all(init_source):
+		handlers[str(hit.get_string(1))] = true
+	var mac := {}
+	for lib in (table.cast_libs as Dictionary).keys():
+		var cast = table.cast_for(int(lib))
+		if cast == null:
+			continue
+		for number in cast.member_numbers():
+			var src := str(cast.member(int(number)).get("source", ""))
+			if src == "":
+				continue
+			for name in handlers:
+				var body := _handler_body(src, str(name))
+				if body == "":
+					continue
+				for hit in RegEx.create_from_string(KEYCODE_TEST).search_all(body):
+					mac[int(hit.get_string(1))] = true
+				var in_case := false
+				for line in body.split("\n"):
+					if RegEx.create_from_string("(?i)^\\s*case\\b").search(line) != null:
+						in_case = RegEx.create_from_string(
+							KEYCODE_CASE).search(line) != null
+						continue
+					if RegEx.create_from_string("(?i)^\\s*end\\s+case").search(line) != null:
+						in_case = false
+						continue
+					if not in_case:
+						continue
+					var arm := RegEx.create_from_string("^\\s*([0-9]+)\\s*:").search(line)
+					if arm != null:
+						mac[int(arm.get_string(1))] = true
+	var codes: Array = mac.keys()
+	codes.sort()
+	var keys: Array = []
+	var names: Array = []
+	for code in codes:
+		var godot: int = int(MAC_TO_GODOT.get(int(code), -1))
+		if godot < 0:
+			continue
+		keys.append(godot)
+		names.append(OS.get_keycode_string(godot))
+	# No fallback. A scene whose init installs no primary key script is a scene with no
+	# keyboard, and the empty list is what routes it to the mouse driver below: `eat.dir`
+	# and the Hexxagon board are both mouse scenes, and an arrow-key default made this file
+	# press keys nothing reads and then report that nothing changed.
+	return {"keys": keys, "names": names}
+
+
+## One handler's body out of a script's text, "" where the script has no such handler.
+func _handler_body(src: String, name: String) -> String:
+	var out: Array = []
+	var inside := false
+	var re := RegEx.create_from_string("(?i)^\\s*on\\s+%s\\b" % name)
+	for line in src.split("\n"):
+		if re.search(line) != null:
+			inside = true
+			continue
+		if not inside:
+			continue
+		if RegEx.create_from_string("(?i)^\\s*on\\s+[a-z_]").search(line) != null:
+			break
+		if RegEx.create_from_string("(?i)^\\s*end\\s*$").search(line) != null:
+			break
+		out.append(line)
+	return "\n".join(out)
 
 
 ## The markers this scene's own scripts leave for, and which of them are outside
@@ -1049,8 +1315,7 @@ func _entry(table, score, cover: Dictionary, run: Array, init: int) -> String:
 		if holds.search(src) != null and gated.search(src) == null:
 			at = int(frame)
 	if at < 0:
-		return "walk in: no closed loop before f%d, land before f%d and play" % [
-			init, int(run[0])]
+		return "walk in: no closed loop before f%d" % init
 
 	# The span the loop covers: back to the marker the jump returns to, which is the
 	# last covered frame before it that is not part of the same jump. The score's own
