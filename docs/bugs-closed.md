@@ -6719,3 +6719,111 @@ Two things to look at when someone first plays with a controller: whether
 `_apply_cursor` installing a hardware cursor while on the gamepad path leaves a
 stray OS cursor wherever the physical mouse happens to sit, and whether the drawn
 cursor lands on the hotspot or half a cursor away from it.
+
+---
+
+## 107. `the memberNum of sprite` answered a packed reference once a script had written one, so Piposh Dream's platformer and duel could not move at all
+
+**Status:** FIXED · **Area:** `scenes/preview/channel.gd:read` · found from a
+player's "he doesn't move, at all", after four wrong hypotheses about the keyboard
+
+`channel.gd:read` answered from the override entry **before** consulting the row's
+`kind`:
+
+```gdscript
+func read(prop: String, sprite: Dictionary) -> Variant:
+	if entry.has(prop):
+		return entry[prop]        # raw -- no `kind` conversion
+	...
+	match str(row["kind"]):
+		"member":     return int(sprite["cast_id"])   # bare
+		"member_ref": return Members.pack_ref(...)    # packed
+```
+
+So the `membernum`/`castnum` split held only while the **score** owned the channel
+and collapsed the moment Lingo wrote one. `member(3, 2)` evaluates to a *packed*
+reference, so `set the member of sprite 15 to member(3, 2)` stored **131,075** and
+`the memberNum of sprite 15` answered 131,075 instead of 3.
+
+**`preview/members.gd:pack_ref` predicted this in its own docstring and nobody
+re-measured it** — "reusing it anywhere the integer might be *stored* would need
+that claim re-measured". The override entry is precisely where it is stored. That
+is the reusable half of this entry: a docstring that names the condition under
+which a claim stops holding is a test nobody wrote.
+
+### Why it presented as a keyboard bug, and why the screen looked fine
+
+`_merge_one` has always unpacked correctly, so the **artwork** was right throughout
+— the character stood there, correctly drawn, refusing to move. Four hypotheses
+were spent on the keyboard before the property was measured: the `keyUp` arm not
+stamping `the keyCode` (which turned out to match the reference exactly and was
+correctly left alone), `Keys.code_for` returning -1 on an unmapped keycode, primary
+`keyDown`/`keyUp` **pairs**, and **linked casts**.
+
+The last two are the instructive ones: they correlated *perfectly* with the failing
+set, and a fix aimed at either would have looked right for the wrong reason. The
+discriminator that actually explains it is whether a scene reads `the memberNum of
+sprite`:
+
+| scene | reads `the memberNum of sprite`? | moved |
+|---|---|---|
+| `COMEIN.dir` `return5` — `hatkeys` | **no**, gates on `sprite(N).visible` | yes |
+| `hatul1.dir` — `hatulidown`/`hatuliup` | **yes**, against 2, 18, 29, 40 | no |
+| `fritz1.dir` — member 10 `on exitFrame` | **yes**, against 18, 46 | no |
+
+And it explains "**at all**" rather than "erratically", which was the shape that
+kept the keyboard hypotheses alive: at 131,075 both `< 29` and `> 18` are wrong at
+once, so no branch moves him and no branch restores him. Kick and jump read
+`the keyCode = 49` in `foedecide`, bypassing the member gate entirely — which is
+exactly the player's "S and space work, arrows do not".
+
+Fixed by routing `read`'s override answer through `_merge_one`, which already owns
+the split, rather than unpacking a second time here. Two places agreeing by both
+saying the same thing is the shape this file's own comments keep warning about.
+
+Blast radius, measured — `set the member/memberNum/castNum of sprite` writes
+against `the memberNum/castNum of sprite` reads:
+
+```
+piposh-dream  1750 writes  1373 reads
+rating         536         671
+piposh2         50          78
+piposh/-en/-ru   5 each      7 each
+total         2351        2143
+```
+
+Negative control, whole files swapped and hashed:
+
+```
+channel.gd 3f9a8d17 (HEAD)   FAIL  wrote member(1, 3) -> memberNum 262145, wanted 1   rc=1
+channel.gd 29554372 (fixed)  ok    wrote member(1, 3) -> memberNum 1                  rc=0
+```
+
+Covered by `tools/member_ref_round_trip.gd`, already in `ALL`, **3 → 6 checks**, so
+the entry count did not move. Everything it asserted before passed `{}` for the
+overrides — the score path only, structurally unable to see this.
+
+**The new case's first version also passed against the bug**, and that is worth
+recording: it wrote through `SpriteState.write_prop`, one seam *below* `ALIASES`, so
+`"member"` was stored under a key the `membernum` read never looks at. It now goes
+through `SpriteProps`, the pair the Lingo host actually calls. That is the third
+blind assertion found in one session, after this same harness's `{}` and
+`key_polling`'s window-gated `_input` section (`85b06dd3`).
+
+### What is not verified
+
+**The player-visible end is reasoned from the gates, not observed.** `hatul1.dir`
+never reached its armed state headlessly: the installer is the frame script at
+frame **174** (`stage1`), and two landings went past it, leaving `the keyDownScript`
+on `cutsnd` so every press correctly did nothing — a dead screen indistinguishable
+from the reported bug, which is the marker-jump trap in another costume. Closing it
+wants a harness that lands before 174 and **waits on `key_up_compiled` becoming
+non-empty** before pressing, probably entering from `mainmenu.dir` rather than
+landing at all.
+
+Two of the investigation's own instruments produced fabricated results before being
+caught by hashing, and both are worth avoiding by name: `git stash -q push --
+<path>` is not valid in this git and silently left an A/B pair identical, and an
+`EXIT` trap running `git checkout HEAD -- channel.gd` destroyed the fix mid-session
+so several "with the fix" runs were really at HEAD. Whole-file `cp` aside and back,
+verified with `shasum`, is the only method this entry would trust.
