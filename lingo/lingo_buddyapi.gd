@@ -129,6 +129,8 @@ extends RefCounted
 const LingoValue := preload("res://lingo/lingo_value.gd")
 const FileIO := preload("res://lingo/lingo_fileio.gd")
 const MovieSave := preload("res://scenes/preview/movie_save.gd")
+## An ini on disc is bytes in the title's script system. See `_document`.
+const Codepage := preload("res://director/director_codepage.gd")
 
 ## What `xtra("BudAPI")` answers questions about. The real Xtra object carries
 ## `new` and the `name` property and no operations at all -- every `ba*` name is
@@ -550,10 +552,15 @@ static func _document(path: String) -> PackedStringArray:
 	var held: Variant = _docs.get(path, null)
 	if held != null:
 		return (held as Dictionary)["lines"]
+	# Through the title's codepage, for the reason `FileIO._read_whole` gives at
+	# length: an ini written by a Director-era installer is bytes in the script
+	# system, and `get_as_text` decoded it as UTF-8. `baReadIni` is how both
+	# Itamar titles read every configured string they own, so this is the same
+	# `?????` as the login screen's and it reaches further.
 	var text := ""
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f != null:
-		text = f.get_as_text()
+		text = Codepage.decode(f.get_buffer(f.get_length()))
 		f.close()
 	var eol := "\r\n" if text.contains("\r\n") else "\n"
 	var lines := text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -574,7 +581,10 @@ static func _commit(path: String) -> bool:
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return false
-	f.store_string(str(doc["eol"]).join(doc["lines"] as PackedStringArray))
+	# Encoded, not stored as UTF-8 — the inverse of `_document`'s decode, changed
+	# with it so that `baWriteIni` then `baReadIni` is still a round trip.
+	f.store_buffer(Codepage.encode(
+		str(doc["eol"]).join(doc["lines"] as PackedStringArray)))
 	f.close()
 	doc["pending"] = false
 	return true

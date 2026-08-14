@@ -17,8 +17,15 @@ extends Node
 ## `sound playFile`, 245 `soundBusy`, 69 `sound stop`, 67 lines naming
 ## `the volume of sound N` and 14 `the soundLevel`. Nothing calls `puppetSound`,
 ## `sound close`, `sound fadeIn` or `sound fadeOut`, and the score's own sound
-## channels play nothing at all — no cast in the game holds a `sound` member.
-## `tools/sound_survey.gd`.
+## channels play nothing at all in *this* title. `tools/sound_survey.gd`.
+##
+## That last clause used to read "no cast in the game holds a `sound` member",
+## which was true of Piposh 2 and false of the corpus: there are 204 sound cast
+## members across the eight roots (`tools/sound_member_census.gd`), and 102 of
+## them decode to real audio. Nothing here changes as a result — a member sound
+## reaches these channels through the same `_start` — but the sentence was one of
+## four saying the same wrong thing, so it is corrected rather than left to be
+## quoted again.
 
 ## Director's default volume for a sound channel, and the range it is written in.
 const VOLUME_MAX := 255
@@ -598,10 +605,31 @@ func play_file(channel: int, file_name: String) -> void:
 	# same line by two routes restarted it from the top instead of leaving it
 	# alone -- which is the machine-gunning this guard exists to prevent, arrived
 	# at through the separator instead of through the frame loop.
+	# **The same question `sound_busy` asks, and it has to be.** This was
+	# `existing.playing`, which stopped agreeing with `sound_busy` the moment that
+	# gained its `_channel_until` ceiling, and the disagreement wedges a channel
+	# silent for the rest of the movie: once the ceiling passes while the device is
+	# still draining the stream, the channel is *free* to the movie and *already
+	# playing* to this guard, so the replay is skipped, `_start` never re-arms
+	# `_channel_until`, and `sound_busy` answers false for ever. Nothing recovers
+	# it, because every later replay of the same file takes this same early return.
+	#
+	# Measured on `itamar-magichat` with `tools/scratch/soundstart.gd`:
+	# `soundBusy` went false after 607 frames with `player.playing` still true and
+	# the ceiling 78 ms into the past; 120 frames later the replay had reached
+	# nothing and the ceiling was 4,175 ms into the past. Magic Hat's `PlayMusic`
+	# busy-waits three seconds on `soundBusy` and then puts up
+	# `alert("Sound file X is missing !")` for a file that exists -- and
+	# `lingo_alert` sets `_paused`, so the movie stops behind a modal naming the
+	# wrong cause. Seen twice in ordinary play, on `MAINMENU_M.MP3` and
+	# `ALBUM_M.MP3`.
+	#
+	# Asking `sound_busy` also gets the failed-channel case right for free: a
+	# channel whose last load failed is not busy, so the replay proceeds rather
+	# than being skipped for ever on the strength of a dead player.
 	var previous := str(_channel_file.get(ch, ""))
 	if previous != "" and _normalise(previous) == _normalise(raw):
-		var existing: AudioStreamPlayer = _channels.get(ch)
-		if existing and existing.playing:
+		if sound_busy(ch):
 			return
 
 	_channel_file[ch] = raw

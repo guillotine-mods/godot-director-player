@@ -57,6 +57,9 @@ extends RefCounted
 ## that guard is for.
 
 const LingoValue := preload("res://lingo/lingo_value.gd")
+## A file on disc is bytes in the title's script system, exactly as cast text is.
+## See `_read_whole`.
+const Codepage := preload("res://director/director_codepage.gd")
 
 # ------------------------------------------------------------- the error codes
 #
@@ -332,7 +335,9 @@ func _flush() -> bool:
 	if f == null:
 		_status = IO_ERROR
 		return false
-	f.store_string(_text)
+	# The inverse of `_read_whole`'s decode, and changed with it in one commit for
+	# the reason that function's note gives: the two are one round trip.
+	f.store_buffer(Codepage.encode(_text))
 	f.close()
 	_dirty = false
 	# A `createFile` only reaches the disk here, and until this call the path
@@ -459,11 +464,29 @@ static func _is_space(c: String) -> bool:
 ## chunk machinery accepts all three and joins with "\n"
 ## (`LingoValue.split_lines`), so a file read here and put into a field has to
 ## arrive in that spelling or `line 3 of field "x"` counts the file as one line.
+##
+## **Through the title's codepage, not as UTF-8** (`director/director_codepage.gd`).
+## A Director-era title's files are bytes in the authoring machine's script
+## system -- the same fact that file's header sets out for cast text, and there
+## is no reason a file on disc should be different from a field in a container.
+## `FileAccess.get_as_text()` decodes UTF-8, so every high byte in a
+## single-byte-codepage file became a replacement character: Magic Hat's
+## `magichat.ini` carries its saved player names in `[users] names=[...]`, the
+## login screen reads them with `LoadFileToField` and put them on screen as
+## `?????` and `????1234567890` -- the digits survived and every Hebrew letter did
+## not. Photographed at `800x600` on the login panel.
+##
+## ASCII is the same bytes either way, so nothing that was already right moves;
+## what changes is exactly the range UTF-8 could not represent one byte at a
+## time. `_flush` encodes through the same table, so a file this port writes and
+## reads back is still a round trip -- and that is the half that must not be
+## done alone, because a reader and a writer that disagree by one byte corrupt a
+## save rather than failing.
 static func _read_whole(path: String) -> String:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return ""
-	var raw := f.get_as_text()
+	var raw := Codepage.decode(f.get_buffer(f.get_length()))
 	f.close()
 	return raw.replace("\r\n", "\n").replace("\r", "\n")
 

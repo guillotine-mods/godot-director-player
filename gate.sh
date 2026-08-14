@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator field_designator:--root@piposh lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling key_overlay:--root@rating@--boot@arcade1.dir key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir movie_tempo transition_render script_compile_check script_compile_check:--root@piposh parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock idle_clock:--root@piposh@--boot@PIPDATA/DAY1.dir new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator field_designator:--root@piposh lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate sound_replay_guard key_polling key_overlay:--root@rating@--boot@arcade1.dir key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir movie_tempo transition_render script_compile_check script_compile_check:--root@piposh parse_residue lingo_surface_audit lingo_objects lingo_scope_check lingo_local_diagnosis lingo_file_codepage:--allow-writes timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock idle_clock:--root@piposh@--boot@PIPDATA/DAY1.dir new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -272,6 +272,36 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # rots into a record of what the engine used to do, which is what left
 # `palette_cycle` carrying four reds nobody saw, and a nightly that names the
 # cause beside the symptom is one line instead of another investigation.
+#
+# **`bugs.md` 90 is now fixed, and `sound_replay_guard` is the entry that exists
+# because fixing it broke something else.** The ceiling `soundBusy` gained made it
+# disagree with `play_file`'s "already playing, leave it alone" guard, which still
+# asked `player.playing` alone -- and where those two disagree a channel goes
+# silent for the rest of the movie: free to the movie, already-playing to the
+# guard, so the replay is skipped, the ceiling is never re-armed, and every later
+# replay takes the same early return. Magic Hat then busy-waits three seconds and
+# raises `alert("Sound file X is missing !")` for a file that is present, with
+# `lingo_alert` pausing the movie behind it. Seen twice in ordinary play.
+#
+# It runs bare and **forces the window rather than waiting for it**: whether the
+# race opens depends on the output device, so a harness built on waiting is green
+# on a fast machine for the wrong reason -- the exact shape of the macOS problem
+# above. It pushes `_channel_until` into the past on a channel that is genuinely
+# still playing, which is the state the race arrives at, and then asks whether a
+# movie can climb out using the only thing a movie can do. Controlled: with the
+# guard reverted to `player.playing`, 2 of its 6 checks fail.
+#
+# `lingo_local_diagnosis` and `lingo_file_codepage` are the two harnesses from the
+# Itamar work. The first asserts that a script's own local reads as an unset local
+# and not as a binding the port owes -- `put x into line N of v` did not register
+# `v` as assigned, so a handler building a value chunk by chunk had its first read
+# filed under `unbound_name`, which is what sent a session hunting for a builtin
+# that does not exist. It carries its own control: a genuinely unknown name must
+# still report as a gap. The second is the codepage on the *Lingo file* paths --
+# `director_codepage.gd` settled container text and `lingo_fileio`/`lingo_buddyapi`
+# never got it, so Magic Hat's login panel drew its saved players as `?????`. Both
+# ends move together, so a round trip stays a round trip; `--allow-writes` because
+# it writes its fixture, to `user://` and never into a corpus.
 #
 # `video_fallback` and `avi_decode` run **once each, bare**, and this is the honest
 # statement of what that costs. Bare on `GATE_ROOT` they say out loud that the

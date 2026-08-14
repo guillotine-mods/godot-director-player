@@ -2548,10 +2548,9 @@ func _collect_assigned(stmts: Variant, out: Dictionary) -> void:
 		var node: Dictionary = stmt
 		match str(node.get("node", "")):
 			"assign", "put":
-				var target: Variant = node.get("target", {})
-				if typeof(target) == TYPE_DICTIONARY \
-						and str((target as Dictionary).get("node", "")) == "var":
-					out[str((target as Dictionary).get("name", "")).to_lower()] = true
+				var base := _assigned_base(node.get("target", {}))
+				if base != "":
+					out[base] = true
 			"if":
 				_collect_assigned(node.get("then", []), out)
 				_collect_assigned(node.get("else", []), out)
@@ -2564,6 +2563,41 @@ func _collect_assigned(stmts: Variant, out: Dictionary) -> void:
 				for branch in node.get("branches", []):
 					_collect_assigned((branch as Dictionary).get("body", []), out)
 				_collect_assigned(node.get("default", []), out)
+
+
+## The variable an assignment target ultimately writes into, lowercased, or "".
+##
+## **`put x into line N of myText` assigns `myText`**, and reading the target's
+## own node type answers `chunk` rather than `var`, so a handler that builds a
+## value up chunk by chunk looked to `_handler_assigns` like a handler that never
+## assigned the name at all. What that costs is a *misfiled diagnostic*, which is
+## the kind of fault this project treats as expensive: `getDataLines`
+## (`itamar-park`, `MovieScript 1 - Param Handlers`) accumulates the parsed
+## arcade.ini into `myNewText` entirely through `put … into line N of myNewText`,
+## so the first read of the name was reported under `builtins unbound` — a line
+## that means "the port owes a binding" and sent this session looking for a
+## builtin called `mynewtext`. It is the script's own uninitialised local, which
+## is what `UNSET_VARIABLE` says.
+##
+## The same line reports `movetofront`, which **is** a binding this port owes
+## (§7.4), and mixing the two kinds is precisely what makes the honest entry hard
+## to see. One name in the wrong bucket costs more than three in the right one.
+##
+## Recursive rather than one level deep, because these wrappers nest:
+## `put c into char 3 of line 2 of myText` is a chunk of a chunk, and
+## `item 1 of myList[2]` is a chunk of an index.
+static func _assigned_base(target: Variant) -> String:
+	if typeof(target) != TYPE_DICTIONARY:
+		return ""
+	var node: Dictionary = target
+	match str(node.get("node", "")):
+		"var":
+			return str(node.get("name", "")).to_lower()
+		"chunk":
+			return _assigned_base(node.get("source", {}))
+		"index", "dot", "prop_of":
+			return _assigned_base(node.get("target", {}))
+	return ""
 
 
 func _script_has_handler(script: Variant, key: String) -> bool:
