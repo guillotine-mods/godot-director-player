@@ -1928,3 +1928,44 @@ directly.
 suite that would catch a main-channel offset being wrong in the direction that
 yields *more* member reference than there is, and it fired the first time it was
 shown data it had not seen. That is the check working.
+
+---
+
+## 115. Rating has 276 real wait-for-sound tempo cells and every harness that exercises one uses synthesised bytes
+
+**Status:** OPEN · **Area:** `gate.sh` coverage, `tools/frame_events.gd` · **not a defect in the engine** — the path is implemented and wired
+
+A tempo cell of 255 or 254 holds the playhead until sound channel 1 or 2 is
+finished. `director_score.gd:tempo_waits` decodes it,
+`director_frame_clock.gd:_arm_waits` sets `_waiting_sound` from it, and
+`holding()` counts it. So the feature is built.
+
+**What is not built is a single test that drives one out of a real movie.**
+`tools/frame_events.gd:366` synthesises the cell —
+`mixed.enter_frame({"tempo": 255, "tempo_cue": -1})` — and `movie_tempo.gd`
+tests the *decode* of 255 in isolation. `tools/sound_wait.gd` does not mention
+tempo at all. Every one of those was written against `GATE_ROOT`, and `piposh2`
+has **zero** such frames in its 61,371.
+
+`rating` has **276**: tempo 255 in 259 frames and tempo 254 in 17
+(`tools/sound_survey.gd --root rating --all`). `piposh`, `piposh-en`,
+`piposh-ru` and `piposh-dream` have none, so `rating` is the only corpus that
+can exercise this and it is not in any entry that would.
+
+This matters more than a coverage number because **those 276 frames just changed
+timing.** `docs/bugs-closed.md` 90 gave `soundBusy` a ceiling and `a9081c79`
+fixed the replay guard that ceiling broke; both move when a sound is considered
+finished, and a wait-for-sound tempo cell is the score-side consumer of exactly
+that question. Nothing asserted the frame-level path before or after.
+
+What the entry needs is a harness that plays a `rating` movie into one of those
+frames and asserts the playhead is held until the sound ends and then released —
+the same shape `pause_holds` has for a click. Adding `sound_wait:--root rating`
+is **not** it: that harness tests `soundBusy`'s logic and never reads a tempo
+cell, so it would pass having asserted nothing about this, which is the dark
+harness `gate.sh` warns about.
+
+Found by pointing `sound_survey` at every root instead of the configured one.
+That tool used to *assert* "no frame's tempo cell is a wait-for-sound", so it
+answered FAIL to the news that a title uses the feature; it prints the count as a
+finding now.

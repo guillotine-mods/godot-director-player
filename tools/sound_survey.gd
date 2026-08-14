@@ -336,8 +336,35 @@ func _init() -> void:
 	# *more* sound than there is.
 	h.check("the score decoder finds no sound cue in any frame", decoded_cues == 0,
 		"%d cue(s)" % decoded_cues)
-	h.check("no frame's tempo cell is a wait-for-sound",
-		sound_waits.is_empty(), "; ".join(sound_waits))
+	# **A finding, not an assertion, and it used to be the other way round.**
+	# "No frame's tempo cell is a wait-for-sound" was true of Piposh 2 and is false
+	# of `rating`, which has **259 frames of tempo 255 and 17 of tempo 254** --
+	# wait on sound channel 1 and channel 2. Asserting it made this tool answer
+	# FAIL to the news that a title uses a feature Director has and the port
+	# implements, which is the fourth time in one day a claim measured on Piposh 2
+	# was written down as a property of the engine (see AGENTS.md, "a measured zero
+	# here is usually a measurement of Piposh 2").
+	#
+	# It is also a different question from the one this tool asks. A wait-for-sound
+	# *tempo cell* holds the playhead until a sound started from anywhere -- almost
+	# always `sound playFile` from Lingo -- has finished. It is not a **score sound
+	# channel** naming a member, which is what the two checks above are about, and
+	# a corpus can have thousands of the first and none of the second. `rating` is
+	# exactly that corpus.
+	#
+	# The path is implemented and wired: `director_score.gd:tempo_waits` decodes
+	# the cell, `director_frame_clock.gd:_arm_waits` sets `_waiting_sound` from it,
+	# and `holding()` counts it. What is not established is that any *gate* entry
+	# exercises it -- `sound_wait` runs bare, on `GATE_ROOT`, which has none of
+	# these frames. That is the gap this number exposes and it is worth an entry
+	# pinned to `rating`.
+	if sound_waits.is_empty():
+		print("frames whose tempo cell waits for a sound: none")
+	else:
+		print("frames whose tempo cell waits for a sound: %s" % "; ".join(sound_waits))
+		print("  (a Lingo-played sound holding the playhead, not a score sound "
+			+ "channel; decoded by director_score.gd:tempo_waits and held by "
+			+ "director_frame_clock.gd:_arm_waits)")
 	h.complete("the score's own sound channels are measured, not assumed")
 	quit(h.finish("score sound channels across the corpus"))
 
