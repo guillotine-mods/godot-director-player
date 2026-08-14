@@ -1876,3 +1876,55 @@ distrust the chess reading rather than to file it as a fault.
 What is missing is a probe that waits on a **marker** rather than on a tick
 count. That is the entry: until it exists neither of these is diagnosable, and
 both will keep being re-reported.
+
+---
+
+## 114. The frame-script slot resolves to a *sound* member in 29 frames of the two recovered corpora, and nobody has separated the three things that could mean
+
+**Status:** OPEN · **Area:** `director/director_score.gd` main-channel decode, or `tools/sound_survey.gd`'s resolution · found 2026-08-14, the first time that harness was pointed at `test-games/`
+
+`tools/sound_survey.gd` asserts that **no slot the port reads as a member
+reference resolves to a sound member**, because a hit there would mean an offset
+is wrong. It has passed on `piposh2` and `piposh` since it was written. Pointed
+at the two recovered corpora it fails on both, at the same offset:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/sound_survey.gd -- --root res://test-games/itamar-magichat --all
+godot --headless --audio-driver Dummy --path . --script tools/sound_survey.gd -- --root res://test-games/itamar-park --all
+```
+
+```
+itamar-magichat  FAIL  and no slot the port reads as a member reference names a sound  (offset 2 in 16 frame(s))
+itamar-park      FAIL  and no slot the port reads as a member reference names a sound  (offset 2 in 13 frame(s))
+```
+
+Offsets 2-3 are the **frame script member** (`KNOWN` in that tool, and
+`MEMBER_REFERENCE_SLOTS`). Both corpora have the sound members to collide with —
+39 reachable in Magic Hat, 66 in Park — and neither had ever been surveyed,
+because a bare `--root <name>` resolves under `games/` and nobody had passed the
+whole path.
+
+**Three readings, and this entry exists because no evidence yet separates them:**
+
+1. **The decode is wrong for these movies** and offset 2 is not the frame script
+   member here — in which case every frame script in both titles is being read
+   from the wrong bytes, and the symptom would be frame scripts silently not
+   running rather than anything visible.
+2. **The value is right and names a sound**, so the port resolves a frame script
+   to a sound member and dispatches nothing. Silent, and indistinguishable from a
+   frame with no script.
+3. **The tool is over-sensitive.** It resolves each slot *against every cast
+   library*, so a hit only proves that some library has a sound at that number.
+   A frame script naming script member 12 in library 1 would report a hit if
+   library 3 happens to hold a sound at 12.
+
+Reading 3 is the cheapest to test and should go first: resolve the slot in the
+frame's **own** library only and see whether the failures survive. If they do,
+the discriminator between 1 and 2 is whether those 29 frames have a frame script
+that runs — `tools/primary_scripts.gd` and the `lingo:` runtime errors say so
+directly.
+
+**Do not close this by relaxing the assertion.** It is the only check in the
+suite that would catch a main-channel offset being wrong in the direction that
+yields *more* member reference than there is, and it fired the first time it was
+shown data it had not seen. That is the check working.
