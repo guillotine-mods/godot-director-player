@@ -6885,6 +6885,30 @@ clean tree            preview_surface  PASS   rc=0
 The probe was one line, `interp.call("no_such_method_xyz")` behind a null guard,
 and the baseline run is what makes the red attributable to it.
 
+**Four green runs would also be what a scrape returning nothing looks like**, so
+they are not on their own evidence that the boundary accepts anything:
+`h.check("no method name has moved", absent.is_empty(), …)` passes vacuously on an
+empty list, which is this file's own "a check whose two readings cannot disagree"
+shape. The positive control is a fifth run, one probe with three call sites at
+three boundary classes:
+
+```
+interp.call(   identifier tail       not scraped
+preview.call(  bare, after `(`       scraped
+_preview.call( leading underscore    scraped
+
+FAIL  no method name has moved  (no_such_method_abc, no_such_method_und)
+```
+
+Two names and not three, and the missing one is `interp`'s. That is the shipped
+GDScript exercising all three branches, rather than a Python model of it.
+
+The second scrape block has the same unbounded flaw and is a no-op today:
+`line.find("preview.")` over `scenes/preview_lingo_host.gd` matches inside
+`director_preview.` too, but every such hit is in a comment and none of them clear
+the `lingo_`/`stage_` prefix filter that follows. Left alone rather than fixed
+blind.
+
 **The first draft of the fix failed the gate about its own comment.** The new
 docstring spelled the needles out in full, so the scrape read them out of this
 very file and reported two method names made of comment fragments. The needles
