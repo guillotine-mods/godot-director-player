@@ -206,12 +206,26 @@ not:
   ship.** `scenes/preview/video.gd` has a third backend behind
   `director/director_plugin_video.gd`, gated on `ClassDB.class_exists` rather
   than on a `preload` of an addon path, so a decoder GDExtension the owner
-  installs plays the 22 MPEG-1 clips from the original bytes and an absent one
+  installs can play the 22 MPEG-1 clips from the original bytes and an absent one
   changes nothing at all — `tools/video_plugin.gd` in `gate.sh`'s `ALL` asserts
-  the second half. `docs/DIGITAL_VIDEO.md` §8 is the install, the Android
-  per-ABI blocker, and which parts of the plugin's API are confirmed from its
-  source versus inferred. Nothing here ships, requires or downloads one, so this
-  line stays: out of the box there is still no decoder for either format.
+  the second half. `docs/DIGITAL_VIDEO.md` §8 is the install and which parts of
+  the plugin's API are confirmed from its source versus inferred.
+
+  **"Can play" is now known to be conditional, and the one extension anybody has
+  tried does not satisfy it.** EIRTeam.FFmpeg 1.1.4 was installed and run
+  (§9): its bundled FFmpeg is the `lgpl-godot` variant, built
+  `--disable-demuxers --disable-decoders` with mov/matroska/avi/flv/aac and
+  h264/vp9/mpeg4/aac/mp3 re-enabled. **No MPEG-PS demuxer, no MS-RLE decoder** —
+  it opens 0 of this tree's 23 media files. Every *engine-side* inference §8 made
+  held, including the one that mattered: `logo.avi` opened, found no decoder,
+  reported no duration, and was refused rather than becoming a ready member with
+  a frozen playhead.
+
+  So this line stays and is now stronger than "nothing here ships one": out of
+  the box there is no decoder for either format, and the obvious extension does
+  not supply one either. Closing this properly still wants either C1 (the
+  reference's own MS-RLE/type-10 work) or an FFmpeg build configured for the
+  formats a 1990s Director title actually holds.
 
 Two smaller things sit beside it. The tempo channel's video waits are **built on
 the clock side and unwired on this one**: `director_score.gd` decodes

@@ -283,14 +283,27 @@ static func handles(file_path: String) -> bool:
 ## What `ResourceLoader.get_recognized_extensions_for_type("VideoStream")` answers
 ## on stock Godot with no extension installed.
 ##
-## **Measured, and it is not just `ogv`.** On 4.7.1, headless, with this project's
-## own `addons/` absent, the call answers `tres, res` and *not* `ogv` — the text
-## and binary resource loaders handle every type there is, so they claim their own
-## two extensions for `VideoStream` as they would for any other, and the Theora
-## loader's `ogv` did not appear at all. `tools/video_plugin.gd` found this on its
-## first run, by asserting that nothing but the stock set is claimed when nothing
-## is installed; the constant was `["ogv"]` until then, which would have made
-## `handles("x.res")` true the moment an extension was installed.
+## **Measured, and it is not just `ogv`.** The text and binary resource loaders
+## handle every type there is, so they claim their own two extensions for
+## `VideoStream` as they would for any other. `tools/video_plugin.gd` found that
+## on its first run, by asserting that nothing but the stock set is claimed when
+## nothing is installed; the constant was `["ogv"]` until then, which would have
+## made `handles("x.res")` true the moment an extension was installed.
+##
+## **The two measurements of this call disagree about `ogv`, and neither is being
+## quietly dropped.** The first, recorded here, was `tres, res` with no `ogv` at
+## all. The second, on 4.7.1 mono Windows headless with the extension present in
+## `addons/` but `.godot/extension_list.cfg` not yet written — so no extension
+## loaded, the same loader set as an absent addon — answered
+## `["ogv", "tres", "res"]`. The conditions that would explain the difference
+## (platform, build flavour, when in startup the question is asked) were not
+## controlled in either run, so the disagreement is unresolved and is written down
+## rather than reconciled by picking one.
+##
+## It changes nothing either way, which is why it is a note and not a bug: `ogv`
+## is in `STOCK_EXTENSIONS` regardless, so it is subtracted whether or not it
+## appears. That is the point of the list being "what stock Godot would claim
+## anyway" rather than "what stock Godot was observed to claim once".
 ##
 ## `ogv` is kept in the list regardless. It is what stock Godot's Theora loader
 ## *is*, an installed extension claiming it would be claiming a format this port

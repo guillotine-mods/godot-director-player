@@ -114,7 +114,7 @@ fi
 trap '[ -n "$HELD" ] && rmdir "$LOCK" 2>/dev/null' EXIT
 
 echo "corpus: $ROOT"
-ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
+ALL="game_config title_mapping title_list export_presets_check preview_surface boot_state:--file@PIP2DATA/EXODUS.DIR frame_events window_preview text_and_shapes text_and_shapes:--root@piposh@--file@PIPDATA/CAPROOM.dir cursor_preview cursor_cross_cast:--root@rating@--boot@mainmenu.dir container_equality_check lingo_logic_check lingo_designator_check field_designator lingo_builtins_check keyboard_check decode_stall hotspots trails sprite_drag debug_bindings snapshot_check container_picker_check go_movie_arg drawn_size_stability member_ref_round_trip reg_point movie_churn film_loop_cast film_loop_scale film_loop_restart:--root@piposh-dream film_loop_nesting:--root@piposh-dream cast_script_sprite:--root@piposh-dream skip_state mouse_events touch_input hilite playhead_escape puppet_persists puppet_freeze:--file@PIP2DATA/CHESS.dir@--channel@8@--wheels@138,175@--span@7 editable_text:--file@PIP2DATA/SAVELOAD.dir save_movie:--allow-writes text_codepage save_state sound_wait sound_rate key_polling key_overlay:--root@rating@--boot@arcade1.dir key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir movie_tempo script_compile_check parse_residue lingo_surface_audit lingo_objects lingo_scope_check timeout_and_actors fileio_xtra buddyapi_xtra:--allow-writes media_surface video_fallback avi_decode video_plugin lingo_movie_surface property_surface lingo_system_builtins update_stage click_eligibility click_chain primary_scripts sprite_lifetime behaviour_me:--file@PIP2DATA/DAY1.dir play_suspends play_stack_bound sound_paths fast_forward key_chain mouse_poll:--file@PIP2DATA/CHESS.dir@--label@ches1 sprite_collision label_index pause_holds:--file@PIP2DATA/SAVELOAD.dir@--label@savegame2@--hotspot cannon_hit:--root@piposh idle_clock new_game_reset:--root@rating@--boot@NAVIGATE.dir bitmap_geometry palette_cycle palette_corpus audio_coverage liveness_sweep:--limit@12 launcher_keys launcher_surface"
 # `text_and_shapes` appears twice, and the second entry is the only one that
 # exercises the field box-type rule at all. `GATE_ROOT` is `piposh2`, and that
 # corpus has **no fixed or scrolling field** -- 1,755 of its 1,795 score-placed
@@ -295,6 +295,27 @@ ALL="game_config title_mapping title_list export_presets_check preview_surface b
 # stock 4.7.1 -- the generic resource loaders handle every type -- so the
 # adapter's "what did an extension add" list had to subtract a measured stock
 # set rather than just `ogv`.
+#
+# **An extension has since been installed and run against it, and what it asserts
+# in that state changed as a result** (`docs/DIGITAL_VIDEO.md` §9). The first
+# version of the present-case branch asserted "at least one media file opens",
+# which made the entry red on a machine with a working install: EIRTeam.FFmpeg
+# 1.1.4 has no MPEG-PS demuxer and no MS-RLE decoder, so it opens 0 of that
+# corpus's 23. **That is a third party's `configure` flags, not this port's
+# behaviour**, and gating on it is the same mistake `palette_corpus` made when it
+# failed on a shipped title's bad member numbering. The count is printed as a
+# FINDING now and the assertions are the port's: `handles()` matches the loader's
+# published list exactly, no stock extension is offered to a plugin, nothing ever
+# opens with a duration of nought, every decline is named, and a file the plugin
+# declines is still opened by the backend behind it -- which `logo.avi` exercises
+# for real, since the build claims `.avi` and cannot decode MS-RLE.
+#
+# The resolution order (plugin, then sidecar, then AVI) is asserted as a **source
+# scan** of `scenes/preview/video.gd` and runs in both branches, so it is
+# corpus-independent and survives the bare run here. It has to be a scan: with a
+# build that decodes none of the tree's containers there is no file the plugin arm
+# and the sidecar arm both want, and a runtime check would pass while asserting
+# nothing.
 
 # `behaviour_me` names `PIP2DATA/DAY1.dir` and the flag is the entry, not a
 # detail of it: `bugs.md` 93 is about whether a behaviour is one *object* for

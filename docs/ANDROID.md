@@ -66,6 +66,41 @@ launcher lists whatever is present, so nothing else has to change.
 behaviour and it has no business inside a binary we hand out. `saves/` and
 `.snapshots/` are excluded because they are somebody's session.
 
+## What an APK does not get: video
+
+**No video decoding, on any device.** The optional decoder GDExtension
+(`docs/DIGITAL_VIDEO.md` §8) is the only thing that could provide it, and
+EIRTeam.FFmpeg 1.1.4 **ships no Android binary** — its `.gdextension` declares
+`android.template_{debug,release}.arm64` and the release archive contains
+`win64` and `linux64` only.
+
+`addons/*` is therefore in this preset's `exclude_filter`, and that line is not
+cosmetic. Measured with it removed: the export **succeeds**, exit 0, after seven
+`ERROR: Can't open file from path 'res://addons/ffmpeg/android/…'` lines — and
+the APK ships **seven zero-byte `.so` files** in `lib/arm64-v8a/`
+(`libgdffmpeg.android.template_debug.arm64.so`, `libavcodec.so`,
+`libavfilter.so`, `libavformat.so`, `libavutil.so`, `libswresample.so`,
+`libswscale.so`) plus `assets/addons/ffmpeg/ffmpeg.gdextension` naming them.
+Godot's exporter writes an empty entry when it cannot read the source file rather
+than skipping it. With the exclusion in place: zero errors, and `lib/arm64-v8a/`
+holds only Godot's own `libc++_shared.so` and `libgodot_android.so`.
+
+**If such an APK ran anyway it would not crash.** A GDExtension whose library is
+missing fails at `GDExtensionManager::load_extensions`, which continues past it:
+three `ERROR` lines in logcat, then the engine starts normally, the adapter's
+`ClassDB.class_exists` gate answers false, and the video path falls back exactly
+as it does with no addon at all. Measured on Windows by pointing the
+`.gdextension` at an absent library — `tools/video_plugin.gd` passed its entire
+absent-case branch and exited 0.
+
+**Not measured**: whether Android's package installer accepts an APK containing
+zero-byte files under `lib/`. No device was attached. It is not a question worth
+answering, because the exclusion means such an APK is never built.
+
+The six shipped titles contain no video members at all, so none of this costs a
+title anything. The exclusion comes out the day EIRTeam ships an `android/`
+directory, in the same commit that fetches it.
+
 ## Size
 
 3.2 GB of containers compress to a **1.74 GB APK** — the game data packs at

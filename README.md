@@ -141,6 +141,7 @@ The tree does not show which directories are safe to hand-edit, and most are not
 | `games/` | The originals, per title, as git submodules. **Never modify anything under here** |
 | `reference/lingo/`, `reference/chunks/` | Merged from two independent ProjectorRays runs over the original DXRs. The source of truth for every behavioural question |
 | `reference/scummvm/` | Fetched by `tools/fetch_scummvm_reference.sh`. GPL, read for the model only |
+| `addons/` | Empty, and gitignored. `tools/fetch_video_plugin.sh` puts the optional video decoder GDExtension here at a pinned, sha256-checked release. Nothing requires it, and it decodes **none** of this project's media — `docs/DIGITAL_VIDEO.md` §9 before installing |
 
 `assets/` and `data/` are **gone.** They held a pre-decoded export — JSON score
 data, extracted BMPs, compiled Lingo ASTs and hand-authored scaffolding — that
@@ -347,7 +348,7 @@ godot --headless --script tools/palette_corpus.gd  # palettes across ALL six tit
 godot --headless --script tools/palette_members.gd -- --root piposh-ru  # custom palettes as the renderer uses them: a CLUT read entry 0 first, a bitmap naming its own palette, the member's table reaching the decoder, pass/fail — fails on a corpus with no palettes rather than passing over nothing. NOT in gate.sh's ALL: only piposh-ru of the six has CLUT chunks (3) and it reaches 7 of 9, because no bitmap there names a palette member. Run it by hand when touching palettes
 godot --headless --script tools/avi_decode.gd -- --root res://test-games/itamar-magichat  # every AVI in a corpus decodes, at the declared size, inside its own frame interval, and a backward seek reproduces frame 0 exactly, pass/fail — `--png DIR` writes pictures. Says so and asserts nothing on a corpus with no AVI, which is seven of the eight
 godot --headless --script tools/video_fallback.gd -- --root res://test-games/itamar-magichat --boot magichat.dir --each  # every frame that scores a video releases the playhead; a member whose media is on the disc answers ready and a real duration and its playhead moves, one whose media is not answers 0, pass/fail
-godot --headless --script tools/video_plugin.gd -- --root res://test-games/itamar-magichat --boot magichat.dir  # the decoder-extension gate: no engine file preloads an addon path (a source scan, because that failure is at parse time), the adapter declines everything on the class gate when none is installed, no reader the engine opened is on the plugin backend, and `getPlaybackEvent` is VOID for a channel with no media — pass/fail. With an extension installed the checks invert and it asserts the corpus's MPEG-1 opens with a real duration. In gate.sh's ALL; `--list` prints every media file it found. `docs/DIGITAL_VIDEO.md` §8 is the install
+godot --headless --script tools/video_plugin.gd -- --root res://test-games/itamar-magichat --boot magichat.dir  # the decoder-extension gate: no engine file preloads an addon path (a source scan, because that failure is at parse time), the adapter declines everything on the class gate when none is installed, no reader the engine opened is on the plugin backend, and `getPlaybackEvent` is VOID for a channel with no media — pass/fail. With an extension installed the checks invert: `handles()` must match the loader's published list exactly, no stock extension may be offered to a plugin, nothing may open with a duration of nought, and a file the plugin declines must still be opened by the backend behind it. **How many files open is printed as a FINDING and not asserted** — that is a third party's build flags, and EIRTeam.FFmpeg 1.1.4 opens 0 of this corpus's 23. The resolution order is a source scan and runs either way. In gate.sh's ALL; `--list` prints every media file it found. `docs/DIGITAL_VIDEO.md` §8 is the install, §9 is what installing one actually did
 godot --headless --script tools/video_census.gd      # what video every corpus holds, in what format, and which frames place it — survey, not pass/fail
 godot --headless --script tools/video_sidecar.gd -- --root res://test-games/itamar-magichat  # which media this port cannot decode, where each one's Ogg Theora sidecar under user:// would go, whether it is there and fresh, and the exact ffmpeg/VLC command that would make it — pass/fail on the cache invariants, and says so and asserts nothing on a corpus with no such media, which is seven of the eight. `--run` transcodes (nothing happens without it), `--verify` checks each sidecar against Godot's own decoder, `--clear` empties the cache
 godot --headless --script tools/aiff_check.gd       # every .aif decodes, and none carries a reachable cue point, pass/fail
@@ -544,3 +545,27 @@ shipping a build *with* the tools has to be typed deliberately.
 
 `tools/debug_bindings.gd` asserts it: with the switch off, no keycode is claimed
 by the preview at all.
+
+## The keyboard a phone does not have
+
+The debug bindings above are *ours* and can simply be absent on a device. The
+**game** wants the keyboard too, and that is not optional: Rating's `arcade1.dir`
+steers on the arrow keys, Piposh 1's roulette wants a number typed, and 46 scripts
+across the corpus skip a line of speech on key code 49. On a touchscreen those
+scenes start, draw correctly and cannot be played — the expensive failure, because
+nothing reports it.
+
+`scenes/preview/key_affordance.gd` answers it **from the movie**, with no per-title
+data anywhere: the frame's own attached scripts say which keys they test, the
+score says on which frames they are attached, and the module draws one button per
+*action* — `(the keyCode = 126) or (the keyCode = 13)` is one control, not two —
+and synthesises the key through `Input`, the path a real key takes. It draws
+nothing unless the device has a touchscreen and no mouse.
+
+- `tools/key_demand.gd` is the census: it runs the *shipping* functions over every
+  root and reports, scene by scene (a marker-delimited span), which of seven shapes
+  the demand is. `--all --scenes` for the listing, `--csv` for the rows.
+- `tools/key_overlay.gd` is the gate, on the two scenes the owner was stopped by.
+- `tools/key_script_survey.gd` still answers the coarser question — which keys a
+  *title* touches anywhere — which is what `debug_bindings` needs and is a union
+  no scene is described by.

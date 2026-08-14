@@ -51,6 +51,33 @@ __pycache__/
 reference/scummvm
 .traces/
 
+# The optional video decoder GDExtension, fetched by tools/fetch_video_plugin.sh.
+# Same rule as the ScummVM sources above and for stronger reasons: this one is
+# 26 MB of somebody else's compiled FFmpeg, and `docs/DIGITAL_VIDEO.md` §9 is the
+# full argument. The short version, all three parts measured:
+#
+#   * It decodes **nothing this project has**. EIRTeam.FFmpeg 1.1.4's bundled
+#     FFmpeg is the `lgpl-godot` variant -- `--disable-demuxers --disable-decoders`
+#     and then mov/matroska/avi/flv/aac back on, h264/vp9/mpeg4/aac/mp3 back on.
+#     No MPEG-PS demuxer and no MS-RLE decoder, which is 22 of this tree's 23
+#     media files and the 23rd. Vendoring binaries for a measured zero is the
+#     easiest call in this file.
+#   * It is LGPL-2.1+ and it arrives with **no licence text and no source
+#     offer** -- there is no LICENSE, COPYING or NOTICE anywhere in the archive.
+#     Committing it would make this repository a distributor of LGPL FFmpeg and
+#     put those obligations on every clone. Leaving it out keeps them where they
+#     belong: on whoever builds and hands out a binary.
+#   * The single release asset carries **win64 and linux64 only**, while its own
+#     `.gdextension` declares android and macos. Committed, half the nightly
+#     matrix and every mobile export would inherit a declaration with nothing
+#     behind it.
+#
+# Ignored as a whole rather than as `addons/ffmpeg`, because the next decoder
+# extension someone tries is a different directory with the same three problems.
+# A first-party addon this project actually owns would need `!addons/<name>` here
+# and a line in this comment saying why it is different.
+addons/
+
 # Screenshots the snapshot key writes. Somebody's session, of a game that is not
 # ours to redistribute — the same reason `games/` is ignored below.
 .snapshots/

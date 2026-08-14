@@ -64,17 +64,37 @@ paragraph above about native code stops being hypothetical.
   platform. With no extension in the tree the mobile export is exactly the export
   described below, and `tools/video_plugin.gd` is in `gate.sh`'s `ALL` asserting
   that.
-- **If one is installed, it is per-ABI native code and it is the export's
-  problem.** EIRTeam.FFmpeg 1.1.4 — the intended one — declares Android
-  `arm64` binaries and **nothing else**: no `arm32`, no `x86_64`, and no iOS
-  entry at all. `ANDROID.md` already builds `arm64-v8a` only, so the Android
-  case happens to line up; the x86_64 emulator and any iOS export do not, and
-  the failure is at extension load, before any Godot code runs and therefore
-  before any fallback this engine has can decline it.
+- **A phone gets no video decoding from it, and that is now measured rather than
+  predicted.** EIRTeam.FFmpeg 1.1.4 — the intended one — **ships no Android
+  binary at all.** Its `.gdextension` declares `android.template_{debug,release}
+  .arm64`, and the release archive contains `win64` and `linux64` only; EIRTeam
+  builds nothing else (`linux_builds.yml` and `windows_builds.yml` are the whole
+  of `.github/workflows/`). There is no iOS entry in the `.gdextension` either,
+  and no macOS binary in the archive despite an entry for one.
+- **An APK built with `addons/ffmpeg/` in the tree exports successfully and is
+  wrong.** Measured: `--export-debug Android` exits **0** after seven
+  `ERROR: Can't open file from path 'res://addons/ffmpeg/android/…'` lines, and
+  the APK contains **seven zero-byte `.so` files** in `lib/arm64-v8a/` plus a
+  `ffmpeg.gdextension` naming them. `DIGITAL_VIDEO.md` §9.2 has the listing.
+  Whether Android's installer accepts zero-byte files under `lib/` was not
+  tested — no device was attached — and it does not need to be: they cannot be
+  `dlopen`ed and nothing should produce them.
+- **`export_presets.cfg` therefore excludes `addons/*` on Android, iOS and
+  macOS**, and not on Windows or Linux. Re-measured after the change: zero export
+  errors and nothing of the addon in the APK. Those three exclusions come out on
+  the day a release ships binaries for those platforms, and not before.
+- **If it were installed anyway, the failure is loud and harmless.** Simulated by
+  pointing the `.gdextension` at a library that is not there: three engine
+  `ERROR` lines at startup, then `ClassDB.class_exists("FFmpegVideoStream")` is
+  false, the adapter declines everything, and `tools/video_plugin.gd` passes its
+  whole absent-case branch. No crash. The player sees nothing — on Android those
+  errors go to logcat.
 - **The six shipped titles hold no video at all** (`DIGITAL_VIDEO.md` §1: 0
   members, 0 sprites, 0 media files), so there is no reason to put a native
   dependency into a phone build of any of them. The extension is for a desktop
-  developer looking at `test-games/itamar-magichat`.
+  developer looking at `test-games/itamar-magichat` — and even there it decodes
+  **0 of that title's 23 media files** (§9.1), so "the extension is optional" is
+  now an understatement rather than a caveat.
 
 ## What it weighs
 
