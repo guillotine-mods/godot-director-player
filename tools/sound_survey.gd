@@ -43,7 +43,48 @@ const Score := preload("res://director/director_score.gd")
 ## Main-channel offsets the port resolves as a cast member number: the frame
 ## script, the transition and the palette. The two sound channels are handled
 ## separately because they are the subject of this survey rather than a control.
+##
+## **Each of these is half of a pair.** The main channel block is six 48-byte
+## records and every one opens with `castLib` at +0 and the member at +2, so the
+## library the port resolves in is always the 16-bit slot two bytes ahead --
+## `director_score.gd:frame` reads 0 with 2, 96 with 98 and 240 with 242 and
+## never resolves a member number on its own. `_record_slot` therefore has to
+## resolve these three the same way, and `bugs.md` 114 is what it cost not to:
+## resolving them against *every* library made the check report a sound member
+## whenever any library in the movie happened to hold a sound at that number,
+## which is a fact about the other library and not about the slot.
 const MEMBER_REFERENCE_SLOTS := [2, 98, 242]
+## member slot -> the library slot that pairs with it, for the three above.
+const MEMBER_REFERENCE_LIB_AT := {2: 0, 98: 96, 242: 240}
+## The three member references `director_score.gd:frame` hands out of the main
+## channel, and the cast member type each one must name. Keyed by what the decode
+## calls them rather than by an offset, so this tool cannot drift from the engine
+## the way a second copy of the offsets did.
+const DECODED_MEMBER_REFERENCES := {
+	"frame script": "script", "transition": "transition", "palette": "palette",
+}
+## What share of the frames carrying a reference must resolve to that type.
+##
+## **A majority, not a purity test**, and the number was chosen by looking at
+## what each kind of failure scores rather than at what the corpus scores. A
+## misaligned offset reads two bytes out of the middle of another record and gets
+## the expected type on approximately none of them; a corpus with a missing
+## linked cast misses a handful out of hundreds. There is no value between those
+## two that is wrong, and picking one near the corpus instead of near the middle
+## is how a check ends up asserting the data: `itamar-park` names palette member
+## 200 in library 6 on three consecutive frames of `torfim.dir` and that library
+## is not in the recovery, so a 95% floor failed a *recovered corpus for being
+## incomplete* — which is the `palette_corpus` mistake in AGENTS.md, made again.
+const MEMBER_TYPE_FLOOR := 0.5
+## Below this many frames a corpus cannot be expected to carry a frame script, so
+## the presence half of the check below does not run. Any real corpus is orders
+## of magnitude above it -- `piposh2` is 61,371 frames -- and a single `--file`
+## run of one short movie is what it is here for.
+const FRAME_SCRIPT_PRESENCE_MIN_FRAMES := 100
+## `castLib` written as "this movie's own", which `director_score.gd` and every
+## reader here fold to library 1. 0 means the same thing in the frame script and
+## sound records, where an unauthored slot is left blank rather than set.
+const OWN_CAST_LIB := 0xFFFF
 const CastTable := preload("res://director/director_cast_table.gd")
 const Cast := preload("res://director/director_cast.gd")
 const Paths := preload("res://director/director_paths.gd")
@@ -140,6 +181,21 @@ func _init() -> void:
 	var scored := 0
 	var frames := 0
 	var undecoded: Dictionary = {}
+	# Every slot that resolved to a sound member, named: movie, frame, the
+	# library the slot's own record declares, the member number and its name.
+	# A count alone cannot be followed up -- `bugs.md` 114 was opened on
+	# "offset 2 in 16 frame(s)" and the next question was always "which 16".
+	var sound_hits: Array[String] = []
+	# What the *port's own decode* makes of the three member references it reads
+	# out of the main channel, resolved in the library the same decode names:
+	# reference name -> {member type name -> times}. Read through
+	# `director_score.gd:frame` rather than off the raw offsets, so that moving an
+	# offset in the engine moves this. See the check.
+	var decode_shape: Dictionary = {}
+	# Every frame where one of those three resolved to something other than the
+	# type it is for, named. The share alone says a decode is wrong; this says
+	# which frames, which is what tells a systematic miss from an authoring slip.
+	var decode_misses: Array[String] = []
 	# What the decoder itself makes of the two sound channels, alongside the raw
 	# byte survey. Both, because they answer different questions: the byte survey
 	# says what is in the block, and this says what the engine reads out of it.
@@ -165,7 +221,10 @@ func _init() -> void:
 
 		for i in score.frame_count:
 			frames += 1
-			decoded_cues += score.frame(i).get("sound_channels", []).size()
+			var decoded: Dictionary = score.frame(i)
+			decoded_cues += decoded.get("sound_channels", []).size()
+			_record_decoded(decode_shape, table, decoded,
+				"%s f%d" % [path.get_file(), i], decode_misses)
 			var block := score.main_channel(i)
 			for at in block.size():
 				if block[at] == 0:
@@ -182,7 +241,8 @@ func _init() -> void:
 			while at16 + 1 < block.size():
 				var value := (block[at16] << 8) | block[at16 + 1]
 				if value != 0:
-					_record_slot(slot_types, table, libs, at16, value)
+					_record_slot(slot_types, table, libs, at16, value, block,
+						"%s f%d" % [path.get_file(), i], sound_hits)
 				at16 += 2
 		table.close()
 		f.close()
@@ -219,7 +279,9 @@ func _init() -> void:
 			])
 		print("")
 
-	print("every 16-bit slot of the block, resolved against every cast library:")
+	print("every 16-bit slot of the block, resolved as a member number")
+	print("  (the three the port pairs with a castLib -- 2, 98, 242 -- in the library")
+	print("   their own record declares; every other slot against every library):")
 	var slots: Array = slot_types.keys()
 	slots.sort()
 	for at in slots:
@@ -231,6 +293,14 @@ func _init() -> void:
 			parts.append("%s x%d" % [str(t), int(types[t])])
 		print("  %3d  %-22s %s" % [at, str(KNOWN.get(at, "")), ", ".join(parts)])
 	print("")
+
+	if not sound_hits.is_empty():
+		print("every frame whose slot resolved to a sound member (first 40):")
+		for line in sound_hits.slice(0, 40):
+			print("  %s" % line)
+		if sound_hits.size() > 40:
+			print("  ... %d more" % (sound_hits.size() - 40))
+		print("")
 
 	print("bytes no part of this port attributes, that are ever non-zero:")
 	if undecoded.is_empty():
@@ -330,6 +400,105 @@ func _init() -> void:
 		print("")
 		print("slots that resolve to a sound member and are read by nothing: %s"
 			% "; ".join(other_slots_naming_sound))
+	# **The check above narrowed when `bugs.md` 114 turned out to be reading 3, so
+	# this one exists to more than make up the catching power.** "Names a sound"
+	# is a tripwire for one wrong answer out of a dozen, and only fires on the
+	# frames that happen to land on a sound. What a wrong offset actually produces
+	# is a *reference to the wrong kind of thing, on every frame*, because the two
+	# bytes then come from the middle of some other record. So this asserts the
+	# positive claim: what `director_score.gd` calls a frame script resolves to a
+	# `script` member, what it calls a transition to a `transition`, and what it
+	# calls a palette to a `palette` — each in the library that same decode names
+	# beside it.
+	#
+	# **It reads the decode, not the offsets, and that is the point.** The first
+	# version of this check walked the raw block at 2/98/242 — a copy of the
+	# engine's constants living in this tool — and the control proved it useless:
+	# moving the frame script member to offset 4 made it report "nothing resolves"
+	# and **pass**, because offset 4 is zero in every frame of `piposh2` and a slot
+	# that is never authored has nothing to be wrong about. Going through
+	# `score.frame(i)` means the engine moving an offset moves this measurement,
+	# and the same perturbation now turns it red.
+	#
+	# **Every frame that carries a reference counts**, including the ones that
+	# resolve to nothing: "the number names no member" is exactly what a
+	# misaligned read looks like, so excluding it is excluding the evidence. The
+	# one value excluded is a **negative palette id**, which is not a member
+	# reference at all — Director numbers its built-in palettes negatively, and
+	# −1 (system Mac) is what all 267 of `piposh2`'s palette frames carry.
+	#
+	# **The floor is 95% and every corpus measured sits at 100% bar one frame:**
+	# `piposh` has a single frame whose frame script names a bitmap in its own
+	# library out of 64,624, and `piposh-en`, `piposh-ru`, `itamar-magichat` and
+	# `itamar-park` have one apiece that names nothing. Requiring 100% would gate
+	# this project on a 1997 authoring slip, which is the `palette_corpus` lesson
+	# in AGENTS.md. A wrong offset does not score 95%.
+	var shape_lines: Array[String] = []
+	var shape_bad: Array[String] = []
+	for what in DECODED_MEMBER_REFERENCES:
+		if not decode_shape.has(what):
+			continue
+		var types: Dictionary = decode_shape[what]
+		var want: String = DECODED_MEMBER_REFERENCES[what]
+		var total := 0
+		var right := 0
+		for t in types:
+			total += int(types[t])
+			if str(t) == want:
+				right += int(types[t])
+		if total == 0:
+			continue
+		var share := float(right) / float(total)
+		var parts: Array = []
+		var kinds: Array = types.keys()
+		kinds.sort()
+		for t in kinds:
+			parts.append("%s x%d" % [str(t), int(types[t])])
+		shape_lines.append("%s %d/%d %s (%.1f%%) [%s]" % [
+			what, right, total, want, share * 100.0, ", ".join(parts),
+		])
+		if share < MEMBER_TYPE_FLOOR:
+			shape_bad.append("%s resolves to %s on %.1f%% of %d frame(s)" % [
+				what, want, share * 100.0, total,
+			])
+	print("")
+	print("what the port's own decode resolves each main-channel reference to:")
+	if shape_lines.is_empty():
+		print("  no frame in this corpus carries one")
+	for line in shape_lines:
+		print("  %s" % line)
+	if not decode_misses.is_empty():
+		print("  every frame that resolved to something else (first 20):")
+		for line in decode_misses.slice(0, 20):
+			print("    %s" % line)
+		if decode_misses.size() > 20:
+			print("    ... %d more" % (decode_misses.size() - 20))
+	h.check("and each main-channel reference resolves to the member type it is for",
+		shape_bad.is_empty(), "; ".join(shape_bad))
+	# **The other half, and the one the control demanded.** A ratio can only speak
+	# about frames that carry a reference, so an offset moved onto bytes that are
+	# zero in every frame produces *no* references, an empty population and a
+	# green ratio. That is not a hypothetical: the first version of this check was
+	# handed exactly that perturbation — the frame script member read from offset 4
+	# instead of 2 — and passed it.
+	#
+	# So: a corpus of any size has frame scripts. Measured, every root: 48,813 in
+	# `piposh2`, 64,624 in `piposh`, 64,942 in `piposh-en`, 65,041 in `piposh-ru`,
+	# 165 in `itamar-magichat`, 125 in `itamar-park`. Transition and palette are
+	# deliberately **not** asserted this way, because a corpus really can have
+	# none: `piposh2` names a transition on 5 frames out of 61,371 and a custom
+	# palette on none at all — all 267 of its palette frames carry the built-in
+	# system Mac id.
+	var frame_scripts := 0
+	for t in decode_shape.get("frame script", {}):
+		frame_scripts += int(decode_shape["frame script"][t])
+	if frames >= FRAME_SCRIPT_PRESENCE_MIN_FRAMES:
+		h.check("and a corpus this size names a frame script somewhere",
+			frame_scripts > 0, "%d frame script(s) in %d frame(s)" % [frame_scripts, frames])
+	else:
+		print("(%d frames read, below the %d this corpus needs for the frame script "
+			% [frames, FRAME_SCRIPT_PRESENCE_MIN_FRAMES]
+			+ "presence check; not asserted)")
 	# The same question asked through the decoder rather than through the bytes. It
 	# is not redundant: `_sound_channels` reads two specific offsets, and this is
 	# what catches those two offsets being read wrong in the direction that yields
@@ -354,10 +523,13 @@ func _init() -> void:
 	#
 	# The path is implemented and wired: `director_score.gd:tempo_waits` decodes
 	# the cell, `director_frame_clock.gd:_arm_waits` sets `_waiting_sound` from it,
-	# and `holding()` counts it. What is not established is that any *gate* entry
-	# exercises it -- `sound_wait` runs bare, on `GATE_ROOT`, which has none of
-	# these frames. That is the gap this number exposes and it is worth an entry
-	# pinned to `rating`.
+	# and `playhead_held()` counts it. **The gap this number exposed is closed**:
+	# `tools/sound_tempo_wait.gd` walks the corpus for one of these cells, lands on
+	# it, plays a real sound into it and asserts the playhead is held and then
+	# released, with `--root rating` in `gate.sh`. Before it, `sound_wait` ran bare
+	# on `GATE_ROOT` and never read a tempo cell in any case, `frame_events`
+	# fabricated one for a bare clock and `movie_tempo` said the holds were out of
+	# its scope. `bugs.md` 115.
 	if sound_waits.is_empty():
 		print("frames whose tempo cell waits for a sound: none")
 	else:
@@ -407,21 +579,91 @@ func _dump(path: String, paths, count: int) -> void:
 	print("")
 
 
-## One 16-bit slot of one frame, resolved as a member number in every library the
-## movie can address. The best answer any library gives wins: `unresolved` only
-## when no library holds that number at all.
-func _record_slot(types: Dictionary, table, libs: Array, at: int, value: int) -> void:
-	var kind := "unresolved"
-	for lib in libs:
-		var member: Dictionary = table.get_member(int(lib), value)
-		if member.is_empty():
+## The three member references one decoded frame carries, resolved as the engine
+## itself would resolve them: each member number in the library the same decode
+## names beside it.
+##
+## A frame that names nothing in a slot contributes nothing — "no frame script"
+## is not a wrong frame script. A frame that names a number contributes whatever
+## that number turns out to be, `unresolved` included, because a reference to
+## a member that is not there is the signature this exists to catch.
+##
+## The one exception is a **negative palette id**, which Director uses for its
+## built-in palettes (−1 is system Mac) and which is therefore not a member
+## reference at all. `director_score.gd:_palette_record` reads that field signed
+## for the same reason.
+func _record_decoded(shape: Dictionary, table, decoded: Dictionary, where: String,
+		misses: Array[String]) -> void:
+	var refs: Array = [
+		["frame script", decoded.get("frame_script"), int(decoded.get("frame_script_lib", 1))],
+		["transition", decoded.get("transition_member"), int(decoded.get("transition_lib", 1))],
+	]
+	var palette: Dictionary = decoded.get("palette", {})
+	if not palette.is_empty() and int(palette.get("member", 0)) > 0:
+		refs.append(["palette", int(palette["member"]), int(palette.get("cast_lib", 1))])
+
+	for ref in refs:
+		var number: int = int(ref[1]) if ref[1] != null else 0
+		if number <= 0:
 			continue
-		var found := str(member.get("type_name", ""))
-		if found == "sound":
-			kind = found
-			break
-		if kind == "unresolved":
-			kind = found
+		var member: Dictionary = table.get_member(int(ref[2]), number)
+		var kind := str(member.get("type_name", "unresolved")) if not member.is_empty() else "unresolved"
+		var bucket: Dictionary = shape.get(ref[0], {})
+		bucket[kind] = int(bucket.get(kind, 0)) + 1
+		shape[ref[0]] = bucket
+		if kind != DECODED_MEMBER_REFERENCES[ref[0]]:
+			misses.append("%s %s -> lib %d member %d is %s" % [
+				where, str(ref[0]), int(ref[2]), number, kind,
+			])
+
+
+## One 16-bit slot of one frame, resolved as a member number.
+##
+## **Two resolutions, and which one a slot gets is the whole of `bugs.md` 114.**
+##
+## A slot the port *reads* as a member reference is resolved in the library that
+## slot's own record declares, because that is what the engine does with it: the
+## frame script at 2 is looked up in the library named at 0, and a hit in some
+## other library is not a thing the port can ever reach. Resolving those against
+## every library is a strictly larger question than the one the check below asks,
+## and it answered "sound" for 16 frames of Magic Hat and 13 of Itamar Park where
+## the declared library holds a *script* at that number and a different library
+## happens to hold a sound at it. That is the tool being wrong, not the decode.
+##
+## Every other slot has no declared library -- offset 52 is two bytes at an
+## alignment inside the tempo record that nothing pairs with anything -- so the
+## only honest question about it is "does this number name a sound anywhere",
+## and that is what it still gets. Those are reported and asserted over by
+## nothing, which is the correct weight for an arithmetic coincidence.
+func _record_slot(types: Dictionary, table, libs: Array, at: int, value: int,
+		block: PackedByteArray, where: String, sound_hits: Array[String]) -> void:
+	var kind := "unresolved"
+	var lib_note := "any library"
+	if MEMBER_REFERENCE_LIB_AT.has(at):
+		var lib_at: int = MEMBER_REFERENCE_LIB_AT[at]
+		var declared := (block[lib_at] << 8) | block[lib_at + 1]
+		var lib := 1 if declared == OWN_CAST_LIB or declared == 0 else declared
+		lib_note = "lib %d" % lib
+		var member: Dictionary = table.get_member(lib, value)
+		kind = str(member.get("type_name", "unresolved")) if not member.is_empty() else "unresolved"
+		if kind == "sound":
+			sound_hits.append("%s offset %d -> %s member %d '%s'" % [
+				where, at, lib_note, value, str(member.get("name", "")),
+			])
+	else:
+		for lib in libs:
+			var member: Dictionary = table.get_member(int(lib), value)
+			if member.is_empty():
+				continue
+			var found := str(member.get("type_name", ""))
+			if found == "sound":
+				kind = found
+				sound_hits.append("%s offset %d -> %s member %d '%s'" % [
+					where, at, "lib %d" % int(lib), value, str(member.get("name", "")),
+				])
+				break
+			if kind == "unresolved":
+				kind = found
 	var bucket: Dictionary = types.get(at, {})
 	bucket[kind] = int(bucket.get(kind, 0)) + 1
 	types[at] = bucket

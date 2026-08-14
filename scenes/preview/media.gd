@@ -25,6 +25,19 @@ extends RefCounted
 ## sample rate, sample size, channel count and cue points are computed from the
 ## member's own bytes rather than assumed.
 ##
+## **A fourth case has no bytes of its own**: Director lets a sound member name an
+## external file, and `castmember/sound.cpp:load()` reaches that from a payload
+## that is absent *or* zero bytes. 54 of `itamar-park`'s 66 sound members are that
+## shape. Those answer out of the file, through
+## `AudioDirector.linked_media` — the same resolver and the same loader
+## `preview/sound.gd` plays them with, so the duration a script reads and the
+## audio it hears cannot come from two different files.
+##
+## **Cue points come out of the member's `cupt` child chunk**, not out of the
+## audio. Only an embedded AIFF can carry markers inline, and Director 6 does not
+## put them there; `sound.cpp:load()` reads `cupt` in the same walk as the
+## samples. No root in reach ships one, so that arm is reference-shaped.
+##
 ## **This paragraph used to end "that decoder is unexercised by this corpus (no
 ## cast in any of the six titles holds a sound member)", and that was false.**
 ## The corpus holds **204** of them (`tools/member_type_census.gd`): 87 in
@@ -500,6 +513,16 @@ static func facts_of(host, where: Array, table) -> Dictionary:
 ## reason: the bytes could not be turned into media.
 static func _decode_sound(member: Dictionary, table, cast_lib: int,
 		facts: Dictionary) -> void:
+	# **A linked member's numbers are the file's, and the file is not in the
+	# container.** Director lets a sound member name an external file instead of
+	# embedding one (`castmember/sound.cpp:load()`, the `getLinkedPath` arm), and a
+	# script asks `the duration of member` of one exactly as it asks it of an
+	# embedded one. Through `AudioDirector.linked_media` rather than a second
+	# resolver, so the duration this reports and the audio `preview/sound.gd` puts
+	# on a channel are the same file by construction.
+	if bool(member.get("sound_linked", false)):
+		_linked_sound_facts(str(member.get("link_filename", "")), facts)
+		return
 	if int(member.get("data_chunk_id", -1)) < 0:
 		return
 	var file = table.file_for(cast_lib)
@@ -513,6 +536,68 @@ static func _decode_sound(member: Dictionary, table, cast_lib: int,
 	var stream: AudioStreamWAV = SoundMember.decode(payload, header, [])
 	if stream == null:
 		return
+	_fill_stream_facts(stream, facts)
+	# Director 6's cue points are a `cupt` child of the member and not markers in
+	# the audio, which is why this reads a second chunk. The rate is passed so a
+	# cue can state both the millisecond time `the cuePointTimes` wants and the
+	# sample frame the playback clock wants; without it one of the two is 0.
+	var cue_chunk := PackedByteArray()
+	var cue_id := int(member.get("sound_cue_chunk_id", -1))
+	if cue_id >= 0:
+		cue_chunk = file.read_chunk(cue_id)
+	for cue in SoundMember.cue_points(payload, cue_chunk, int(stream.mix_rate)):
+		(facts["cues"] as Array).append(cue)
+
+
+## The same facts for a member whose audio is a file on the disc.
+##
+## `ready` is true only when the file both resolved *and* decoded, which is the
+## same rule the embedded path follows and the same one a video follows: a member
+## whose media could not be turned into audio is not ready, whatever the reason.
+## A movie that guards on `the mediaReady` then takes the branch that does not
+## need the sound, instead of waiting for one that is never coming.
+static func _linked_sound_facts(link: String, facts: Dictionary) -> void:
+	if link.strip_edges().is_empty():
+		return
+	# Through the tree rather than through the `AudioDirector` global identifier, so
+	# that a harness holding a cast table and no player -- which is how
+	# `tools/sound_member_census.gd` and half of `tools/` run -- gets a null and the
+	# member's defaults instead of a crash. The autoload is a node under the root,
+	# not an `Engine` singleton.
+	var loop := Engine.get_main_loop()
+	if not (loop is SceneTree) or (loop as SceneTree).root == null:
+		return
+	var audio: Node = (loop as SceneTree).root.get_node_or_null("AudioDirector")
+	if audio == null:
+		return
+	var media: Dictionary = audio.call("linked_media", link)
+	var stream = media.get("stream")
+	if stream == null:
+		return
+	if stream is AudioStreamWAV:
+		_fill_stream_facts(stream as AudioStreamWAV, facts)
+	else:
+		# An Ogg or an MP3 states a length and nothing else this surface asks for.
+		# Reported as ready with the numbers it can answer rather than refused: the
+		# member *is* playable, and answering "not ready" for one that plays is the
+		# worse of the two wrong answers.
+		facts["ready"] = true
+		facts["tracks"] = 1
+		facts["duration"] = _ms_to_ticks(float(stream.get_length()) * 1000.0)
+	var rate := int(facts["sample_rate"])
+	for cue in (media.get("cues", []) as Array):
+		var entry: Dictionary = (cue as Dictionary).duplicate()
+		# The file's own markers are sample frames; `the cuePointTimes` counts
+		# time. Converted here for the same reason `director_sound.gd` converts the
+		# other direction: the storage states one unit and the property wants the
+		# other, and whichever end does not convert answers 0.
+		if not entry.has("ms"):
+			entry["ms"] = 0.0 if rate <= 0 \
+				else float(int(entry.get("frame", 0))) * 1000.0 / float(rate)
+		(facts["cues"] as Array).append(entry)
+
+
+static func _fill_stream_facts(stream: AudioStreamWAV, facts: Dictionary) -> void:
 	facts["ready"] = true
 	facts["sample_rate"] = int(stream.mix_rate)
 	facts["channels"] = 2 if stream.stereo else 1
@@ -522,8 +607,6 @@ static func _decode_sound(member: Dictionary, table, cast_lib: int,
 	# same question of a video, where the answer would come from the file's own
 	# track table.
 	facts["tracks"] = 1
-	for cue in SoundMember.cue_points(payload):
-		(facts["cues"] as Array).append(cue)
 
 
 static func _ms_to_ticks(ms: float) -> int:
@@ -551,7 +634,15 @@ static func _member_default(prop: String) -> Variant:
 ## reader for the type-10 member and the type-15 Xtra, and one storage key for
 ## both spellings, so that the four combinations cannot answer four things.
 static func _linked_file(host, where: Array, member: Dictionary) -> Variant:
-	if not is_playable(member):
+	# **A linked sound member is the second thing that has a file name**, and the
+	# paragraph above was written when it was believed none existed. Director gives
+	# `the fileName of member` the external file for any member whose media is
+	# linked, and a sound member is linked whenever its payload is absent or zero
+	# bytes and its info block names a file (`castmember/sound.cpp:load()`). An
+	# internal sound member still falls through to `preview/members.gd` and still
+	# answers its container, because that is the honest answer for a member whose
+	# media is *in* the container.
+	if not is_playable(member) and not bool(member.get("sound_linked", false)):
 		return null
 	var written: Variant = _member_override(host, where, FILE_PROPS[0])
 	if written != null:

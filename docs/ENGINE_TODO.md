@@ -268,10 +268,71 @@ record, a flat run of `int32`s named by `sound.cpp:MoaSoundFormatDecoder`.
 `tools/sound_member_census.gd` decodes every sound member in reach and asserts
 against the corpus rather than against a count.
 
-Still not implemented, and now visible: **the linked-file fallback.** The
-reference reads a zero-byte payload as "the audio is an external file" and loads
-it from the path in the member's info block. `director_cast.gd` reports the state
-as `sound_linked_empty` and nothing consumes it yet.
+**The linked-file fallback is implemented.** The reference reads a payload that is
+absent *or* zero bytes as "the audio is an external file" and loads it from the
+path in the member's info block (`castmember/sound.cpp:load()`, the
+`getLinkedPath` arm), with looping forced off for one. `director_cast.gd`
+classifies the member as `sound_linked`, `preview/sound.gd:play_member` hands the
+name to `AudioDirector.play_linked_member`, and `preview/media.gd` answers the
+whole property surface out of the same file through `AudioDirector.linked_media`,
+so the duration a script reads and the audio it hears cannot come from two
+different files. **54 of `itamar-park`'s 66 sound members are that shape and all
+54 now resolve and decode** (`tools/sound_linked_member.gd --root
+res://test-games/itamar-park`); before this they were 54 silences with nothing in
+the log. No root under `games/` ships one, so the gate entry proves the playback
+path against a real audio file and a constructed member, and says out loud that
+it found no linked member to check.
+
+**Cue points come out of the member's `cupt` chunk, and that chunk was never
+read.** Director 6 writes a sound member's cue points to a separate child chunk —
+an `int32` count, then per cue an `int32` position and a fixed 32-byte name —
+which `sound.cpp:load()` reads in the same walk as the samples.
+`director_sound.gd:cue_points` read markers out of an embedded AIFF and nothing
+else, which is the one shape of four that can carry them inline and is not the
+shape Director writes. So `the cuePointNames`, `the cuePointTimes`, the
+`cuePassed` event and a tempo cell waiting on a cue index all answered nothing for
+every member authored the ordinary way. Fixed, with `tools/sound_cue_points.gd` as
+the harness. A second defect went with it: the AIFF arm emitted `{id, frame,
+name}` while `media.gd` read `cue["ms"]`, so **`the cuePointTimes` answered 0 for
+every cue it had** — every record now carries the frame, the time and the name.
+
+**Unverified against the corpus, and stated rather than implied**: there are
+**zero `cupt` chunks in 677 containers across all eight roots**, and the AIFF arm
+is no better off because all 336 markers in the corpus's 168 marked AIFFs sit past
+the end of their own file (`tools/aiff_check.gd`). The decode is proved against
+bytes laid out from the reference; what is *not* synthesised is that the records
+it emits are pushed through the real channel machinery and read back through the
+calls `preview/sound.gd:pump` and `the cuePointNames of sound` use.
+
+**A wait-for-sound tempo cell now has a test against a real one.** `bugs.md` 115:
+a tempo of 255/254 holds the playhead until sound channel 1/2 finishes, it was
+implemented, and every harness that touched it used bytes it wrote itself —
+`frame_events.gd` fabricates the cell for a bare clock, `movie_tempo.gd` says in as
+many words that the holds are out of its scope, and `sound_wait.gd` never reads a
+tempo cell at all. All three run against `GATE_ROOT`, which has **zero** such
+frames; `rating` has **276** (259 of tempo 255, 17 of tempo 254, over 48 of its 81
+containers, every one with the operand −2). `tools/sound_tempo_wait.gd` finds one
+by walking the corpus, plays a real sound into it, and asserts the playhead is
+held, that a silent channel does *not* hold it, and that the sound ending releases
+it.
+
+**Still missing on this surface**: the `ediM` arm — a whole compressed stream in
+the member, which `sound.cpp:load()` opens only for `kMoaCfFormat_AIFF`. Zero
+members in reach carry one.
+
+**A cast-table defect found under this work and not fixed here, because it is not
+a sound bug.** `DirectorCastTable.file_for()` answers **null for every cast
+library embedded in the movie's own container** — the `MCsL` arm with an empty
+path, which `_cast_for` opens correctly by `castID` and then never registers in
+`_by_path`. Every payload in the engine is fetched through `file_for`, so those
+members resolve, report their name, type and rect, and then draw or play nothing:
+**18 such libraries across the corpus hiding 969 member payloads**, 869 of them
+bitmaps, including `games/piposh2`'s own `GARDUG.dir` library `heznigt` with 294.
+It is also the whole of the "48 of Magic Hat's 87 sound members are addressable by
+neither cast walk" report — all 87 *are* addressable; the census skipped the six
+embedded sound libraries because `file_for` gave it nothing to read from.
+`tools/embedded_cast_payload.gd` is the reproduction and is deliberately **not** in
+`gate.sh`'s `ALL` until the fix lands.
 
 **Score recording (8 builtins).** `beginRecording`, `endRecording`,
 `updateFrame`, `insertFrame`, `deleteFrame`, `duplicateFrame`, `clearFrame`, and

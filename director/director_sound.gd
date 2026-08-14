@@ -22,13 +22,20 @@ extends RefCounted
 ## is signed.** So these need the 0x80 flip that AIFF's do not. Getting it wrong
 ## does not fail — it plays, at full volume, as loud symmetrical distortion.
 ##
-## **None of this is verified against the corpus this port was built on.** That
-## game has no sound cast member in any of its 86 containers and no score sound
-## channel is ever written; every sound it plays is an external `.aif` played by
-## `sound playFile` (`tools/sound_survey.gd`). The formats below are implemented
-## from their published definitions, and `tools/sound_member.gd` exercises them
-## against synthesised payloads, which proves the decoder and not the corpus. The
-## first title that ships a sound member is what will confirm the reader.
+## **This used to say "none of this is verified against the corpus", and the
+## sentence was a measurement of Piposh 2 written as a fact about eight roots.**
+## Piposh 2 has no sound cast member in any of its 86 containers; the corpus has
+## **204** (`tools/member_type_census.gd`), and
+## `tools/sound_member_census.gd` decodes every one the cast walk can address --
+## 102 embedded, all 102 decoding, across 7 sample rates and both sample widths.
+## The `sndS` arm is measured. The `snd ` resource and the embedded RIFF/AIFF arms
+## still are not: no member in any root comes in under either tag, so those two
+## are implemented from their published definitions and exercised against
+## synthesised payloads only, which proves the decoder and not the corpus.
+##
+## A fourth shape exists and is **not** implemented: `ediM`, a whole compressed
+## stream (`castmember/sound.cpp:load()` opens it only for `kMoaCfFormat_AIFF`).
+## Zero members in reach carry one.
 
 const AiffLoader := preload("res://autoload/aiff_loader.gd")
 
@@ -44,6 +51,8 @@ const ENCODE_COMPRESSED := 0xFE
 const ENCODE_EXTENDED := 0xFF
 ## Mac 8-bit samples are unsigned; this is the offset to signed.
 const UNSIGNED_TO_SIGNED := 0x80
+## The name field of one `cupt` entry: a fixed 32 bytes, whatever the name is.
+const CUE_NAME_BYTES := 32
 
 
 ## `null` when the bytes are not a sound this can read, with the reason appended
@@ -68,13 +77,109 @@ static func decode(data: PackedByteArray, header: PackedByteArray = PackedByteAr
 
 
 ## Cue points, so a member-sourced sound answers `the cuePointNames of member`
-## and fires `cuePassed` the same way a file-sourced one does. Only the embedded
-## AIFF shape can carry them — a `snd ` resource has no marker chunk — which is
-## why this returns an empty list rather than refusing for the others.
-static func cue_points(data: PackedByteArray) -> Array:
+## and fires `cuePassed` the same way a file-sourced one does.
+##
+## **Two sources, and for years this read only the weaker one.** An embedded AIFF
+## can carry `MARK` inline, which is the shape `aiff_loader.gd` decodes; every
+## other shape a sound member has — a `snd ` resource, the `sndH`/`sndS` pair, an
+## `ediM` stream — carries no marker chunk at all, and Director 6 does not put
+## them there in any case. It writes them to a **separate `cupt` child chunk of
+## the member**, which `castmember/sound.cpp:SoundCastMember::load()` reads in the
+## same walk as the audio (`MKTAG('c','u','p','t')`). Nothing here read that
+## chunk, so `the cuePointNames`, `the cuePointTimes`, the `cuePassed` event and a
+## tempo cell waiting on a cue index answered nothing for every member authored
+## the ordinary way — which is every member with cue points that Director 6 wrote.
+##
+## `cue_chunk` is preferred over the inline markers when both are present: the
+## member's own chunk is what the author edited in the Cast window, and an AIFF
+## imported with markers already in it keeps them in the file whether or not
+## Director still agrees with them.
+##
+## Every entry carries **three keys, deliberately redundant**, because the two
+## consumers count in different units and neither should be converting:
+##
+##   - `frame` — the sample frame, which is what `AudioDirector.take_cues_passed`
+##     compares against the player's own playback position;
+##   - `ms` — milliseconds, which is what `the cuePointTimes` is derived from;
+##   - `name` — the cue's name, for `the cuePointNames` and `cuePassed`.
+##
+## `mix_rate` is what converts between the two and is the decoded stream's rate.
+## Passing 0 leaves whichever unit the source did not state at 0 rather than
+## guessing a rate: a cue at the wrong sample frame fires at the wrong moment,
+## which is worse than one that never fires at all.
+##
+## **Unverified against the corpus.** `tools/scratch/sndprobe.gd` finds **zero
+## `cupt` chunks across all eight roots** — 651 containers, 204 sound members —
+## so this arm is implemented from the reference and proved against synthesised
+## bytes (`tools/sound_cue_points.gd`). That is the honest state and it is not the
+## same as absent; the AIFF arm beside it is equally unexercised, because all 336
+## markers in the corpus's 168 marked AIFFs sit past the end of their own file
+## (`tools/aiff_check.gd`).
+static func cue_points(data: PackedByteArray, cue_chunk: PackedByteArray = PackedByteArray(),
+		mix_rate: int = 0) -> Array:
+	if not cue_chunk.is_empty():
+		return decode_cue_chunk(cue_chunk, mix_rate)
 	if data.size() >= 4 and data.slice(0, 4).get_string_from_ascii() == "FORM":
-		return AiffLoader.cue_points(data)
+		var out: Array = []
+		for cue in AiffLoader.cue_points(data):
+			var entry: Dictionary = cue
+			# AIFF states the position as a sample frame and says nothing about
+			# time, so the millisecond figure is derived here rather than in the
+			# loader — `aiff_loader.gd` is also the `sound playFile` path and has no
+			# business knowing what a Lingo property wants.
+			var frame := int(entry.get("frame", 0))
+			entry["ms"] = 0.0 if mix_rate <= 0 else float(frame) * 1000.0 / float(mix_rate)
+			out.append(entry)
+		return out
 	return []
+
+
+## Bytes of one `cupt` chunk to cue records.
+##
+## The layout is `castmember/sound.cpp:load()`'s own read, in its own order: an
+## `int32` count, then per cue an `int32` position followed by a fixed **32-byte**
+## name field which the reference NUL-terminates at byte 31 before taking it as a
+## string. Fixed width, not a Pascal or C string with a length — a name that fills
+## all 32 bytes has no terminator in the file and the reference supplies one, so a
+## reader that stops at the first NUL and a reader that takes all 32 disagree only
+## on the longest names. This stops at the first NUL and then strips, which is the
+## same answer for every shorter name and the reference's answer for the longest.
+##
+## **The position is milliseconds.** The reference stores the `int32` unchanged
+## and hands it to `the cuePointTimes` unchanged (`SoundCastMember::getField`,
+## `kTheCuePointTimes`), so it does not name the unit; Director's own
+## documentation does, and `the cuePointTimes` is a list of times in
+## milliseconds. That is the one fact in this decoder that is neither measured nor
+## quoted from the reference, and it is where to look first if a member's cues
+## ever fire at the wrong moment.
+##
+## A count that does not fit the chunk truncates rather than refusing: a cue list
+## the author half-wrote is still worth the cues it does hold, and there is no
+## caller that can do anything with a refusal.
+static func decode_cue_chunk(chunk: PackedByteArray, mix_rate: int = 0) -> Array:
+	var out: Array = []
+	if chunk.size() < 4:
+		return out
+	var count := _be_i32(chunk, 0)
+	var at := 4
+	for i in count:
+		if at + 4 + CUE_NAME_BYTES > chunk.size():
+			break
+		var ms := _be_i32(chunk, at)
+		var raw := chunk.slice(at + 4, at + 4 + CUE_NAME_BYTES)
+		var stop := raw.find(0)
+		if stop >= 0:
+			raw = raw.slice(0, stop)
+		out.append({
+			# 1-based, the way `take_cues_passed` numbers what it reports and the
+			# way `cuePassed`'s cueNumber counts.
+			"index": i + 1,
+			"ms": float(ms),
+			"frame": 0 if mix_rate <= 0 else int(round(float(ms) * float(mix_rate) / 1000.0)),
+			"name": raw.get_string_from_ascii().strip_edges(),
+		})
+		at += 4 + CUE_NAME_BYTES
+	return out
 
 
 # ------------------------------------------------------------------ snd

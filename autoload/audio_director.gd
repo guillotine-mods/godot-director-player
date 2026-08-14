@@ -666,6 +666,117 @@ func play_stream(channel: int, id: String, stream: AudioStream, cues: Array = []
 	_start(ch, stream, cues)
 
 
+## A sound cast member whose audio is an **external file** rather than an
+## embedded payload, onto a channel. `false` when the name resolves to nothing or
+## the file will not decode, which is a fact about the movie and not an error.
+##
+## Director lets a sound member name a file instead of carrying one, and
+## `castmember/sound.cpp:SoundCastMember::load()` reaches that case from a payload
+## that is absent *or* zero bytes: it asks `_cast->getLinkedPath(_castId)` and
+## builds an `AudioFileDecoder` on the answer. `director_cast.gd` has reported the
+## state as `sound_linked` / `link_filename` all along and **nothing consumed
+## it**, so 54 of `itamar-park`'s 66 sound members resolved to silence — `%Coll1`,
+## `%Eat1`, `%HiScore` in `Sound.cst`, which is a game whose collect, eat and
+## high-score effects were all mute.
+##
+## **This deliberately reuses `resolve_path` rather than resolving a second
+## time.** A linked member's name is the same kind of string `sound playFile`
+## takes — a fragment of a path from the authoring machine, in Mac or Windows
+## separator form, possibly missing leading segments — and that resolver is where
+## the tail index, the exact index and the ambiguity warning live. A second
+## resolver beside it would be a second set of answers to the same question, and
+## the one that got a wrong take of a line of speech would be silent about it.
+##
+## `id` is the member's `"<lib>:<member>"`, not the filename, because that is what
+## `the member of sound` reports and what restart-on-change compares — the member
+## is the identity, and the file behind it is an implementation detail of the
+## member.
+##
+## **Looping is off, and that is the reference's rule rather than a default.**
+## `load()` sets `_looping = 0` in the linked arm with the comment "Linked sound
+## files always have the loop flag disabled", so a member whose Cast window tick
+## box says loop does not loop when its audio came from a file. Godot carries the
+## loop flag on the *stream*, and `_stream_cache` hands the same stream object to
+## every caller, so a stream that arrives looping is duplicated before the flag is
+## cleared — clearing it in place would silently unloop the same file for
+## `sound playFile`.
+func play_linked_member(channel: int, id: String, file_name: String) -> bool:
+	_ensure_index()
+	var ch := maxi(1, channel)
+	var raw := file_name.to_lower().strip_edges()
+	if raw.is_empty():
+		return false
+	var path := resolve_path(raw)
+	if path.is_empty():
+		# Through `_fail`, for the reason `_fail` gives: Director claims the channel
+		# before it opens the media, so a member that cannot be found leaves the
+		# channel *empty* rather than still playing whatever was there. A `soundBusy`
+		# poll after a score sound that missed must not wait out the previous sound.
+		_fail(ch, id, "linked sound member %s: no file named %s" % [id, file_name])
+		return false
+	var stream := _load_stream(path)
+	if stream == null:
+		_fail(ch, id, "linked sound member %s: %s will not decode" % [id, path])
+		return false
+	stream = _without_loop(stream)
+	_channel_file[ch] = id
+	_channel_failed[ch] = false
+	_start(ch, stream, _cue_points_of(path))
+	return true
+
+
+## The media behind a linked name, without touching a channel: `{"path",
+## "stream", "cues"}`, with `path` empty when nothing resolved and `stream` null
+## when nothing decoded.
+##
+## `preview/media.gd` needs exactly this and needs it *not* to play: `the
+## duration`, `the sampleRate`, `the sampleSize`, `the channelCount` and `the
+## cuePointNames` of a linked sound member are all questions about the file, and a
+## script may ask any of them without ever putting the member on a channel. One
+## resolver and one loader for both, so a member cannot answer a duration for one
+## file and play another.
+func linked_media(file_name: String) -> Dictionary:
+	_ensure_index()
+	var out := {"path": "", "stream": null, "cues": []}
+	var raw := file_name.to_lower().strip_edges()
+	if raw.is_empty():
+		return out
+	var path := resolve_path(raw)
+	if path.is_empty():
+		return out
+	out["path"] = path
+	var stream := _load_stream(path)
+	if stream == null:
+		return out
+	out["stream"] = _without_loop(stream)
+	out["cues"] = _cue_points_of(path)
+	return out
+
+
+## The same stream with looping off, copied first when it is on.
+##
+## `_stream_cache` is keyed by path and shared, so this may not write through to
+## the cached object. The duplicate is only paid for by a file that actually loops,
+## which is none in any corpus in reach.
+func _without_loop(stream: AudioStream) -> AudioStream:
+	if stream is AudioStreamWAV:
+		var wav: AudioStreamWAV = stream
+		if wav.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+			return wav
+		var copy: AudioStreamWAV = wav.duplicate()
+		copy.loop_mode = AudioStreamWAV.LOOP_DISABLED
+		return copy
+	# `loop` is a plain bool on the Ogg and MP3 streams, and neither type is
+	# reachable from any root today (0 ogg, 0 mp3 across all six shipped titles).
+	# Handled by property rather than by type so that a title that ships one is not
+	# a silent exception.
+	if stream != null and bool(stream.get("loop")):
+		var copy: AudioStream = stream.duplicate()
+		copy.set("loop", false)
+		return copy
+	return stream
+
+
 func _start(channel: int, stream: AudioStream, cues: Array) -> void:
 	_channel_cues[channel] = cues
 	_channel_cues_passed[channel] = 0

@@ -386,10 +386,24 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 	#
 	# A zero-byte payload is not corruption. The reference treats
 	# `sndData->size() == 0` as "the audio is a **linked** file" and loads it from
-	# the path in the member's info block. That fallback is not implemented here
-	# yet, so the empty tag is skipped rather than preferred, which is the half of
-	# the rule that can be got right without it; `sound_linked_empty` records that
-	# the member is in that state so nothing downstream reads the miss as silence.
+	# the path in the member's info block. **That fallback is implemented now** --
+	# `preview/sound.gd:play_member` hands the name to
+	# `AudioDirector.play_linked_member`, which is the same resolver
+	# `sound playFile` goes through. The empty tag is still skipped rather than
+	# preferred, so `data_chunk_id` never names a chunk with nothing in it.
+	#
+	# Two keys come out of it, and the difference matters. `sound_linked_empty` is
+	# the reference's *zero-byte* arm specifically -- a `snd ` chunk that exists and
+	# holds nothing -- and is kept because it is the shape Piposh 1's containers
+	# carry and the one that cost this port every sound member it had.
+	# `sound_linked` is the question a player asks: **this member has no payload
+	# this engine can decode and does name an external file**, which is the union of
+	# the reference's "absent *or* zero bytes" test with a non-empty
+	# `getLinkedPath`. 54 of `itamar-park`'s 66 sound members reach it, and every
+	# one of those reaches it through the *absent* arm rather than the zero-byte one
+	# (`tools/sound_member_census.gd`): that title writes no `snd ` chunk at all for
+	# a linked member, so a fallback keyed on `sound_linked_empty` alone would have
+	# played none of them.
 	if type_code == 6:
 		var sound_owned: Dictionary = _owned.get(chunk_id, {})
 		var header_id := int(sound_owned.get("sndH", -1))
@@ -413,7 +427,23 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 			out["data_chunk_id"] = resource_id
 			out["sound_tag"] = "snd "
 		out["sound_header_chunk_id"] = header_id
+		# The cue points, which are **not** in the audio. Director 6 writes them to a
+		# `cupt` child of the member -- an `int32` count, then per cue an `int32`
+		# position and a fixed 32-byte name -- and
+		# `castmember/sound.cpp:SoundCastMember::load()` reads that arm alongside
+		# `sndH`/`sndS`/`snd `/`ediM`. `director_sound.gd:cue_points` was reading
+		# markers out of an embedded AIFF only, which is the one shape of the four
+		# that can carry them inline, so `the cuePointNames`, `the cuePointTimes`,
+		# `cuePassed` and a tempo cell waiting on a cue index all answered nothing for
+		# every member authored the ordinary way.
+		out["sound_cue_chunk_id"] = int(sound_owned.get("cupt", -1))
 		out["sound_linked_empty"] = empty_resource and samples_id < 0
+		# `_chunk_is_empty` and not `< 0`, because the last-resort arm above hands
+		# `data_chunk_id` a zero-byte `snd ` when that is the only tag the member
+		# owns -- which is exactly the state the reference calls linked.
+		var payload_id := int(out.get("data_chunk_id", -1))
+		out["sound_linked"] = (payload_id < 0 or _chunk_is_empty(payload_id)) \
+			and str(out.get("link_filename", "")) != ""
 	# A rich text member owns *three* chunks rather than one, so it cannot go
 	# through `want` above. `castmember/richtext.cpp:load()` names them: `RTE0` is
 	# the Paige editor document and is authoring-tool data with no runtime use,
