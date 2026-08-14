@@ -39,6 +39,11 @@ const Score := preload("res://director/director_score.gd")
 const Paths := preload("res://director/director_paths.gd")
 const CastTable := preload("res://director/director_cast_table.gd")
 const SpriteState := preload("res://scenes/preview/sprite_state.gd")
+## The write/read pair the Lingo host actually calls. `SpriteState` is one seam
+## deeper and does **not** apply `ALIASES`, so writing "member" through it stores
+## a key the `membernum` read never looks at -- which is how the first version of
+## the override case below passed against the bug it was written for.
+const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
 const Members := preload("res://scenes/preview/members.gd")
 
 
@@ -57,6 +62,8 @@ func _init() -> void:
 	var movies := 0
 	var wrong: Array[String] = []
 	var bare_wrong: Array[String] = []
+	## One real sprite outside library 1, kept for the override case at the end.
+	var probe: Dictionary = {}
 	for path in _containers(paths.root, Args.text(args, "file")):
 		var f := ContainerFile.new()
 		if not f.open(path):
@@ -109,6 +116,15 @@ func _init() -> void:
 				if typeof(bare) != TYPE_INT or int(bare) != id:
 					bare_wrong.append("%s ch%d %s -> memberNum %s" % [
 						path.get_file(), int(sprite["channel"]), key, str(bare)])
+				# Keep one real sprite outside library 1 for the override case
+				# below. A real one rather than a synthetic dictionary, because the
+				# bare-value arm falls back to *the sprite's own* library and a
+				# fabricated record would not test that.
+				if lib > 1 and probe.is_empty():
+					probe = {
+						"channel": int(sprite["channel"]), "lib": lib, "id": id,
+						"sprites": sprites, "where": path.get_file(),
+					}
 		f.close()
 
 	print("%s: %d movie(s), %d distinct sprite member(s), %d outside library 1"
@@ -125,6 +141,62 @@ func _init() -> void:
 	h.check("the memberNum of sprite stays a bare member number",
 		bare_wrong.is_empty(), ", ".join(PackedStringArray(bare_wrong.slice(0, 6))))
 	h.complete("a sprite's member reference survives a round trip through Lingo")
+
+	# ------------------------------------------------- and after a script writes
+	# **Everything above passes `{}` for the overrides, so all of it is the score
+	# path.** That is exactly half the property, and the missing half is the half
+	# the corpus actually uses: `piposh-dream` writes `the member of sprite N` at
+	# 1,453 sites and reads the number back afterwards. `channel.gd:read` returned
+	# a script's stored value *raw*, with no `kind` conversion, so the
+	# `membernum`/`castnum` split held only while the score owned the channel and
+	# collapsed the moment Lingo wrote one -- and `member(3, 2)` evaluates to a
+	# **packed** reference, so `the memberNum of sprite` answered 131,075.
+	#
+	# Measured cost: `hatuli.cst`'s `hatulidown`/`hatuliup` gate every movement
+	# branch on `the memberNum of sprite 15` against 2, 18, 29 and 40. At 131,075
+	# `< 29` is false *and* `> 18` is true, so the branches fail in both
+	# directions at once and the player cannot move. The Fritz duel reads the same
+	# property against 18 and 46.
+	#
+	# A write-then-read in one module would be the unit test this file's own header
+	# refuses, so the write goes in as Lingo's own value -- `pack_ref`, which is
+	# what `member()` produces -- and the read comes back out through both
+	# spellings and then through `resolve_ref`, the same chain as above.
+	if probe.is_empty():
+		print("  note: no sprite outside library 1, so the override case is skipped")
+	else:
+		h.begin("and it survives a script having written it")
+		var channel := int(probe["channel"])
+		var lib := int(probe["lib"])
+		var id := int(probe["id"])
+		var sprites: Array = probe["sprites"]
+		var overrides: Dictionary = {}
+		SpriteProps.write(channel, "member", Members.pack_ref(lib, id),
+			overrides, sprites, {})
+		var bare_after = SpriteProps.read(channel, "membernum", overrides, sprites, {})
+		h.check("the memberNum of sprite is still bare after a script wrote member()",
+			typeof(bare_after) == TYPE_INT and int(bare_after) == id,
+			"%s ch%d wrote member(%d, %d) -> memberNum %s, wanted %d" % [
+				str(probe["where"]), channel, id, lib, str(bare_after), id])
+		var ref_after = SpriteProps.read(channel, "castnum", overrides, sprites, {})
+		var table_for_ref := CastTable.new()
+		var back_after: Array = Members.resolve_ref(ref_after, "", table_for_ref)
+		h.check("the castNum of sprite still resolves to the member that was written",
+			int(back_after[0]) == lib and int(back_after[1]) == id,
+			"castNum %s -> %d:%d, wanted %d:%d" % [
+				str(ref_after), int(back_after[0]), int(back_after[1]), lib, id])
+		# The bare direction too: `rating` writes a plain number, and it has to
+		# keep the library the sprite is already in rather than falling to 1.
+		var bare_overrides: Dictionary = {}
+		SpriteProps.write(channel, "membernum", id, bare_overrides, sprites, {})
+		var ref_from_bare = SpriteProps.read(channel, "castnum", bare_overrides, sprites, {})
+		var back_bare: Array = Members.resolve_ref(ref_from_bare, "", table_for_ref)
+		h.check("a bare memberNum write keeps the sprite's own library",
+			int(back_bare[0]) == lib and int(back_bare[1]) == id,
+			"wrote memberNum %d -> castNum %s -> %d:%d, wanted %d:%d" % [
+				id, str(ref_from_bare), int(back_bare[0]), int(back_bare[1]), lib, id])
+		h.complete("and it survives a script having written it")
+
 	quit(h.finish("member references across the corpus"))
 
 

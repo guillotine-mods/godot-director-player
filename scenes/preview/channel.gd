@@ -600,6 +600,43 @@ func _bare_sprite() -> Dictionary:
 ## `sprite_props.CONSUMED` is the list that says which those are.
 func read(prop: String, sprite: Dictionary) -> Variant:
 	if entry.has(prop):
+		# **A script's own write still has to be read back through the row's kind.**
+		# This returned the stored value raw, so the `member`/`member_ref` split
+		# below held only while the score owned the channel and collapsed the
+		# moment a script wrote one -- and `member()` evaluates to a *packed*
+		# reference, so `set the member of sprite 15 to member(3, 2)` stored
+		# 131,075 and `the memberNum of sprite 15` answered 131,075 instead of 3.
+		#
+		# `preview/members.gd:pack_ref` predicted exactly this and nobody
+		# re-measured it: "reusing it anywhere the integer might be *stored* would
+		# need that claim re-measured." The override entry is where it is stored.
+		#
+		# The cost is every script that does arithmetic on a member number after
+		# writing one, which in this corpus is the games that animate a character
+		# by walking their member along. `hatuli.cst`'s `hatulidown`/`hatuliup`
+		# gate every movement branch on `the memberNum of sprite 15` against 2, 18,
+		# 29 and 40; at 131,075 `< 29` is false and `> 18` is true, so the branches
+		# fail in *both* directions and the player cannot move at all. Piposh
+		# Dream's Fritz duel reads the same property against 18 and 46.
+		#
+		# Answered through `_merge_one` rather than by unpacking here, because the
+		# split is already written once and a second copy is the shape this file's
+		# own comments keep warning about -- two places agreeing by both saying the
+		# same thing, until one of them gains a case.
+		var kind := str((FIELDS.get(prop, {}) as Dictionary).get("kind", ""))
+		if kind == "member" or kind == "member_ref":
+			var split: Dictionary = {
+				"cast_lib": int(sprite.get("cast_lib", 1)) if not sprite.is_empty() else 1,
+				"cast_id": 0,
+			}
+			# A `castLibNum` the same script wrote wins over the score's library,
+			# for the same reason the merge lets it: it is the later statement.
+			if entry.has("castlibnum"):
+				_merge_one("castlibnum", split)
+			_merge_one(prop, split)
+			if kind == "member":
+				return int(split["cast_id"])
+			return Members.pack_ref(int(split.get("cast_lib", 1)), int(split["cast_id"]))
 		return entry[prop]
 	if sprite.is_empty():
 		return EMPTY_CHANNEL.get(prop, 0)
