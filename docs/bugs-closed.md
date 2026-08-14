@@ -6810,16 +6810,28 @@ through `SpriteProps`, the pair the Lingo host actually calls. That is the third
 blind assertion found in one session, after this same harness's `{}` and
 `key_polling`'s window-gated `_input` section (`85b06dd3`).
 
-### What is not verified
+### Confirmed by the player; still not covered by a harness
 
-**The player-visible end is reasoned from the gates, not observed.** `hatul1.dir`
-never reached its armed state headlessly: the installer is the frame script at
-frame **174** (`stage1`), and two landings went past it, leaving `the keyDownScript`
-on `cutsnd` so every press correctly did nothing — a dead screen indistinguishable
-from the reported bug, which is the marker-jump trap in another costume. Closing it
-wants a harness that lands before 174 and **waits on `key_up_compiled` becoming
-non-empty** before pressing, probably entering from `mainmenu.dir` rather than
-landing at all.
+**Both scenes were played after the fix and both move** — reported by the player who
+filed the original "he doesn't move, at all". So the player-visible end is
+*observed*, and this entry no longer rests on the gates alone.
+
+**The harness gap is separate and remains open.** `hatul1.dir` never reached its
+armed state headlessly: the installer is the frame script at frame **174**
+(`stage1`), and two landings went past it, leaving `the keyDownScript` on `cutsnd`
+so every press correctly did nothing — a dead screen indistinguishable from the
+reported bug, which is the marker-jump trap in another costume. So what gates this
+fix is `member_ref_round_trip`'s property-level check, not a played one. Closing
+that wants a harness which lands before 174 and **waits on `key_up_compiled`
+becoming non-empty** before pressing, probably entering from `mainmenu.dir` rather
+than landing at all. Worth keeping distinct: the *bug* is confirmed fixed by
+observation, the *regression risk* is covered only at the property level.
+
+`hatul3.dir` — the platformer's third screen — was reported as having problems in
+the same play session, suspected by the player to be original-game behaviour. That
+is **not established** and is a separate question from this entry; `bugs.md` is where
+it belongs once somebody has a symptom and a frame number, and "not a bug" needs
+more evidence than a bug does.
 
 Two of the investigation's own instruments produced fabricated results before being
 caught by hashing, and both are worth avoiding by name: `git stash -q push --
