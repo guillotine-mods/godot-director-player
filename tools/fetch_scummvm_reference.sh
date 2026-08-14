@@ -78,6 +78,17 @@ FILES=(
   # then the two files `director/director_avi.gd` reproduces: the RIFF/AVI
   # container walk and the Microsoft RLE expansion.
   "castmember/digitalvideo.cpp"   # Specific block layout, getRegistrationOffset, movieTime
+
+  # Frame transitions. `score.cpp:renderTransition` (above) is only the
+  # resolution order -- puppet, then the frame's member, then a cut -- and the
+  # port already implements that and the member decode. What is missing is every
+  # algorithm behind it: `director/director_transition.gd` names all 52 types and
+  # draws none of them, holding the playhead for the authored duration and then
+  # cutting. AGENTS.md lists "the transition wipe algorithms" among the calls
+  # already made the wrong way, so these are the specification for undoing it.
+  "transitions.cpp"               # playTransition: the step loop and all 52 algorithms
+  "castmember/transition.cpp"     # The type-14 member's 6-byte specific block
+  "castmember/transition.h"       # TransParams field names and the TransitionType enum
 )
 
 # The same revision, from outside engines/director/. These three are ScummVM's
