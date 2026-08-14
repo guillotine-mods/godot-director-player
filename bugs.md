@@ -1659,3 +1659,52 @@ godot --headless --path . --script tools/click_chain.gd -- --root piposh-dream -
 and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
 `_lib_keys.clear()` at `:469` removed.
 
+
+---
+
+## 117. On a machine with a screen, a transition composes the wrong two pictures
+
+**Status:** OPEN · **Area:** `scenes/director_preview.gd:_grab_stage`, the
+framebuffer arm · found 2026-08-14 while building the offscreen surface, and
+**predates it** — the surface is only what made it visible
+
+Headless is unaffected: `35e9cac5` gave the painter a CPU rasteriser and
+`_grab_stage` reads the last completed paint off it, already in Director's
+pixels. A build **with a screen** still takes the other arm, reading the frame
+back out of the framebuffer and cropping it to the stage — and the crop is wrong.
+
+The same frame captured both ways: the surface is the whole frame (room,
+television, three lines of Hebrew, HUD); the framebuffer answer is the
+**top-left corner of the stage with the letterbox still in it**, magnified to
+640x480. Mean channel drift 107 of 255, blurred to about 64x48 of real detail.
+Not a settling artifact — 200 awaited frames give the same picture as 30.
+
+**The arithmetic is not what is wrong.** `get_global_transform_with_canvas()`
+answers `scale 1.5646, origin (139,0)` and the crop follows it faithfully. The
+drawing is not at that scale: 1001x751 is far short of the 2880x1690 window. So
+the node's transform and the transform the frame was actually rendered with
+disagree, and the crop is derived from the wrong one of the two.
+
+Every transition on a desktop has therefore been blending two wrong pictures for
+as long as transitions have drawn. Nobody saw it because until `35e9cac5` they
+did not draw at all.
+
+Reported by `tools/transition_render.gd`'s `_two_backends_agree` case, which is
+**green in the gate** (headless says it needs a screen and asserts nothing) and
+**red on a by-hand desktop run**, with the cause in the failure message so nobody
+closes it by loosening the threshold:
+
+```
+godot --path . --script tools/transition_render.gd -- --root rating --boot EGOZROO1.dir
+```
+
+Two ways out, and the choice is not obvious:
+
+1. **Find why the transforms disagree** and fix the crop. Cheapest if the cause
+   is a stale transform on the node, which is what the numbers suggest.
+2. **Make the surface the source on every display server**, deleting the
+   framebuffer arm. Correct by construction and removes a whole class of
+   divergence, at a measured **+13.8 ms per paint** on the most text-heavy frame
+   in the corpus. These are 4-15 fps movies, so that is affordable — but it is a
+   real cost paid on every machine to fix a bug on one path, and it should be a
+   decision rather than a default.
