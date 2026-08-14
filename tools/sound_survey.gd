@@ -272,7 +272,30 @@ func _init() -> void:
 
 	var h := Harness.new()
 	h.begin("the score's own sound channels are measured, not assumed")
-	h.check("read at least one score", scored > 0, "%d of %d containers" % [scored, movies])
+	if not h.check("read at least one score", scored > 0,
+			"%d of %d containers" % [scored, movies]):
+		# **Everything below is a conclusion about a population, and over an empty
+		# one all of them are true and none of them means anything.** Run with a
+		# `--root` this tool cannot resolve -- `test-games/` corpora, or a typo --
+		# it read 0 containers and still printed "ok the score's sound channels
+		# are unexercised by this corpus", which is *the exact sentence* that got
+		# written into `AGENTS.md` and `preview_lingo_host.gd` as a fact about the
+		# engine. The floor check turned the run red, so the gate was safe; a human
+		# reading the output was not, because three green lines stating the
+		# conclusion sat directly beneath the one red line explaining that nothing
+		# had been counted.
+		#
+		# So the conclusions do not run at all without a denominator. A tool that
+		# refuses is worth more than one that answers over nothing --
+		# `bugs.md` 105 is the same lesson from the other direction, where an
+		# instrument reported a board dead and was quoted as the state of the frame.
+		print("")
+		print("no score was read, so nothing below is asserted: "
+			+ "`--root` names a folder under `games/` and this tool cannot reach "
+			+ "`test-games/`.")
+		h.complete("the score's own sound channels are measured, not assumed")
+		quit(h.finish("score sound channels across the corpus"))
+		return
 	# This used to assert that no container held a sound cast member at all,
 	# which was true of the first title and is not a property of anything:
 	# Piposh 1 ships 17 of them, so the tool answered FAIL to the news that a
