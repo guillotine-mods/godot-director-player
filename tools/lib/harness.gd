@@ -52,7 +52,20 @@ func failures() -> int:
 
 
 ## Prints the verdict and returns the exit code. Pass it straight to `quit()`.
+##
+## Zero checks is a failure, not a pass. `begin`/`complete` only catches an abort
+## that happened *after* a case was declared; a runtime error in `_init`, in the
+## argument parsing, or in the first `await` before the first `begin` leaves
+## `_order` empty and `_checks` at 0, and this printed `PASS (0 checks, 0 failed)`
+## and returned 0. The gate reads the last `PASS`/`FAIL` line, so that run went
+## green having asserted nothing -- the same shape as the vacuous scrape in
+## `docs/bugs-closed.md` 106, and indistinguishable from a real pass in the table.
+## All 130 harness callers make at least one `check`, so a run that made none did
+## not reach its own assertions.
 func finish(summary: String = "") -> int:
+	if _checks == 0:
+		_fails += 1
+		print("FAIL  the run asserted nothing: it died before its first check (see the errors above)")
 	for case_name in _order:
 		if not bool(_closed[case_name]):
 			_fails += 1
