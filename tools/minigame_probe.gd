@@ -19,11 +19,21 @@ extends SceneTree
 ##                 not one of them was broken. `gate.sh:70` and `bugs.md` 51
 ##                 carry the same trap.
 ##   --movie M     the container to play (required)
+##   --await MK    **wait for marker `MK` before the budget starts.** See below.
+##   --await-hotspot
+##                 wait until the frame offers an eligible hotspot, instead of or
+##                 as well as a marker
+##   --await-ticks N  ceiling on that wait, in process frames (default 3000)
+##   --await-click    press hotspots on the `--every` cadence *during* the wait,
+##                 for an intro that hands over on a click rather than by itself
 ##   --warmup N    process frames to let the *boot* movie run before hopping (240)
 ##   --ticks N     process frames to play the target for (default 900)
 ##   --every K     act — one click, or one key — every K process frames (40)
 ##   --keys        also press the keys this title's own scripts test for
 ##   --watch a,b   globals to print on every sample, in addition to the diff
+##   --poll-mouse  on a tick that offers no hotspot, press the raw button anyway,
+##                 for a minigame played by `if the mouseDown` rather than by
+##                 sprite scripts. See below.
 ##   --no-click    watch only; do not touch the mouse
 ##   --verbose     print every sample rather than every *change*
 ##
@@ -101,6 +111,72 @@ extends SceneTree
 ## settled state, and cycles through the frame's eligible sprites so a game with
 ## one live button and forty dead ones is still reached.
 ##
+## ## Waiting on a marker, not on a tick budget
+##
+## **A tick budget cannot tell a dead board from a long intro**, and `bugs.md`
+## 113 is that measurement made twice. Piposh 2's chess reached `ches1`,
+## drew 16 pieces, swapped members on 5 of 17 channels and offered **0 hotspots
+## in 900 ticks**; Piposh Dream's hex never arrived at all, because its intro
+## cycles to frame 148 and the board is at 216. The first reads as a dead board
+## and the second as an unreachable one, and neither reading is supported: what
+## both actually measure is that the budget ran out somewhere inside the intro.
+## `bugs.md` 105 is the proof that this instrument has been wrong about exactly
+## this — the hex board *does* offer three eligible tiles when it is played into.
+##
+## So the budget no longer starts when the movie is entered. It starts when the
+## movie says it is ready, and the movie says so in the only vocabulary its own
+## scripts use: **a marker**. No script in this corpus says `go to frame 216`;
+## they all say `go("game")`. `--await <marker>` spins on real awaited frames
+## until `_marker` answers that name, and only then does the measured budget
+## begin — so "0 hotspots in 900 ticks" becomes a statement about 900 ticks
+## *of the board*, which is the sentence somebody wanted in the first place.
+##
+## `--await-hotspot` is the same idea without needing to know the marker: wait
+## until the frame offers something clickable at all. It is weaker evidence —
+## an intro's own SKIP button is a hotspot — so the two compose, and where the
+## marker is known the marker is better.
+##
+## **The wait is reported, and a wait that runs out is reported as undecided
+## rather than as a zero.** Every marker visited on the way is printed with the
+## ticks spent in it, so a run that never arrives says which room it was still
+## in. That is the half `bugs.md` 113 asks for: not a bigger budget, but an
+## instrument that can tell "the board offered nothing" from "the board was
+## never on screen", and that refuses to print the first when it measured the
+## second.
+##
+## ## A minigame with no hotspots is not a dead minigame
+##
+## The other half of `bugs.md` 113, and the half that turned out to be the whole
+## answer for chess. This tool presses *hotspots*: a sprite the engine says
+## responds to the mouse, at a point the engine says reaches it. A Director movie
+## does not have to be played that way, and Piposh 2's chess is not:
+##
+##     on exitFrame
+##       if the mouseDown then
+##         sound playFile 1, soundspath & "art" & member(the memberNum of sprite 8).name & ".aif"
+##         repeat with i = 8 to 15
+##           puppetSprite(i, 1)
+##         end repeat
+##         go(marker(1))
+##       else
+##         go(marker(0))
+##       end if
+##     end
+##
+## — `reference/lingo/CHESS/master/BehaviorScript 81.ls`, and three more like it.
+## Channel 8 cycles seven members and the button stops it wherever it is; the
+## board is a slot machine and **there is no hotspot anywhere in it**. So "0 of
+## 900 ticks offered a hotspot" was a true measurement of a movie that has none
+## by construction, and reading it as a dead board is the same class of error as
+## `bugs.md` 105.
+##
+## `--poll-mouse` is the answer: on any tick that offers nothing to click, press
+## the raw button anyway, through `Input.parse_input_event` exactly as
+## `tools/mouse_poll.gd` does — a poll answered from the live button state, which
+## is what `the mouseDown` reads. A poll-driven game then moves, and a genuinely
+## dead one still does not, which is the distinction the tick budget could never
+## draw.
+##
 ## Reports, never asserts. There is no invariant that holds across six titles'
 ## minigames — a game that ends on the first click is a legitimate answer — so
 ## this prints and exits 0, and the harness that asserts something comes after.
@@ -115,6 +191,15 @@ const Keys := preload("res://director/director_keys.gd")
 ## so a hotspot keyed per frame is a brand-new button on every frame and the
 ## budget goes on opening and shutting the same thing.
 var _pressed: Dictionary = {}
+## Raw button presses made by `--poll-mouse`, counted so a run that pressed
+## nothing and a run that pressed a hundred times do not print the same report.
+var _polls := 0
+## Process frames a `--poll-mouse` press is held for. These movies run at 4 to 8
+## fps and a press released inside one process frame lands between two of the
+## movie's own polls; 12 frames is comfortably longer than one score step at 8
+## fps and is what `tools/mouse_poll.gd` measured as the difference between 2 of
+## 8 clicks seen and 8 of 8.
+const POLL_HOLD_FRAMES := 12
 var _clicks: Array[String] = []
 var _keys_sent: Array[String] = []
 var _samples: Array[Dictionary] = []
@@ -172,17 +257,44 @@ func _init() -> void:
 	var ticks := Args.number(args, "ticks", 900)
 	var every := maxi(1, Args.number(args, "every", 40))
 	var click := not Args.flag(args, "no-click")
+	var poll_mouse := Args.flag(args, "poll-mouse")
 	var verbose := Args.flag(args, "verbose")
 	var watch := Args.text(args, "watch", "").to_lower().split(",", false)
 
+	# The wait, before anything is measured. `_await_ready` returns what it did,
+	# and everything printed below says whether the budget was spent on the thing
+	# that was asked about or on whatever came before it.
+	var wait: Dictionary = await _await_ready(preview, args, every, click)
+	if not wait.is_empty():
+		_report_wait(wait)
+		# **Re-baselined after the wait**, so the diff is about the budget rather
+		# than about the intro. A wait that runs half a minute of speech and two
+		# room changes moves dozens of globals, and folding those into the answer
+		# is how "nothing moved" and "everything moved" become equally unreadable.
+		globals_before = _snapshot_globals(interp)
+		fields_before = _snapshot_fields(preview)
+		members.clear()
+
 	var last_line := ""
 	var key_at := 0
+	# How much of the budget offered anything to click at all. `bugs.md` 113 is a
+	# zero here that nobody could attribute, so it is now counted beside the
+	# marker it was counted in.
+	var offering := 0
+	var offering_by_marker: Dictionary = {}
 	for i in ticks:
 		await process_frame
 		if _stopped(preview):
 			print("stopped  : the movie called quit/halt at tick %d" % i)
 			break
 		_record_members(preview, members)
+		var here := _marker(preview, 0)
+		var seen_here: Array = offering_by_marker.get(here, [0, 0])
+		seen_here[0] = int(seen_here[0]) + 1
+		if _offers_hotspot(preview):
+			offering += 1
+			seen_here[1] = int(seen_here[1]) + 1
+		offering_by_marker[here] = seen_here
 		var line := _state_line(preview, interp, watch)
 		if verbose or line != last_line:
 			_samples.append({"tick": i, "line": line})
@@ -190,7 +302,13 @@ func _init() -> void:
 		if i % every != every - 1:
 			continue
 		if click:
-			_press_one(preview)
+			# `_press_one` returns false when the frame offered nothing. That is
+			# the case `--poll-mouse` is for, and it is checked here rather than
+			# inside `_press_one` so that a movie which offers a hotspot keeps
+			# being driven through the hotspot -- pressing the raw button at a
+			# board that *does* have buttons would answer a different question.
+			if not _press_one(preview) and poll_mouse:
+				await _poll_button(preview)
 		if not keys.is_empty():
 			_press_key(preview, keys[key_at % keys.size()])
 			key_at += 1
@@ -199,6 +317,24 @@ func _init() -> void:
 	print("== timeline (%d change(s) over %d tick(s))" % [_samples.size(), ticks])
 	for sample in _samples:
 		print("  t%-5d %s" % [int(sample["tick"]), str(sample["line"])])
+
+	print("")
+	# **The number `bugs.md` 113 was about, with the marker attached.** "0 of 900
+	# ticks offered a hotspot" is unreadable without knowing which room the 900
+	# were spent in; this says it per marker, so a zero on the board and a zero in
+	# the intro are different lines rather than the same one.
+	print("== hotspots offered on %d of %d tick(s)" % [offering, ticks])
+	var marker_keys: Array = offering_by_marker.keys()
+	marker_keys.sort()
+	for marker in marker_keys:
+		var pair: Array = offering_by_marker[marker]
+		print("  %-16s %d of %d tick(s)" % [
+			str(marker) if str(marker) != "" else "<no marker>",
+			int(pair[1]), int(pair[0])])
+
+	if _polls > 0:
+		print("  raw button pressed %d time(s) on ticks that offered no hotspot "
+			% _polls + "(--poll-mouse)")
 
 	print("")
 	print("== clicks (%d)" % _clicks.size())
@@ -223,6 +359,95 @@ func _init() -> void:
 		print("  ch%-4d %s" % [int(channel), str(seen).substr(0, 110)])
 	print("  %d of %d channel(s) ever swapped member" % [changed, channels.size()])
 	quit(0)
+
+
+## Spin on real awaited frames until the movie is where the caller asked, and
+## report what happened on the way. `{}` when nothing was asked, which leaves the
+## old behaviour exactly as it was.
+##
+## **Real frames, never a synthetic loop.** AGENTS.md's rule, and it is load
+## bearing here more than anywhere: what these waits are waiting through is
+## speech, and a `for i in N: tick()` advances the runtime's clock and not the
+## audio server's, so every `soundBusy` guard holds for ever and the wait can
+## never end. `bugs.md` 22 was diagnosed wrong twice on exactly that.
+##
+## **The ceiling is a ceiling, not a budget.** Reaching it is reported as
+## `NOT REACHED` and the caller prints the whole itinerary, because a wait that
+## ran out is a measurement of the intro and must not be presented as a
+## measurement of the board.
+func _await_ready(preview: Node, args: Dictionary, every: int, click: bool) -> Dictionary:
+	var want_marker := Args.text(args, "await", "").strip_edges().to_lower()
+	var want_hotspot := Args.flag(args, "await-hotspot")
+	if want_marker == "" and not want_hotspot:
+		return {}
+	var ceiling := Args.number(args, "await-ticks", 3000)
+	var also_click: bool = click and Args.flag(args, "await-click")
+	# marker -> ticks spent in it, in arrival order, so the report reads as an
+	# itinerary rather than as a set.
+	var visited: Array[String] = []
+	var spent: Dictionary = {}
+	var reached := false
+	var at := 0
+	while at < ceiling:
+		await process_frame
+		at += 1
+		if _stopped(preview):
+			break
+		var here := _marker(preview, 0)
+		if not spent.has(here):
+			visited.append(here)
+		spent[here] = int(spent.get(here, 0)) + 1
+		var marker_ok := want_marker == "" or here.to_lower() == want_marker
+		var hotspot_ok := not want_hotspot or _offers_hotspot(preview)
+		if marker_ok and hotspot_ok:
+			reached = true
+			break
+		if also_click and at % every == every - 1:
+			_press_one(preview)
+	return {
+		"marker": want_marker, "hotspot": want_hotspot, "ticks": at,
+		"ceiling": ceiling, "reached": reached, "visited": visited, "spent": spent,
+		"clicked": also_click,
+	}
+
+
+func _report_wait(wait: Dictionary) -> void:
+	var wanted: Array[String] = []
+	if str(wait["marker"]) != "":
+		wanted.append("marker '%s'" % str(wait["marker"]))
+	if bool(wait["hotspot"]):
+		wanted.append("a hotspot")
+	print("await    : %s -> %s after %d tick(s) of %d%s" % [
+		" and ".join(wanted),
+		"REACHED" if bool(wait["reached"]) else "NOT REACHED",
+		int(wait["ticks"]), int(wait["ceiling"]),
+		", clicking" if bool(wait["clicked"]) else ""])
+	var itinerary: Array[String] = []
+	var spent: Dictionary = wait["spent"]
+	for marker in (wait["visited"] as Array):
+		itinerary.append("%s x%d" % [
+			str(marker) if str(marker) != "" else "<no marker>",
+			int(spent[marker])])
+	print("           through: %s" % " -> ".join(itinerary))
+	if not bool(wait["reached"]):
+		# Said in words, because the whole of `bugs.md` 113 is a reader taking a
+		# number measured before the subject arrived as a number about the
+		# subject. Everything below this line describes the itinerary above.
+		print("           UNDECIDED: the budget below was spent before the wait was "
+			+ "satisfied, so it measures the rooms listed above and not the one asked for.")
+
+
+## Whether this frame offers anything a player could click, by the engine's own
+## eligibility and reachability rules — the same two `_press_one` uses, so a
+## count of "offered" cannot disagree with what actually gets pressed.
+func _offers_hotspot(preview: Node) -> bool:
+	for raw in preview.call("frame_sprites"):
+		var sprite: Dictionary = preview.call("_effective", raw)
+		if sprite.is_empty() or not bool(preview.call("_responds_to_mouse", sprite)):
+			continue
+		if _reachable_point(preview, sprite, int(sprite["channel"])) != null:
+			return true
+	return false
 
 
 ## Every global as a printable string. Compared by value, so a list that is
@@ -325,7 +550,11 @@ func _record_members(preview: Node, into: Dictionary) -> void:
 ## still reached. Eligibility and the reachable point are the engine's own, the
 ## way `liveness_sweep._poke` does it: a sprite with a transparent middle answers
 ## nowhere near its centre.
-func _press_one(preview: Node) -> void:
+## Returns whether anything was pressed, so the caller can tell "this frame has
+## no buttons" from "this frame has buttons and one was used". That distinction
+## is what `--poll-mouse` hangs off and is the difference between a minigame with
+## no hotspots and a minigame whose hotspots do not work.
+func _press_one(preview: Node) -> bool:
 	var frame := int(preview.call("current_frame"))
 	var marker := _marker(preview, frame)
 	var offered: Array = []
@@ -340,7 +569,7 @@ func _press_one(preview: Node) -> void:
 		var key := "%s:%d" % [marker, channel]
 		if not _pressed.has(key):
 			_do_press(preview, at, key, channel, marker, frame)
-			return
+			return true
 		offered.append({"at": at, "key": key, "channel": channel})
 	# Everything on offer here has been pressed once. Press again anyway — a
 	# minigame's one button is meant to be pressed repeatedly, and refusing would
@@ -352,11 +581,45 @@ func _press_one(preview: Node) -> void:
 	# again; a tool that spends its budget on one button cannot answer whether
 	# any of the others work.
 	if offered.is_empty():
-		return
+		return false
 	offered.sort_custom(func(a, b):
 		return int(_pressed.get(a["key"], 0)) < int(_pressed.get(b["key"], 0)))
 	var pick: Dictionary = offered[0]
 	_do_press(preview, pick["at"], str(pick["key"]), int(pick["channel"]), marker, frame)
+	return true
+
+
+## Press and release the real mouse button, for a movie that reads `the
+## mouseDown` from its own `exitFrame` instead of hanging a script on a sprite.
+##
+## Through `Input.parse_input_event` and not `route_press`, because those answer
+## different questions: `route_press` delivers a *click* to whatever sprite is
+## under the point, and `the mouseDown` is the live **button state**, which is
+## what a polling handler samples. `tools/mouse_poll.gd` drives it the same way
+## and its docstring carries the measurement that made this necessary.
+##
+## **Held across a score step, not for one process frame.** These movies run at 4
+## to 8 fps, so two polls are 125-250 ms apart; a press released in the same
+## process frame lands between two polls and is never sampled. `mouse_poll` is
+## the harness for that and `docs/bugs-closed.md` carries the before/after --
+## 2 of 8 clicks seen, then 8 of 8. Awaiting frames rather than sleeping, for
+## AGENTS.md's reason: a synthetic loop advances no clock the movie can see.
+func _poll_button(preview: Node) -> void:
+	var at: Vector2 = Vector2(preview.call("stage_size")) * 0.5
+	_button(true, at)
+	for i in POLL_HOLD_FRAMES:
+		await process_frame
+	_button(false, at)
+	_polls += 1
+
+
+static func _button(pressed: bool, at: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = pressed
+	event.position = at
+	Input.parse_input_event(event)
+	Input.flush_buffered_events()
 
 
 func _do_press(preview: Node, at: Variant, key: String, channel: int,

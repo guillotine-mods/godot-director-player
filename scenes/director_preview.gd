@@ -885,6 +885,15 @@ func _load_container(path: String) -> bool:
 func lingo_go_movie(name: String, where: Variant) -> void:
 	if _paths == null:
 		return
+	# **A `go to movie` with no movie loaded is a state this engine can be in**, and
+	# it has to say so rather than dereference a null. `bugs.md` 111: a boot whose
+	# container did not resolve leaves `_movie` null, and the next jump raised
+	# `Invalid access to property 'path' on a base object of type 'Nil'` from the
+	# resolution below -- a sentence about GDScript, which sent two sessions looking
+	# for five Rating minigames that were not broken.
+	if _movie == null:
+		_trace("go movie %s ignored: no movie is loaded" % name)
+		return
 	# The same guard as `lingo_go_frame`: `Lingo::func_goto` handles both forms and
 	# refuses both while `_disableGoPlayUpdateStage` is set.
 	if _sprite_message > 0:

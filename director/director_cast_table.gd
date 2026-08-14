@@ -158,17 +158,54 @@ func cast_for(cast_lib: int):
 
 
 ## The container a library lives in, so a caller can read its payload chunks.
+##
+## **A library with no file path of its own lives in this container**, and this
+## used to answer `null` for every one of them. `_cast_for` has always had that
+## arm — an empty `MCsL` path means a second cast embedded in the movie's own
+## `.dir`, found by matching the library's `castID` against the `KEY*` owner of
+## each `CAS*` — but this function looked the answer up in `_by_path`, which is
+## written **only** by the external `.cst` arm. The lookup missed and the
+## fallthrough returned null.
+##
+## Every payload in the engine comes through here: a bitmap's `BITD`, a palette's
+## `CLUT`, a film loop's `SCVW`, a sound's samples, and `member_payload_size` for
+## `the size of member`. Every one of those callers has an `if f == null` beside
+## it, so the failure was **silent in all of them** — the member resolved,
+## reported its name, type and rect, and then drew or played nothing.
+##
+## Measured over all eight roots by `tools/embedded_cast_payload.gd`: **18
+## embedded libraries, 969 members with a payload chunk, every one unreadable.**
+## Not a recovered-corpus problem — `GATE_ROOT`'s own `piposh2 PIP2DATA/
+## GARDUG.dir` lib 2 `heznigt` hides 294 of them, `piposh PIPDATA/ENDDAYS.dir`
+## lib 2 `master` 43, and `itamar-park torfim.dir` lib 3 `Panel` 92, which is
+## that title's study section.
+##
+## **`_movie` is returned rather than registered in `_by_path`**, and the
+## difference matters at teardown: `close()` closes every file in `_by_path`, and
+## the movie's container is the caller's, not this table's. Registering it here
+## would make closing the cast table close the movie out from under the preview.
+## The condition is the declared empty path and not `resolved_path == _movie.path`
+## for the same reason `_cast_for` branches on it — one rule, stated once, in the
+## same terms in both places.
 func file_for(cast_lib: int):
 	if cast_lib == 1:
 		return _movie
 	var entry: Dictionary = cast_libs.get(cast_lib, {})
+	if entry.has("path") and str(entry["path"]) == "":
+		return _movie
 	var resolved := str(entry.get("resolved_path", ""))
 	if resolved == "" or not _by_path.has(resolved):
 		_cast_for(cast_lib)
 		resolved = str(cast_libs.get(cast_lib, {}).get("resolved_path", ""))
 	if _by_path.has(resolved):
 		return _by_path[resolved]["file"]
-	return _movie if cast_lib == 1 else null
+	# Library 1 is answered above, so there is no `cast_lib == 1` arm left here:
+	# reaching this line means an external cast whose file could not be resolved,
+	# and the movie's own container is not a substitute for it. Answering `_movie`
+	# would hand back a container that has none of the chunks asked for, which
+	# reads to every caller as a member whose payload is missing rather than as a
+	# cast that did not load.
+	return null
 
 
 ## `the size of member` — bytes of the member's own payload chunk.
@@ -229,6 +266,55 @@ func cast_list_for(cast_lib: int) -> PackedStringArray:
 		out = FilmLoop.read_cast_list(f.read_chunk(ids[0]))
 	_cast_lists[key] = out
 	return out
+
+
+## Which library number a `ccl ` entry names, or -1 when none of them.
+##
+## **A `ccl ` entry is a file path; a library has three identities and only two
+## of them are paths.** `MCsL` records a library's authored *name* and its
+## authored *file path*, and the author is free to make them differ — which is
+## `bugs.md` 109. `piposh-dream/meet5.dir` links `macintosh hd:arcade:origina:
+## psyco2.cst` under the name `psyco`, and its own `ccl ` names the same file by
+## the same path; matching the path's stem `psyco2` against library *names* finds
+## nothing, and five children of `Internal:37` fell back to the loop's own
+## library and drew out of the wrong cast. The same movie does it twice —
+## library 11 is `chor` from `chor2.cst`.
+##
+## So: the declared path first, then the resolved one, then the name. The first
+## two are file identity and cannot be two files; the name is a label and is the
+## weakest of the three, kept last because it is what shipped and because a
+## converted container can carry a `ccl ` that has lost its path.
+##
+## **Exact stem equality, never a prefix.** Matching `won` as a prefix of
+## `wonder` is how MASTER's loops 2:57 and 2:59 came to draw the *wonder* cast's
+## art at the same member numbers — a loop that draws somebody else's pictures
+## rather than one that fails. `docs/bugs-closed.md` carries it. An entry that
+## matches nothing answers -1 and the caller decides; guessing by plausibility is
+## the mistake this whole family of bugs is made of.
+##
+## Separators are normalised because the same list is written in Mac colon form
+## by the 1997 originals and in Windows form by anything that has re-saved them:
+## `piposh2/PIP2DATA/DAY1.dir` carries a full `C:\...\wonder.cst`, and
+## `piposh2/PIP2DATA/MURDER1.dir` carries `macintosh hd:pip2 full:tofi.cst`.
+func lib_for_cast_entry(entry: String) -> int:
+	var stem := _path_stem(entry)
+	if stem == "":
+		return -1
+	for field in ["path", "resolved_path"]:
+		for number in cast_libs:
+			if _path_stem(str(cast_libs[number].get(field, ""))) == stem:
+				return int(number)
+	for number in cast_libs:
+		if str(cast_libs[number].get("name", "")).to_lower() == stem:
+			return int(number)
+	return -1
+
+
+## A path's filename without its extension, lower-cased, in any separator this
+## corpus writes. "" for an empty path, so the internal cast — whose declared
+## path is empty — cannot be matched by an entry that is also empty.
+static func _path_stem(path: String) -> String:
+	return path.replace(":", "/").replace("\\", "/").get_file().get_basename().to_lower()
 
 
 func _cast_for(cast_lib: int):

@@ -29,17 +29,22 @@ static func child_lib(child: Dictionary, owner_lib: int, table) -> int:
 	var name := str(child["cast_name"])
 	if name == "":
 		return owner_lib
-	# A `ccl ` entry is the cast's authoring path, in whichever separator the
-	# machine that saved the movie used: Mac colon form in the 1997 originals, a
-	# Windows path in a file that has been through a converter. Only the filename
-	# is of any use, so both separators are normalised before it is taken.
-	var stem := name.replace(":", "/").replace("\\", "/").get_file().get_basename().to_lower()
-	for number in table.cast_libs:
-		if str(table.cast_libs[number].get("name", "")).to_lower() == stem:
-			return int(number)
+	# **A library's name and its file path need not agree, and this used to match
+	# only the name.** `DirectorCastTable.lib_for_cast_entry` is the engine's one
+	# copy of the rule -- declared path, then resolved path, then name, by exact
+	# stem equality -- and this function carried a second copy that skipped the
+	# first two. `piposh-dream/meet5.dir` links
+	# `macintosh hd:arcade:origina:psyco2.cst` under the *name* `psyco`, so its
+	# `ccl` stem `psyco2` matched nothing and children 89-93 of `Internal:37` fell
+	# back to the loop's own cast; the same movie does it again with `chor2.cst`
+	# as `chor`. `bugs.md` 109. Two copies of one rule is how they drifted, so
+	# there is now one.
+	var found: int = table.lib_for_cast_entry(name)
+	if found >= 0:
+		return found
 	# Unresolvable, which for a converted file is the normal case rather than the
-	# exception: DAY1's `ccl ` holds a single truncated local path
-	# (`...\PIP2DATA\won`) that names none of its five libraries.
+	# exception: DAY1's `ccl ` holds a single local path that names none of its
+	# five libraries.
 	#
 	# The loop's own library is the answer, not a guess at the name. A film
 	# loop's children live in the cast the loop lives in, and that is knowledge

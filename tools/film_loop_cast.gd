@@ -86,13 +86,15 @@ func _init() -> void:
 			movies.append(str(rel))
 
 	h.begin("an indexed child resolves in the cast its own container's ccl names")
+	h.begin("the engine's own ccl resolver agrees with the size oracle")
 	h.begin("a disputed own-cast child is in a loop no score plays")
 	h.begin("a loop's ccl list is its own container's")
 	h.begin("every ccl entry names a cast the movie can address")
 
 	var tally := {
 		"children": 0, "loops": 0, "indexed": 0, "indexed_decisive": 0,
-		"indexed_wrong": 0, "own": 0, "own_decisive": 0, "own_disputed": 0,
+		"indexed_wrong": 0, "engine_wrong": 0,
+		"own": 0, "own_decisive": 0, "own_disputed": 0,
 		"own_disputed_played": 0, "borrowed": 0, "unnameable": 0,
 	}
 	var lines: Array[String] = []
@@ -114,6 +116,26 @@ func _init() -> void:
 			% [int(tally["indexed_wrong"]), int(tally["indexed_decisive"]),
 				int(tally["indexed"]), int(tally["loops"]), movies.size()])
 	h.complete("an indexed child resolves in the cast its own container's ccl names")
+
+	# **The engine's answer, separately from the player's.** The check above
+	# measures `FilmLoopView.child_lib`, which is what reaches the screen and is
+	# the right thing for a harness to assert. This one measures
+	# `DirectorCastTable.lib_for_cast_entry`, the engine's single copy of the
+	# rule, against the same oracle.
+	#
+	# Two checks rather than one because `bugs.md` 109 is precisely the distance
+	# between them: the engine resolver matches a `ccl ` path against a library's
+	# *path* and then its name, and `child_lib` still carries its own older copy
+	# that matches the name alone. `piposh-dream/meet5.dir` links `psyco2.cst`
+	# under the name `psyco`, so the name-only rule misses and five children of
+	# `Internal:37` draw out of the loop's own cast instead. Until `child_lib`
+	# calls the resolver, this check is green on `piposh-dream` and the one above
+	# is red, and the difference is the whole remaining bug.
+	h.check("the engine's ccl resolver lands where the size oracle says",
+		int(tally["engine_wrong"]) == 0 and int(tally["indexed_decisive"]) > 0,
+		"%d of %d decided indexed children resolved elsewhere"
+			% [int(tally["engine_wrong"]), int(tally["indexed_decisive"])])
+	h.complete("the engine's own ccl resolver agrees with the size oracle")
 
 	h.check("no played loop's own-cast child contradicts its size",
 		int(tally["own_disputed_played"]) == 0,
@@ -154,10 +176,6 @@ func _sweep(paths, rel: String, tally: Dictionary, lines: Array[String]) -> void
 	for n in table.cast_libs:
 		table.cast_for(int(n))
 
-	var by_name := {}
-	for n in table.cast_libs:
-		by_name[str(table.cast_libs[n].get("name", "")).to_lower()] = int(n)
-
 	# Only built when something is disputed, which is normally never.
 	var played: Dictionary = {}
 	var played_read := false
@@ -177,7 +195,7 @@ func _sweep(paths, rel: String, tally: Dictionary, lines: Array[String]) -> void
 		for entry in own_list:
 			if str(entry).strip_edges() == "":
 				continue
-			if _lib_of(by_name, str(entry)) < 0:
+			if _lib_of(table, str(entry)) < 0:
 				tally["unnameable"] = int(tally["unnameable"]) + 1
 				lines.append("%s  ccl entry %s names no linked cast" % [rel, str(entry)])
 
@@ -209,6 +227,21 @@ func _sweep(paths, rel: String, tally: Dictionary, lines: Array[String]) -> void
 						continue
 					var bucket := "indexed_decisive" if named else "own_decisive"
 					tally[bucket] = int(tally[bucket]) + 1
+					# Two answers to the same question, on purpose. `engine` is
+					# `DirectorCastTable.lib_for_cast_entry`, the engine's one
+					# copy of "which library does this `ccl ` entry name"; `got`
+					# is what the player actually draws with. They are the same
+					# number today for every corpus but `piposh-dream`, where
+					# `bugs.md` 109 is exactly the gap between them — see the
+					# check below.
+					if named:
+						var engine: int = table.lib_for_cast_entry(str(kid["cast_name"]))
+						if engine != truth:
+							tally["engine_wrong"] = int(tally["engine_wrong"]) + 1
+							lines.append("%s  ENGINE %s:%d child %d wants %s, resolver said %s" % [
+								rel, str(table.cast_libs[lib]["name"]), number,
+								int(kid["cast_id"]), _name_of(table, truth),
+								_name_of(table, engine)])
 					var got: int = FilmLoopView.child_lib(kid, lib, table)
 					if got == truth:
 						continue
@@ -277,11 +310,16 @@ func _oracle(table, kid: Dictionary) -> int:
 	return int(fits[0]) if fits.size() == 1 else -1
 
 
-func _lib_of(by_name: Dictionary, entry: String) -> int:
-	var stem := entry.replace(":", "/").replace("\\", "/").get_file().get_basename().to_lower()
-	if stem == "":
-		return -1
-	return int(by_name.get(stem, -1))
+## **Through the engine's own resolver, not a second copy of it.** This function
+## used to hold its own stem-against-name match, identical to the one in
+## `scenes/preview/film_loop_view.gd:child_lib`, and the two agreed by being the
+## same mistake twice: `piposh-dream/meet5.dir` links `psyco2.cst` under the name
+## `psyco`, so both answered "no such library" to a `ccl ` entry naming a library
+## the movie plainly has. A harness carrying its own copy of the rule it is
+## checking cannot report that the rule is wrong — it can only report that the
+## code agrees with it. `DirectorCastTable.lib_for_cast_entry` is the one copy.
+func _lib_of(table, entry: String) -> int:
+	return table.lib_for_cast_entry(entry)
 
 
 func _name_of(table, lib: int) -> String:

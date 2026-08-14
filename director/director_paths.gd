@@ -31,6 +31,10 @@ const CONTAINER_EXTENSIONS := ContainerName.ALL
 ## is meant to run any Director title. `director_game.cfg` ships per game.
 var root: String = ""
 var boot_movie: String = ""
+## Why the last `load_config` answered what it did. Empty when the pair is both
+## configured and openable; set for the two ways it can be neither. Read it
+## rather than inferring from the return value -- see `boot_resolves`.
+var error: String = ""
 
 ## Lowercased path relative to `root` -> the real path, for every container
 ## found under the root. Built once, on first use.
@@ -44,16 +48,84 @@ var _indexed := false
 ## setup problem to report rather than something to paper over with a default:
 ## a built-in fallback would be one title's name living in the engine, and would
 ## turn "the config is missing" into "the wrong game silently loaded".
-func load_config(config_path: String = CONFIG_PATH) -> bool:
+## `force_root` names a root the way `--root` does, for a caller that already
+## knows which title it wants and has no command line to say so with.
+##
+## **It exists so the override path can be tested at all.** The flags are read
+## from `OS.get_cmdline_user_args()`, and a process has exactly one command line,
+## so a harness that wants to check that *every* root boots on `--root` alone
+## could only ever check the one it was started with — which is how `bugs.md` 111
+## survived: a bare run passes whether or not the bug is there, and only the one
+## pinned root exposes it. `tools/root_boot.gd` drives all six through here in one
+## process, and the assertion goes red for the right reason with the fix removed.
+##
+## Same code path as the flag, deliberately, including the per-root boot lookup
+## below: a seam that took a shortcut past the thing it is testing would be worse
+## than no seam. `--root` still wins over it, so pinning a run from the command
+## line beats anything a caller asks for in code.
+func load_config(config_path: String = CONFIG_PATH, force_root: String = "") -> bool:
+	error = ""
 	if not GameConfig.exists(config_path):
+		error = "no game configured: %s" % config_path
 		return false
 	var cfg := GameConfig.merged(config_path)
 	root = str(cfg.get_value("game", "root", ""))
 	boot_movie = str(cfg.get_value("game", "boot_movie", ""))
-	root = _override_root(root)
+	root = _override_root(root, force_root)
 	root = beside_the_executable(root)
+	# **`--root` moves the boot movie with it.** `[game] boot_movie` describes the
+	# root `[game] root` names and nothing else, so carrying it across a `--root`
+	# leaves the engine pointed at a container of the *previous* title -- which is
+	# the whole of `bugs.md` 111 and half of `bugs.md` 51. The config already
+	# answers the question per root, in the `[root.<name>] boot` the launcher
+	# reads through `title_list.gd`; this is the same answer reaching the same
+	# question from the command line instead of from a menu.
+	#
+	# Only when the root actually moved, so a plain run is untouched and
+	# `[game] boot_movie` keeps beating the mapping for the root it is about --
+	# which is what `director_game.cfg` says beside those sections. `--boot` is
+	# applied after and beats both, so `gate.sh`'s `--root X --boot Y` is
+	# unaffected in either direction.
+	if force_root != "" or _root_overridden():
+		boot_movie = str(cfg.get_value("root.%s" % root.get_file(), "boot", boot_movie))
 	boot_movie = _override_boot(boot_movie)
-	return root != "" and boot_movie != ""
+	if root == "" or boot_movie == "":
+		error = "the config names no %s" % ("game root" if root == "" else "boot movie")
+		return false
+	# **Refuse a root whose boot movie is not in it**, rather than answering with
+	# a pair that cannot open anything. The caller that loads the boot movie
+	# already reports this well (`scenes/preview/boot.gd` lists candidate
+	# containers), but it is not the only caller: `AudioDirector` reads this pair
+	# for its sound index, every survey in `tools/` reads it, and the preview goes
+	# on to run with no movie loaded at all -- which is the state where
+	# `lingo_go_movie` dereferences a null movie and raises a bare
+	# `Invalid access to property 'path' on a base object of type 'Nil'`.
+	# `bugs.md` 111: five of `rating`'s minigames were measured as broken through
+	# exactly that, and none of them was.
+	#
+	# **A finding rather than a refusal**, because the two names are the whole
+	# diagnosis and losing them costs more than the false start does: `error`
+	# carries the root *and* the boot movie, and `boot_resolves()` is the question
+	# a caller asks when it wants a yes or no. Returning false here instead would
+	# collapse "this root does not boot that movie" into "no game configured",
+	# which is a different setup problem with a different fix, and would stop
+	# every `--all` corpus survey -- which never opens the boot movie -- from
+	# running against a root at all.
+	if boot_path() == "":
+		error = "root %s has no boot movie %s" % [root, boot_movie]
+	return true
+
+
+## Whether the configured root actually holds the configured boot movie.
+##
+## Separate from `load_config`'s return value on purpose. "No game is configured"
+## and "this game does not boot that container" are different problems with
+## different fixes, and a caller that only surveys a corpus (`--all` over every
+## container under the root) is entitled to the second without being stopped: it
+## never opens the boot movie. A caller that *does* open it -- the player -- gets
+## the sentence out of `error`, with both names in it.
+func boot_resolves() -> bool:
+	return boot_path() != ""
 
 
 ## Where the games are, whether they were packaged or shipped beside the binary.
@@ -155,17 +227,45 @@ static func beside_the_executable(wanted: String) -> String:
 ## itself -- would index its sounds against whatever the config still said and
 ## the title would run silent. `--root` beats it, so a save can be forced open
 ## against another corpus deliberately.
-static func _override_root(from_config: String) -> String:
-	var wanted := _flag("--root")
+static func _override_root(from_config: String, forced: String = "") -> String:
+	# The flag beats `forced`, so a run pinned from the command line stays pinned
+	# whatever a caller asked for in code -- `gate.sh` passes `--root` to every
+	# harness and must not be talked out of it.
+	var wanted := _wanted_root()
 	if wanted == "":
-		var save := _flag("--save")
-		if save != "":
-			wanted = _root_from_save(save)
+		wanted = forced
 	if wanted == "":
 		return from_config
 	if wanted.begins_with("res://"):
 		return wanted
 	return GAMES_DIR.path_join(wanted)
+
+
+## The root the command line asks for, "" when it asks for none.
+##
+## Its own function because two questions need it and they are not the same one:
+## `_override_root` wants the value, and `load_config` wants to know **whether
+## the command line named a root at all**, so that it can stop carrying
+## `[game] boot_movie` -- which describes the *configured* root -- across to one
+## the flag chose instead.
+##
+## The test is "was the flag given", not "is the answer different from the
+## config", and the difference only shows on `--root piposh2` against a config
+## that already says piposh2. Both readings are safe there, because
+## `[root.piposh2] boot` and `[game] boot_movie` name the same container; the
+## flag-given reading is chosen because it is the one that stays right when they
+## stop agreeing -- an explicit `--root` is a statement about which title to run,
+## and the title's own mapping is what answers it.
+static func _wanted_root() -> String:
+	var wanted := _flag("--root")
+	if wanted != "":
+		return wanted
+	var save := _flag("--save")
+	return _root_from_save(save) if save != "" else ""
+
+
+static func _root_overridden() -> bool:
+	return _wanted_root() != ""
 
 
 ## `--boot <container>` on the command line beats the config, for every reader.

@@ -7034,3 +7034,391 @@ that exists so the two guards can never drift apart again.
 The cue-point caveat above stands and is still unsolved: `is_past_cue_point` is
 paced by `get_playback_position` and would still lag on a slow device. No script
 in the corpus names a cue point.
+
+---
+
+# The 2026-08-14 second sweep
+
+Ten entries resolved in one pass by four agents working disjoint file sets, plus
+one new bug found twice from opposite directions and fixed. Three of the ten are
+**not bugs**, and each says what the evidence was rather than that somebody looked
+again.
+
+The pattern worth carrying forward: **five of the ten were instruments lying, not
+engines misbehaving.** 105 was a tool reporting a cold score as a live one; 110
+was one bucket holding "this member type has no renderer" and "the artwork failed
+to decode"; 112 does not reproduce at all; 113 was a probe asking a mouse-polled
+movie for hotspots; 114 was a survey resolving a member reference against every
+cast library instead of the one its record names. `porting-fidelity-verification`
+says to distrust the harness before the code, and this sweep is the strongest
+evidence for that rule the project has produced.
+
+The entries below are kept as they were written, because what was believed at the
+time is the record. The verdicts are here:
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 105 | **Fixed** | `tools/hotspots.gd` takes `--do`, plays in with the movie's own `go`, prints how it reached the frame on **every** run, and fails a check when a `--do` step never fires. `--at` and `--opaque` were added in the same pass and are what root-caused 108. |
+| 107 | **Fixed** | `moveToFront`/`moveToBack` bound, with the stage in the window stack (Director §14). `tools/window_order.gd` drives two real windows through compiled Lingo: 25 checks, 12 fail with the binding removed. |
+| 108 | **Fixed, and the entry's premise was wrong** | Channel 94 *is* eligible. The descent walks past it because its Matte artwork has no opaque pixel anywhere — because the artwork never decoded. `0 of 1950 sampled points opaque, texture: NONE`. That is 116 below. |
+| 109 | **Fixed, and it is not 116** | An `MCsL` library's *name* and its *file path* need not agree. `meet5.dir` links `psyco2.cst` under the name `psyco` (and `chor2.cst` as `chor`), and two separate copies of the resolver matched the `ccl` stem against names only. One copy now, `DirectorCastTable.lib_for_cast_entry`: path, then resolved path, then name, exact stem equality. `psyco`'s path is non-empty, so 116's embedded arm was never involved. |
+| 110 | **Not a bug, and the report was the bug** | All eight are `vectorShape` Xtras — Director 7 vector art that neither this port nor the reference draws, correctly. `"child has no art"` was one bucket holding an undrawable member type and a decode failure. `sprite_art.gd:decline_reason` splits them; `tools/film_loop_children.gd` holds the painter to a census derived off the cast. |
+| 111 | **Fixed at the source and at the symptom** | `--root <name>` now takes its boot movie from `[root.<name>] boot`, the mapping the launcher already read. And `lingo_go_movie` refuses a null `_movie` instead of dereferencing it — the raw `Invalid access to property 'path'` was a sentence about GDScript that sent two sessions after five Rating minigames that were not broken. |
+| 112 | **Does not reproduce** | Four runs of the exact gate entry: 0 occurrences, 49-line log. 0 again with `_key_overlay` deliberately left armed through `quit()`. No speculative guard was added for a symptom that cannot be produced; if it returns, the platform needs recording. |
+| 113 | **Not a bug. The chess board works.** | `ches1` has no hotspots *by construction* — `BehaviorScript 81` is `if the mouseDown then go(marker(1)) else go(marker(0))` with channel 8 cycling seven members. It is a slot machine, polled, not clicked. Driven with `--await ches1 --poll-mouse` it sets `ches1 = suz` and `ches2 = pat` and runs on to `talkonches1`/`choosemore`. The 0-of-900 was the instrument asking a mouse-polled movie for hotspots. |
+| 114 | **Not a bug. Reading 3.** | `sound_survey` resolved every 16-bit slot against *every* cast library and preferred any `sound` answer. The port never does that — the main channel is six 48-byte records with `castLib` at +0 and member at +2. In the declared library all 29 frames resolve to `script`. The assertion was made **stronger**, not relaxed, and is now controlled by perturbing `director_score.gd`'s own offsets. |
+| 115 | **Fixed** | `tools/sound_tempo_wait.gd` finds a real 255/254 cell (276 in 48 of `rating`'s containers, matching the filed figure), lands on it, plays a real sound into it, and asserts the hold and the release — with the control that a **silent** channel does not hold the same frame. |
+
+---
+
+## 116. A cast library embedded in the movie's own container can hand out no payload at all
+
+**Status:** FIXED · **Area:** `director/director_cast_table.gd:file_for` · found
+2026-08-14 by two agents from opposite directions, and never open for a day
+
+`MCsL` may name a library with an **empty path** — a second cast living inside
+this `.dir`. `_cast_for` opens it correctly, matching its `castID` against the
+`KEY*` owner of each `CAS*`, and sets `resolved_path` to the movie's own file.
+`file_for` then resolved through `_by_path`, and `_by_path` is only ever written
+by the *external* `.cst` arm — so the lookup missed and the function fell through
+to `return _movie if cast_lib == 1 else null`.
+
+Every payload in the engine is fetched through `file_for`: `sprite_art.gd:89` for
+a bitmap's `BITD`, `palette_view.gd:80` for a `CLUT`, `film_loop_view.gd:66` for a
+loop's `SCVW`, `preview/sound.gd` and `preview/media.gd` for samples,
+`member_payload_size` for `the size of member`. **Each has a quiet
+`if f == null: return null` beside it**, so a member of an embedded library
+resolves, reports its name and type and rect, and draws or plays nothing.
+
+Measured over all eight roots: **18 libraries, 969 members with a payload chunk,
+all 969 unreadable.** Not a test-corpus problem — `GATE_ROOT`'s own
+`piposh2 PIP2DATA/GARDUG.dir` lib 2 `heznigt` hid 294, `piposh PIPDATA/ENDDAYS.dir`
+lib 2 `master` 43, `piposh-dream dinner2.dir` lib 13 `Hafaka` 23,
+`itamar-magichat hats.dir` libs 2/3/5 (81 + 39 + 25, the last of them sound),
+`itamar-park torfim.dir` lib 3 `Panel` 92.
+
+**Found twice, independently, neither agent looking for it.** One was chasing
+Magic Hat's "48 sound chunks no cast walk addresses" — which turned out to be 48
+the walk addresses perfectly and cannot read the bytes of. The other was chasing
+Itamar Park's dead book hotspot, which is member 3:1 of exactly such a library.
+
+Fixed by answering `_movie` for a library whose declared path is empty, before
+the `_by_path` lookup. **Returned rather than registered**: `close()` closes every
+file in `_by_path`, and the movie's container belongs to the caller, so
+registering it would close the movie out from under the preview. The dead
+`cast_lib == 1` tail is now `return null` — an external cast that did not resolve
+must not be handed the movie's container, which holds none of the chunks asked
+for.
+
+`tools/embedded_cast_payload.gd` is the harness and went into `ALL` in the same
+commit as the fix, never before it: a standing red teaches everyone to read past
+reds. `18 of 18 answer null, hiding 969 member payload(s)` → `0 of 18`.
+
+## 105. `tools/hotspots.gd` reports the score's members on a frame only the movie's init reaches, and says nothing about it
+
+**Status:** OPEN · **Area:** `tools/hotspots.gd` · found while diagnosing the hex
+board, after the tool's false reading had already cost a session
+
+The tool `_advance`s from frame 0 and pins `_index`, and it warns only when it
+**fails** to arrive. On `piposh-dream/hex1.dir` frame 216 it arrives, prints no
+caveat, and reports all 58 board channels as `1:56` /
+`no behaviour, member script declares none  [1:104 unresolved]`, concluding
+"4 of 71 sprites can answer a click". Played into the same board, six of those
+channels hold members 2 and 3 and three are eligible through
+`member script declares mouseDown/mouseUp`:
+
+```
+cold:  36    1:56   (278,412) 77x43   8  pixel  no   no behaviour, member script declares none  [1:104 unresolved]
+live:  ch36  score 1:56  live 1:3  (284,412) 65x42  why='member script declares mouseDown/mouseUp'
+```
+
+So **the instrument said the board was dead about a board with three clickable
+pieces on it**, and that reading was the starting point for the absorption
+hypothesis and four wrong turns in one session — after `tools/hotspots.gd` had
+already, correctly, been cited as the authority on the `eat.dir` question that
+became `docs/bugs-closed.md` 101. A tool that is right about a cold score and
+silent about the difference is worse than one that refuses, because its output is
+quoted as the state of the frame.
+
+`_effective` **is** applied per sprite, so this is not the score-versus-effective
+split fixed in `interaction.gd:script_for_click`. It is that arriving at a frame
+through `_advance` is not the same as reaching it by playing: the init that swaps
+member 56 for member 3 on 58 channels never ran.
+
+Reproduce, and compare the two:
+
+```
+godot --headless --path . --script tools/hotspots.gd -- --root piposh-dream --file hex1.dir --frame 216
+godot --headless --path . --script tools/cast_script_sprite.gd -- --root piposh-dream
+```
+
+Minimum honest fix: print the caveat whenever the walk cannot show that the
+frame's own initialisers ran, not only when the playhead stops short. The wider
+version is a `--play` mode, which `tools/puppet_members.gd` already has and which
+is what made the difference visible here.
+
+**Measured and explicitly not a bug, so nobody re-opens it:** the 58 tiles each
+carry sprite behaviour `1:104`, a script member named `spriteClicked` with
+`script_id = 0`, `data_chunk_id = -1`, no source and no `Lscr` chunk — empty in
+the container, identically in all three hex movies. The tiles are therefore
+correctly not click targets in their unlit state, and
+`behaviour_scripts`'s decision to drop unresolved attachments is right here.
+`e1ca332b`'s sourceless-script census is **not** contradicted: it counted
+`script_id != 0`, and this member is 0, so it was never in that population.
+
+---
+
+## 107. `moveToFront` and `moveToBack` are unbound, so a title with two windows cannot order them
+
+**Status:** OPEN · **Area:** `scenes/preview_lingo_host.gd`, `scenes/preview/windows.gd`
+
+`docs/LINGO_SURFACE.md` §7.4 lists both among the window methods. Nothing binds
+either. Every Itamar Park boot prints them in `builtins unbound`:
+
+```
+builtins unbound : {"movetofront":2, ...}
+```
+
+Park calls `moveToFront` four times and `moveToBack` twice.
+
+**Currently masked, and that is the reason to file it rather than to shrug.**
+`windows.gd` parents a window above the stage unconditionally, so the one
+arrangement Park asks for is the one it already gets. A title that opens *two*
+windows has no way to say which is in front, and the symptom then is not an error
+but a window drawn behind the one it was raised over — which reads as a drawing
+bug and is a binding that was never written.
+
+Reproduce:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/scratch/deepplay.gd -- --root res://test-games/itamar-park --file torfim/torfim.dir --settle 12
+```
+
+---
+
+## 108. Itamar Park's study section is unreachable: the book hotspot is drawn, visible and answers no click
+
+**Status:** OPEN · **Area:** `scenes/preview/interaction.gd` or the hit test
+
+Channel 94 at `AntPlay` holds `bookpas-NRM`, member 3:1, rect (266,416) 50x39.
+It draws, it is visible, and three separate points inside it all resolve to
+channel 0:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/scratch/deepplay.gd -- \
+  --root res://test-games/itamar-park --file torfim/torfim.dir --settle 12 --steps 560 \
+  --do "play+10=ch11;Ant+30=code:49;AntPlay+50=xy:280,430"
+# clicked (280,430) frame 24  ch0  frame script BehaviorScript 24 - play frame  mouseUp:NO HANDLER
+```
+
+**The discriminator is that its neighbours work.** Channels 71 (telephone) and 72
+(ball) are hotspots on the same frame, behind the same `frameLabel contains
+"play"` guard, and both resolve correctly in the same run — 71 reaches `AntTele`
+and 72 reaches `AntLevels`. So this is not the guard, and not the frame: it is
+the hit test or the eligibility rule, for one channel that differs from its
+neighbours in some way nobody has named yet.
+
+Everything behind it is unreachable — `AntStudy` and the whole of `study/`.
+
+**What the next session needs first is an instrument, not a hypothesis.**
+`tools/hotspots.gd` is what would say whether channel 94 is eligible at all, and
+it cannot reach `AntPlay`: getting there needs the space key, because
+`BehaviorScript 23` holds the world-explanation frame with `play frame the frame`
+until its own `on keyDown` matches keyCode 123-126 or 49. A mouse-only walk sits
+there for ever — measured at 596 ticks with every later step unfired. Either
+`hotspots.gd` gains a way to press a key on the way in, or this is answered by
+`deepplay.gd` alone, which is a driver and not an instrument.
+
+---
+
+## 109. `film_loop_cast` is red on `piposh-dream`, and the gate only ever runs it pinned to `piposh2`
+
+**Status:** OPEN · **Area:** `director/director_film_loop.gd`, `gate.sh`
+
+2 of 4 checks fail. `meet5.dir Internal:37`, children 89-93: *wants `psyco(2)`,
+resolved `Internal(1)`*, plus one `ccl` entry naming no library.
+
+```
+godot --headless --path . --script tools/film_loop_cast.gd -- --root piposh-dream --verbose
+```
+
+`ALL` carries `film_loop_cast` bare, which is `GATE_ROOT` — `piposh2`, where it
+passes. `film_loop_restart`, `film_loop_nesting` and `cast_script_sprite` are all
+already pinned to `piposh-dream` for exactly this reason, so the pattern for
+fixing the coverage half is established and beside it. **Both halves are the
+entry**: the resolution bug, and a suite that could not see it.
+
+---
+
+## 110. `plane1.dir`: 8 of 37 film-loop children draw nothing, and it is not the closed nested-loop cause
+
+**Status:** OPEN · **Area:** `scenes/preview/film_loop_view.gd` or `director/director_film_loop.gd`
+
+Reproduced in two independent runs of `tools/minigame_probe.gd`:
+
+```
+{"child drawn":29,"child has no art":8,"children offered":37}
+```
+
+The flyer plays — it initialises `vertnum`, `horznum`, `hellfire` and `borderx`
+and its HUD fields update — so this is art and not logic. It is the **only**
+movie in the minigame corpus with a non-zero miss, which is what makes it worth a
+number rather than a sweep.
+
+**Explicitly not the Hatuli projectile bug.** `plane1.dir` is not one of the ten
+nested-loop sites `docs/bugs-closed.md` enumerates, so whatever this is, it is a
+second cause and closing it against that entry would be wrong.
+
+---
+
+## 111. `--root <name>` alone raises a raw Nil error on `rating` instead of refusing
+
+**Status:** OPEN · **Area:** `scenes/director_preview.gd:860`, `lingo_go_movie`
+
+`--root rating` without `--boot` leaves the boot movie coming from the config
+(`strtgame.dir`, which is not rating's), the preview holds no movie, and the next
+`go to movie` raises:
+
+```
+Invalid access to property 'path' on a base object of type 'Nil'
+```
+
+Five of rating's minigames read as `no-open` through that route and **none of
+them is broken** — `--boot MAINMENU.dir` reaches all five. So the cost is not the
+five, it is that a tool reports "cannot open" for a configuration error and a
+session spends its time on the wrong question.
+
+Two things are wrong and only one of them is this entry's: rating needs its own
+boot movie named, which is documentation; and `lingo_go_movie` dereferences a
+null movie rather than refusing with a sentence, which is the engine. A `go to
+movie` with no movie loaded is a state the engine can be in, and it should say so.
+
+---
+
+## 112. A roulette teardown prints ~1,200 `Nonexistent function 'draw'` lines after the run has passed
+
+**Status:** OPEN · **Area:** `scenes/preview/sprite_art.gd`, `film_loop_view.gd`, via `StagePaint.paint_frame`
+
+Seen at the end of `key_overlay:--root@piposh@--boot@PIPDATA/ROULLETE.dir`,
+*after* it prints PASS. The reported site is `scenes/director_preview.gd:2002`,
+which is `StagePaint.paint_frame` — reached through `SpriteArt.draw` /
+`FilmLoopView.draw` while the tree is being torn down and the callee is already
+freed.
+
+Harmless to the assertion and not harmless to the suite: 1,200 lines of engine
+error after a green verdict is how a real error stops being read. It is a
+teardown ordering fault — the painter runs one more time on a frame whose
+children have gone — rather than anything about roulette.
+
+---
+
+## 113. Piposh 2's chess board is reached and offers no click in 900 ticks, and nobody has separated "dead" from "the intro had not finished"
+
+**Status:** OPEN · **Area:** unknown; needs an instrument before a diagnosis
+
+`ches1` frames 138-144 draw the board — 16 pieces, 5 of 17 channels swapping
+member — and across 900 ticks **0 offered a hotspot** (`tools/minigame_probe.gd`).
+Piposh Dream's `hex1` is the same shape from the other side: its intro cycles to
+frame 148 and the board is at 216, so 900 ticks never arrived at all.
+
+**Both are measured at a tick budget, and a tick budget cannot tell a dead board
+from a long intro.** `bugs.md` 105 already records that the hex board *does* have
+three eligible tiles when it is played into properly, which is the reason to
+distrust the chess reading rather than to file it as a fault.
+
+What is missing is a probe that waits on a **marker** rather than on a tick
+count. That is the entry: until it exists neither of these is diagnosable, and
+both will keep being re-reported.
+
+---
+
+## 114. The frame-script slot resolves to a *sound* member in 29 frames of the two recovered corpora, and nobody has separated the three things that could mean
+
+**Status:** OPEN · **Area:** `director/director_score.gd` main-channel decode, or `tools/sound_survey.gd`'s resolution · found 2026-08-14, the first time that harness was pointed at `test-games/`
+
+`tools/sound_survey.gd` asserts that **no slot the port reads as a member
+reference resolves to a sound member**, because a hit there would mean an offset
+is wrong. It has passed on `piposh2` and `piposh` since it was written. Pointed
+at the two recovered corpora it fails on both, at the same offset:
+
+```
+godot --headless --audio-driver Dummy --path . --script tools/sound_survey.gd -- --root res://test-games/itamar-magichat --all
+godot --headless --audio-driver Dummy --path . --script tools/sound_survey.gd -- --root res://test-games/itamar-park --all
+```
+
+```
+itamar-magichat  FAIL  and no slot the port reads as a member reference names a sound  (offset 2 in 16 frame(s))
+itamar-park      FAIL  and no slot the port reads as a member reference names a sound  (offset 2 in 13 frame(s))
+```
+
+Offsets 2-3 are the **frame script member** (`KNOWN` in that tool, and
+`MEMBER_REFERENCE_SLOTS`). Both corpora have the sound members to collide with —
+39 reachable in Magic Hat, 66 in Park — and neither had ever been surveyed,
+because a bare `--root <name>` resolves under `games/` and nobody had passed the
+whole path.
+
+**Three readings, and this entry exists because no evidence yet separates them:**
+
+1. **The decode is wrong for these movies** and offset 2 is not the frame script
+   member here — in which case every frame script in both titles is being read
+   from the wrong bytes, and the symptom would be frame scripts silently not
+   running rather than anything visible.
+2. **The value is right and names a sound**, so the port resolves a frame script
+   to a sound member and dispatches nothing. Silent, and indistinguishable from a
+   frame with no script.
+3. **The tool is over-sensitive.** It resolves each slot *against every cast
+   library*, so a hit only proves that some library has a sound at that number.
+   A frame script naming script member 12 in library 1 would report a hit if
+   library 3 happens to hold a sound at 12.
+
+Reading 3 is the cheapest to test and should go first: resolve the slot in the
+frame's **own** library only and see whether the failures survive. If they do,
+the discriminator between 1 and 2 is whether those 29 frames have a frame script
+that runs — `tools/primary_scripts.gd` and the `lingo:` runtime errors say so
+directly.
+
+**Do not close this by relaxing the assertion.** It is the only check in the
+suite that would catch a main-channel offset being wrong in the direction that
+yields *more* member reference than there is, and it fired the first time it was
+shown data it had not seen. That is the check working.
+
+---
+
+## 115. Rating has 276 real wait-for-sound tempo cells and every harness that exercises one uses synthesised bytes
+
+**Status:** OPEN · **Area:** `gate.sh` coverage, `tools/frame_events.gd` · **not a defect in the engine** — the path is implemented and wired
+
+A tempo cell of 255 or 254 holds the playhead until sound channel 1 or 2 is
+finished. `director_score.gd:tempo_waits` decodes it,
+`director_frame_clock.gd:_arm_waits` sets `_waiting_sound` from it, and
+`holding()` counts it. So the feature is built.
+
+**What is not built is a single test that drives one out of a real movie.**
+`tools/frame_events.gd:366` synthesises the cell —
+`mixed.enter_frame({"tempo": 255, "tempo_cue": -1})` — and `movie_tempo.gd`
+tests the *decode* of 255 in isolation. `tools/sound_wait.gd` does not mention
+tempo at all. Every one of those was written against `GATE_ROOT`, and `piposh2`
+has **zero** such frames in its 61,371.
+
+`rating` has **276**: tempo 255 in 259 frames and tempo 254 in 17
+(`tools/sound_survey.gd --root rating --all`). `piposh`, `piposh-en`,
+`piposh-ru` and `piposh-dream` have none, so `rating` is the only corpus that
+can exercise this and it is not in any entry that would.
+
+This matters more than a coverage number because **those 276 frames just changed
+timing.** `docs/bugs-closed.md` 90 gave `soundBusy` a ceiling and `a9081c79`
+fixed the replay guard that ceiling broke; both move when a sound is considered
+finished, and a wait-for-sound tempo cell is the score-side consumer of exactly
+that question. Nothing asserted the frame-level path before or after.
+
+What the entry needs is a harness that plays a `rating` movie into one of those
+frames and asserts the playhead is held until the sound ends and then released —
+the same shape `pause_holds` has for a click. Adding `sound_wait:--root rating`
+is **not** it: that harness tests `soundBusy`'s logic and never reads a tempo
+cell, so it would pass having asserted nothing about this, which is the dark
+harness `gate.sh` warns about.
+
+Found by pointing `sound_survey` at every root instead of the configured one.
+That tool used to *assert* "no frame's tempo cell is a wait-for-sound", so it
+answered FAIL to the news that a title uses the feature; it prints the count as a
+finding now.
