@@ -46,6 +46,7 @@ func parse(lexer, script_name: String) -> Dictionary:
 	_i = 0
 	_name = script_name
 	_depth = 0
+	_open_ifs = 0
 	error = ""
 	error_line = 0
 	return _parse_script()
@@ -210,10 +211,29 @@ func _parse_handler() -> Dictionary:
 	var body := _parse_block(["end"])
 	if not _eat_kw("end"):
 		return _fail("expected end", _ln())
-	# `end mouseUp` names the handler again; swallow it.
+	## The word after `end` is advisory, and Director does not require it to be
+	## the handler's name.
+	##
+	## `checkEnd` in the reference's grammar compares it and *warns* on a
+	## mismatch — the handler still closes (`lingo-gr.y`'s `tEND ID` clause). This
+	## swallowed the word only when it matched, so `MASTER.CST MovieScript 34`,
+	##
+	## ```lingo
+	## on idle
+	##   ClockScript1
+	## end if
+	## ```
+	##
+	## closed the handler, left `if` behind, and then failed at the next token
+	## with `unexpected ""` — the whole script dropped, and with it the `idle`
+	## that drives Piposh 1's clock in the movies that have no `idle` of their
+	## own. Nothing distinguishes a mistyped terminator from a correct one here,
+	## which is exactly the reference's position.
+	##
+	## Only a word on the *same line* is taken: newlines are their own token, so
+	## a handler ending `end` followed by the next `on` cannot lose it.
 	if _k() == "ident" or _k() == "kw":
-		if _v().to_lower() == name.to_lower():
-			_advance()
+		_advance()
 	_skip_newlines()
 	return {
 		"node": "handler", "name": name, "params": params,
@@ -335,6 +355,36 @@ static func _is_place(node: Dictionary) -> bool:
 	].has(str(node.get("node", "")))
 
 
+## How many `if` blocks above this point are still waiting for their own
+## `end if`.
+##
+## **A one-line `if x then <stmt>` has no `end if` of its own, so the next one it
+## sees belongs to somebody else.** The single-line arm below used to swallow it
+## regardless, which is only harmless at the outermost level and is a stolen
+## terminator anywhere inside a multi-line `if`:
+##
+## ```lingo
+## if the timer > clockspeed then      -- opens a block, needs `end if`
+##   ...
+##   if globalhour >= "19" then go to movie ("trakday" & globalday & ".dxr")
+## end if                              -- eaten by the one-liner above
+## end                                 -- read as the outer if's `end if`
+## ```
+##
+## The handler's own `end` is then consumed as the outer `if`'s terminator and
+## the handler runs off the end of the source, which is reported at the last line
+## as `expected end` — a diagnostic pointing at the file's end and never at the
+## line that caused it. That is all five of Piposh 1's `MASTER.CST` CLOCK
+## SCRIPTs, in all three localisations, and the clock they drive is the movie's
+## own on-screen clock, so the symptom is a game whose time never advances rather
+## than anything that looks like a parse error.
+##
+## Counting only `if` is deliberate: a `repeat`, `case` or `tell` terminator is
+## `end repeat` / `end case` / `end tell`, and the one-liner's lookahead already
+## requires the literal word `if` after `end`, so no other block can lose its own.
+var _open_ifs := 0
+
+
 func _parse_if() -> Dictionary:
 	var line := _ln()
 	_advance() # if
@@ -350,24 +400,36 @@ func _parse_if() -> Dictionary:
 			if _k() != "nl" and _k() != "eof":
 				else_one = [_parse_statement()]
 			else:
+				# `if x then <stmt>` / `else` / block / `end if`: the block and
+				# the terminator are this statement's, so it is an open `if`
+				# while the block is being read.
+				_open_ifs += 1
 				else_one = _parse_block(["end", "else"])
+				_open_ifs -= 1
 				_finish_if()
-		elif _at_kw("end") and _at_word("if", 1):
+		elif _open_ifs == 0 and _at_kw("end") and _at_word("if", 1):
+			# Tolerated only where no enclosing `if` can be the owner. See
+			# `_open_ifs`.
 			_finish_if()
 		return {"node": "if", "cond": cond, "then": then_one, "else": else_one, "line": line}
 
+	_open_ifs += 1
 	var then_body := _parse_block(["end", "else"])
 	var else_body: Array = []
 	if _at_kw("else"):
 		_advance()
 		# `else if` chains without a matching `end if` per level.
 		if _at_kw("if"):
+			# The chain shares one `end if`, and the innermost `_parse_if`
+			# consumes it — so this level is no longer waiting for one.
+			_open_ifs -= 1
 			else_body = [_parse_if()]
 			return {"node": "if", "cond": cond, "then": then_body, "else": else_body, "line": line}
 		if _k() != "nl" and _k() != "eof":
 			else_body = [_parse_statement()]
 		else:
 			else_body = _parse_block(["end"])
+	_open_ifs -= 1
 	_finish_if()
 	return {"node": "if", "cond": cond, "then": then_body, "else": else_body, "line": line}
 

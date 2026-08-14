@@ -91,18 +91,41 @@ static func resolve(name: Variant, first: Array, table, qualified := false) -> A
 			and int(table.get_member(int(first[0]), int(first[1])).get("type", 0)) \
 				== Ink.TYPE_FIELD:
 		return first
+	## **A library is asked for a field of that name, not for that name.**
+	##
+	## Both arms below used to ask `number_of`, which answers the lowest-numbered
+	## member of the name *whatever its type*, and then rejected the answer if it
+	## was not a field. So a library holding a non-field of that name reported no
+	## field at all -- and, in the walk, the search moved on to the next library
+	## instead of to the next member. `SLOTMACH.dir`'s Xtra `credit` at 83 hid
+	## its own field `credit` at 97 exactly that way; `number_of_type` carries the
+	## evidence and the reference's rule.
+	##
+	## `first`'s answer is still preferred when it is a field, because the
+	## untyped and typed lookups must not disagree about a name only one of them
+	## can see -- and because a *number* designator (`field 122`) has already been
+	## resolved by `first` and has no name for the lookup below.
 	if qualified:
-		return []
+		# `field "x" of castLib Y` searches Y and nothing else, so the typed
+		# lookup replaces the walk rather than preceding it. `first[0]` is the
+		# library the designator named -- `members.gd:resolve_ref` never leaves
+		# it -- so this is that library, asked the question it should have been
+		# asked in the first place.
+		if first.is_empty():
+			return []
+		var named = table.cast_for(int(first[0]))
+		if named == null:
+			return []
+		var here: int = named.number_of_type(str(name), Ink.TYPE_FIELD)
+		return [int(first[0]), here] if here > 0 else []
 	var libs: Array = table.cast_libs.keys()
 	libs.sort()
 	for lib in libs:
 		var cast = table.cast_for(int(lib))
 		if cast == null:
 			continue
-		var number: int = cast.number_of(str(name))
-		if number <= 0:
-			continue
-		if int(cast.member(number).get("type", 0)) == Ink.TYPE_FIELD:
+		var number: int = cast.number_of_type(str(name), Ink.TYPE_FIELD)
+		if number > 0:
 			return [int(lib), number]
 	return []
 

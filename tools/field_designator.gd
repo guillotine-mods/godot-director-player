@@ -57,6 +57,12 @@ const Paths := preload("res://director/director_paths.gd")
 const ContainerName := preload("res://director/director_container.gd")
 const Ink := preload("res://director/director_ink.gd")
 const Members := preload("res://scenes/preview/members.gd")
+## For the fixture search only. Opening a container and reading its member
+## records costs milliseconds; `lingo_go_movie` compiles every script in the
+## movie and its linked casts, which on Piposh 1's rooms is seconds each and on
+## a 124-container corpus is the difference between a harness and a sweep.
+const ContainerFile := preload("res://director/director_file.gd")
+const Cast := preload("res://director/director_cast.gd")
 
 var _preview: Node = null
 var _interp = null
@@ -84,6 +90,9 @@ func _init() -> void:
 	_library_checks(h)
 	_property_checks(h)
 	_number_checks(h)
+	# Last, because it walks the corpus and leaves the preview on whatever movie
+	# offered its fixture.
+	await _type_collision_checks(h)
 
 	if Args.flag(args, "survey"):
 		await _survey()
@@ -385,6 +394,171 @@ static func _find_non_field_in_own_cast(table) -> int:
 		if int(m.get("type", 0)) != Ink.TYPE_FIELD and int(m.get("type", 0)) > 0:
 			return int(number)
 	return 0
+
+
+# ------------------------------------- the typed half (`name:type`, §11.8)
+
+
+## `field "x"` where a member of another type also answers to `x`.
+##
+## Director keeps **two** name keys per member — `name` and `name:type` — and a
+## typed designator asks the second (`reference/scummvm/cast.cpp:174-186`, built
+## at `rebuildCastNameCache`, 2448). So a name is unique per type, not per
+## library, and a bitmap or an Xtra sharing a field's name is simply not a
+## candidate for `field "x"`.
+##
+## This port had only the untyped key. `field "x"` asked for the lowest-numbered
+## member of that name whatever its type, rejected the answer when it was not a
+## field, and moved on to the **next library** rather than to the next member —
+## so one non-field of that name in a library hid every field of that name in it.
+## `SLOTMACH.dir` is what that costs: an Xtra `credit` at 83 hid the field
+## `credit` at 97, so `value(the text of field "credit")` was 0 on every pull of
+## the handle and the machine told the player they had not inserted a coin, while
+## the coin slot's `put ... + 1 into field "credit"` wrote into nothing.
+##
+## The fixture is found, not named: the corpus is searched for a library where
+## one name is held by a field *and* by a non-field with a **lower** member
+## number, which is the only arrangement where the typed and untyped lookups can
+## disagree. A corpus offering none says so and asserts nothing rather than
+## passing over a check that cannot fail.
+func _type_collision_checks(h: Harness) -> void:
+	var case := "`field \"x\"` finds the field when another type owns the name first"
+	h.begin(case)
+	var table = _preview.get("_table")
+	var found: Dictionary = _find_type_collision(table)
+	var here := str(_preview.call("movie_name"))
+	if found.is_empty():
+		# Searched with the container reader rather than by opening each movie in
+		# the player: the fixture is a fact about a cast's member records, and
+		# paying a full Lingo compile per container to learn it turned this check
+		# into a ten-minute sweep. One `lingo_go_movie` is spent, on the winner.
+		var where_movie := _corpus_collision()
+		if where_movie != "":
+			_preview.call("lingo_go_movie", where_movie, null)
+			await process_frame
+			table = _preview.get("_table")
+			found = _find_type_collision(table)
+			here = where_movie
+	if found.is_empty():
+		print("no library in this corpus gives one name to a field and to an "
+			+ "earlier member of another type -- nothing asserted here")
+		h.complete(case)
+		return
+
+	var name := str(found["name"])
+	print("type-collision fixture: %s  %s -> field %d:%d, %s %d:%d" % [
+		here, name, int(found["lib"]), int(found["field"]),
+		str(found["other_type"]), int(found["lib"]), int(found["other"]),
+	])
+	var where: Array = _preview.call("_resolve_field", name, "")
+	h.check("the designator resolves to the field and not to the %s"
+			% str(found["other_type"]),
+		where == [int(found["lib"]), int(found["field"])], JSON.stringify(where))
+	# Through the interpreter as well, because the resolver is not what a movie
+	# calls: `value(the text of field "x")` reading 0 is the shape the player saw,
+	# and a resolver that is right while the read is wrong would still be broken.
+	var authored := str((table.get_member(
+		int(found["lib"]), int(found["field"])) as Dictionary).get("text", ""))
+	var text: Variant = _value("the text of field \"%s\"" % name)
+	h.check("and a script reads the field's own text through it",
+		str(text) == authored, "%s vs authored %s" % [
+			JSON.stringify(text), JSON.stringify(authored)])
+	# The untyped designator is deliberately *not* asserted to move: `member "x"`
+	# is `kCastTypeAny` in the reference and still answers the earlier member.
+	var any: Array = _preview.call("lingo_member_where", name)
+	h.check("while the untyped `member \"x\"` still answers the earlier member",
+		any == [int(found["lib"]), int(found["other"])], JSON.stringify(any))
+	h.complete(case)
+
+
+## `{name, lib, field, other, other_type}` for the first library in the movie
+## that holds one name as a field and, at a lower number, as something else.
+##
+## The lower number is the whole point: the untyped lookup answers the lowest
+## member of the name, so a collision where the field comes first is one both
+## readings resolve identically and proves nothing. No earlier library may hold a
+## field of that name either, or the walk would legitimately answer there and the
+## assertion would be about library order rather than about type.
+static func _find_type_collision(table) -> Dictionary:
+	if table == null:
+		return {}
+	var libs: Array = table.cast_libs.keys()
+	libs.sort()
+	for lib in libs:
+		var hit := _collision_in_cast(table.cast_for(int(lib)))
+		if hit.is_empty():
+			continue
+		var earlier := false
+		for before in libs:
+			if int(before) >= int(lib):
+				break
+			var other_cast = table.cast_for(int(before))
+			if other_cast != null \
+					and other_cast.number_of_type(str(hit["name"]), Ink.TYPE_FIELD) > 0:
+				earlier = true
+				break
+		if earlier:
+			continue
+		hit["lib"] = int(lib)
+		return hit
+	return {}
+
+
+## The same question asked of one cast: `{name, field, other, other_type}`.
+static func _collision_in_cast(cast) -> Dictionary:
+	if cast == null:
+		return {}
+	var fields: Dictionary = {}
+	var others: Dictionary = {}
+	var kinds: Dictionary = {}
+	for number in cast.member_numbers():
+		var m: Dictionary = cast.member(int(number))
+		var name := str(m.get("name", "")).to_lower()
+		if name == "":
+			continue
+		var kind := int(m.get("type", 0))
+		if kind == Ink.TYPE_FIELD:
+			if not fields.has(name):
+				fields[name] = int(number)
+		elif kind > 0:
+			if not others.has(name):
+				others[name] = int(number)
+				kinds[name] = str(m.get("type_name", "?"))
+	for name in fields:
+		if not others.has(name) or int(others[name]) > int(fields[name]):
+			continue
+		return {
+			"name": name, "field": int(fields[name]),
+			"other": int(others[name]), "other_type": str(kinds[name]),
+		}
+	return {}
+
+
+## The first movie container of the corpus whose own cast holds the collision,
+## or "". Read straight off the disc; see the `ContainerFile` preload.
+static func _corpus_collision() -> String:
+	var paths := Paths.new()
+	if not paths.load_config():
+		return ""
+	var containers: Array = []
+	for entry in paths.containers():
+		if ContainerName.CAST.has(str(entry).get_extension().to_lower()):
+			continue
+		containers.append(str(entry))
+	containers.sort()
+	for movie in containers:
+		var path = paths.resolve(str(movie))
+		if path == "":
+			continue
+		var f := ContainerFile.new()
+		if not f.open(path):
+			continue
+		var cast := Cast.new()
+		var hit: Dictionary = _collision_in_cast(cast) if cast.open(f) else {}
+		f.close()
+		if not hit.is_empty():
+			return str(movie)
+	return ""
 
 
 static func _member_named(table, name: String) -> bool:

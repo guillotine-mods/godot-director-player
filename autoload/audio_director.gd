@@ -83,6 +83,33 @@ var _fades: Dictionary = {}
 ## channel -> the cue points of the sound on it, and how many have been reported.
 var _channel_cues: Dictionary = {}
 var _channel_cues_passed: Dictionary = {}
+## channel -> the wall-clock msec at which the sound now on it must be over,
+## from the stream's own length. Absent for a channel whose stream could not
+## state one.
+##
+## **`soundBusy` is a question about the sound and this port was answering with
+## the device.** `AudioStreamPlayer.playing` is retired by the audio server, when
+## its mix thread has consumed the stream, so on hardware it is the sound's
+## length to within a fraction of a percent and on a slow or starved device it is
+## whatever that device is slow by — measured at 2.09x on a macOS CI runner for a
+## 0.63 s file (`bugs.md` 90, `tools/sound_rate.gd`).
+##
+## Nothing in the corpus ever asks how long a sound is; it asks `soundBusy`, and
+## the shape it asks in holds the playhead:
+##
+## ```lingo
+## on exitFrame
+##   if not soundBusy(1) then play done
+## end
+## ```
+##
+## So a flag that retires at half speed does not play the speech slowly — it
+## makes every *button on that frame* answer late by the remainder, which is what
+## a player experiences as a dialogue whose options, exit included, take several
+## seconds each. The ceiling is a bound and not a replacement: where the device is
+## honest `playing` still ends first and nothing changes, and where it lags it can
+## no longer hold a movie past the end of the sound.
+var _channel_until: Dictionary = {}
 ## path -> cue points, so a sound played twice is not re-parsed for its markers.
 var _cue_cache: Dictionary = {}
 ## `the soundLevel`, 0-7. Nothing else in the port owns the master bus, so
@@ -614,6 +641,15 @@ func play_stream(channel: int, id: String, stream: AudioStream, cues: Array = []
 func _start(channel: int, stream: AudioStream, cues: Array) -> void:
 	_channel_cues[channel] = cues
 	_channel_cues_passed[channel] = 0
+	# The one funnel both `play_file` and `play_stream` reach, which is why the
+	# `soundBusy` ceiling is recorded here and nowhere else. A stream that cannot
+	# state a length -- a generator, or a format whose header did not carry one --
+	# gets no ceiling rather than a guessed one, and behaves exactly as before.
+	var length := stream.get_length()
+	if length > 0.0:
+		_channel_until[channel] = Time.get_ticks_msec() + int(length * 1000.0)
+	else:
+		_channel_until.erase(channel)
 	# A fade in progress belongs to the sound that was playing, not to this one.
 	_fades.erase(channel)
 	var player := _ensure_player(channel)
@@ -853,6 +889,7 @@ func _fail(channel: int, request: String, why: String) -> void:
 	_fades.erase(channel)
 	_channel_cues[channel] = []
 	_channel_cues_passed[channel] = 0
+	_channel_until.erase(channel)
 	_channel_file[channel] = request
 	_channel_failed[channel] = true
 	GameState.emit_log(why, "warn")
@@ -865,7 +902,15 @@ func sound_busy(channel: int) -> bool:
 	var player: AudioStreamPlayer = _channels.get(ch)
 	if player == null:
 		return false
-	return player.playing
+	if not player.playing:
+		return false
+	# `and`, not `or`: the ceiling can only end a wait early, never extend one.
+	# A `stop`, a replacement sound or a channel that finished before its stated
+	# length all clear `playing` and are answered by the line above, so the only
+	# case this arm decides is the one the flag gets wrong. See `_channel_until`.
+	if not _channel_until.has(ch):
+		return true
+	return Time.get_ticks_msec() < int(_channel_until[ch])
 
 
 func stop_all() -> void:
@@ -883,6 +928,7 @@ func stop_channel(channel: int) -> void:
 	_fades.erase(ch)
 	_channel_cues[ch] = []
 	_channel_cues_passed[ch] = 0
+	_channel_until.erase(ch)
 
 
 ## `sound close <channel>` — stop, and give the channel's device back.
