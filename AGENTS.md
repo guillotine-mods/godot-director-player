@@ -205,6 +205,25 @@ the opposite and had been available from the first minute. Read
   process exits, so a running editor looks like a failed one. Redirect to a file.
 - **`git add -A` sweeps pre-existing untracked `.uid` files** into the commit. Stage
   paths deliberately.
+- **A modified file is not evidence of authorship.** More than one session can
+  share this checkout, and `git status` does not say who wrote a hunk. `edaeba49`
+  bundled two sessions' work because one of them found `tools/preview_surface.gd`
+  modified, recognised the subject as something it had asked an agent about, and
+  committed it: a plausible inference, and wrong. So `git add -A` is unsafe
+  whenever another session may be live, `git add <path>` is not sufficient either
+  unless you wrote that path, and the cheap check is to ask before committing a
+  file you did not write. Same hazard as the `.uid` line above, one step up: those
+  only add noise, this misattributes work and makes a bisect point lie.
+  Two more consequences, both paid for on 2026-08-14. `bugs.md` and
+  `docs/bugs-closed.md` need a **single owner** while two sessions are live,
+  because both append numbered entries and neither can see the other's draft. And
+  **`.gate.lock` only excludes other `gate.sh` runs**: a plain `godot --headless`
+  invocation is not covered, and concurrent ones contend over `.godot/` badly
+  enough to hang rather than fail. The convention that worked is `mkdir
+  .agent.lock` with a `trap ... EXIT` around every Godot call, removing only a
+  lock you created. A `gate.sh` that waits its full 900s and exits **2** means the
+  lock is held, not that anything hung, and a stale lock from a run whose trap did
+  not fire blocks everyone for the whole 15 minutes.
 - **`titles/piposh3d.pck` builds itself, and the first run after a fresh clone
   pays minutes for it.** The pack is gitignored — it is the `titles/piposh-3d`
   submodule's own bytes with the import saved ahead of time, not new data — so no
