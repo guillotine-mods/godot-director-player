@@ -589,8 +589,11 @@ func _resolve_and_call(name: String, args: Array, script: Dictionary,
 ## Run one handler.
 ##
 ## `me` is the script object the message was delivered to, or null for every
-## other dispatch there is -- a frame script, a movie handler, a behaviour this
-## port reaches as a *script* rather than as an instance. It goes on the frame
+## other dispatch there is -- a plain frame script and a movie handler. **Not a
+## behaviour any more**: `038b79a4` made every message to one arrive on an
+## instance (`behaviour_instance`, and `gate.sh behaviour_me`), so the clause that
+## used to end this sentence -- "a behaviour this port reaches as a *script*
+## rather than as an instance" -- names no dispatch that exists. It goes on the frame
 ## rather than into a field, because a handler that calls another handler on
 ## another object must not leave the caller's `me` showing through: the frame is
 ## already the thing that is saved and restored per call.
@@ -1431,9 +1434,14 @@ func _exec(stmt: Dictionary, frame: Dictionary) -> int:
 			# port has no object to hang one on, so it does what it has always
 			# done and declares a global.
 			#
-			# That second reading is a divergence and it is deliberate: a
-			# behaviour this port reaches as a *script* rather than as an instance
-			# has nowhere else for the name to live, and making it a local instead
+			# That second reading is a divergence and it is deliberate: a **movie
+			# or frame script** declaring `property` has nowhere else for the name
+			# to live. (This example used to say "a behaviour this port reaches as
+			# a script rather than as an instance", which `038b79a4` made false --
+			# a behaviour gets a real instance and its `property` names are seeded
+			# into it. The rule below is unchanged; only the case it names was
+			# stale, and `bugs.md` 83 quoted it as evidence.) Making it a local
+			# instead
 			# would lose the value between the handlers of one behaviour, which is
 			# the one thing a `property` is for. It is narrowed rather than
 			# widened -- an object-scoped frame no longer leaks the name into the

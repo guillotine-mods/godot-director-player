@@ -566,9 +566,30 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		var cast_id := _u16(buffer, at + 6)
 		# Occupancy is the **member and nothing else**: hundreds of thousands of
 		# records carry a type byte and no member, and those are the empty ones.
-		# The reference gates its render walk the same way and in the same place
-		# — `score.cpp:503` and `score.cpp:2474` both test
-		# `_sprite->_castId.member != 0` (ScummVM 805f259a).
+		# **The reference gates its render walk on `Channel::isEmpty()`**
+		# (`channel.cpp:330`), which is `_spriteType == kInactiveSprite` and only
+		# that. `Window::render` → `renderChannel` →
+		# `Score::getSpriteIntersections` (`score.cpp:1723`) is the one walk that
+		# puts a channel on the stage. This comment used to cite `score.cpp:503`
+		# and `:2474` for a member test: 503 is the rollOver-bbox cache and 2474 is
+		# `formatChannelInfo`, a debug printer. Right rule, wrong two lines.
+		#
+		# The two tests agree anyway, because `_spriteType` is not the record's
+		# type byte by the time `isEmpty` reads it: `Score::loadFrame` ends in
+		# `setSpriteCasts()` (`score.cpp:2326`) and `Sprite::setCast`
+		# (`sprite.cpp:588`) promotes any non-QuickDraw sprite naming a member to
+		# `kCastMemberSprite`. So the reference is empty only when the type byte,
+		# the member and the cast lib are all zero — weaker than `member == 0`,
+		# and able only to admit records this test drops, never the reverse.
+		#
+		# **Measured** (`bugs.md` 49, `tools/channel_occupancy.gd`): 65,883,235
+		# records over 491 scores in all eight roots, **0 disagreements either
+		# way**, with the type byte taking exactly two values — 16 on all
+		# 8,079,420 records naming a member and 0 on all 57,803,815 naming none.
+		# The one case that would diverge is a QuickDraw *shape sprite* (types
+		# 2-6, 12-15, painted from the record with no member); from D5 a shape is
+		# a cast member, so no container here can express one. That gap is in
+		# `docs/ENGINE_TODO.md`, not here.
 		#
 		# **A stated size of zero used to be part of this test, and it is not an
 		# emptiness signal in Director.** `frame.cpp:396` normalises a
