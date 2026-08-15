@@ -102,6 +102,20 @@ extends RefCounted
 ## order below is byte for byte the one that existed before it, which is what
 ## `tools/video_plugin.gd` asserts.
 ##
+## ## The fourth backend: MPEG-1, decoded here
+##
+## `docs/DIGITAL_VIDEO.md` §9 measured the decoder extension taking **0 of the 23
+## media files in this tree** — its bundled FFmpeg is built
+## `--disable-demuxers --disable-decoders` with no MPEG-PS demuxer — so after the
+## plugin landed the 22 MPEG-1 clips still played only from a hand-made Theora
+## sidecar, which is the transcode the owner had already ruled out.
+## `director/director_mpeg1.gd` is the way out of that: the program stream and the
+## video layer decoded in GDScript from the original bytes, the way
+## `director_avi.gd` decodes MS-RLE, with no plugin, no sidecar and no
+## dependency. It is a **pull** backend and is driven by exactly the code below
+## that drives the AVI reader; `_is_push` does not name it, which is the whole of
+## what that cost this file.
+##
 ## ## Three backends, one playhead
 ##
 ## The AVI reader is a **pull** decoder: `frame_at(n)` returns a picture and the
@@ -142,6 +156,7 @@ extends RefCounted
 ##     `the movieTime` needs.
 
 const Avi := preload("res://director/director_avi.gd")
+const Mpeg1 := preload("res://director/director_mpeg1.gd")
 const Ogg := preload("res://director/director_ogg.gd")
 ## The plugin **adapter**, which is a file in this repository and is always
 ## present; the decoder extension it looks for is not preloaded, is not named by
@@ -232,9 +247,24 @@ static func reader_for(host, where: Array, table) -> RefCounted:
 ##      (`director_sidecar.gd:fresh_for`, which answers `""` for absent, stale,
 ##      and for a source that is not on the disc at all);
 ##   4. the original bytes through the MS-RLE AVI reader;
-##   5. nothing.
+##   5. the original bytes through the **GDScript MPEG-1 decoder**
+##      (`director_mpeg1.gd`);
+##   6. nothing.
 ##
-## Step 5 is not a failure path bolted on the end — it is the behaviour every one
+## **Step 5 is last among the backends on purpose, and it is the one ordering
+## decision in this list that is a judgement rather than a rule.** Every argument
+## made for putting the plugin ahead of the sidecar — an installed decoder plays
+## the *original* media and the engine reads original containers — applies to the
+## GDScript decoder just as well, and would put it at step 3. It is at step 5
+## because it is the slowest thing here by a wide margin
+## (`tools/mpeg1_decode.gd` measures it), so promoting it would take a clip that
+## plays smoothly off an owner-made sidecar and give it back at a few frames a
+## second. As it stands nothing that worked before this arm existed behaves
+## differently, and the only clips it changes are the ones that were drawing
+## nothing. Whether the premise should beat the frame rate is the owner's call
+## and not this file's, and moving it is a one-line change.
+##
+## Step 6 is not a failure path bolted on the end — it is the behaviour every one
 ## of Magic Hat's video frames is written against, and `docs/DIGITAL_VIDEO.md` §2
 ## measures all three of them leaving cleanly because of it. So each step that
 ## declines says why through `host._trace` and moves on, and none of them raises.
@@ -292,15 +322,19 @@ static func _open(host, wanted: String):
 	var avi = Avi.new()
 	if avi.open(resolved):
 		return avi
+	var mpeg = Mpeg1.new()
+	if mpeg.open(resolved):
+		host._trace("video %s: decoding MPEG-1 in GDScript, %dx%d %.3f fps (%.2fs)" % [
+			wanted, mpeg.width, mpeg.height, mpeg.fps, mpeg.duration_ms / 1000.0])
+		return mpeg
 	# Named rather than silent, and this is the line a reader follows when a clip
-	# does not play: an MPEG-1 file reports the AVI reader's "not a RIFF file",
-	# which is correct and is the cue to install a decoder extension
-	# (`docs/DIGITAL_VIDEO.md` §8) or to run `tools/video_sidecar.gd`. Which of
-	# the two is missing is stated rather than left to be inferred, because the
-	# whole point of having three backends is that "it did not play" is now three
-	# different diagnoses.
-	host._trace("video %s: %s (decoder extension: %s; no sidecar in %s)" % [
-		wanted, str(avi.error),
+	# does not play. Both refusals are printed, because a file that is neither a
+	# RIFF nor an MPEG-1 program stream is a different problem from one that is an
+	# MPEG-1 program stream this decoder would not take — the whole point of
+	# having four backends is that "it did not play" is now four diagnoses rather
+	# than one.
+	host._trace("video %s: %s / %s (decoder extension: %s; no sidecar in %s)" % [
+		wanted, str(avi.error), str(mpeg.error),
 		Plugin.installed_class() if Plugin.available() else "none installed",
 		Sidecar.CACHE_DIR])
 	return null

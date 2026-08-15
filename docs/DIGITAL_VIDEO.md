@@ -19,7 +19,8 @@ recommends.
 > **16.2 ms per decoded frame** for 640x480 against a 90 ms budget at the file's
 > own 11.11 fps (`tools/avi_decode.gd`), and **10.08 s** of wall clock from
 > `movieTime` 0 to the member's own 6,048-unit duration. §6's first item is done;
-> §6's second (the Xtra sprite methods) is not, and C2 and D are still refused.
+> §6's second (the Xtra sprite methods) is not. **C2 and D have both since been
+> taken — see §4C2 and §8 — and C2 is what plays the 22 MPEG-1 clips today.**
 > Everything below is the census and the costing as they were written, and they
 > are still what the decision rests on -- read §3 before touching `the duration`.
 
@@ -333,6 +334,24 @@ pair (`video/avi_decoder.cpp` with `image/codecs/msrle.cpp`) with no external
 dependency, which is the shape to copy. **Both `#digitalVideo` members in eight
 corpora are AVI**, so this alone closes the type-10 half.
 
+> **C2 was taken on 2026-08-15 and works. Everything in this subsection is the
+> argument against doing it, kept because it is what the attempt had to answer —
+> and one clause of it is simply wrong.** All 22 clips decode from the original
+> bytes in GDScript, with no native build, no plugin and no transcode:
+> `director/director_mpeg1_ps.gd`, `director_mpeg1_video.gd`, `director_mpeg1.gd`.
+> The wrong clause is "GDScript will not do it". It does it — **not at real time**,
+> which is the honest correction: 53-366 ms per coded picture, 8% to 42% of real
+> time, so a 25 fps clip plays at roughly 2-10. `preview/video.gd` picks the frame
+> from `the movieTime`, so a slow decode drops pictures and keeps the clock rather
+> than falling behind. The prediction was right about the cost and wrong about the
+> verdict, and a clip that plays slowly is worth more than one that does not play.
+>
+> What it does **not** buy: MPEG-1 Layer II audio, so the clips are silent. That
+> is a second decoder — a 512-tap polyphase filterbank, ~45 million multiplies for
+> `intro.mpg` — and it is a named gap rather than a claim the files have no sound.
+> The reader parses the audio frame header, so `the sampleRate`, `the sampleSize`
+> and `the channelCount` answer the file's own numbers.
+
 **C2 — the MPEG-1 half is not small.** MPEG-1 video is variable-length codes,
 inverse DCT and motion compensation; 352x288 at 25 fps is 2.5 Mpix/s of IDCT
 output and GDScript will not do it. The realistic shape is a GDExtension wrapping
@@ -390,6 +409,15 @@ lines of engine glue as B.
 > can use a decoder extension, and ships none. The reasoning below is what that
 > decision was weighed against and is unchanged; read item 3 in particular, since
 > it is the argument §8 had to answer rather than one §8 overturned.
+
+> **Superseded 2026-08-15.** D was taken (§8) and then measured as decoding 0 of
+> this tree's 23 files; **C2 was taken and plays all 22 MPEG-1 clips**. The verdict
+> below is kept because its *reasoning* is still the right reasoning — item 3
+> especially — and because a recommendation that turned out wrong is worth more
+> visible than deleted. What it got wrong was one engineering estimate, not a
+> principle: it refused C2 on "GDScript will not do it", and the correct answer
+> was "GDScript will do it at 8-42% of real time, which for a 1997 cutscene is
+> enough".
 
 **Take A now. Take C1 next if anybody wants the logo. Do not take C2 or D, and
 take B only if the owner decides Magic Hat's album is worth changing what the

@@ -9526,3 +9526,169 @@ a `MacText`, so the reference *draws* a promoted member, and `sprite_art.gd`
 still returns null for type 15. It costs nothing measurable — 0 of the 11 are named
 by any sprite record in any frame of any container in any root — and it will cost
 the first title that places one.
+
+---
+
+# 119 and 75, closed 2026-08-15 — and `bugs.md` is empty
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 119 | **Fixed, and it was two faults wearing one symptom** | The entry named the stale captured reference. It did not name the other one: **the window was measured in process frames**. Sixty process frames is not a fixed amount of *movie* — DAY1 runs at 8 fps off a real-time clock, so the same wait covered ~12 score steps idle and ~30 under load. Three consecutive runs at HEAD went **2 PASS / 1 FAIL decided by machine load alone**. That is `bugs.md` 41's fixed-frame-count flake recurring. |
+| 75 | **Closed as a documented deliberate deviation** | The last untraced reference turns out not to exercise the deviation at all. |
+
+## 119: why the fix reads the cache at comparison time
+
+`_behaviours["0:<script>"]` is what `live_behaviour` hands every message on that
+tier, so re-reading it at comparison time makes the assertion **the rule
+verbatim** — *the object `exitFrame` bound is the object a message would be
+delivered on*. A captured reference is a third thing, and the third thing is what
+went stale.
+
+The same read is an **exact straddle detector rather than a heuristic**: instances
+are made in one place and released in one place, so an entry that is the same
+object at both ends of a window cannot have been remade inside it, and a span that
+left and came back — even to the same script — yields a different object.
+Straddled windows are discarded and re-opened. Measured: DAY1's behaviour channel
+cycles frames 39..68 (`BehaviorScript 55` spans [39,67], `BehaviorScript 26` spans
+[68,68] and sends the playhead back), and over 400 process frames the span changed
+**25** times.
+
+**A tempting shortcut was refused with a reason.** Pinning the playhead cannot be
+done from this harness without changing the subject: `go to the frame` in this port
+answers with `lingo_hold()` **and** `request_suspend("go")`, so a prepended hold
+*parks and resumes* the title's own `exitFrame` body rather than replacing it — the
+code that navigates still runs. And `pause` stops `exitFrame` being sent at all,
+which is the event under test.
+
+20 consecutive green runs under load, three of which discarded 2, 1 and 7 windows
+first — so the retry is load-bearing rather than decoration. Two engine-broken
+controls, and the second is the sharp one: with `live_behaviour` handing out a
+fresh object while the cache still holds one, the log reads
+`ok the behaviour channel's span held still for one window` and then fails exactly
+the two checks the entry named. **A clean window and a wrong answer is the only
+shape in which this harness is allowed to blame the engine.**
+
+## 75: the last reference does not exercise the deviation
+
+`timebasebackup` is `Panel.cst` member 62, a 26-line field — one line per hour of
+the hotel's day, one item per room slot — and `TIMEKEEPER` is a global holding the
+line number. `checkroom` walks it to decide who has changed room.
+
+Three things settle the entry:
+
+* **`checkroom` does not use a `field` designator at all.** It reads
+  `the text of member "TimeBaseBackup" of castlib "panel.cst"`. The `field …
+  of castLib …` spelling this entry is about lives in other handlers.
+* **In `rating` the deviation is never reached.** The movie's own `MCsL` names the
+  library `Panel.cst`, **extension included**, so `castLib "panel.cst"` matches on
+  `library_named`'s *first* pass and the reference's `getCastLibIDByName` answers
+  the same library. 76 movies name it; **0 miss**.
+* **In `piposh-dream` both readings answer nothing, identically.** All 12 hits are
+  one script member carried in on a shared linked cast — Rating's script sitting in
+  Piposh Dream's folder. That root loads no `panel.cst`, holds no such member, and
+  has no `manaegoz.dir` for the handler's `go` to reach. Port: `library_named` → 0,
+  the walk finds nothing, `""` and the write dropped. Reference: `Unknown castLib`,
+  `""`, write dropped.
+
+So the deviation from `movie.cpp:247` changes the answer for **exactly two
+references, in one title, both of which the original draws** — Piposh 1's
+`field "…" of castLib "master.cst"`, where the `MCsL` name is `master` and the
+linked file is `master.cst`. Knowingly narrow, which is what the entry existed to
+establish.
+
+## 75. Three field references name a cast library their movie does not have, and the port answers them where the reference would not
+
+**Status:** open, **deliberate**, and now **narrowed** — the measurement this
+entry asked for was taken on 2026-08-14 ·
+**Area:** `scenes/director_preview.gd:_resolve_field`,
+
+> **The two Piposh 1 references are spelling the linked cast's *file*, not a
+> library that does not exist.** `tools/scratch/lib_names.gd` on
+> `piposh/PIPDATA/MAINMENU.dir`: library 2 is
+> `name=[master] path=[…\PIPDATA\master.cst]`, and the script says
+> `castLib "master.cst"`. `members.gd:library_named` now matches the authored
+> path's basename as a **third** pass — separators normalised the way
+> `lib_for_cast_entry` does, extension kept so `master.dir` is not swallowed.
+>
+> That is **narrower** than what it replaces, which is the point: those two
+> references used to fall through to `_resolve_field`'s unqualified walk, which
+> can answer out of *any* library (`bugs.md` 34's family). They resolve to library
+> 2 and nowhere else now.
+>
+> The deviation from the reference stands and is still deliberate — ScummVM keys
+> `_castNames` by the `MCsL` name alone (`movie.cpp:247`, `:692-699`) and answers
+> neither spelling. It is now a deviation that resolves *correctly* rather than
+> *plausibly*, which is the distinction this entry was filed to keep.
+>
+> **The `piposh-dream` ten are untouched** and answer `""` under both readings, no
+> `panel.cst` being loaded. `checkroom`'s
+> `line TIMEKEEPER of field "timebasebackup"` is still untraced.
+
+`scenes/preview/members.gd:library_named` · found while closing
+`docs/bugs-closed.md` 53/35
+
+`Movie::getCastLibIDByName` is an exact case-insensitive match against the names a
+movie's `MCsL` gave its libraries and answers -1 for anything else
+(`reference/scummvm/movie.cpp:692-699`); `getCastMemberIDByNameAndType` then warns
+`Unknown castLib` and finds nothing. This port instead falls back to the
+unqualified walk when the clause names no library that exists.
+
+Three references in the corpus land on that path, and they are the reason it is
+there. Measured with
+`godot --headless --path . --script tools/field_designator.gd -- --root <r> --survey`:
+
+| root | reference | the movie's own libraries |
+|---|---|---|
+| piposh, piposh-en, piposh-ru | `mainmenu.dir`: `field "globalmoney" of castLib "master.cst"` | `Internal`, `master` |
+| piposh, piposh-en, piposh-ru | `mainmenu.dir`: `field "afganifield" of castLib "master.cst"` | `Internal`, `master` |
+| piposh-dream (10 movies) | `field "timebasebackup" of castLib "panel.cst"` | no `panel.cst` loaded |
+
+Both spellings of the same file are in use across Piposh 1 — the corpus names its
+linked casts `master` and `master.cst`, `zoom1` and `zoom1.cst`, `pirats` and
+`pirats.cst`, per movie — so the author's one spelling matches in some rooms and
+not in others. Following the reference exactly would blank the money on Piposh 1's
+slot machine, a field the original draws, so the walk is kept and written down
+rather than taken silently.
+
+**What would settle it**, in order of what it would cost: read the `MCsL` name and
+path of every library of every movie in Piposh 1 and see whether the *path*
+basename is what the script is spelling (in which case Director may match on the
+file and this port should too, which would be a fix rather than a deviation); or
+run the original under a Director projector and watch that field.
+
+The `piposh-dream` ten are a different case wearing the same clothes: neither
+resolution finds `timebasebackup` there, qualified or not, so those ten reads
+answer `""` today and would answer `""` under the reference. `checkroom` reads
+`line TIMEKEEPER of field "timebasebackup"` to decide where the player is sent,
+which makes this worth its own look — it is filed here because the survey found
+it and not because it has been traced.
+
+---
+
+## 119. `behaviour_me` is a standing flake, and it has been one at HEAD
+
+**Status:** OPEN · **Area:** `tools/behaviour_me.gd` · found 2026-08-15 while
+gating unrelated work, and **measured at HEAD before anything was blamed on it**
+
+It goes red intermittently. Sampled by repeated `bash gate.sh behaviour_me`:
+
+* three unrelated files reverted to `HEAD`: **2 FAIL in 10 runs**
+* with those files changed: **3 FAIL in 8 runs**
+
+so it is inert to the change that was in flight when it was noticed, and it was
+already flaking before it.
+
+Always the same two checks — `and it is the instance the span holds` and
+`a property written on that instance is readable from exitFrame` — with two
+distinct `<offspring "BehaviorScript 55 - what to do everyframe" …>` objects.
+
+**The mechanism is in the harness.** It reads the channel-0 cache entry, awaits 60
+frames, and compares. If the playhead crosses a frame-interval boundary in
+between, the span legitimately changes, and `endSprite`/`beginSprite` correctly
+makes a **new** instance — so the harness compares an instance from before the
+boundary against the right instance from after it and calls the engine wrong.
+
+A gate entry that fails one run in four teaches everyone to re-run it, which is
+the same damage as a standing red. Either pin the playhead for the span of the
+comparison, or assert against the instance the span holds *at the moment of the
+second read* rather than a captured reference.

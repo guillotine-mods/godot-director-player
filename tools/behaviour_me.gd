@@ -59,6 +59,46 @@ const MARK := 4242
 ## name any Director title uses, so it can only ever be reached by this harness.
 const FALLBACK := "behaviourmeprobe"
 
+## How many observation windows `_frame_behaviour` may open before it gives up.
+##
+## **`bugs.md` 119, and the whole of it.** A window is thrown away when the
+## behaviour channel's span changed inside it, because a span change is the score
+## doing its job -- `endSprite` releases the instance and `beginSprite` makes a
+## new one -- and says nothing about the dispatcher. The old shape captured the
+## cache entry, waited a fixed 60 frames and compared; when the playhead crossed
+## a frame-interval boundary in between it compared an instance from before the
+## boundary against the right instance from after it and called the engine wrong,
+## at **2 FAIL in 10 runs** on `PIP2DATA/DAY1.dir`.
+##
+## Eight rather than two, because the cost of an extra window is a fraction of a
+## second and the cost of one unlucky run is the entry teaching everybody to
+## re-run the gate instead of reading it.
+const WINDOWS := 8
+
+## `exitFrame`s a window waits for, and the process-frame ceiling behind that.
+##
+## **Counted messages, not counted frames, and that is the other half of
+## `bugs.md` 119.** The old wait was a flat `for _i in 60: await process_frame`,
+## and 60 process frames is not a fixed amount of *movie*: DAY1 plays at 8 fps
+## and the clock is driven by elapsed real time, so the same 60 frames covered
+## about 12 score steps on an idle machine and about 30 with five other Godots
+## running. Its behaviour channel cycles frames 39..68 -- `BehaviorScript 55 -
+## what to do everyframe` over [39,67] with `BehaviorScript 26 - go to mrkr 0`
+## on [68,68] sending the playhead back -- so a 12-step window sat inside the
+## span and passed while a 30-step window crossed the boundary and failed. Same
+## machine, same commit, same movie: **2 PASS and 1 FAIL in three runs**, decided
+## by load. That is `bugs.md` 41's fixed-frame-count flake wearing another hat,
+## and the cure is the same one `play_suspends` took -- wait on the thing, under
+## a ceiling.
+##
+## Five rather than one, because the rule is that *every* message lands on the
+## one instance and a window of a single message could not see a dispatcher that
+## gets the fifth wrong. Five score steps against the 29 this movie's span is
+## wide leaves the window room to land inside it; `WINDOWS` covers the times it
+## does not.
+const MESSAGES := 5
+const WINDOW_FRAMES := 300
+
 
 func _init() -> void:
 	var h := Harness.new()
@@ -187,6 +227,66 @@ func _shown(interpreter, name: String) -> String:
 ## Corpus-agnostic: it takes whatever frame the boot movie settles on. A movie
 ## whose settling frame carries no behaviour-channel script says so and skips,
 ## because a check that silently asserts nothing is worse than an absent one.
+##
+## ## Why the comparison is against a re-read and not against a capture
+##
+## `bugs.md` 119. "The instance the span holds" is a statement about a *span*,
+## and the span is the score's to change: the moment the playhead crosses a
+## frame-interval boundary, `endSprite` releases the channel-0 instance and
+## `beginSprite` makes a new one, **correctly**. A reference captured before that
+## and compared after it is a comparison between two different sprites, and this
+## case made it -- 2 FAIL in 10 runs at HEAD, always the two checks that carry a
+## captured object across the wait.
+##
+## The entry offered two shapes and this is the second: assert against the
+## instance the span holds *at the moment of the second read*. It takes two
+## changes together -- the window is measured in the movie's own `exitFrame`s
+## rather than in process frames (see `MESSAGES`, which is where the flake's
+## other half turned out to be), and what it compares against is re-read from
+## the cache at the end of it rather than captured at the start. It is the truer
+## statement of the rule for three reasons.
+##
+## **The cache entry is the engine's own answer to the question being asked.**
+## `LingoInterpreter._behaviours["0:<script>"]` is what `live_behaviour` hands
+## every message on that tier, so reading it at comparison time makes the
+## assertion "the object `exitFrame` bound is the object a message would be
+## delivered on", which is the rule verbatim. A captured reference is a *third*
+## thing, and it is the third thing that went stale.
+##
+## **The same read is an exact straddle detector, not a heuristic.** Instances
+## are made in one place and released in one place, so if the entry is the same
+## object at both ends of the window, no `endSprite`/`beginSprite` ran for
+## channel 0 inside it -- and if the span left and came back, even to the same
+## script, `LingoObject.new` gives a different object and the window is thrown
+## away. So the harness never has to guess whether it was unlucky, and the
+## property check below -- which genuinely requires one span, because the write
+## is on the instance -- gets a window it can be stated in.
+##
+## **Pinning the playhead, the entry's other shape, cannot be done from here
+## without changing the subject.** The Director idiom is `go to the frame`, and
+## prepending one does not hold this port still: the `go` builtin's `"the frame"`
+## arm (`preview_lingo_host.gd`) answers it with `lingo_hold()` **and**
+## `request_suspend("go")` -- "it suspends like any other" -- so the rest of
+## the handler -- the title's own `exitFrame` body, the thing that navigates --
+## is parked and resumed rather than dropped. Making it a real pin would mean
+## replacing the handler body instead of prepending to it, and the header above
+## says why this harness will not do that: a synthesised handler tests the
+## synthesiser. The one lever that does stop the playhead dead, `pause`, also
+## stops `exitFrame` being sent at all (`frame_loop.gd:799`), which is the event
+## under test.
+##
+## Measured after the change on `PIP2DATA/DAY1.dir`, with five other Godots on
+## the machine: **20 consecutive green runs**, 17 of which needed one window and
+## three of which discarded 1, 2 and 7 before they got a clean one -- so the
+## retry is load-bearing rather than decoration, and it is what the old fixed
+## wait had no way to express.
+##
+## **And still red when the engine is wrong**, which is the half a retry loop can
+## quietly destroy. With `live_behaviour` handing every message a fresh object
+## while the cache still holds one, this case reports "the span held still for
+## one window" **ok** and then fails on exactly the two checks above plus
+## `me.spriteNum`: the window was clean and the answer was still wrong, which is
+## the only way the harness is allowed to blame the engine.
 func _frame_behaviour(h: Harness, preview, interpreter) -> void:
 	h.begin("the frame behaviour")
 	var index := int(preview.get("_index"))
@@ -196,23 +296,78 @@ func _frame_behaviour(h: Harness, preview, interpreter) -> void:
 		h.complete("the frame behaviour")
 		return
 	var name := str(script.get("script", ""))
-	var live: Variant = _cache(interpreter).get("0:%s" % name, null)
-	if not h.check("the behaviour channel's span has an instance", live != null,
-			"cache entry 0:%s is %s" % [name, "there" if live != null else "missing"]):
+	var key := "0:%s" % name
+	if not h.check("the behaviour channel's span has an instance",
+			_cache(interpreter).get(key, null) != null,
+			"cache entry %s is %s" % [
+				key, "there" if _cache(interpreter).has(key) else "missing"]):
 		h.complete("the frame behaviour")
 		return
-	# Written on the instance from outside, which is exactly what a `beginSprite`
-	# handler's `pMark = ...` does from inside -- the same object, the same slot.
-	_declare_property(script, live)
-	live.call("set_slot", "pmark", MARK)
+	# Prepended once, outside the window loop: the statements are the movie's own
+	# handler now and re-prepending per window would stack another copy of them on
+	# every retry.
 	_prepend(interpreter, script, "exitFrame",
-		"global gexitme\nglobal gexitmark\nglobal gexitnum\n" +
-		"gexitme = me\ngexitmark = pMark\ngexitnum = me.spriteNum")
-	for _i in 60:
-		await process_frame
-	var got: Variant = _object(interpreter, "gexitme")
+		"global gexitme\nglobal gexitmark\nglobal gexitnum\nglobal gexitcount\n" +
+		"gexitme = me\ngexitmark = pMark\ngexitnum = me.spriteNum\n" +
+		"gexitcount = gexitcount + 1")
+
+	var live: Variant = null
+	var got: Variant = null
+	var settled := false
+	var straddled := 0
+	var windows := 0
+	var messages := 0
+	for _attempt in WINDOWS:
+		windows += 1
+		live = _cache(interpreter).get(key, null)
+		if live == null:
+			# Between the `endSprite` that released the span and the `beginSprite`
+			# that will remake it. Nothing to state the rule about yet, and nothing
+			# an earlier window observed may stand in for it.
+			straddled += 1
+			got = null
+			messages = 0
+			await process_frame
+			continue
+		# Written on the instance from outside, which is exactly what a `beginSprite`
+		# handler's `pMark = ...` does from inside -- the same object, the same slot.
+		_declare_property(script, live)
+		live.call("set_slot", "pmark", MARK)
+		# Cleared rather than left, so what is read below is this window's messages
+		# and cannot be an answer the previous window already had. `gexitcount` is
+		# seeded rather than erased: the probe increments it, and `VOID + 1` is not
+		# a number.
+		var globals := interpreter.globals as Dictionary
+		globals.erase("gexitme")
+		globals.erase("gexitmark")
+		globals.erase("gexitnum")
+		globals["gexitcount"] = 0
+		var frames := 0
+		while frames < WINDOW_FRAMES \
+				and _num(interpreter, "gexitcount", 0) < MESSAGES:
+			await process_frame
+			frames += 1
+		messages = _num(interpreter, "gexitcount", 0)
+		got = _object(interpreter, "gexitme")
+		if got != null and is_same(_cache(interpreter).get(key, null), live):
+			settled = true
+			break
+		straddled += 1
+	print("window: %d opened, %d discarded, %d exitFrame(s) in the last, playhead %d -> %d"
+		% [windows, straddled, messages, index, int(preview.get("_index"))])
+	# Stated as a check rather than as a skip. A movie whose behaviour channel
+	# cannot hold one span across five of its own `exitFrame`s, eight times
+	# running, is a finding -- either the score is churning or something is
+	# releasing instances that should not -- and the counts above name which.
+	h.check("the behaviour channel's span held still for one window",
+		settled, "%d of %d windows straddled a span boundary, %d messages in the last"
+			% [straddled, windows, messages])
+	h.check("%d messages arrived inside that window" % MESSAGES,
+		messages >= MESSAGES, "%d exitFrame(s)" % messages)
 	h.check("exitFrame ran on an object", got != null,
 		"me was %s" % _shown(interpreter, "gexitme"))
+	# `live` is re-read from the cache at the end of the window above, so this is
+	# "the instance the span holds *now*" and not a capture from before the wait.
 	h.check("and it is the instance the span holds", got != null and is_same(got, live),
 		"%s vs %s" % [str(got), str(live)])
 	h.check("a property written on that instance is readable from exitFrame",
