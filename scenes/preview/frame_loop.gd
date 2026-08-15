@@ -227,6 +227,43 @@ static func sync_frame_entry(host) -> void:
 ## have one headless. The play is created either way: a play with nothing to
 ## compose still counts its steps against the hold, so the wiring is the same
 ## code on both, and only the pixels are missing.
+##
+## ## Which rectangle the play is sized by, and why it is `window_size()`
+##
+## `bugs.md` 118. Three call sites decide how big a transition's pictures are and
+## they were asking three different questions: `director_preview.gd`'s
+## `paint_capture` is armed at `window_size()` for a Movie-In-A-Window and
+## `stage_size()` for the stage, `_grab_stage`'s framebuffer arm crops and
+## resizes to `stage_size()` unconditionally, and this line built the play at
+## `stage_size()`. All three are equal in all eight corpora, so nothing can
+## disagree today and no harness can fail on it -- which is why the entry was
+## written down rather than left to be rediscovered, and why this paragraph
+## exists even though the value below does not change.
+##
+## **The reference answers `window_size()` and it answers it structurally, not by
+## preference.** A transition is played by `Window::playTransition`
+## (`transitions.cpp:158`) -- a method *on the window the frame change happened
+## in*, reached from `Score::renderTransition` through `_window`
+## (`score.cpp:900-919`). Both composited pictures are allocated from that
+## window's own surface, `composeSurface->w` by `composeSurface->h`
+## (`:194-199`), and a changed-area transition's clip is then clipped to
+## `_window->getInnerDimensions()` (`:217`). There is no path in which a window's
+## transition is sized by the stage.
+##
+## In this port `window_size()` is already that question asked correctly for both
+## cases: `preview/windows.gd:size_of` answers the node's own `_window_rect` when
+## it has one and **falls back to `stage_size()` when it does not**, and the stage
+## node never has one. So this is a no-op on the stage by construction rather than
+## by measurement, and it is the correct size for a Movie-In-A-Window whose rect
+## is smaller than the stage -- which is the case the entry is about and which no
+## container here can express.
+##
+## **`_grab_stage`'s framebuffer arm is the remaining half and is not in this
+## file.** It crops to `stage_size()`, so on a desktop run a window smaller than
+## the stage still hands this a stage-sized crop of something that is not the
+## stage, and the play would then refuse the pair as mismatched. The patch is the
+## same substitution in `scenes/director_preview.gd:_grab_stage`; it is reported
+## rather than made because that file has another owner.
 static func begin_transition(host, frame: Dictionary, table) -> bool:
 	var puppet: Dictionary = host._puppet_transition
 	host._puppet_transition = {}
@@ -252,8 +289,12 @@ static func begin_transition(host, frame: Dictionary, table) -> bool:
 	# arriving frame is a paint of the frame the playhead has already moved to.
 	var departing: Image = host._grab_stage()
 	var arriving: Image = host._grab_arriving() if departing != null else null
+	# `window_size()`, not `stage_size()` -- see the header for the reference's
+	# answer and for why the two are equal on the stage by construction. `Play`
+	# names its parameter `stage`, which is the older reading; renaming it is a
+	# change to `director/director_transition.gd` for no behaviour, so it is left.
 	host._transition_play = Transition.Play.new(
-		transition, host.stage_size(), departing, arriving)
+		transition, Vector2i(host.window_size()), departing, arriving)
 	host._trace("f%d transition %s" % [host._index, host._transition_play.status()])
 	return true
 
@@ -444,7 +485,7 @@ static func tick(host, delta: float) -> void:
 
 
 ## The sprite behaviours the score has on stage at `index`, as
-## `channel -> [start, end, lib, member, start, end, lib, member, ...]`.
+## `channel -> [start, end, lib, member, params, start, end, lib, member, params, ...]`.
 ##
 ## **A "sprite" is a score *span*, not a channel that happens to be occupied.**
 ## That is the whole of what decides `beginSprite`/`endSprite`, and getting it
@@ -467,13 +508,24 @@ static func tick(host, delta: float) -> void:
 ## without scripts cost nothing here -- DAY1 has 425 sprite intervals against a
 ## score whose frames hold far more sprites than that.
 ##
-## The flat int array is the identity *and* the payload: two adjacent spans in one
+## The flat array is the identity *and* the payload: two adjacent spans in one
 ## channel naming the same script are two sprites and must end and begin, which a
 ## `channel -> script` key cannot express, and `endSprite` has to be sent to a span
 ## the playhead has already left, which a lookup by current frame cannot answer.
-## Four ints per behaviour because a D6+ span carries a *list* of them (2 spans of
+## Five slots per behaviour because a D6+ span carries a *list* of them (2 spans of
 ## 158,001 in Piposh 2 do, both naming the same script twice) and the reference
 ## instantiates and messages each.
+##
+## **The fifth slot is the span's authored behaviour parameters** (`bugs.md` 83) --
+## the string `director_score.gd:_read_interval` lifts out of the score's
+## initialiser entry, e.g. `[#prGotoFrame: "mainmenu"]`. It rides in the identity
+## array rather than being looked up at instantiation time, and that is deliberate
+## in both directions: the instance is built from it, and **two adjacent spans of
+## one channel that name the same script with different parameters are two
+## different sprites** -- which is exactly what the diff in `sync_sprite_lifetime`
+## has to see, because the second one needs its own instance seeded with its own
+## values. With four slots those two spans compared equal and the second inherited
+## the first's parameters for as long as the channel stayed occupied.
 ##
 ## **Channel 0 is the behaviour channel and it is in here**, which is the half of
 ## this that the whole of `bugs.md` 87 actually turns on. Director's score has one
@@ -517,11 +569,12 @@ static func sprite_behaviours_at(score, index: int) -> Dictionary:
 			continue
 		var lib := int(interval["script_cast_lib"])
 		var member := int(interval["script_member"])
+		var params := str(interval.get("initializer_params", ""))
 		if str(interval["kind"]) == "frame":
 			if end - start >= frame_span:
 				continue
 			frame_span = end - start
-			out[0] = [start, end, lib, member]
+			out[0] = [start, end, lib, member, params]
 			continue
 		var channel := int(interval["channel"])
 		if channel <= 0:
@@ -531,6 +584,7 @@ static func sprite_behaviours_at(score, index: int) -> Dictionary:
 		spec.append(end)
 		spec.append(lib)
 		spec.append(member)
+		spec.append(params)
 		out[channel] = spec
 	return out
 
@@ -563,10 +617,11 @@ static func send_sprite_message(host, handler: String, channel: int,
 		return
 	var key := handler.to_lower()
 	var at := 0
-	while at + 4 <= spec.size():
+	while at + 5 <= spec.size():
 		var lib := int(spec[at + 2])
 		var member := int(spec[at + 3])
-		at += 4
+		var params := str(spec[at + 4])
+		at += 5
 		var script: Dictionary = host._script_in_lib(lib, member)
 		if script.is_empty():
 			continue
@@ -574,7 +629,11 @@ static func send_sprite_message(host, handler: String, channel: int,
 		# `LingoInterpreter.behaviour_instance` for why that needs saying out loud.
 		var script_channel := channel == 0
 		if key == "beginsprite":
-			interpreter.behaviour_instance(script, channel, script_channel)
+			# The one place a behaviour's authored parameters can be applied, because
+			# it is the one place the instance is *made*: the reference seeds them
+			# inside `Score::createScriptInstance`, between `new` and the first
+			# message (`lingo-events.cpp:879-935`). `bugs.md` 83.
+			interpreter.behaviour_instance(script, channel, script_channel, params)
 		host._tally(host._sent, handler)
 		if not bool(interpreter.call("_script_has_handler", script, key)):
 			if key == "endsprite":

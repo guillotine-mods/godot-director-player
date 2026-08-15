@@ -312,11 +312,36 @@ func parse(payload: PackedByteArray, movie_file_version: int = 0) -> bool:
 	# narrowed §4.3's clause 4 on the strength of attachments supposedly handed
 	# to the wrong span, and that is not what the data says. The attachments
 	# naming a bitmap are the record's own; see `preview/interaction.gd`.
+	# **Entries named as behaviour initialisers are not span records**, and the skip
+	# set is what stops the scan reading one as if it were. An initialiser entry is
+	# a Lingo property-list *string* -- see `_read_interval` -- and the longer ones
+	# clear the 44-byte floor: `[#prSprite: 7, #prSoundLoop: 0, #prSound: "",
+	# #prBackToGame: 0, #prFreezFlash: 0, #prPlayMuisc: 0]` is 100 bytes in
+	# `itamar-magichat/trivia/trivia.dir`, so without this the scan reads `dLoo` as
+	# a sprite number and two ASCII words as a frame range and appends an interval
+	# that is entirely text. Measured over all eight corpus roots by
+	# `tools/behaviour_params.gd --survey`, which walks the entry table both ways
+	# and diffs them: the scan without this set produces **122 intervals that are
+	# not spans, every one of them `itamar-magichat`'s, and 0 in the six shipped
+	# titles**. That is also why this cannot change what any shipped title decodes
+	# -- a corpus that authors no initialiser has an empty set here and takes the
+	# identical path -- and the survey asserts the diff is 0 the other way, so the
+	# set can be seen not to have eaten a real span.
+	#
+	# The set is filled as the scan goes rather than in a pass of its own, and that
+	# works because an initialiser entry is written *after* the span that names it:
+	# every element in the corpus names a higher index. A backward reference would
+	# be marked too late to skip, and it is recorded as a hazard rather than
+	# guarded, because guarding it needs a first pass that is itself reading text as
+	# spans -- the circularity this note exists to name.
+	var initialisers: Dictionary = {}
 	for i in range(2, entry_count):
+		if initialisers.has(i):
+			continue
 		var primary: PackedByteArray = entry.call(i)
 		if primary.size() < 44:
 			continue
-		_read_interval(i, primary, entry.call(i + 1))
+		_read_interval(i, primary, entry.call(i + 1), entry, initialisers)
 	return true
 
 
@@ -990,23 +1015,54 @@ func _sound_channels(buffer: PackedByteArray) -> Array[Dictionary]:
 ## Piposh 2's name the *same* script twice, which Director answers by
 ## instantiating two behaviour objects and running the handler twice.
 ##
-## The element's second half is `initializerIndex`, an entry index holding the
-## behaviour's authored parameters, and it is **0 in all 14,903 elements of
-## Piposh 2** -- which is the corroboration that the element is 8 bytes rather
-## than 4 with padding. Nothing reads the parameters yet; a title that authors
-## them is what will need `getSpriteDetailsStream(initializerIndex)`.
+## The element's second half is `initializerIndex`, **an entry index holding the
+## values an author typed into the behaviour's parameter dialog for this span**,
+## and it is read here now (`bugs.md` 83). It is 0 in all 14,903 elements of
+## Piposh 2 -- which is the corroboration that the element is 8 bytes rather than
+## 4 with padding -- and 0 in all six shipped titles. `tools/behaviour_params.gd
+## --survey` over all eight corpus roots, 677 containers and 491 scores: it walks
+## 127,559 behaviour elements and **82 spans carry an authored initialiser, every
+## one of them `test-games/itamar-magichat`'s**. That is the whole population, and
+## it is why this cost nothing for as long as nobody looked.
+##
+## **The entry is a NUL-terminated Lingo property-list literal**, padded to a
+## 4-byte boundary, and it is stored on the interval verbatim rather than
+## evaluated here. `Score::loadSpriteBehavior` reads it with a plain
+## `stream1->readString()` (`score.cpp:2062-2075`) and the evaluation happens much
+## later and somewhere else -- `Score::createScriptInstance` pushes the string
+## through `LB::b_value` at the moment the behaviour is instantiated
+## (`lingo-events.cpp:900-935`). Keeping that split matters here for the same
+## reason it does there: this file decodes a container and owns no interpreter,
+## and a property list parsed at load time would be parsed by a second dialect
+## that nothing else in the port uses. What the corpus actually holds:
+##
+##     [#prHide: 0]                      12 chars in a 16-byte entry
+##     [#prFrameStep: 4]                 16 in 20
+##     [#prGotoFrame: "mainmenu"]        26 in 28
+##     [#prSpritesList: [], #prFreezJinny: "1"]        39 in 44
+##
+## so the terminator is real and the slack is alignment, not content.
 ##
 ## The **script channel** takes one element however long its entry is, which is
 ## the reference's own asymmetry: `loadFrameSpriteDetails` comments "We can have
 ## only one behavior here" and pushes a single element for the main channel while
 ## looping over a sprite's.
-func _read_interval(index: int, primary: PackedByteArray, behaviours: PackedByteArray) -> void:
+## `entry` fetches an entry of the score list by index -- `getSpriteDetailsStream`
+## -- so that an element naming an initialiser can open it. `initialisers` is the
+## scan's skip set and is written here for the reason `parse` gives.
+func _read_interval(index: int, primary: PackedByteArray, behaviours: PackedByteArray,
+		entry: Callable, initialisers: Dictionary) -> void:
 	var sprite_number := _i32(primary, 16)
 	# Sprite number 0 is the frame-script channel, not channel -5.
 	var kind := "frame" if sprite_number == 0 else "sprite"
 	var at := 0
 	while at + BEHAVIOUR_ELEMENT_SIZE <= behaviours.size():
 		var member := _u16(behaviours, at + 2)
+		var initializer_index := _i32(behaviours, at + 4)
+		var params := ""
+		if initializer_index > 0:
+			initialisers[initializer_index] = true
+			params = _entry_string(entry.call(initializer_index))
 		if member > 0:
 			_intervals.append({
 				"kind": kind,
@@ -1015,6 +1071,13 @@ func _read_interval(index: int, primary: PackedByteArray, behaviours: PackedByte
 				"end": _i32(primary, 4) - 1,
 				"script_cast_lib": _i16(behaviours, at),
 				"script_member": member,
+				# The parameter dialog's values for *this span*, as authored, and
+				# the entry they came out of. Both are carried: the string is what
+				# a consumer evaluates, and the index is what says "there was one"
+				# when the string is empty, which a title with an empty initialiser
+				# entry would otherwise be indistinguishable from.
+				"initializer_index": initializer_index,
+				"initializer_params": params,
 				# Which entry this span is, so a consumer can match a sprite
 				# record to its own behaviours exactly rather than by channel and
 				# frame range. Nothing needs it yet -- the two agree on every one
@@ -1040,6 +1103,22 @@ func max_channel() -> int:
 		for sprite in frame(i)["sprites"]:
 			highest = max(highest, int(sprite["channel"]))
 	return highest
+
+
+## One score-list entry read as text, exactly as far as `readString()` would go.
+##
+## `Common::ReadStream::readString()` stops at the first NUL or at the end of the
+## stream, and both arms happen here: the initialiser entries are NUL-terminated
+## and then padded to a 4-byte boundary, so `[#prHide: 0]` arrives as 12 bytes of
+## text, one terminator and three bytes of slack in a 16-byte entry. Decoding the
+## whole entry instead would hand the interpreter a string with NULs in it, which
+## `value()` answers VOID for -- the same failure as not reading the entry at all,
+## and harder to see.
+static func _entry_string(bytes: PackedByteArray) -> String:
+	var stop := bytes.find(0)
+	if stop < 0:
+		stop = bytes.size()
+	return bytes.slice(0, stop).get_string_from_utf8()
 
 
 static func _u16(d: PackedByteArray, o: int) -> int:

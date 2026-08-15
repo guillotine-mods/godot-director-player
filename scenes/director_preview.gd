@@ -1686,7 +1686,21 @@ func _grab_stage() -> Image:
 	var image: Image = Snapshot.grab(self)
 	if image == null:
 		return null
-	var stage := stage_size()
+	# **The window's size, not the stage's** — `bugs.md` 118. A transition is
+	# composited over the window the frame change happened in, and structurally so:
+	# `Window::playTransition` (`transitions.cpp:158`) is a method on that window,
+	# reached from `Score::renderTransition` through `_window`; both composited
+	# pictures are allocated at `composeSurface->w/h` taken from
+	# `_window->getSurface()`, and a changed-area clip is clipped to
+	# `_window->getInnerDimensions()`. No path in the reference sizes a window's
+	# transition by the stage.
+	#
+	# A no-op on the stage **by construction rather than by corpus**:
+	# `preview/windows.gd:size_of` falls back to `stage_size()` for a node with no
+	# `_window_rect`, and the stage node never has one. `_arm_paint_capture` was
+	# already asking this question correctly, which is how the three call sites came
+	# to disagree — they were equal in all eight corpora, so nothing could fail.
+	var stage := window_size()
 	if stage.x <= 0 or stage.y <= 0:
 		return null
 	# Through `framebuffer_region` rather than `get_global_transform_with_canvas()`

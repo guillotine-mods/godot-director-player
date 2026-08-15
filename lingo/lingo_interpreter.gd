@@ -395,8 +395,34 @@ func run_compiled(compiled: Dictionary) -> bool:
 ## `beginSprite`, which is the port's `Score::createScriptInstances` -- and every
 ## message afterwards only looks one up. `bugs.md` 93 is what the split cost
 ## while `exitFrame` had no way to ask.
+## **`initializer_params` is the score's own answer to what the author typed into
+## this behaviour's parameter dialog**, as a Lingo property-list literal --
+## `[#prGotoFrame: "mainmenu"]`, `[#prFrameStep: 4]`. `bugs.md` 83, and it is the
+## half of a behaviour that had no path into the engine at all: the properties
+## were declared and left VOID, so `go(prGotoFrame)` reached VOID through a
+## *declared, unassigned* property and every behaviour in the corpus that takes a
+## parameter ran on nothing.
+##
+## Seeded here rather than by the caller, and only on the pass that *creates* the
+## object, because that is the reference's shape exactly: `Score::
+## createScriptInstance` runs `new`, and only then evaluates the string and writes
+## the pairs onto the fresh instance (`lingo-events.cpp:879-935`). A later message
+## finding the instance in the cache must not re-seed it -- a behaviour that
+## assigned its own property in `beginSprite` would have the author's value put
+## back on the next tick.
+##
+## **A pair whose name the script never declared is dropped, not created**, which
+## is `ScriptContext::setProp`'s own behaviour with its default `force = false`
+## (`lingo-object.cpp:742-765`): an undeclared name is offered to the ancestor and
+## then goes nowhere. `LingoObject.set_slot` is the same walk and answers false
+## for the same case, so the reference's rule is already written down here and
+## this only has to not work around it. It matters because the parameter dialog
+## and the `property` line are authored separately: a behaviour whose
+## `getPropertyDescriptionList` names a property the script forgot to declare is
+## an authoring bug that Director silently ignores, and inventing the slot would
+## make this port run a script the original could not.
 func behaviour_instance(script: Dictionary, channel: int,
-		script_channel := false) -> Variant:
+		script_channel := false, initializer_params := "") -> Variant:
 	if script.is_empty() or (channel <= 0 and not script_channel):
 		return null
 	var key := "%d:%s" % [channel, str(script.get("script", ""))]
@@ -404,8 +430,37 @@ func behaviour_instance(script: Dictionary, channel: int,
 		var made := LingoObject.new(script, str(script.get("cast", "")))
 		made.call("declare", "spritenum")
 		made.call("set_slot", "spritenum", channel)
+		_seed_behaviour_params(made, initializer_params)
 		_behaviours[key] = made
 	return _behaviours[key]
+
+
+## Write a span's authored parameters onto a freshly built behaviour instance.
+##
+## The string is evaluated with `value()` and not with a parser of its own, which
+## is the reference's choice as well -- `createScriptInstance` pushes it through
+## `LB::b_value` rather than reading the bytes it just loaded. That matters more
+## here than it looks: `LingoBuiltins._value_of` already knows that a nested `[]`
+## is a list, that `point(-10, 0)`'s comma is not the literal's, and that a bare
+## `[#a: 1]` is a property list and not a two-element list, all of which turn up
+## in the corpus's initialisers (`[#prSpritesList: [], #prFreezJinny: "1"]` is 37
+## spans of `trivia.dir`). A second reader here would be a second dialect and a
+## second set of those bugs.
+##
+## Anything that does not evaluate to a property list is ignored and the instance
+## is left as declared. The reference warns and returns the instance for both the
+## empty-stack and the not-a-PARRAY case (`lingo-events.cpp:914-926`); it does not
+## refuse the behaviour, because a behaviour with unset properties is still a
+## behaviour and Director runs it.
+func _seed_behaviour_params(instance: Variant, initializer_params: String) -> void:
+	if initializer_params.strip_edges() == "":
+		return
+	var handled: Array = []
+	var parsed: Variant = Builtins.call_builtin("value", [initializer_params], handled)
+	if handled.is_empty() or typeof(parsed) != TYPE_DICTIONARY:
+		return
+	for name in (parsed as Dictionary):
+		instance.call("set_slot", str(name), (parsed as Dictionary)[name])
 
 
 ## Live behaviour instances, keyed `<channel>:<script name>`. See above.

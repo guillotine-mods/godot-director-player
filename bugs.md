@@ -101,96 +101,6 @@ today.
 
 ---
 
-## 45. A hit on a Piposh 1 submarine lifts it 122px, so after two it is clipped off the top of the stage
-
-> **Narrowed 2026-08-14, and the answer is not the one the entry expected.**
-> `CANON.dir` member 641 had never existed as text in this tree; extracted, it
-> confirms the mechanism exactly — the dive branch is gated on `value(item)=0` and
-> writes `put 14`; the surface branch fires at `=1` and subtracts 122 (sprite 12)
-> or 164 (sprites 10, 11) **unconditionally**; and member 642's `movecannon4`
-> writes `put 20 into item i - 16 of allshipscounter` in *all four* hit stages,
-> where the entry quotes only one. One global, two purposes, both in the movie's
-> own script. **So if a hit-armed countdown ever reached 1, the original would
-> lift the sub too.**
->
-> It does not reach 1 here. `tools/cannon_sub_drift.gd` lands a shell through the
-> real key path and watches all three subs for 220 frames: every dive/surface pair
-> is balanced (+164/-164, +122/-122), no sub leaves the stage, and `allships` is
-> back at `live,live,live` at the end — which only member 640's `enterFrame`
-> writes. **The round's entry frame re-runs and resets `allshipscounter` before
-> the hit's 20 counts down.**
->
-> **Next step, and it decides the entry:** is that re-entry faithful? If it is,
-> this closes as unreachable. If the port is looping the entry frame where
-> Director holds, *that* is the real bug and it is masking this one.
-
-**Status:** OPEN · **Area:** `PIPDATA/CANON.dir` game6, `allshipscounter` ·
-reported from play with a snapshot: frame 373, 51 degrees, score -53, the large
-submarine jammed against the top of the stage and drawn over the HUD panels.
-
-**Newly reachable, which is why nobody has seen it before.** This path needs a
-shot to register, and until entry 43's fix landed no shot in the cannon game ever
-did. `sub1hit1`..`sub3hit4`, the sub-hiding and channel 39's shared damage
-display had never once executed in this port.
-
-**The mechanism.** game6's `exitFrame` (member 641) dives and surfaces each
-submarine in a pair that is meant to cancel:
-
-```lingo
-if value(item i - 9 of allshipscounter) = 0 then
-  ...dive:    set the locV of sprite 12 to the locV of sprite 12 + 122
-  put 14 into item i - 9 of allshipscounter
-  next repeat
-end if
-put value(item i - 9 of allshipscounter) - 1 into item i - 9 of allshipscounter
-if value(item i - 9 of allshipscounter) = 1 then
-  ...surface: set the locV of sprite 12 to the locV of sprite 12 - 122
-```
-
-`movecannon4`'s hit branch writes the **same counter** for a different purpose:
-
-```lingo
-put "hit2" into item i - 16 of allships
-put 20 into item i - 16 of allshipscounter     -- no dive ran
-```
-
-So a hit arms the countdown from 20, it ticks to 1, and the *surface* half fires
-alone -- `-122` for the big sub (sprite 12), `-164` for the two small ones
-(sprites 10 and 11) -- with no matching `+122` before it. Each hit lifts that
-submarine permanently. Two hits puts it off the top of a 480px stage.
-
-**What is confirmed:** the precondition. Driving game6 through the real key path,
-a landed shot leaves `allships = live,live,hit1` and `allshipscounter = 0,0,20`
--- the counter armed by a *hit* rather than by a dive, with the sub hidden
-(`the visible of sprite 12` = 0, which is the hit branch's own doing).
-
-**What is not confirmed:** the `-122` actually landing at the end of that
-countdown. The probe watched 40 ticks and the counter needs ~20 `exitFrame`s to
-reach 1. That is the next step and it is mechanical: extend the tick budget and
-print `the locV of sprite 12` each frame across the whole countdown.
-
-**The question that decides the fix, and it must be answered before any code
-changes.** `allshipscounter` is doing double duty *in the movie's own script* --
-dive timer and hit timer -- so the drift may be the original's own quirk, in
-which case a faithful port reproduces it and the entry closes as "not ours".
-Check against the original before touching anything: if real Director also lifts
-the sub, this is not a bug in the engine. If it does not, something in the port
-is letting the two uses of that counter share state they should not, and the fix
-is engine-level -- **not** a patch to this game's script, per `AGENTS.md`.
-
-Reproduce:
-
-```
-godot --headless --script tools/cannon_hit.gd -- --root piposh --label game6
-# then watch `the locV of sprite 12` for 30+ ticks after the hit
-```
-
-Related: entry 43's fix is what made this reachable. `tools/cannon_hit.gd` still
-drives `movecannon` through `call_handler` rather than the keyboard, so it proves
-the Lingo and not the key path -- worth switching over while working here.
-
----
-
 ## 75. Three field references name a cast library their movie does not have, and the port answers them where the reference would not
 
 **Status:** open, **deliberate**, and now **narrowed** — the measurement this
@@ -460,135 +370,33 @@ unchanged and is still the bug. **It is also the larger half**, because 459 of t
 566 type-15 members are Flash and animated GIF rather than video, and those need no
 MPEG decoder.
 
----
-
-## 83. The score's per-sprite behaviour parameters are never applied, so a behaviour runs with its properties declared and unset
-
-**Status:** OPEN, and narrowed to one third of what it was ·
-**Area:** `director/director_score.gd:_read_interval`, the `initializerIndex` /
-`getSpriteDetailsStream` half
-
-**Re-verified 2026-08-14 and two of the three original claims are dead**, which
-is why the title changed. This used to read "a sprite behaviour is dispatched as
-a plain script with `me = null`, so its `property` names have nowhere to live and
-the score's per-sprite initialiser is never applied".
-
-* **`me = null`: closed.** `038b79a4` made every message to a behaviour arrive on
-  an instance. `behaviour_me --root res://test-games/itamar-magichat --file
-  magichat.dir` is 19 checks, 0 failed.
-* **"a script-level `property` line is collected and then dropped": closed, and
-  the entry never said so.** `behaviour_instance` builds a `LingoObject` whose
-  `_init` seeds `props` from `script["properties"]`. Measured on this entry's own
-  example: `properties (AST): ["prGotoFrame"]` becomes
-  `instance props: ["prgotoframe", "spritenum"]`.
-* **`initializerIndex`: open, and untouched.** `grep -rn
-  'initializerIndex\|getSpriteDetailsStream'` over `director/ lingo/ scenes/
-  tools/` finds only the docstring at `director_score.gd:911`.
-
-So the failure *shape* the entry describes is also wrong now: `go(prGotoFrame)`
-still reaches VOID, but through a **declared, unassigned property** rather than
-through an unbound builtin, and the diagnosis a reader would form from the old
-text would send them to `lingo_interpreter.gd`, where there is no longer anything
-to fix.
-
-**Narrowed 2026-08-14: the `me` half is closed and the parameters half is not.**
-`038b79a4` made a behaviour an instance for every message, so the premise of the
-first half of this entry — "a behaviour this port reaches as a *script* rather than
-as an instance" — is no longer true and a script-level `property` has an object to
-live on. See 93, now closed. **Point 2 is untouched.** `initializerIndex` is read
-by nothing in `director/`; `grep -rn 'initializerIndex\|getSpriteDetailsStream'`
-finds only the docstring at `director_score.gd:911` saying so. `magichat.dir`'s
-`BehaviorScript 135` still goes to VOID, because `prGotoFrame`'s value is in the
-score's initialiser stream and nothing opens it.
-
-The port says this about itself, in `_invoke`'s docstring: "`me` is the script
-object the message was delivered to, or null for every other dispatch there is —
-a frame script, a movie handler, **a behaviour this port reaches as a *script*
-rather than as an instance**." The `property` statement arm then takes the
-documented consequence, which its own comment calls "a divergence and it is
-deliberate": with no `me` it declares a **global** instead of an instance
-variable, because there is no object to hang one on.
-
-That fallback covers a `property` written *inside a handler body*. Two things it
-does not cover:
-
-**1. A script-level `property` line is collected and then dropped.**
-`lingo_parser.gd` gathers the declarations outside any handler into
-`script["properties"]`, and the only reader of that key is
-`lingo_object.gd:_init`, which seeds `props` for an object built by `new`. A
-behaviour never becomes one, so the name is declared nowhere at all — not as an
-instance variable, not as a global. `_read_var` then reaches its last arm, where
-"an unknown bare identifier is a parameterless handler call in Lingo", and the
-name is answered as an unbound builtin: the same failure shape
-`docs/bugs-closed.md` 78 traces from `baReadIni`, arriving by a different route
-and with nothing in the trace to say it was a property.
-
-**2. The behaviour's authored parameters are decoded and never applied.**
-`director_score.gd:_read_interval` says so: the behaviour element's second half
-is `initializerIndex`, "an entry index holding the behaviour's authored
-parameters", and "**Nothing reads the parameters yet**; a title that authors them
-is what will need `getSpriteDetailsStream(initializerIndex)`". The same docstring
-records why this has cost nothing so far — the index is 0 in all 14,903 elements
-of Piposh 2 — which is a fact about Piposh 2 and not about Director.
-
-**`itamar-magichat` is a title that authors them**, and it is the whole pattern in
-one script (`BehaviorScript 135 - end video`):
-
-```lingo
-property prGotoFrame
-
-on exitFrame me
-  go(prGotoFrame)
-end
-
-on getPropertyDescriptionList
-  description = [:]
-  addProp(description, #prGotoFrame, [#default: EMPTY, #format: #string, #comment: "gotoFrame"])
-  return description
-end
-```
-
-`getPropertyDescriptionList` is Director's declaration of *which* parameters the
-author is offered in the score, and the score is where the answer lives — e.g.
-`[#prGotoFrame: "mainmenu"]`. The handler is one statement long and every bit of
-what it does is in a value this port never reads, so `go(prGotoFrame)` goes to
-VOID. `BehaviorScript 134` (see 82) is the same shape with `prFrameStep`.
-
-Reproduce: extract `magichat.dir`'s scripts with `tools/director_extract.gd` and
-read 134 and 135; the parameters they name are in the score's initialiser stream
-and nothing in `director/` opens it.
 
 ---
 
-## 118. A Movie-In-A-Window smaller than the stage would hand a transition two differently-sized pictures
+## 119. `behaviour_me` is a standing flake, and it has been one at HEAD
 
-**Status:** OPEN · **Area:** `scenes/preview/frame_loop.gd:begin_transition`,
-`scenes/director_preview.gd:_grab_stage` · **latent — no corpus can express it
-today** · found 2026-08-14 while fixing 117, and deliberately not folded into it
+**Status:** OPEN · **Area:** `tools/behaviour_me.gd` · found 2026-08-15 while
+gating unrelated work, and **measured at HEAD before anything was blamed on it**
 
-The two frames a transition composites and the play that composites them are
-sized by three different questions, and only one of them asks the window:
+It goes red intermittently. Sampled by repeated `bash gate.sh behaviour_me`:
 
-* `paint_capture` is sized `window_size()` (`director_preview.gd:1758`);
-* `_grab_stage`'s framebuffer arm crops and resizes to `stage_size()`;
-* `frame_loop.gd:begin_transition` builds `Transition.Play` at `stage_size()`.
+* three unrelated files reverted to `HEAD`: **2 FAIL in 10 runs**
+* with those files changed: **3 FAIL in 8 runs**
 
-In all six shipped corpora and both Itamar corpora those are equal, so nothing
-disagrees and nothing can be measured. **A Movie-In-A-Window smaller than the
-stage would hand the headless path a window-sized departing frame to a
-stage-sized play**, and the desktop path a stage-sized crop of a window that is
-not the stage.
+so it is inert to the change that was in flight when it was noticed, and it was
+already flaking before it.
 
-Not folded into 117 because it is a different subject with a different fix: 117
-was a transform missing from a crop, and this is three call sites that should all
-be asking the same question and are not. Fixing it needs a decision about *which*
-question is right — Director composites a transition over the window the frame
-change happened in, so `window_size()` is the likely answer, and `stage_size()`
-being correct everywhere today is a property of this corpus rather than of the
-engine.
+Always the same two checks — `and it is the instance the span holds` and
+`a property written on that instance is readable from exitFrame` — with two
+distinct `<offspring "BehaviorScript 55 - what to do everyframe" …>` objects.
 
-**No harness can currently fail on this**, which is exactly why it is written
-down rather than left to be rediscovered: `tools/window_preview.gd` opens the two
-`piposh2` windows and both are stage-sized. A fixture would have to be
-synthesised, and the honest first step is to say in `begin_transition` which size
-it means and why.
+**The mechanism is in the harness.** It reads the channel-0 cache entry, awaits 60
+frames, and compares. If the playhead crosses a frame-interval boundary in
+between, the span legitimately changes, and `endSprite`/`beginSprite` correctly
+makes a **new** instance — so the harness compares an instance from before the
+boundary against the right instance from after it and calls the engine wrong.
+
+A gate entry that fails one run in four teaches everyone to re-run it, which is
+the same damage as a standing red. Either pin the playhead for the span of the
+comparison, or assert against the instance the span holds *at the moment of the
+second read* rather than a captured reference.
