@@ -22,7 +22,10 @@ extends SceneTree
 ##    (`lingo/xtras-cast/textxtra.cpp:TextXtraCastMember::load`, ScummVM
 ##    805f259a). A member with no `XMED` has no text to draw, whatever it is
 ##    promoted to, so this is the question that decides whether promotion buys
-##    anything at all.
+##    anything at all. **All eleven have one, all eleven decode**, and the decode
+##    is re-derived here from the chunk bytes rather than read off the member --
+##    `_decode_xmed` below is this tool's own copy of the reference's algorithm,
+##    so it and `director_cast.gd:decode_xmed` are two readings that can disagree.
 ##
 ## 2. **Why is the `xtraRect` 0x0?** Because the geometry of *this* Xtra is not
 ##    in the info block at all: `TextXtra::parseXtraData` reads a big-endian
@@ -57,8 +60,23 @@ extends SceneTree
 ##     and `field "credit"` -- which asks for `credit:3` -- still cannot see it.
 ##     A port that promoted these into type-3 members would break that; a port
 ##     that promotes them the way the reference does cannot.
+##   * **and the same collision from the other side**: where a `text` Xtra shares
+##     its name with a *field*, `number_of_type(name, field)` answers the field's
+##     own number and `number_of_type(name, xtra)` answers the Xtra's. Asserting
+##     only the first is asserting that the typed lookup finds nothing, which a
+##     lookup that answered nothing at all would also pass. In `piposh` the pair
+##     is `SLOTMACH.dir` #83 (Xtra) and #97 (field), so this is
+##     `number_of('credit') = 83` and `number_of_type('credit', field) = 97`
+##     stated as a rule rather than as two numbers about one disc.
+##   * **promotion keeps the type.** The member's `type` is still 15 and its
+##     `type_name` still `xtra` after `_promote_text_xtra` has run, which is the
+##     mechanical reason the two rows above hold rather than a restatement of
+##     them: they are properties of the name cache, this is a property of the
+##     record the name cache is built from.
 ##   * every `text` Xtra's payload is long enough to carry the rect the reference
 ##     reads out of it, so the answer to question 2 is a fact about the bytes;
+##   * every `XMED` decodes, and the member's text is the bytes this tool decodes
+##     for itself out of the same chunk;
 ##   * the untyped lookup obeys lowest-number-wins where a name is shared, which
 ##     is the rule `_build_names` implements and the rule the collision is under.
 ##
@@ -74,6 +92,7 @@ const CastTable := preload("res://director/director_cast_table.gd")
 const Score := preload("res://director/director_score.gd")
 const Config := preload("res://director/director_config.gd")
 const Paths := preload("res://director/director_paths.gd")
+const Codepage := preload("res://director/director_codepage.gd")
 
 const XTRA := 15
 const FIELD := 3
@@ -117,6 +136,12 @@ func _init() -> void:
 	var typed_hits_xtra: Array[String] = []
 	var untyped_out_of_order: Array[String] = []
 	var seen_casts: Dictionary = {}
+	var decoded := 0
+	var not_decoded: Array[String] = []
+	var text_disagrees: Array[String] = []
+	var type_moved: Array[String] = []
+	var field_twins := 0
+	var field_twin_lost: Array[String] = []
 
 	for root in roots:
 		var files: Array[String] = []
@@ -220,8 +245,49 @@ func _init() -> void:
 					if has_xmed:
 						with_xmed += 1
 
+					# Question 1, answered from the bytes: what the `XMED`
+					# decodes to, re-derived here rather than read off the
+					# member. `_decode_xmed` is this tool's own copy of
+					# `TextXtra::decodeXMED`, so the two can disagree -- which is
+					# what makes the comparison below an assertion.
+					var decoded_text := ""
+					if has_xmed:
+						var raw := _decode_xmed(
+							cast.file.read_chunk(int(children["XMED"])))
+						if raw.is_empty():
+							not_decoded.append("%s #%d '%s': XMED %d, %d bytes in" % [
+								path.get_file(), number, name,
+								int(children["XMED"]),
+								cast.file.read_chunk(int(children["XMED"])).size()])
+						else:
+							decoded += 1
+							decoded_text = _as_text(raw)
+							if str(m.get("text", "")) != decoded_text:
+								text_disagrees.append(
+									"%s #%d '%s': member has %d chars, XMED decodes to %d"
+									% [path.get_file(), number, name,
+									str(m.get("text", "")).length(),
+									decoded_text.length()])
+						print("%18s XMED %d decodes to %d char(s): %s" % [
+							"", int(children["XMED"]), decoded_text.length(),
+							_printable(decoded_text)])
+
+					# Promotion must not move the member's type. This is the
+					# mechanical half of the collision assertion below: the name
+					# cache keys on `type`, so a promotion that changed it is the
+					# one way `field "credit"` could start seeing the Xtra again.
+					if int(m.get("type", 0)) != XTRA \
+							or str(m.get("type_name", "")) != "xtra":
+						type_moved.append("%s #%d '%s': type %d '%s'" % [
+							path.get_file(), number, name,
+							int(m.get("type", 0)), str(m.get("type_name", ""))])
+
 					# Question 4: what else in this cast wears the name.
 					var twins: Array[String] = []
+					# The lowest-numbered *field* of the same name: the other
+					# half of the collision, and the member `field "credit"` has
+					# to keep resolving to.
+					var field_twin := 0
 					if name != "":
 						for other in cast.member_numbers():
 							if other == number:
@@ -230,14 +296,33 @@ func _init() -> void:
 							if str(om.get("name", "")).to_lower() == name.to_lower():
 								twins.append("#%d %s" % [
 									other, str(om.get("type_name", ""))])
+								if int(om.get("type", 0)) == FIELD \
+										and (field_twin == 0 or other < field_twin):
+									field_twin = other
 						if not twins.is_empty():
 							name_shared += 1
 						var untyped: int = cast.number_of(name)
 						var as_field: int = cast.number_of_type(name, FIELD)
+						var as_xtra: int = cast.number_of_type(name, XTRA)
 						if as_field == number:
 							typed_hits_xtra.append(
 								"%s #%d '%s': number_of_type(...,3) answers the Xtra"
 								% [path.get_file(), number, name])
+						# Both directions, and only where there is a field to
+						# collide with -- a name with no field twin cannot say
+						# anything about which of the two the typed lookup picks.
+						if field_twin > 0:
+							field_twins += 1
+							if as_field != field_twin:
+								field_twin_lost.append(
+									"%s '%s': the field is #%d, number_of_type(...,field) answers %d"
+									% [path.get_file(), name, field_twin, as_field])
+							if as_xtra != number:
+								field_twin_lost.append(
+									"%s '%s': the Xtra is #%d, number_of_type(...,xtra) answers %d"
+									% [path.get_file(), name, number, as_xtra])
+							print("%18s number_of_type('%s', xtra) = %d (this member), field = %d" % [
+								"", name, as_xtra, field_twin])
 						# Lowest number wins, untyped, which is the rule the
 						# collision sits under.
 						var lowest: int = number
@@ -286,6 +371,8 @@ func _init() -> void:
 	print("  whose payload carries a rect the reference would accept: %d" % payload_rect_ok)
 	print("  placed on at least one sprite record: %d" % scored)
 	print("  sharing a name with another member of the same cast: %d" % name_shared)
+	print("  sharing a name with a *field* in the same cast: %d" % field_twins)
+	print("  whose XMED decodes to text: %d" % decoded)
 
 	h.begin("the `text` Xtras are found and read")
 	h.check("found some", found > 0, "%d" % found)
@@ -307,6 +394,27 @@ func _init() -> void:
 	)
 	for line in sized_wrong.slice(0, 6):
 		print("    " + line)
+	# `TextXtraCastMember::load()` reads the `XMED` and warns when it cannot
+	# decode one, so a member with a chunk and no text is the reference's own
+	# failure case and is reported here as this port's.
+	h.check(
+		"every XMED chunk decodes to a run of text",
+		not_decoded.is_empty(),
+		"%d do not" % not_decoded.size(),
+	)
+	for line in not_decoded.slice(0, 6):
+		print("    " + line)
+	# Two readings again: `_decode_xmed` below is this file's own implementation
+	# of the reference's algorithm and never consults the member, so agreement is
+	# evidence that `the text of member` is answering the chunk rather than a
+	# leftover.
+	h.check(
+		"the member's text is what the XMED decodes to",
+		text_disagrees.is_empty(),
+		"%d disagree" % text_disagrees.size(),
+	)
+	for line in text_disagrees.slice(0, 6):
+		print("    " + line)
 	h.complete("the `text` Xtras are found and read")
 
 	# The invariant `02844f93` bought and the one promotion must not spend.
@@ -325,8 +433,104 @@ func _init() -> void:
 	)
 	for line in untyped_out_of_order.slice(0, 6):
 		print("    " + line)
+	# The other direction. Without this the check above is satisfied by a typed
+	# lookup that answers nothing at all, which is the state `02844f93` fixed and
+	# not a state anybody would notice from a green run.
+	h.check(
+		"where a field wears the same name, each typed lookup answers its own member",
+		field_twin_lost.is_empty(),
+		"%d do not" % field_twin_lost.size(),
+	)
+	for line in field_twin_lost.slice(0, 6):
+		print("    " + line)
+	# And the reason both of the above hold: the record the name cache is built
+	# from still says 15.
+	h.check(
+		"promotion leaves the member's type where it was",
+		type_moved.is_empty(),
+		"%d moved" % type_moved.size(),
+	)
+	for line in type_moved.slice(0, 6):
+		print("    " + line)
 	h.complete("promoting one cannot re-open the slot-machine collision")
 	quit(h.finish("the eleven `text` Xtra members, bugs.md 82"))
+
+
+## The text inside an `XMED` chunk: this file's own reading of
+## `TextXtra::decodeXMED` (`lingo/xtras-cast/textxtra.cpp`, ScummVM 805f259a).
+##
+## Deliberately a second implementation rather than a call to
+## `director_cast.gd:decode_xmed`. The assertion this feeds is "the member's text
+## is what the chunk says", and a harness that asked the engine to decode the
+## chunk and then compared the answer to the engine's own member would be
+## comparing a value to itself -- the shape `AGENTS.md` names as a check whose
+## two readings cannot disagree.
+##
+## `FFFF` header; then the first `0x00 <up to six ASCII hex digits> , <that many
+## bytes>` run whose content is at least four-fifths printable, where printable is
+## ASCII 0x20..0x7e, anything >= 0x80, and CR/LF/TAB.
+func _decode_xmed(data: PackedByteArray) -> PackedByteArray:
+	var size := data.size()
+	if size < 4 or data[0] != 0x46 or data[1] != 0x46 \
+			or data[2] != 0x46 or data[3] != 0x46:
+		return PackedByteArray()
+	for i in size:
+		if i + 2 >= size:
+			break
+		if data[i] != 0x00:
+			continue
+		var j := i + 1
+		var length := 0
+		var digits := 0
+		while j < size and _is_hex(data[j]) and digits < 6:
+			length = length * 16 + _hex_of(data[j])
+			j += 1
+			digits += 1
+		if digits == 0 or length == 0 or j >= size or data[j] != 0x2C:
+			continue
+		j += 1
+		if j + length > size:
+			continue
+		var printable := 0
+		for k in length:
+			var c := data[j + k]
+			if (c >= 0x20 and c <= 0x7E) or c >= 0x80 \
+					or c == 0x0D or c == 0x0A or c == 0x09:
+				printable += 1
+		if printable * 5 < length * 4:
+			continue
+		return data.slice(j, j + length)
+	return PackedByteArray()
+
+
+static func _is_hex(c: int) -> bool:
+	return (c >= 0x30 and c <= 0x39) or (c >= 0x41 and c <= 0x46) \
+		or (c >= 0x61 and c <= 0x66)
+
+
+static func _hex_of(c: int) -> int:
+	if c <= 0x39:
+		return c - 0x30
+	if c <= 0x46:
+		return c - 0x41 + 10
+	return c - 0x61 + 10
+
+
+## The decoded run as the engine would present it: the title's codepage, and the
+## `\r` line separator these 1997 files use folded to `\n`. The same two steps
+## `director_cast.gd:_text` takes, spelled out here rather than borrowed, for the
+## same independence reason as `_decode_xmed`.
+func _as_text(raw: PackedByteArray) -> String:
+	return Codepage.decode(raw).replace("\r\n", "\n").replace("\r", "\n")
+
+
+## One line of it, for the report. Hebrew survives; the control codes that make a
+## terminal useless do not.
+func _printable(text: String) -> String:
+	var one_line := text.replace("\n", "\\n").replace("\t", "\\t")
+	if one_line.length() <= 96:
+		return "'%s'" % one_line
+	return "'%s' ... (+%d)" % [one_line.substr(0, 96), one_line.length() - 96]
 
 
 ## The Xtra's own payload bytes, re-read from the member's `CASt` chunk.

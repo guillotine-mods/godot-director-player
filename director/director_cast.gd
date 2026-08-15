@@ -28,6 +28,13 @@ const TYPE_NAMES := {
 ## A sprite whose member is one of these and does not resolve is missing art.
 ## Anything else — a shape, a script — is *meant* to draw nothing.
 const DRAWING_TYPES := ["bitmap", "filmLoop", "picture", "richText"]
+## The three numbers `TextXtra::decodeXMED` is written in terms of: at most six
+## ASCII hex digits of run length, and a run is text when at least four fifths of
+## its bytes are printable. Named rather than inlined because the fraction is the
+## whole of the heuristic — see `decode_xmed`.
+const XMED_LEN_DIGITS := 6
+const XMED_PRINTABLE_OF := 5
+const XMED_PRINTABLE_IN := 4
 ## Everything below the flag bit of a bitmap's pitch word is the row stride in
 ## bytes.
 ##
@@ -354,6 +361,14 @@ func _parse_cast(data: PackedByteArray, chunk_id: int, number: int) -> Dictionar
 	# and still carries a rect.
 	if type_code == 15:
 		_apply_xtra_rect(out)
+		# `XtraCastMember::promote` looks the member's symbol up in
+		# `xtraCastMemberProtos` and hands it to whichever class registered that
+		# name; anything unregistered stays an `XtraCastMember`. Of the five
+		# symbols in this tree only `text` is in that table, so this is the whole
+		# of the promotion surface here — and the reason 555 of the corpus's 566
+		# Xtra members correctly get nothing.
+		if str(out.get("xtra_symbol", "")).to_lower() == "text":
+			_promote_text_xtra(out, chunk_id)
 
 	# The payload chunk this member owns, by tag rather than by "its first
 	# chunk": bitmaps also own `Thum` thumbnails, and taking the first would
@@ -1087,6 +1102,160 @@ func _apply_xtra_rect(out: Dictionary) -> void:
 	out["initial_rect"] = rect.duplicate()
 	out["reg_offset_x"] = -left
 	out["reg_offset_y"] = -top
+
+
+## Promote a `text` Xtra member the way `XtraCastMember::promote` does: give it
+## the text of its `XMED` child, and let it keep its type.
+##
+## **The type is the load-bearing half and it is deliberately unchanged.**
+## `TextXtraCastMember`'s constructor sets `_type = kCastXtra` with the comment
+## "Not kCastText: the engine casts kCastText members to TextCastMember"
+## (`lingo/xtras-cast/textxtra.cpp`, ScummVM 805f259a). That is what keeps
+## `Cast::rebuildCastNameCache` keying `SLOTMACH.dir`'s promoted `credit` as
+## `credit:15`, so `field "credit"` -- which goes through
+## `getCastMemberByNameAndType` asking for `credit:3` -- still cannot see it and
+## still resolves to the *field* #97 the slot machine's score draws. That is
+## `02844f93`'s fix and this must not spend it: a port that promoted these into
+## type-3 members would put the "you have not inserted money" bug back, because
+## `value(the text of field "credit")` would read the Xtra's text instead of the
+## field's. `tools/text_xtra_members.gd` asserts it in both directions -- the
+## untyped lookup answers 83 and the typed field lookup answers 97 -- and does so
+## generically, over every text Xtra in the tree that shares a name with a field.
+##
+## So nothing here touches `type`, `type_name` or `drawing`. What is added is the
+## text, and one thing more: the reference's `getField(kTheCastType)` answers the
+## **symbol `#text`** for a promoted member while its `_type` stays `kCastXtra`,
+## which is the one place the two readings of "type" differ. `promoted_type_name`
+## carries that second reading for `scenes/preview/members.gd:read_prop` and is
+## kept beside `type_name` rather than replacing it, because `type_name` is what
+## `DRAWING_TYPES`, the name cache and every survey in `tools/` are keyed on.
+##
+## **The one thing this does not do is draw.** The reference's
+## `TextXtraCastMember::createWidget` builds a `Graphics::MacText`, so a promoted
+## member placed on a sprite is drawn there; here `sprite_art.gd:texture_for`
+## still answers null for type 15. That is a real remaining gap and it is stated
+## rather than hidden -- it costs nothing measurable in this tree, because **0 of
+## the 11 are named by any sprite record in any frame of any container of any
+## root** (`tools/text_xtra_members.gd`), and it will cost the first title that
+## places one.
+func _promote_text_xtra(out: Dictionary, chunk_id: int) -> void:
+	out["promoted_type_name"] = "text"
+	# `TextXtraCastMember::load()` finds the payload by walking the member's own
+	# children for the `XMED` tag rather than by asking the type what tag it owns,
+	# which is why this cannot go through `_parse_cast`'s `want` table: nothing in
+	# `TYPE_NAMES` says an Xtra owns an `XMED`, and which tag it owns is the
+	# Xtra's decision rather than Director's.
+	var xmed := int((_owned.get(chunk_id, {}) as Dictionary).get("XMED", -1))
+	out["xmed_chunk_id"] = xmed
+	if xmed < 0:
+		return
+	var raw := decode_xmed(file.read_chunk(xmed))
+	# An empty answer is "not decoded" and never "decoded to nothing": the
+	# reference refuses a zero length outright, so a run it accepts is at least
+	# one byte long.
+	out["xtra_text_decoded"] = not raw.is_empty()
+	if not raw.is_empty():
+		out["text"] = _text(raw)
+
+
+## The text inside an `XMED` chunk, or empty bytes when there is none to be had.
+##
+## `XMED` is the serialised document of the Hermes **Paige** text engine, which is
+## what the `text` Xtra is, and it is not a Director format: Director stores the
+## chunk and never looks inside it. The whole of what is known about the layout is
+## `TextXtra::decodeXMED` (`lingo/xtras-cast/textxtra.cpp`, ScummVM 805f259a --
+## **not part of the vendored subset under `reference/scummvm/`**, fetched at that
+## revision to write this), and what it knows is deliberately little:
+##
+##   * the chunk opens with the four ASCII bytes `FFFF`;
+##   * the body is mostly ASCII hex -- record tags and lengths written as digits;
+##   * a **literal run** is introduced by a `0x00` byte, then up to six ASCII hex
+##     digits giving its length, then a `,`, then that many raw bytes;
+##   * the first literal run that is at least four-fifths printable is the text.
+##
+## The last rule is the whole of the heuristic and it is doing real work rather
+## than being a safety net. `SLOTMACH.dir` #83's chunk holds a 64-byte run at
+## offset 487 whose content is `05 e7 f8 ee e5 ef 00 00 ...` -- a Pascal string in
+## a fixed 64-byte buffer, the font name `קרמון` -- and 5 printable bytes in 64
+## fails the test by a wide margin, which is what stops the member's *font* being
+## returned as its *text*. Nothing else in the format distinguishes the two runs.
+##
+## Printable here is the reference's definition and not a narrower one: ASCII
+## `0x20..0x7e`, **anything at or above `0x80`**, and the three whitespace control
+## codes. The `>= 0x80` arm is not optional in this corpus -- five of the eleven
+## members are Hebrew, in the title's own codepage, and every byte of their text
+## is above 0x7f.
+##
+## **The scan starts at the beginning and takes the first run that passes**, which
+## is what makes it deterministic on files with several. Measured over all eleven
+## `text` Xtra members in the tree (`tools/text_xtra_members.gd --all`): eleven
+## chunks, eleven decodes, and the first passing run is the authored text in all
+## eleven -- `SLOTMACH`/`Slotmach` #83 `credit` is the single character `0`, the
+## three `piposh-dream` maze members are a 437-byte Lingo scratchpad beginning
+## `pathx=[]`, `HEZSAVE.DIR`/`AIR1.dir` #118 `temporary` are 98 bytes of
+## `put the moviepath & "sounds:s_day1:" into tlkpath`, `MAP.dir` #12 is a
+## 455-byte table of room names and coordinates, #17 is 192 bytes of the same
+## commented out, and `rating`'s `objectsfound includ :` is its 131-byte checklist.
+##
+## The result is handed back as **bytes**, not as a `String`, so that the caller
+## puts it through `_text` and the title's own codepage the same way every other
+## member's text goes -- the reference does the same thing one step later,
+## building `U32String(text, g_director->getPlatformEncoding())`.
+##
+## Static and public: `tools/text_xtra_members.gd` re-derives the same runs from
+## its own copy of this, so the harness and the engine are two readings of the
+## same bytes and can disagree.
+static func decode_xmed(data: PackedByteArray) -> PackedByteArray:
+	var size := data.size()
+	# `FFFF`, as four ASCII characters rather than as a 16-bit sentinel.
+	if size < 4 or data[0] != 0x46 or data[1] != 0x46 \
+			or data[2] != 0x46 or data[3] != 0x46:
+		return PackedByteArray()
+	var i := 0
+	while i + 2 < size:
+		if data[i] != 0x00:
+			i += 1
+			continue
+		var j := i + 1
+		var length := 0
+		var digits := 0
+		while j < size and _is_hex_digit(data[j]) and digits < XMED_LEN_DIGITS:
+			length = length * 16 + _hex_value(data[j])
+			j += 1
+			digits += 1
+		# `,` is the separator, and a run that does not have one here is not a run
+		# -- a `0x00` byte occurs all over a Paige document.
+		if digits == 0 or length == 0 or j >= size or data[j] != 0x2C:
+			i += 1
+			continue
+		j += 1
+		if j + length > size:
+			i += 1
+			continue
+		var printable := 0
+		for k in length:
+			var c := data[j + k]
+			if (c >= 0x20 and c <= 0x7E) or c >= 0x80 \
+					or c == 0x0D or c == 0x0A or c == 0x09:
+				printable += 1
+		if printable * XMED_PRINTABLE_OF < length * XMED_PRINTABLE_IN:
+			i += 1
+			continue
+		return data.slice(j, j + length)
+	return PackedByteArray()
+
+
+static func _is_hex_digit(c: int) -> bool:
+	return (c >= 0x30 and c <= 0x39) or (c >= 0x41 and c <= 0x46) \
+		or (c >= 0x61 and c <= 0x66)
+
+
+static func _hex_value(c: int) -> int:
+	if c <= 0x39:
+		return c - 0x30
+	if c <= 0x46:
+		return c - 0x41 + 10
+	return c - 0x61 + 10
 
 
 func _read_stxt(chunk_id: int) -> String:

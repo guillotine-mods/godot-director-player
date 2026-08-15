@@ -257,8 +257,19 @@ static func read_prop(host, where: Array, prop: String, table) -> Variant:
 		# against. `director_cast.gd:TYPE_NAMES` already maps the type code onto
 		# the reference's own word for it, so this is that name promoted to a
 		# symbol rather than a second table.
+		#
+		# **A promoted Xtra answers the Xtra's word and not `#xtra`**, and it is
+		# the only member in the cast whose two readings of "type" disagree. A
+		# `text` Xtra keeps `_type = kCastXtra` -- which is what stops
+		# `field "credit"` seeing `SLOTMACH.dir`'s Xtra of that name, see
+		# `director_cast.gd:_promote_text_xtra` -- while
+		# `TextXtraCastMember::getField`'s `kTheCastType` arm answers the symbol
+		# `text` (`lingo/xtras-cast/textxtra.cpp`, ScummVM 805f259a). So the cast
+		# record carries both: `type_name` is the type, `promoted_type_name` is
+		# what a script sees, and only the second one is answered here.
 		"type", "casttype":
-			return StringName(str(m.get("type_name", "empty")))
+			return StringName(str(
+				m.get("promoted_type_name", m.get("type_name", "empty"))))
 		"scripttype":
 			# `#movie`, `#score` or `#parent` -- what the script member is attached
 			# as. The score's own word for it is the u16 in the specific block.
