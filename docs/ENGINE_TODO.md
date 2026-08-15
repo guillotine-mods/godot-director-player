@@ -1262,6 +1262,26 @@ gaps -- and an unverified implementation is an honest state, not a missing one.
   like QuickDraw's default rather than decoded -- that is the part to check first
   against Director running.
 
+- **A QuickDraw shape *sprite* is not drawn at all**, and this entry used to
+  cover only shape *members*. Sprite types 2-6 and 12-15 are a shape painted from
+  the score record itself, with **no cast member** -- Director's original way of
+  putting a rectangle on the stage. `director_shape.gd` paints a type-8 *member*;
+  a record of those types dies in `director_score.gd:_snapshot`, which drops any
+  record naming no member.
+
+  Nothing here can express one, from three directions that do not share a
+  pipeline: from D5 a shape is a cast member, so the authoring tool stopped
+  writing them; `director_shape.gd`'s own docstring measured **sprite type 16 in
+  all 60,914** records it looked at; and `tools/channel_occupancy.gd` puts the
+  type byte at exactly two values over **65,883,235 records in all eight roots**
+  -- 16 where a member is named, 0 where none is. The member census agrees from
+  the other end: 747 type-8 members corpus-wide, 0 QuickDraw sprite types.
+
+  So it is unbuildable-against rather than unbuilt, and it is here rather than in
+  `bugs.md` because it is a Director feature this engine does not have, not a
+  fault a player can reach. Closing it means painting from the record's own ink,
+  colour and line-size fields with no member behind them.
+
 ## The rule that governs this list
 
 A measured zero is a reason to build something *last* and to mark it unverified.
