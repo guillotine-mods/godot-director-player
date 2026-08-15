@@ -1700,7 +1700,12 @@ func _grab_stage() -> Image:
 	# `_window_rect`, and the stage node never has one. `_arm_paint_capture` was
 	# already asking this question correctly, which is how the three call sites came
 	# to disagree — they were equal in all eight corpora, so nothing could fail.
-	var stage := window_size()
+	# `Vector2i`, because everything below it is pixels: `Image.get_size()` answers
+	# one and `Image.resize` takes two ints. `window_size()` returns a `Vector2`
+	# where `stage_size()` returned a `Vector2i`, and taking the new answer without
+	# the conversion is a **parse** error at the `!=` below rather than a wrong
+	# picture -- which is the good outcome, and is how this was caught.
+	var stage := Vector2i(window_size())
 	if stage.x <= 0 or stage.y <= 0:
 		return null
 	# Through `framebuffer_region` rather than `get_global_transform_with_canvas()`
