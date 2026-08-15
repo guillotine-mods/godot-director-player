@@ -89,6 +89,8 @@ func _init() -> void:
 	await _open_a_movie_with_fields(h)
 	_library_checks(h)
 	_property_checks(h)
+	_dot_property_checks(h)
+	_library_by_file_checks(h)
 	_number_checks(h)
 	# Last, because it walks the corpus and leaves the preview on whatever movie
 	# offered its fixture.
@@ -270,6 +272,113 @@ func _property_checks(h: Harness) -> void:
 	var after := str(_value("the text of field \"%s\"" % name))
 	h.check("and the text it was not addressing is untouched",
 		after == "the quick brown fox", JSON.stringify(after))
+	h.complete(case)
+
+
+## `field("x").prop` — the dot spelling of the same property. `bugs.md` 76.
+##
+## Director has two spellings of one access and the reference reaches
+## `member->getField(prop)` from both; this port had an arm for the designator
+## and none for the dot, so `_eval`'s `dot` case evaluated the owner -- which
+## yields the field's **text** -- and then asked `get_member_prop` for a member of
+## *that* name. `field("save1").textSize` therefore read a property of a member
+## called `Tal` when the save slot said `Tal`, and VOID when nothing was named
+## that. `field("x").text = y` took the identical route.
+##
+## **Stated as an agreement between the two spellings rather than against a
+## literal**, because that is the invariant that cannot rot: the value a property
+## answers is the engine's business and may legitimately change, and the day the
+## two spellings disagree is the day one of them is wrong whatever the number is.
+## The one literal below is the text, which is asserted because the *bug* was that
+## the dot spelling answered it.
+##
+## 0 sites in the six titles use this spelling. It is built because Director has
+## it, and it is a case here rather than a file because it is the same rule as the
+## designator above and must be measured against the same fixture -- two harnesses
+## over one rule is how the two spellings drift apart.
+func _dot_property_checks(h: Harness) -> void:
+	var case := "`field(\"x\").prop` is the same access as `the prop of field \"x\"`"
+	h.begin(case)
+	var table = _preview.get("_table")
+	var found: Dictionary = _find_field(table, false)
+	if found.is_empty():
+		h.check("the movie carries a field member to state this about", false)
+		h.complete(case)
+		return
+	var name := str(found["name"])
+
+	_run("put \"dotted\" into field \"%s\"" % name)
+	_run("set the textSize of field \"%s\" to 21" % name)
+	var dotted_size := int(_value("field(\"%s\").textSize" % name))
+	h.check("the dot spelling reads the member property, not the text",
+		dotted_size == 21, "answered %d, wanted 21" % dotted_size)
+	var dotted_name := str(_value("field(\"%s\").name" % name))
+	h.check("and `.name` is the member's name and not its contents",
+		dotted_name.to_lower() == name.to_lower(),
+		"answered %s, wanted %s" % [JSON.stringify(dotted_name), JSON.stringify(name)])
+	var dotted_text := str(_value("field(\"%s\").text" % name))
+	h.check("`.text` is still the text", dotted_text == "dotted",
+		JSON.stringify(dotted_text))
+
+	# The write half, and the reason it is the half that hurts: a write through
+	# the dot went to `set_member_prop` on a member named after the text, so it
+	# either vanished or landed on a stranger.
+	_run("field(\"%s\").textSize = 34" % name)
+	var through_designator := int(_value("the textSize of field \"%s\"" % name))
+	h.check("a write through the dot reaches what the designator reads",
+		through_designator == 34,
+		"`the textSize of field` answered %d" % through_designator)
+	_run("field(\"%s\").text = \"written through the dot\"" % name)
+	var text_now := str(_value("the text of field \"%s\"" % name))
+	h.check("and `.text = ` writes the text", text_now == "written through the dot",
+		JSON.stringify(text_now))
+	h.complete(case)
+
+
+## A library named by its **file** resolves to that library. `bugs.md` 75.
+##
+## The corpus spells `of castLib "master.cst"` where the movie's `MCsL` calls the
+## same library `master`, and Piposh 1 writes both spellings across its rooms --
+## `master`/`master.cst`, `zoom1`/`zoom1.cst`, `pirats`/`pirats.cst` -- so
+## whichever half a given movie carries, some script naming it spells the other.
+## Before this, such a reference matched no library and fell through to
+## `_resolve_field`'s unqualified walk, which can answer out of *any* cast; the
+## reference would answer nothing at all (`movie.cpp:692-699`, `:247` -- the name
+## table is keyed by the `MCsL` name and never by the path).
+##
+## **The negative is the check that matters**, as it is for the library rule
+## above: a file name that names no library must still answer 0, or "match on the
+## file" has become "match on anything that looks like one".
+##
+## Skipped, loudly, on a movie whose libraries declare no path -- an internal cast
+## has none by construction, so a movie with one library can say nothing about
+## this.
+func _library_by_file_checks(h: Harness) -> void:
+	var case := "`of castLib \"<file>.cst\"` names the library that file is"
+	h.begin(case)
+	var table = _preview.get("_table")
+	var lib := 0
+	var file := ""
+	for number in table.cast_libs:
+		var path := str(table.cast_libs[number].get("path", ""))
+		if path == "":
+			continue
+		lib = int(number)
+		file = path.replace(":", "/").replace("\\", "/").get_file()
+		break
+	if lib == 0:
+		h.check("this movie links a cast with a path to state this about", false,
+			"%s declares only embedded libraries" % _preview.call("movie_path"))
+		h.complete(case)
+		return
+	h.check("the library's file resolves to the library",
+		Members.library_named(file, table) == lib,
+		"%s -> %d, wanted %d" % [file, Members.library_named(file, table), lib])
+	h.check("its `MCsL` name still resolves to the same one",
+		Members.library_named(str(table.cast_libs[lib].get("name", "")), table) == lib,
+		"name %s" % str(table.cast_libs[lib].get("name", "")))
+	h.check("a file no library is named after resolves to nothing",
+		Members.library_named("no-such-cast-9001.cst", table) == 0)
 	h.complete(case)
 
 

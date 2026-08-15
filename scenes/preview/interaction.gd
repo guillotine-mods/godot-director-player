@@ -582,6 +582,17 @@ static func press(host, at: Vector2, right := false) -> void:
 	# Cleared first, so a press the interpreter is not up for cannot leave the
 	# *previous* click's script latched for the release to send a message to.
 	host._click_script = {}
+	# §9.2's other half: the press that ended a wait-for-click dispatches no
+	# `mouseDown` and does not move `the clickLoc`, `the lastClick` or `the
+	# doubleClick` -- all four are inside the else-arm of `events.cpp:249-297`. See
+	# `latch_press`, which carries the argument and the reference lines.
+	#
+	# After `note_pointer` and the `_click_script` clear, because those two are the
+	# port's own bookkeeping rather than Director state: the window still has to
+	# learn where the pointer is, and a stale script left latched would answer the
+	# release for a click that never resolved one.
+	if host._clock != null and host._clock.press_consumed():
+		return
 	if not host._lingo_on or host._interpreter == null:
 		return
 	# `the clickLoc`, `the lastClick` and `the doubleClick`, which are three views
@@ -713,6 +724,27 @@ static func press(host, at: Vector2, right := false) -> void:
 ## and last click's member alive across a click that reached nothing.
 static func latch_press(host, at: Vector2, channel: int) -> void:
 	if host._host == null:
+		return
+	# **A press that ended a wait-for-click latches none of it** (`bugs.md` 61).
+	# `Movie::processEvent` handles the mouse-down in one `if`/`else`
+	# (`events.cpp:249-297`): `if (sc->_waitForClick) { _waitForClick = false;
+	# renderCursor(pos, true); } else { … }`, and everything below -- the click
+	# position and time, `the clickOn`, the hilite, the drag, the latched member,
+	# and the `mouseDown` dispatch itself -- is in the else. So on a wait-for-click
+	# frame the press does one thing and one thing only: it ends the wait.
+	#
+	# The port released the wait in `route_press` and then carried straight on
+	# into this block and the mouse-down chain, so the click that ended the wait
+	# was also a click on whatever sprite was under it. Piposh 2 has 24
+	# wait-for-click frames and *Rating* has 214.
+	#
+	# **The mouse-*up* is a separate question and is deliberately not suppressed.**
+	# `EVENT_LBUTTONUP` has no `_waitForClick` arm at all (`events.cpp:300-332`)
+	# and `queueEvent` resolves a `mouseUp` from `getMouseSpriteIDFromPos` rather
+	# than from anything the press latched (`lingo-events.cpp:579-597`), so the
+	# release still reaches the sprite under it in the reference. Suppressing the
+	# whole click would be a second bug wearing this one's clothes.
+	if host._clock != null and host._clock.press_consumed():
 		return
 	# `the clickOn`, written by `rightMouseDown` as well as by `mouseDown`.
 	host._host.click_sprite = channel

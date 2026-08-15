@@ -280,6 +280,31 @@ static func start_lingo(host, path: String) -> void:
 	var started := Time.get_ticks_usec()
 	var total := 0
 	host._script_casts.clear()
+	# **And the library keys with them** (`bugs.md` 103). `_lib_keys` maps a score
+	# record's `castLib` number onto the interpreter key its scripts were loaded
+	# under, and it is rebuilt below from the *new* movie's `MCsL` -- but only for
+	# the libraries that movie declares and whose casts compiled to at least one
+	# script. Every other number kept whatever the movie before it had put there,
+	# so entering `eat.dir` (one library) from `dinner1.dir` (eight) left
+	# `{2: "DINNER1/doc", 3: "DINNER1/hezi", 5, 7, 8, 10, 13: …}` standing under a
+	# movie that has no such libraries, and `Scripts.in_lib` answered them.
+	#
+	# **Measured before fixing, because the entry was filed with no symptom and
+	# the honest verdict is that there is not one today**: `host._interpreter` is
+	# replaced three lines above, so a stale key names a bundle the new
+	# interpreter has never loaded and `find_script_by_member` answers `{}` --
+	# indistinguishable from the missing key this line now produces. What the line
+	# buys is that the two can never come apart: the moment anything carries a
+	# bundle across a movie boundary (a Movie-In-A-Window sharing an interpreter, a
+	# cache, a restore that reuses one) a stale key stops being inert and becomes
+	# `bugs.md` 34's family -- a member number resolving in the wrong library
+	# returns a stranger rather than nothing.
+	#
+	# The evidence that the *state* was wrong rather than merely untidy is that
+	# two harnesses cleared it by hand before measuring anything
+	# (`tools/click_eligibility.gd:127`, `tools/click_chain.gd:469`). A tool
+	# clearing engine state is a statement that the engine did not.
+	host._lib_keys.clear()
 	for lib in host._table.cast_libs:
 		var cast = host._table.cast_for(int(lib))
 		if cast == null:

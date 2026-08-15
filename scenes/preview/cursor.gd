@@ -34,6 +34,19 @@ const MAX_CURSOR_SIZE := 32
 ## disappearing.
 const MAX_CURSOR_PIXELS := 128
 
+## §9.2's two wait-for-click cursors, as values the arbitration can return and
+## `install` can act on. `bugs.md` 62.
+##
+## **Strings and not numbers, deliberately.** Everything else that reaches
+## `install` is either Director's own cursor number or a `[data, mask]` member
+## pair, and these two are neither: `kCursorMouseUp` / `kCursorMouseDown` are
+## engine-internal in the reference too (`types.h:328-331`), reachable only from
+## `Score::renderCursor` and never from `the cursor`. Picking spare integers would
+## have put two invented values into a numbering Director owns, where the next
+## built-in Macromedia documented would collide with them silently.
+const WAIT_CLICK_UP := "waitClickUp"
+const WAIT_CLICK_DOWN := "waitClickDown"
+
 
 ## Is this channel one to fall through rather than stop on?
 ##
@@ -65,6 +78,19 @@ static func is_empty(value: Variant) -> bool:
 ## was in.
 static func at(host, point: Vector2, sprites: Array, channel_cursors: Dictionary,
 		global_cursor: Variant) -> Variant:
+	# **§9.2 outranks the sprite stack**, and the reference puts the test in the
+	# same place: `Score::renderCursor` answers `_waitForClickCursor ?
+	# kCursorMouseDown : kCursorMouseUp` and returns *before* it walks the channels
+	# (`score.cpp:1454-1457`). So a wait-for-click frame shows the alternating
+	# arrow even over a sprite that names a cursor of its own -- which is the
+	# point: the alternation is the movie saying "I am waiting for you", and a
+	# hotspot's hand cursor underneath it would say the opposite.
+	#
+	# Ahead of the descent rather than folded into it, because a descent that can
+	# be short-circuited by a matte hole (`kCollisionHole`) must not be able to
+	# lose this.
+	if host._clock != null and host._clock.waiting_click():
+		return WAIT_CLICK_DOWN if host._clock.waiting_click_cursor() else WAIT_CLICK_UP
 	for i in range(sprites.size() - 1, -1, -1):
 		# `effective`, not the raw score record, and for the same reason the draw
 		# path uses it: a script that hid a channel or moved it returns `{}` or a
@@ -299,6 +325,27 @@ static func install(value: Variant, table, palette: PackedByteArray,
 		Input.set_custom_mouse_cursor(null)
 		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
 		return "arrow (pair empty)"
+	# §9.2's alternating pair, ahead of the integer read below because `int("…")`
+	# of either name is 0, which is the arrow -- so without this arm the wait would
+	# resolve to "no cursor change at all" and look exactly like the bug it fixes.
+	#
+	# **Two Godot shapes stand in for Director's own 16x16 artwork, and that is a
+	# substitution rather than a port of it.** The reference draws its own
+	# `mouseUp`/`mouseDown` bitmaps (`graphics.cpp:277-285` over `graphics-data.h`),
+	# which are the arrow with a small box beside it, hollow in one and filled in
+	# the other. Reproducing that art is copying it, and inventing a lookalike is
+	# worse than saying what this is: the *mechanism* -- precedence over the sprite
+	# stack, and a flip once a second -- is the whole of what `bugs.md` 62 is about,
+	# and two plainly different shapes carry it. Same honesty as the built-in
+	# numbers below, which are also "the nearest shape Godot offers".
+	if typeof(value) == TYPE_STRING:
+		var name := str(value)
+		if name == WAIT_CLICK_UP or name == WAIT_CLICK_DOWN:
+			Input.set_custom_mouse_cursor(null)
+			Input.set_default_cursor_shape(
+				Input.CURSOR_POINTING_HAND if name == WAIT_CLICK_DOWN
+				else Input.CURSOR_ARROW)
+			return name
 	var which := int(value)
 	Input.set_custom_mouse_cursor(null)
 	# Director's built-in numbers. -1 and 0 are the arrow; the rest map onto the

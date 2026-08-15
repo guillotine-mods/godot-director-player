@@ -65,6 +65,33 @@ var globals: Dictionary = {}
 var host: Object = null
 var item_delimiter: String = ","
 var errors: PackedStringArray = PackedStringArray()
+## **How many runtime faults have been raised since this interpreter was built**,
+## and the half of `bugs.md` 59 a harness can assert on.
+##
+## `errors` is the last *dispatch*'s faults and is cleared at the start of the
+## next one -- `reset_steps` runs at the head of `preview/scripts.gd:dispatch`,
+## `preview/event_chain.gd:run` and the thaw, and one score step dispatches
+## `idle`, `exitFrame`, `prepareFrame` and `enterFrame` back to back inside a
+## single process frame. So a fault raised in any of them but the last is gone
+## before anything outside the interpreter can look, and no tool in `tools/`
+## could answer "did any script fault while that room ran".
+##
+## Half of the sink already existed: `reset_steps` drains to `print` through
+## `_reported`, which survives the dispatch, so a fault is at least in the run's
+## output. What was missing is a *number*, because a harness cannot assert on
+## stdout. These two are it, and neither is touched by `reset_steps`:
+##
+##   `error_total`   every raise, including the ones past `errors`' 50-entry cap
+##                   and including repeats -- a frame script that fails on every
+##                   `exitFrame` is 15 faults a second, and that is the shape
+##                   worth being able to see.
+##   `session_faults()`  the distinct messages, first-seen order, which is what a
+##                   report wants to print.
+##
+## Counted in `_fail` rather than derived from `errors`, because the cap makes
+## `errors.size()` stop at 50 and a derived count would report a movie fauting
+## fifty times identically to one faulting fifty thousand times.
+var error_total := 0
 ## Names the runtime could not bind, with where each was reached from. Host
 ## bindings report through here too, via `report()`.
 var diagnostics := LingoDiagnostics.new()
@@ -1783,6 +1810,9 @@ func _assign(target: Dictionary, value: Variant, frame: Dictionary) -> void:
 					_cast_of(owner_node, frame), prop_name, value,
 				])
 				return
+			if str(owner_node.get("node", "")) == "field":
+				_assign(_field_prop_node(owner_node, prop_name), value, frame)
+				return
 			## `window("joke.dxr").windowType = 2` and friends. The owner is a call
 			## returning a window handle, and the property belongs to that window
 			## — so it goes to the host with the handle, the same as the
@@ -1984,6 +2014,39 @@ func _set_field_node(node: Dictionary, text: String, frame: Dictionary) -> void:
 ## `resolve_ref` reads: `field ("chara" & n)` is a name and has always worked,
 ## and it is the same expression node as `field 122`. Only the type tells them
 ## apart, so only the type may be thrown away.
+## The `field_prop` node `field("x").<prop>` means, built from the `field` node the
+## dot's owner is. `bugs.md` 76.
+##
+## **A synthesised node rather than a second copy of the arm**, and that is the
+## whole point of the function. Director has two spellings of one thing --
+## `the textSize of field "x"` and `field("x").textSize` -- and the reference
+## reaches `member->getField(prop)` from both (`lingo-the.cpp:2334-2372` for the
+## designator; the dot form is the same `kTheField` access with the object
+## supplied by the expression). Two arms doing the property lookup separately is
+## how one of them ends up with the cast argument dropped, or with the
+## host-without-`get_field_prop` fallback in only one of the two, and neither
+## divergence would show up as a failure -- both spellings answer *something*.
+##
+## What the dot arm did instead: `_eval`'s `dot` had no `field` case, so it
+## evaluated the owner -- which yields the field's **text** -- and asked
+## `get_member_prop` for a member *named after whatever the player had typed*.
+## `field("save1").textSize` therefore read a property of a member called
+## `Tal` when the save slot said `Tal`, and answered VOID when nothing was
+## named that. `_assign` took the identical route.
+##
+## 0 sites in the six titles use the spelling, so this is built because Director
+## has it and not because the corpus asked -- and it is one arm rather than a
+## file for exactly that reason.
+static func _field_prop_node(owner: Dictionary, prop: String) -> Dictionary:
+	return {
+		"node": "field_prop",
+		"name": owner.get("name", {}),
+		"cast": owner.get("cast", null),
+		"prop": prop,
+		"line": owner.get("line", 0),
+	}
+
+
 func _field_designator(node: Dictionary, frame: Dictionary) -> Variant:
 	var value: Variant = _eval(node.get("name", {}), frame)
 	if typeof(value) == TYPE_INT:
@@ -2178,6 +2241,8 @@ func _eval(node: Variant, frame: Dictionary) -> Variant:
 					_eval(owner_node.get("which", {}), frame),
 					_cast_of(owner_node, frame), prop_name,
 				])
+			if str(owner_node.get("node", "")) == "field":
+				return _eval(_field_prop_node(owner_node, prop_name), frame)
 			return _value_prop(_eval(owner_node, frame), prop_name)
 		"index":
 			var target: Variant = _eval(expr.get("target", {}), frame)
@@ -2928,6 +2993,8 @@ func _host_call(method: String, args: Array) -> Variant:
 
 
 func _fail(message: String) -> void:
+	# Before the cap, deliberately: see `error_total`.
+	error_total += 1
 	if errors.size() < 50:
 		# The location travels with the message. Without it a report reads
 		# "cannot assign to member_ref" and names neither the script nor the
@@ -2959,6 +3026,20 @@ func _drain_errors() -> void:
 			continue
 		_reported[text] = true
 		print("lingo: %s" % text)
+
+
+## The distinct faults raised since this interpreter was built, first-seen order.
+##
+## `_reported` is the dedup set `_drain_errors` prints against and it deliberately
+## outlives `reset_steps`; this is the same set as a value, so a harness or a
+## report can ask what faulted without re-reading stdout. Insertion-ordered
+## because GDScript's `Dictionary` is, and first-seen order is the order a reader
+## wants: the first fault in a room is usually the cause of the rest.
+func session_faults() -> PackedStringArray:
+	var out := PackedStringArray()
+	for message in _reported.keys():
+		out.append(str(message))
+	return out
 
 
 var _reported: Dictionary = {}

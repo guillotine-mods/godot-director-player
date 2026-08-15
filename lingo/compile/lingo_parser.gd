@@ -209,6 +209,44 @@ func _parse_handler() -> Dictionary:
 			break
 	_skip_newlines()
 	var body := _parse_block(["end"])
+	## **A final handler with no `end` at all closes at the end of the source, and
+	## that is Director's rule rather than this port's leniency** (`bugs.md` 39).
+	##
+	## The reference's grammar carries the alternative outright. `lingo-gr.y`'s
+	## `handler` non-terminal has four productions and two of them are
+	## `tON ID idlist '\n' stmtlist` with no `tENDCLAUSE` after the statement list,
+	## commented `// D4. No 'end' clause`. There is no version guard on the rule and
+	## no error action attached to it -- unlike the `error` productions beside it,
+	## which exist precisely to mark the tolerated-but-malformed cases. So a handler
+	## whose body runs to the end of the script part *is* a handler in Director, and
+	## `LingoArchive::addCode` (`lingo/lingo.cpp:388`) hands the member's whole text
+	## to one `compileLingo` call with nothing appended that could stand in for the
+	## terminator that is not there.
+	##
+	## A port that refuses it drops the script -- **every handler in it**, not only
+	## the unterminated one, because `_parse_script` returns `{}` on any failure.
+	## That is the whole of what `Texts.cst CastScript 98 - day4doc2` costs in
+	## `piposh-en` and `piposh-ru`: an `on mouseUp` whose source stops after
+	## `go to frame "doc1b"`, reported as `line 5: expected end`, and one click in
+	## the day-4 doctor dialogue dead in both localisations. The Hebrew build's copy
+	## of the same member is terminated and was never affected.
+	##
+	## **Only at EOF, and the narrowness is deliberate.** The same production would
+	## in principle also close an unterminated handler at the *next* `on`, but the
+	## reference cannot be read as doing that with any confidence: `lingo-gr.y:397`
+	## puts `tON` in `CMDID`, so `on mouseUp` is also a legal command-form call, and
+	## a generator resolving the shift/reduce conflict that creates by shifting
+	## parses the following `on` as a statement of the handler above it rather than
+	## as the start of a new one. Guessing there would silently change what every
+	## malformed script in the corpus does, which is the reason this entry stayed
+	## open through several sessions. EOF has no such ambiguity: there is no token
+	## left to shift, and the only two readings are "close it" and "throw the file
+	## away".
+	if _k() == "eof":
+		return {
+			"node": "handler", "name": name, "params": params,
+			"body": body, "line": line,
+		}
 	if not _eat_kw("end"):
 		return _fail("expected end", _ln())
 	## The word after `end` is advisory, and Director does not require it to be

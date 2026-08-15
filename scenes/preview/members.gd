@@ -111,6 +111,48 @@ static func library_named(cast: String, table) -> int:
 			return int(number)
 	if wanted.is_valid_int() and table.cast_libs.has(int(wanted)):
 		return int(wanted)
+	# **A library may also be named by its file**, and that is what the references
+	# of `bugs.md` 75 spell. The entry left itself open on one measurement -- "read
+	# the `MCsL` name and path of every library and see whether the *path* basename
+	# is what the script is spelling, in which case Director may match on the file
+	# and this port should too" -- and the measurement came back yes:
+	#
+	#   piposh/PIPDATA/MAINMENU.dir  library 2  name=[master]
+	#                                           path=[...\PIPDATA\master.cst]
+	#
+	# and the two references that missed there are `field "globalmoney" of castLib
+	# "master.cst"` and `field "afganifield" of castLib "master.cst"`, in that
+	# movie. The author spelled the linked cast's **filename**; the movie's `MCsL`
+	# name for the same library is the stem. Piposh 1 writes both spellings across
+	# its movies -- `master`/`master.cst`, `zoom1`/`zoom1.cst`, `pirats`/
+	# `pirats.cst` -- so whichever half a given movie's `MCsL` carries, the scripts
+	# naming it from elsewhere spell the other one.
+	#
+	# **This is narrower than what it replaces, not wider.** Without it those two
+	# fell through to `director_preview.gd:_resolve_field`'s unqualified walk,
+	# which searches *every* library and can answer out of any of them --
+	# `bugs.md` 34's family, a member number resolving in the wrong library and
+	# returning a stranger rather than nothing. With it they resolve to library 2
+	# and nowhere else, which is the library the script asked for.
+	#
+	# The reference would answer neither: `Movie::getCastLibIDByName` matches
+	# `_castNames` alone (`movie.cpp:692-699`) and `_castNames` is keyed by the
+	# `MCsL` *name* field, never by the path (`movie.cpp:247`). So this remains a
+	# deviation from ScummVM -- it is a deviation that resolves correctly instead
+	# of one that resolves plausibly, and it is the one the bug entry asked for.
+	#
+	# Separators are normalised the way `DirectorCastTable.lib_for_cast_entry`
+	# normalises them and for the same reason: this corpus writes the field in Mac
+	# colon form, in Windows form and as a full absolute path, within one title.
+	# The extension is **kept**, so this pass answers `master.cst` and not
+	# `master` -- a stem match would also swallow `castLib "master.dir"`, and no
+	# reference in six titles needs that.
+	for number in table.cast_libs:
+		var path := str(table.cast_libs[number].get("path", ""))
+		if path == "":
+			continue
+		if path.replace(":", "/").replace("\\", "/").get_file().to_lower() == wanted:
+			return int(number)
 	return 0
 
 

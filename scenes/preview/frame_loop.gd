@@ -126,6 +126,68 @@ static func send_idle(host) -> void:
 ## First within the function, too. A frame's scripts run after this returns, so a
 ## release ordered after them would take back the write the frame just made
 ## instead of the one the frame before it left behind.
+##
+## **The tempo is no longer this function's alone** -- see `rearm_tempo`, which is
+## the same arm run once per score step for a playhead that is standing still.
+## What stays here is everything the reference does inside
+## `if (_curFrameNumber != nextFrameNumberToLoad)`: the auto-puppet release, the
+## frame's sounds, its palette and its transition. A transition re-armed every
+## step is a wipe that never finishes, which is why the split is here and not a
+## flag.
+## The playhead took a score step and did not move: re-read the frame's tempo cell
+## and arm it again. `bugs.md` 60.
+##
+## **`Score::update` calls `updateCurrentFrame()` and then `updateNextFrameTime()`
+## every update cycle, not only when the frame number changes**
+## (`score.cpp:640-711`). A room holding itself with `go to the frame` sets
+## `_nextFrame` to the frame it is already on, so `updateCurrentFrame` takes its
+## else-arm and does nothing (`score.cpp:497`, `:518-526`) -- and
+## `updateNextFrameTime` still runs, reads the same cell, and re-arms the same
+## instruction. So in Director a frame carrying a two-second delay and holding
+## itself steps **once every two seconds, for ever**; this port armed the delay on
+## a genuine frame *change* only, so it ran out once and the room then stepped at
+## the movie's frame rate -- 15 or 8 times a second against Director's once every
+## two seconds. Piposh 2 carries 36 delay frames totalling 74.0 s, 23 of them with
+## a frame script; *Rating* carries 160 totalling 439.0 s.
+##
+## The comment that used to sit on `enter_frame` said re-arming "would hold it for
+## ever rather than for two seconds", and that is the reasoning this replaces: a
+## re-arm does not hold the frame, it *re-delays* it, and the playhead takes a step
+## between every pair of delays. What the old comment describes would need the
+## delay re-armed without the playhead ever being let through, which is not what
+## the reference does and is not what this is.
+##
+## **Once per score step, never per tick.** `sync_frame_entry` runs at the head of
+## every engine tick and this must not: `_arm_waits` *adds* a delay to whatever is
+## already holding, so a per-tick arm would grow the hold by two seconds sixty
+## times a second and the room really would stop for ever. It is called from the
+## one place a step is actually taken, after `advance`, and only when the playhead
+## is still on the frame it started on -- a step that *moved* is armed by
+## `sync_frame_entry` on the next tick, from the frame it moved to, which is the
+## same "arm the cell of the frame the playhead now stands on" rule read from the
+## other end.
+##
+## Three things it deliberately does not re-run, all of them inside the
+## reference's own `if (_curFrameNumber != nextFrameNumberToLoad)`: the frame's
+## sounds (a line of speech restarted every step is the loop `marker()` used to
+## produce), its palette, and its transition (a wipe re-armed every step never
+## finishes). Those stay in `sync_frame_entry`.
+##
+## What it *does* re-arm besides the delay is the wait-for-click and the
+## wait-for-sound, and that is the reference too rather than an oversight: the
+## same cell is decoded by the same `updateNextFrameTime`, so a self-holding frame
+## whose cell says 248 waits for a click again after each click releases it. That
+## is the click-to-advance idiom a Director title is built on, and a port that
+## armed it once turns the second click into a free step.
+static func rearm_tempo(host) -> void:
+	if host._score == null:
+		return
+	var frame: Dictionary = host._score.frame(host._index)
+	if frame.is_empty():
+		return
+	host._clock.enter_frame(frame)
+
+
 static func sync_frame_entry(host) -> void:
 	if host._index == host._entered_index or host._score == null:
 		return
@@ -321,6 +383,13 @@ static func tick(host, delta: float) -> void:
 	# `FrameClock.tick` for both numbers and for what this does to a movie whose
 	# tempo is above the loop's own rate.
 	var step_due: bool = host._clock.tick(delta)
+	# §9.2's alternating wait-for-click cursor, pushed the moment the clock says
+	# its answer moved -- armed, flipped once a second, or released. Immediately
+	# after `tick` because `tick` is where the flip happens, and gated on the flag
+	# because a cursor recompute walks the whole sprite stack and Director's own
+	# cadence is not per frame either (`preview/cursor.gd`'s header). `bugs.md` 62.
+	if host._clock.take_cursor_change():
+		host._resolve_cursor()
 	# **After the clock, and this is the one thing in the tick that is.** The
 	# clock takes this tick's delta off the transition's remaining hold as its
 	# first act, so asking it here is asking whether the transition is still
@@ -355,7 +424,11 @@ static func tick(host, delta: float) -> void:
 				host._pending_enter = null
 				host._dispatch("enterFrame", resumed)
 			else:
+				var stood_on: int = host._index
+				var score_here = host._score
 				host._advance()
+				if host._score == score_here and host._index == stood_on:
+					rearm_tempo(host)
 				# The press has now been offered to a step, so it stops being owed.
 				# What the button is *still* doing it says for itself, which is why
 				# this is the live state and not `false`: a held button keeps reading

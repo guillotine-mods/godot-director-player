@@ -8145,3 +8145,267 @@ running the hub's frame-1 handler on any cold entry broke 9 green checks, becaus
 the caller had set up. Do not add an init-seeding path; route the entry through
 frame 1 instead. The decision to make is whether these two dev tools should
 auto-start a game, not how to seed.
+---
+
+# The 2026-08-14 language-and-clock pass
+
+Seven entries closed, one narrowed by taking the measurement it asked for. Two of
+the seven had been open for a long time because they needed an **answer from the
+grammar or the event loop**, not a patch, and nobody had gone and got it.
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 39 | **Fixed — answered from `lingo-gr.y`, not guessed** | Whether Director closes an unterminated final handler at EOF was the open question. The `handler` non-terminal has four productions and **two of them are `tON ID idlist '\n' stmtlist` with no `tENDCLAUSE`**, commented `// D4. No 'end' clause` — no version guard, and no `error` action, unlike the malformed-but-tolerated productions beside them. `LingoArchive::addCode` hands the member's whole text to one `compileLingo` call with nothing appended that could stand in for the terminator. So Director closes it, and so does this port now — **only at EOF, deliberately**: `lingo-gr.y:397` puts `tON` in `CMDID`, so `on mouseUp` is also a legal command-form call, and a parser resolving that ambiguity by shifting would swallow the next handler. That ambiguity is *why* the entry stayed open; EOF has none of it. `piposh-en` 9420 → **9422 of 9422**, `piposh-ru` 9724 → **9726 of 9726**. The day-4 doctor click is alive in both localisations. |
+| 61 | **Fixed, and the entry overstated the fault** | `events.cpp:249-297` is one `if`/`else`: the wait arm ends the wait and returns, so no `mouseDown`, no `the clickOn`, no `clickLoc`, no `lastClick`, no hilite, no drag. **But the mouse-*up* is not consumed** — `EVENT_LBUTTONUP` has no `_waitForClick` arm and `queueEvent` resolves `mouseUp` from the position, not from anything the press latched. So "one click both releases the wait and fires whatever it landed on" is half right, and **suppressing the whole click would have been a second bug**. One residue left and named: the timeout stamp still fires, where the reference stamps `_lastTimeOut` inside the else-arm. |
+| 60 | **Fixed — the port's recorded reasoning was wrong** | `Score::update` calls `updateCurrentFrame()` then `updateNextFrameTime()` on **every** cycle; on `go to the frame` the first does nothing and the second re-reads the same cell. The port's note said re-arming "would hold it for ever rather than for two seconds" — but a re-arm *re-delays*, with a step between every pair. The entry's three feared blockers dissolve: sounds, palette and transition stay behind the reference's own `if (_curFrameNumber != nextFrameNumberToLoad)`, and re-arming a **wait** is correct, because a self-holding `tempo 248` frame waiting for a click again after each click *is* the click-to-advance idiom. `strtgame.dir` frame 5, 1000 ms delay at 8 fps: **30 steps in 5.0 s before, 4 after.** |
+| 62 | **Fixed** | `score.cpp:417-423` flips the cursor every 1000 ms while the wait stands and `:1454-1457` answers it *before* walking the channels — so precedence and rhythm are both part of the rule. Director's own 16x16 bitmaps are art that was not copied; the two states map to the arrow and the pointing hand, **declared rather than hidden**, the same honesty the file's existing built-in mapping uses. |
+| 59 | **Fixed** | `error_total` is incremented in `_fail` **before** the 50-entry cap, so a frame script failing fifteen times a second is not reported as one fault, and `session_faults()` exposes the set that already survived `reset_steps`. |
+| 76 | **Fixed** | The `dot` arms of `_eval` and `_assign` **synthesise the `field_prop` node and delegate** rather than duplicating the arm, so the two spellings cannot drift. The control showed the reported fault exactly: `.textSize` answered 12 — a property of a member named after the field's *text*. |
+| 103 | **Fixed, with an honest "no symptom today"** | `start_lingo` now clears `_lib_keys` beside `_script_casts`. Measured before fixing: the interpreter is replaced three lines above, so a stale key names a bundle the new interpreter never loaded and the lookup answers `{}` — indistinguishable from the key being absent. What the line buys is that the two cannot come apart the moment anything carries a bundle across a movie boundary. The evidence the *state* was wrong is that two harnesses were clearing it by hand. |
+
+**A correction that applies to the three clock entries above**, re-measured today
+with `tools/transition_survey.gd --root piposh2`: Piposh 2 has **19**
+wait-for-click frames and **23** delay frames totalling **46.0 s**. The entries as
+written say 24, 36 and 74.0 s. Their arguments do not turn on the figures, but the
+figures were wrong.
+
+## 39. One script in two roots still does not compile, and it may be malformed rather than unparsed
+
+**Status:** open · **Area:** `lingo/compile/lingo_parser.gd` · found by
+`tools/script_compile_check.gd`, which is why it is a number and not an
+impression
+
+**Re-measured 2026-08-14 at `02844f93`, after the two parser fixes that commit
+carries. Four roots are green and the remainder is one script**, so the table and
+the diagnosis below are both replaced rather than annotated:
+
+| root | compiled | before the fix | before that |
+|---|---|---|---|
+| `piposh2` | **3,307 of 3,307** | 3,307 | 3,307 |
+| `piposh` | **8,754 of 8,754** | 8,742 | 8,738 |
+| `piposh-dream` | **1,746 of 1,746** | 1,746 | 1,725 |
+| `rating` | **5,441 of 5,441** | 5,440 | 5,437 |
+| `piposh-en` | 9,420 of 9,422 | 9,408 | 9,406 |
+| `piposh-ru` | 9,724 of 9,726 | 9,712 | 9,710 |
+
+The two defects that closed the rest were both in `end`-swallowing. A one-line
+`if x then <stmt>` consumed a following `end if` that belonged to an enclosing
+block, so the handler ran off the end of its own source and reported `expected
+end` at the last line -- pointing nowhere near the cause, which is why the five
+CLOCK SCRIPTs stayed undiagnosed through several passes. And `end` only swallowed
+a trailing word when it matched the handler name, so `on idle / ClockScript1 /
+end if` was dropped. Both are in `02844f93`; the visible consequence was Piposh
+1's in-game clock never advancing, which had been reported as an Android bug.
+
+The recovered Itamar corpora move with them: `magichat.dir` is 124 of 124, and
+what is left there is `hats.dir` 111 of 112 and `torfim.dir` 64 of 65, neither
+re-read since the numbers moved.
+
+**What remains is one script, in two roots, and it may not be a parser bug at
+all.** `Texts.cst CastScript 98 - day4doc2` in `piposh-en` and `piposh-ru`, "line
+5: expected end", counted twice in each because the cast is reached twice. It is
+an `on mouseUp` with **no `end` at all** -- the member's source stops after
+`go to frame "doc1b"`. So the question is not how to parse it but whether
+Director closes an unterminated final handler at EOF, and nobody has measured
+that. Guessing either way silently changes what every malformed script in the
+corpus does, so it stays open until it is answered from the reference.
+
+The Hebrew build is unaffected. The cost of the remaining two is that one click
+in the day-4 doctor dialogue is dead in both localisations.
+
+```
+godot --headless --path . --script tools/script_compile_check.gd -- --root piposh-en --verbose
+```
+
+---
+
+## 59. A Lingo runtime error survives only until the next dispatch, so nothing can observe one during play
+
+**Status:** open · **Area:** `lingo/lingo_interpreter.gd`
+
+`LingoInterpreter._fail` is where every runtime fault the interpreter can name
+lands: "step budget exhausted", "repeat while did not terminate", "handler
+recursion too deep at X", "unknown statement", "cannot assign to X". They go into
+`errors`, a `PackedStringArray` capped at 50.
+
+`reset_steps()` clears it, and `reset_steps` is called at the **start of every
+dispatch** — `preview/scripts.gd:dispatch`, `preview/event_chain.gd:run` and the
+thaw. One score step dispatches `idle`, `exitFrame`, `prepareFrame` and
+`enterFrame` back to back, all inside one process frame, so an error raised in
+any of them but the last is gone before anything outside the interpreter can read
+it. The only reader in the whole port is `preview/debug_report.gd`, which prints
+whatever happens to be there when the report key is pressed.
+
+So the port has no way to answer "did any script fault while that room ran". A
+handler cut off half-way by the step budget leaves the room in a state nobody can
+attribute later, which is the same class of failure as a harness that reads null
+and reports zero.
+
+`tools/liveness_sweep.gd` polls `errors` once per process frame and accumulates
+what it finds, which is the best that can be done from outside: a `lingo` finding
+from it is real, and **a clean sweep is not evidence that nothing faulted.**
+
+The fix is a sink that outlives a dispatch — the shape `LingoDiagnostics` already
+has for unbound names, which deliberately survives `reset_steps` and accumulates
+over a session. `errors` wants the same treatment, or a counter beside it, so
+that "42 runtime faults this session" is a number a harness can assert on.
+
+**Narrowed 2026-08-14: half of that sink exists.** `reset_steps` now calls
+`_drain_errors()` before `errors.clear()`, and `_drain_errors` prints each *unique*
+message once per session against a `_reported` dictionary that survives the
+dispatch. So a fault two dispatches ago is no longer silent — it is in the run's
+output. What is still missing is the assertable half: nothing counts them, so a
+harness cannot say "this room ran clean" and `tools/liveness_sweep.gd` is still
+polling `errors` once a process frame and still cannot promise it caught them all.
+
+**Reproduce:** read `lingo/lingo_interpreter.gd:698-708` (`reset_steps`) beside
+`:1634` (`_fail`) and `scenes/preview/scripts.gd:75`. Then run any movie and note
+that no tool in `tools/` can report a fault that happened two dispatches ago.
+
+---
+
+## 60. A tempo delay on a self-holding frame is armed once; the reference re-arms it on every step
+
+**Status:** open · **Area:** `scenes/preview/frame_loop.gd:sync_frame_entry`, `director/director_frame_clock.gd:enter_frame`, `score.cpp:640-712`
+
+`Score::update` calls `updateCurrentFrame()` and then `updateNextFrameTime()`
+**every update cycle**, not only when the frame number changes. A room holding
+itself with `go to the frame` sets `_nextFrame` to the frame it is already on, so
+`updateCurrentFrame` takes its else-arm and does nothing -- and
+`updateNextFrameTime` still runs, reads the same tempo cell, and re-arms the same
+delay. A frame carrying a two-second delay and holding itself therefore steps
+once every two seconds, for ever, in Director.
+
+This port arms the tempo on a genuine frame *change* only: `sync_frame_entry`
+returns early when `_index == _entered_index`, so the delay is armed once, runs
+out, and the room then steps at the movie's frame rate -- 15 or 8 times a second
+against Director's once every two seconds. The frames are there: Piposh 2 carries
+36 delay frames totalling 74.0 s and 23 of them carry a frame script; *Rating*
+carries 160 totalling 439.0 s.
+
+The early return is deliberate and its comment says why -- "re-arming a two-second
+delay from there would hold it for ever rather than for two seconds" -- and that
+reasoning is wrong in a way worth recording: re-arming does not hold the frame for
+ever, it *re-delays* it, which is exactly the behaviour above. What the comment
+describes would only happen if the delay were re-armed without the playhead ever
+being allowed to step, which is not what the reference does.
+
+Not changed here because it is not a one-line move. Arming the tempo per step
+means the transition must **not** move with it (a wipe re-armed every step never
+finishes), so the two would have to be split out of `sync_frame_entry`, and
+`enter_frame` would have to become idempotent for the click and sound waits or a
+frame released by a click would re-arm its own wait on the next step. That is a
+change to the tick's shape and wants measuring against `idle_clock`,
+`pause_holds`, `playhead_escape` and `frame_events` together.
+
+**Reproduce:** read `reference/scummvm/score.cpp:640-712` beside
+`scenes/preview/frame_loop.gd:sync_frame_entry`. For the exposure,
+`godot --headless --path . --script tools/transition_survey.gd -- --root piposh2`
+prints the delay frames and their total.
+
+---
+
+## 61. The click that releases a wait-for-click is delivered to the movie as well; the reference consumes it
+
+**Status:** open · **Area:** `scenes/director_preview.gd:route_press`, `scenes/preview/interaction.gd`, `events.cpp:250-262`
+
+`Movie::processEvent` handles the mouse-down in one `if`/`else`:
+
+```
+if (sc->_waitForClick) { sc->_waitForClick = false; sc->renderCursor(pos, true); }
+else                   { ...latch the press, build the chain, dispatch mouseDown... }
+```
+
+So on a wait-for-click frame the press does one thing and one thing only: it ends
+the wait. No `mouseDown` is dispatched, `the clickOn` is not rewritten, no drag
+starts, and no sprite is hilited. This port releases the wait in `route_press` and
+then carries straight on into `latch_press` and the mouse-down chain, so the click
+that ends the wait is also a click on whatever sprite was under it.
+
+Piposh 2 has 24 wait-for-click frames and *Rating* has 214, so the divergence is
+reachable; whether it is *visible* depends on whether those frames also carry a
+clickable sprite, which is not measured here.
+
+Not changed here because it is a change to the input path rather than to the
+clock, and it inverts the order two other rules depend on: §15's latch block is
+documented as running for either button and on every press, and
+`preview/interaction.gd` is where that decision lives.
+
+**Reproduce:** read `reference/scummvm/events.cpp:250-262` beside
+`scenes/director_preview.gd:route_press`.
+
+---
+
+## 62. A wait-for-click frame shows no alternating cursor, so a waiting movie looks like a stopped one
+
+**Status:** open · **Area:** `scenes/preview/cursor.gd`, `director/director_frame_clock.gd:waiting_click`, `score.cpp:400-424` and `:1444-1458`
+
+§9.2: while `_waitForClick` is set, `Score::isWaitingForNextFrame` flips
+`_waitForClickCursor` once a second and re-renders the cursor, and
+`Score::renderCursor` returns the built-in mouse-up or mouse-down arrow for that
+flag *before* it consults any sprite. It is the only feedback a wait-for-click
+frame gives, and without it the movie is indistinguishable from one that has
+hung -- which is what a player sees on 24 frames of Piposh 2 and 214 of *Rating*.
+
+The clock half is there: `FrameClock.waiting_click()` answers the question and was
+added for this. What is missing is the cursor path taking it, with the 1000 ms
+alternation and the precedence over the sprite cursor (§7.4).
+
+**Reproduce:** read `reference/scummvm/score.cpp:400-424` and `:1444-1458` beside
+`scenes/preview/cursor.gd`.
+
+---
+
+## 76. `field("x").prop` — the dot spelling of a field property — resolves a member named after the field's *text*
+
+**Status:** open, unexercised · **Area:** `lingo/lingo_interpreter.gd`'s `dot`
+arms · found while closing `docs/bugs-closed.md` 53/35, and **not** fixed with it
+
+The designator spelling `the <prop> of field "x"` now reaches
+`get_field_prop`/`set_field_prop`. The dot spelling does not: `_eval`'s `dot` arm
+tests the owner node for `sprite_ref` and `member_ref` and has no `field` case, so
+`field("x").textSize` evaluates the owner — which yields the field's **text** —
+and then asks `get_member_prop` for a member of that name. `field("x").text = y`
+takes the same route through `_assign`.
+
+0 sites in any of the six titles use it, which is why it is filed rather than
+fixed in the same change: the fix is one more arm beside the two that are there,
+and it wants the same harness case as the designator spelling
+(`tools/field_designator.gd`) rather than a new file.
+
+---
+
+## 103. `start_lingo` clears the script casts but not the library keys, so a movie inherits the previous movie's cast-library names
+
+**Status:** OPEN, no symptom measured · **Area:** `scenes/preview/boot.gd:start_lingo`
+· found while tracing entry 102's cast resolution
+
+`boot.gd:start_lingo` clears `_script_casts` (`:282`) and does not clear
+`_lib_keys` (`:321`). So entering `eat.dir` from `dinner1.dir` leaves
+`{2: "DINNER1/doc", 3: "DINNER1/hezi", 5, 7, 8, 10, 13: …}` alive under a movie
+whose only library is 1. A script naming `castLib 7` there would resolve into the
+movie the playhead has left.
+
+**The evidence that this is real rather than theoretical is that two harnesses work
+around it**: `tools/click_eligibility.gd:127` and `tools/click_chain.gd:469` both
+call `_lib_keys.clear()` themselves before measuring. A tool clearing engine state
+by hand is a statement that the engine did not.
+
+No player-visible symptom has been measured, and that is why it is filed rather
+than fixed: library 1 *is* re-keyed on every movie load (verified live —
+`lib_keys={1: "EAT/internal", 2: "DINNER1/doc", …}` after the real
+`dinner1.dir → eat.dir` handover), and library 1 is what this corpus's scripts
+actually name. So the stale entries are unreachable in the six titles as authored,
+and the bug is a loaded gun rather than a wound. It is one line beside the existing
+`clear()`, and the reason to do it deliberately rather than casually is that
+`bugs.md` 34's whole family — a member number resolving in the wrong library returns
+a stranger rather than nothing — is what stale keys would produce.
+
+Reproduce the state:
+
+```
+godot --headless --path . --script tools/click_chain.gd -- --root piposh-dream --file dinner1.dir
+```
+
+and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
+`_lib_keys.clear()` at `:469` removed.

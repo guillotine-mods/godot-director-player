@@ -113,6 +113,10 @@ const REASON_TRANSITION := "transition"
 ## live and the frame the same length. See `director_palette_state.gd`.
 const REASON_PALETTE := "palette"
 
+## How long each half of the wait-for-click cursor is shown, in milliseconds.
+## `score.cpp:418` -- `getMillis() >= _nextFrameTime + 1000`.
+const CLICK_CURSOR_MS := 1000.0
+
 ## The rate the score last asked for. Carried forward across frames, as Director
 ## does: a frame with no tempo keeps the rate the last one set.
 var fps := DEFAULT_FPS
@@ -126,6 +130,35 @@ var _hold_ms := 0.0
 var _hold_reason := ""
 ## The tempo channel's wait-for-click, released only by a click or a jump.
 var _waiting_click := false
+## Which half of §9.2's alternating cursor a wait-for-click frame is showing:
+## false is the built-in mouse-**up** arrow, true the mouse-**down** one.
+##
+## `Score::isWaitingForNextFrame` flips this once a second while `_waitForClick`
+## stands and re-renders the cursor from it (`score.cpp:417-423`), and
+## `Score::renderCursor` answers it *before* it consults any sprite
+## (`score.cpp:1454-1457`). It is the only feedback such a frame gives, and
+## without it a waiting movie is indistinguishable from one that has hung -- which
+## is what a player saw on 24 frames of Piposh 2 and 214 of *Rating*.
+## `bugs.md` 62.
+var _waiting_click_cursor := false
+## Milliseconds since the last flip. The reference keeps the same phase in
+## `_nextFrameTime`, which it stamps to *now* on each flip and compares against
+## `+ 1000`; a counter says the same thing without borrowing the field that also
+## means "when the next step is due", which here it does not.
+var _click_cursor_ms := 0.0
+## Was the most recent press the one that ended a wait-for-click? Written by
+## `clicked` on every press and read by `preview/interaction.gd`; `bugs.md` 61.
+var _click_consumed := false
+## Set whenever the answer to "what cursor does the wait want" has moved: armed,
+## flipped, or released. Read and cleared by `take_cursor_change`.
+##
+## A flag rather than a signal because the caller is a tick, and a flag rather
+## than a comparison because the *only* place that could hold the previous value
+## is the preview node -- and the wait-for-click cursor is the clock's fact, not
+## the node's. The reference calls `renderCursor` directly from all three of those
+## points; this port cannot, because the cursor arbitration needs the sprite stack
+## and the stage mouse, neither of which the clock knows about.
+var _cursor_changed := false
 ## The tempo channel's wait-for-sound: the channel it waits on, 0 for none, and
 ## which cue point in that sound releases it (`DirectorScore.CUE_NEXT`,
 ## `CUE_END`, or a 1-based index).
@@ -237,7 +270,12 @@ func reset(rate: float = 0.0) -> void:
 	_hold_ms = 0.0
 	_transition_ms = 0.0
 	_hold_reason = ""
+	if _waiting_click:
+		_cursor_changed = true
 	_waiting_click = false
+	_waiting_click_cursor = false
+	_click_cursor_ms = 0.0
+	_click_consumed = false
 	_waiting_sound = 0
 	_waiting_cue = 0
 	_waiting_video = 0
@@ -252,11 +290,23 @@ func reset(rate: float = 0.0) -> void:
 ## The playhead has moved onto `frame`: take its tempo and arm whatever it waits
 ## for.
 ##
-## Called on a genuine frame *change*, not once per tick. A room holding itself
-## with `go to the frame` re-enters the same index every tick, and re-arming a
-## two-second delay from there would hold it for ever rather than for two
-## seconds. `director/director_runtime.gd:281` measures the same delay from the
-## moment the frame was entered, for the same reason.
+## **Called once per score step, not once per tick and not only on a frame
+## change** (`bugs.md` 60). `Score::update` runs `updateCurrentFrame()` and then
+## `updateNextFrameTime()` every update cycle (`score.cpp:640-711`), so the cell
+## of whichever frame the playhead now stands on is armed again after every step
+## -- including the step a room holding itself with `go to the frame` takes, where
+## `updateCurrentFrame` does nothing and `updateNextFrameTime` still re-arms. A
+## frame carrying a two-second delay and holding itself therefore steps once every
+## two seconds for ever in Director.
+##
+## The two callers are `preview/frame_loop.gd`: `sync_frame_entry` for a step that
+## moved the playhead, `rearm_tempo` for one that did not. The per-tick arm this
+## must never become is argued there -- `_arm_waits` adds a delay to whatever is
+## already holding, so sixty arms a second is a hold that never runs out.
+##
+## The line this replaces said re-arming "would hold it for ever rather than for
+## two seconds", which is wrong in a way worth recording: re-arming *re-delays*
+## the frame, and the playhead takes a step between every pair of delays.
 ## **The frame's own decoded waits are not what is armed.** They are the score's
 ## reading of the cell the frame carries, and the instruction actually in force
 ## may be a different one — a `puppetTempo` overriding it, or the carried-forward
@@ -368,6 +418,18 @@ func _arm_waits(waits: Dictionary, clearing := true) -> void:
 	var sound := int(waits.get("wait_sound_channel", 0))
 	var video := int(waits.get("wait_video_channel", 0))
 	if clearing or click:
+		# §9.2's cursor starts on the mouse-up arrow every time the wait is armed,
+		# which is `_waitForClickCursor = false` beside `_waitForClick = true` in
+		# `score.cpp:602-604` (D6+) and `:565-567` (before it). Unconditional when
+		# the cell says wait, exactly as there: with `bugs.md` 60's per-step re-arm
+		# a self-holding wait frame comes back through here after every click, and
+		# the reference restarts its phase on each of them too.
+		if click:
+			_waiting_click_cursor = false
+			_click_cursor_ms = 0.0
+			_cursor_changed = true
+		elif _waiting_click:
+			_cursor_changed = true
 		_waiting_click = click
 	if clearing or sound > 0:
 		_waiting_sound = sound
@@ -480,6 +542,23 @@ func hold(ms: float, reason: String) -> void:
 ## clickable-through: §9.2 gives the alternating cursor and the mouse-down
 ## release to the wait-for-click case alone.
 func clicked() -> void:
+	# **Whether this press consumed a wait is the port's only record that it did**,
+	# and `bugs.md` 61 is the whole of why it is kept. `Movie::processEvent` handles
+	# the mouse-down in one `if`/`else` (`events.cpp:249-297`): on a wait-for-click
+	# frame the press ends the wait and returns, so no `mouseDown` is dispatched,
+	# `the clickOn` is not rewritten, no drag starts and no sprite is hilited. The
+	# port released the wait and then carried straight on into the mouse-down
+	# chain, so the click that ended the wait was also a click on whatever sprite
+	# was under it.
+	#
+	# Recorded here rather than returned, because the caller that has to know is
+	# not the caller that calls this: `route_press` releases the wait and
+	# `preview/interaction.gd` builds the chain, and the second must be able to ask
+	# without the first being rewritten to tell it. Assigned on *every* press, so it
+	# describes this press and never a previous one.
+	_click_consumed = _waiting_click
+	if _waiting_click:
+		_cursor_changed = true
 	_waiting_click = false
 
 
@@ -508,6 +587,8 @@ func clicked() -> void:
 ## corpus spends 74.0 s in tempo delays across thirty-six frames, so clicking
 ## through one is an ordinary thing for a player to do. `bugs.md` 55.
 func release() -> void:
+	if _waiting_click:
+		_cursor_changed = true
 	_waiting_click = false
 	_waiting_sound = 0
 	_waiting_cue = 0
@@ -557,6 +638,32 @@ func sound_arrived() -> void:
 ## screen saying the movie wants a click rather than having stopped.
 func waiting_click() -> bool:
 	return _waiting_click
+
+
+## Which half of the wait-for-click alternation is showing: false is the built-in
+## mouse-up arrow, true the mouse-down one. Only meaningful while
+## `waiting_click()`; `preview/cursor.gd` asks both together.
+func waiting_click_cursor() -> bool:
+	return _waiting_click_cursor
+
+
+## Has the wait-for-click cursor's answer moved since this was last asked?
+##
+## Read-and-clear, with exactly one caller (`preview/frame_loop.gd:tick`), because
+## the cursor recompute is expensive enough not to want per tick and the three
+## events that move it -- armed, flipped, released -- happen in three different
+## places. Director calls `renderCursor` from each of them directly; this port
+## cannot, because arbitration needs the sprite stack and the stage mouse.
+func take_cursor_change() -> bool:
+	var moved := _cursor_changed
+	_cursor_changed = false
+	return moved
+
+
+## Did the last press land on a frame that was waiting for a click, and therefore
+## get consumed by the wait? `bugs.md` 61; see `clicked`.
+func press_consumed() -> bool:
+	return _click_consumed
 
 
 ## The sprite channel whose digital video is holding the playhead, 0 for none.
@@ -683,7 +790,28 @@ func hold_reason() -> String:
 ## as they animate through a room holding itself still — so the caller asks
 ## `playhead_held()` for that and counts this either way.
 func tick(delta: float) -> bool:
+	# **`_click_consumed` describes one press and must not outlive the frame it was
+	# stamped in.** `clicked()` is called from `route_press` only when the movie
+	# has seen a real mouse-down (`_saw_press`), so a synthesised click -- every
+	# harness's `route_click`, the container picker -- reaches `latch_press` and
+	# `press` without going through it. Left standing, the last genuine
+	# wait-release would keep suppressing the *next* synthesised click's mouse-down
+	# chain, which is a silent dead hotspot in exactly the tooling that would have
+	# to catch it. Both readers run inside one `route_press` call, so a per-tick
+	# clear cannot cut a live press in half.
+	_click_consumed = false
 	if delta > 0.0:
+		# §9.2's alternating cursor, stepped here because this is the one call the
+		# host makes every tick whether or not the playhead is allowed to move --
+		# and a wait-for-click frame is precisely one the playhead may not move on.
+		# `Score::isWaitingForNextFrame` flips it from the same place, inside the
+		# arm that keeps the wait standing (`score.cpp:417-423`).
+		if _waiting_click:
+			_click_cursor_ms += delta * 1000.0
+			if _click_cursor_ms >= CLICK_CURSOR_MS:
+				_click_cursor_ms = 0.0
+				_waiting_click_cursor = not _waiting_click_cursor
+				_cursor_changed = true
 		_hold_ms = maxf(0.0, _hold_ms - delta * 1000.0)
 		# The transition's own share runs down with it, and first: Director spends
 		# the wipe's time inside the render and only then arms the delay, so the
@@ -726,6 +854,12 @@ func state() -> Dictionary:
 		"transition_ms": _transition_ms,
 		"hold_reason": _hold_reason,
 		"waiting_click": _waiting_click,
+		# The alternation's phase, for the same reason the hold's remainder is
+		# here: a save taken half a second into a wait comes back showing the
+		# other arrow without it, which is a visible difference between the movie
+		# that was saved and the one that comes back.
+		"waiting_click_cursor": _waiting_click_cursor,
+		"click_cursor_ms": _click_cursor_ms,
 		"waiting_sound": _waiting_sound,
 		"waiting_cue": _waiting_cue,
 		"waiting_video": _waiting_video,
@@ -749,6 +883,10 @@ func restore_state(from: Dictionary) -> void:
 	_transition_ms = float(from.get("transition_ms", 0.0))
 	_hold_reason = str(from.get("hold_reason", ""))
 	_waiting_click = bool(from.get("waiting_click", false))
+	_waiting_click_cursor = bool(from.get("waiting_click_cursor", false))
+	_click_cursor_ms = float(from.get("click_cursor_ms", 0.0))
+	# The restored cursor has not been pushed to the OS yet, whatever it is.
+	_cursor_changed = true
 	_waiting_sound = int(from.get("waiting_sound", 0))
 	_waiting_cue = int(from.get("waiting_cue", 0))
 	_waiting_video = int(from.get("waiting_video", 0))
