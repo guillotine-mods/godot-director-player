@@ -28,6 +28,18 @@ const CURSOR_SIZE := 16
 ## asked for. The biggest real cursor in this corpus is 17x17.
 const MAX_CURSOR_SIZE := 32
 
+## §7.3 rule 2's two thresholds, as Director's own numbers.
+##
+## `PLATFORM_WINDOWS` is the id Director stores in the movie's config chunk at
+## offset 56 and the reference maps with `util.cpp:platformFromID` -- 1 Mac,
+## 2 Windows. `FILE_VERSION_D5` is `kFileVer500` from `types.h:370`, the word the
+## config chunk states at offset 36; the reference compares a *human* version
+## (`humanVersion(0x4B1) == 500`) and comparing the file-version words directly
+## is the same test with one fewer conversion, because `humanVersion` is
+## monotonic in its argument.
+const PLATFORM_WINDOWS := 2
+const FILE_VERSION_D5 := 0x4B1
+
 ## Godot refuses a custom cursor above this, and a cursor that large would be
 ## absurd anyway. 16x16 art at a 4x stage is 64, so the ceiling only bites on
 ## genuinely enormous windows, where the cursor stops growing rather than
@@ -279,17 +291,79 @@ static func compose(data_id: int, mask_id: int, table, palette: PackedByteArray)
 	if visible == 0:
 		return null
 
-	# The hotspot is the data member's registration point, and it is recentred
-	# when it falls outside the 16x16 crop -- an out-of-range hotspot would put
-	# the click somewhere the cursor is not drawn.
+	# The hotspot is the data member's registration point, put through §7.3's
+	# rule; `hotspot_of` is where that rule and its evidence live.
 	var m: Dictionary = table.get_member(data_lib, data_slot)
+	return {
+		"image": out,
+		"hotspot": Vector2(hotspot_of(
+			m, int(table.movie_version), int(table.movie_platform_id)
+		)),
+	}
+
+
+## Where a custom cursor points, out of the data member and the movie it is in.
+##
+## **This is §7.3's whole hotspot rule and it is one `if` in the reference**, so
+## it is one `if` here. `cursor.cpp:Cursor::readFromCast` (ScummVM 805f259a):
+##
+##     int offX = bc->_regX - bc->_initialRect.left;
+##     int offY = bc->_regY - bc->_initialRect.top;
+##     if ((offX < 0) || (offX >= 16) || (offY < 0) || (offY >= 16) ||
+##         (g_director->getVersion() < 500 &&
+##          g_director->getPlatform() == Common::kPlatformWindows)) {
+##         offX = 8;
+##         offY = 8;
+##     }
+##
+## Three things about that expression are worth writing down, because `bugs.md`
+## 28 sat open for want of each of them.
+##
+## **The subtraction is already done.** `reg_offset_x` is not `regX`: it is
+## `regX - initialRect.left`, computed in `director_cast.gd:_parse_specific`'s
+## type-1 arm, which is the expression the two lines above compute. So the port
+## reads the field the reference derives, and the two agree by construction
+## rather than by coincidence. (`director_cast.gd:set_reg_point` documents the
+## same split from the other end: Lingo's `the regPoint` is the raw pair and this
+## is the offset.)
+##
+## **Out of range moves both coordinates, not the offending one.** The reference
+## assigns `offX = 8; offY = 8;` inside one branch whose condition is a
+## disjunction, so a member whose x is in range and whose y is not gets (8,8) and
+## not (x,8). This port did that already; it is stated because it is the sort of
+## thing a rewrite quietly gets wrong.
+##
+## **Rule 2 is inert on this corpus and is implemented anyway.** Measured by
+## `tools/cursor_hotspot.gd --all` over the six shipped roots: 651 containers,
+## 482 of them carrying a config chunk, and every one of those 482 states a file
+## version of `0x57E` (111 of them) or `0x73A` (371). `humanVersion` puts the
+## lower of those at 700 and D5 begins at `0x4B1`, so `version < 500` is false
+## everywhere and the Windows clause never fires on any data this project has.
+## **`bugs.md` 28's premise, "this game's containers are D4", is wrong** -- D4 is
+## `0x45B` and nothing in reach states it -- and that premise is the whole reason
+## the unimplemented half read as a live defect. Its second premise is shakier
+## than it looks too: the platform id splits **373 Windows to 109 Mac** across
+## those same containers, so "the original shipped on Windows" is not even
+## uniformly what the files say. A D4 Windows title would still be Director, so
+## the clause is here, unexercised against real data and asserted against a
+## synthetic member by `tools/cursor_hotspot.gd`.
+##
+## Zero for either argument means "the movie did not say" -- a cast file has no
+## config chunk and therefore no platform -- and zero is neither Windows nor
+## pre-D5, so an unknown movie takes rule 1 alone. That is the answer the port
+## gave before this function existed, which is what makes the change additive.
+static func hotspot_of(member: Dictionary, movie_version: int,
+		platform_id: int) -> Vector2i:
 	var hotspot := Vector2i(
-		int(m.get("reg_offset_x", 0)), int(m.get("reg_offset_y", 0))
+		int(member.get("reg_offset_x", 0)), int(member.get("reg_offset_y", 0))
 	)
-	if hotspot.x < 0 or hotspot.y < 0 \
+	var windows_pre_d5 := platform_id == PLATFORM_WINDOWS \
+		and movie_version > 0 and movie_version < FILE_VERSION_D5
+	if windows_pre_d5 \
+			or hotspot.x < 0 or hotspot.y < 0 \
 			or hotspot.x >= CURSOR_SIZE or hotspot.y >= CURSOR_SIZE:
-		hotspot = Vector2i(CURSOR_SIZE / 2, CURSOR_SIZE / 2)
-	return {"image": out, "hotspot": Vector2(hotspot)}
+		return Vector2i(CURSOR_SIZE / 2, CURSOR_SIZE / 2)
+	return hotspot
 
 
 ## Install a cursor: a `[data, mask]` member pair, or a built-in number. Returns

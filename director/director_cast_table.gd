@@ -20,10 +20,26 @@ const Cast := preload("res://director/director_cast.gd")
 const ContainerFile := preload("res://director/director_file.gd")
 const FilmLoop := preload("res://director/director_film_loop.gd")
 const Codepage := preload("res://director/director_codepage.gd")
+const Config := preload("res://director/director_config.gd")
 
 ## lib number -> {name, path, min, max, id, resolved_path, embedded}
 var cast_libs: Dictionary = {}
 var movie_name: String = ""
+## The movie's own `DRCF` file-version word and platform id, read once at `open`.
+##
+## Both are zero when the movie carries no config chunk, and callers must treat
+## zero as "unknown" rather than as a value: `platform_id` 0 is not Mac, and
+## `movie_version` 0 is not D1.
+##
+## **Here rather than in the caller, because the callers are per-mouse-move.**
+## `scenes/preview/cursor.gd:compose` needs both to apply §7.3's second hotspot
+## rule and runs on every cursor recompute; re-reading and re-parsing the config
+## chunk there would parse `DRCF` several times a second for a pair of integers
+## that cannot change while the movie is open. The table is opened once per movie
+## and closed when the movie changes, which is exactly the lifetime these two
+## have.
+var movie_version: int = 0
+var movie_platform_id: int = 0
 var error: String = ""
 
 var _paths = null
@@ -41,6 +57,15 @@ func open(movie, director_paths) -> bool:
 	_movie = movie
 	_paths = director_paths
 	movie_name = str(movie.path).get_file().get_basename()
+
+	# Before any cast is opened, because a caller that reads the table at all may
+	# read these first. A cast file with no `DRCF`/`VWCF` leaves both at zero and
+	# `read` says so by returning false; that is the honest state for a `.cst`,
+	# which has no movie and therefore no platform of its own.
+	var config = Config.new()
+	if config.read(movie):
+		movie_version = int(config.version)
+		movie_platform_id = int(config.platform_id)
 
 	# The internal cast is library 1 whether or not an MCsL says so; a pure cast
 	# file has no MCsL at all and is a single library by definition.

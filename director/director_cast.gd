@@ -149,6 +149,22 @@ func open(container, cast_owner_id: int = -1) -> bool:
 	return true
 
 
+## The child chunks one member owns, `{tag: chunk id}`, straight out of `KEY*`.
+##
+## `_parse_cast` picks a member's *payload* out of this by type, which is the
+## right answer for the six types that have one and no answer at all for a type
+## whose children are decided by the Xtra rather than by Director. A `text` Xtra
+## owns an `XMED` and nothing in `TYPE_NAMES` says so; the reference finds it by
+## walking the member's children and matching the tag
+## (`lingo/xtras-cast/textxtra.cpp:TextXtraCastMember::load`, ScummVM 805f259a).
+##
+## Public because the survey that has to answer "is there anything behind this
+## member" cannot get there any other way, and reaching into `_owned` from a tool
+## would make the private name load-bearing outside this file.
+func owned_chunks(chunk_id: int) -> Dictionary:
+	return _owned.get(chunk_id, {})
+
+
 ## Member numbers that have a record, ascending.
 func member_numbers() -> Array:
 	var out: Array = _cast_chunk.keys()
@@ -905,6 +921,9 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["xtra_symbol"] = _text(spec.slice(4, 4 + symbol_len))
 			var data_len := _be_u32(spec, 4 + symbol_len)
 			out["xtra_data_size"] = mini(data_len, spec.size() - (8 + symbol_len))
+			_apply_text_xtra_rect(
+				out, spec.slice(8 + symbol_len,
+					mini(8 + symbol_len + data_len, spec.size())))
 			# The self-check, reported rather than asserted here so that
 			# `tools/xtra_members.gd` can assert it over the whole corpus at once:
 			# the two length words and the two runs they measure must account for
@@ -994,7 +1013,63 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 ## Nothing here draws an Xtra: this makes the member's *geometry* right, and
 ## `scenes/preview/sprite_art.gd:texture_for` still returns null for the type,
 ## which is what Director does for an Xtra it has no DLL for.
+## The `text` Xtra's size, which is in the Xtra's own payload and nowhere else.
+##
+## **This is why all eleven `text` Xtra members in the tree carry a 0x0
+## `xtraRect`, and the zero is not a decode gap.** `_apply_xtra_rect` above reads
+## item 12 of the *info* block, which is where Director puts geometry for the
+## Xtras that have it there; the `text` Xtra puts its own somewhere else, and the
+## reference reads it from the payload without consulting the info rect at all
+## (`lingo/xtras-cast/textxtra.cpp:TextXtra::parseXtraData`, ScummVM 805f259a):
+## a big-endian int32 height at offset 36 and a width at 40, refused outright
+## below 44 bytes of payload or outside `1..0x4000` on either axis. Those bounds
+## are the reference's, copied because a payload that fails them is one this
+## reading does not understand, and inventing a size from it would be worse than
+## leaving the member sizeless.
+##
+## Measured by `tools/text_xtra_members.gd --all` over all eight roots: **all
+## eleven** members with symbol `text` carry a payload that passes, and the sizes
+## are the shapes of the things they name -- `SLOTMACH.dir` #83 `credit` is
+## 60x23, a credit readout; `HEZSAVE.DIR` and `AIR1.dir` #118 `temporary` are
+## 300x45 and 300x64; `MAP.dir` #12 and #17 are 300x560 and 300x160;
+## `piposh-dream`'s three maze members are 457x496, 457x372 and 457x496; and
+## `rating ARCADE1.dir` #136 `objectsfound includ :` is 360x144. Eleven of eleven
+## landing in that range is what says offsets 36 and 40 are the right two.
+##
+## **No registration point is derived from it**, unlike the info-block rect. The
+## reference builds `Common::Rect(w, h)`, whose origin is (0,0), so the
+## registration offset stays the zero `_parse_cast` already put there.
+##
+## Applied for the symbol the reference promotes and no other. `promote` hands a
+## `text` Xtra to `TextXtra` and everything else to `XtraCastMember`, which never
+## looks at its payload, so reading these four bytes out of a Flash movie's
+## private serialisation would be reading noise.
+##
+## **Nothing in this corpus is placed on a sprite**, so this changes no pixel: the
+## same survey reports 0 of the 11 named by any score record in any container of
+## any root. What it changes is what `the width of member` and `the height of
+## member` answer, which was 0 for every one of them and is now the authored size.
+func _apply_text_xtra_rect(out: Dictionary, payload: PackedByteArray) -> void:
+	if str(out.get("xtra_symbol", "")).to_lower() != "text":
+		return
+	if payload.size() < 44:
+		return
+	var h := _be_i32(payload, 36)
+	var w := _be_i32(payload, 40)
+	if w <= 0 or h <= 0 or w > 0x4000 or h > 0x4000:
+		return
+	out["width"] = w
+	out["height"] = h
+	out["initial_rect"] = {"top": 0, "left": 0, "bottom": h, "right": w}
+	out["xtra_text_rect"] = true
+
+
 func _apply_xtra_rect(out: Dictionary) -> void:
+	# The `text` Xtra already answered from its payload, which is the only place
+	# the reference looks for one. An info rect would not be a second opinion, it
+	# would be a different member's convention applied to this one.
+	if bool(out.get("xtra_text_rect", false)):
+		return
 	var rect: Dictionary = out.get("xtra_rect", {})
 	if rect.is_empty():
 		return

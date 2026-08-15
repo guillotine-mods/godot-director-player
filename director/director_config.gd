@@ -101,6 +101,36 @@ var default_tempo := 0
 ## palette cast member and is left alone.
 var default_palette := 0
 var default_palette_lib := 0
+## The machine the movie was authored on, as Director's own id: 1 Mac, 2 Windows,
+## 0 when the chunk is too short to carry it.
+##
+## Offset 56, immediately after the frame rate at 54, and it is the *only*
+## in-file answer to "which platform is this". The reference gets its platform
+## from here too -- `cast.cpp:loadConfig` reads `_platformID = readUint16()` and
+## `_platform = platformFromID(_platformID)` (`util.cpp:1348`, 1 Mac / 2 Windows,
+## ScummVM 805f259a) -- so this is the same field read the same way rather than a
+## guess from the container's endianness. `XFIR` is a strong hint and not the
+## answer: byte order is a property of the file the projector wrote, and Director
+## will happily write a little-endian container for a movie whose config says
+## Mac.
+##
+## Read because **Director's cursor hotspot rule branches on it**. §7.3 rule 2:
+## Windows Director before D5 ignores a custom cursor's registration point and
+## always uses (8,8), and the reference expresses that as one clause of the same
+## `if` that recentres an out-of-range hotspot
+## (`cursor.cpp:Cursor::readFromCast`). Without this field the engine can only
+## implement half of that rule, which is the state `bugs.md` 28 recorded.
+## **Measured, and it is not one answer.** `tools/cursor_hotspot.gd --all` over
+## the six shipped roots opens 651 containers, of which 482 carry a config at
+## all: **373 state 2 (Windows) and 109 state 1 (Mac)**, which is worth knowing
+## before anybody writes "these are Windows discs" into a comment. It does not
+## reach the cursor rule either way, because the same survey puts every one of
+## those 482 at file version `0x57E` (111) or `0x73A` (371) and D5 begins at
+## `0x4B1` -- so **zero containers are Windows *and* below D5** and rule 2 is
+## inert on this corpus. It is implemented because Director has it, not because
+## anything here exercises it, and `tools/cursor_hotspot.gd` says that out loud
+## and asserts the branch against a synthetic D4 member instead.
+var platform_id := 0
 var error: String = ""
 
 ## D5 and later, from the reference's own table. Below this the config's tail is
@@ -135,6 +165,7 @@ func parse(payload: PackedByteArray) -> bool:
 	# negative is one nothing will take, and "the movie states no usable rate" is
 	# the honest reading of a field that is out of range either way.
 	default_tempo = _i16(payload, 54) if payload.size() >= 56 else 0
+	platform_id = _u16(payload, 56) if payload.size() >= 58 else 0
 	_read_default_palette(payload)
 	return true
 

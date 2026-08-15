@@ -80,6 +80,33 @@ var _stream_cache: Dictionary = {} ## path -> AudioStream
 var _channels: Dictionary = {} ## int -> AudioStreamPlayer
 var _channel_file: Dictionary = {} ## int -> stem currently requested
 var _channel_failed: Dictionary = {}
+
+## Every distinct sound this session asked for and did not get:
+## `"<channel>|<request>"` -> `{channel, request, why, count}`.
+##
+## **`bugs.md` 88's rule is that absent game data is not an engine defect
+## *provided the engine reports it*, and this is the half of that rule this port
+## did not hold.** `_fail` has always written one `warn` line per failed request,
+## and `bugs.md` 68 says what that is worth in as many words: "nothing collects
+## it ... the movies asking for it got `Audio miss: dream2\1` in a log nobody
+## reads". The line is also the wrong shape to read even if somebody did.
+## `audio_director.gd:321` short-circuits a repeat request only when the previous
+## one matches *and* the channel is playing, so a failed request re-fails on
+## every re-entry of the room that made it -- the count in the log measures how
+## long the playhead sat there, not how many distinct sounds are missing. Piposh
+## 1's deck loop asks 400 times for one file.
+##
+## So the per-occurrence `warn` stays (quieting it is what `bugs.md` 46 argues
+## against: it would hide the symptom while the data is still absent) and this
+## sits beside it, keyed by `(channel, request)` so a room held for four hundred
+## frames contributes **one** entry with a count of 400. `miss_report()` turns it
+## into the statement a session owes its reader, and `_exit_tree` prints it, so a
+## run that could not play three sounds says which three when it ends rather than
+## leaving them in the scrollback.
+##
+## Insertion-ordered, because Godot dictionaries are and first-asked is the order
+## a reader wants: it is the order the rooms were entered in.
+var _misses: Dictionary = {}
 ## `the volume of sound N`, 0-255, per channel. Kept here rather than in a host
 ## because both hosts set it and Director's channels outlive any one movie: a
 ## room that turns speech down to 75 and jumps to the next expects it to still
@@ -1031,7 +1058,80 @@ func _fail(channel: int, request: String, why: String) -> void:
 	_channel_until.erase(channel)
 	_channel_file[channel] = request
 	_channel_failed[channel] = true
+	# Collected before it is logged, so a `warn` that scrolls past is still
+	# counted. See `_misses` for why the log line alone was not reporting.
+	var key := "%d|%s" % [channel, request]
+	if _misses.has(key):
+		_misses[key]["count"] = int(_misses[key]["count"]) + 1
+	else:
+		_misses[key] = {
+			"channel": channel, "request": request, "why": why, "count": 1,
+		}
 	GameState.emit_log(why, "warn")
+
+
+## Every distinct sound this session asked for and did not get, first-asked
+## first. Each entry is `{channel, request, why, count}`.
+##
+## The reporting surface `bugs.md` 88 requires, and the thing a harness can
+## assert against -- a `warn` line cannot be asserted on without scraping a log,
+## which is how `docs/bugs-closed.md` 106's vacuous scrape happened.
+func misses() -> Array:
+	var out: Array = []
+	for key in _misses.keys():
+		out.append((_misses[key] as Dictionary).duplicate())
+	return out
+
+
+## How many *distinct* requests failed, which is the number that means something.
+## The per-request `count` is how long the room holding the playhead asked.
+func miss_count() -> int:
+	return _misses.size()
+
+
+## Forget them. For a harness that wants to measure one movie's requests without
+## the boot sequence's in the total; nothing in the player calls it, because a
+## session's misses are the session's.
+func clear_misses() -> void:
+	_misses.clear()
+
+
+## The session's audio misses as one block of text, or `""` when there were none.
+##
+## Deliberately says the two things a reader needs and no more: **which files**,
+## and **that the engine composed the request correctly and the disc did not have
+## it**. The second sentence is there because every time this has come up -- 46,
+## 68, and the `dream2\1` case before them -- the first reading was "the resolver
+## is broken", and it has never once been that.
+func miss_report() -> String:
+	if _misses.is_empty():
+		return ""
+	var lines: Array[String] = []
+	lines.append("Audio: %d request(s) this session resolved to no file on disc." % _misses.size())
+	lines.append("  The path was composed and searched; the file is not in the game tree.")
+	for key in _misses.keys():
+		var m: Dictionary = _misses[key]
+		lines.append("  channel %d  %-40s  asked %d time(s)  [%s]" % [
+			int(m["channel"]),
+			str(m["request"]) if str(m["request"]) != "" else "(empty request)",
+			int(m["count"]), str(m["why"]),
+		])
+	return "\n".join(lines)
+
+
+## The report, at the one moment every session reaches.
+##
+## An autoload's `_exit_tree` runs on quit, including a headless `--script` run
+## and a windowed one closed from the title bar, which is what makes this the
+## place: a player who has just watched a room play silently gets told why on the
+## way out, and a sweep that drove eighty movies gets the union of what they
+## asked for. Through `print` rather than `GameState.emit_log`, because the log
+## sinks are being torn down alongside this node and the whole point is that the
+## statement survives.
+func _exit_tree() -> void:
+	var report := miss_report()
+	if report != "":
+		print(report)
 
 
 func sound_busy(channel: int) -> bool:

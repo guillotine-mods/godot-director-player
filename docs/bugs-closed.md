@@ -8713,3 +8713,261 @@ godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh --f
 
 `memowrite` reports `1 lines, 14pt, box (7,383) 277x85`; a `save2` box reads 19px
 tall against a member whose stored `text_height` is 38.
+---
+
+# 28, 46 and 68, closed 2026-08-15
+
+Two of these are **absent game data**, adjudicated under `bugs.md` 88's test — and
+that test has two halves, of which this port was only holding one. The third
+closes because the rule it doubted was already right, on a premise that turned out
+to be false.
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 28 | **They agree. The entry's premise was wrong.** | The rule is one `if` in `cursor.cpp:Cursor::readFromCast`, and the port's `compose` already implemented the whole of its first term — including the detail that an out-of-range *y* recentres *x* too. The missing second term is `version < 500 && platform == Windows`, and **it could never have fired**: the entry says "this game's containers are D4", but all 482 containers with a config chunk across the six shipped roots state file version `0x57E` or `0x73A` — 700 and 800 in human terms, where D4 is `0x45B`. `able1`'s (10,9) hotspot was correct all along. Implemented anyway, because engine completeness is not corpus-driven, and asserted synthetically since no shipped data can exercise it. |
+| 46 | **Absent game data.** | `find games/piposh-ru -iname '*fx*'` returns **nothing at any depth**; `pipdata/` has no subdirectories at all, where `piposh-en` has `pipdata/FX` and `pipdata/FX/FXMUS`. Of the 18 background tracks, **16 have no file under that root under any name**. The Hebrew half stays closed: `games/piposh` answers 126 FX files, the same as `piposh-en`. |
+| 68 | **Absent game data, and the entry's own open question is answered.** | The only match under the whole of `games/rating` for the three stems, any case, any extension, is the container `MIDGAME.dir` and the directory `SOUNDS/MIDGAME/`. The rename hypothesis is dead: **0 files under that root have no extension.** All four candidate folders were enumerated in full. |
+
+**Both absences were proved by walking the filesystem, never by asking the
+resolver that had already failed** — which is the half of 88's test that makes it
+a verdict rather than a shrug. And the siblings play, in the same run: `BONDS.dir`
+reaches `brosnam1.aif` on 82 of 200 frames and `BRAKEIN.dir` reaches `openbag.aif`,
+while `brakemus.aif` misses. That is what separates absent data from a broken
+resolver.
+
+## 68's open question, answered
+
+It asked whether a request for `sounds\bonds\midgame.aif` next to a
+`SOUNDS/MIDGAME/` folder meant the folder. **It does not.** The request comes from
+`Panel.cst`'s `on openmidgame`, which does
+`sound playfile 2, soundspath & "midgame.aif"` while `soundspath` is still the
+*departing* room's folder — so the folder in the request is whichever room you came
+from, and `MIDGAME.dir`'s own `setmoviepath("midgame")` runs later. Even the
+charitable reading finds nothing, because no folder under `games/rating` holds a
+`MIDGAME.AIF` at all.
+
+## The engine's half of 88's rule was failing, and that was the real defect
+
+88's test is that absent game data is not an engine defect **provided the engine
+reports it**. `_fail` wrote one `warn` line per failed request and *nothing
+collected it* — and the line was the wrong shape to read even if somebody had,
+because `audio_director.gd:321` short-circuits a repeat only when the previous
+request matches *and* the channel is playing. So a failed request re-fails on every
+re-entry of the room that made it: **Piposh 1's deck loop writes 400 identical
+lines for one absent file**, and the count measures how long the playhead sat
+there rather than how many sounds are missing.
+
+A session could not state what it had failed to play. It can now: a `_misses`
+ledger keyed by `(channel, request)`, so four hundred frames contribute **one**
+entry with a count of 400, printed at exit. The per-occurrence `warn` stays —
+quieting it is what `bugs.md` 46 argued against, and it was right.
+
+## 82's remainder narrows to one sentence
+
+Promotion of the eleven `text` Xtras is **safe and visually free**, measured:
+`TextXtraCastMember`'s constructor sets `_type = kCastXtra`, so
+`rebuildCastNameCache` keys a promoted `credit` as `credit:15` and
+`field "credit"` — which asks for `credit:3` — still cannot see it. **The
+`02844f93` slot-machine fix holds under promotion for the same structural reason
+the reference holds it.** And 0 of the 11 are named by any sprite record in any
+frame of any container in any root, so promotion changes no pixel. What is left is
+`decodeXMED` behind `the text of member`, for 11 members that no script asks for by
+name — 5 are unnamed and therefore unreachable, and every one of the ~9 sites
+naming `credit` says `field "credit"`.
+
+**The 0x0 `xtraRect` is explained and fixed**: it was the wrong place to look.
+`_apply_xtra_rect` reads item 12 of the *info* block, and the `text` Xtra does not
+put its geometry there — `TextXtra::parseXtraData` reads a big-endian height at
+offset **36** of the Xtra's own payload and a width at **40**. All 11 payloads pass
+the reference's own bounds, and the sizes are the shapes of the things they name.
+
+## 28. The preview's cursor hotspot rule is unverified
+
+**Status:** open, cosmetic · **Area:** preview renderer ·
+found while fixing the preview's custom cursors
+
+**This entry was filed with two halves and only one is still open.** The scale
+half — the composed image handed to `Input.set_custom_mouse_cursor` at its native
+16x16 while the stage around it drew at 1.5 — was fixed by `ff066de6` and is in
+`docs/bugs-closed.md` under 19 and 28. What follows is the remainder.
+
+`_cursor_image` takes the hotspot from the data member's
+registration point and recentres it to (8,8) only when it falls outside the 16x16
+crop, which is `docs/DIRECTOR_ENGINE.md` 7.3 rule 1. Rule 2 of the same section
+says **Windows Director before D5 ignores custom hotspots entirely and always
+uses (8,8)**. This game's containers are D4 and the original shipped on Windows,
+so (8,8) may be right for every cursor here. Measured for MAP's pair: `able1` has
+a registration point of (10,9), so the two rules differ by (2,1) — small enough
+that nobody would notice it and large enough to make every click land off by a
+couple of pixels from where the cursor points. Not resolved either way: deciding
+it needs a source on what the original build did, not a preference.
+
+---
+
+## 46. Piposh 1's ship is silent because `games/piposh` has no `PIPDATA/FX` tree at all
+
+**Narrowed 2026-08-14: the Hebrew half is closed and only `piposh-ru` is left.**
+`find games/<root> -ipath '*fx*' -iname '*.aif' | wc -l` now answers **126 for
+`games/piposh`**, the same count as `piposh-en`, so the deck music and the 116
+effect filenames below have files behind them and the ship is not silent any more.
+`piposh-dream` has 159. **`games/piposh-ru` still answers 0**, composing the
+identical path from its own `master.cst` — so everything below still holds, for
+that one root. The heading is wrong about which root and is left as filed so the
+`git log` of the submodule bump stays findable.
+
+That also settles the "whose gap is it" paragraph one way: a root that was missing
+the tree got it back from the disc, so this is an extraction gap and not a disc
+that shipped without it. `piposh-ru` needs the same treatment and nobody has done
+it.
+
+**Status:** OPEN, and **not an engine fault** — the port composes the request
+correctly and plays it the moment the file exists. Reported from play as "the
+background music on the ship doesn't work". · **Area:** the `games/piposh`
+submodule's contents, not this repo's code.
+
+Every deck room's `exitFrame` is the same handler (`PIPDATA/DAY1.dir`, and
+DAY2-DAY5 identically):
+
+```lingo
+on exitFrame
+  global effectspath2, whichmus
+  whatodoeveryframe()
+  if not soundBusy(2) then
+    set the mouseDownScript to EMPTY
+    sound playFile 2, effectspath2 & whichmus
+  end if
+```
+
+`effectspath2` is `the moviePath & "fx" & y & "fxmus" & y` (`MASTER.CST`), so the
+music is a per-frame re-request against `PIPDATA/FX/FXMUS/`. **That folder does
+not exist under `games/piposh`**, nor does its parent `PIPDATA/FX`. Neither does
+it under `games/piposh-ru`. `games/piposh-en` has both: 126 files, 35 of them the
+music.
+
+Measured, same movie both ways, on real frames:
+
+```
+godot --headless --path . --script tools/music_requests.gd -- --root piposh    --movie PIPDATA/DAY1.dir
+godot --headless --path . --script tools/music_requests.gd -- --root piposh-en --movie pipdata/DAY1.dir
+```
+
+```
+piposh     SILENT  res://games/piposh/pipdata/fx\fxmus\dbsndlow.aif
+                   resolves to <nothing on disc>        channel 2 audible on   0 of 400 frames
+piposh-en  PLAYS   res://games/piposh-en/pipdata/fx\fxmus\dbsndlow.aif
+                   resolves to .../FX/FXMUS/DBSNDLOW.AIF  channel 2 audible on 371 of 400 frames
+```
+
+Both roots reach the deck with identical globals — `whichmus = dbsndlow.aif`,
+`effectspath = <root>/PIPDATA/fx\` — so the only variable is whether the file is
+on disc. Confirmed in the other direction too: dropping the single file
+`DBSNDLOW.AIF` into `games/piposh/PIPDATA/FX/FXMUS/` takes the Hebrew deck from
+0/400 to **372/400** audible frames. (Copied for the measurement and removed
+again; the submodule is untouched.)
+
+**The scope is far wider than the music.** `effectspath` is the same tree one
+level up, and the Hebrew containers ask it for **116 distinct filenames** — door
+handles, footsteps, locks, hits — of which **110 exist in `piposh-en`'s `FX/`**.
+So every sound effect on the ship is silent for the same reason, and the 18
+background tracks (`arcade arcade2 bath dbsnd dbsndlow downdeck foodroom justeng
+loby lolo lowdeck movie stimoff stimon stopstim strtstim topdeck ware`) are the
+audible half of one gap. The six the English disc does not hold either
+(`boing detective dream pipaaa robot shirt`) are a separate question.
+
+**What is not settled: whose gap it is.** The Hebrew movie *composes* the path, so
+the folder existed when the game was authored — that was the argument for calling
+it an extraction defect in the `guillotine-mods/piposh` submodule. Against it:
+`piposh-ru` composes the identical path (`master.cst`:
+`put the moviepath & "fx" & y & "fxmus" & y into effectspath2`, nine containers
+naming `fxmus`, `pipdata/Day1.dir` running the same `playFile 2, effectspath2 &
+whichmus` loop over the same `bath/justeng/lolo/ware/stimon/stimoff` names) and is
+missing the tree too. Two of three localisations losing the same folder while
+asking for it is as consistent with one faulty extraction pipeline as with a disc
+that shipped without it. `games/piposh` holds no installer archive to re-extract
+from, so settling this needs the original media.
+
+**Do not "fix" this in engine code.** A fallback that reaches into another root
+for a missing file would make every future data gap invisible, which is the state
+`audio_director.gd`'s `Audio miss` logging exists to prevent. The two honest repairs are re-extracting the disc, or copying
+`piposh-en/pipdata/FX` into the Hebrew and Russian roots as a deliberate,
+recorded substitution. If the substitution is taken, the files have to be
+listened to first: nothing here has been played back. `LOLO.AIF` is 5.6 MB and
+shares its name with a character who has her own cast and three day-movies, which
+is not the size or the naming of a wordless loop, so at least some of the 35 are
+likely to carry English voice.
+
+**The same probe on the other roots.**
+
+```
+godot --headless --path . --script tools/music_requests.gd -- --root piposh-dream --movie Hquest.dir
+```
+
+`piposh-dream` has the identical shape at a much smaller scale: `Hquest.dir` runs
+`if not soundBusy(2) or (whichsnd <> "sea") then sound playFile 2, effectspath &
+"sea.aif"`, and no `sea.aif` exists anywhere under `games/piposh-dream` — 0 of 400
+frames audible. (That run entered `Hquest.dir` cold, so `effectspath` was still
+empty and the request went out as the bare name; it fails the same way either
+way, because `resolve_path` tail-matches a filename under any folder and there is
+no `sea.aif` under any.) Across that root, 19 of the 116 filenames its containers ask
+`effectspath` for have no file: `1234 bish crash drill findjoke handle jaquasi jmp
+kick machak move nofound openbag sea sissy soja stage water yanki`. Some of those
+are near-miss spellings rather than absences — the disc holds `JAQAUSI.AIF` for a
+request of `jaquasi.aif`, and `DRILL.WAV` for a request of `drill.aif` — and
+separating the two is the work that entry has not had.
+
+**Why the log says it dozens of times.** `audio_director.gd:321` short-circuits a
+repeat request only when the previous request matches *and* the channel is
+actually playing. A failed request writes `_channel_file` but starts nothing, so
+the guard falls through on every re-entry and `_fail` logs unconditionally. The
+count measures how long the room held the playhead, not how many distinct faults
+there were. `_fail` stopping the channel is load-bearing for `soundBusy` and must
+not be touched; the cheap quieting fix is to log once per `(channel, request)`
+until the request changes. Not done — it would hide this entry's symptom while
+the data is still absent.
+
+---
+
+## 68. Three sounds Rating asks for are not in the shipped tree, so the arcade, the Bonds game and the break-in open silent
+
+**Status:** open, data · **Area:** `games/rating/SOUNDS/` · found by
+`tools/qa_walk.gd --sweep` over all 81 movies
+
+`AudioDirector._fail` logs `Audio miss` at `warn` and nothing collects it, which
+`autoload/audio_director.gd:167` says in as many words -- "the movies asking for
+it got `Audio miss: dream2\1` in a log nobody reads". Sweeping the corpus with
+the warnings collected, Rating asks for three files it does not ship:
+
+| request | folder that resolved | what is in it |
+|---|---|---|
+| `sounds\arcade1\startmus.aif` | `SOUNDS/ARCADE1/` | 20 files incl. `GAMEMUS.AIF`, no `STARTMUS` |
+| `sounds\bonds\midgame.aif` | `SOUNDS/BONDS/` | 22 files incl. `BONDMUS.AIF`, no `MIDGAME` |
+| `sounds\brakein\brakemus.aif` | `SOUNDS/BRAKEIN/` | 23 files incl. `BRAKEIN.AIF`, no `BRAKEMUS` |
+
+**The folder resolved and the file is not in it**, which is what separates this
+from a resolver bug: the sibling files in each of those three directories load
+and play. No `.aif` anywhere under `games/rating` carries any of the three
+basenames, in any case, so they are absent from the tree rather than missed by
+the search path.
+
+**One name is not as absent as this entry first said**, and the correction is
+the interesting part. `find games/rating -iname "*midgame*"` does not return
+nothing: it returns `MIDGAME.dir` and a whole `SOUNDS/MIDGAME/` directory of
+nine `.aif` files. Neither is a file named `MIDGAME.AIF`, so the conclusion
+stands, but a request for `sounds\bonds\midgame.aif` sitting next to a
+`SOUNDS/MIDGAME/` folder is worth one look at whether the movie meant a folder
+before this is written off as missing data.
+
+Same class as entry 46 (`games/piposh` shipping no `PIPDATA/FX` tree at all) and
+the `piposh-ru` note beside it: a gap in the data this repository was given, not
+a fault in the engine reading it.
+
+**What no data here proves:** whether the original CD shipped these three. There
+is one copy of Rating under `games/`, so unlike Piposh there is no second
+localisation to difference against, and that is the measurement that would settle
+it.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --ticks 150
+```
