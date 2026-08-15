@@ -68,11 +68,14 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 		palette = PaletteView.table_for_member(m, table, palette, stage_palette_id)
 
 	textures[key] = null
-	# Both colours, resolved through the palette once and used by both branches.
-	# Director's 8-bit convention puts white at index 0 and black at 255, so the
-	# defaults a sprite record carries are fore 255 and back 0.
-	var fore := Ink.colour_of(palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
-	var back := Ink.colour_of(palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
+	# Both colours, resolved once and used by both branches. Director's 8-bit
+	# convention puts white at index 0 and black at 255, so the defaults a sprite
+	# record carries are fore 255 and back 0 -- **unless the record states a true
+	# colour instead**, which is what `Ink.fore_colour`/`back_colour` are for and
+	# what this used to get wrong on 113,706 records across the corpus
+	# (`bugs.md` 30, `tools/sprite_rgb_colour.gd`).
+	var fore := Ink.fore_colour(sprite, palette)
+	var back := Ink.back_colour(sprite, palette)
 
 	if type_code == Ink.TYPE_SHAPE:
 		# A shape has no artwork and no registration point: its sprite rect is the
@@ -125,8 +128,12 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	# first leaves the flood nothing to match and the sprite comes out as a solid
 	# rectangle. Keying first also means the pixels this repaints are exactly the
 	# ones that survived, so the keyed-out paper cannot come back as a colour.
-	if Ink.applies_colour(ink, int(sprite.get("fore_color", Ink.INDEX_BLACK)),
-			int(sprite.get("back_color", Ink.INDEX_WHITE))):
+	# Asked of the record rather than of two indices, because a record whose
+	# colour pair is a true colour cannot be judged by an index test: `(0,0,0)`
+	# on `(255,255,255)` *is* the default pair, and its two red bytes read as
+	# indices are 255 and 0 -- the default pair inverted, so the index test said
+	# "colourise" and the line below then swapped the artwork's black and white.
+	if Ink.applies_colour_to(sprite, ink):
 		Ink.apply_colour(image, fore, back)
 	hit_images[key] = image
 	textures[key] = ImageTexture.create_from_image(image)

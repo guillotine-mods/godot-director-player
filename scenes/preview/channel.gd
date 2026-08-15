@@ -208,11 +208,23 @@ const FIELDS := {
 	# conversion on only one side reads back a different number than was written.
 	# No release row: the reference auto-puppets it and never takes it back.
 	"blend": {"field": "blend_amount", "kind": "blend", "released_by": []},
+	# `the foreColor of sprite N` and `the backColor of sprite N` are **palette
+	# indices in the language**, whichever way the score's own record spelled the
+	# colour it started from. So the write kind is not a plain int: a D7 record
+	# may carry a true colour beside the index (`director_score.gd`'s
+	# `fore_rgb`/`back_rgb`, colour-code bits 0x10/0x20), that colour is what the
+	# renderer prefers, and a script setting the index has to retire it or the
+	# write reaches nothing at all -- silently, on exactly the sprites where the
+	# score bothered to state a colour. `released_by` names the record's green and
+	# blue bytes as well for the mirror-image reason: the score rewriting the
+	# colour is what hands the property back.
 	"forecolor": {
-		"field": "fore_color", "kind": "int", "released_by": ["fore_color"],
+		"field": "fore_color", "kind": "colour_index", "clears": "fore_rgb",
+		"released_by": ["fore_color", "fore_color_g", "fore_color_b"],
 	},
 	"backcolor": {
-		"field": "back_color", "kind": "int", "released_by": ["back_color"],
+		"field": "back_color", "kind": "colour_index", "clears": "back_rgb",
+		"released_by": ["back_color", "back_color_g", "back_color_b"],
 	},
 	# `the moveableSprite of sprite N` and the score's own moveable bit are one
 	# property from two sources. Before the merge existed a sprite the author
@@ -429,6 +441,13 @@ func _merge_one(key: String, out: Dictionary) -> void:
 			out["size_from_script"] = true
 		"blend":
 			out[str(row["field"])] = clampi((100 - clampi(raw, 0, 100)) * 255 / 100, 0, 255)
+		"colour_index":
+			# The index, and the true colour the score may have put beside it
+			# taken away with it. A script that says `set the backColor of
+			# sprite 1 to 12` means palette entry 12, and leaving the record's
+			# own `(255,255,255)` in place would keep drawing white for ever.
+			out[str(row["field"])] = raw
+			out.erase(str(row["clears"]))
 		_:
 			out[str(row["field"])] = raw
 

@@ -226,6 +226,27 @@ the data is still absent.
 
 ## 45. A hit on a Piposh 1 submarine lifts it 122px, so after two it is clipped off the top of the stage
 
+> **Narrowed 2026-08-14, and the answer is not the one the entry expected.**
+> `CANON.dir` member 641 had never existed as text in this tree; extracted, it
+> confirms the mechanism exactly — the dive branch is gated on `value(item)=0` and
+> writes `put 14`; the surface branch fires at `=1` and subtracts 122 (sprite 12)
+> or 164 (sprites 10, 11) **unconditionally**; and member 642's `movecannon4`
+> writes `put 20 into item i - 16 of allshipscounter` in *all four* hit stages,
+> where the entry quotes only one. One global, two purposes, both in the movie's
+> own script. **So if a hit-armed countdown ever reached 1, the original would
+> lift the sub too.**
+>
+> It does not reach 1 here. `tools/cannon_sub_drift.gd` lands a shell through the
+> real key path and watches all three subs for 220 frames: every dive/surface pair
+> is balanced (+164/-164, +122/-122), no sub leaves the stage, and `allships` is
+> back at `live,live,live` at the end — which only member 640's `enterFrame`
+> writes. **The round's entry frame re-runs and resets `allshipscounter` before
+> the hit's 20 counts down.**
+>
+> **Next step, and it decides the entry:** is that re-entry faithful? If it is,
+> this closes as unreachable. If the port is looping the entry frame where
+> Director holds, *that* is the real bug and it is masking this one.
+
 **Status:** OPEN · **Area:** `PIPDATA/CANON.dir` game6, `allshipscounter` ·
 reported from play with a snapshot: frame 373, 51 degrees, score -53, the large
 submarine jammed against the top of the stage and drawn over the HUD panels.
@@ -316,50 +337,6 @@ it needs a source on what the original build did, not a preference.
 
 ---
 
-## 30. Sprite colours that D7 stores as true RGB are read as palette indices
-
-**Status:** open · **Area:** score decoder / renderer ·
-found while measuring the sprite record byte by byte
-
-Bits 0x10 and 0x20 of the sprite record's colour-code byte (offset 20) say that
-the sprite's fore or back colour is a **true colour** carried in bytes 24-27 —
-byte 2 and byte 3 being the red components, 24/26 the green and blue of the fore
-colour, 25/27 of the back — rather than an index into the movie's palette. The
-port reads bytes 2 and 3 as indices unconditionally, so those sprites take
-whatever the palette happens to hold at that index.
-
-Measured, on the corpora as they stand:
-
-```
-$ godot --headless --script tools/sprite_record_bytes.gd -- --all   # Piposh 2
-  20         9    0x00:746048 0x01:7470 0x02:51929 0x03:2830 0x04:2149
-                  0x05:4753 0x10:15 0x20:635 0x30:489
-  24        20    0x00..0xff
-  25        35    0x00..0xff
-  26        16    0x00..0xff
-  27        24    0x00..0xff
-```
-
-So **1,124 of Piposh 2's 816,318 records** carry the back-colour bit and **504**
-the fore-colour bit, and bytes 24-27 genuinely vary. Piposh 1 sets neither bit
-and leaves 24-27 zero across all 1,886,362 of its records, so it cannot be used
-to check a fix.
-
-It matters more than a wrong tint would suggest: the back colour is what
-Background Transparent keys against (§2.1), so a record whose paper is an RGB
-that the port resolves as index 255 keys out the wrong pixels entirely.
-
-The reference is no help and no excuse. `frame.cpp:readSpriteDataD7` parses all
-four bytes and `sprite.cpp:replaceFrom` copies them, and **nothing in ScummVM
-ever reads them again** — the same shape as flip before §1.8 was implemented.
-
-Not fixed here because it needs the colour to stop being an index all the way
-through `director_ink.gd` and the texture cache key, and because the only corpus
-that exercises it is the one this port already renders acceptably — which makes
-it exactly the kind of change that wants its own before-and-after measurement.
-
----
-
 ## 68. Three sounds Rating asks for are not in the shipped tree, so the arcade, the Bonds game and the break-in open silent
 
 **Status:** open, data · **Area:** `games/rating/SOUNDS/` · found by
@@ -408,6 +385,20 @@ godot --headless --path . --script tools/qa_walk.gd -- --root rating --sweep --t
 ---
 
 ## 80. An expanding field still clips, because no path pushes its laid-out height back onto the sprite
+
+> **Re-verified 2026-08-14: unchanged, and the entry is accurate in every
+> particular.** `text_and_shapes --root piposh --file PIPDATA/CAPROOM.dir` still
+> prints `memowrite  1 lines, 14pt, box (7,383) 277x85` verbatim, with `memo21` at
+> `290x134` showing the fixed/scroll arm working. `_field_size` still returns
+> `natural` for `BOX_ADJUST` and `BOX_LIMIT`, `director_text.gd:layout` still
+> returns on the first line past the box bottom, and `size_from_script` is still
+> the only path that sticks a size.
+>
+> **The blocker is confirmed real and is the reason this is still open**:
+> `drawn_size(sprite, member)` is static and has no access to the runtime text,
+> which lives in the host's `_field_text` overrides. The write-back vehicle has to
+> be stamped onto the effective sprite in `director_preview.gd:_effective`, and it
+> should land in one commit with the layout change for the reason the entry gives.
 
 **Status:** open, and it is the **remaining half** of `DIRECTOR_ENGINE.md` §1.2 ·
 **Area:** `scenes/preview/sprite_geometry.gd:_field_size`,
@@ -536,6 +527,30 @@ it and not because it has been traced.
 
 ## 74. Eight rows of Piposh 1's piano keyboard draw differently in the player and in `director_render.gd`
 
+> **Re-measured 2026-08-14: it reproduces, and the likeliest innocent explanation
+> is eliminated.** The expectation was a window-capture artifact — the stage is a
+> `Node2D` whose float32 scale composes with the viewport stretch
+> (`stage_paint.gd:framebuffer_region`, `bugs.md` 117). It is not.
+> `tools/stage_compare.gd` photographs the player **headlessly** through
+> `director_paint.gd:Surface`, stage-sized and 1:1, with no scale anywhere in the
+> path, and the difference survives.
+>
+> The whole-stage figure reproduces exactly (833 of 268,800 px, 0.31%). **The band
+> is 31.7%, not the 13.3% recorded here** — that number came from sampling one
+> pixel of each 2x2 block. The player produces 243 distinct values where the
+> diagnostic produces 23 exact palette entries, so the characterisation stands.
+>
+> Two live candidates, both testable: the two compositors resolving **different
+> palettes** for these members (`PaletteView.table_for_member` against
+> `director_render`'s own — the `bugs.md` 104 shape), or **partial alpha** reaching
+> `Image.blend_rect` in `Surface._compose`. `director_render.gd` remains a valid
+> oracle: it shares `director_ink.gd` and `director_bitmap.gd` with the player.
+>
+> **A trap for anyone repeating this**: setting `_index` and settling leaves the
+> playhead elsewhere on a movie that does not hold itself. The first run reported
+> "frame 37" while standing on **41**, comparing it against a render of 37. The
+> tool re-seats, pauses, and asserts it is standing where it was asked.
+
 `docs/bugs-closed.md` 73 removed the diagnostic's own crude keying rule, and with
 that gone the player and `tools/director_render.gd` agree on **0.30% of the stage
 below the HUD** on `PIANO.dir` frame 37, and on **0.00%** of the book. What did
@@ -588,6 +603,34 @@ room that *are* closed are `docs/bugs-closed.md` 72.
 ---
 
 ## 82. Cast type 15 (`kCastXtra`) members are skipped by the renderer entirely, and Magic Hat's `yes`/`no` buttons and its intro video are six of them
+
+> **Re-measured 2026-08-14: the headline is retracted and the entry narrows to
+> eleven members.** The three decode complaints are fixed (`TYPE_NAMES` names 15
+> `xtra`, `_parse_specific` has an arm, `_apply_xtra_rect` supplies geometry), and
+> "not counted as missing art" is answered by `sprite_art.gd:decline_reason`,
+> which now names the *symbol* (`bugs.md` 110). All six named members resolve
+> since `226ac4af`.
+>
+> **And the reference draws none of the six either.**
+> `tools/xtra_members.gd --roots res://test-games/itamar-magichat --list` gives
+> their symbols: `no`/`yes` and `title1`/`title2` are **`flash`**;
+> `IntroRetroVideo`/`magicvideo` are **`VisibleLightOnStageMedia`**. ScummVM's
+> `castmember/xtra.cpp:41-47` registers exactly four — `cursor`,
+> `quickTimeMedia`, `text`, `font` — and everything else falls through
+> `XtraCastMember::promote` to `CastMember::createWidget` returning `nullptr`. By
+> this project's own stated rule that is *correct behaviour*, so "two members a
+> player is meant to click, and this port cannot draw either" is withdrawn.
+>
+> Corpus-wide, 566 Xtra members across 8 roots: `flash` 253, `animGif` 206,
+> `vectorShape` 94, `text` 11, `VisibleLightOnStageMedia` 2. **555 of 566 are
+> unregistered in the reference.** The genuine gap is the remaining **11**, symbol
+> `text`, the one the reference promotes to `TextXtra` — and they are in the
+> shipped titles rather than the test corpus: `piposh SLOTMACH.dir #83 credit`,
+> `piposh-en`/`piposh-ru Slotmach.dir #83`, `piposh-dream MAZE1/MAZE2/maze3 #15`,
+> `piposh2 HEZSAVE.DIR #118`, `AIR1.dir #118`, `MAP.dir #12` and `#17`,
+> `rating ARCADE1.dir #136`. All carry no `xtraRect` (0x0), and promoting them is
+> not free: `director_cast.gd:232` already records `SLOTMACH.dir` #83 `credit`
+> colliding with `field "credit"`. It wants its own measurement first.
 
 **Status:** open · **Area:** `director/director_cast.gd` (`TYPE_NAMES`,
 `_parse_cast`), `scenes/preview/sprite_art.gd:texture_for` · found while reading

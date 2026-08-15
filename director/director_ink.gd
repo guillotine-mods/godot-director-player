@@ -237,6 +237,50 @@ static func applies_colour(ink: int, fore: int, back: int) -> bool:
 	return APPLY_COLOR_INKS.has(ink & INK_MASK)
 
 
+## The same switch asked of a whole sprite record, so that a record whose colour
+## is a **true colour** rather than an index is answered about the colour.
+##
+## `applies_colour` above compares indices, and an index test cannot see a D7
+## true colour at all: `(0,0,0)` fore and `(255,255,255)` back *is* the default
+## pair, and its red bytes are 0 and 255, which as indices are the default pair
+## **inverted**. So the index test said "not default, colourise" and
+## `apply_colour` then swapped the artwork's black and white. Measured by
+## `tools/sprite_rgb_colour.gd` over all eight roots: 32,875 records state
+## `(0,0,0)` fore and all 57,152 back colours in the corpus are `(255,255,255)`,
+## the overwhelming majority of them in `piposh-dream`. `bugs.md` 30.
+##
+## Callers with only two indices in hand keep using `applies_colour`; this is for
+## anything holding the record, which is every renderer.
+static func applies_colour_to(sprite: Dictionary, ink: int) -> bool:
+	if is_default_colour(sprite):
+		return false
+	return APPLY_COLOR_INKS.has(ink & INK_MASK)
+
+
+## Is this record's colour pair Director's default -- black ink on white paper --
+## however the record chooses to say so?
+##
+## Two spellings of one fact, which is why this is a function and not a pair of
+## comparisons at each call site: as palette indices the default is fore 255 and
+## back 0 (the inverted 8-bit convention, 2.2), and as true colours it is fore
+## `(0,0,0)` and back `(255,255,255)`. A sprite may state one half each way.
+static func is_default_colour(sprite: Dictionary) -> bool:
+	var fore_default := (
+		_is_rgb(sprite.get(FORE_RGB_KEY), 0, 0, 0) if sprite.has(FORE_RGB_KEY)
+		else int(sprite.get("fore_color", INDEX_BLACK)) == INDEX_BLACK)
+	var back_default := (
+		_is_rgb(sprite.get(BACK_RGB_KEY), 255, 255, 255) if sprite.has(BACK_RGB_KEY)
+		else int(sprite.get("back_color", INDEX_WHITE)) == INDEX_WHITE)
+	return fore_default and back_default
+
+
+static func _is_rgb(value: Variant, r: int, g: int, b: int) -> bool:
+	if not (value is Color):
+		return false
+	var c: Color = value
+	return c.r8 == r and c.g8 == g and c.b8 == b
+
+
 const INDEX_WHITE := 0
 const INDEX_BLACK := 255
 const APPLY_COLOR_INKS := [
@@ -479,3 +523,36 @@ static func colour_of(palette: PackedByteArray, index: int) -> Color:
 	if index < 0 or index * 3 + 2 >= palette.size():
 		return Color(1, 1, 1, 1)
 	return Color8(palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2])
+
+
+## Where a decoded true colour sits on a sprite record. The decoder's own names
+## (`director_score.gd:FORE_RGB_KEY`), repeated here rather than imported,
+## because this file is preloaded by the score reader's own callers and a cycle
+## between the two would be a worse cost than two constants.
+const FORE_RGB_KEY := "fore_rgb"
+const BACK_RGB_KEY := "back_rgb"
+
+
+## The sprite's ink colour, from whichever of the two things the record states.
+##
+## A D7 record may carry the colour itself instead of an index into the movie's
+## palette (`frame.cpp:readSpriteDataD7`, colour-code bits `0x10`/`0x20`), and
+## when it does the palette is not involved at all -- so this is not "look the
+## index up more carefully", it is a different source. The reference parses those
+## four bytes, copies them between sprites in `replaceFrom`, and then reads them
+## nowhere, so it is no use as a specification for what to *do* with one; what a
+## true colour means is not in doubt.
+static func fore_colour(sprite: Dictionary, palette: PackedByteArray) -> Color:
+	if sprite.get(FORE_RGB_KEY) is Color:
+		return sprite[FORE_RGB_KEY]
+	return colour_of(palette, int(sprite.get("fore_color", INDEX_BLACK)))
+
+
+## The paper colour, same rule. This is the one that is not only a tint:
+## Background Transparent keys every pixel equal to it (2.1, `key_paper`), so
+## resolving it through the palette when the record did not mean an index keys
+## out the wrong pixels rather than drawing the right ones in a wrong shade.
+static func back_colour(sprite: Dictionary, palette: PackedByteArray) -> Color:
+	if sprite.get(BACK_RGB_KEY) is Color:
+		return sprite[BACK_RGB_KEY]
+	return colour_of(palette, int(sprite.get("back_color", INDEX_WHITE)))

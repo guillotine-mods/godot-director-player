@@ -8409,3 +8409,75 @@ godot --headless --path . --script tools/click_chain.gd -- --root piposh-dream -
 
 and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
 `_lib_keys.clear()` at `:469` removed.
+---
+
+## 30. Sprite colours that D7 stores as true RGB are read as palette indices
+
+**Status:** open · **Area:** score decoder / renderer ·
+found while measuring the sprite record byte by byte
+
+Bits 0x10 and 0x20 of the sprite record's colour-code byte (offset 20) say that
+the sprite's fore or back colour is a **true colour** carried in bytes 24-27 —
+byte 2 and byte 3 being the red components, 24/26 the green and blue of the fore
+colour, 25/27 of the back — rather than an index into the movie's palette. The
+port reads bytes 2 and 3 as indices unconditionally, so those sprites take
+whatever the palette happens to hold at that index.
+
+Measured, on the corpora as they stand:
+
+```
+$ godot --headless --script tools/sprite_record_bytes.gd -- --all   # Piposh 2
+  20         9    0x00:746048 0x01:7470 0x02:51929 0x03:2830 0x04:2149
+                  0x05:4753 0x10:15 0x20:635 0x30:489
+  24        20    0x00..0xff
+  25        35    0x00..0xff
+  26        16    0x00..0xff
+  27        24    0x00..0xff
+```
+
+So **1,124 of Piposh 2's 816,318 records** carry the back-colour bit and **504**
+the fore-colour bit, and bytes 24-27 genuinely vary. Piposh 1 sets neither bit
+and leaves 24-27 zero across all 1,886,362 of its records, so it cannot be used
+to check a fix.
+
+It matters more than a wrong tint would suggest: the back colour is what
+Background Transparent keys against (§2.1), so a record whose paper is an RGB
+that the port resolves as index 255 keys out the wrong pixels entirely.
+
+The reference is no help and no excuse. `frame.cpp:readSpriteDataD7` parses all
+four bytes and `sprite.cpp:replaceFrom` copies them, and **nothing in ScummVM
+ever reads them again** — the same shape as flip before §1.8 was implemented.
+
+Not fixed here because it needs the colour to stop being an index all the way
+through `director_ink.gd` and the texture cache key, and because the only corpus
+that exercises it is the one this port already renders acceptably — which makes
+it exactly the kind of change that wants its own before-and-after measurement.
+**Resolved 2026-08-14. The entry's own cost estimate was a measurement of Piposh
+2 and was low by two orders of magnitude.**
+
+`tools/sprite_rgb_colour.gd` over all eight roots, 8,074,544 occupied sprite
+records: **`piposh-dream` states a true colour on 55,134 of its 766,010 records —
+7.2% — and had never been measured.** Piposh 2 states 504/1,124, `piposh` and
+`rating` none at all.
+
+**What it states is not an exotic tint, which is why this mattered so much more
+than the count suggests.** Every one of the corpus's 57,152 back colours is
+`(255,255,255)` and the commonest fore is `(0,0,0)` — Director's *default* pair,
+written the D7 way. Read as palette **indices** those same bytes are 255 and 0,
+which in Director's inverted 8-bit convention are the same pair **backwards**. So
+`applies_colour` concluded "not the defaults, colourise" and `apply_colour`
+swapped the artwork's black and white; on the 23,343 Background-Transparent
+records `key_paper` keyed the black pixels instead of the white ones. **33,514
+records were repainted by that reading, every one of them a default pair that
+should have been left alone.**
+
+The outside witness that the byte assignment is right, rather than a plausible
+re-reading: the 8 distinct fore colours are recognisable web-safe triples —
+`(238,238,238)`, `(204,255,0)`, `(102,255,255)`. Random bytes do not do that.
+
+`director_score.gd` emits `fore_rgb`/`back_rgb` only on records that set the bits;
+`director_ink.gd` owns the decision; `sprite_geometry.gd:texture_key` gained a
+term because a true colour's red *is* the index byte, so `(0,0,0)` and index 0
+collided in the cache. `channel.gd`'s `forecolor`/`backcolor` became
+`colour_index` and retired the record's colour, because the Lingo property is an
+index and the record's field is not. Reverted, the harness fails 10 of 17.

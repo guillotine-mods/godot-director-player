@@ -290,9 +290,26 @@ static func stage_rect(sprite: Dictionary, member: Dictionary) -> Rect2:
 ## the same dialogue balloon, and all four are drawn Copy. Omit the flag and
 ## whichever decodes first decides how the others look.
 static func texture_key(sprite: Dictionary, drawn: Vector2) -> String:
-	return "%d:%d:%d:%dx%d:%d:%d:%d" % [
+	return "%d:%d:%d:%dx%d:%d:%d:%d%s%s" % [
 		int(sprite["cast_lib"]), int(sprite["cast_id"]), int(sprite["ink"]),
 		int(drawn.x), int(drawn.y), int(sprite.get("back_color", 0)),
 		int(sprite.get("fore_color", Ink.INDEX_BLACK)),
 		1 if bool(sprite.get("has_blend", false)) else 0,
+		_rgb_key(sprite, Ink.FORE_RGB_KEY), _rgb_key(sprite, Ink.BACK_RGB_KEY),
 	]
+
+
+## The true-colour half of the key, or nothing when the record has none.
+##
+## The two index bytes above are **not** enough on their own once true colours
+## exist, and the collision is not a corner case: a true colour's red component
+## *is* the byte the index reading uses, so `(0,0,0)` fore and palette index 0
+## produce the same character in the key while naming black and white
+## respectively. Empty for an indexed record, so the 7.9 million records in the
+## corpus that state no true colour keep exactly the key they had and nothing
+## re-decodes (`bugs.md` 30).
+static func _rgb_key(sprite: Dictionary, key: String) -> String:
+	if not (sprite.get(key) is Color):
+		return ""
+	var c: Color = sprite[key]
+	return ":%02x%02x%02x" % [c.r8, c.g8, c.b8]

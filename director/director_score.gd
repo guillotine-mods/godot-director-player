@@ -73,8 +73,24 @@ const FIELD_BYTES := {
 	"blend_amount": [21, 1],
 	"thickness": [22, 1],
 	"sprite_flags": [23, 1],
+	# The green and blue halves of the two true colours. They are fields of this
+	# record like any other, and a field missing from this table is a field whose
+	# auto-puppet the score can never release -- which for these four would mean a
+	# script that had written `the backColor of sprite` once kept its index for
+	# the rest of the movie on every channel the score later recoloured.
+	"fore_color_g": [24, 1],
+	"back_color_g": [25, 1],
+	"fore_color_b": [26, 1],
+	"back_color_b": [27, 1],
 }
 const COLOR_CODE_AT := 20
+## Bytes 24-27, in the reference's own order (`frame.cpp:readSpriteDataD7`): the
+## greens first and the blues after, fore before back in each pair. The *red*
+## component of each colour is the byte the palette-index reading uses, 2 and 3.
+const FORE_G_AT := 24
+const BACK_G_AT := 25
+const FORE_B_AT := 26
+const BACK_B_AT := 27
 const BLEND_AMOUNT_AT := 21
 const THICKNESS_AT := 22
 const SPRITE_FLAGS_AT := 23
@@ -89,12 +105,45 @@ const THICKNESS_MASK := 0x0F
 ## Bits of the colour-code byte. The low nibble is the score colour — the tint
 ## the authoring tool paints the channel with in the Score window, which is
 ## editing furniture and not something the stage ever shows. The two RGB bits say
-## that the fore or back colour is a true colour in bytes 24-27 rather than a
-## palette index; the port reads the index and warns nowhere, because 1,124 of
-## Piposh 2's records set the back-colour bit and none of Piposh 1's set either.
+## that the fore or back colour is a **true colour** whose red component is the
+## byte the index reading uses (2 or 3) and whose green and blue are in 24-27,
+## rather than an index into the movie's palette.
+##
+## **Both are decoded now, and the reason they were not is the reason to be
+## careful with a number in a comment here.** This line used to end "because
+## 1,124 of Piposh 2's records set the back-colour bit and none of Piposh 1's set
+## either", which was true and was a measurement of two roots out of eight.
+## `tools/sprite_rgb_colour.gd` over all of them:
+##
+##   root                    records   fore RGB   back RGB
+##   itamar-magichat            9615        397        371
+##   itamar-park                7671        501        501
+##   piposh                  1886362          0          0
+##   piposh-dream             766010      55134      55138
+##   piposh-en               1872196          9          9
+##   piposh-ru               1868941          9          9
+##   piposh2                  816318        504       1124
+##   rating                    847431         0          0
+##
+## Piposh Dream states one on **7.2% of its records**, and what it states is not
+## an exotic tint: every one of the 57,152 back colours in the whole corpus is
+## `(255,255,255)`, and the commonest fore colour is `(0,0,0)` on 32,875 — the
+## *default* pair, written the D7 way. Read as indices those are 255 and 0, which
+## in Director's 8-bit convention are black and white the other way round, so a
+## sprite asking for black on white got white on black: `director_ink.gd`
+## repainted the artwork with the pair inverted, and on the 23,343 records whose
+## ink is Background Transparent it keyed out the black pixels instead of the
+## white ones. `bugs.md` 30.
 const SCORE_COLOR_MASK := 0x0F
 const FORE_COLOR_RGB_FLAG := 0x10
 const BACK_COLOR_RGB_FLAG := 0x20
+## Where a decoded true colour lands on the sprite record, and the *only* signal
+## that one is there. Named here rather than spelled twice, because the decoder
+## writes them and `director_ink.gd` is the one thing that reads them; a sprite
+## without the key is a sprite whose colour is an index, which is what every
+## record in three of the eight roots is.
+const FORE_RGB_KEY := "fore_rgb"
+const BACK_RGB_KEY := "back_rgb"
 const EDITABLE_FLAG := 0x40
 const MOVEABLE_FLAG := 0x80
 ## A sprite record naming this library means "the movie's own cast".
@@ -594,7 +643,7 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 		var cast_lib := _u16(buffer, at + 4)
 		var thickness_byte := buffer[at + THICKNESS_AT]
 		var color_code := buffer[at + COLOR_CODE_AT]
-		sprites.append({
+		var record := {
 			"channel": channel,
 			"cast_lib": 1 if cast_lib == OWN_CAST_LIB else cast_lib,
 			# The same field before `0xFFFF` is folded away, because the fold is
@@ -669,7 +718,19 @@ func _snapshot(buffer: PackedByteArray, index: int) -> Dictionary:
 			# instead of guessing at boundaries from where the member changes.
 			# The reference reads the field and then uses it for nothing.
 			"sprite_list_idx": _u32(buffer, at + SPRITE_LIST_IDX_AT),
-		})
+		}
+		# The true colours, present only on the records that state one, so that
+		# `has()` is the question "is this an index or a colour" and no consumer
+		# has to carry a second flag beside the value. `fore_color`/`back_color`
+		# keep the raw byte either way: it is still what `the foreColor of sprite`
+		# answers, and it is still the red component of the colour beside it.
+		if (color_code & FORE_COLOR_RGB_FLAG) != 0:
+			record[FORE_RGB_KEY] = Color8(
+				buffer[at + 2], buffer[at + FORE_G_AT], buffer[at + FORE_B_AT])
+		if (color_code & BACK_COLOR_RGB_FLAG) != 0:
+			record[BACK_RGB_KEY] = Color8(
+				buffer[at + 3], buffer[at + BACK_G_AT], buffer[at + BACK_B_AT])
+		sprites.append(record)
 
 	var tempo := buffer[54]
 	var tempo_cue := buffer[53]

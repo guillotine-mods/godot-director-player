@@ -167,15 +167,20 @@ func _init() -> void:
 		# load-bearing -- a matte floods *white* in from the border, so repainting
 		# the whites first leaves the flood nothing to match.
 		var ink := int(sprite["ink"])
-		var fore := Ink.colour_of(member_palette, int(sprite.get("fore_color", Ink.INDEX_BLACK)))
-		var back := Ink.colour_of(member_palette, int(sprite.get("back_color", Ink.INDEX_WHITE)))
+		# Through the record rather than through two indices, for the same reason
+		# and by the same two calls the player uses: a D7 record may state the
+		# colour itself instead of an index (`bugs.md` 30). A diagnostic that read
+		# the index where the player read the colour would disagree with it on
+		# every one of `piposh-dream`'s 55,134 such records, and that disagreement
+		# is precisely what this tool exists not to invent.
+		var fore := Ink.fore_colour(sprite, member_palette)
+		var back := Ink.back_colour(sprite, member_palette)
 		match Ink.key_for(sprite, m):
 			Ink.KEY_MATTE:
 				Ink.key_matte(image)
 			Ink.KEY_PAPER:
 				Ink.key_paper(image, back)
-		if Ink.applies_colour(ink, int(sprite.get("fore_color", Ink.INDEX_BLACK)),
-				int(sprite.get("back_color", Ink.INDEX_WHITE))):
+		if Ink.applies_colour_to(sprite, ink):
 			Ink.apply_colour(image, fore, back)
 
 		# loc is the registration point, not the top-left corner.
