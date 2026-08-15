@@ -46,6 +46,7 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Transition := preload("res://director/director_transition.gd")
+const StagePaint := preload("res://scenes/preview/stage_paint.gd")
 
 ## Small on purpose. Every algorithm's arithmetic is in proportions of the clip,
 ## so a 96x72 stage exercises the same branches as a 640x480 one and a run over
@@ -66,6 +67,7 @@ func _init() -> void:
 	_dissolve_scatters(h)
 	_blinds_are_stripes(h)
 	_change_area_confines_it(h)
+	await _crop_follows_the_stretch(h)
 	await _steps_inside_the_hold(h)
 	await _composites_a_real_movie(h)
 	quit(h.finish("transition drawing, direction by direction"))
@@ -493,6 +495,116 @@ func _change_area_confines_it(h) -> void:
 	h.check("an unchanged frame degrades to a cut rather than dividing by zero",
 		still.degraded != "" and still.steps >= 1, still.degraded)
 	h.complete("a changed-area transition plays inside the rectangle that changed")
+
+
+## ## The crop `_grab_stage` takes is in render-target pixels
+##
+## `bugs.md` 117, headless. The case below this one (`_two_backends_agree`) is
+## the end-to-end statement of the same thing and it can only run on a machine
+## with a screen, which meant the defect went unguarded for as long as it
+## existed: the gate is headless, headless reads the offscreen surface, and the
+## framebuffer arm was never asked anything.
+##
+## This asks it the one question a machine with no framebuffer can still answer,
+## because it is a question about **transforms rather than pixels**. Godot's
+## `canvas_items` stretch splits the two apart: the render target is the window,
+## the 2D coordinate space is the content-scale size, and the viewport carries a
+## stretch transform between them that `get_global_transform_with_canvas()` does
+## not include. A `SubViewport` with `size_2d_override_stretch` reproduces that
+## split exactly and costs nothing to render, so the arithmetic can be driven at
+## the real numbers on any display server.
+##
+## **The numbers are the ones the entry was measured at** — a 2880x1690 window
+## whose 2D space is 1280x751, a 640x480 stage letterboxed into it at
+## `1.564583` from `(139, 0)`. With the fix reverted the answer is
+## `(139, 0, 1001, 751)`, the top-left ninth of a 2880x1690 image; with it,
+## `(312, 0, 2252, 1690)`, which is the letterboxed stage edge to edge. Two
+## pixels of slack, and they are for one named thing rather than for comfort:
+## `Node2D.scale` is float32, so `1001.33 x 2.25` comes back `2252.99` and
+## truncates one short of the exact 2253.
+##
+## The second half is the control that keeps the first from being a licence to
+## multiply by anything: with no stretch the region must be **unchanged**, which
+## is what makes this safe for headless, for a window at the base resolution and
+## for `stretch/mode="disabled"`.
+func _crop_follows_the_stretch(h) -> void:
+	h.begin("the framebuffer crop is taken in the space the frame was rendered in")
+	# The window, and the 2D space Godot leaves the canvas in underneath it.
+	var target := Vector2i(2880, 1690)
+	var canvas := Vector2i(1280, 751)
+	var stretched := _stretched_viewport(target, canvas)
+	var flat := _stretched_viewport(canvas, Vector2i.ZERO)
+	root.add_child(stretched)
+	root.add_child(flat)
+	await process_frame
+	# Placed the way `director_preview.gd:_fit_to_window` places the stage: the
+	# largest whole-aspect fit, floored to a whole pixel. Computed rather than
+	# quoted so that a change to that rule shows up here as a moved rectangle
+	# instead of as a passing test of a stale constant.
+	var stage := Vector2i(640, 480)
+	var factor := minf(float(canvas.x) / stage.x, float(canvas.y) / stage.y)
+	var node := _placed_node(factor,
+		((Vector2(canvas) - Vector2(stage) * factor) * 0.5).floor())
+	stretched.add_child(node)
+	var flat_node := _placed_node(factor, node.position)
+	flat.add_child(flat_node)
+	await process_frame
+	var local := Rect2(Vector2.ZERO, Vector2(stage))
+	h.check("the viewport's stretch is the ratio of the two, and is not identity",
+		stretched.get_final_transform().get_scale().is_equal_approx(
+			Vector2(float(target.x) / canvas.x, float(target.y) / canvas.y)),
+		str(stretched.get_final_transform()))
+	# What the node alone says, which is what the arm used to crop with. Kept in
+	# the failure message so a red says *which* of the two spaces it landed in
+	# rather than only that it is wrong.
+	var canvas_only := StagePaint.render_target_region(
+		node.get_global_transform_with_canvas() * local, Transform2D(), target)
+	var region := StagePaint.framebuffer_region(node, local, target)
+	h.check("the crop is the letterboxed stage in render-target pixels",
+		_rect_near(region, Rect2i(312, 0, 2253, 1690), 2),
+		"%s (the node's own transform alone answers %s)" % [region, canvas_only])
+	h.check("so it spans the full height of the render target, which is the axis"
+		+ " the letterbox does not pad",
+		absi(region.size.y - target.y) <= 2, "%d of %d" % [region.size.y, target.y])
+	h.check("and the pre-fix answer really is the wrong picture, not a rounding"
+		+ " difference", not _rect_near(canvas_only, region, 8), str(canvas_only))
+	h.check("with no stretch the region is the node's own rectangle, unchanged",
+		StagePaint.framebuffer_region(flat_node, local, canvas) == canvas_only,
+		"%s vs %s" % [StagePaint.framebuffer_region(flat_node, local, canvas),
+			canvas_only])
+	stretched.queue_free()
+	flat.queue_free()
+	h.complete("the framebuffer crop is taken in the space the frame was rendered in")
+
+
+## A viewport whose render target and 2D space differ, which is what
+## `window/stretch/mode="canvas_items"` does to the root one. `override` of zero
+## means no split at all, for the control.
+func _stretched_viewport(size: Vector2i, override: Vector2i) -> SubViewport:
+	var viewport := SubViewport.new()
+	viewport.size = size
+	# Nothing is drawn into it -- every assertion is about transforms -- and a
+	# render target that never updates is what makes this free on a real GPU as
+	# well as on the dummy one.
+	viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	if override != Vector2i.ZERO:
+		viewport.size_2d_override = override
+		viewport.size_2d_override_stretch = true
+	return viewport
+
+
+func _placed_node(factor: float, at: Vector2) -> Node2D:
+	var node := Node2D.new()
+	node.position = at
+	node.scale = Vector2(factor, factor)
+	return node
+
+
+func _rect_near(a: Rect2i, b: Rect2i, slack: int) -> bool:
+	return absi(a.position.x - b.position.x) <= slack \
+		and absi(a.position.y - b.position.y) <= slack \
+		and absi(a.size.x - b.size.x) <= slack \
+		and absi(a.size.y - b.size.y) <= slack
 
 
 ## The wiring: the play is stepped *by* the hold the clock is already running,
@@ -924,7 +1036,7 @@ static func _arm_surface(preview: Node) -> void:
 	preview.call("repaint_now")
 
 
-## ## This is red on a desktop run, and the red is a finding
+## ## This was red on a desktop run, and the red was `bugs.md` 117
 ##
 ## It compares blurred rather than exact, because the framebuffer arm crops the
 ## letterboxed viewport and resizes it back to Director's pixels with
@@ -933,26 +1045,32 @@ static func _arm_surface(preview: Node) -> void:
 ## was. Blurring both to a 64x48 thumbnail throws that away and keeps the question
 ## worth asking: are these the same picture, laid out the same way?
 ##
-## **They are not.** Measured on 4.7.1 on Windows against `rating`'s
-## `EGOZROO1.dir` frame 227, window 2880x1690, stage 640x480: mean channel drift
-## **107/255 blurred**, and the two saved side by side say why. The offscreen
-## surface is the whole frame -- room, television, three lines of Hebrew, the HUD.
-## The framebuffer answer is the **top-left corner of the stage with the letterbox
-## still in it**, magnified to fill 640x480.
+## **They were not**, and this is the measurement either side of the fix, both on
+## 4.7.1 on Windows against `rating`'s `EGOZROO1.dir` frame 227, window 2880x1690,
+## stage 640x480, by hand without `--headless`:
 ##
-## The crop arithmetic is not what is wrong: `get_global_transform_with_canvas()`
-## answers `scale 1.5646, origin (139, 0)` and `_grab_stage` duly crops
-## `(139, 0, 1001, 751)` out of a 2880x1690 viewport. The *drawing* is not at that
-## scale -- 1001x751 is far short of the window, and what comes back is the
-## fraction of the stage that rectangle actually covers. So the node's transform
-## and the transform the frame was rendered with disagree, and it is not a settling
-## artifact: 200 awaited frames give the same picture as 30.
+##   before  mean channel drift **106.9/255** blurred, 67,027 of 76,800 samples
+##           differ exactly -- the offscreen surface held the whole frame (room,
+##           television, three lines of Hebrew, the HUD) and the framebuffer answer
+##           was the **top-left corner of the stage with the letterbox still in
+##           it**, magnified to fill 640x480
+##   after   mean channel drift **0.2/255**, 585 of 76,800 -- which is the
+##           `INTERPOLATE_NEAREST` downscale and the 3 approximated text
+##           primitives, i.e. the residue this case was always going to have
 ##
-## What that means is that **on a machine with a screen a transition has been
-## composing two wrong pictures** -- and it is a defect in the path that predates
-## the offscreen surface, which is only how it became visible. It has no effect on
-## the gate, which is headless and reads the surface, and this case is the whole
-## of what reports it. Do not "fix" it by loosening the threshold.
+## The cause was one missing transform and not the arithmetic around it.
+## `get_global_transform_with_canvas()` answers `scale 1.5646, origin (139, 0)`,
+## and that rectangle is *correct in the viewport's 2D space*, which
+## `window/stretch/mode="canvas_items"` leaves at 1280x751 while the render target
+## `get_image()` returns is the 2880x1690 window. The stretch between them --
+## `2880/1280 = 2.25`, `1690/751 = 2.250333` -- lives on the viewport as
+## `get_final_transform()` and was not in the crop.
+## `preview/stage_paint.gd:framebuffer_region` carries the full account, and
+## `_crop_follows_the_stretch` above is the headless guard: this case needs a
+## screen, so for as long as it was the only one asking, the gate could not see
+## the defect at all.
+##
+## Still: do not "fix" a future red here by loosening the threshold.
 static func _two_backends_agree(h, preview: Node) -> void:
 	if DisplayServer.get_name() == "headless":
 		h.check("the two paint backends can only be compared with a screen"

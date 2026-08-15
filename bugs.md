@@ -1660,51 +1660,38 @@ and read `_lib_keys` after the handover to `eat.dir`, with that tool's own
 `_lib_keys.clear()` at `:469` removed.
 
 
+
 ---
 
-## 117. On a machine with a screen, a transition composes the wrong two pictures
+## 118. A Movie-In-A-Window smaller than the stage would hand a transition two differently-sized pictures
 
-**Status:** OPEN · **Area:** `scenes/director_preview.gd:_grab_stage`, the
-framebuffer arm · found 2026-08-14 while building the offscreen surface, and
-**predates it** — the surface is only what made it visible
+**Status:** OPEN · **Area:** `scenes/preview/frame_loop.gd:begin_transition`,
+`scenes/director_preview.gd:_grab_stage` · **latent — no corpus can express it
+today** · found 2026-08-14 while fixing 117, and deliberately not folded into it
 
-Headless is unaffected: `35e9cac5` gave the painter a CPU rasteriser and
-`_grab_stage` reads the last completed paint off it, already in Director's
-pixels. A build **with a screen** still takes the other arm, reading the frame
-back out of the framebuffer and cropping it to the stage — and the crop is wrong.
+The two frames a transition composites and the play that composites them are
+sized by three different questions, and only one of them asks the window:
 
-The same frame captured both ways: the surface is the whole frame (room,
-television, three lines of Hebrew, HUD); the framebuffer answer is the
-**top-left corner of the stage with the letterbox still in it**, magnified to
-640x480. Mean channel drift 107 of 255, blurred to about 64x48 of real detail.
-Not a settling artifact — 200 awaited frames give the same picture as 30.
+* `paint_capture` is sized `window_size()` (`director_preview.gd:1758`);
+* `_grab_stage`'s framebuffer arm crops and resizes to `stage_size()`;
+* `frame_loop.gd:begin_transition` builds `Transition.Play` at `stage_size()`.
 
-**The arithmetic is not what is wrong.** `get_global_transform_with_canvas()`
-answers `scale 1.5646, origin (139,0)` and the crop follows it faithfully. The
-drawing is not at that scale: 1001x751 is far short of the 2880x1690 window. So
-the node's transform and the transform the frame was actually rendered with
-disagree, and the crop is derived from the wrong one of the two.
+In all six shipped corpora and both Itamar corpora those are equal, so nothing
+disagrees and nothing can be measured. **A Movie-In-A-Window smaller than the
+stage would hand the headless path a window-sized departing frame to a
+stage-sized play**, and the desktop path a stage-sized crop of a window that is
+not the stage.
 
-Every transition on a desktop has therefore been blending two wrong pictures for
-as long as transitions have drawn. Nobody saw it because until `35e9cac5` they
-did not draw at all.
+Not folded into 117 because it is a different subject with a different fix: 117
+was a transform missing from a crop, and this is three call sites that should all
+be asking the same question and are not. Fixing it needs a decision about *which*
+question is right — Director composites a transition over the window the frame
+change happened in, so `window_size()` is the likely answer, and `stage_size()`
+being correct everywhere today is a property of this corpus rather than of the
+engine.
 
-Reported by `tools/transition_render.gd`'s `_two_backends_agree` case, which is
-**green in the gate** (headless says it needs a screen and asserts nothing) and
-**red on a by-hand desktop run**, with the cause in the failure message so nobody
-closes it by loosening the threshold:
-
-```
-godot --path . --script tools/transition_render.gd -- --root rating --boot EGOZROO1.dir
-```
-
-Two ways out, and the choice is not obvious:
-
-1. **Find why the transforms disagree** and fix the crop. Cheapest if the cause
-   is a stale transform on the node, which is what the numbers suggest.
-2. **Make the surface the source on every display server**, deleting the
-   framebuffer arm. Correct by construction and removes a whole class of
-   divergence, at a measured **+13.8 ms per paint** on the most text-heavy frame
-   in the corpus. These are 4-15 fps movies, so that is affordable — but it is a
-   real cost paid on every machine to fix a bug on one path, and it should be a
-   decision rather than a default.
+**No harness can currently fail on this**, which is exactly why it is written
+down rather than left to be rediscovered: `tools/window_preview.gd` opens the two
+`piposh2` windows and both are stage-sized. A fixture would have to be
+synthesised, and the honest first step is to say in `begin_transition` which size
+it means and why.

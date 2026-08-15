@@ -1689,8 +1689,15 @@ func _grab_stage() -> Image:
 	var stage := stage_size()
 	if stage.x <= 0 or stage.y <= 0:
 		return null
-	var placed := get_global_transform_with_canvas() * Rect2(Vector2.ZERO, Vector2(stage))
-	var region := Rect2i(placed.abs()).intersection(Rect2i(Vector2i.ZERO, image.get_size()))
+	# Through `framebuffer_region` rather than `get_global_transform_with_canvas()`
+	# directly, and that one call is the whole of `bugs.md` 117: the image above is
+	# the *render target*, this project stretches with `canvas_items`, and the
+	# node's transform answers in the pre-stretch 2D space. Cropping one with the
+	# other took the top-left corner of the stage, letterbox included, on every
+	# desktop transition this port has ever drawn. The account and the measurement
+	# are on `preview/stage_paint.gd:framebuffer_region`.
+	var region := StagePaint.framebuffer_region(self,
+		Rect2(Vector2.ZERO, Vector2(stage)), image.get_size())
 	if region.size.x <= 0 or region.size.y <= 0:
 		return null
 	var cropped := image.get_region(region)

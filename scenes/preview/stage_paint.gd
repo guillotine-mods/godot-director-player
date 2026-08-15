@@ -53,6 +53,78 @@ static func clip_to_stage(host, stage: Vector2i) -> Rect2:
 	return rect
 
 
+## Where a rectangle of this node's own space lands **in the render target**,
+## which is not where the node's transform alone says it lands.
+##
+## `bugs.md` 117, and the whole of the fix for it. `director_preview.gd:_grab_stage`
+## reads `Viewport.get_texture().get_image()` — the framebuffer, in *window*
+## pixels — and used to crop it with `get_global_transform_with_canvas()`, which
+## answers in *canvas* pixels. Those are two different spaces the moment the
+## project stretches, and this one does: `project.godot` sets
+## `window/stretch/mode="canvas_items"` with `aspect="expand"`, so Godot leaves
+## the 2D coordinate space at the content-scale size and hands the renderer a
+## separate **stretch transform** that scales every canvas item up to the window
+## on its way to the framebuffer. `CanvasItem.get_global_transform_with_canvas()`
+## stops one transform short of it by definition — it is
+## `viewport canvas transform * global transform` and nothing else — so the crop
+## was being taken in a space 2.25x smaller than the image it was cropping.
+##
+## Measured on 4.7.1 on Windows against `rating`/`EGOZROO1.dir`, maximised
+## (`tools/scratch/probe_stretch.gd`, since deleted; the numbers are the entry's):
+##
+##   window / framebuffer      2880 x 1690
+##   viewport 2D space         1280 x 751   (`get_visible_rect()`)
+##   node position / scale     (139, 0) / 1.564583
+##   get_global_transform_with_canvas()  scale 1.564583, origin (139, 0)
+##   viewport get_final_transform()      scale (2.25, 2.250333), origin (0, 0)
+##
+## `2880/1280 = 2.25` and `1690/751 = 2.250333` exactly, which is what says the
+## second transform is the stretch and not something else. The old crop was
+## `(139, 0, 1001, 751)` of a 2880x1690 image — the top-left corner of the stage
+## with the letterbox still in it, magnified back to 640x480, mean channel drift
+## **106.9 of 255** against the offscreen surface. Through the stretch it is
+## `(312, 0, 2252, 1690)`: the letterboxed stage, edge to edge, and the drift is
+## **0.2**. The width is one short of the exact `1001.33 x 2.25 = 2253` because
+## `Node2D.scale` is float32; `transition_render.gd:_crop_follows_the_stretch`
+## allows two pixels for that and says so.
+##
+## **`CanvasItem.get_screen_transform()` is not the answer** and is worth naming
+## so nobody reaches for it next: measured on the same run it returned exactly
+## `get_global_transform_with_canvas()`, because the window's own screen position
+## is what it adds and the stretch is not part of it. The *viewport's*
+## `get_screen_transform()` is the same thing as its `get_final_transform()` on
+## the root window and either will do; `get_final_transform()` is named for what
+## it is, so it is the one used here.
+##
+## **This was already known in `tools/` and had never crossed into the engine**,
+## which is the part worth remembering rather than the arithmetic.
+## `hilite.gd:_to_screen` composes exactly this pair and its comment calls the
+## stretch "the half that is easy to leave out"; `mouse_events.gd`,
+## `sprite_drag.gd`, `touch_input.gd` and `editable_text.gd` compose it too, and
+## `stage_clip.gd` derives the same factor from `image size / visible rect`
+## instead. Six harnesses had the fix and the one place that paints did not.
+##
+## Identity where there is no stretch, so every unstretched path — headless, a
+## window at the base resolution, `stretch/mode="disabled"` — gets the rectangle
+## it got before, byte for byte.
+static func framebuffer_region(host, local: Rect2, image_size: Vector2i) -> Rect2i:
+	# Annotated rather than inferred: a call through `host` is untyped.
+	var placed: Rect2 = host.get_global_transform_with_canvas() * local
+	var viewport: Viewport = host.get_viewport()
+	var final := Transform2D() if viewport == null else viewport.get_final_transform()
+	return render_target_region(placed, final, image_size)
+
+
+## The arithmetic on its own, so a harness can hand it a stretch this machine's
+## window does not happen to produce. `final` is the viewport's
+## `get_final_transform()`: `stretch transform * global canvas transform`, which
+## is precisely the pair `get_global_transform_with_canvas()` leaves out.
+static func render_target_region(placed: Rect2, final: Transform2D,
+		image_size: Vector2i) -> Rect2i:
+	return Rect2i((final * placed).abs()).intersection(
+		Rect2i(Vector2i.ZERO, image_size))
+
+
 ## Every sprite of one frame, in channel order.
 static func paint_frame(host, table, stage: Vector2i) -> void:
 	# Where each channel is this paint, and what it holds, so the trail layer can

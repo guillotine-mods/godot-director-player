@@ -7422,3 +7422,91 @@ Found by pointing `sound_survey` at every root instead of the configured one.
 That tool used to *assert* "no frame's tempo cell is a wait-for-sound", so it
 answered FAIL to the news that a title uses the feature; it prints the count as a
 finding now.
+---
+
+## 117. On a machine with a screen, a transition composes the wrong two pictures
+
+**Status:** OPEN · **Area:** `scenes/director_preview.gd:_grab_stage`, the
+framebuffer arm · found 2026-08-14 while building the offscreen surface, and
+**predates it** — the surface is only what made it visible
+
+Headless is unaffected: `35e9cac5` gave the painter a CPU rasteriser and
+`_grab_stage` reads the last completed paint off it, already in Director's
+pixels. A build **with a screen** still takes the other arm, reading the frame
+back out of the framebuffer and cropping it to the stage — and the crop is wrong.
+
+The same frame captured both ways: the surface is the whole frame (room,
+television, three lines of Hebrew, HUD); the framebuffer answer is the
+**top-left corner of the stage with the letterbox still in it**, magnified to
+640x480. Mean channel drift 107 of 255, blurred to about 64x48 of real detail.
+Not a settling artifact — 200 awaited frames give the same picture as 30.
+
+**The arithmetic is not what is wrong.** `get_global_transform_with_canvas()`
+answers `scale 1.5646, origin (139,0)` and the crop follows it faithfully. The
+drawing is not at that scale: 1001x751 is far short of the 2880x1690 window. So
+the node's transform and the transform the frame was actually rendered with
+disagree, and the crop is derived from the wrong one of the two.
+
+Every transition on a desktop has therefore been blending two wrong pictures for
+as long as transitions have drawn. Nobody saw it because until `35e9cac5` they
+did not draw at all.
+
+Reported by `tools/transition_render.gd`'s `_two_backends_agree` case, which is
+**green in the gate** (headless says it needs a screen and asserts nothing) and
+**red on a by-hand desktop run**, with the cause in the failure message so nobody
+closes it by loosening the threshold:
+
+```
+godot --path . --script tools/transition_render.gd -- --root rating --boot EGOZROO1.dir
+```
+
+Two ways out, and the choice is not obvious:
+
+1. **Find why the transforms disagree** and fix the crop. Cheapest if the cause
+   is a stale transform on the node, which is what the numbers suggest.
+2. **Make the surface the source on every display server**, deleting the
+   framebuffer arm. Correct by construction and removes a whole class of
+   divergence, at a measured **+13.8 ms per paint** on the most text-heavy frame
+   in the corpus. These are 4-15 fps movies, so that is affordable — but it is a
+   real cost paid on every machine to fix a bug on one path, and it should be a
+   decision rather than a default.
+**Resolved 2026-08-14 — the diagnosis, not the fallback. The framebuffer arm
+stays and costs nothing.**
+
+`get_global_transform_with_canvas()` was never stale and the node was on no stray
+canvas layer. It is **one transform short of the framebuffer by definition**.
+`project.godot` sets `window/stretch/mode="canvas_items"`, which splits a
+viewport's render target from its 2D coordinate space and puts a stretch
+transform between them, applied by the renderer. That function is
+`viewport canvas transform * global transform` and nothing else, so it answers in
+the pre-stretch space; `Snapshot.grab` reads the render target.
+
+Measured on 4.7.1 on Windows, `rating`/`EGOZROO1.dir`, maximised: the render
+target and window are 2880x1690 while `get_visible_rect()` is 1280x751.
+`2880/1280 = 2.25` and `1690/751 = 2.250333` — that ratio is the stretch, the
+viewport carries it as `get_final_transform()`, and it was missing from the crop.
+So the crop was `(139, 0, 1001, 751)` of a 2880x1690 image, the top-left ninth.
+Through the stretch it is `(312, 0, 2252, 1690)`. `CanvasItem.get_screen_transform()`
+is **not** the answer and was tried: it returns exactly
+`get_global_transform_with_canvas()`.
+
+`_two_backends_agree` on a by-hand desktop run: mean channel drift
+**106.9/255 → 0.2/255**, 67,027 → 580 of 76,800 samples differing exactly. The
+residue is the `INTERPOLATE_NEAREST` downscale and three approximated text
+primitives, which that case was always going to carry.
+
+**The knowledge already existed in `tools/` and had never crossed into the
+engine.** `hilite.gd:_to_screen` composes exactly this pair and its own comment
+calls the stretch "the half that is easy to leave out"; `mouse_events.gd`,
+`sprite_drag.gd`, `touch_input.gd` and `editable_text.gd` compose it too, and
+`stage_clip.gd` derives the same factor from image size over visible rect. Six
+harnesses had it. The one place in the engine that paints did not.
+
+`stage_paint.gd:framebuffer_region` is now the single copy, identity where there
+is no stretch — so headless, a base-resolution window and `stretch=disabled` get
+the old rectangle byte for byte. Guarded on both sides:
+`transition_render.gd:_crop_follows_the_stretch` asks the transform question
+**headless**, through a `SubViewport` with `size_2d_override_stretch`, so the gate
+can see this defect without a screen; `_two_backends_agree` remains the
+end-to-end statement for a desktop run. Reverted to the pre-fix arithmetic, the
+headless case fails 3 checks.
