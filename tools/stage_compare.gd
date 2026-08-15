@@ -2,22 +2,69 @@ extends SceneTree
 ## Photograph the running player's stage **headlessly**, at one image pixel per
 ## stage pixel, and compare it against a picture composited some other way.
 ##
-##   godot --headless --path . --audio-driver Dummy --script tools/director_render.gd -- \
-##       --root piposh --file PIPDATA/PIANO.dir --frame 37 --out C:/tmp/rend.png
 ##   godot --headless --path . --audio-driver Dummy --script tools/stage_compare.gd -- \
-##       --root piposh --boot PIPDATA/PIANO.dir --frame 37 \
-##       --against C:/tmp/rend.png --band 8,466,252,9 --out C:/tmp/prev.png
+##       --root piposh --boot PIPDATA/PIANO.dir --frame 37 --debug-ui off \
+##       --render PIPDATA/PIANO.dir --band 8,466,252,9 --skip-top 60
 ##
 ##   --boot C       the container to boot (the player's own `--boot`/`--root`)
 ##   --movie C      `go to movie` after boot, when the frame wanted is elsewhere
 ##   --frame N      stand here (`--marker M` for a label instead)
 ##   --settle N     process frames after each step (default 8)
 ##   --band x,y,w,h one rectangle to report separately from the whole stage
-##   --against PNG  a second picture, in stage pixels, to difference against
+##   --render C     compose the picture to difference against here and now,
+##                  through `director_render.gd:compose`, at whatever frame the
+##                  player turned out to be standing on
+##   --against PNG  or difference against a picture some earlier run wrote
 ##   --skip-top N   ignore the first N rows of both (a HUD the diagnostic
 ##                  cannot dress, which is the usual reason a whole-stage
 ##                  number is not the interesting one)
 ##   --out PATH     write the player's own stage image
+##   --debug-ui off **required** -- see below
+##
+## ## The debug layer has to be off, and this refuses to run with it on
+##
+## `bugs.md` 74 -- "eight rows of Piposh 1's piano keyboard draw differently in
+## the player and in `director_render.gd`" -- was **this tool photographing our
+## own debug HUD** and reporting it as a compositor disagreement. It cost two
+## sessions and three wrong theories, so the check is a hard failure rather than
+## a note.
+##
+## `stage_paint.gd:295` draws `frame 37/206  playpiano  fps 15  hit:art  cur:0`
+## at `Vector2(8, stage.y - 8)` = (8,472), white at alpha 0.75, whenever
+## `DebugKeys.enabled()` -- which on a run from source is `auto`, which is on.
+## Every number the entry recorded is that one string:
+##
+##   * the band it names, `(8,466) 252x9`, is the string's bounding box;
+##   * "the player produces 243 distinct values where the diagnostic produces 23
+##     exact palette entries" is antialiased glyph coverage -- `Surface.glyphs`
+##     composes atlas cells whose alpha is partial, `Image.blend_rect` blends
+##     rather than replaces, and the results land between palette entries;
+##   * it showed only on the dark seam under the keys because white text over a
+##     white key changes nothing, which is what made it look like a dither fault
+##     in the artwork;
+##   * and it was stable across frames 37 and 39 because the HUD is.
+##
+## Measured with `--debug-ui off`: **0 of 268,800 px below y60 differ**, on frame
+## 37 and on frame 39, band included. That number is also what rules out the two
+## candidates the entry carried -- a palette disagreement cannot come out exact on
+## every pixel of 67 sprites, and the partial alpha was ours.
+##
+## The whole stage *including* the top 60 rows differs on 496 px, which is the
+## two field members `director_render.gd` skips by design. `--skip-top` is for
+## that and nothing else.
+##
+## ## What a real disagreement looks like, so 74's shape is not mistaken again
+##
+## `--root piposh2 --boot PIP2DATA/CHESS.dir --marker ches1 --debug-ui off
+## --render PIP2DATA/CHESS.dir --skip-top 60` differs on **7,005 px (2.61%)**,
+## and **both sides are exact palette entries** -- 9 distinct on the player's
+## side, 16 on the diagnostic's, `(255,204,0)` x1772 against x1806 at the top of
+## each. That is the movie having dressed itself with Lingo the diagnostic does
+## not run, and it is the *expected* asymmetry this tool's header describes. The
+## signature to be suspicious of is the other one: one side holding values no
+## palette entry holds. That is either a blend somewhere, or -- as it was in 74
+## -- something of ours in the picture. So CHESS is not a gate entry: it has no
+## principled budget, and a number picked to make it green would gate nothing.
 ##
 ## ## Why this exists, and why it is not `scene_probe.gd`
 ##
@@ -54,6 +101,8 @@ extends SceneTree
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
+const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const Render := preload("res://tools/director_render.gd")
 
 ## How many distinct colours to name on each side of a differing band. Enough to
 ## show whether one side's values are palette entries and the other's are not,
@@ -66,6 +115,19 @@ func _init() -> void:
 	var h := Harness.new()
 	var case := "the player's own stage, headless, at one pixel per stage pixel"
 	h.begin(case)
+
+	# First, before anything paints. The debug layer draws a translucent white
+	# HUD line across the bottom of the stage and a SKIP button at the top, and
+	# neither is the movie -- a comparison taken with them on is a comparison
+	# against our own overlay. `bugs.md` 74 is the whole of what that costs, and
+	# the header carries the account.
+	if not h.check("the debug layer is off, so this photographs the movie and "
+			+ "not our own HUD", not DebugKeys.enabled(),
+			"pass --debug-ui off; the HUD alone accounts for 833 px of "
+			+ "PIANO.dir frame 37"):
+		h.complete(case)
+		quit(h.finish("stage comparison"))
+		return
 
 	var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
 	root.add_child(preview)
@@ -130,15 +192,51 @@ func _init() -> void:
 	print("player: %s frame %d of %d, %dx%d" % [
 		str(preview.call("movie_name")), int(preview.call("current_frame")),
 		int(score.frame_count), mine.get_width(), mine.get_height()])
+	# How much of this capture the surface knows it did not rasterise the way the
+	# GPU would have -- every string of glyphs, and a tiled `texture_rect` nothing
+	# in this port passes. Printed rather than asserted because a movie with a
+	# field on the frame legitimately raises it, and because a non-zero here is
+	# the first thing to look at when a difference turns out to be text-shaped:
+	# that is what `bugs.md` 74 was.
+	var capture = preview.get("paint_capture")
+	if capture != null:
+		print("surface: %d primitives, %d approximated" % [
+			int(capture.drawn), int(capture.approximated)])
 
 	var out := Args.text(args, "out", "")
 	if out != "":
 		mine.save_png(out)
 		print("wrote %s" % out)
 
+	var container := Args.text(args, "render", "")
+	if container != "":
+		# Composed here rather than loaded from a PNG some earlier command wrote,
+		# and composed at the frame the player *turned out* to be standing on
+		# rather than at the one that was asked for. Both halves close the same
+		# hole: two invocations can be of two different frames, and the entry this
+		# tool was written for was compared at 37 against a player standing on 41.
+		var lines: Array[String] = []
+		var theirs := Render.compose(container, int(preview.call("current_frame")),
+			"", lines)
+		if Args.flag(args, "verbose"):
+			for line in lines:
+				print(line)
+		if h.check("the reference frame composited", theirs != null,
+				"%s frame %d%s" % [container, int(preview.call("current_frame")),
+					"" if theirs != null else ": " + "; ".join(lines)]):
+			_measure(h, mine, theirs, args)
 	var against := Args.text(args, "against", "")
 	if against != "":
 		_compare(h, mine, against, args)
+	# **A run that named neither is dark, not clean.** Every version of this tool
+	# before today would photograph the stage, print five green lines about the
+	# capture and exit 0 without comparing anything at all, which is the failure
+	# `gate.sh`'s EMPTY guard exists for and which that guard cannot see, because
+	# five checks is not zero checks. It is worth a red of its own: a gate entry
+	# whose `--render` was dropped in an edit would otherwise go on passing.
+	h.check("a picture to compare against was named",
+		container != "" or against != "",
+		"pass --render <container> or --against <png>")
 	h.complete(case)
 	quit(h.finish("stage comparison"))
 
@@ -157,12 +255,27 @@ func _target_frame(preview: Node, args: Dictionary) -> int:
 
 
 func _compare(h, mine: Image, against: String, args: Dictionary) -> void:
-	var case := "the two compositors, pixel by pixel"
-	h.begin(case)
 	var theirs := Image.load_from_file(against)
 	if not h.check("the picture to compare against loaded", theirs != null, against):
-		h.complete(case)
 		return
+	_measure(h, mine, theirs, args)
+
+
+## The two pictures, counted and asserted.
+##
+## **It asserts now, and it did not before.** Every earlier version printed a
+## percentage and passed, which is how `bugs.md` 74 could reproduce for two
+## sessions with nobody able to put it in `gate.sh`: a tool that only prints is
+## a tool nothing runs. `--max-differ` is the budget, and it defaults to **0**
+## because that is the measurement -- with the debug layer off, the player and
+## `director_render.gd` agree on every one of the 268,800 px of `PIANO.dir`
+## frame 37 below y60, and on frame 39 too. A budget above zero is a claim that
+## something is legitimately undressed on that frame (the diagnostic runs no
+## scripts and skips field members), and it should be written on the gate entry
+## where the next reader can see the number and ask about it.
+func _measure(h, mine: Image, theirs: Image, args: Dictionary) -> void:
+	var case := "the two compositors, pixel by pixel"
+	h.begin(case)
 	if not h.check("both pictures are the same size",
 			theirs.get_size() == mine.get_size(),
 			"player %dx%d, other %dx%d" % [mine.get_width(), mine.get_height(),
@@ -171,11 +284,15 @@ func _compare(h, mine: Image, against: String, args: Dictionary) -> void:
 		return
 
 	var skip_top := Args.number(args, "skip-top", 0)
+	var budget := Args.number(args, "max-differ", 0)
 	var whole := _band(mine, theirs, Rect2i(0, skip_top,
 		mine.get_width(), mine.get_height() - skip_top))
 	print("whole stage below y%d: %d of %d px differ (%.2f%%)" % [
 		skip_top, int(whole["differ"]), int(whole["total"]),
 		100.0 * float(whole["differ"]) / maxf(1.0, float(whole["total"]))])
+	if int(whole["differ"]) > 0:
+		_name_colours("  player ", whole["mine"])
+		_name_colours("  other  ", whole["theirs"])
 
 	var spec := Args.text(args, "band", "").split(",", false)
 	if spec.size() == 4:
@@ -187,6 +304,13 @@ func _compare(h, mine: Image, against: String, args: Dictionary) -> void:
 			100.0 * float(band["differ"]) / maxf(1.0, float(band["total"]))])
 		_name_colours("  player ", band["mine"])
 		_name_colours("  other  ", band["theirs"])
+		h.check("the band agrees within its budget", int(band["differ"]) <= budget,
+			"%d differ, budget %d" % [int(band["differ"]), budget])
+
+	h.check("the two compositors agree within the budget",
+		int(whole["differ"]) <= budget,
+		"%d of %d differ below y%d, budget %d" % [int(whole["differ"]),
+			int(whole["total"]), skip_top, budget])
 	h.complete(case)
 
 

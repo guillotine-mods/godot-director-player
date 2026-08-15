@@ -26,7 +26,37 @@ extends SceneTree
 ## rendering bug. A diagnostic that is wrong in a way nobody can see from its own
 ## output is worse than no diagnostic, so the parallel rule is gone rather than
 ## documented -- `docs/bugs-closed.md` 73 has the before-and-after numbers, and
-## `bugs.md` 74 is the eight rows this did not account for.
+## `bugs.md` 74 was the eight rows this did not account for.
+##
+## **74 closed on 2026-08-15, and it was never this file's fault nor the
+## player's.** The eight rows were `stage_paint.gd:295` -- the *debug HUD*, the
+## line reading `frame 37/206  playpiano  fps 15  hit:art  cur:0`, drawn at
+## `Vector2(8, stage.y - 8)` = (8,472) in white at alpha 0.75. `stage_compare.gd`
+## photographed the player with the debug layer on, so it photographed our own
+## overlay and reported it as a compositor disagreement. Everything the entry
+## recorded follows from that and from nothing else: the band it names,
+## `(8,466) 252x9`, is that string's own bounding box; "243 distinct values where
+## the diagnostic produces 23 exact palette entries" is antialiased glyph
+## coverage reaching `Image.blend_rect`; and the difference showed *only* on the
+## dark seam under the keys because white text over a white key changes nothing.
+## With `--debug-ui off` the two agree on **0 of 268,800 px below y60**, on frames
+## 37 and 39 alike. `stage_compare.gd` refuses to run with the layer on now.
+##
+## ## `compose` is public so that the comparison can be one process
+##
+## The reference picture used to have to be written to a PNG by one run and read
+## back by another, which is a large part of why `bugs.md` 74 sat for two
+## sessions with no gate entry: a harness cannot depend on a file some earlier
+## command left in `/tmp`, and two runs can disagree about the frame.
+## `stage_compare.gd` calls `compose()` directly now, so the whole comparison is
+## one `gate.sh` entry with no temporary files.
+##
+## **Both halves of that sharing are on the diagnostic's side of the
+## comparison**, which is the property that has to be preserved: the player
+## reaches none of this file. What this *does* share with the player is
+## `director_ink.gd` and `director_bitmap.gd`, deliberately, so that a
+## disagreement is between the two composition paths and never between two
+## decoders.
 
 const Args := preload("res://tools/lib/args.gd")
 const ContainerFile := preload("res://director/director_file.gd")
@@ -50,67 +80,94 @@ const STAGE := Vector2i(640, 480)
 
 func _init() -> void:
 	var args := Args.parse()
+	var lines: Array[String] = []
+	var stage := compose(Args.text(args, "file"), Args.number(args, "frame", -1),
+		Args.text(args, "label"), lines)
+	for line in lines:
+		print(line)
+	if stage == null:
+		quit(1)
+		return
+	# Named for whichever of the two the caller gave, rather than for the resolved
+	# index: `compose` does not hand one back, and `user://frame_-1.png` is what a
+	# `--label` run used to get once the resolution moved inside it.
+	var label := Args.text(args, "label")
+	var out := Args.text(args, "out", "user://frame_%s.png" % [
+		label if label != "" else str(Args.number(args, "frame", -1))])
+	var err := stage.save_png(out)
+	print("wrote %s" % out if err == OK else "could not write %s (%s)" % [out, error_string(err)])
+	quit(0)
+
+
+## One composited frame, or null with the reason appended to `lines`.
+##
+## **Public because `stage_compare.gd` is the other half of this diagnostic and
+## has to run in the same process as the player it photographs.** Handing the
+## reference picture over as a PNG on disc means two invocations, and two
+## invocations can be of two different frames, two different corpora or two
+## different commits -- which is exactly the class of mistake `bugs.md` 74's
+## "reported frame 37 while standing on 41" note is about, one level up. Nothing
+## here is a second decision about pixels: `_init` above is now only argument
+## parsing and a `save_png` around this call, so the picture a comparison sees
+## and the picture a person looks at are the same bytes.
+##
+## `lines` collects what the command-line form prints, rather than printing,
+## because a harness that wants the image does not want 70 lines of sprite table
+## in the middle of its own output and cannot suppress a `print`.
+static func compose(file: String, index: int, label: String,
+		lines: Array[String]) -> Image:
 	var paths := Paths.new()
 	if not paths.load_config():
-		print("no game configured: %s must set [game] root and boot_movie" % Paths.CONFIG_PATH)
-		quit(1)
-		return
+		lines.append("no game configured: %s must set [game] root and boot_movie"
+			% Paths.CONFIG_PATH)
+		return null
 
-	var path = paths.resolve(Args.text(args, "file", paths.boot_movie))
+	var path = paths.resolve(file if file != "" else paths.boot_movie)
 	if path == "":
-		print("no such container: %s" % Args.text(args, "file"))
-		quit(1)
-		return
+		lines.append("no such container: %s" % file)
+		return null
 
 	var movie := ContainerFile.new()
 	if not movie.open(path):
-		print("%s: %s" % [path, movie.error])
-		quit(1)
-		return
+		lines.append("%s: %s" % [path, movie.error])
+		return null
 	var vwsc: Array = movie.ids_of("VWSC")
 	if vwsc.is_empty():
-		print("%s has no score" % path)
-		quit(1)
-		return
+		lines.append("%s has no score" % path)
+		return null
 
 	var score := Score.new()
 	if not score.parse(movie.read_chunk(vwsc[0])):
-		print("%s: %s" % [path, score.error])
-		quit(1)
-		return
+		lines.append("%s: %s" % [path, score.error])
+		return null
 	var labels := Labels.new()
 	var vwlb: Array = movie.ids_of("VWLB")
 	if not vwlb.is_empty():
 		labels.parse(movie.read_chunk(vwlb[0]))
 
-	var index := Args.number(args, "frame", -1)
-	var label := Args.text(args, "label")
 	if label != "":
 		index = int(labels.labels.get(label.to_lower(), -1))
 		if index < 0:
-			print("no label %s" % label)
-			quit(1)
-			return
+			lines.append("no label %s" % label)
+			return null
 	if index < 0 or index >= score.frame_count:
-		print("frame %d is outside 0..%d" % [index, score.frame_count - 1])
-		quit(1)
-		return
+		lines.append("frame %d is outside 0..%d" % [index, score.frame_count - 1])
+		return null
 
 	var table := CastTable.new()
 	if not table.open(movie, paths):
-		print("cast libraries: %s" % table.error)
-		quit(1)
-		return
+		lines.append("cast libraries: %s" % table.error)
+		return null
 
-	print("%s frame %d (%s)" % [path.get_file(), index, labels.marker_at(index)])
-	print("libraries:")
+	lines.append("%s frame %d (%s)" % [path.get_file(), index, labels.marker_at(index)])
+	lines.append("libraries:")
 	for lib in table.cast_libs:
 		var entry: Dictionary = table.cast_libs[lib]
-		print("  %d  %-10s %s" % [lib, entry["name"], entry["path"]])
+		lines.append("  %d  %-10s %s" % [lib, entry["name"], entry["path"]])
 
 	var config = Config.new()
 	var size: Vector2i = config.rect.size if config.read(movie) else STAGE
-	print("stage: %dx%d" % [size.x, size.y])
+	lines.append("stage: %dx%d" % [size.x, size.y])
 	var stage := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
 	stage.fill(Color.BLACK)
 	var palette: PackedByteArray = Palette.system_mac()
@@ -118,7 +175,7 @@ func _init() -> void:
 	var skipped := 0
 	var started := Time.get_ticks_usec()
 
-	print("")
+	lines.append("")
 	for sprite in score.frame(index)["sprites"]:
 		var lib := int(sprite["cast_lib"])
 		var id := int(sprite["cast_id"])
@@ -127,7 +184,7 @@ func _init() -> void:
 		if m.is_empty() or int(m.get("type", 0)) != 1:
 			# A shape or a script member draws nothing by design.
 			skipped += 1
-			print("  ch %3d  %d:%-5d  %-16s skipped (%s)" % [
+			lines.append("  ch %3d  %d:%-5d  %-16s skipped (%s)" % [
 				sprite["channel"], lib, id, name, _why_skipped(m),
 			])
 			continue
@@ -147,7 +204,7 @@ func _init() -> void:
 		var image: Image = Bitmap.decode(m, chunk, member_palette, error)
 		if image == null:
 			skipped += 1
-			print("  ch %3d  %d:%-5d  %-16s decode failed: %s" % [
+			lines.append("  ch %3d  %d:%-5d  %-16s decode failed: %s" % [
 				sprite["channel"], lib, id, name, "; ".join(error),
 			])
 			continue
@@ -192,21 +249,18 @@ func _init() -> void:
 		var at := Vector2i(int(sprite["loc_h"]) - reg_x, int(sprite["loc_v"]) - reg_y)
 		stage.blend_rect(image, Rect2i(Vector2i.ZERO, image.get_size()), at)
 		drawn += 1
-		print("  ch %3d  %d:%-5d  %-16s %4dx%-4d at (%4d,%4d) ink %d%s" % [
+		lines.append("  ch %3d  %d:%-5d  %-16s %4dx%-4d at (%4d,%4d) ink %d%s" % [
 			sprite["channel"], lib, id, name, image.get_width(), image.get_height(),
 			at.x, at.y, sprite["ink"], "  stretched" if sprite["stretch"] else "",
 		])
 
-	var out := Args.text(args, "out", "user://frame_%d.png" % index)
-	var err := stage.save_png(out)
-	print("")
-	print("drawn %d, skipped %d, %.0f ms" % [
+	lines.append("")
+	lines.append("drawn %d, skipped %d, %.0f ms" % [
 		drawn, skipped, (Time.get_ticks_usec() - started) / 1000.0,
 	])
-	print("wrote %s" % out if err == OK else "could not write %s (%s)" % [out, error_string(err)])
 	table.close()
 	movie.close()
-	quit(0)
+	return stage
 
 
 ## Why a sprite was not drawn, in enough detail to tell a decision from a gap.
