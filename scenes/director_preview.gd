@@ -4119,7 +4119,58 @@ func lingo_puppet_sound(channel: int, which: Variant, cast: String = "") -> void
 ## Puppet state, delegated to `preview/sprite_state.gd`. The dictionaries stay
 ## on the node -- `tools/` reads `_overrides` by name -- and are passed in.
 func _effective(sprite: Dictionary, ignore_visible: bool = false) -> Dictionary:
-	return SpriteState.effective(sprite, _overrides, _table, ignore_visible)
+	return _with_field_text(
+		SpriteState.effective(sprite, _overrides, _table, ignore_visible))
+
+
+## Stamp a field sprite with the text it currently holds and the style it is drawn
+## in, so the geometry rule can size an expanding field from it (`bugs.md` 80).
+##
+## **This is the write-back vehicle, and `_effective` is the only place it can
+## be.** Director sizes an expanding field from its widget and copies the widget's
+## dimensions onto the sprite (`channel.cpp:774-779`), so the drawn height is a
+## function of the *runtime* text. The port's single sizing rule,
+## `sprite_geometry.drawn_size`, is static by design -- it is the one module that
+## can be reasoned about without standing up a movie, and half of `tools/` sizes
+## score records with no player at all -- and the runtime text is not in any score:
+## it lives in this node's `_field_text` and `_member_style`, written by
+## `lingo_set_field`, by `set the text of member` and by the player typing into an
+## editable field. `_effective` is where the two meet. It is the one funnel every
+## path that asks about a live sprite already goes through -- the painter
+## (`stage_paint.gd`), the hit test (`interaction.gd`), `rollOver`, the cursor,
+## `text_focus.gd`'s own caret placement, and the fourteen harnesses in `tools/`
+## that call it by name -- so stamping here means the box the glyphs are drawn in,
+## the box a click is tested against and the box a caret is placed in cannot
+## disagree. Stamping in the painter instead is exactly the divergence
+## `sprite_state.effective`'s docstring records having cost a menu button.
+##
+## **The record is copied before it is written to.** `channel.gd:merged` returns
+## the score's own dictionary when nothing is puppeted -- which is the common case,
+## every frame -- and writing into that would put a runtime string into the parsed
+## score, where it would outlive the frame, the movie and every later reader of
+## that container.
+##
+## **And it is only stamped when the runtime differs from what the member already
+## says.** `sprite_geometry.laid_out_height` falls back to the member's authored
+## text and style, so a field nobody has written to gets the same answer with or
+## without the stamp; skipping it there keeps the common path to one member lookup
+## and two comparisons, and keeps `_effective`'s output byte-identical to what it
+## was for the 99% of sprites that are not fields.
+func _with_field_text(live: Dictionary) -> Dictionary:
+	if live.is_empty() or _table == null:
+		return live
+	var member: Dictionary = _table.get_member(
+		int(live.get("cast_lib", 1)), int(live.get("cast_id", 0)))
+	if int(member.get("type", 0)) != Ink.TYPE_FIELD:
+		return live
+	var text := _field_text_of(member)
+	var style: Dictionary = TextArt.style_for(self, live, member)
+	if text == str(member.get("text", "")) and style == Text.style_of(member):
+		return live
+	var out := live.duplicate()
+	out[Geometry.FIELD_TEXT] = text
+	out[Geometry.FIELD_STYLE] = style
+	return out
 
 
 ## `_effective` for a caller that is only *looking* -- the preloader, walking

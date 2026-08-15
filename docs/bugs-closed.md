@@ -8481,3 +8481,235 @@ term because a true colour's red *is* the index byte, so `(0,0,0)` and index 0
 collided in the cache. `channel.gd`'s `forecolor`/`backcolor` became
 `colour_index` and retired the record's colour, because the Lingo property is an
 index and the record's field is not. Reverted, the harness fails 10 of 17.
+
+---
+
+# 74 and 80, closed 2026-08-15
+
+**74 is the sharpest instance this project has produced of the rule it keeps
+relearning: subtract the harness from the difference before believing anything
+about the port.** Two sessions and three theories went into the artwork, the
+palettes and the blend path. The first thing to check — whether anything of *ours*
+was in the picture — was never checked.
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 74 | **Not a bug in either compositor. The diagnostic was the faulty side.** | `tools/stage_compare.gd` was photographing the player with the **debug layer on**. The "eight rows" are `scenes/preview/stage_paint.gd:295` drawing `frame 37/206  playpiano  fps 15  hit:art  cur:0` at `Vector2(8, stage.y - 8)` = (8,472) in white at alpha 0.75 whenever `DebugKeys.enabled()` — which is `auto`, and `auto` on a run from source is **on**. |
+| 80 | **Fixed** | An adjust-to-fit or limit field now takes the member's width and `MAX(member height, laid-out text height)`, and the vehicle that lets a *static* sizing function see *runtime* text is a stamp in `_effective`. |
+
+## Every figure entry 74 carried was that one string
+
+The band it names, `(8,466) 252x9`, is the string's own bounding box. "243 distinct
+values where the diagnostic produces 23 exact palette entries" is **antialiased
+glyph coverage**: `Surface.glyphs` composes atlas cells carrying partial alpha and
+`Image.blend_rect` blends rather than replaces, so the results land *between*
+palette entries. It showed only on the dark seam under the keys because white text
+over a white key changes nothing — which is exactly what made it read as a fault in
+the artwork's dither. It was stable across frames 37 and 39 because the HUD is.
+
+So the second of the two candidates named the right **mechanism** and the wrong
+**subject**: partial alpha really was reaching `blend_rect`, and the alpha was ours.
+The first candidate dies by the same measurement — with `--debug-ui off` the two
+compositors agree on **0 of 268,800 px below y60**, band included, on frames 37 and
+39 alike. Two compositors resolving different palettes cannot come out exact on
+every pixel of 67 sprites.
+
+The entry's recorded 13.3% was also wrong: it sampled one pixel of each 2x2 block.
+The real figure is 31.7%.
+
+`stage_compare.gd` now **refuses to run with the debug layer on**, naming the flag;
+composes its reference through `director_render.gd:compose` **in the same process**
+at the frame the player turned out to be standing on (removing the two-invocation
+PNG handoff that made it ungateable); and **asserts** the difference instead of
+printing it — every previous version printed a percentage and exited 0, which is
+why it passed for as long as the bug was open. It also fails when handed neither a
+reference nor a rendering, because a run that compares nothing is dark rather than
+clean and `gate.sh`'s EMPTY guard cannot see it: 5 checks is not 0 checks.
+
+A contrast case is recorded in the tool so the signature is legible next time:
+`piposh2 CHESS.dir` at `ches1` differs on 7,005 px with **both sides exact palette
+entries**. That is the ordinary "the movie dressed itself with Lingo" asymmetry.
+The signature to be suspicious of is the other one — one side holding values no
+palette entry holds.
+
+## 80: the rule, and two deliberate departures from the reference's literal `dims`
+
+`castmember/text.cpp:createWidget` builds MacText from a box it "can expand now,
+but can't shrink"; `createWindowOrWidget` hands it a `maxWidth` of the member's
+`initialRect`; `channel.cpp:774-779` copies the widget's dimensions onto the
+sprite and `:585-591` re-pushes them every frame for exactly the box types
+`getFixDims()` does not cover. So fixed and scrolling take
+`MAX(bbox, MAX(initialRect, maxHeight))` once; adjust and limit take the member's
+width and grow vertically.
+
+Both departures were **measured** by the new `tools/field_box_survey.gd` over all
+eight roots and are in the docstring:
+
+* **Width is the member's, not `MIN(bbox, initialRect)`.** Taking `dims` literally
+  narrows 33,767 records in `piposh`, 33,764 each in `piposh-en` and `piposh-ru`,
+  1,679 in `rating` and 1,603 in `piposh2` — that is `GlobalMoney` again, the
+  regression `9d1b23d2` fixed. Adjust to Fit grows a field *vertically*; the width
+  is the wrapping width.
+* **The height floor is the member's rect, not the score's bbox.** A floor that
+  follows residue makes the drawn height change mid-run — the pulse
+  `drawn_size_stability` exists to catch. Cost: 52 records sit taller than the
+  reference would start them, and none clips either way.
+
+**No oscillation, by construction**: the size is *derived* on demand and never
+stored. Storing it is what diverges — `limit` leaves the bbox alone so a stored
+height would be re-laid-out and grow without bound, and `adjust`'s MIN would
+ratchet down to residue. `drawn_size_stability` still reports 0 unstable runs over
+816,344 records.
+
+**And the entry's own motivating example is the wrong box type.** `CAPROOM.dir`'s
+`memowrite` is *fixed*, and `createWidget` passes `fixDims` for fixed and
+scrolling — so Director clips it too when typed past. The typing case the entry
+wanted is an adjust/limit editable field, which is what `SAVELOAD.dir`'s `points`
+is and what the new harness drives.
+
+## 74. Eight rows of Piposh 1's piano keyboard draw differently in the player and in `director_render.gd`
+
+> **Re-measured 2026-08-14: it reproduces, and the likeliest innocent explanation
+> is eliminated.** The expectation was a window-capture artifact — the stage is a
+> `Node2D` whose float32 scale composes with the viewport stretch
+> (`stage_paint.gd:framebuffer_region`, `bugs.md` 117). It is not.
+> `tools/stage_compare.gd` photographs the player **headlessly** through
+> `director_paint.gd:Surface`, stage-sized and 1:1, with no scale anywhere in the
+> path, and the difference survives.
+>
+> The whole-stage figure reproduces exactly (833 of 268,800 px, 0.31%). **The band
+> is 31.7%, not the 13.3% recorded here** — that number came from sampling one
+> pixel of each 2x2 block. The player produces 243 distinct values where the
+> diagnostic produces 23 exact palette entries, so the characterisation stands.
+>
+> Two live candidates, both testable: the two compositors resolving **different
+> palettes** for these members (`PaletteView.table_for_member` against
+> `director_render`'s own — the `bugs.md` 104 shape), or **partial alpha** reaching
+> `Image.blend_rect` in `Surface._compose`. `director_render.gd` remains a valid
+> oracle: it shares `director_ink.gd` and `director_bitmap.gd` with the player.
+>
+> **A trap for anyone repeating this**: setting `_index` and settling leaves the
+> playhead elsewhere on a movie that does not hold itself. The first run reported
+> "frame 37" while standing on **41**, comparing it against a render of 37. The
+> tool re-seats, pauses, and asserts it is standing where it was asked.
+
+`docs/bugs-closed.md` 73 removed the diagnostic's own crude keying rule, and with
+that gone the player and `tools/director_render.gd` agree on **0.30% of the stage
+below the HUD** on `PIANO.dir` frame 37, and on **0.00%** of the book. What did
+not close is the eight rows the original report was about: **y466-474, x8-259,
+where 13.3% of the pixels still differ.** Stable across frames 37 and 39, so it is
+not a frame mismatch.
+
+This is the mottled line under the left half of the keyboard. Where they differ,
+the renderer produces exact palette entries -- `(170,170,170)`, `(153,153,102)`,
+`(102,102,102)` -- and the player produces values that are in the palette's gaps,
+`(181,181,181)`, `(217,217,217)`, `(209,209,187)`. A value no palette entry holds
+came from combining two, so **the player is blending where the renderer is not**,
+and 0.3% of the sampled 2x blocks have two different columns inside one stage
+pixel, which under nearest filtering at an exact 2.000 scale should be none.
+Nearest is configured twice over -- `project.godot`
+`textures/canvas_textures/default_texture_filter=0` and `boot.gd` setting
+`TEXTURE_FILTER_NEAREST` on the host -- so the blend is coming from somewhere
+those two do not cover. That is the thread to pull.
+
+**What is already ruled out.** `key_matte` on member 2 (`noclid1`) is clean: 79.6%
+opaque, border removed, interior paper correctly kept, so it is not a matte leak.
+Dashing is genuinely *present in the inputs* -- member 2 has a solid dark row at
+its own local y55, a part-toned row at y54 and a dashed row at y56 -- and the key
+sprites overlap about 12px with each sitting one pixel lower going left, so some
+of the appearance is authentic whatever this turns out to be. Which is why this is
+still open rather than filed as authentic: an explanation of how it *could* be
+authentic is not the evidence `AGENTS.md` wants for the verdict that stops work.
+
+**Measuring this at all needs care, and getting it wrong cost a session.** A
+window capture is only comparable at an *integer* stage scale, and the window size
+that gives one is not the stage size: the stage takes 75% of the window's width,
+so `--stage 854,640` yields 641x480, a fractional 1.0016, and comparing that
+against a 640x480 render reports 38% of the stage differing -- all of it the
+capture, none of it the renderer. `--stage 1707,1280` yields exactly 1280x960;
+sample the top-left of each 2x2 block. Always check the content bounding box
+first.
+
+Reproduce:
+
+```
+godot --path . --script tools/scene_probe.gd -- --root piposh --movie PIANO.dir \
+    --frame 37 --settle 2 --ticks 0 --hold --stage 1707,1280 --quiet --out /tmp/prev.png
+godot --headless --path . --script tools/director_render.gd -- --root piposh \
+    --file PIPDATA/PIANO.dir --frame 37 --out /tmp/rend.png
+```
+
+`/tmp/prev.png`'s stage sits at (213,160) at scale 2. The three rulings about this
+room that *are* closed are `docs/bugs-closed.md` 72.
+
+---
+
+## 80. An expanding field still clips, because no path pushes its laid-out height back onto the sprite
+
+> **Re-verified 2026-08-14: unchanged, and the entry is accurate in every
+> particular.** `text_and_shapes --root piposh --file PIPDATA/CAPROOM.dir` still
+> prints `memowrite  1 lines, 14pt, box (7,383) 277x85` verbatim, with `memo21` at
+> `290x134` showing the fixed/scroll arm working. `_field_size` still returns
+> `natural` for `BOX_ADJUST` and `BOX_LIMIT`, `director_text.gd:layout` still
+> returns on the first line past the box bottom, and `size_from_script` is still
+> the only path that sticks a size.
+>
+> **The blocker is confirmed real and is the reason this is still open**:
+> `drawn_size(sprite, member)` is static and has no access to the runtime text,
+> which lives in the host's `_field_text` overrides. The write-back vehicle has to
+> be stamped onto the effective sprite in `director_preview.gd:_effective`, and it
+> should land in one commit with the layout change for the reason the entry gives.
+
+**Status:** open, and it is the **remaining half** of `DIRECTOR_ENGINE.md` §1.2 ·
+**Area:** `scenes/preview/sprite_geometry.gd:_field_size`,
+`director/director_text.gd:152`, `scenes/preview/text_art.gd:paint` · found
+verifying monday 12752286416
+
+`castmember/text.cpp:createWidget` sizes a field's widget from the score's rect —
+`sprite.cpp:627-632` skips `kCastText` when it resets a sprite's dimensions, so
+that rect survives as the bbox — and then `channel.cpp:774-779` writes the widget's
+size back onto the sprite. Three box types, three rules:
+
+```
+adjust(0)           MIN(bbox, initialRect), then the widget may expand
+fixed(2)/scroll(1)  MAX(bbox, MAX(initialRect, maxHeight)), never expands
+limit(3)            bbox unchanged, then the widget may expand
+```
+
+**The fixed and scrolling arm is implemented** (this entry's commit); the two arms
+that expand are not, because the port has nowhere to push a laid-out height back
+to. `director_text.gd:152` returns on the first line whose top reaches the box
+bottom, so overflow clips, and `text_art.paint` draws into the rect it is handed
+without reporting what it laid out.
+
+**The two halves cannot land separately, and that is the finding.** `createWidget`'s
+own comment is "for mactext, we can expand now, but we can't shrink", and
+`createWindowOrWidget` hands it a `maxWidth` of the member's width plus borders to
+expand into — so the MIN is a *starting* size, not an answer. Implementing it alone
+clamps every expanding field to whatever the score last left on the channel:
+measured over `piposh`, **5,677 of 12,622 `adjust` records would draw smaller than
+they do today**, and the clearest one is `GlobalMoney`, the 102x19 member every room
+records as 68x32 residue — which is exactly the regression `9d1b23d2` fixed.
+
+What is actually lost today: **16 sprite records over two members**, `save2`
+(`limit`, where the line dropped is a trailing empty one) and `memo21`. So the
+player-visible cost is small; the reason to do it is that `text_focus.gd` now makes
+fields editable, and typing past the box in `CAPROOM.dir`'s `memowrite` (`fixed`,
+277x85) clips with no growth. **Unverified:** no probe measures text Lingo writes at
+runtime.
+
+The vehicle would need to be a new one. `size_from_script`
+(`scenes/preview/channel.gd:429`) is the only existing path that makes a size stick,
+and it means "a script resized this" — a field growing because its text got longer
+is a different cause and conflating them would make `drawn_size` unable to tell them
+apart.
+
+Reproduce:
+
+```
+godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh --file PIPDATA/CAPROOM.dir
+godot --headless --path . --script tools/text_and_shapes.gd -- --root piposh --file PIPDATA/MAINMENU.dir
+```
+
+`memowrite` reports `1 lines, 14pt, box (7,383) 277x85`; a `save2` box reads 19px
+tall against a member whose stored `text_height` is 38.

@@ -165,6 +165,37 @@ static func layout(rect: Rect2, text: String, style: Dictionary) -> Array:
 	return out
 
 
+## How tall the text is when nothing clips it: every line `layout` would produce
+## at this wrapping width, whether or not a box that tall exists.
+##
+## **`layout` cannot answer this and must not be changed to.** It returns on the
+## first line whose top reaches the box bottom because Director clips to the box
+## and a caret cannot be placed where no glyph was drawn -- both of which stay
+## true. What an *expanding* field needs is the opposite question, asked before
+## there is a box: `castmember/text.cpp:createWidget` hands MacText a starting
+## size and the widget lays the text out and grows to it, and
+## `channel.cpp:774-779` then writes the widget's size back onto the sprite. So
+## the height is an input to the box rather than a reading of it, and the two
+## questions are separate functions rather than a flag on one.
+##
+## Asked with an infinite box rather than by teaching `layout` a second mode, so
+## there is exactly one wrapping implementation and no way for the measured
+## height and the drawn lines to disagree by a line -- which is the same argument
+## `layout`'s own docstring makes for the painter and the caret sharing it. The
+## guard is `top >= rect.position.y + rect.size.y`, and `+INF` fails it for every
+## line, so this is `layout` with the clip lifted and nothing else.
+##
+## Returns `line_height` per line and 0.0 for empty text. It deliberately does
+## not add Director's border, gutter or box shadow: this port draws none of them
+## (`text_art.gd`), and a height that accounted for chrome nothing paints would
+## put a gap under every grown field.
+static func laid_out_height(width: float, text: String, style: Dictionary) -> float:
+	if text == "" or width <= 0.0:
+		return 0.0
+	var lines: Array = layout(Rect2(0.0, 0.0, width, INF), text, style)
+	return float(lines.size()) * float(style.get("line_height", 16))
+
+
 ## Draw a field's text into a canvas, inside `rect`.
 ##
 ## `rect` is the sprite's stage rect — the single placement rule of 1.1, with a

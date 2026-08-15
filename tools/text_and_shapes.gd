@@ -259,6 +259,7 @@ func _init() -> void:
 		var blank: Array = []
 		var offstage: Array = []
 		var wrong_box: Array = []
+		var clipped: Array = []
 		var unstyled: Array = []
 		var checked := 0
 		for key in field_frames:
@@ -330,6 +331,38 @@ func _init() -> void:
 							maxf(float(int(entry["sprite"]["width"])), own.x),
 							maxf(float(int(entry["sprite"]["height"])),
 								maxf(own.y, float(int(entry["member"].get("max_height", 0))))))
+			# **`adjust` and `limit` are the other exception, and they are the half
+			# of 1.2 that used to be missing.** `getFixDims()` is false for both, so
+			# `channel.cpp:585-591` keeps pushing the widget's laid-out dimensions
+			# onto the sprite for as long as it is on stage -- the widget "can expand
+			# now, but can't shrink" (`castmember/text.cpp:createWidget`) and wraps
+			# inside a `maxWidth` of the member's own width
+			# (`createWindowOrWidget`). So the drawn box is the member's width, and
+			# the *greater* of the member's height and the height its current text
+			# needs. Cited at ScummVM 805f259a.
+			#
+			# Computed from `laid["text"]` -- what the paint actually laid out --
+			# rather than from the member's authored STXT, because the whole point of
+			# the rule is that the field grows around a string a script wrote, and
+			# the write case below re-runs this same assertion after writing one.
+			# `Text.laid_out_height` is the layout engine and not the sizing rule:
+			# spelling the arithmetic out here and asking `sprite_geometry` for it
+			# would prove only that the function is deterministic, which is the
+			# argument the fixed arm above makes for itself.
+			else:
+				var style: Dictionary = Text.style_of(entry["member"])
+				var needs: int = Text.layout(Rect2(Vector2.ZERO, Vector2(natural.x, INF)),
+					str(laid["text"]), style).size()
+				want = Vector2(natural.x, maxf(natural.y,
+					Text.laid_out_height(natural.x, str(laid["text"]), style)))
+				# The box grew *because* it had to, so nothing may be clipped out of
+				# it -- and this is the player-visible half. `director_text.layout`
+				# returns on the first line past the box bottom, so a box that failed
+				# to grow shows fewer lines than the text has and there is no other
+				# symptom anywhere: no error, no warning, a field that simply stops.
+				if int(laid["lines"]) < needs:
+					clipped.append("ch%d %s drew %d of %d line(s) in %s" % [
+						channel, str(laid["name"]), int(laid["lines"]), needs, str(rect.size)])
 			if int(rect.size.x) != int(want.x) or int(rect.size.y) != int(want.y):
 				wrong_box.append("ch%d %s is %s, wanted %dx%d (member %dx%d, score %dx%d)" % [
 					channel, str(laid["name"]), str(rect.size), int(want.x), int(want.y),
@@ -348,6 +381,8 @@ func _init() -> void:
 			", ".join(PackedStringArray(blank)))
 		h.check("every field's box is its member's, not the score's residue",
 			wrong_box.is_empty(), ", ".join(PackedStringArray(wrong_box)))
+		h.check("an expanding field is tall enough for every line of its text",
+			clipped.is_empty(), ", ".join(PackedStringArray(clipped)))
 		h.check("no field was laid out off the stage", offstage.is_empty(),
 			", ".join(PackedStringArray(offstage)))
 		h.check("every field resolved a point size", unstyled.is_empty(),

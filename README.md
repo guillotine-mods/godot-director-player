@@ -337,6 +337,8 @@ godot --headless --script tools/pause_holds.gd -- --file PIP2DATA/SAVELOAD.dir -
 godot --headless --script tools/idle_clock.gd -- --root rating --boot NAVIGATE.dir  # `idle` is sent once per step to the movie, and the title's clock advances because of it, pass/fail
 godot --headless --script tools/new_game_reset.gd -- --root rating --boot NAVIGATE.dir  # a New Game resets the tables rating schedules its story from, pass/fail
 godot --headless --script tools/text_and_shapes.gd -- --file PIP2DATA/DAY1.dir  # fields draw text, invisible shapes stay clickable, pass/fail
+godot --headless --script tools/field_expands.gd -- --file PIP2DATA/SAVELOAD.dir  # an `adjust`/`limit` field grows to its laid-out text and draws every line, a `fixed`/`scrolling` one never grows, and the size is a fixed point rather than a runaway (bugs.md 80), pass/fail
+godot --headless --script tools/field_box_survey.gd  # survey, no verdict: how many expanding-field records grow once the laid-out height reaches the sprite, and what the reference's literal `MIN(bbox, initialRect)` would narrow, over every root
 godot --script tools/editable_text.gd -- --file PIP2DATA/SAVELOAD.dir  # typing into a field: focus, caret, selection, drag-select, real keys, real pixels, pass/fail — NOT --headless
 godot --headless --script tools/save_movie.gd       # `saveMovie` writes a container this engine reopens, and the save outlives the process that made it — runs a second Godot to prove it, pass/fail
 godot --headless --script tools/fileio_xtra.gd     # the FileIO Xtra driven from Lingo: the registry, the reads, Director's own status codes and the write guard, pass/fail

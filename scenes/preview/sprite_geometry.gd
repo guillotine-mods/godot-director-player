@@ -14,6 +14,37 @@ extends RefCounted
 ## the divergence cannot come back by editing only half of it.
 
 const Ink := preload("res://director/director_ink.gd")
+const Text := preload("res://director/director_text.gd")
+
+## The runtime text a field currently holds, stamped onto the *effective* sprite
+## by `director_preview.gd:_effective`, and the style it is drawn in.
+##
+## **This is the vehicle `bugs.md` 80 was blocked on, and the shape of it is the
+## finding.** An expanding field's height is a function of its text, and
+## `drawn_size` is static: it is handed a sprite record and a cast member and has
+## no route to the host, which is where a script's writes and a player's typing
+## live (`_field_text`, `_member_style`). Making it non-static, or handing it the
+## host, would put the node into the one module that can be reasoned about
+## without standing a movie up -- and every caller in `tools/` that measures a
+## score record without a player would lose the ability to ask.
+##
+## So the runtime state travels *on the record*, stamped once where the record is
+## already being assembled. A raw score sprite carries neither key and
+## `_field_size` falls back to the member's own authored `STXT` and style, which
+## is the right answer for a record nobody has written to and is what keeps
+## `drawn_size_stability.gd` and the corpus surveys able to run without a host.
+##
+## Deliberately **not** `size_from_script` and not `SIZE_COMPUTED`: those two say
+## "the answer is already in `width`/`height`, use it", and this says "here is the
+## input the answer has to be computed from". A `drawn_size` that could not tell
+## the three apart could not be reasoned about, which is the argument
+## `SIZE_COMPUTED` above makes for itself.
+##
+## Neither enters `texture_key`. A field produces no texture at all
+## (`text_and_shapes.gd` asserts it), and the drawn size the key already carries
+## is what the growth changes.
+const FIELD_TEXT := "field_text"
+const FIELD_STYLE := "field_style"
 
 ## Cast types whose sprite keeps its own width and height on a member swap.
 ## `sprite.cpp:Sprite::setCast` resets the sprite's dimensions to the member's
@@ -55,12 +86,13 @@ const KEEPS_ITS_OWN_SIZE := [8]  # shape
 ## (`channel.gd:429`, the `size` kind, `the width of sprite N` and its `height`
 ## twin) and it has a release rule and a puppet story attached to it. This one
 ## means "the caller already did the arithmetic". They coincide in what
-## `drawn_size` does with them and in nothing else. `bugs.md` 80 makes the same
-## argument for a third cause that is coming -- a field grown by its own laid-out
-## text -- and turns it down as a reader of `size_from_script` for precisely this
-## reason: a size that sticks because a script wrote it and a size that sticks
-## because somebody computed it are different facts, and a `drawn_size` that
-## cannot tell them apart cannot be reasoned about later.
+## `drawn_size` does with them and in nothing else. `bugs.md` 80 made the same
+## argument for a third cause, which has since landed as `FIELD_TEXT` above -- a
+## field grown by its own laid-out text -- and turned it down as a reader of
+## `size_from_script` for precisely this reason: a size that sticks because a
+## script wrote it, a size that sticks because somebody computed it, and an input
+## a size has to be computed *from* are three different facts, and a `drawn_size`
+## that cannot tell them apart cannot be reasoned about later.
 ##
 ## It deliberately does **not** enter `texture_key`: it changes the drawn size,
 ## which that key already carries, and not the pixels.
@@ -138,10 +170,13 @@ const SIZE_COMPUTED := "size_computed"
 ## naming just two members -- `save2`, where the line lost is a trailing empty
 ## one, and `memo21`.
 ##
-## The other half of §1.2 -- pushing the laid-out height back -- is still missing
-## for the two box types that expand, and `_field_size` below says why that half
-## cannot land on its own. The half that needs no layout is now implemented there:
-## a fixed or scrolling field takes `MAX(score rect, initialRect, maxHeight)`.
+## **All four box types are implemented now**, in `_field_size` below: a fixed or
+## scrolling field takes `MAX(score rect, initialRect, maxHeight)` and is then
+## never touched again, and an `adjust` or `limit` field is grown to the height
+## its text lays out to. The second half used to be missing, and what it was
+## missing was not the arithmetic but a route to the *runtime* text -- see
+## `FIELD_TEXT` above, which is that route and is why the two halves had to land
+## in one commit.
 ##
 ## One claim that used to stand here was wrong and is worth recording as such: it
 ## said `CAPROOM.dir`'s memos "mostly carry the stretch flag, so they keep their
@@ -194,19 +229,55 @@ const BOX_LIMIT := 3
 ##   fixed/scrolling MAX(bbox, MAX(initialRect, maxHeight)), and never expands
 ##   limit           bbox unchanged, then the widget may expand
 ##
-## **Only the fixed and scrolling arm is implemented here, and the reason the
-## other two are not is measured rather than a preference.** Their MIN is the
-## size the widget *starts* at: `createWidget`'s own comment is "for mactext, we
-## can expand now, but we can't shrink", and `createWindowOrWidget` hands it a
-## `maxWidth` of the member's width plus its borders to expand into. The port has
-## no path that pushes a laid-out height back onto a sprite, so implementing the
-## MIN alone would clamp every expanding field to whatever the score last left on
-## the channel and never grow it out again. Measured over `piposh` that is
-## **5,677 of 12,622 adjust records drawn smaller than they are today**, and it is
-## `GlobalMoney` -- a 102x19 member whose rooms record it as 68x32 residue --
-## which is the regression `9d1b23d2` fixed and this docstring's own history
-## describes. So `adjust` and `limit` wait for the write-back; they take the
-## member's size, as they did before this arm existed.
+## **All four arms are implemented now.** The two that expand were waiting on a
+## way to reach the runtime text, which `FIELD_TEXT` above is; what follows is
+## what they do with it, and where it departs from the reference's literal
+## arithmetic and why.
+##
+## An expanding field's height is **the greater of the member's own rect and the
+## height its text lays out to** at the member's width. That is the write-back:
+## `createWidget` builds MacText from a starting box it "can expand" but "can't
+## shrink" below, `createWindowOrWidget` hands it a `maxWidth` of the member's
+## width to wrap inside, and `channel.cpp:774-779` copies the widget's dimensions
+## onto the sprite -- re-applied every frame by `channel.cpp:585-591`, which
+## `getFixDims()` limits to exactly these two box types. So the sprite's height
+## for an expanding field is *derived from the text*, and the port derives it
+## here on demand instead of storing it.
+##
+## **Derived rather than stored, and that is the load-bearing decision.** A
+## laid-out size written back into the sprite record becomes the next frame's
+## input: `limit` leaves the bbox alone, so a stored height would be laid out
+## again, grow again, and diverge without bound, and `adjust`'s MIN would ratchet
+## a field down to residue and never let it out. Every input here -- the member's
+## rect, its text or the stamped override, the style -- is stable across a
+## re-read, so asking twice returns the same answer by construction.
+## `tools/field_expands.gd` asserts exactly that, because "by construction" is
+## what everyone says right up until the frame it oscillates.
+##
+## **The width is the member's, not `MIN(bbox, initialRect)`, and the departure is
+## measured.** Director's Adjust to Fit grows a field *vertically*; the author's
+## width is the wrapping width and the reference agrees, handing MacText the
+## member's width as its `maxWidth`. Taking `dims` literally instead would make
+## the drawn width the score's stored rect wherever that is narrower --
+## authoring residue, the one value Director never shows, and precisely the
+## regression `9d1b23d2` fixed. Measured by `tools/field_box_survey.gd` over all
+## eight roots: it would narrow **33,767 records in `piposh`, 33,764 in
+## `piposh-en`, 33,764 in `piposh-ru`, 1,679 in `rating` and 1,603 in `piposh2`**,
+## and `GlobalMoney` -- 102x19, recorded 68x32 by every room -- is the clearest of
+## them, its amount centred in a box 34px too narrow. The same run says the
+## upside is real and small: with the *authored* text, 1,943 records of 333,217
+## grow, over 24 members, the largest `rating`'s `MANAEGOZ.dir` `save2` at
+## 119x19 -> 119x57. The rest of the value is at runtime, where a script's write
+## or a player's typing is not in any score.
+##
+## The height floor is the member's rect for the same reason, rather than
+## `MIN(bbox, initialRect)` for `adjust` or the bare bbox for `limit`: both read
+## the score's residue, and both would make the drawn height follow a number that
+## changes mid-run, which is the pulse `tools/drawn_size_stability.gd` exists to
+## catch. Cost of the departure, from the same run: **52 records** whose bbox is
+## shorter than the member (44 in `piposh2`, 8 in `piposh-dream`) keep the
+## member's height where the reference would start them lower -- and since the
+## text still fits either way, none of them clips.
 ##
 ## Fixed and scrolling carry no such coupling. `createWidget` passes
 ## `fixDims = (_textType == kTextTypeFixed || _textType == kTextTypeScrolling)`,
@@ -222,7 +293,8 @@ const BOX_LIMIT := 3
 static func _field_size(sprite: Dictionary, member: Dictionary, natural: Vector2) -> Vector2:
 	var box := int(member.get("text_type", BOX_ADJUST))
 	if box != BOX_FIXED and box != BOX_SCROLL:
-		return natural
+		return Vector2(natural.x,
+			maxf(natural.y, laid_out_height(sprite, member, natural.x)))
 	var rect: Dictionary = member.get("initial_rect", {})
 	if rect.is_empty():
 		return natural
@@ -236,6 +308,36 @@ static func _field_size(sprite: Dictionary, member: Dictionary, natural: Vector2
 		maxf(float(int(sprite.get("width", 0))), own.x),
 		maxf(float(int(sprite.get("height", 0))), maxf(own.y, float(int(member.get("max_height", 0)))))
 	)
+
+
+## How tall this field's text lays out at `width`, with nothing clipping it.
+##
+## **The runtime text if the record carries one, the member's authored `STXT`
+## otherwise**, and the fallback is the half that keeps this module honest. A
+## sprite that came through `director_preview.gd:_effective` has been stamped with
+## what a script or the player put in the field; a raw score record read straight
+## off a container by a survey has not, and its member's own text is the correct
+## answer for it rather than a degraded one. Neither caller has to know which it
+## is, and no caller has to hold a player to ask.
+##
+## The style travels with the text for the same reason: `set the textSize of
+## member "x" to 24` re-derives the line height (`text_art.gd:style_for`), so a
+## height computed from the authored 12pt run would be half the box the doubled
+## text needs. Absent the stamp it is the member's own run.
+##
+## Zero for a field with no text, which lets the caller's `maxf` against the
+## member's rect stand -- Director does the same thing from the other end, giving
+## an empty adjust-to-fit member a one-line rect at load
+## (`castmember/text.cpp:291-292`).
+static func laid_out_height(sprite: Dictionary, member: Dictionary, width: float) -> float:
+	var text := str(sprite.get(FIELD_TEXT, member.get("text", "")))
+	if text == "":
+		return 0.0
+	var style: Dictionary = sprite.get(FIELD_STYLE, {}) if \
+		sprite.get(FIELD_STYLE) is Dictionary else {}
+	if style.is_empty():
+		style = Text.style_of(member)
+	return Text.laid_out_height(width, text, style)
 
 
 ## The registration offset, scaled into the size the sprite is actually drawn at.
