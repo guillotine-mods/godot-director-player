@@ -13,6 +13,9 @@ extends SceneTree
 ##                say what drew. `--play all` walks every scene it derived.
 ##   --ticks N    process frames to give one played scene (default 4000)
 ##   --no-input   press nothing: the control run every input claim needs
+##   --avoid L    channels `--play` must not click, comma-separated, on top of the ones
+##                derived. For a back-to-the-menu button kept as a *cast* script, which
+##                the derivation cannot see — `hex2.dir`'s ch90 is the measured case.
 ##   --source     print each script's handler text under its findings
 ##   --verbose    print every element of every game, not the first 12
 ##
@@ -253,12 +256,17 @@ const KEYCODE_CASE := "(?i)case\\s+the\\s+keycode\\s+of"
 
 var _verbose := false
 var _show_source := false
+## Channels `--play` must not click, on top of the ones `_hotspots` derives. See
+## `_live_hotspots` for why a derived set is not enough.
+var _avoid := {}
 
 
 func _init() -> void:
 	var args := Args.parse()
 	_verbose = Args.flag(args, "verbose")
 	_show_source = Args.flag(args, "source")
+	for text in Args.text(args, "avoid", "").split(",", false):
+		_avoid[int(text)] = true
 
 	var paths = Paths.new()
 	if not paths.load_config():
@@ -498,7 +506,25 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 			# already dressed when the sampler first looked, which showed up as `doc`
 			# reporting nothing but member 0 on all three lanes while the painter's own
 			# loop cache held all three of its spears.
+			# **Claimed *and* dressed, not claimed alone.** A scene's init claims one set of
+			# channels and its handlers dress another, and the two need not agree -- the
+			# per-scene report says so out loud ("handlers also dress %s, unclaimed") and
+			# this sampler then ignored exactly the channels that line names. Measured on
+			# `piposh-dream/fritz2.dir`: the scene at f273 claims `[1, 32]` and dresses
+			# `[6]`, so 92 runs of its own `psyregb` key handler produced a channel table
+			# identical to the `--no-input` control on both claimed channels and the scene
+			# read as taking no input at all. It does -- `mnv` moves through 259 distinct
+			# values against the control's 103 -- and the one channel that would have shown
+			# it was the one not being watched. Sampling the union costs nothing and the two
+			# kinds of evidence are still told apart below.
+			var watching: Dictionary = {}
 			for channel in scene["claimed"]:
+				watching[int(channel)] = true
+			for channel in (scene["assigned_channels"] as Dictionary):
+				watching[int(channel)] = true
+			var watch_list: Array = watching.keys()
+			watch_list.sort()
+			for channel in watch_list:
 				if not bool(preview.call("lingo_sprite_prop", int(channel), "visible")):
 					continue
 				var member := int(preview.call(
@@ -575,9 +601,16 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		var parts: Array = []
 		for member in members:
 			parts.append("%d on %d frame(s)" % [int(member), int(seen[member])])
-		print("  ch %-3d   : visible with %s" % [int(channel), ", ".join(parts)])
+		# Which of the two the channel is, because they are not the same evidence. A
+		# claimed channel is off the score, so a member on it can only be this scene's
+		# assignment; a dressed-but-unclaimed one is still shared with the score, and the
+		# score may have put that member there.
+		print("  ch %-3d   : %-9s visible with %s" % [int(channel),
+			"claimed" if (scene["claimed"] as Array).has(int(channel)) else "dressed",
+			", ".join(parts)])
 	if chans.is_empty():
-		print("  channels : none of %s ever became visible" % str(scene["claimed"]))
+		print("  channels : none of %s (claimed) or %s (dressed) ever became visible" % [
+			str(scene["claimed"]), str((scene["assigned_channels"] as Dictionary).keys())])
 	var els: Dictionary = scene["elements"]
 	var keys: Array = els.keys()
 	keys.sort_custom(func(a, b): return int(els[a]["id"]) < int(els[b]["id"]))
@@ -664,6 +697,14 @@ func _centre_of(entry: String) -> Vector2:
 ## Which visible channels the engine's own click descent would send a `mouseUp` to on this
 ## frame, minus the ones that leave the movie. Asked of `interaction.gd:script_for_click`
 ## rather than derived, so what is clicked is what a click reaches.
+##
+## `_hotspots` derives the leaves-the-movie set from **sprite behaviours** only, and it says
+## so; a back-to-the-menu button kept as a *cast* script is invisible to it and the click
+## descent answers for one exactly as it does for a game piece. Measured on
+## `piposh-dream/hex2.dir`: ch90's `CastScript 306` ends the run on `mainmenu.dir` after seven
+## clicks, so the scene's own outcome frames can never be reached and criterion 4 fails for a
+## reason that is this file's rather than the engine's. `--avoid` is the manual half, for the
+## channels a scan cannot find.
 func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 	var out: Array = []
 	var sprites: Array = preview.call("frame_sprites")
@@ -671,6 +712,8 @@ func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 		var raw: Dictionary = value
 		var channel := int(raw["channel"])
 		if (scene["avoid_channels"] as Array).has(channel) or out.has(channel):
+			continue
+		if _avoid.has(channel):
 			continue
 		if (preview.call("_effective", raw) as Dictionary).is_empty():
 			continue
