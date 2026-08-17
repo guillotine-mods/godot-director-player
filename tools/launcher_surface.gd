@@ -40,6 +40,7 @@ const Harness := preload("res://tools/lib/harness.gd")
 ## the launcher's own list layer answers, which is the layer `_on_play` copies
 ## from, rather than reaching into the built tiles for a value they never carry.
 const TitleList := preload("res://scenes/launcher/title_list.gd")
+const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 
 const LAUNCHER := "res://scenes/launcher/launcher.tscn"
 const SETTLE_FRAMES := 8
@@ -97,11 +98,117 @@ func _run() -> void:
 			node.get_class())
 	h.complete(case)
 
+	_overrides(h, scene)
+
 	if _game_named():
 		_bypassed(h, scene)
 	else:
 		await _menu(h, scene)
 	quit(h.finish("the launcher's reflective surface"))
+
+
+## What `_on_play` may put in the overlay, which is a question about releases and
+## not about tidiness.
+##
+## The overlay is laid over the shipped config, so a key that merely repeats a
+## default is a live override of whatever that default becomes next. `v0.3.0-alpha`
+## is where that was paid: the launcher wrote `enabled="auto"` on every Play from
+## source, the release stamped `enabled="true"` into the config it ships, and every
+## machine that had ever pressed Play overrode the release back to off -- no HUD,
+## no SKIP, no toast, every F-key dead, and the Developer tab still there because
+## it reads the tracked config alone.
+##
+## `_override` is static, so this asserts the rule in both of this file's modes
+## rather than only the one that builds a menu. Reached through the instantiated
+## `scene` and **not** through a `preload` of `launcher.gd`: that script names the
+## `InputRouter` autoload, autoloads resolve at compile time, and a `--script`
+## harness has none -- so preloading it failed to compile, took every dependent
+## script with it, and turned this whole file red with five unrelated failures.
+func _overrides(h, scene: Node) -> void:
+	var case := "the overlay takes only what differs from the shipped config"
+	h.begin(case)
+
+	# The release-breaking case, in the direction that broke it: the shipped
+	# config has moved to `true` and the switch is showing it, so the stale
+	# `auto` underneath has to go rather than be rewritten.
+	var shipped := ConfigFile.new()
+	shipped.set_value("debug", "enabled", "true")
+	var overlay := ConfigFile.new()
+	overlay.set_value("debug", "enabled", "auto")
+	scene._override(overlay, shipped, "enabled", "true", DebugKeys.AUTO)
+	h.check("a stale value is erased once the switch agrees with the build",
+		not overlay.has_section_key("debug", "enabled"),
+		str(overlay.get_value("debug", "enabled", "<erased>")))
+
+	# ...and the same call is what a phone has instead of a command line. Android
+	# has no argv and no writable `res://`, so this erase is the only route from a
+	# stale `enabled` back to the build's own answer that does not cost the
+	# player every save.
+	h.check("which is the whole recovery on a platform with no command line",
+		DebugKeys.resolve_switch(overlay, true, []) == DebugKeys.AUTO,
+		DebugKeys.resolve_switch(overlay, true, []))
+
+	# A real override still survives, or the switch would be decorative.
+	scene._override(overlay, shipped, "enabled", "false", DebugKeys.AUTO)
+	h.check("a value that differs is written", overlay.get_value("debug", "enabled", "") == "false",
+		str(overlay.get_value("debug", "enabled", "<missing>")))
+
+	# Echoing is what the launcher did, and it did it from source, where the
+	# tracked file says `auto` and the switch reads `auto` back off the merge.
+	var from_source := ConfigFile.new()
+	from_source.set_value("debug", "enabled", "auto")
+	var fresh := ConfigFile.new()
+	scene._override(fresh, from_source, "enabled", "auto", DebugKeys.AUTO)
+	h.check("a Play from source pins nothing at all",
+		not fresh.has_section_key("debug", "enabled"),
+		str(fresh.get_value("debug", "enabled", "<absent>")))
+
+	# Case and whitespace, because `resolve_switch` reads the switch stripped and
+	# lowered and `OS.find_keycode_from_string` reads a key name the same way: an
+	# echo in different clothes is still an echo.
+	var loud := ConfigFile.new()
+	loud.set_value("debug", "enabled", "auto")
+	scene._override(loud, from_source, "enabled", "  AUTO ", DebugKeys.AUTO)
+	h.check("a differently-cased echo is still an echo",
+		not loud.has_section_key("debug", "enabled"))
+
+	# A tracked file that says nothing about a key is not the empty string: the
+	# comparison has to be against the value `DebugKeys` would actually use.
+	var silent := ConfigFile.new()
+	var bound := ConfigFile.new()
+	bound.set_value("debug", "boxes", "F1")
+	scene._override(bound, silent, "boxes", str(DebugKeys.DEFAULTS["boxes"]),
+		str(DebugKeys.DEFAULTS["boxes"]))
+	h.check("a binding equal to the shipped default is erased",
+		not bound.has_section_key("debug", "boxes"))
+	scene._override(bound, silent, "boxes", "F4", str(DebugKeys.DEFAULTS["boxes"]))
+	h.check("and a rebound key is kept", bound.get_value("debug", "boxes", "") == "F4",
+		str(bound.get_value("debug", "boxes", "<missing>")))
+
+	# An empty value unbinds a command outright, which is a deliberate statement
+	# and differs from every default, so it must survive.
+	scene._override(bound, silent, "quit", "", str(DebugKeys.DEFAULTS["quit"]))
+	h.check("an unbind is an override and is kept",
+		bound.has_section_key("debug", "quit")
+			and str(bound.get_value("debug", "quit", "<missing>")) == "")
+
+	# Everything above exercises `_override` and would stay green through the one
+	# regression that matters: `_on_play` going back to writing `[debug]` keys
+	# itself. That is the shape `porting-fidelity-verification` warns about -- an
+	# assertion that passes while proving nothing -- so the wiring is asserted too.
+	#
+	# Read as text because there is no cheaper way to ask. `_on_play` writes the
+	# real `user://` overlay and then changes scene, so calling it here would edit
+	# a human's config to answer a question about a call site.
+	#
+	# One site is correct and is `_override`'s own write. Two means a caller has
+	# gone around it.
+	var source := FileAccess.get_file_as_string("res://scenes/launcher/launcher.gd")
+	var direct := source.count('set_value("debug"')
+	h.check("and `_on_play` still routes every debug key through it", direct == 1,
+		"%d site(s) in launcher.gd write a [debug] key directly" % direct)
+
+	h.complete(case)
 
 
 func _game_named() -> bool:

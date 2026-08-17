@@ -564,6 +564,19 @@ included: `auto` plus `--export-release` is `false`, so no F-key was bound at
 all. The Developer tab that would have turned it back on is hidden by the same
 switch, which is what made it look like the build was ignoring the config.
 
+**The per-machine overlay beats the shipped value, and that bit `v0.3.0-alpha`.**
+`user://director_game.local.cfg` is laid over the packaged config, so anything it
+says about `[debug]` wins. The launcher used to write the whole tab back on every
+Play, including values nobody had chosen — so a Play from source pinned
+`enabled="auto"`, and because `user://` is keyed on the project name rather than
+on the build, that same file disarmed the *released* build on the same machine:
+tab visible, HUD and SKIP absent, every F-key dead. `_on_play` now writes a
+`[debug]` key only when it differs from the shipped one and erases it when it
+does not, so choosing the value the build ships hands the decision back to the
+build. That erase is the whole recovery on Android, which has no command line to
+pass `--debug-ui` to and no writable `res://` to edit — before it, a stale switch
+could only be cleared by clearing app data, which costs the player every save.
+
 Off means *off*: no key is bound at all, the SKIP button is neither drawn nor
 hit-tested, and the hotspot outlines, the HUD line, the snapshot toast, the
 container picker and the exit report are all absent. A shipped game does not have

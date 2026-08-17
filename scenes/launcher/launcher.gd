@@ -851,10 +851,27 @@ func _on_play() -> void:
 			overlay.set_value("game", "codepage", codepage)
 		elif overlay.has_section_key("game", "codepage"):
 			overlay.erase_section_key("game", "codepage")
-		overlay.set_value("debug", "enabled", DEBUG_VALUES[maxi(%Debug.selected, 0)])
+		# `_override` and not `set_value`, and this is the `%Boot` lesson above
+		# arriving on the two controls that were still echoing. Both are seeded
+		# from the *merged* config and were written back unconditionally, so a
+		# value nobody chose became a per-machine override of the shipped one.
+		#
+		# It cost a release. Running from source the tab is always visible and the
+		# switch reads `auto`, so every Play pinned `enabled="auto"` into
+		# `user://` -- and `user://` is keyed on the project name, so it is the
+		# same file the exported build reads. `v0.3.0-alpha` stamps `true` into
+		# the config it ships and every machine that had ever pressed Play here
+		# overrode it back to `auto`, which in a release export is off. The build
+		# was right and the overlay switched it off: no HUD, no SKIP, no toast,
+		# and every F-key dead, with the Developer tab still visible because that
+		# reads the tracked config alone.
+		var tracked := GameConfig.tracked()
+		_override(overlay, tracked, "enabled",
+			DEBUG_VALUES[maxi(%Debug.selected, 0)], DebugKeys.AUTO)
 		for command in _binding_fields:
-			overlay.set_value("debug", str(command),
-				str((_binding_fields[command] as LineEdit).text).strip_edges())
+			_override(overlay, tracked, str(command),
+				str((_binding_fields[command] as LineEdit).text).strip_edges(),
+				str(DebugKeys.DEFAULTS[command]))
 		overlay.set_value("qol", "hotspot_hints", %HotspotHints.button_pressed)
 		overlay.set_value("qol", "minigame_skip", %MinigameSkip.button_pressed)
 		overlay.set_value("qol", "expand_edge_hotspots", %EdgeHotspots.button_pressed)
@@ -863,6 +880,39 @@ func _on_play() -> void:
 	GameConfig.write_overlay(overlay)
 	_redrive_autoloads()
 	_launch()
+
+
+## Write a `[debug]` key into the overlay only when it is genuinely an override.
+##
+## A value equal to what the shipped config says is *not* an override, so the key
+## is erased instead of written. An overlay that repeats a default is
+## indistinguishable from one that deliberately pins it, and the moment the
+## shipped default moves -- which is precisely what a release stamping
+## `enabled = "true"` does -- every repeat turns into a silent override of the new
+## value. See `_on_play` for the release that cost.
+##
+## `fallback` is what `DebugKeys` uses when the tracked file says nothing, so the
+## comparison is against the value that would actually apply rather than against
+## the empty string. Compared case-insensitively and stripped, because
+## `resolve_switch` reads the switch that way and `OS.find_keycode_from_string`
+## reads a key name that way: a differently-cased echo is still an echo.
+##
+## **Erasing is what makes this work on a phone.** Android has no command line,
+## so `--debug-ui on` does not exist there, and `res://` lives inside the APK, so
+## there is no file to hand-edit either -- `game_config.gd` records that the
+## recovery from a bad `[debug] enabled` on Android was clear-app-data, which
+## costs the player every save. With this, the switch in the Developer tab reaches
+## every state on its own: choosing the value the build ships erases the key and
+## hands the decision back to the build, choosing any other one overrides it. One
+## tap, no data loss, and identical on desktop.
+static func _override(overlay: ConfigFile, tracked: ConfigFile, key: String,
+		value: String, fallback: String) -> void:
+	var shipped := str(tracked.get_value("debug", key, fallback))
+	if value.strip_edges().to_lower() == shipped.strip_edges().to_lower():
+		if overlay.has_section_key("debug", key):
+			overlay.erase_section_key("debug", key)
+		return
+	overlay.set_value("debug", key, value)
 
 
 ## Autoloads read the config once, at process start, and survive a scene change.
