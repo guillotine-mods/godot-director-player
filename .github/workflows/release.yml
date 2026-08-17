@@ -78,6 +78,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       release_name: ${{ steps.version.outputs.release_name }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       # Secrets are invisible to `if:` conditions, so they're read into env vars
       # here and checked with plain shell tests. Without this, an empty
@@ -128,6 +129,7 @@ jobs:
       - name: Run the tools/ci suites
         run: |
           bash tools/ci/stamp_version_test.sh
+          bash tools/ci/stamp_debug_ui_test.sh
           bash tools/ci/check_asset_size_test.sh
           bash tools/ci/check_macho_signed_test.sh
           bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
@@ -157,6 +159,27 @@ jobs:
           esac
           echo "release_name=$name" >> "$GITHUB_OUTPUT"
           echo "resolved version: $name"
+          # The pre-1.0 channel, resolved here for the same reason the version
+          # string is: it now has TWO readers -- the `--prerelease` flag on the
+          # draft below, and the `[debug] enabled` stamp in every export job --
+          # and two places deriving one predicate agree today and are one edit
+          # away from not agreeing.
+          #
+          # From `$GITHUB_REF_NAME` and deliberately not from `$name`. The two
+          # differ on exactly one run: a dispatch against a real tag, where
+          # `$name` is the dispatch input (`0.0.0-dryrun` by default) while the
+          # ref is still the tag. The honest question is which channel the REF
+          # belongs to, which is the question the draft step asked before this
+          # was hoisted, so its behaviour is unchanged.
+          #
+          # `v0.*` does not match `v10.0` -- that starts `v1` -- so it keeps
+          # working once the major version reaches double digits.
+          case $GITHUB_REF_NAME in
+            v0.*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "pre-1.0 channel: $prerelease"
 
       # A draft, and that word is carrying the safety property that used to belong
       # to "publish at the very end". A draft release is not publicly visible and
@@ -178,10 +201,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          # `v0.x` is a pre-release; `v1.x` and later are not. `startsWith(...,
-          # 'v0.')` does not match `v10.x` -- that starts `v1`, not `v0.` -- so it
-          # keeps working once the major version reaches double digits.
-          PRERELEASE: ${{ startsWith(github.ref_name, 'v0.') }}
+          # `v0.x` is a pre-release; `v1.x` and later are not. Resolved once in
+          # `Resolve the release version` above, because the same predicate now
+          # also decides whether the export ships the debug layer.
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; leaving it as it is"
@@ -225,6 +248,7 @@ jobs:
             preset: Linux
     env:
       RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
+      PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
     steps:
       # A job output that failed to propagate arrives as an empty string, not as
       # an error, and every later step would accept it: the exports would write
@@ -237,7 +261,20 @@ jobs:
             echo "RELEASE_NAME is empty; the preflight job's output did not reach this one." >&2
             exit 1
           fi
-          echo "building '${{ matrix.target }}' as version $RELEASE_NAME"
+          # Same class of fault, and a quieter one. An empty `PRERELEASE` is not
+          # merely wrong, it reads as `false` to the debug stamp below: the alpha
+          # would export with the preview layer off, which is the exact defect
+          # that stamp exists to end, and nothing about the artifact would look
+          # wrong. Demanded as one of the two literal words the resolution emits,
+          # so a renamed output cannot arrive as a plausible value either.
+          case "${PRERELEASE:-}" in
+            true | false) ;;
+            *)
+              echo "PRERELEASE is '${PRERELEASE:-}', not true or false; the preflight job's output did not reach this one." >&2
+              exit 1
+              ;;
+          esac
+          echo "building '${{ matrix.target }}' as version $RELEASE_NAME (pre-1.0: $PRERELEASE)"
 
       # Measured on the first complete run: 88 GB available at job start, 20 GB
       # consumed by a checkout plus all three exports, 67 GB left afterwards. So
@@ -348,6 +385,35 @@ jobs:
       # the same release.
       - name: Stamp the release version
         run: tools/ci/stamp_version.sh "$RELEASE_NAME" "$GITHUB_RUN_NUMBER"
+
+      # A pre-1.0 build keeps the preview layer; v1.0 and later do not.
+      #
+      # `director_game.cfg` ships `enabled = "auto"`, which `debug_keys.gd`
+      # resolves to `OS.has_feature("editor") or OS.is_debug_build()` -- both
+      # false under `--export-release`. So every alpha published so far had NO
+      # F-key bound at all, no hotspot outlines, no SKIP button and no container
+      # picker, which is not what an alpha is for: it is handed to people so they
+      # can say what it did, and the tools are how they say it. `v0.2.0-alpha` is
+      # the release where that was noticed.
+      #
+      # Stamped rather than committed, and that is the whole design. The config is
+      # tracked, so a `true` written into the repository would put the layer in
+      # every build including the first non-alpha one -- the "unless somebody
+      # remembered to edit it" failure that `auto` exists to remove. CI writes it
+      # onto a checkout it is about to throw away, for the one channel that asked.
+      #
+      # `auto` is passed rather than skipping the call, so the v1.0 build -- the
+      # one where the layer being off matters most -- still fails loudly if the
+      # switch it depends on has been renamed or dropped from the config.
+      #
+      # No input controls this. A tag push carries no `inputs`, so a dispatch
+      # input could only ever have steered a dry run, which publishes nothing.
+      # `$PRERELEASE` is job-level env and was checked against its two literal
+      # spellings in the first step of this job, before the checkout.
+      - name: Stamp the debug layer
+        run: |
+          if [ "$PRERELEASE" = "true" ]; then enabled=true; else enabled=auto; fi
+          tools/ci/stamp_debug_ui.sh "$enabled"
 
       # A fresh checkout has no `.godot`, and without it `class_name` globals do
       # not resolve, so this has to precede every export.

@@ -28,6 +28,7 @@ jobs:
       - name: Run the tools/ci suites
         run: |
           bash tools/ci/stamp_version_test.sh
+          bash tools/ci/stamp_debug_ui_test.sh
           bash tools/ci/check_asset_size_test.sh
           bash tools/ci/check_macho_signed_test.sh
           bash tools/ci/install_godot_test.sh "$GODOT_VERSION"

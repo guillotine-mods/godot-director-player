@@ -534,7 +534,35 @@ enabled = "auto"
   * `true` — keep the tools even in a release export. This is the QA build.
   * `false` — off everywhere, including from source.
 
-`--debug-ui on|off` beats the file for a single run.
+`--debug-ui on|off` beats the file for a single run — and it needs a bare `--`
+first, because every flag here is read from `OS.get_cmdline_user_args()`, which
+is empty without one. From source that separator is already there in every gate
+and harness invocation; against a built binary it has to be typed:
+
+```
+GodotDirectorPlayer.exe -- --debug-ui on
+```
+
+The same applies to `--root`, `--boot`, `--codepage` and `--allow-writes`.
+Without the `--` the flag is not rejected, it is simply never seen. On a v0.x
+build that flag is a convenience — the layer is already on, by the paragraph
+below. On a v1.0 build it is the only way in, because the Developer tab that
+would otherwise turn the layer back on is hidden by the same switch that turned
+it off.
+
+**A pre-1.0 release ships the tools; v1.0 and later do not.** An alpha is handed
+to people so they can say what it did, and the tools are how they say it, so
+`release.yml` stamps `enabled = "true"` into the config it exports whenever the
+tag is `v0.x` — the same predicate that already marks the GitHub release as a
+pre-release. `tools/ci/stamp_debug_ui.sh` does the writing and proves it took.
+It is stamped in CI rather than committed for the reason the next paragraph
+gives: the tracked file has to keep saying `auto`, or the first non-alpha
+release ships the tools by forgetting.
+
+Before that existed, every published build had the layer off, `v0.2.0-alpha`
+included: `auto` plus `--export-release` is `false`, so no F-key was bound at
+all. The Developer tab that would have turned it back on is hidden by the same
+switch, which is what made it look like the build was ignoring the config.
 
 Off means *off*: no key is bound at all, the SKIP button is neither drawn nor
 hit-tested, and the hotspot outlines, the HUD line, the snapshot toast, the
