@@ -9692,3 +9692,120 @@ A gate entry that fails one run in four teaches everyone to re-run it, which is
 the same damage as a standing red. Either pin the playhead for the span of the
 comparison, or assert against the instance the span holds *at the moment of the
 second read* rather than a captured reference.
+---
+
+## 120. Piposh Dream's sliding-tile puzzle showed the solved picture after a move, because a backward `go` released every auto-puppet on every channel
+
+**Status:** FIXED · **Area:** `director/director_score.gd:writes_between` · found
+2026-08-20 while re-reading the day-2 minigame sweep, which measured the symptom
+on 2026-08-14 and left the mechanism open
+
+`games/piposh-dream/puzzle.dir` is a 4x4 sliding-tile puzzle, entered
+unconditionally from `dinner2.dir` f1765. Its board lives in `field "pazel"` —
+four lines of four items, `"x"` for the hole — and its sixteen tiles are ordinary
+score sprites whose `on mouseDown` swaps an item with an adjacent `"x"` and calls
+`refreshpaz`, which re-dresses all sixteen by **name**:
+
+    set the member of sprite gsnum to "paz" & item x of line y of field "pazel"
+
+Nothing in the container calls `puppetSprite`, so every one of those is an
+auto-puppet. The symptom: after a few moves `field "pazel"` went on holding a
+correctly scrambled board while every tile reverted to the score's own
+`paz<its own channel>` — the **solved** picture — with `visible` still correct, so
+the hole stayed in the right place. A player saw a puzzle whose tiles snapped back
+to the finished picture and could not be moved.
+
+**The cause is this port's release rule, faithfully copied from the reference.**
+`puzzle.dir`'s only idle loop is `1:3` on f9 doing `go("start")` back to f6 — a
+rewind every four frames, for ever. `writes_between` answered *every field of every
+channel* for any `to <= from`, so `sprite_state.release_auto_puppets` released
+`kAPCast` on all sixteen tiles on every wrap and the score wrote its own members
+back. `visible` survived because it is channel state and no release path touches it,
+which is exactly the half-and-half that was observed.
+
+That blanket is `Score::loadFrame`'s (`score.cpp:2211`): it cannot walk a delta
+stream backwards, so it rebuilds from the start of the movie and sets
+`_copyBackMask` to all-ones, commented *"starting from rewind, copy back
+everything"*. **That is a consequence of its storage, not a rule of Director's** —
+the mask is defined as the fields the frame's *own* delta touched, and moving
+backwards does not change which fields those are. It cannot be the original
+behaviour either: the puzzle is the whole content of the container and would have
+failed on the first move.
+
+**Fixed** by taking the rewind mask from the target frame's own delta, and by not
+releasing at all when the playhead has not moved (the reference's same-frame
+`go to frame` branch calls `updateSprites` without `releaseAutoPuppet`). Measured
+before the change: f6's own delta writes **no channel at all**, so the wrap now
+releases nothing and the overrides survive it.
+
+Two traps in the fix, both paid for:
+
+* **Not the union over the rebuild path.** Replaying from frame 0 writes every
+  channel the movie ever sets, so that is all-ones by another name. `puzzle.dir`
+  f0 writes ch2..ch16.
+* **The blanket is not what keeps entry 47 closed.** Both legs of the dwarf's
+  journey release through the target frame's own delta — 47's own text says frame
+  2613's delta writes channel 18's whole record and frame 1548's writes it again.
+  `tools/puppet_persists.gd` **PASS, 38 checks, 0 failed** after the change, and it
+  is the gate for **91** as well: its own comment states it asserts
+  `with_puppets`' contract from the other side, that a frame holds the score's
+  channels plus the flagged puppets and nothing else. So both auto-puppet entries
+  this could have disturbed are covered by one green harness, measured rather than
+  reasoned. (**36** and **80** are not adjacent despite sitting near the same
+  words: 36 is cold globals at movie entry and 80 is a field's laid-out height.)
+
+**Verified on the two click sequences the sweep recorded as diverging**, both with
+`tools/scene_probe.gd`, which must run windowed:
+
+    godot --path . --script tools/scene_probe.gd -- --root piposh-dream \
+        --movie puzzle.dir --marker restart --fields pazel --settle 8 --ticks 30 \
+        --clicks "ch1;ch2;ch3;ch4;ch5;ch6;ch7;ch8"
+
+| clicks | `field "pazel"` | stage | |
+|---|---|---|---|
+| `ch1..ch8` | `2,11,6,5 / 3,8,10,13 / 9,4,7,14 / 1,15,x,12` | ch1 `paz2`, ch2 `paz11`, ch3 `paz6`, ch4 `paz5`, … ch15 absent | **agrees 16/16** |
+| `ch1..ch16` | `9,2,13,10 / 14,1,7,5 / 12,8,15,4 / 3,6,11,x` | ch1 `paz9`, ch2 `paz2`, ch3 `paz13`, ch4 `paz10`, … ch16 absent | **agrees 16/16** |
+
+Both diverged before the change, showing `paz1..paz15` in order. The hole is
+included in the count.
+
+**Gated, because this fix is the kind a later session undoes on purpose.**
+`score.cpp:2211` says all-ones in plain sight and `AGENTS.md` says the reference
+documents are the specification, so "restore fidelity here" is a sound-looking
+change that silently re-breaks every movie holding a member across its own idle
+loop. A comment at the site cannot stop that; `tools/puzzle_board.gd` can, and is
+in `ALL` as `puzzle_board:--root@piposh-dream` (**132** entries, counted with the
+anchored command `gate.sh:39` documents).
+
+It asserts the two readings agree after the movie's own loop has wrapped, and
+**the wrap count and the move count are checks rather than prints** — without them
+a run that never wrapped, or never landed a legal move, goes green with the bug
+fully present. Measured with the blanket restored for one run: **14 of 16 channels
+disagree**, every one holding `paz<its own index>`, and the move check fails too
+because a reverted board answers a click with whichever tile the score put there.
+With the fix: 5 checks, 0 failed, 8 of 8 moves landed, 9 backward jumps, on three
+consecutive runs.
+
+Two traps the harness itself walked into first, both now recorded at its own site:
+the board is dealt when the playhead **leaves** f5 (`1:2` is an `exitFrame`), so a
+fixed settle reads the authored member text against the score's members and reds
+for its own impatience; and a fixed click list is **shuffle-dependent** — `ch1..ch8`
+moves nothing when the hole comes up in the bottom row — so each move is derived
+from the board, skipping the cell the hole just vacated, or consecutive moves undo
+each other and the field ends where it started.
+
+**One thing the day-2 note got wrong, recorded so it is not re-derived.** It
+reported the divergence as needing *more than four clicks* and offered the
+no-click control as disproof of "a frame change releases the swap". The mechanism
+is per-wrap and does not count clicks, and the click runs above name the answering
+channel for every press — eight and sixteen `mouseDown@cast` dispatches, all of
+them `CastScript 4..19`, the tiles. So the peek buttons on ch19/ch21, which do
+`set the member of sprite i to "paz" & i` deliberately and were a live suspect,
+are not involved. Whatever the control was reading, the click attribution is now
+explicit and the release rule is the cause.
+
+**Not a softlock, which is why this sat unfiled for six days without blocking
+anyone.** `ch26` carries `1:31`, `on mouseDown: sound stop 2; go("afterpazzel",
+"dinner2.dir")` — an unconditional exit, hidden at f0 by `1:28` and revealed by
+`1:3` at `ohcounter = 100`. `ch20` restarts. The win check is inside `refreshpaz`
+(`winnum = 15` and `item 4 of line 4 = "x"`, then `go("win")`).

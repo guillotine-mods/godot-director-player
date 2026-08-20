@@ -441,26 +441,41 @@ func _apply(stream: PackedByteArray, at: int, buffer: PackedByteArray) -> bool:
 ## and the room it was entered from happen to put the same member on a channel
 ## (`bugs.md` 47).
 ##
-## The three cases are the reference's, from `Score::loadFrame`:
+## Four cases. Three are the reference's, from `Score::loadFrame`; the rewind is
+## the one deliberate divergence in this file and carries its reason below.
 ##
 ## - `from < 0` — no frame has been entered yet, so nothing has been written
 ##   *since* one. There is no live channel state for the score to have moved.
-## - `to <= from` — Director cannot walk a delta stream backwards, so it rebuilds
-##   the frame from the start of the movie, and every field of every channel is
-##   written on the way. `loadFrame` says so directly: on a rewind it sets the
-##   copy-back mask to all-ones rather than accumulating it.
+## - `to == from` — the playhead has not moved. The reference does not release at
+##   all on this path: `Score::update`'s second branch is the same-frame `go to
+##   frame` case and it calls `updateSprites` without `releaseAutoPuppet`.
+## - `to < from` — the target frame's **own** delta, and this is the one place this
+##   function deliberately does not copy the reference. `Score::loadFrame` cannot
+##   walk a delta stream backwards, so it rebuilds from the start of the movie and
+##   sets the mask to all-ones for the whole rebuild (`score.cpp:2211`, commented
+##   *"starting from rewind, copy back everything"*). That is a consequence of its
+##   storage and not a rule of Director's: the mask is *defined* as the fields the
+##   frame's own delta touched, and moving backwards does not change which fields
+##   those are. Taken literally it releases every auto-puppet on every channel on
+##   every backward `go`, which breaks any movie whose idle loop jumps back while
+##   holding one — `piposh-dream/puzzle.dir` loops `go("start")` from f9 to f6 for
+##   ever and its sliding-tile board reverted to the solved picture within four
+##   frames of a move (`docs/bugs-closed.md` 120).
+##   **Not the union over the rebuild path**, which is all-ones by another name:
+##   replaying from frame 0 writes every channel the movie ever sets. And the
+##   blanket is not what keeps `bugs.md` 47 closed — both legs of that journey
+##   release through the target frame's own delta, which is why
+##   `tools/puppet_persists.gd` still passes.
 ## - `to > from` — the deltas of frames `from + 1 .. to`, unioned. A `go` that
 ##   skips a thousand frames replays all thousand, so all thousand write.
 func writes_between(from: int, to: int) -> Dictionary:
 	var out: Dictionary = {}
 	if from < 0 or to < 0 or to >= _frame_at.size():
 		return out
-	if to <= from:
-		for channel in range(1, channels_displayed + 1):
-			var all: Dictionary = {}
-			for field in FIELD_BYTES:
-				all[field] = true
-			out[channel] = all
+	if to == from:
+		return out
+	if to < from:
+		_writes_into(to, out)
 		return out
 	for index in range(from + 1, to + 1):
 		_writes_into(index, out)
