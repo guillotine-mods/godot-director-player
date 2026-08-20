@@ -91,9 +91,24 @@ extends SceneTree
 ## come from a claiming init, the fallback adds **2** — and the gate refuses **350**
 ## runs that dress inside movies that do puppet. That last number is the whole
 ## argument for the gate rather than an assumption that nothing was over-widened:
-## `piposh-dream/hatul3.dir` alone would have gone from 14 scenes to 43, and its 29
-## extras are the same ending screens COMEIN's are. It is the `gated` column, and it
-## is printed rather than reasoned about.
+## `piposh-dream/hatul3.dir` alone would have gone from 14 scenes to 43. It is the
+## `gated` column, and it is printed rather than reasoned about.
+##
+## **Those 29 were then read**, because "they are all endings" is the kind of sentence
+## that reads as measured whether or not anybody measured it. Fifteen are one frame
+## long and run `1:155`, which is COMEIN's ending shape exactly: `puppetSprite(20, 0)`,
+## `puppetSprite(21, 0)`, then `hatmen = hatmen - 1` and a respawn at `savespot`. The
+## other fourteen are three frames each under the movie's own `stage<N>psila`,
+## `stage<N>water` and `stage<N>fall` markers, running `1:150` or `1:154` — which open
+##
+##     set the keyDownScript to EMPTY
+##     set the keyUpScript to EMPTY
+##     set the member of sprite 15 to member(89, 2)
+##
+## and drop or lift the cat by 40 pixels. They dress a channel while *disarming* the
+## controls, which is this file's own definition of a scene ending (`KEY_INSTALL`
+## deliberately does not match the EMPTY form). So all 29 are outcome frames and none
+## is an init, which is what the gate refusing them is worth.
 ##
 ## The false negative that remains, stated rather than hidden: a movie that puppets
 ## in one scene and auto-puppets in another still loses the second. That is what a
