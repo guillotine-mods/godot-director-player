@@ -241,6 +241,92 @@ extends SceneTree
 ## *not* repeat, and a survey that assumed it did would have gone looking for five
 ## hotspots that are not there.
 ##
+## ## Position, and the channels nobody was watching
+##
+## The played sampler read `membernum` and `visible` and nothing else, so **a scene whose
+## visible behaviour is a sprite moving measured as dead on it.** Two things changed for
+## that, and it is worth being exact about which of them did the work, because the
+## obvious diagnosis was the wrong one.
+##
+## `piposh-dream/fritz2.dir`'s scene at f273 is the case. With input and without, every
+## channel it watched reported the same members, and the row read as a game that takes
+## none. The diagnosis on record was that the scene *moves* a sprite rather than swapping
+## its member. Its own scripts say otherwise — `1:10` and `1:11` each do both, in
+## adjacent lines:
+##
+##     set the memberNum of sprite getAt(ppl, 1) to member(the memberNum of sprite getAt(ppl, 1) + 1, 2)
+##     set the locH of sprite getAt(ppl, 1) to the locH of sprite getAt(ppl, 1) + 17
+##
+## and the reason neither showed is that `getAt(ppl, 1)` is channel **10**, and channel
+## 10 was not being watched. `ppl = [10, 11, 12, 13]`, the init claims all four with
+## `repeat with i = 10 to 13` / `puppetSprite(i, 1)`, and a bare loop variable is the one
+## operand `_operand` refuses to bound. So `claimed` came out `[1, 32]`,
+## `assigned_channels` `[6]`, and the four channels the entire scene is about were
+## invisible to the instrument. The blind spot was the **watch list**, not the property.
+##
+## Both are fixed. The sampler asks the engine which channels the run puppeted rather
+## than only which ones a regex could spell (`_puppeted_now`), and it reads
+## `the locH`/`the locV` of every watched channel as a signal of its own
+## (`_note_position`). Measured on that scene over 4,000 process frames, against
+## `--no-input` at the same landing — the watch list goes from `[1, 6, 32]` to
+## `[1, 6, 10, 11, 12, 13, 32]`, and:
+##
+##     ch      position, with input          position, no input        members in / out
+##     1       STILL (1499, 240)             STILL (1499, 240)          1 / 1
+##     6       STILL (504, 431)              STILL (504, 431)           1 / 1
+##     10      MOVED 1x, 2 points            MOVED 1x, 2 points         1 / 1
+##     11      MOVED 24x, 25 points          MOVED 24x, 25 points      21 / 21
+##     12      MOVED 1x, 2 points            MOVED 1x, 2 points        35 / 14
+##     13      STILL (27, 400)               STILL (27, 400)            8 / 8
+##     32      STILL (190, 264)              STILL (190, 264)           2 / 2
+##
+## **So position is a new signal and it is not what separates the two runs.** Three
+## channels move where the old table showed no channel doing anything at all, which is
+## the description of the scene the survey could not previously give; but every position
+## number matches its control to the step, and what the player changes is ch12's
+## membership — 35 distinct members against 14, with 82, 83 and 84 reached only with
+## input. The scene's own gate says why: the player's motion is behind
+## `if getAt(mnv, 1) > 1`, the init sets `mnv = [0, 0, 0, 0, 0, 0]`, and only a hit
+## raises it. Ch11's 25 points are `foemov` walking an enemy in on its own, which is the
+## score's business and not the player's — and it is identical in both runs, which is the
+## control doing its job.
+##
+## The other thing to read off that table: ch10, 11 and 12's positions stop at
+## `h 138..563` and `v 350..386` because the init sets `the constraint of sprite i to 39`
+## and the engine clamps into channel 39's box. `set the locH of sprite 13 to -20` is
+## reported as a resting position of 27 for the same reason, so the numbers are the
+## engine's answer and not the script's literal.
+##
+## The negative control is a scene that swaps members, `piposh-dream/hatul2.dir`'s
+## `stage1psila` at f180, and it says the position signal does not manufacture motion:
+##
+##     ch      position, with input          position, no input        members in / out
+##     1       MOVED 1x, 2 points            MOVED 1x, 2 points         2 / 2
+##     15      MOVED 9x, 10 points           STILL (13, 392)            9 / 4
+##     40      MOVED 2x, 3 points            STILL (-83, 152)           4 / 2
+##
+## Ch15 really does move, and Director's canonical walk cycle is why: `1:8`'s
+## `hatulidown2` arm swaps the cat's member *and* adds 17 to its `locH` on the same
+## keypress, so `h 13..148` over ten points beside members 2/3/4/18..21 is one behaviour
+## and not two claims. Under `--no-input` the same channel is `STILL`, which is the
+## reading that matters — the signal is silent where nothing pressed anything.
+##
+## **Ch1 is the caution, and it is in the table on purpose.** It reports motion in both
+## runs, and nothing in the scene moves it: it swaps between members 3 and 236, and the
+## score's own record for those two carries different `locH`/`locV`. A member swap can
+## therefore move a sprite without any script saying `set the locH`, so a position
+## difference is evidence about the *player* only against the control run — the same rule
+## every other number in this file is under, and the reason `--no-input` exists.
+##
+## **What is legible now and still not fixed**: the *membership* column reads an absent
+## channel too, and answers `member 0` for it. `EMPTY_CHANNEL`'s `visible` is 1, so the
+## sampler's visibility guard lets an unoffered channel through, which is where fritz2's
+## `ch 32 : visible with 0 on 17 frame(s)` comes from — 17 samples before the init, the
+## same 17 the position line accounts for as `416 of 433 sample(s) drawn`. Left alone on
+## purpose: fixing it moves every membership number this file has ever printed, and it is
+## its own change with its own control run. The position line at least says out loud how
+## many of a row's samples were real.
+##
 ## ## A lead this survey turned up, filed as `bugs.md` 100, and got wrong
 ##
 ## This section said `doc` was the one of the six that never dresses its lanes: "over a
@@ -572,8 +658,16 @@ func _sweep(paths) -> void:
 ## here: `_textures` is the decode cache keyed by `Geometry.texture_key`, so an
 ## element's key appearing in it means the painter asked the cast to decode that
 ## member at that size; `_loop_stats` is the paint tally, including the recursion's
-## own `nested loop drawn` and `nested children offered`; and the live membership of a
-## channel comes through `lingo_sprite_prop`, which is what a script would read.
+## own `nested loop drawn` and `nested children offered`; and the live membership *and
+## position* of a channel come through `lingo_sprite_prop`, which is what a script would
+## read.
+##
+## **Three signals per channel, printed apart on purpose**: which members it held, where
+## it stood, and — on the `signals` line — which of the two changed. Membership alone
+## was the whole of this sampler, and a scene whose visible behaviour is a sprite walking
+## measures as dead on that instrument. See the header's `fritz2.dir` section for the row
+## that cost, and `_note_position` for the absent-channel trap the position read has to
+## get past.
 ##
 ## `_last_member` is deliberately not touched. It is the painter's record of what it
 ## painted and `tools/update_stage.gd` uses it as a probe that `updateStage` paints
@@ -623,6 +717,20 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	for key in scene["elements"]:
 		want[str(key)] = int(scene["elements"][key]["type"])
 	var alive: Dictionary = {}   # channel -> {member: times seen visible}
+	# channel -> where it stood, over the frames that offered it. Membership and
+	# position are kept apart all the way to the print, because a scene that swaps a
+	# member and a scene that moves a sprite are two different claims about what the
+	# movie did and one used to stand in for both.
+	var positions: Dictionary = {}
+	# Every channel the sampler ever watched, so a channel that was watched and never
+	# became visible is a row that says so rather than a row that is missing.
+	var watched: Dictionary = {}
+	# Channels the engine reports as puppeted at some point in the run, accumulated
+	# rather than read once: they are claimed *by* the init, so a set taken at the
+	# landing is empty, and a channel handed back later still belongs in the report.
+	var runtime: Dictionary = {}
+	# Sampler passes, i.e. score frames the sampler ran on.
+	var samples := 0
 	var reached: Dictionary = {} # "lib:id" -> the first texture key it decoded under
 	var frames: Dictionary = {}
 	var last := -1
@@ -700,17 +808,49 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 			# `[6]`, so 92 runs of its own `psyregb` key handler produced a channel table
 			# identical to the `--no-input` control on both claimed channels and the scene
 			# read as taking no input at all. It does -- `mnv` moves through 259 distinct
-			# values against the control's 103 -- and the one channel that would have shown
-			# it was the one not being watched. Sampling the union costs nothing and the two
+			# values against the control's 103. Sampling the union costs nothing and the two
 			# kinds of evidence are still told apart below.
+			# **Sampling the union was not enough, and this comment used to say it was**:
+			# ch6 was the channel it added and ch6 reads member 337 in both runs. The
+			# channel that shows the difference is **10**, which neither rule could name --
+			# see the header's position section.
+			# **And the channels the *run* puppeted, asked of the engine rather than
+			# spelled.** The static scan can only watch a channel whose operand it could
+			# bound, and `fritz2.dir`'s f273 init claims its four fighters with
+			#
+			#     ppl = [10, 11, 12, 13]
+			#     repeat with i = 10 to 13
+			#       puppetSprite(i, 1)
+			#
+			# so `_operand` reports `i` unbounded, `claimed` comes out `[1, 32]`, and the one
+			# channel every handler in the scene reads and writes -- `sprite getAt(ppl, 1)`,
+			# channel 10 -- was watched by nothing at all. The puppet flag is not derived
+			# from anything: it is state the engine holds, so the run can be *asked* which
+			# channels it took off the score rather than a regex being asked which channels
+			# it can spell. That costs the static derivation nothing and cannot move it --
+			# `_operand`, `_init_of` and the `--all` sweep are untouched, which is why this is
+			# not the bare-loop-variable change the header defers.
+			for channel in _puppeted_now(preview):
+				runtime[int(channel)] = true
 			var watching: Dictionary = {}
 			for channel in scene["claimed"]:
 				watching[int(channel)] = true
 			for channel in (scene["assigned_channels"] as Dictionary):
 				watching[int(channel)] = true
+			for channel in runtime:
+				watching[int(channel)] = true
 			var watch_list: Array = watching.keys()
 			watch_list.sort()
+			# Which channels this frame is *offering*, which is the guard the position read
+			# cannot do without. See `_note_position` for what an unguarded read answers.
+			var offered: Dictionary = {}
+			for value in preview.call("frame_sprites"):
+				offered[int((value as Dictionary)["channel"])] = true
+			samples += 1
 			for channel in watch_list:
+				watched[int(channel)] = true
+				_note_position(preview, positions, int(channel),
+					offered.has(int(channel)))
 				if not bool(preview.call("lingo_sprite_prop", int(channel), "visible")):
 					continue
 				var member := int(preview.call(
@@ -763,10 +903,10 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		"(control run: nothing pressed)" if no_input
 			else (str(scene["key_names"]) if not press_keys.is_empty()
 				else "on channel(s) %s" % str(clicks))])
-	print("  played   : %d process frame(s), %d distinct frame(s) f%s..f%s" % [
-		spent, visited.size(),
+	print("  played   : %d process frame(s), %d distinct frame(s) f%s..f%s, %d sampler pass(es)"
+		% [spent, visited.size(),
 		str(visited[0]) if visited.size() > 0 else "?",
-		str(visited[-1]) if visited.size() > 0 else "?"])
+		str(visited[-1]) if visited.size() > 0 else "?", samples])
 	if _verbose:
 		print("  frames   : %s" % str(visited))
 	# At or past, not equal. The eight process frames awaited after the landing can carry
@@ -778,25 +918,66 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	print("  init ran : %s (f%d %s in the frames played)" % [
 		"yes" if reached_init else "NO", int(scene["init"]),
 		"is" if reached_init else "is NOT"])
-	var chans: Array = alive.keys()
+	var chans: Array = watched.keys()
 	chans.sort()
 	for channel in chans:
-		var seen: Dictionary = alive[channel]
-		var members: Array = seen.keys()
-		members.sort()
-		var parts: Array = []
-		for member in members:
-			parts.append("%d on %d frame(s)" % [int(member), int(seen[member])])
-		# Which of the two the channel is, because they are not the same evidence. A
+		# Which of the three the channel is, because they are not the same evidence. A
 		# claimed channel is off the score, so a member on it can only be this scene's
 		# assignment; a dressed-but-unclaimed one is still shared with the score, and the
-		# score may have put that member there.
-		print("  ch %-3d   : %-9s visible with %s" % [int(channel),
-			"claimed" if (scene["claimed"] as Array).has(int(channel)) else "dressed",
-			", ".join(parts)])
+		# score may have put that member there. `puppeted` is the third and it is not a
+		# shade of either: the engine reported the puppet flag set on a channel the static
+		# scan could not spell, so the channel *is* off the score and calling it `dressed`
+		# -- which is what a two-word label did to `fritz2`'s channel 10 -- states the
+		# opposite of what the movie did.
+		var label := "dressed"
+		if (scene["claimed"] as Array).has(int(channel)):
+			label = "claimed"
+		elif runtime.has(int(channel)):
+			label = "puppeted"
+		if alive.has(int(channel)):
+			var seen: Dictionary = alive[channel]
+			var members: Array = seen.keys()
+			members.sort()
+			var parts: Array = []
+			for member in members:
+				parts.append("%d on %d frame(s)" % [int(member), int(seen[member])])
+			print("  ch %-3d   : %-9s visible with %s" % [
+				int(channel), label, ", ".join(parts)])
+		else:
+			print("  ch %-3d   : %-9s never visible" % [int(channel), label])
+		print("             %-9s %s" % ["position",
+			_position_words(positions.get(int(channel), {}))])
+	# Now that the rows above cover every watched channel rather than only the ones that
+	# became visible, this fires for a scene the sampler had nothing to watch at all --
+	# no claim it could bound, no assignment, and no puppet flag anywhere in the run.
 	if chans.is_empty():
-		print("  channels : none of %s (claimed) or %s (dressed) ever became visible" % [
-			str(scene["claimed"]), str((scene["assigned_channels"] as Dictionary).keys())])
+		print("  channels : nothing to watch — %s (claimed), %s (dressed), and no channel"
+			% [str(scene["claimed"]),
+				str((scene["assigned_channels"] as Dictionary).keys())]
+			+ " reported the puppet flag while the run played")
+	# Which kind of evidence each row rests on, in one line, because that is the question
+	# a reader of this table actually has. A row with a member change and no motion is a
+	# member-swapping scene; a row with motion and one member is a moving one; a row with
+	# neither is the row that used to be the *whole* table for `fritz2` and read as a dead
+	# game. Compared against the `--no-input` control, not read alone: the score swaps and
+	# moves sprites of its own, and only the difference between the two runs is the player.
+	var swapped: Array = []
+	var shifted: Array = []
+	var flat: Array = []
+	for channel in chans:
+		var members := int((alive.get(int(channel), {}) as Dictionary).size())
+		# `steps` and not the size of the point set, because a channel that returns to
+		# where it started has one point and moved twice. This line is the one that gets
+		# quoted, so it reads the number that means "it moved on this run".
+		var steps := int((positions.get(int(channel), {}) as Dictionary).get("steps", 0))
+		if members > 1:
+			swapped.append(int(channel))
+		if steps > 0:
+			shifted.append(int(channel))
+		if members <= 1 and steps == 0:
+			flat.append(int(channel))
+	print("  signals  : member change on ch %s; motion on ch %s; neither on ch %s"
+		% [str(swapped), str(shifted), str(flat)])
 	var els: Dictionary = scene["elements"]
 	var keys: Array = els.keys()
 	keys.sort_custom(func(a, b): return int(els[a]["id"]) < int(els[b]["id"]))
@@ -840,6 +1021,116 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		print("  tally    : %-34s %d" % [str(key), int(stats[key])])
 	preview.queue_free()
 	await process_frame
+
+
+## Which channels this movie has taken off the score, right now.
+##
+## Asked of the engine and not of the scripts. `puppetSprite` sets a flag the preview
+## holds per channel, and `the puppet of sprite N` is the read for it, so the run knows
+## something the static scan cannot: `fritz2.dir` claims channels 10..13 inside a
+## `repeat with i = 10 to 13`, and a bare loop variable is exactly the operand
+## `_operand` refuses to bound.
+##
+## Enumerated over `_overrides` because that is where the flag lives -- one entry per
+## channel any script has touched -- rather than over a channel range, which would be
+## both a per-frame scan of a hundred-odd channels and the kind of number this file has
+## none of. `frame_sprites` is the wrong enumeration for the same reason it is the right
+## guard below: a channel puppeted while the score had nothing for it carries an empty
+## record and never reaches that list (`sprite_state.gd:with_puppets`), so asking it
+## would drop precisely the channels a script invented.
+func _puppeted_now(preview: Node) -> Array:
+	var out: Array = []
+	for number in preview.get("_overrides") as Dictionary:
+		if int(preview.call("lingo_sprite_prop", int(number), "puppet")) == 1:
+			out.append(int(number))
+	return out
+
+
+## Note where a channel is standing, into its running record.
+##
+## **Only ever called for a channel the frame offers**, and that guard is the whole
+## reason this is a function rather than two lines at the call site. `channel.gd:read`
+## answers from `EMPTY_CHANNEL` for a channel with no sprite record and no override, and
+## `EMPTY_CHANNEL` has no `loch` or `locv` row, so the `get` default comes back: an
+## absent channel reports (0, 0) and reads as a sprite parked at the stage origin, which
+## is indistinguishable from one that is really there and really at the origin. The
+## existing `visible` guard does **not** exclude it -- `EMPTY_CHANNEL`'s own `visible`
+## is `1` -- which is why this file's channel table has always been able to carry a row
+## reading `member 0` for a channel no frame ever had, and it is the trap
+## `tools/puzzle_board.gd` has its own paragraph about.
+##
+## `frame_sprites` is the frame's own sprite list merged `with_puppets`, so presence in
+## it is exactly the condition under which the read reaches the override table or the
+## score rather than a default.
+##
+## Four numbers, and none of them is a boolean. The distinct *points* and the distinct
+## values per axis, because a sprite that oscillates back to where it started visits few
+## points and is really moving, and because the axis ranges are what say whether a
+## fighter walked sideways (`locH -/+ 17`) or was knocked up and down (`locV -/+ 17`).
+## And **`steps`, the number of samples on which the position differed from the one
+## before it**, because the other three are *sets* and a set can be identical across two
+## runs that moved very differently: `fritz2`'s ch11 walks the same 17-pixel grid between
+## the same two constrained ends whether or not a key is pressed, so its point set and
+## both its ranges match its own control exactly and only how *often* it moved does not.
+## A set answers "can this channel move at all"; `steps` answers "did it move on this
+## run", and the second is the one an input claim needs.
+##
+## `watched` is the denominator and it is per channel rather than the run's own sample
+## count, because a channel found at runtime joins the watch list when the init puppets
+## it. Counting its gap against the whole run would report a sprite as undrawn for
+## frames on which nothing was asking about it. `steps` is not normalised against it and
+## must be read beside it: a run that stops early because `_all_painted` fired has fewer
+## samples to move on.
+##
+## **The gap this leaves, stated rather than left to be found: the sampler runs once per
+## score-frame transition**, so a handler that moves a sprite and calls `updateStage`
+## several times inside one held frame contributes one sample. That is how a Director
+## movie animates without the score (`scenes/preview/README.md`), and it is the next
+## instance of exactly the class of blind spot this function was added for. Neither
+## `fritz2.dir` nor `hatul2.dir` is that shape -- both move on `exitFrame` -- so it does
+## not touch the numbers in the header.
+func _note_position(preview: Node, positions: Dictionary, channel: int,
+		offered: bool) -> void:
+	var spot: Dictionary = positions.get(channel, {
+		"watched": 0, "drawn": 0, "steps": 0, "last": "", "points": {}, "h": {}, "v": {}})
+	spot["watched"] = int(spot["watched"]) + 1
+	positions[channel] = spot
+	if not offered:
+		return
+	var h := int(preview.call("lingo_sprite_prop", channel, "loch"))
+	var v := int(preview.call("lingo_sprite_prop", channel, "locv"))
+	var here := "%d,%d" % [h, v]
+	spot["drawn"] = int(spot["drawn"]) + 1
+	if str(spot["last"]) != "" and str(spot["last"]) != here:
+		spot["steps"] = int(spot["steps"]) + 1
+	spot["last"] = here
+	(spot["points"] as Dictionary)[here] = true
+	(spot["h"] as Dictionary)[h] = true
+	(spot["v"] as Dictionary)[v] = true
+
+
+## One channel's position record, as a sentence.
+##
+## An empty record is a channel no frame ever offered, and it says so rather than
+## printing a position, for `_note_position`'s reason: the only position available for
+## such a channel is a default, and a default that looks like a measurement is worse
+## than a gap that says it is one.
+static func _position_words(spot: Dictionary) -> String:
+	if spot.is_empty() or int(spot["drawn"]) == 0:
+		return "not read — no frame offered this channel (0 of %d sample(s))" % [
+			0 if spot.is_empty() else int(spot["watched"])]
+	var hs: Array = (spot["h"] as Dictionary).keys()
+	var vs: Array = (spot["v"] as Dictionary).keys()
+	hs.sort()
+	vs.sort()
+	var points: Dictionary = spot["points"]
+	var drawn := "%d of %d sample(s) drawn" % [int(spot["drawn"]), int(spot["watched"])]
+	if points.size() == 1:
+		return "STILL at (%d, %d) on %s" % [int(hs[0]), int(vs[0]), drawn]
+	return "MOVED %d time(s) over %d point(s) on %s," % [
+			int(spot["steps"]), points.size(), drawn] \
+		+ " h %d..%d (%d distinct), v %d..%d (%d distinct)" % [
+			int(hs[0]), int(hs[-1]), hs.size(), int(vs[0]), int(vs[-1]), vs.size()]
 
 
 ## Has every film loop the scene assigns reached the painter's parse cache?
