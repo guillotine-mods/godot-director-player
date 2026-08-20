@@ -232,10 +232,12 @@ ALL="game_config root_boot embedded_cast_payload title_mapping title_list export
 # makes **zero** `Harness.check` calls in either of its modes -- it is the
 # diagnostic that was written to *find* the nested-loop bug, printing which scenes
 # claim which channels and which of their film loops have film-loop children. Run
-# against `GATE_ROOT` it reports `0 of 0 scene(s)`, and `gate.sh` calls that ERROR,
-# correctly: a run that asserted nothing has not passed. Its subject is covered by
-# the entry above, which asserts the same four things about the same corpus. Adding
-# it would mean writing assertions it does not have, not moving a name into `ALL`.
+# against `GATE_ROOT` it reports `0 of 1 scene(s)` -- one and not the none this line
+# said until `strtgame.dir`'s rollover menu became derivable, and neither number is
+# an assertion -- and `gate.sh` calls that ERROR, correctly: a run that asserted
+# nothing has not passed. Its subject is covered by the entry above, which asserts
+# the same four things about the same corpus. Adding it would mean writing assertions
+# it does not have, not moving a name into `ALL`.
 #
 # `cast_script_sprite` names `piposh-dream` for the same reason and the population
 # is even narrower: **all 12 reads of `the currentSpriteNum` in the six titles are

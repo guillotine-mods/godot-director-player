@@ -5,10 +5,13 @@ extends SceneTree
 ##   godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream
 ##   godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream --file COMEIN.dir
 ##   godot --headless --path . --script tools/puppet_members.gd -- --root rating --file blatack1.dir
+##   godot --headless --path . --script tools/puppet_members.gd -- --root piposh-dream --all
 ##   godot --headless --path . --script tools/puppet_members.gd -- --source
 ##
 ##   --root R     the corpus (default the config's)
 ##   --file F     the container (default the config's boot movie)
+##   --all        every container of the root in counts, and nothing else: how the two
+##                init rules divide each movie's runs. One process per root.
 ##   --play S     after the static report, enter scene S the way the movie does and
 ##                say what drew. `--play all` walks every scene it derived.
 ##   --ticks N    process frames to give one played scene (default 4000)
@@ -42,7 +45,7 @@ extends SceneTree
 ##
 ## ## How a "scene" is derived, with no table anywhere
 ##
-## Nothing here names a movie, a marker, a channel or a member. Four rules, each
+## Nothing here names a movie, a marker, a channel or a member. Five rules, each
 ## read off the container:
 ##
 ## **An init is a frame script that claims a channel.** `puppetSprite(N, 1)` takes
@@ -55,6 +58,71 @@ extends SceneTree
 ## it inside a `repeat with i`, where the channel is a variable this cannot bound
 ## and does not need to. Count mentions instead of claims and this file would report
 ## fifteen games in a movie that has six, and the nine extras would all be endings.
+##
+## **Where a movie never puppets at all, an init is a frame script that *dresses* a
+## channel.** `puppetSprite` is the author's own statement of which script owns which
+## channel, so where it is present it is the better evidence and this second rule is
+## a fallback rather than a widening: it fires only when **no** covered frame script
+## in the container so much as mentions `puppetSprite`. `piposh-dream/puzzle.dir` is
+## why it exists. That container is a playable 4x4 sliding-tile puzzle whose sixteen
+## tiles are ordinary score sprites — Director's own auto-puppets, and the subject of
+## `docs/bugs-closed.md` 120 — made visible with `sprite(i).visible = 1` and dressed
+## by name with
+##
+##     set the member of sprite gsnum to "paz" & item x of line y of field "pazel"
+##
+## Nothing in it calls `puppetSprite`, so the claim rule reported `0 run(s) hold a
+## claiming init` for a container `tools/puzzle_board.gd` gates as a working game:
+## a survey and a gate contradicting each other, and a minigame sweep that drops
+## the movie from its set. Its init is `1:2` on f5, under the movie's own `restart`
+## marker, and it deals the board, reveals the tiles, dresses all sixteen and sets
+## the `ifmove` global that the tiles' own `mouseDown` reads.
+##
+## **The gate is `mention` and not `claim`**, which is the whole of what keeps this a
+## fallback. `PUPPET` requires the call to end the line, so a movie that this file
+## reports as releasing without ever claiming is a movie whose claims the regex
+## missed rather than one that has none — and opening the fallback there would turn
+## COMEIN's nine ending screens into nine more games, in whichever container that
+## shape next appears. `piposh-dream/rating.dir` is that shape in this corpus today:
+## 2 mentions, 0 claims, and a `claim == 0` gate would have opened the fallback in a
+## movie that puppets.
+##
+## **Measured with `--all` over all six roots**: 482 movies hold a score, 1,207 scenes
+## come from a claiming init, the fallback adds **2** — and the gate refuses **350**
+## runs that dress inside movies that do puppet. That last number is the whole
+## argument for the gate rather than an assumption that nothing was over-widened:
+## `piposh-dream/hatul3.dir` alone would have gone from 14 scenes to 43, and its 29
+## extras are the same ending screens COMEIN's are. It is the `gated` column, and it
+## is printed rather than reasoned about.
+##
+## The false negative that remains, stated rather than hidden: a movie that puppets
+## in one scene and auto-puppets in another still loses the second. That is what a
+## fallback costs, and it is not what `puzzle.dir` was — nothing in it puppets at all,
+## in a covered frame script or anywhere else in the container, and the same is true
+## of the second site the rule finds.
+##
+## **The other site is a main menu, and it is worth knowing before reading a report.**
+## `piposh2/strtgame.dir` f839..f906 — the default root's own boot movie, so a bare
+## run lands on it — is the four-button menu, and its `1:357` swaps each button
+## between a still bitmap and a 14-frame film loop on `rollOver`. Derived correctly
+## and it is not a minigame: the label to read is `dressed`, and the honest reading of
+## a dressing scene is "a script puts members on channels over these frames", which is
+## this file's subject and not a claim about what the player is playing. (Its derived
+## *name* is `credits`, from the one marker it exits to, which is `_name_of`'s
+## longest-common-prefix rule having a single exit to work with.)
+##
+## Which of the two rules fired is on every line of the report, as `claimed` or
+## `dressed`. The two words are `--play`'s own labels for a sampled channel because
+## it is the same distinction: a claimed channel is off the score, so a member on it
+## can only be the script's, and a dressed one is still shared with the score.
+##
+## What the derived `puzzle.dir` scene then *says* is thin, and that is a second
+## defect rather than this one: its channel operand is `gsnum`, a `repeat` counter,
+## and its right-hand side is a string concatenation rather than a `member()` call,
+## so both come out `UNBOUND` and the scene reports no elements. Bounding a bare
+## loop variable would feed the **claim** scan as well and could move COMEIN's six,
+## so it is a separate change owing its own control run. `tools/scene_probe.gd
+## --marker restart` is what reads that board today, and `bugs.md` 120 used it.
 ##
 ## **A scene is the covered run its init sits in.** Frame scripts arrive as score
 ## interval entries — a span of frames with a script attached — so "which frames
@@ -273,6 +341,10 @@ func _init() -> void:
 		print("no game configured: %s must set [game] root" % Paths.CONFIG_PATH)
 		quit(1)
 		return
+	if Args.flag(args, "all"):
+		_sweep(paths)
+		quit(0)
+		return
 	var rel := Args.text(args, "file", str(paths.boot_movie))
 
 	var f := ContainerFile.new()
@@ -311,10 +383,15 @@ func _init() -> void:
 
 	var cover := _coverage(score)
 	var runs := _runs(cover)
-	var scenes := _scenes(table, score, labels, cover, runs)
+	# The census before the derivation, because it decides which rules the derivation
+	# is allowed to use: the dressing fallback is gated on this movie mentioning
+	# `puppetSprite` nowhere. Printed in the order it always was, which is why the
+	# call moved and the `print` did not.
+	var puppets := _puppet_sites(table, cover)
+	var may_dress := int(puppets["mention"]) == 0
+	var scenes := _scenes(table, score, labels, cover, runs, may_dress)
 	print("covered    : %d of %d frames, in %d contiguous run(s)" % [
 		cover.size(), score.frame_count, runs.size()])
-	var puppets := _puppet_sites(table, cover)
 	print("puppetting : %d frame script(s) mention puppetSprite — %d claim a channel," % [
 		int(puppets["mention"]), int(puppets["claim"])]
 		+ " %d release one" % int(puppets["release"]))
@@ -323,7 +400,13 @@ func _init() -> void:
 	# the run count, so a run with two claims is one scene and the first claim is its
 	# init -- which the per-scene report says outright rather than averaging away.
 	print("claims     : %d frame(s) claim a channel" % scenes["claim_sites"])
-	print("scenes     : %d run(s) hold a claiming init" % scenes["list"].size())
+	print("scenes     : %d run(s) hold an init — %d claiming, %d dressing" % [
+		scenes["list"].size(), int((scenes["by_rule"] as Dictionary)["claim"]),
+		int((scenes["by_rule"] as Dictionary)["dress"])])
+	print("rules      : %s" % ("the dressing fallback is ON — no covered frame script"
+		+ " here mentions puppetSprite" if may_dress
+		else "the dressing fallback is OFF — this movie puppets, so a claim is the"
+			+ " discriminator"))
 	print("")
 
 	var hit := 0
@@ -333,8 +416,8 @@ func _init() -> void:
 
 	print("=".repeat(78))
 	print("summary")
-	print("  %-10s %-7s %-20s %-18s %s" % [
-		"scene", "init", "channels claimed", "film loops", "loops that nest"])
+	print("  %-10s %-7s %-8s %-20s %-18s %s" % [
+		"scene", "init", "rule", "channels claimed", "film loops", "loops that nest"])
 	for scene in scenes["list"]:
 		var loops: Array = []
 		var nests: Array = []
@@ -347,8 +430,8 @@ func _init() -> void:
 				nests.append(int(el["id"]))
 		loops.sort()
 		nests.sort()
-		print("  %-10s %-7s %-20s %-18s %s" % [
-			str(scene["name"]), "f%d" % int(scene["init"]),
+		print("  %-10s %-7s %-8s %-20s %-18s %s" % [
+			str(scene["name"]), "f%d" % int(scene["init"]), _rule_word(scene),
 			str(scene["claimed"]), str(loops),
 			"none" if nests.is_empty() else str(nests)])
 	print("")
@@ -377,6 +460,94 @@ func _init() -> void:
 	f.close()
 	table.close()
 	quit(0)
+
+
+## Every container of the root in counts, and nothing else.
+##
+## **It is a before-and-after in one run**, which is the reason it exists. The
+## dressing rule fires only where `mention` is 0, so a container with any
+## `puppetSprite` in a covered frame script cannot move: its `claimed` column is
+## exactly what this file reported before the rule existed, and `dressed` is
+## everything the rule added. A reader who wants to know whether the fallback
+## over-widened does not have to take the argument on trust or stash the code —
+## the two columns are side by side, per container, over a whole root.
+##
+## `gated` is the recall the gate gives up on purpose: for a movie that *does*
+## puppet, the number of its runs that would have derived a dressing init had the
+## gate not been closed. For `piposh-dream/COMEIN.dir` that number is the movie's
+## ending screens, and the argument for the gate is that they are not games.
+##
+## One root per process, because `--root` beats `Paths.load_config`'s `force_root`
+## and a sweep that fought it would report six copies of one corpus.
+## `paths.containers()` lists the `.cst` files too, and a container with no score
+## has no frame scripts and nothing to derive; those are counted and skipped rather
+## than fatal, because quitting on the first one reports the first movie of a root.
+func _sweep(paths) -> void:
+	var rels: Array[String] = paths.containers()
+	print("root       : %s" % paths.root)
+	print("containers : %d listed under the root" % rels.size())
+	print("")
+	print("  %-30s %7s %5s %8s %6s %8s %8s %6s" % [
+		"container", "frames", "runs", "mention", "claim", "claimed", "dressed",
+		"gated"])
+	var totals := {"movies": 0, "skipped": 0, "claimed": 0, "dressed": 0, "gated": 0,
+		"moved": 0}
+	for rel in rels:
+		var f := ContainerFile.new()
+		if not f.open(paths.resolve(rel)):
+			totals["skipped"] = int(totals["skipped"]) + 1
+			continue
+		var ids: Array = f.ids_of("VWSC")
+		if ids.is_empty():
+			totals["skipped"] = int(totals["skipped"]) + 1
+			f.close()
+			continue
+		var table = CastTable.new()
+		var score = Score.new()
+		if not table.open(f, paths) or not score.parse(f.read_chunk(ids[0])):
+			totals["skipped"] = int(totals["skipped"]) + 1
+			table.close()
+			f.close()
+			continue
+		totals["movies"] = int(totals["movies"]) + 1
+		var cover := _coverage(score)
+		var runs := _runs(cover)
+		var puppets := _puppet_sites(table, cover)
+		var may_dress := int(puppets["mention"]) == 0
+		var claimed := 0
+		var dressed := 0
+		var gated := 0
+		for run in runs:
+			var found := _init_of(table, cover, run, may_dress)
+			if str(found["rule"]) == "claim":
+				claimed += 1
+			elif str(found["rule"]) == "dress":
+				dressed += 1
+			elif not may_dress and str(_init_of(table, cover, run, true)["rule"]) == "dress":
+				gated += 1
+		totals["claimed"] = int(totals["claimed"]) + claimed
+		totals["dressed"] = int(totals["dressed"]) + dressed
+		totals["gated"] = int(totals["gated"]) + gated
+		if dressed > 0:
+			totals["moved"] = int(totals["moved"]) + 1
+		if _verbose or claimed > 0 or dressed > 0 or gated > 0:
+			print("  %-30s %7d %5d %8d %6d %8d %8d %6d" % [
+				str(rel).left(30), int(score.frame_count), runs.size(),
+				int(puppets["mention"]), int(puppets["claim"]),
+				claimed, dressed, gated])
+		table.close()
+		f.close()
+	print("")
+	print("  %d movie(s) with a score, %d container(s) skipped (no score, or will not"
+		% [int(totals["movies"]), int(totals["skipped"])] + " parse)")
+	print("  %d scene(s) by a claiming init — the count before the dressing rule"
+		% int(totals["claimed"]))
+	print("  %d scene(s) by a dressing init, in %d movie(s), each of which reported"
+		% [int(totals["dressed"]), int(totals["moved"])] + " 0 before")
+	print("  %d run(s) refused by the gate: they dress, in movies that puppet"
+		% int(totals["gated"]))
+	print("  (rows with nothing in any of the three columns are omitted; --verbose"
+		+ " prints them)")
 
 
 ## Enter one scene the way the movie does, and report what reached the painter.
@@ -757,9 +928,12 @@ func _report(scene: Dictionary, table, score, labels, cover: Dictionary) -> bool
 	var run: Array = scene["run"]
 	print("-".repeat(78))
 	print("scene      : %s" % str(scene["name"]))
-	print("  init     : f%d, marker %s, frame script %s" % [
+	print("  init     : f%d, marker %s, frame script %s — %s" % [
 		int(scene["init"]), _marker_label(labels, int(scene["init"])),
-		str(scene["init_script"])])
+		str(scene["init_script"]),
+		"it claims a channel" if str(scene["rule"]) == "claim"
+			else "it dresses a channel and claims none, and nothing in this movie"
+				+ " mentions puppetSprite"])
 	print("  span     : f%d..f%d (%d frames), scripts %s" % [
 		int(run[0]), int(run[-1]), run.size(), str(scene["scripts"])])
 	# Derived against claimed, compared here rather than left to the reader. The
@@ -774,9 +948,20 @@ func _report(scene: Dictionary, table, score, labels, cover: Dictionary) -> bool
 	for channel in assigned:
 		if not claimed.has(int(channel)):
 			extra.append(int(channel))
-	print("  claims   : channels %s claimed by the init; %s dressed by its handlers — %s"
-		% [str(claimed), str(assigned),
-			"agree" if extra.is_empty() else "handlers also dress %s, unclaimed" % str(extra)])
+	if str(scene["rule"]) == "dress":
+		# Not the same statement as the line below it, and the difference is the whole
+		# of what the two rules mean. Every channel here is still the score's, so a
+		# member seen on one is this scene's assignment *or* the score's own -- which
+		# is why `--play`'s sampler labels these rows `dressed` and why an auto-puppet
+		# reverting on a backward `go` was a bug the score could cause at all
+		# (`docs/bugs-closed.md` 120).
+		print("  dresses  : nothing claimed — channels %s are dressed by this run's"
+			% str(assigned) + " scripts and stay the score's, as auto-puppets")
+	else:
+		print("  claims   : channels %s claimed by the init; %s dressed by its handlers — %s"
+			% [str(claimed), str(assigned),
+				"agree" if extra.is_empty()
+					else "handlers also dress %s, unclaimed" % str(extra)])
 	print("  markers  : %s" % str(_markers_in(labels, int(run[0]), int(run[-1]))))
 	print("  exits to : %s" % str(scene["exits"]))
 
@@ -904,48 +1089,100 @@ func _puppet_sites(table, cover: Dictionary) -> Dictionary:
 	return out
 
 
-## Every scene in the movie: a covered run holding a frame script that *claims* a
-## channel, with the members its own scripts assign.
-func _scenes(table, score, labels, cover: Dictionary, runs: Array) -> Dictionary:
-	var puppet := RegEx.create_from_string(PUPPET)
+## Every scene in the movie: a covered run holding an init, with the members its own
+## scripts assign. `may_dress` is the movie-level gate on the second init rule, and
+## the caller reads it off `_puppet_sites`.
+func _scenes(table, score, labels, cover: Dictionary, runs: Array,
+		may_dress: bool) -> Dictionary:
 	var claim_sites := 0
+	var by_rule := {"claim": 0, "dress": 0}
 	var list: Array = []
 	for run in runs:
-		var init := -1
-		var init_script := ""
-		var claimed := {}
-		for frame in run:
-			var lib := int(cover[frame]["lib"])
-			var member := int(cover[frame]["member"])
-			var src := _source(table, lib, member)
-			var mine := {}
-			for hit in puppet.search_all(src):
-				# The flag, not the call. `, 0` hands the channel back, and six of
-				# COMEIN's twelve sites are that -- the losing screens.
-				if str(hit.get_string(2)).strip_edges() != "1":
-					continue
-				for channel in _operand(str(hit.get_string(1)), src)["values"]:
-					mine[int(channel)] = true
-			if mine.is_empty():
-				continue
-			claim_sites += 1
-			if init >= 0:
-				continue
-			init = int(frame)
-			init_script = "%d:%d" % [lib, member]
-			claimed = mine
-		if init < 0:
+		var found := _init_of(table, cover, run, may_dress)
+		claim_sites += int(found["claim_sites"])
+		if int(found["frame"]) < 0:
 			continue
-		var chans: Array = claimed.keys()
-		chans.sort()
-		list.append(_scene(table, score, labels, cover, run, init, init_script, chans))
+		by_rule[str(found["rule"])] = int(by_rule[str(found["rule"])]) + 1
+		list.append(_scene(table, score, labels, cover, run, int(found["frame"]),
+			str(found["script"]), found["claimed"], str(found["rule"])))
 	_disambiguate(list)
-	return {"list": list, "claim_sites": claim_sites}
+	return {"list": list, "claim_sites": claim_sites, "by_rule": by_rule}
+
+
+## One run's init, and which of the two rules found it. `frame` is -1 for a run that
+## holds neither, and `claim_sites` counts every claiming frame in the run rather than
+## only the init -- `rating/blatack1.dir` re-arms its channels partway through a fight.
+##
+## The claim rule is tried first and always, and the dressing rule only where the
+## caller says the movie never mentions `puppetSprite` at all, so the two can never
+## disagree about a run: a movie with a claim in it has the fallback switched off
+## whole, which is what makes this a fallback and keeps COMEIN's ending screens out.
+func _init_of(table, cover: Dictionary, run: Array, may_dress: bool) -> Dictionary:
+	var puppet := RegEx.create_from_string(PUPPET)
+	var out := {"frame": -1, "script": "", "claimed": [] as Array, "rule": "",
+		"claim_sites": 0}
+	for frame in run:
+		var lib := int(cover[frame]["lib"])
+		var member := int(cover[frame]["member"])
+		var src := _source(table, lib, member)
+		var mine := {}
+		for hit in puppet.search_all(src):
+			# The flag, not the call. `, 0` hands the channel back, and six of
+			# COMEIN's twelve sites are that -- the losing screens.
+			if str(hit.get_string(2)).strip_edges() != "1":
+				continue
+			for channel in _operand(str(hit.get_string(1)), src)["values"]:
+				mine[int(channel)] = true
+		if mine.is_empty():
+			continue
+		out["claim_sites"] = int(out["claim_sites"]) + 1
+		if int(out["frame"]) >= 0:
+			continue
+		var chans: Array = mine.keys()
+		chans.sort()
+		out["frame"] = int(frame)
+		out["script"] = "%d:%d" % [lib, member]
+		out["claimed"] = chans
+		out["rule"] = "claim"
+	if int(out["frame"]) >= 0 or not may_dress:
+		return out
+	for frame in run:
+		var lib2 := int(cover[frame]["lib"])
+		var member2 := int(cover[frame]["member"])
+		if not _dresses_a_channel(_source(table, lib2, member2)):
+			continue
+		out["frame"] = int(frame)
+		out["script"] = "%d:%d" % [lib2, member2]
+		out["rule"] = "dress"
+		break
+	return out
+
+
+## Does this script put a member on a sprite channel? The same two assignment
+## spellings `_scene` reads a scene's elements out of, asked as a yes or no --
+## reused rather than restated, so a spelling this file learns to read becomes a
+## spelling it can derive an init from in the same edit.
+##
+## Presence, not a resolved channel. `puzzle.dir` dresses `sprite gsnum` inside a
+## `repeat`, and a rule that required the channel to be bounded would find nothing
+## there and reintroduce the false negative it exists to fix.
+func _dresses_a_channel(src: String) -> bool:
+	if src == "":
+		return false
+	if RegEx.create_from_string(SET_MEMBER).search(src) != null:
+		return true
+	return RegEx.create_from_string(DOT_MEMBER).search(src) != null
+
+
+## `claimed` or `dressed`, which is how every line of the report says which rule
+## found the scene. The same two words `_play` labels a sampled channel with.
+static func _rule_word(scene: Dictionary) -> String:
+	return "claimed" if str(scene["rule"]) == "claim" else "dressed"
 
 
 ## One scene, filled in: its scripts, the members they assign, and its entry.
 func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
-		init_script: String, claimed: Array) -> Dictionary:
+		init_script: String, claimed: Array, rule: String) -> Dictionary:
 	var set_re := RegEx.create_from_string(SET_MEMBER)
 	var dot_re := RegEx.create_from_string(DOT_MEMBER)
 	var member_re := RegEx.create_from_string(MEMBER_OF)
@@ -1055,7 +1292,7 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 		"land": int(landing["frame"]), "land_by": str(landing["why"]),
 		"keys": controls["keys"], "key_names": controls["names"],
 		"avoid_channels": hotspots["avoid"],
-		"run": run, "init": init, "init_script": init_script,
+		"run": run, "init": init, "init_script": init_script, "rule": rule,
 		"claimed": claimed, "scripts": order, "exits": exits,
 		"elements": elements, "assigned_channels": assigned,
 		"unbounded": unbounded, "sources": sources,
