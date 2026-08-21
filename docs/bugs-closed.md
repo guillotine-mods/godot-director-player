@@ -10063,3 +10063,85 @@ them reads a value out of it** — `egoz` 156 writes the literal, `egoz` 162 and
 positional read and write. The list is a seven-slot done-flag vector whose initial
 strings only have to differ from `"done"`, so a duplicate value and two dead slots cannot
 reach anything. 0 sourceless scripts in the 80 casts scanned.
+
+---
+
+## 126. FIXED. `intersects` and `within` read no ink, so 585 operand pairs collided as bounding boxes
+
+**Status:** FIXED at `b4a01fd0`, count corrected at `18eab996` · **Area:**
+`scenes/preview/collision.gd` (new), `director/director_ink.gd`,
+`scenes/preview/sprite_art.gd`, the host's `"intersects", "within"` arm · filed and
+closed 2026-08-21
+
+`preview_lingo_host.gd` answered `first.intersects(second)` and
+`second.encloses(first)` unconditionally. The reference is ink-aware:
+`lingo-code.cpp:c_intersects` has three arms — matte-on-matte, box-on-matte when only
+the *second* operand qualifies, box-on-box — and `c_within` two. The asymmetry between
+them is in the reference and is reproduced as written: `c_intersects` tests
+`_cast->_type == kCastBitmap`, `c_within` tests `!isQDShape()`, so `director_ink.gd`
+keeps `hits_per_pixel` and `mattes_for_within` apart and `collision_arms` asserts the
+two disagree. A box-only test is *more permissive*, so the symptom was a hit
+registering where the artwork has a hole.
+
+**The matte arms sit behind the box test, which is the reference's own order**, so a
+matte arm can only narrow a box "yes" — never turn a "no" into a "yes". That is why
+585 pairs changing arm did not move a single minigame assertion.
+
+**This is emphatically not a "nothing changes" result**, which is what the entry
+expected. `tools/collision_ink.gd` over all six shipped roots — 651 containers, 482
+scores, 4,621 operator sites, 8,057,628 sprite records — gives **585 of 845
+resolvable literal operand pairs changing arm over 94,193 frames**: 411
+matte-on-matte and 314 box-on-matte (725 pair/arm rows, because a pair can take
+different arms on different frames), and **0 matte-within**.
+
+| root | pairs changing arm |
+|---|---|
+| rating | 512 |
+| piposh-dream | 18 (all in `hatul1/2/3`) |
+| piposh | 17 |
+| piposh-en | 17 |
+| piposh-ru | 17 |
+| piposh2 | 4 |
+
+`piposh-dream`'s eighteen are `sprite 15 intersects <terrain>` in the three `hatul`
+difficulties — the platformer's ground and ladder test, which was the regression risk
+this entry was dispatched with and which did not regress.
+
+**`rating` is the bulk and it is not minigames**: eight to twenty pairs per *room*
+movie, the inventory-drop idiom (`sprite the clickOn intersects <slot>`). No gate
+entry plays that end to end, so **the largest consumer of this change is the one
+nothing watches** — a `click_chain`-shaped entry on a `rating` room is the follow-up
+this leaves open.
+
+**The first survey said 82, and both wrong numbers were the tool's own.**
+`Paths.load_config` resolves the boot movie and latches the path index against the
+root as it stands at that moment, so assigning `.root` afterwards made all six roots
+resolve their linked casts against `piposh2`'s files — 82 pairs and 1.1M unresolved
+members. Two things worth carrying forward: **the guard written to catch exactly this
+(`unresolved * 2 < total`) passed the broken run** and is `== 0` now; and the same
+`load_config`/`.root` ordering defect is latent in other `tools/` surveys —
+`hilite_survey.gd` among them — none of which is in `ALL`.
+
+**One deliberate deviation, argued at the site.** The reference's three helpers
+`return false` on a null matte; here that operand is treated as opaque and falls back
+to its box, because `isWithin` reads `matte ? sample : true`. Measured reach: 0.
+
+**What none of the existing coverage could tell.** `tools/collision_arms.gd`'s last
+check is the only thing anywhere that separates a real refinement from an operator
+hardcoded to `true`: every other check, including all eleven minigame entries and
+`sprite_collision` itself, passes against an always-true operator. It hunts a frame
+where the matte arm *disagrees* with the box and asserts the answer is 0 —
+`strtgame` f56 `7 intersects 5`, `hatul3` f0 `24 intersects 28` (box-on-matte),
+`BLAEGOZ` f7 `9 intersects 10` (matte-on-matte).
+
+`cannon_hit` was the entry most at risk — channel 48, the 1x1 `dot`, is Matte on all
+222 frames — and survives because the fence sprites carry ink 0 and 36. The
+visibility rule (43) is untouched and `sprite_collision` still asserts both halves;
+so is the zero-size guard. `save_state` went red on the first whole-suite run because
+the new `_matte_masks` field needed an `ACCOUNTED` entry, which is what that harness
+exists for.
+
+Verified independently of the agent that wrote it: `collision_arms` 23 checks PASS on
+both roots, `sprite_collision` 8 checks PASS, `cannon_hit` 5 checks PASS, and
+`bash gate.sh` green at **141** entries (137 + three `collision_arms` + one
+`collision_ink`).
