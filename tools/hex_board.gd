@@ -68,6 +68,14 @@ extends SceneTree
 ##   `CastScript 103`, and an unchanged board agrees with an unchanged field for
 ##   a reason that has nothing to do with the port.
 ##
+## **The wrap is before the clicks and not after, and that is a real limit.** The
+## move ends in `go("ishspk")`, so the playhead leaves the board loop forwards and
+## does not come back inside this run. So what is asserted is that the *dealt*
+## board survives a rewind and that the *moved* board agrees at the instant the
+## move was made -- not that a member a click assigned survives one, which is the
+## ordering `puzzle_board` has and the reason that file and this one are both in
+## `ALL`.
+##
 ## ## The cells are the ones the movie draws, not 2..62
 ##
 ## Five of the sixty-one channels `valueOf` maps are not drawn at the landing, and
