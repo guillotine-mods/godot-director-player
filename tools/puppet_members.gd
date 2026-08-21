@@ -352,6 +352,162 @@ extends SceneTree
 ## What is *not* settled: whether `doc` still leaves for `docend` earlier than it should on
 ## the `sprite(3).visible` branch of `1:195`. That was the second half of the same report and
 ## it needs the reference, not another run of this file.
+##
+## ## The day-2 containers, re-derived and played scene by scene
+##
+## The 2026-08-14 minigame sweep played **one scene per container** in `piposh-dream`'s
+## day-2 games and said so, leaving `hatul2`'s other thirteen and `fritz2`'s other five
+## unmeasured. Re-derived after the dressing fallback widened the init rule and after
+## `--play` grew a position signal and a runtime watch list:
+##
+##     container    the sweep said    now                          moved
+##     hatul2.dir              14     14 claiming, 0 dressing      no
+##     fritz2.dir               6      6 claiming, 0 dressing      no
+##     show.dir                 0      0 claiming, 0 dressing      no
+##
+## **`show.dir` is the one the fallback could have moved and does not.** It is the exact
+## condition that opens the rule — 0 of its covered frame scripts mention `puppetSprite`,
+## so the report says `the dressing fallback is ON` — and it still derives nothing,
+## because nothing in the container dresses a channel either. `strings` over the file
+## finds **0** `puppetSprite` and **0** `set the member[Num] of sprite` at any site,
+## covered or not, so the zero is the container's rather than the rule's and no further
+## widening reaches it. `show.dir` has no scenes because it assigns no members, which is
+## a different fact from "it is not a game" — see the last part of this section.
+##
+## ### hatul2: thirteen of fourteen entered, and one row carries every one of them
+##
+## `--play all --ticks 4000 --avoid 12` against `--play all --no-input` at the same
+## landings. **`--avoid 12` is load-bearing and the numbers say so**: without it all six
+## water scenes click channel 12 on the gameover screen the run wanders into, leave for
+## `mainmenu.dir` after ~1,000 of the 4,000 frames, and report their `drown`/`splsh`
+## loops as *never painted* — which reads exactly like the nested-loop bug this file was
+## built beside, and is nothing but a truncated run. With the channel avoided the same
+## six paint both loops and agree with the control. That is the `hex2` ch90 case again in
+## a container nobody had pointed it at.
+##
+## Thirteen of the fourteen report `init ran : yes`. Every one of the eight stage scenes
+## rests on **channel 15, the cat, on both signals at once**: with input ch15 shows 7..9
+## distinct members and 4..45 position steps, and against the control 2..4 members and
+## **0 or 1** steps. `stage3`, `stage5`, `stage6` and `stage@f643` are the widest
+## (42, 44, 45 and 43 steps against 0 or 1). Ch1 and ch40 read the same in both runs in
+## six of the eight, which is the control doing its job; ch40 separates only in
+## `stage1psila` and `stage5`, where the death loop is dressed onto it and only a
+## keypress kills the cat. So the eight stages are one behaviour measured eight times —
+## Director's walk cycle, `set the memberNum ... + 1` and `set the locH ... + 17` on the
+## same arm — and not eight independent findings.
+##
+## The six water scenes rest on **ch20 and ch21**, at 193..300 position steps against 0
+## or 1, and their membership barely moves (3..5 against 1..3). Read with the caveat
+## that the play run's own click restarts the game from `newgame` (f179) and the control
+## never gets there, so the region differs as well as the input: the honest row is
+## "these are the frames the splash animation runs over, and only the input run reaches
+## them", not "the player animates the splash".
+##
+## The fourteenth, `stage8water@f982`, reports `init ran : NO` in **both** runs, and the
+## cause is the landing rather than the engine. The playhead is put at f980 and the first
+## frame either run samples is f1050: a script in between takes its
+## `go("gameover")` branch, because the landing skipped the movie's own `newgame` at f179
+## and `hatmen` is therefore never assigned. `AGENTS.md`'s VOID-global rule one level up —
+## the *movie's* init, not the scene's — and the reason `stage1psila` (landing f178, two
+## frames before `newgame`) is the only hatul2 scene that gets its globals honestly.
+##
+## ### fritz2: one scene of six is measured, and the other five are the same fight
+##
+## Every fritz2 scene lands at **f252** and every one of them plays f255..f300. That is
+## `_landing` above working as written and collapsing: the rule takes the latest `action*`
+## marker at or before the init, `fritz2.dir` has exactly one (`actionbegins`, f254), and
+## the inits are at f254, f273, f425, f517, f591 and f703. So `endstage1`..`endstage4` are
+## landed 173 to 451 frames short of themselves and none is entered.
+##
+## They are not entered by a longer run either, and the movie says why: the fight holds on
+## `go(marker(0))` and leaves for `endstage1` only when
+## `sprite(30).visible = 1 and sprite getAt(ppl, 1) intersects 30`. Winning is the entry.
+## `endstage1` then leaves for `endstage2` on its own copy of the same test, and so on to
+## `endstage5`, so the container is a five-link chain each of whose links is a won fight.
+## **A key driver that rotates through ten keys cannot win it**, and the reason is the one
+## the position section above records: the player's own motion is behind
+## `if getAt(mnv, 1) > 1`, which only a hit raises.
+##
+## So the only fritz2 row that is a measurement of its own scene is `actionbegins@f273`,
+## and it reproduces `606a2a15` to the channel: ch12's membership is the whole difference,
+## **34 distinct members against the control's 14** (35 when that commit measured it — the
+## throw picks with `random`), every other watched channel identical on both signals. The
+## five other rows carry that same ch12 difference because they are five recordings of the
+## same fight, which is worth knowing before quoting them as five findings.
+##
+## ### Two defects in this file, found by pointing it at containers it had not seen
+##
+## Neither is fixed here, and the reproducing commands are `--root piposh-dream --file
+## fritz2.dir --play <scene>`:
+##
+## **`init ran` tests exact frame equality and its own comment says it should not.** The
+## comment above `reached_init` reads "At or past, not equal", records that `eat.dir` had
+## already been misread this way, and the code below it still only sets `init_seen` on
+## `here == scene["init"]`. Measured on `--play "actionbegins@f254" --verbose`: the
+## landing is f252, the eight process frames awaited after it carry the playhead through
+## f253 and f254, the first sampled frame is **f255**, the frame list is a contiguous
+## f255..f280, and the row says `init ran : NO (f254 is NOT in the frames played)` about
+## an init the playhead demonstrably ran. Any scene whose init falls inside the settle
+## window reads NO, in any container this file has ever surveyed, and the fix is the
+## comment.
+##
+## **`_landing`'s `action*` rule has no distance bound.** It is right where the marker is
+## in or beside the scene's own run (`actionbegins@f273`, measured) and wrong where the
+## movie has one such marker and several scenes after it, which is fritz2 exactly. A
+## landing 451 frames early is not a landing. Note before changing it that landing
+## `LEAD_IN` before an `endstage` init instead runs that init with `ppl`, `foes`, `mnv`
+## and `advance` unassigned, which is what `stage8water@f982` above shows costs a
+## 70-frame jump to `gameover` — so the rule exists for a reason and both arms are wrong
+## for this container.
+##
+## ### hatul2's stage chain: the mechanism is in the scripts, and nothing drove it
+##
+## The sweep left open whether one pass runs `hatul2`'s stages in sequence. The container
+## answers it: `wlkrightintersects` — a walk handler, not a frame script — does
+## `stage = stage + 1`, scrolls `movwho` by 30 pixels per step, places the cat for the new
+## stage and calls `go(marker(1))`, all behind `sprite 15 intersects 5`; `wlkleftintersects`
+## is the mirror with `stage - 1` and `go(marker(-1))`. So the stages *are* one contiguous
+## chain walked by reaching the edge of the screen, not eight independently addressed
+## screens, and `stage = 9` is the win.
+##
+## **Not driven, and the budget is why.** Three obstacles, each measured rather than
+## assumed: the key driver rotates Space/Left/Right/Down/Up so the cat's net displacement
+## is ~0 and it never reaches sprite 5; `--play stage2 --ticks 8000 --verbose` walks
+## f219..f236, drowns into `stage2water` at f772 and parks in `gameover` f1050..f1093
+## without ever visiting f298; and `stage1psila`, the one scene landed before `newgame`,
+## stops after 668 frames on this file's own painted-everything break. Driving the chain
+## needs a held direction key rather than a rotation, which is a change to `_press` and
+## `press_keys` and not a longer run.
+##
+## ### show.dir is not 2,402 frames of animation, and it does run
+##
+## It was ruled not-a-minigame from its static shape, and the derivation agrees — no
+## scenes, correctly. What it is is a **click-driven quiz**: `clknum` numbers the
+## questions, four `on mouseUp` handlers spell `go("clk" & clknum & "a".."d")`, a
+## `badpoint` field scores the wrong ones, and each question's frame script holds on
+## `if not soundBusy(1)`. So the question "do its 2,402 frames run cleanly" is not a
+## question about a linear show.
+##
+## Entering it the way `mainmenu.dir` does (`go(1, "show.dir")`) and letting it run plays
+## **6 frames of 2,402**: `liveness_sweep --only show.dir` and `film_loop_nesting --file
+## show.dir --ticks 12000` independently report f0..f5, `go`/`marker` and nothing else
+## reached, and `film loops {}`. That is the movie's own opening hold, and
+## `tools/hotspots.gd --file show.dir --frame 1` says what is on it: three sprites, a
+## 640x480 background and two 102x30 buttons at (1,1) and (1,37), both clickable. Channel
+## 2 is the exit (`go(1, "mainmenu.dxr")`) and channel 3 is the start — and a sweep that
+## clicks in channel order takes the exit, which is why nothing had ever seen the show.
+##
+## Clicked, it plays. `--do "*=ch3;+2500=wait"` reaches the `clk1` marker at f59 and
+## settles on f64, with **393 loop draws and 1,143 child draws** (ch7 carries `1:25`, the
+## nested child of the `1:29` parent `docs/bugs-closed.md` records for this container),
+## 284 `soundBusy` polls, 299 `exitFrame`s run, **0 unbound builtins, no Lingo error, no
+## sprite skipped**, and four answer buttons `ch51..ch54` eligible — the first question,
+## waiting. 2,514 ticks for 63 frames is the speech gate setting the pace, so the
+## remaining ~2,338 frames are behind fourteen answer clicks and roughly fourteen times
+## that wall clock. **Answered for the frames a click reaches, and not measured beyond
+## them**; the next step is a `--do` chain of `clk<N>` to an answer channel, not a longer
+## wait. `film_loop_cast.gd` takes no `--root` and sweeps the config's default — 61
+## piposh2 movies — so it has never seen this container either.
 
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
