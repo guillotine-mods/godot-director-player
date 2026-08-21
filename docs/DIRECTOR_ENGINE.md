@@ -2031,6 +2031,23 @@ same filename under `SOUNDS/S_DAY1/`. Falling straight from the whole path to th
 bare filename is what it used to do, and 315 of this corpus's 3,142 sounds share
 a filename with another -- 0 once one folder is kept.
 
+**The tail end stops one segment short of the filename**, which is the other half
+of the same rule and was missing from it. Leading segments come off because the
+request carries a prefix the engine cannot see; the request's own *trailing*
+folder is not a prefix, it is the part the script composed on purpose, and
+Director plays nothing for a path that is not there rather than substituting the
+same filename out of a sibling folder. So `<folder>/<filename>` is the shortest
+tail tried for a request that carries a folder, a request that is already a bare
+filename keeps it -- that is the shortest legal tail, not a reduction -- and a
+resolution refused this way is a **miss**: the channel is claimed and empty,
+`soundBusy` answers false, and the request lands in the miss ledger beside a file
+the disc genuinely lacks, with a clause saying which of the two it was. Measured
+before the bound existed, over all six roots: **52** distinct requests resolved by
+crossing into a folder they did not name, 32 of them with nothing printed at all,
+every one of them a different take of a line of speech. `the searchPath` is the
+deliberate exception -- what it searches its folders *for* is a name.
+`tools/sound_folder_scope.gd`.
+
 ---
 
 ## 13. Trails, blend, video, text, shapes

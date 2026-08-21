@@ -328,6 +328,7 @@ godot --script tools/scene_probe.gd -- --root piposh --movie PIANO.dir --marker 
 godot --headless --script tools/qa_walk.gd -- --sweep  # the same detectors over every container of a corpus rather than the rooms a walk reaches: missing sounds, unresolved members, Lingo errors, a stage that stays empty — reports, or pass/fail with `--strict` (`--ticks N`, `--blank N`)
 godot --headless --script tools/bitmap_geometry.gd # every bitmap member's row stride is at least one row long, whole corpus, pass/fail
 godot --headless --script tools/audio_coverage.gd  # every file whose bytes say it is a sound resolves through AudioDirector, and resolves to itself rather than to another take, whole corpus, pass/fail
+godot --headless --script tools/sound_folder_scope.gd  # the other half of that: a request may lose the segments in front of the folder it names, never the folder — a folder that does not hold the file misses, and the refusal reaches the miss ledger rather than a sibling folder's take, pass/fail (`--root R`)
 godot --headless --script tools/transition_survey.gd -- --all  # transitions, delays and waits the score asks for
 godot --headless --script tools/transition_render.gd  # all 52 transition types draw, and draw in the direction their name says, pass/fail
 godot --headless --script tools/draw_survey.gd -- --all  # sprite records by the cast type they name, and which would colourise

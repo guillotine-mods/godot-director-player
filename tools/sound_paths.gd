@@ -127,13 +127,17 @@ func _init() -> void:
 	for separator in ["/", ":", "\\"]:
 		var spelled := bogus.replace("/", separator)
 		var got := str(audio.call("resolve_path", spelled))
-		# A leading segment that matches nothing is dropped, so the *bare
-		# filename* tail is reached and this resolves -- to the same file. What
-		# must not happen is a different one, and what must happen is that the
-		# three spellings agree.
-		h.check("`%s` resolves the same way the other spellings do" % spelled,
-			got == str(audio.call("resolve_path", bogus)),
-			"'%s'" % got)
+		# **The paragraph above said "it must miss" and the assertion under it
+		# checked that the three spellings agreed -- which they did, by all three
+		# resolving to the subject through the bare-filename tail.** So the
+		# control could not fail: a resolver ignoring folders outright passed it
+		# exactly as loudly as one honouring them, which is the shape
+		# `porting-fidelity-verification` is about, and it sat one line under a
+		# comment stating the stronger claim. The request's own trailing folder is
+		# no longer dropped (`audio_director.gd:_request_tails`), so what is
+		# asserted here is now what is written above it.
+		h.check("`%s` names no folder on the disc, so it misses" % spelled,
+			got == "", "'%s'" % got)
 	# The real discriminator: two files sharing a filename under different
 	# folders must stay two files. Skipped, loudly, where the root has no such
 	# pair -- 315 of Piposh 2's 3,142 sounds share a filename and 0 share a

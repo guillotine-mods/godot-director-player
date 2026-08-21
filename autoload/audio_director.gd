@@ -371,7 +371,9 @@ func resolve_path(file_name: String) -> String:
 ## The longest match wins in both directions, so a more specific request beats a
 ## less specific one, and the whole path beats a tail of it. A bare filename is
 ## the shortest tail, still legal and still common, and it is the only one this
-## corpus can leave ambiguous.
+## corpus can leave ambiguous -- but a request that *carries* a folder is never
+## reduced to one. `_request_tails` is where that bound is written down, and why:
+## dropping the folder is how the wrong take gets played from the other side.
 func _resolve_normalised(raw: String) -> String:
 	# The exact name first, and only its leading segments dropped -- never its
 	# extension. A request that names a file that is on the disc gets that file;
@@ -379,26 +381,20 @@ func _resolve_normalised(raw: String) -> String:
 	# `_exact_index` for the two Piposh 1 pairs this decides between.
 	var named := _normalise_named(raw)
 	if named != "":
-		var named_parts := named.split("/", false)
-		for start in range(named_parts.size()):
-			var tail := "/".join(Array(named_parts).slice(start))
+		for tail in _request_tails(named):
 			if _exact_index.has(tail):
 				return str(_exact_index[tail])
 	var key := _normalise(raw)
 	if key == "":
 		return ""
-	if _path_index.has(key):
-		return str(_path_index[key])
+	var tails := _request_tails(key)
 	# Drop leading segments until something matches: the request may be absolute
 	# where the index is relative to the game root.
-	var parts := key.split("/", false)
-	for start in range(1, parts.size()):
-		var tail := "/".join(Array(parts).slice(start))
+	for tail in tails:
 		if _path_index.has(tail):
 			return str(_path_index[tail])
 	# Then the other direction: the request may be a tail of a path on disc.
-	for start in range(parts.size()):
-		var tail := "/".join(Array(parts).slice(start))
+	for tail in tails:
 		if not _tail_index.has(tail):
 			continue
 		if _ambiguous.has(tail):
@@ -408,6 +404,83 @@ func _resolve_normalised(raw: String) -> String:
 			)
 		return str(_tail_index[tail])
 	return _search_path_hit(raw)
+
+
+## The tails of a request the lookup may try, longest first.
+##
+## **Leading segments may go. The request's own trailing folder may not.** The two
+## ends are asymmetric and this is the one place that says so. In front of the
+## folder sits a prefix this engine cannot see -- a CD drive letter, `the
+## moviePath` of the machine the movie was authored on, a `soundspathstart`
+## written by a movie this entry never passed through -- and dropping it is the
+## only reason an absolute 1997 path is answerable at all. The folder itself is
+## the part the script composed on purpose, and Director plays **nothing** for a
+## path that is not there. It never answers `dream3\149` out of `dream1`.
+##
+## So reducing a request to its bare filename is not a last resort, it is the
+## wrong answer, and it is the same wrong-take-of-a-line failure `_tail_index` was
+## built to stop -- reached from the other side, and worse than a silence, because
+## a sound plays and nothing looks broken. Measured with `qa_walk --sweep` over
+## all six roots before this bound existed: **52 distinct requests** resolved that
+## way, and every one of them crossed into a folder the request did not name.
+## `sounds\brjday3\brj1.aif` was answered out of `SOUNDS/BRJDAY1`, one of the
+## eight different takes of `brj1` that disc carries, and `sounds\days\circ1.aif`
+## out of `SOUNDS/NIGHTS`. Only 20 of the 52 printed anything at all -- the
+## `push_warning` below, which nothing in this repository reads -- and the other 32
+## were silent, because the filename they crossed to happened to be unique. A
+## request that has no folder is untouched: a bare filename is the shortest
+## **legal** tail, not a reduction, and it is what every entry that skips a drive
+## probe composes.
+##
+## **52 is a floor.** A sweep opens each container cold, so a request only becomes
+## folder-qualified there if the movie sets its own path global; one whose global
+## was written by a movie the sweep never came through stays a bare filename and
+## cannot be counted. `fx\1234.aif` -> `CFILES/SUEME/1234.AIF` is exactly that
+## case and appears in none of the six sweeps: `effectspath` is set on the way
+## through `STRTGAME.dir`, and only an entry that passes through it sees the
+## folder at all (`docs/bugs-closed.md` 122).
+##
+## All 52 were answered by `_tail_index`. The two loops above it hold whole
+## root-relative paths, so a bare-filename hit there needs a sound sitting
+## directly under the game root and no root in this corpus has one -- the bound
+## covers them because the rule is about requests and not about which index
+## answers, not because anything measured them.
+##
+## The game root comes off first, because it is the one prefix the engine *can*
+## see: `the moviePath & "click.aif"` is a whole-path request for a sound sitting
+## beside the movie, and measuring the bound against the absolute form would
+## refuse it. That arm is implemented from the rule and **unverified against
+## data** -- no root in this corpus keeps a sound directly under it, 0 of 14,638
+## across the six -- rather than left out because this corpus cannot exercise it.
+func _request_tails(key: String) -> Array:
+	var parts := _strip_root(key).split("/", false)
+	var out: Array = []
+	# The last tail kept is `<folder>/<filename>`, or the filename on its own
+	# where that is the whole request.
+	for start in range(maxi(1, parts.size() - 1)):
+		out.append("/".join(Array(parts).slice(start)))
+	return out
+
+
+## The clause `_fail` adds when a request missed because of the rule above rather
+## than because the disc is short of a file.
+##
+## Two different facts, and `miss_report`'s standing sentence only states one of
+## them. A request whose path is absent is the disc's gap under `bugs.md` 88 --
+## 46 and 68 are both that -- and a reader who has seen the line knows to go
+## looking at the tree. A request whose named folder does not hold the file while
+## another folder does is this engine declining to substitute a sibling, and it
+## reads as the first one unless the line says otherwise. It is also the more
+## actionable of the two, because it names a file that *is* on the disc.
+##
+## In the ledger and not in a `push_warning`, for the reason `_misses` gives:
+## nothing here reads a warning, so a distinction that lives in one is nowhere.
+func _folder_note(raw: String) -> String:
+	var key := _strip_root(_normalise(raw))
+	var file := key.get_file()
+	if key == file or not _tail_index.has(file):
+		return ""
+	return " (the folder it names holds no such file; '%s' is on the disc elsewhere)" % file
 
 
 ## `the searchPath` — where Director looks once the indexed tree has said no.
@@ -422,6 +495,16 @@ func _resolve_normalised(raw: String) -> String:
 ## The request's own leading segments are dropped one at a time here too, for the
 ## same reason `_resolve_normalised` drops them: a request carries a prefix from
 ## the authoring machine and the search path supplies the real one.
+##
+## **And `_request_tails`'s bound deliberately does not apply here**, which is
+## why this loop still reduces to the bare filename while the one above refuses
+## to. The two are answering different questions. Above, the index knows the whole
+## tree and a folder in the request is a claim about where in it the file is, so
+## honouring the claim is the whole point. `the searchPath` is a list of folders
+## Director *searches*, and what it searches them for is a name -- a folder in the
+## request is the authoring machine's, not one of the entries', so keeping it
+## would mean never finding anything through a search path at all. Do not make
+## these two consistent; they are consistent, at the level of what each is for.
 func _search_path_hit(raw: String) -> String:
 	if search_path.is_empty():
 		return ""
@@ -666,7 +749,7 @@ func play_file(channel: int, file_name: String) -> void:
 	# the folder the script had gone to the trouble of building.
 	var path := resolve_path(raw)
 	if path.is_empty():
-		_fail(ch, raw, "Audio miss: %s" % raw)
+		_fail(ch, raw, "Audio miss: %s%s" % [raw, _folder_note(raw)])
 		return
 
 	var stream := _load_stream(path)
@@ -739,7 +822,8 @@ func play_linked_member(channel: int, id: String, file_name: String) -> bool:
 		# before it opens the media, so a member that cannot be found leaves the
 		# channel *empty* rather than still playing whatever was there. A `soundBusy`
 		# poll after a score sound that missed must not wait out the previous sound.
-		_fail(ch, id, "linked sound member %s: no file named %s" % [id, file_name])
+		_fail(ch, id, "linked sound member %s: no file named %s%s" % [
+			id, file_name, _folder_note(raw)])
 		return false
 	var stream := _load_stream(path)
 	if stream == null:
