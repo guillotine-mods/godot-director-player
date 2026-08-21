@@ -132,6 +132,32 @@ extends SceneTree
 ##   `-`  no placement in this container's score (`--linked` only)
 ##
 ## Title-agnostic: it names no game, no movie, no channel and no member.
+##
+## ## `-` is not absence, and two findings died on reading it as absence
+##
+## A member holding `on <handler>` and reported `- linked here, and this score
+## places it nowhere` is **reachable**. That line means the member sits on no frame
+## and no channel, which is exactly what a handler *called by name* looks like: the
+## score never places it because a caller resolves it at run time. Read as absence it
+## manufactures a missing-definition finding.
+##
+## Both of these came out of a day-3 sweep and both are false:
+##
+## - *"`hatul2.dir` calls `wlkleftintersects()` at eight sites and nothing defines
+##   it."* It defines it, in its own internal cast: `1:10`, named `wlk intersects`,
+##   reported `-` because no score places it. Confirmed at run time as well as
+##   statically -- a `--play` run of the stage-4 mover, the arm that calls it, leaves
+##   `builtins unbound` **empty** after 46 `exitFrame` dispatches, and an undefined
+##   call in this port lands there.
+## - *"no init in `hatul3.dir` ever sets `savespot` to `stage4`."* `1:122` sets it and
+##   is placed, at f402 under the marker `stage4`. What misleads here is the mirror
+##   case: `hatul1.dir` `1:100` also holds `savespot = "stage1"` and **is** genuinely
+##   unplaced, superseded by `1:196` -- so a container can hold both shapes at once,
+##   and only the `+` lines say which one ran.
+##
+## The check that settles it either way is the run, not the report: an undefined
+## handler is visible in a played run's `builtins unbound` tally, empty when every
+## call resolved.
 
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
