@@ -418,7 +418,8 @@ extends SceneTree
 ##
 ## ### fritz2: one scene of six is measured, and the other five are the same fight
 ##
-## Every fritz2 scene lands at **f252** and every one of them plays f255..f300. That is
+## Every fritz2 scene lands at **f252** and every one of them plays f252..f300 (f255..f300
+## before the settle frames were recorded; the span is the same walk). That is
 ## `_landing` above working as written and collapsing: the rule takes the latest `action*`
 ## marker at or before the init, `fritz2.dir` has exactly one (`actionbegins`, f254), and
 ## the inits are at f254, f273, f425, f517, f591 and f703. So `endstage1`..`endstage4` are
@@ -440,21 +441,42 @@ extends SceneTree
 ## five other rows carry that same ch12 difference because they are five recordings of the
 ## same fight, which is worth knowing before quoting them as five findings.
 ##
-## ### Two defects in this file, found by pointing it at containers it had not seen
+## ### `init ran` said NO about inits the playhead had run, and now does not
 ##
-## Neither is fixed here, and the reproducing commands are `--root piposh-dream --file
-## fritz2.dir --play <scene>`:
+## **The settle frames were not in the record.** `init ran` was a flag the sampler set on
+## `here == scene["init"]`, and the sampler's first pass is eight process frames after the
+## landing -- while the landing is `LEAD_IN` frames *before* the init on purpose, so the
+## playhead crosses the init inside those eight and the flag was asking about a window
+## that starts after the frame it is about. Measured with
+## `--root piposh-dream --file fritz2.dir --play "actionbegins@f254" --ticks 600
+## --verbose`: landing f252, first sampled frame f256, 45 distinct frames f256..f300, and
+## `init ran : NO (f254 is NOT in the frames played)` on a run whose own tally line
+## reports the interpreter reaching `puppetsprite` nine times. Every scene whose init
+## falls inside the settle window read NO, in every container this file has surveyed.
 ##
-## **`init ran` tests exact frame equality and its own comment says it should not.** The
-## comment above `reached_init` reads "At or past, not equal", records that `eat.dir` had
-## already been misread this way, and the code below it still only sets `init_seen` on
-## `here == scene["init"]`. Measured on `--play "actionbegins@f254" --verbose`: the
-## landing is f252, the eight process frames awaited after it carry the playhead through
-## f253 and f254, the first sampled frame is **f255**, the frame list is a contiguous
-## f255..f280, and the row says `init ran : NO (f254 is NOT in the frames played)` about
-## an init the playhead demonstrably ran. Any scene whose init falls inside the settle
-## window reads NO, in any container this file has ever surveyed, and the fix is the
-## comment.
+## Fixed by recording those frames (`_note_frame`), so the set the line prints is the set
+## it tests. The same run now reports 48 distinct frames **f252..f300** and `init ran :
+## yes`, and no channel row moves.
+##
+## **The control is a scene that comes close to its init and never stands on it**, because
+## manufactured coverage would be a worse answer than the one fixed. `hatul2.dir`'s
+## `stage8water@f982` is it: landing f980, the record now holds **f980** and then nothing
+## until f1050 -- a script at f980 takes its `go("gameover")` branch -- and the row still
+## reads `init ran : NO (f982 is NOT in the frames played)`. A near miss stays a miss. So
+## do the four `endstage` rows below, whose inits are 173 to 451 frames past anything the
+## run visits: `--play all` on fritz2 reports `yes` for exactly the two scenes whose init
+## the playhead crossed and `NO` for the other four.
+##
+## A gap in the printed frame list is now the *movie* jumping rather than this file
+## looking away, and the fixed run is its own example: f253 is absent because f252's
+## frame script `3:2` is `if not soundBusy(1) then go(marker(1))` and `marker(1)` there is
+## `actionbegins` at f254, so f253 ran no `exitFrame`. `_note_frame` records why that is
+## a property of `frame_loop.gd` rather than a hope.
+##
+## ### The defect left in this file, found by pointing it at a container it had not seen
+##
+## Not fixed here. The reproducing command is `--root piposh-dream --file fritz2.dir
+## --play <scene>`:
 ##
 ## **`_landing`'s `action*` rule has no distance bound.** It is right where the marker is
 ## in or beside the scene's own run (`actionbegins@f273`, measured) and wrong where the
@@ -861,27 +883,49 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		preview.queue_free()
 		return
 
+	# The frame record and the paint baseline are opened *before* the entry, because the
+	# settle frames below are frames of the run and the record has to be able to hold
+	# them. That is the whole of the `init ran` fix; see `_note_frame`.
+	var frames: Dictionary = {}
+	# What the painter had already parsed when the init first ran. **The cache is
+	# cumulative and the score places film loops of its own**, so "in `_loops`" is not
+	# by itself evidence that a *scene* drew its element: `doc` and `poz` both have
+	# 187..189 painted at their span's first frame, before their init has run, because
+	# the score puts them on channels there. Without this baseline the run stopped after
+	# one frame with all three loops "painted" and the init never reached -- a pass that
+	# proved nothing, and exactly the shape `film_loop_nesting.gd`'s population guard
+	# exists to refuse.
+	var baseline: Dictionary = {}
+
 	var entry := str(scene["entry"])
+	var clicking := entry.begins_with("click")
 	var how := ""
-	if entry.begins_with("click"):
+	var at := 0
+	var centre := Vector2.ZERO
+	if clicking:
 		# Inside the idle span, a few frames short of the frame that jumps back, so the
 		# score is genuinely looping when the press lands.
 		var hold := int(entry.split("f")[1].split(" ")[0])
-		var at: int = maxi(0, hold - 5)
-		preview.set("_index", at)
-		for i in 8:
-			await process_frame
-		var centre := _centre_of(entry)
-		preview.call("route_press", centre)
-		preview.call("route_release", centre)
+		at = maxi(0, hold - 5)
+		centre = _centre_of(entry)
 		how = "clicked (%d, %d) from f%d, inside the idle span" % [
 			int(centre.x), int(centre.y), at]
 	else:
-		var at2: int = int(scene["land"])
-		preview.set("_index", at2)
-		for i in 8:
-			await process_frame
-		how = "playhead put at f%d, %s" % [at2, str(scene["land_by"])]
+		at = int(scene["land"])
+		how = "playhead put at f%d, %s" % [at, str(scene["land_by"])]
+	preview.set("_index", at)
+	# **These eight frames are recorded, and that is the `init ran` fix.** The landing is
+	# `LEAD_IN` before the init on purpose, so the playhead crosses the init *here*,
+	# before the sampler's first pass -- and a record that opened at the first pass could
+	# not hold the one frame the whole question is about. The two entries share one settle
+	# loop rather than a copy each for the same reason: a frame recorded on one path and
+	# not the other would make the answer depend on how the scene was entered.
+	for i in 8:
+		await process_frame
+		_note_frame(preview, frames, baseline, int(scene["init"]))
+	if clicking:
+		preview.call("route_press", centre)
+		preview.call("route_release", centre)
 	print("  entered  : %s" % how)
 
 	# The elements this scene is expected to put on a channel, and the channels the
@@ -905,20 +949,9 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	# Sampler passes, i.e. score frames the sampler ran on.
 	var samples := 0
 	var reached: Dictionary = {} # "lib:id" -> the first texture key it decoded under
-	var frames: Dictionary = {}
 	var last := -1
 	var since := 0
-	# What the painter had already parsed when the init first ran. **The cache is
-	# cumulative and the score places film loops of its own**, so "in `_loops`" is not
-	# by itself evidence that a *scene* drew its element: `doc` and `poz` both have
-	# 187..189 painted at their span's first frame, before their init has run, because
-	# the score puts them on channels there. Without this baseline the run stopped after
-	# one frame with all three loops "painted" and the init never reached -- a pass that
-	# proved nothing, and exactly the shape `film_loop_nesting.gd`'s population guard
-	# exists to refuse.
-	var baseline: Dictionary = {}
 	var on_channel: Dictionary = {}
-	var init_seen := false
 	var spent := 0
 	var left_for := ""
 	var here_movie := str(preview.call("movie_name"))
@@ -941,11 +974,7 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 			left_for = str(preview.call("movie_name"))
 			break
 		var here := int(preview.call("current_frame"))
-		frames[here] = true
-		if here == int(scene["init"]) and not init_seen:
-			init_seen = true
-			for key in preview.get("_loops") as Dictionary:
-				baseline[str(key)] = true
+		_note_frame(preview, frames, baseline, int(scene["init"]))
 		if here != last:
 			last = here
 			since += 1
@@ -1066,7 +1095,7 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		# same argument `gate.sh`'s header makes about `play_suspends`.
 		# The init having run is half the condition. Painted-before-the-init is the
 		# score's doing and says nothing about the scene.
-		if init_seen and _all_painted(preview, want, on_channel):
+		if frames.has(int(scene["init"])) and _all_painted(preview, want, on_channel):
 			break
 
 	var visited: Array = frames.keys()
@@ -1082,10 +1111,20 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		str(visited[-1]) if visited.size() > 0 else "?", samples])
 	if _verbose:
 		print("  frames   : %s" % str(visited))
-	# At or past, not equal. The eight process frames awaited after the landing can carry
-	# the playhead past the init before the sampling starts, and `eat.dir`, whose init is
-	# its own frame 0, then read `init ran: NO` on a run where it demonstrably had.
-	var reached_init := init_seen
+	# Occupancy, and the same set the line below prints. The eight process frames awaited
+	# after the landing carry the playhead through the init -- that is what `LEAD_IN` is
+	# for -- so a record that opened at the sampler's first pass could not contain it, and
+	# `eat.dir`, whose init is its own frame 0, read `init ran: NO` on a run where it
+	# demonstrably had. `_note_frame` records the settle frames too, so this reads a set
+	# that holds every frame the playhead stood on since the landing.
+	#
+	# **Occupancy and not `here >= init`**, which is what "at or past" would have been and
+	# would have been worse: a scene landed elsewhere in the movie is past its own init's
+	# frame number from the first sample, and the answer would have been `yes` for every
+	# scene whose init is behind the landing. A frame nobody stood on ran no `exitFrame`,
+	# and a jump over the init is a jump over its script, so the frame the playhead
+	# occupied is the only thing that answers this.
+	var reached_init := frames.has(int(scene["init"]))
 	if left_for != "":
 		print("  LEFT     : a click sent the movie to %s; the run stops there" % left_for)
 	print("  init ran : %s (f%d %s in the frames played)" % [
@@ -1194,6 +1233,45 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 		print("  tally    : %-34s %d" % [str(key), int(stats[key])])
 	preview.queue_free()
 	await process_frame
+
+
+## Note that the playhead is standing on this frame, and snapshot the painter's parse
+## cache the first time that frame is the scene's init.
+##
+## Called from the settle loop *and* from the sampler, which is the only reason it is a
+## function. `init ran` used to be a flag the sampler set on `here == init`, and the
+## sampler's first pass is eight process frames after the landing: the landing is
+## `LEAD_IN` before the init, so the playhead crosses the init inside those eight and
+## the flag was answering about a window that begins after the frame it asks about.
+## Measured on `piposh-dream/fritz2.dir` `actionbegins@f254` -- landing f252, first
+## sampled frame f256, `init ran : NO` about an init whose `puppetSprite` the same run
+## reports the interpreter reaching.
+##
+## The baseline is captured here rather than at the call site so it cannot drift from the
+## frame it is a baseline *for*: it is what `_loops` held when the playhead first stood
+## on the init, and taking it a pass later would count the init's own paints as the
+## score's.
+##
+## **The record is complete rather than a sample, and that is the engine's property and
+## not this file's luck.** `frame_loop.gd:tick` takes at most one score step per engine
+## tick and keeps no queue behind it (its own "One score step per tick at most", measured
+## against `Score::update`), so `_index` changes at most once per process frame and a
+## caller that looks once per process frame sees every value it takes.
+##
+## So a gap in the printed frame list is the *movie* jumping and not this missing a look,
+## and the first run after the fix is the worked example: `actionbegins@f254` records
+## f252, f254, f255.. and no f253, because f252's own frame script (`3:2`) is
+## `if not soundBusy(1) then go(marker(1))` and `marker(1)` from there is `actionbegins`
+## at f254. f253 ran no `exitFrame` and belongs out of the set.
+func _note_frame(preview: Node, frames: Dictionary, baseline: Dictionary,
+		init: int) -> void:
+	var here := int(preview.call("current_frame"))
+	var first := here == init and not frames.has(init)
+	frames[here] = true
+	if not first:
+		return
+	for key in preview.get("_loops") as Dictionary:
+		baseline[str(key)] = true
 
 
 ## Which channels this movie has taken off the score, right now.
