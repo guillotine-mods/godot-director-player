@@ -17,8 +17,11 @@ extends SceneTree
 ##   --ticks N    process frames to give one played scene (default 4000)
 ##   --no-input   press nothing: the control run every input claim needs
 ##   --avoid L    channels `--play` must not click, comma-separated, on top of the ones
-##                derived. For a back-to-the-menu button kept as a *cast* script, which
-##                the derivation cannot see — `hex2.dir`'s ch90 is the measured case.
+##                derived. The derivation reads sprite behaviours *and* the cast scripts of
+##                the members the score displays, so a back-to-the-menu button kept as a
+##                cast script no longer needs the flag — `hex2.dir`'s ch90 and `hex3.dir`'s
+##                ch86 were the measured cases and both are derived now. What it is still
+##                for: a button a script puppets on at run time, which no static scan sees.
 ##   --source     print each script's handler text under its findings
 ##   --verbose    print every element of every game, not the first 12
 ##
@@ -407,8 +410,13 @@ extends SceneTree
 ## `mainmenu.dir` after ~1,000 of the 4,000 frames, and report their `drown`/`splsh`
 ## loops as *never painted* — which reads exactly like the nested-loop bug this file was
 ## built beside, and is nothing but a truncated run. With the channel avoided the same
-## six paint both loops and agree with the control. That is the `hex2` ch90 case again in
-## a container nobody had pointed it at.
+## six paint both loops and agree with the control. **It is not the `hex2` ch90 case, which
+## this line used to call it, and the difference is the whole of what the derivation cannot
+## reach:** ch90 is a channel of the scene's own run and is derived now, while ch12 belongs
+## to a gameover screen the run *wanders into* — `hex3.dir`'s f392 is the same shape, a frame
+## whose own `exitFrame` is `go(1, the moviePath & "mainmenu.dxr")` and which sits outside
+## the covered run `_hotspots` scans. A per-scene channel set cannot answer for frames the
+## scene does not own, so `--avoid 12` stays load-bearing.
 ##
 ## Thirteen of the fourteen report `init ran : yes`. Every one of the eight stage scenes
 ## rests on **channel 15, the cat, on both signals at once**: with input ch15 shows 7..9
@@ -676,6 +684,12 @@ const HOLDS := "(?i)go\\s*(?:to\\s*)?\\(?\\s*(?:marker\\s*\\(\\s*0\\s*\\)|the\\s
 const SOUND_GATED := "(?i)soundbusy"
 ## A behaviour that answers the mouse and moves the playhead is the way out of one.
 const MOUSE_GO := "(?i)^\\s*on\\s+mouse(up|down)\\b"
+## A script that names another container: `go(1, the moviePath & "mainmenu.dxr")`. Named
+## rather than inline because `_hotspots` now asks two populations the same question and one
+## literal is what keeps it one question. **Not the same as "leaves this movie"** — a script
+## can name a container in order to `open window` it — see `_hotspots` for how much of the
+## corpus that is.
+const NAMES_CONTAINER := "(?i)\\.(dxr|dir)\""
 ## `set the keyDownScript to "westdown"`, naming the handler a scene reads its controls
 ## through. The EMPTY form is deliberately not matched: it is how a scene *ends*.
 const KEY_INSTALL := "(?i)set\\s+the\\s+key(?:down|up)script\\s+to\\s+\"([^\"]+)\""
@@ -687,6 +701,11 @@ var _show_source := false
 ## Channels `--play` must not click, on top of the ones `_hotspots` derives. See
 ## `_live_hotspots` for why a derived set is not enough.
 var _avoid := {}
+## The two regexes `_names_container_on_click` asks, compiled once. Built lazily rather
+## than as constants because `RegEx.create_from_string` is a call and this file's constants
+## are strings; the test runs once per sprite record per frame of every run.
+var _mouse_re: RegEx = null
+var _container_re: RegEx = null
 
 
 func _init() -> void:
@@ -1029,11 +1048,12 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	for tick in ticks:
 		await process_frame
 		spent = tick + 1
-		# **Stop if a click took the movie somewhere else.** The scene's own back-to-the-menu
-		# button is excluded by name where it is a sprite behaviour, but `hex1.dir` keeps one
-		# as a *cast* script and the click descent answers for it exactly as it does for a
-		# board piece. Carrying on would sample another movie's channels under this scene's
-		# name, and the frame numbers would silently be someone else's.
+		# **Stop if a click took the movie somewhere else.** `_hotspots` excludes the scene's
+		# own back-to-the-menu button whether it is a sprite behaviour or the cast script of
+		# a member the score displays, and this guard is what covers the rest: a member a
+		# script puppets on, and any other way out a static scan cannot spell. Carrying on
+		# would sample another movie's channels under this scene's name, and the frame
+		# numbers would silently be someone else's.
 		if str(preview.call("movie_name")) != here_movie:
 			left_for = str(preview.call("movie_name"))
 			break
@@ -1213,7 +1233,15 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	# occupied is the only thing that answers this.
 	var reached_init := frames.has(int(scene["init"]))
 	if left_for != "":
-		print("  LEFT     : a click sent the movie to %s; the run stops there" % left_for)
+		# **Names the frame it left from and not a cause**, which this line used to assert:
+		# it read "a click sent the movie to X" and that is now often false. With the
+		# back-to-the-menu button derived into the avoid list, both Hexxagon boards play on
+		# to their own outcome frame — `hex3.dir` f392, `hex2.dir` f344 — whose *frame*
+		# script is `on exitFrame ... go(1, the moviePath & "mainmenu.dxr")`. The score
+		# left, no click did, and a report that says otherwise sends the next reader
+		# looking for a hotspot to avoid.
+		print("  LEFT     : the movie became %s from %s; the run stops there"
+			% [left_for, "f%d" % last if last >= 0 else "a frame the sampler never saw"])
 	print("  init ran : %s (f%d %s in the frames played)" % [
 		"yes" if reached_init else "NO", int(scene["init"]),
 		"is" if reached_init else "is NOT"])
@@ -1318,6 +1346,13 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	stat_keys.sort()
 	for key in stat_keys:
 		print("  tally    : %-34s %d" % [str(key), int(stats[key])])
+	# **Which handlers actually ran, from the engine's own tally.** The channel table above
+	# says what was drawn and the `pressed` line says what was pressed; neither says a script
+	# answered. `debug_report.gd` prints this same dictionary behind the report key, and
+	# `event_chain.gd` tallies the tier into the name — so `mouseUp@cast` is a cast script
+	# answering a click, which is how this title's boards work and the one thing a change to
+	# the avoid list can silently take away.
+	print("  lingo ran: %s" % JSON.stringify(preview.get("_ran")))
 	preview.queue_free()
 	await process_frame
 
@@ -1513,13 +1548,16 @@ func _centre_of(entry: String) -> Vector2:
 ## frame, minus the ones that leave the movie. Asked of `interaction.gd:script_for_click`
 ## rather than derived, so what is clicked is what a click reaches.
 ##
-## `_hotspots` derives the leaves-the-movie set from **sprite behaviours** only, and it says
-## so; a back-to-the-menu button kept as a *cast* script is invisible to it and the click
-## descent answers for one exactly as it does for a game piece. Measured on
-## `piposh-dream/hex2.dir`: ch90's `CastScript 306` ends the run on `mainmenu.dir` after seven
-## clicks, so the scene's own outcome frames can never be reached and criterion 4 fails for a
-## reason that is this file's rather than the engine's. `--avoid` is the manual half, for the
-## channels a scan cannot find.
+## `_hotspots` derives the leaves-the-movie set from sprite behaviours **and** from the cast
+## scripts of the members the score displays, which is what the click descent itself
+## resolves. It used to read behaviours only, and a back-to-the-menu button kept as a *cast*
+## script was invisible to it: `hex2.dir`'s ch90 (`CastScript 306`) ended the run on
+## `mainmenu.dxr` after seven clicks and `hex3.dir`'s ch86 (`CastScript 289`) after 14
+## frames, so neither scene's outcome frames could ever be reached — a failure that was this
+## file's and not the engine's. Both are derived now.
+##
+## `--avoid` stays the manual half, for what a static scan still cannot find: a member a
+## script puppets onto a channel at run time never appears in a score record.
 func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 	var out: Array = []
 	var sprites: Array = preview.call("frame_sprites")
@@ -1608,6 +1646,19 @@ func _report(scene: Dictionary, table, score, labels, cover: Dictionary) -> bool
 					else "handlers also dress %s, unclaimed" % str(extra)])
 	print("  markers  : %s" % str(_markers_in(labels, int(run[0]), int(run[-1]))))
 	print("  exits to : %s" % str(scene["exits"]))
+	# Printed rather than only acted on, because it is the one derivation `--play` obeys
+	# silently: a channel in this list is a channel no click ever reaches, and a set nobody
+	# can read is a set nobody can check. Each entry says which script answered for it, so
+	# an over-avoided channel is a line to argue with rather than a number to trust.
+	var avoid: Array = scene["avoid_channels"]
+	if avoid.is_empty():
+		print("  avoid    : none — no script on this run's channels names another container")
+	else:
+		var reasons: Array = []
+		for channel in avoid:
+			reasons.append("ch%d via %s" % [int(channel),
+				str((scene["avoid_why"] as Dictionary).get(int(channel), "?"))])
+		print("  avoid    : %s — %s" % [str(avoid), ", ".join(reasons)])
 
 	var els: Dictionary = scene["elements"]
 	var keys: Array = els.keys()
@@ -1754,13 +1805,18 @@ func _scenes(table, score, labels, cover: Dictionary, runs: Array,
 		if int(found["frame"]) >= 0:
 			inits[int(found["frame"])] = true
 	var list: Array = []
+	# One cache of "does this member's script leave the movie" for the whole container,
+	# because every run asks it about the same members. Owned here rather than by the file
+	# so that it cannot outlive the cast table its answers were read from -- a member
+	# number means nothing without the cast it was resolved in.
+	var leaves := {}
 	for index in runs.size():
 		var found: Dictionary = found_per_run[index]
 		if int(found["frame"]) < 0:
 			continue
 		by_rule[str(found["rule"])] = int(by_rule[str(found["rule"])]) + 1
 		list.append(_scene(table, score, labels, cover, runs[index], int(found["frame"]),
-			str(found["script"]), found["claimed"], str(found["rule"]), inits))
+			str(found["script"]), found["claimed"], str(found["rule"]), inits, leaves))
 	_disambiguate(list)
 	return {"list": list, "claim_sites": claim_sites, "by_rule": by_rule}
 
@@ -1838,7 +1894,8 @@ static func _rule_word(scene: Dictionary) -> String:
 
 ## One scene, filled in: its scripts, the members they assign, and its entry.
 func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
-		init_script: String, claimed: Array, rule: String, inits: Dictionary) -> Dictionary:
+		init_script: String, claimed: Array, rule: String, inits: Dictionary,
+		leaves: Dictionary) -> Dictionary:
 	var set_re := RegEx.create_from_string(SET_MEMBER)
 	var dot_re := RegEx.create_from_string(DOT_MEMBER)
 	var member_re := RegEx.create_from_string(MEMBER_OF)
@@ -1939,7 +1996,7 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 					chans["values"], how)
 
 	var exits := _exits(sources, labels, int(run[0]), int(run[-1]))
-	var hotspots := _hotspots(table, score, run)
+	var hotspots := _hotspots(table, score, run, leaves)
 	var landing := _landing(labels, init, inits)
 	var controls := _controls(table, _source(table, int(init_script.split(":")[0]),
 		int(init_script.split(":")[1])))
@@ -1947,7 +2004,7 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 		"name": _name_of(labels, init, exits),
 		"land": int(landing["frame"]), "land_by": str(landing["why"]),
 		"keys": controls["keys"], "key_names": controls["names"],
-		"avoid_channels": hotspots["avoid"],
+		"avoid_channels": hotspots["avoid"], "avoid_why": hotspots["why"],
 		"run": run, "init": init, "init_script": init_script, "rule": rule,
 		"claimed": claimed, "scripts": order, "exits": exits,
 		"elements": elements, "assigned_channels": assigned,
@@ -1956,34 +2013,123 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 	}
 
 
-## Which channels of this scene a click must **not** go to: the ones whose behaviour names
-## another container. Those are the way back to the menu, and clicking one ends the run on a
+## Which channels of this scene a click must **not** go to: the ones whose script names
+## another container. Most are the way back to the menu, and clicking one ends the run on a
 ## screen that reads exactly like a freeze (`director-qa-playthrough`'s first named false
 ## finding).
 ##
-## What a click *may* go to is not derived here, because the engine answers it better than a
-## scan can. `interaction.gd:script_for_click` is the click descent itself, and it resolves
-## the sprite's behaviour **or the live member's cast script** — which is where this title
-## keeps its board games: `hex1.dir`'s pieces carry no behaviour at all and member 3's own
-## cast script is the handler. A scan of `member["source"]` finds nothing for those, because
-## a bitmap's cast script is a separate script member.
-func _hotspots(table, score, run: Array) -> Dictionary:
-	var mouse := RegEx.create_from_string(MOUSE_GO)
-	var leaves := RegEx.create_from_string("(?i)\\.(dxr|dir)\"")
+## **Not all of them, and the exception is measured rather than suspected.** The test is
+## "names another container", which is not the same question as "leaves this movie", and
+## three scripts in the corpus name one in order to `open window` it — a Movie-In-A-Window,
+## which `scenes/preview/windows.gd` parents to the stage as a child preview and which
+## therefore never changes `movie_name`. They are `piposh` 7:14 (`open window
+## "inventor.dxr"`, ch55) and 7:15 (`open window "mainmenu.dxr"`, ch57), and `rating`'s
+## member 35 in libs 2, 4, 6 and 7 (`open window "inventor.dir"`, ch45). Over all six roots
+## those three account for **1,317 of the 1,455 (scene, channel) pairs** this derivation
+## avoids — 430 of `piposh`'s 474 and again in `piposh-en` and `piposh-ru`, 27 of `rating`'s
+## 28 — so the great majority of what is avoided is avoided without leaving anything.
+##
+## **The tightening that would fix it was deliberately not made**: requiring the line that
+## names the container to carry a `go` or `play` would separate the two cleanly, and it would
+## apply to the behaviour tier as well, where it can only *shrink* a set that has been right
+## about truncated runs before (`mainmenu.dir`'s ch4..ch10, and the `--avoid 12` story in
+## this file's header). Over-avoidance costs a channel unclicked; under-avoidance costs a run
+## that stops early and reports its loops as never painted. The safe error is the one this
+## keeps, and for a *click driver* opening the inventory over the board and then clicking
+## into it is not a run worth sampling either. What is wrong is the label, not the behaviour,
+## so the label says "names another container" and this paragraph says the rest.
+##
+## **Two populations, one test.** The click descent
+## (`interaction.gd:script_for_click`) resolves a sprite's behaviour **or the live member's
+## own cast script**, so a scan of behaviours alone answers for half the hotspots on the
+## frame. This scanned only behaviours, and the half it missed is exactly where this title
+## keeps its back-to-the-menu buttons: `hex3.dir`'s ch86 displays member 289, a bitmap whose
+## whole cast script is `on mouseUp / go(1, the moviePath & "mainmenu.dxr") / end`, and
+## `hex2.dir`'s ch90 displays member 306, the same script byte for byte. Neither channel
+## carries a behaviour at all, so neither was ever a candidate and `--play` clicked both.
+##
+## So the members the score displays over the run are scanned too, and asked the same
+## question — a mouse handler, and a container name in the source. **The test is what the
+## script does and never that a cast script exists**, because a cast script is also how
+## these boards work: the same movies answer a click on a *piece* through member 3's cast
+## script, which reads `the currentSpriteNum` to learn which of 58 channels it is running
+## for. Member 3 declares `mouseUp` and names no container, so it fails the second half of
+## the test and the board stays clickable. Avoiding every channel whose member carries a
+## script would have taken the board with it.
+##
+## Cached per container in `leaves`, keyed `lib:member`: the population is now every sprite
+## record of every frame of the run rather than one script per interval, and `_source`
+## duplicates a member dictionary on each ask.
+##
+## What this still cannot see, stated rather than left to be found: a button a *script*
+## puppets onto a channel at run time. The score never displays it, so no static walk finds
+## it, and `--avoid` remains the manual half for that.
+func _hotspots(table, score, run: Array, leaves: Dictionary) -> Dictionary:
 	var avoid := {}
+	var why := {}
 	for interval in score.intervals():
 		if str(interval["kind"]) != "sprite":
 			continue
 		if int(interval["end"]) < int(run[0]) or int(interval["start"]) > int(run[-1]):
 			continue
-		var src := _source(table, _lib(int(interval["script_cast_lib"])),
-			int(interval["script_member"]))
-		if src == "" or mouse.search(src) == null or leaves.search(src) == null:
+		var lib := _lib(int(interval["script_cast_lib"]))
+		var member := int(interval["script_member"])
+		if not _names_container_on_click(table, lib, member, leaves):
 			continue
-		avoid[int(interval["channel"])] = true
+		var channel := int(interval["channel"])
+		if avoid.has(channel):
+			continue
+		avoid[channel] = true
+		why[channel] = "behaviour %d:%d" % [lib, member]
+	# The members the score puts on a channel over this run, each asked about its own cast
+	# script. Per frame and not per interval, because an interval says which behaviour is
+	# attached and nothing about what the channel is displaying -- the member lives in the
+	# frame's own sprite record (`director_score.gd:_snapshot`), and a channel that holds a
+	# game piece for 300 frames and the exit button for 20 is one interval either way.
+	for frame in run:
+		for value in score.frame(int(frame)).get("sprites", []):
+			var sprite: Dictionary = value
+			var channel2 := int(sprite["channel"])
+			if avoid.has(channel2):
+				continue
+			var lib2 := _lib(int(sprite["cast_lib"]))
+			var id2 := int(sprite["cast_id"])
+			if not _names_container_on_click(table, lib2, id2, leaves):
+				continue
+			avoid[channel2] = true
+			why[channel2] = "cast script of member %d:%d" % [lib2, id2]
 	var list: Array = avoid.keys()
 	list.sort()
-	return {"avoid": list}
+	return {"avoid": list, "why": why}
+
+
+## Does this member's own script answer a click and name another container?
+##
+## The one test, applied to a sprite's behaviour and to a displayed member's cast script
+## alike, so the two populations of `_hotspots` cannot drift into two rules. Memoised in
+## `cache` because a run's frames ask it thousands of times about the same handful of
+## members.
+##
+## Named for what it measures rather than for what it is used for: `open window` names a
+## container too, and this cannot tell the two apart. `_hotspots` carries the measurement.
+##
+## `_lib` on the way in is the caller's job and every caller does it: `scripts.gd:in_lib`
+## normalises a script's library before its number is resolved, and missing that resolves
+## the number in the wrong cast, where it finds a stranger.
+func _names_container_on_click(table, lib: int, member: int, cache: Dictionary) -> bool:
+	if member <= 0:
+		return false
+	var key := "%d:%d" % [lib, member]
+	if cache.has(key):
+		return bool(cache[key])
+	if _mouse_re == null:
+		_mouse_re = RegEx.create_from_string(MOUSE_GO)
+		_container_re = RegEx.create_from_string(NAMES_CONTAINER)
+	var src := _source(table, lib, member)
+	var answer := src != "" and _mouse_re.search(src) != null \
+		and _container_re.search(src) != null
+	cache[key] = answer
+	return answer
 
 
 ## Where to put the playhead for a walk-in entry, and why.
