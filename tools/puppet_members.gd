@@ -280,6 +280,10 @@ extends SceneTree
 ##     13      STILL (27, 400)               STILL (27, 400)            8 / 8
 ##     32      STILL (190, 264)              STILL (190, 264)           2 / 2
 ##
+## Ch32's `2 / 2` is one member and one default: the second is the `member 0` the
+## absent-channel guard below now keeps out, re-measured as `1 / 1` on the input side.
+## Every other row here is offered on every sample and is unaffected.
+##
 ## **So position is a new signal and it is not what separates the two runs.** Three
 ## channels move where the old table showed no channel doing anything at all, which is
 ## the description of the scene the survey could not previously give; but every position
@@ -318,14 +322,35 @@ extends SceneTree
 ## difference is evidence about the *player* only against the control run — the same rule
 ## every other number in this file is under, and the reason `--no-input` exists.
 ##
-## **What is legible now and still not fixed**: the *membership* column reads an absent
-## channel too, and answers `member 0` for it. `EMPTY_CHANNEL`'s `visible` is 1, so the
-## sampler's visibility guard lets an unoffered channel through, which is where fritz2's
-## `ch 32 : visible with 0 on 17 frame(s)` comes from — 17 samples before the init, the
-## same 17 the position line accounts for as `416 of 433 sample(s) drawn`. Left alone on
-## purpose: fixing it moves every membership number this file has ever printed, and it is
-## its own change with its own control run. The position line at least says out loud how
-## many of a row's samples were real.
+## **The membership column read an absent channel too, and answered `member 0` for it.**
+## `EMPTY_CHANNEL`'s `visible` is 1 and it carries no `membernum` row at all, so the
+## sampler's visibility guard admitted an unoffered channel and the `get` default became a
+## measurement. That is where fritz2's `ch 32 : visible with 0 on 17 frame(s)` came from
+## — 17 samples before the init, the same 17 the position line beside it prices as
+## `420 of 437 sample(s) drawn`. Fixed by giving the membership read the guard the
+## position read already had, and the two tables above are pre-fix: **every `0 on N
+## frame(s)` in this header is that default and not a member.** `hatul2.dir`'s
+## `stage1psila` is the like-for-like pair, 64 samples either side of the change:
+##
+##     ch      before                                   after
+##     1       3 on 49, 236 on 15                       unchanged (offered on all 64)
+##     15      **0 on 15**, 2, 3, 4, 18, 19, 20, 21, 43 the same eight, without the 0
+##     40      **0 on 15**, 29 on 18, 87, 103 on 30     the same three, without the 0
+##
+## so the negative-control table further up reads 9 and 4 distinct members on ch15 where
+## the truth is 8 and 3, and the same subtraction applies to every membership count in
+## this file older than the guard. The rows it moves most are the ones with nothing real
+## in them at all: `fritz2.dir`'s `endstage2` reported ch16, ch18 and ch51 as
+## `visible with 0 on 62 frame(s)` — 62 of 62 samples — for three channels no frame ever
+## offered, because that scene's init is never reached and so never claimed them. They
+## read `never visible` now, and ch32 and ch17 leave the `signals` line's member-change
+## list, which is the line that gets quoted.
+##
+## An empty-carry puppet is deliberately in the same bucket: `sprite_state.gd:with_puppets`
+## keeps a whole-sprite puppet whose score record was empty *out* of the frame's sprite
+## list, and such a channel has no member to report. It still gets a row — `_puppeted_now`
+## found it — saying `never visible` with the position line's `no frame offered this
+## channel`, which is two true statements in place of one false one.
 ##
 ## ## A lead this survey turned up, filed as `bugs.md` 100, and got wrong
 ##
@@ -1043,16 +1068,39 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 				watching[int(channel)] = true
 			var watch_list: Array = watching.keys()
 			watch_list.sort()
-			# Which channels this frame is *offering*, which is the guard the position read
-			# cannot do without. See `_note_position` for what an unguarded read answers.
+			# Which channels this frame is *offering*, which is the guard **both** reads
+			# need. See `_note_position` for what an unguarded read answers.
 			var offered: Dictionary = {}
 			for value in preview.call("frame_sprites"):
 				offered[int((value as Dictionary)["channel"])] = true
 			samples += 1
 			for channel in watch_list:
 				watched[int(channel)] = true
+				# Called before the guard below and deliberately so: `watched` is the
+				# denominator the position line prints as `N of M sample(s) drawn`, and a row
+				# that says how many of its samples were real is the row that can be read.
+				# Skipping an unoffered channel here would leave the gap unstated instead.
 				_note_position(preview, positions, int(channel),
 					offered.has(int(channel)))
+				# **The same guard, on the membership read.** For a long time only the
+				# position read had it, and the reason is that this one *looked* guarded:
+				# `visible` is asked immediately below, and a channel no frame offers is
+				# surely not visible. It is. `channel.gd:read` answers out of
+				# `EMPTY_CHANNEL` for a channel with no sprite record and no override, and
+				# `EMPTY_CHANNEL`'s `visible` is `1` while it carries no `membernum` row at
+				# all -- so the visibility guard admitted the channel and the `get` default
+				# then reported it holding member 0. That is where `fritz2.dir`'s
+				# `ch 32 : visible with 0 on 17 frame(s)` came from: 17 samples taken before
+				# the init, the same 17 the position line beside it prices as
+				# `420 of 437 sample(s) drawn`.
+				#
+				# A default that reads as a measurement is the trap `_note_position`'s own
+				# docstring is about, and `member 0` is the worse half of it: a position
+				# default is at least a plausible position, while 0 is a member number no
+				# cast has, and it lands in `alive` as a distinct member and inflates the
+				# count on the `signals` line -- which is the line that gets quoted.
+				if not offered.has(int(channel)):
+					continue
 				if not bool(preview.call("lingo_sprite_prop", int(channel), "visible")):
 					continue
 				var member := int(preview.call(
