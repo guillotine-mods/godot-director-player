@@ -397,11 +397,16 @@ extends SceneTree
 ## same arm — and not eight independent findings.
 ##
 ## The six water scenes rest on **ch20 and ch21**, at 193..300 position steps against 0
-## or 1, and their membership barely moves (3..5 against 1..3). Read with the caveat
-## that the play run's own click restarts the game from `newgame` (f179) and the control
-## never gets there, so the region differs as well as the input: the honest row is
-## "these are the frames the splash animation runs over, and only the input run reaches
-## them", not "the player animates the splash".
+## or 1, and their membership barely moves (3..5 against 1..3). **Those six rows are not
+## a like-for-like pair and the numbers must not be quoted as one.** Avoiding channel 12
+## only moved the click: the play run then presses **ch13**, which is the gameover
+## screen's *play again* button — `on mouseUp ... go("again")`, and the `again` frame's
+## `exitFrame` is `go("newgame")` — so the input run replays the game from f179 and
+## visits f179..f1128 while the control sits in f1050..f1093. The region differs as well
+## as the input, and the honest row is "these are the frames the splash animation runs
+## over, and only the input run reaches them" rather than "the player animates the
+## splash". A pair worth quoting needs `--avoid 12,13` on the play side, which is one run
+## nobody has made.
 ##
 ## The fourteenth, `stage8water@f982`, reports `init ran : NO` in **both** runs, and the
 ## cause is the landing rather than the engine. The playhead is put at f980 and the first
@@ -506,8 +511,20 @@ extends SceneTree
 ## remaining ~2,338 frames are behind fourteen answer clicks and roughly fourteen times
 ## that wall clock. **Answered for the frames a click reaches, and not measured beyond
 ## them**; the next step is a `--do` chain of `clk<N>` to an answer channel, not a longer
-## wait. `film_loop_cast.gd` takes no `--root` and sweeps the config's default — 61
-## piposh2 movies — so it has never seen this container either.
+## wait.
+##
+## Which of the two film-loop harnesses already covers this container, settled by running
+## them rather than by reading their headers, because reading them gave the wrong answer.
+## `film_loop_cast.gd` **does**. A bare run sweeps the config's default and answers about
+## piposh2's 61 movies, which is `AGENTS.md`'s measured-zero trap exactly and is what made
+## this look like a gap — but the tool takes `--root` through `Args`/`DirectorPaths` like
+## every other survey here, and `gate.sh`'s `ALL` carries it **twice**, the second entry
+## being `film_loop_cast:--root@piposh-dream`: 52 movies including this one, 918 indexed
+## children in 1,373 loops, 5 checks green. `film_loop_nesting.gd` **does not**. It
+## defaults to COMEIN, and `--file show.dir --index 0 --ticks 12000` fails all four of its
+## checks for want of a subject rather than for a defect — the movie holds at f0..f5, so
+## the painter never reaches the `1:29` parent and there is nothing for the assertions to
+## be about. The played entry above would give it one.
 
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
