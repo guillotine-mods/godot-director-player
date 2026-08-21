@@ -9877,19 +9877,39 @@ Verified independently before filing: `script_placement --match manleft --root
 piposh-dream --file WEST1.dir` reports 2 placed, both frame scripts, at f338 under
 `actionbegins` f329 and f364 under `start` f339, with 0 sprite-behaviour spans.
 
-**Two open items, neither affecting this verdict.**
+**Two open items, neither affecting this verdict.** The first is closed; see below.
 
-1. **`1234.aif` is not where `1:140` looks for it.** `effectspath` resolves to
+1. ~~**`1234.aif` is not where `1:140` looks for it.**~~ **Closed 2026-08-21 by
+   `1e760a51`, and it had the direction backwards.** `effectspath` resolves to
    `res://games/piposh-dream/fx\` on the authored path (set by `strtgame.dir` `1:234`, a
    movie script no score places — and `WEST1.dir` does not even link that cast, so a cold
    entry leaves it unset), while the file exists only at
-   `games/piposh-dream/CFILES/SUEME/1234.AIF`. The port plays it regardless because the
-   audio index tail-matches filenames (`autoload/audio_director.gd:405`). That tail match
-   is therefore **the sole input to `soundBusy(4)`, which is the sole input to a five-man
-   duel versus a twenty-five-man one.** Whether the original resolved `FX\1234.AIF` at all
-   is unchecked. Design evidence leans to 5 being intended — `psila = 5` is the next line,
-   and `stole > 3` is lenient against five spawns and unwinnable against twenty-five — but
-   that is inference.
+   `games/piposh-dream/CFILES/SUEME/1234.AIF`; `FX/` holds 188 files and none is `1234`
+   under any extension. The port used to play it anyway, because the audio index matched
+   the bare filename across folders. **That resolver no longer crosses a folder the
+   request named** — a request may lose the segments in front of its folder and never the
+   folder itself — so `fx\1234.aif` is now a reported miss.
+
+   **Which flips the branch the other way from what this entry inferred.** `1:140` reads
+   `if not soundBusy(4)`, so a miss makes the guard *true*: measured through
+   `STRTGAME.dir` to marker `actionbegins`, `manleft` goes **5 → 25** in all three
+   containers. So the five-man duel was never the data's answer, it was this port's tail
+   match, and the sentence this item used to end with ("design evidence leans to 5 being
+   intended") pointed at the branch the defect was producing.
+
+   **Two corrections to that inference, because it will be read again.** `stole` counts
+   men who *got away* — `brain()` credits it when a man completes his waypoints — and
+   `1:140`'s sibling `go("gamelost")` fires on `stole > 3`. So twenty-five spawns are not
+   "unwinnable": they are twenty-five chances with three escapes allowed, which is an
+   ordinary arcade difficulty, and five spawns with three escapes allowed is the lenient
+   one. Harder, not impossible.
+
+   **What is still open is a data question, not an engine one**, and it is the same shape
+   as `bugs.md` 46 and the FX folder `games/piposh` got back by submodule bump: whether the
+   shipped disc had `FX\1234.AIF` and this checkout of the `piposh-dream` submodule does
+   not. If it did, the original played it, `soundBusy(4)` answered true, `manleft` was 5,
+   and the port is now harder than the game was. If it did not, 25 is authentic and always
+   was. Nothing in the tree can settle that; a disc can.
 2. **`psila` never moved off 5** in four runs across three movies. `brain()` spawns enemy
    bullets and `1:152` tests `sprite(getAt(bltsprite, i)).within(getAt(ppl, 1))`,
    decrementing `psila` on a hit, and it never fired once. Not investigated, and not

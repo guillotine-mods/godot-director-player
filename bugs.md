@@ -21,9 +21,15 @@ touches only `scenes/preview/channel.gd` and one harness.) They are now in `docs
 whose defect was fixed and whose entry was never moved, and 18 whose *subject was
 deleted* with the retired renderer and which therefore cannot be re-measured at
 all. Seven more were narrowed in place, and one — 100 — was answered from the
-reference and reclassified as not a bug. What is left below is 16 open entries,
-7 narrowed ones and 4 not-a-bug signposts, one fewer than the sweep left because
-106 has since been fixed and moved.
+reference and reclassified as not a bug.
+
+**What that sweep left below is deliberately not counted here any more.** The
+sentence that used to end this paragraph said "16 open entries, 7 narrowed ones and
+4 not-a-bug signposts" long after the file held two numbered entries, which is this
+document's own rule about numbers in prose broken inside the paragraph that states
+it. Entries are added and moved by different sessions and the count is stale the
+next day. `grep -c '^## [0-9]' bugs.md docs/bugs-closed.md` answers it in the state
+the tree is actually in.
 
 Two rules came out of it, and both are cheaper to follow than to rediscover:
 
@@ -213,6 +219,184 @@ VOID past the end of a list and that "all three came back as 0 *and* reported th
 missing" — so some callers depend on a value coming back rather than on an abort.
 Aborting unconditionally would need those cases separated first, which is why this is an
 entry and not a one-line change.
+
+---
+
+## 126. `intersects` and `within` never read the ink, so every matte-inked bitmap collides as its bounding box
+
+**Status:** open, partly unmeasured · **Area:** `scenes/preview_lingo_host.gd:1012`, the
+`"intersects", "within"` arm · found 2026-08-21 during a QA pass over Piposh Dream
+
+The reference is ink-aware and this port is not. `lingo-code.cpp:c_intersects` has
+three arms — matte-on-matte (`isMatteIntersect`), box-on-matte
+(`isMatteBoxIntersect`) and box-on-box — chosen by whether each operand is a
+**bitmap** whose ink is `kInkTypeMatte`; `c_within` has two, `isMatteWithin` when
+*both* operands are non-QD-shape with Matte ink, `getBbox().contains(getBbox())`
+otherwise. A shape is never a matte however it is inked. `docs/LINGO_SURFACE.md`
+§2.7 already records all of that, correctly, and the port's arm answers
+`first.intersects(second)` / `second.encloses(first)` unconditionally.
+
+A box-only test is **more permissive**, so the failure mode is a hit registering
+where the artwork has a hole — a hotspot larger than it was drawn, which reads as
+sloppy hit detection rather than as a bug, and never as an error.
+
+**Why Piposh Dream raises it.** `intersects`/`within` is how four of its minigames
+decide everything. Occurrences of either word in the containers' script text:
+
+    hatul3.dir 123   hatul2.dir 106   hatul1.dir 91   hatuli.cst 37
+    fritz2.dir  25   fritz3.dir  24   fritz1.dir 14
+    WEST3.dir   11   WEST2.dir   10   WEST1.dir  9
+    plane1/2/3.dir 4 each   psy.cst 3   ques.dir 1
+
+That is a text count over `strings`, not a resolved site count, and it is the
+platformer's terrain and ladders, the fighter's hits, the shooter's targets and
+the duel's men.
+
+**What is not measured, and it is the thing that sizes this.** Nobody has read the
+**ink bytes** of the channels those operators are asked about. The arms only differ
+when an operand is a bitmap with ink 8, so if none of the pairs in this corpus is
+matte the change is invisible here and is still owed to Director — `AGENTS.md`'s
+"build Director, not this game". Until somebody counts, the size of the defect is
+unknown, not zero.
+
+Measuring it needs the score's ink per channel at the frames those handlers run
+on, which is `tools/behaviour_params.gd`-shaped work; the per-pixel machinery it
+would then need already exists for the mouse (`scenes/preview/interaction.gd`'s
+`hits_per_pixel`, and `sprite_art.gd`'s matte keying), so the fix is wiring rather
+than new decoding.
+
+**`docs/ENGINE_TODO.md` does not list it**, which is the half worth fixing first
+whatever happens to the code. That file's only mention of these operators is the
+warning at its head that `intersects` was once "listed as implemented while only
+the retired host bound it"; the ink arms are absent from it entirely, so the gap
+list reads as if this were finished. `AGENTS.md` is explicit that a stale gap list
+is worse than no list.
+
+**Do not confuse this with visibility, which is a separate rule and is right.**
+Neither operator consults `the visible of sprite` and neither should; that is
+`docs/bugs-closed.md` 43 and `tools/sprite_collision.gd` asserts it.
+
+Reproducing the gap as it stands — the code path has no ink in it at all:
+
+    grep -n '"intersects", "within"' -A 30 scenes/preview_lingo_host.gd
+
+---
+
+## 127. The retired renderer's game-state autoload survives whole, and one of its dead fields reaches the live audio resolver
+
+**Status:** open · **Area:** `autoload/game_state.gd`, and `autoload/audio_director.gd:346`
+and `:603` · found 2026-08-21 during a QA pass over Piposh Dream
+
+`GameState` is registered as an autoload (`project.godot:27`) and holds Piposh 2's
+game model: `HUB_MOVIES` is `["DAY1", "HOTEL1", "NIGHT1"]`, `MINIGAME_MOVIES` names
+`CHESS`, `TENNIS`, `SHUFFLE`, `ARCADE1`, `ARCADE2`, `PPTSHOW`, `SEA1`, `AIR1`,
+`current_movie` defaults to `"strtgame"`, `current_label` to `"mainmenu"`, and
+`from_dict` defaults a load to `DAY1` at `shore2`. Beside them are a day counter, a
+meetings list, an inventory with slot channels, story flags, a route stack and a
+four-function save-slot API. `HUB_MOVIES`' own comment says it mirrors
+`data/movie_context.json`, a file deleted with the renderer that read it.
+
+**Every one of those is referenced only from inside the file that declares it.**
+
+    grep -rln "GameState" --include='*.gd' .
+
+answers with three paths: `autoload/game_state.gd`, `autoload/audio_director.gd`
+and `tools/qa_walk.gd`. The tool takes the node for `emit_log` alone, and
+`audio_director` takes `emit_log` and one field. So the live engine's whole use of
+this autoload is a **log signal bus** plus `whichsnd`; the day, the meetings, the
+inventory, the hub, the flags, the route stack and the save slots are the retired
+renderer's, and nothing has called them since it was deleted. The real save path is
+`scenes/preview/save_state.gd`, `save_files.gd` and `movie_save.gd`.
+
+**The field that is not dead is the one that matters.** `audio_director.gd` rewrites
+a request spelled exactly `$whichsnd` into `GameState.whichsnd`, which **defaults to
+the string `"sea"`** -- Piposh 2's `SEA.AIF`, present under `games/piposh2/FX/` and
+absent from Piposh Dream under any name. And every `sound playFile` on channel 2
+whose stem does not begin with `$` writes the field back, in every title, so a
+general engine is keeping one title's "which sound is playing" bookkeeping.
+
+Both readers are unreachable:
+
+    grep -rn '\$whichsnd' . --exclude-dir=.git --exclude-dir=.godot
+
+answers with those two sites and nothing else in the tree. `$whichsnd` was a token
+of the deleted declarative sound scaffolding; no container, no data file and no
+script writes it. So the branches cannot fire, the channel-2 write feeds only them,
+and what is left is `AGENTS.md`'s third standing rule broken in the plainest way --
+a per-title mapping in engine code -- with no player-visible symptom to notice it
+by.
+
+**Why it is filed rather than deleted on sight.** `emit_log` is the sink six
+harnesses read for `Audio miss` and friends, so the node has to stay and the
+deletion is a careful one, not a `git rm`. The cheap shape is one commit: strip the
+model, keep the bus, drop the two `$whichsnd` arms and the channel-2 write, and run
+`tools/preview_surface.gd` and the `save_state` and `audio_misses` gate entries
+either side. Anyone who instead wants `whichsnd` to *work* should note that Piposh
+Dream's own `Hquest.dir` keeps its own `global whichsnd` in Lingo and compares it
+itself -- the interpreter already holds that state, which is where it belongs.
+
+## 128. A corpus sweep of Piposh Dream spends 46 of 51 watches inside an opening speech, so `52 of 52 ok` is close to vacuous
+
+**Status:** open · **Area:** `tools/liveness_sweep.gd`, its watch budget · measured
+2026-08-21 during a QA pass over Piposh Dream
+
+**The mechanism is the tool's own documented caveat, not a discovery.** Its header
+already says it: "Sound is the one thing fast-forward cannot scale -- the mixer runs
+on the audio server's clock -- so a `soundBusy` wait takes as long as the sound does
+however fast the score runs. That makes sound-excused ticks *over*-represented at
+high `--ff`, which can only hide a finding, never invent one." What had never been
+measured is **how much** it hides, and on this title the caveat is not a caveat, it
+is the result.
+
+    godot --headless --path . --script tools/liveness_sweep.gd -- \
+        --root piposh-dream --click --strict --verbose
+
+52 movies in 324 s, one finding, and the `ok` lines say:
+
+    46 of the 51 judged movies end held on `wait for sound 1`
+    39 of them for 100 or more of the 120 sampled ticks, 22 for all 120
+    9 clicks landed across the 51 movies `--click` poked
+    `cursors: 0 channel(s) [], global 0` over the whole corpus
+
+The arithmetic is in the tool's own two numbers. Its clock line says `8 fps`; each
+per-movie line says `120 tick(s)` in about `4.2s` of wall clock, so the score ran at
+roughly 28 ticks a second while the mixer ran at one. A four-second opening line --
+34 ticks at the movie's own rate -- holds the playhead for about 115 of a 120-tick
+watch. Every excuse is granted correctly, the playhead really is held, the verdict
+really is `ok`, and the watch never reaches the frame the room's hotspots are on.
+
+The other three numbers are that same fact seen from elsewhere, and each would
+otherwise read as a separate defect:
+
+  * Nine clicks over 51 poked movies is **not** an eligibility bug. `_poke` is
+    looking at an intro frame with nothing on it to click.
+  * Zero cursors installed across a corpus whose `Hquest.dir` alone holds 61
+    mentions of `cursor` and a literal `set the cursor of sprite 2 to [3, 4]` is
+    `cursorfunk()` living on frames the sweep never reaches.
+  * `builtins reached` totals `go: 5, marker: 4, sound: 2, soundbusy: 134` for a
+    whole corpus, which is the shape of 52 movies each opening and then waiting.
+
+**Why it is worth an entry rather than a header line.** The summary prints
+`visited: 52 of 52` and `FAIL ... (15 checks, 1 failed)`, and coverage is asserted
+at 100% -- correctly, because coverage measures *contiguously sampled ticks over
+ticks watched* and every held tick is a sampled one. So the one number designed to
+stop a thin sweep reading as a clean one says 100% for a sweep that watched almost
+no gameplay. `unjudged` does not catch it either: these watches filled their
+windows.
+
+**The shape of a fix, and it is not "turn `--ff` off".** The budget is spent in
+ticks and a held tick costs the same as a live one, so the sweep pays its whole
+watch for a hold it has already excused. Spending `--ticks` on *unexcused* ticks
+only -- the same ticks the window is read over -- would let a movie's watch continue
+past its opening line, bounded by `WATCH_CAP_MS` as it already is. That is a change
+to a `gate.sh` entry (`liveness_sweep:--limit@12`) and it will change what the sweep
+finds, so it wants its own before/after over all six roots.
+
+The cheap confirmation of the mechanism, which nobody has run: the same command with
+`--ff 8` -- the movie's own rate, and `--ff` is a *ceiling* on an adaptive rate, so 8
+is how to ask for no fast-forward -- comparing the `wait for sound 1 x<n>` tail of
+each `ok` line. If the reading above is right the counts fall by roughly the ratio
+of the rates and the click total rises.
 
 ---
 
