@@ -9897,3 +9897,149 @@ piposh-dream --file WEST1.dir` reports 2 placed, both frame scripts, at f338 und
    fast-forward artifact, and it is the one quantity in this investigation that could
    still be this port's. The hidden-sprite rule for `within`/`intersects` is the first
    place to look.
+
+---
+
+## 124. NOT A BUG. `hatul3`'s cat enters the climb pose off a ladder, because `hatuli.cst` 106 was cloned from 105 and edited down
+
+**Status:** NOT A BUG — ruled out · **Area:** `piposh-dream` `hatuli.cst` members 62 /
+105 / 106, authored 1997 data · reported from play as *"hatuli have bugs on the 3rd
+screen but i think(!) that it was in the original game"* — the `(!)` the player's own ·
+settled 2026-08-21
+
+`hatul1`, `hatul2` and `hatul3` are one platformer at three difficulties, and their
+keyboard handlers are three members of the shared `hatuli.cst`: 62 `hatulidown`, 105
+`hatulidown2`, 106 `hatulidown3`. **The climb guard is graded, not present-or-absent:**
+
+    62   if ((the keyCode = 125) and (the locV of sprite 15 < keepv)) or (the keyCode = 126) then
+           if stage <> 6 then
+             if sprite 15 intersects 7 or sprite 15 intersects 8 or sprite 15 intersects 9 or (sprite 15 intersects 3 and (stage = 4)) then
+               set the member of sprite 15 to member(29, 2)
+
+    105  the same, with the `intersects` test and NO `stage <> 6`
+
+    106  if ((the keyCode = 125) and (the locV of sprite 15 < keepv)) or (the keyCode = 126) then
+           set the member of sprite 15 to member(29, 2)
+           setAt(mnv, 1, 12)
+
+So 62 has two gates, 105 has one, 106 has none. The `intersects 7` lines that survive in
+106 are positioning conditionals (`if (stage = 1) and sprite 15 intersects 7 then set the
+locH ...`), not the climb gate.
+
+**It applies to every stage of `hatul3`.** All eight stage-entry frame scripts install
+`hatulidown3` — `1:5` f204, `1:108` f243, `1:116` f322, `1:122` f402, `1:125` f476,
+`1:132` f543, `1:135` f619, `1:141` f667, under markers `stage1`..`stage8` — and the
+container's one `hatulidown` installer, `1:11`, is **placed nowhere**. Reachability was
+measured rather than inferred: a played run reports
+`lingo ran: {"keyDownScript:hatulidown3": 10, ...}`, `builtins unbound : {}`, and member
+29 on ch15.
+
+**The playable consequence is narrower than "Up climbs from anywhere", and the
+difference matters.** The vertical step is not in the key handler; it is in the per-frame
+mover, which still gates on the ladder:
+
+    if the keyCode = 126 then
+      if sprite 15 intersects 7 then
+        set the locV of sprite 15 to the locV of sprite 15 - 15
+
+So what 106's missing guard buys is **entry into the climb state off a ladder**: the
+member becomes `member(29, 2)` (`"climb"`), `mnv[1]` becomes 12, and the mover then walks
+memberNum forward one per held frame (29, 30, 31, 32) with **no vertical movement**. In
+`hatul1` and `hatul2` the same press off a ladder does nothing at all. It is bounded —
+`hatuliup3` does `if the keyCode > 122 then setAt(mnv, 1, 1)`, so releasing the key ends
+it. A cat that plays a climbing animation standing on the floor, not a cat that flies.
+
+**Authored, on four items from outside the decoded text.** Member 106 is a *rewrite* of
+105, not a lossy render of it: 105's `locH` chain tests `intersects 8`, `9`, `3` and
+writes 280/435/370/84/190/347/437, while 106's tests `intersects 11`, `12`, `13` and
+writes 280/71/142/220/295 — sprite numbers and literals that appear nowhere in 62 or 105,
+and a decoder that dropped statements cannot invent them. `hatulidown3` is structurally
+balanced at 13 `then` and 13 `end if`, so no `if` header was lost. It carries **two empty
+conditionals** that a compiler preserves and a decoder cannot fabricate: `if stage = 7
+then / end if` in the horizontal arm where 62 and 105 hold a `case felix of` setting the
+constraint of sprite 15, and `if stage = 2 then / end if` at the tail of the `locH` chain
+where 62 and 105 hold `hhight = 0` / `set the constraint of sprite 15 to 2` / `keepv =
+355`. And the member **names** are the clone's own fingerprint: 62 and 105 are *both*
+named `"regular2"`, 106 is `"regular3"`.
+
+`end if` counts inside the `hatulidownN` handler alone: **17 / 16 / 13**. Whole-member
+totals, both handlers each member holds: 27 / 27 / 24. Either figure is right and the
+scope has to travel with it.
+
+**The limit on this verdict.** There is no independent decompilation of `hatuli.cst` in
+the tree — `reference/lingo/` and `reference/chunks/` are Piposh 2 only — and
+`script_compile_check` asserts that decoded source *parses*, not that the decode is
+faithful. A data-dependent `Lscr` decode fault cannot be formally excluded; none is
+proposed, and 62 and 105 decode the same constructs from the same cast. A ProjectorRays
+dump of members 62, 105 and 106 would remove the caveat in one command.
+
+**What this verdict does not settle**, and the day-3 sweep said so too: it settles that
+*this* defect is authored, not that the player's symptom is this defect. Nothing here
+measures colour, size or placement, and a cat playing a climb animation on the floor
+satisfies every mechanical criterion. If the report is about how `hatul3` *looks*, this
+evidence does not reach it.
+
+**Not reproducible from the tree as it stands.** The sweep's played evidence — 88
+unsupported climbs in `hatul3` against 0 in `hatul1`, over 114 and 100 Up-only presses —
+needed a throwaway harness, and it still does, for two measured reasons. `--play` rotates
+a scene's derived keys at `PRESS_EVERY = 3` score ticks with no way to hold or select one
+(`pressed : 128 key(s) ["Space", "Left", "Right", "Down", "Up"]`, so Up is one press in
+five), and the ladder sprites 7/8/9/11/12/13 are **never in the watch list** — every
+`hatul3` stage scene claims `[1, 15, 40]` — while what is recorded per channel is a
+position *point*, not a rect, so `intersects` cannot be evaluated even for a watched
+channel. The available proxy is weaker and should not be read as the claim: over 6,000
+ticks on matched stage-4 scenes, member 29 appears on ch15 in `hatul3` (2 of 41 drawn
+samples) and **not at all** in `hatul1` (0 of 78) or `hatul2`, which is directionally
+right and does not establish that the `hatul3` appearance was off a ladder.
+
+---
+
+## 125. NOT A BUG. `rating.dir`'s `movis` list names seven slots for six movies and two of them are dead
+
+**Status:** NOT A BUG — ruled out · **Area:** `piposh-dream` `rating.dir` and
+`egoz.cst`, authored 1997 data · settled 2026-08-21
+
+`egoz.cst` member 156, placed at **f0 of `rating.dir`**, initialises
+
+    movis = "rata,ratb,ratc,ratd,ratd,rate,ratf"
+
+which is seven items for the six rat containers on disc (`ratA`, `RATB`, `ratC`, `ratD`,
+`ratE`, `ratF`), with `ratd` at positions 4 **and** 5. (The scripts spell targets `.dxr`
+and the disc holds `.dir`; `DirectorPaths.resolve` tries the other packagings through
+`ContainerName.spellings`, so that is not a miss.)
+
+Eight doors sit on channels 31..38 over f22..f37 under the marker `upstairs` — `egoz` 156
+sets the cursor of sprites 31 through 38, so eight is the author's own count — and only
+five of them read the list:
+
+| ch | member | item | goes to |
+|---|---|---|---|
+| 31 | `1:73` | 3 | `ratc.dxr` |
+| 32 | `1:74` | 6 | `ratf.dxr` |
+| 33 | `1:75` | 4 | `ratd.dxr` |
+| 34 | `1:76` | — | `"yeshurun"` |
+| 35 | `1:77` | 1 | `rata.dxr` |
+| 36 | `1:78` | 5 | `rate.dxr` |
+| 37 | `1:79` | — | `"yakroom"` |
+| 38 | `3:162` | — | `"warms"` |
+
+So items 1, 3 and 4 hold the name of the movie their own door plays; **item 5 holds
+`"ratd"` where its door plays `rate.dxr`** and item 6 holds `"rate"` where its door plays
+`ratf.dxr`; and **items 2 and 7 are read and written by nothing in the corpus** — the
+day-3 sweep named item 7 alone and missed item 2. The three doors that read nothing
+declare `global movis` and never touch it.
+
+**Item 2's name is the one rat movie that is not behind a door.** `egoz.cst` member 191
+is, in full, `on exitFrame / go(1, the moviePath & "ratb.dxr") / end` — unconditional —
+and it is placed at **f416 of `rating.dir` under the marker `caveopen`**. So slot 2 names
+the movie that arrives by a different mechanism and needs no done-flag, which is why
+nothing reads it.
+
+**Harmless, and this is the load-bearing half.** Every access is **positional**: reads
+are `if item N of movis <> "done"`, writes are `put "done" into item N of movis`. Over all
+79 containers of `piposh-dream` exactly **nine** members mention `movis`, and **none of
+them reads a value out of it** — `egoz` 156 writes the literal, `egoz` 162 and `1:76` and
+`1:79` declare it and never touch it, and `1:73`/`1:74`/`1:75`/`1:77`/`1:78` do the
+positional read and write. The list is a seven-slot done-flag vector whose initial
+strings only have to differ from `"done"`, so a duplicate value and two dead slots cannot
+reach anything. 0 sourceless scripts in the 80 casts scanned.

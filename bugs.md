@@ -155,6 +155,67 @@ reach it".
 
 ---
 
+## 123. A call to a handler nothing defines returns 0 and the rest of the handler runs; the reference aborts it
+
+**Status:** open · **Area:** `lingo/lingo_interpreter.gd:_call` · found 2026-08-21 while
+refuting a day-3 finding that turned on what an undefined call does
+
+`LC::call` in the reference ends an undefined call by aborting:
+
+    g_lingo->lingoError("Call to undefined handler '%s'. Dropping %d stack items",
+                        funcSym.name->c_str(), nargs);
+
+and `lingoError` (`reference/scummvm/lingo/lingo.cpp:792`) sets **`_abort = true`** — it
+also calls `error()` under `kDebugLingoStrict`, but the plain path aborts. So in the
+reference, **no statement after an undefined call runs.**
+
+This port falls through every resolution arm — native handlers, `new`, user handlers,
+`_own_builtin`, the engine-free builtins, the host — and then:
+
+    		report(LingoDiagnostics.BUILTIN, name)
+    	return result if result != null else 0
+
+The call yields **0** and the enclosing handler continues to its end. This file's own
+comment at `lingo_interpreter.gd:2836` already calls the silent-drop shape "the state
+§19 calls the worst one".
+
+**What a player sees: nothing.** The diagnostics sink is read by six harnesses
+(`lingo_local_diagnosis`, `lingo_scope_check`, `property_surface`,
+`lingo_surface_audit`, `lingo_movie_surface`, `buddyapi_xtra`) and by **nothing on the
+player's path** — `debug_report.gd` does not read it. The name does reach the F3/exit
+report's `builtins unbound` line through `preview_lingo_host`, and
+`scenes/preview/boot.gd:322` names that symptom, but a running game gives no sign.
+
+**Why it matters beyond fidelity.** The difference is not the return value, it is the
+statements after it. A movie whose author relied on an abort — a guard clause calling a
+handler that exists only in some containers, for instance — gets its whole handler body
+executed here where Director stopped at the call. That is a behavioural divergence with
+no upper bound on its effects, and it is silent in both directions: nothing warns, and
+the 0 is indistinguishable from a handler that returned 0.
+
+**Reproducing it** is the awkward part and is why this is filed rather than fixed. No
+container in the corpus is currently known to make an undefined call — the day-3 finding
+that prompted this (`hatul2.dir` calling `wlkleftintersects()` with nothing defining it)
+turned out to be **false**: `hatul2` defines it in its own internal cast at `1:10`, and a
+played run of the arm that calls it leaves `builtins unbound` empty after 46 `exitFrame`
+dispatches. So the divergence is established from the two implementations rather than
+from a movie that trips it, and the fix needs a synthetic case:
+
+    godot --headless --path . --script tools/puppet_members.gd -- \
+        --root piposh-dream --file hatul2.dir --play stage4 --ticks 6000
+
+prints `builtins unbound : {}` today, which is the negative control — the tally an
+undefined call would appear in.
+
+**Before changing it**, note what the current behaviour is load-bearing for. The comment
+above the fall-through records that `externalParamName` and `externalParamValue` answer
+VOID past the end of a list and that "all three came back as 0 *and* reported themselves
+missing" — so some callers depend on a value coming back rather than on an abort.
+Aborting unconditionally would need those cases separated first, which is why this is an
+entry and not a one-line change.
+
+---
+
 ## Coverage debt — harnesses deleted with the retired renderer
 
 These asserted rules that still matter, through an engine that no longer exists.
