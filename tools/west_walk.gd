@@ -87,6 +87,57 @@ extends SceneTree
 ## `random(6)` into indices 2..9. The pair is index 1 only, and no line in the
 ## movie writes `hppl[1]` or `vppl[1]` outside the arrow arm.
 ##
+## ## Why `hatul2` and `fritz2` have no entry like this one
+##
+## Five of the sweep's `YES (1-3)` rows were examined for a pair. Three landed --
+## this file, `hex_board` and `plane_heading` -- and the other two are recorded
+## here rather than left to elimination, because three cross-checks and no trace
+## of the two that were rejected reads as "covered everything".
+##
+## Both are rejected on the *same* axis this file asserts, which is why the note
+## is here: **neither movie keeps its walker's position anywhere but the channel.**
+## Every position write in both is a read-modify-write through the channel with a
+## literal delta -- `hatul2` moves sprite 15 by +-17 walking and +-15/+-25 jumping,
+## `fritz2` moves `ppl[1]` by +-17 -- so there is no second store to disagree with.
+##
+## What the candidates were, and what each one is:
+##
+## - **`hatul2`'s `hhight` is dead.** Four sites: two `global` declaration lists
+##   and two `hhight = 0` assignments, and it is never read. A pair whose other
+##   half is a constant nothing consumes is not a pair.
+## - **`hatul2`'s `keepv` is a direct assignment.** `set the locV of sprite 15 to
+##   keepv` -- one value through two names, which always agrees and looks like
+##   evidence.
+## - **`fritz2`'s `pwr[1]` against `field "power"` is the same shape**, through
+##   `put getAt(pwr, 1) into field "power"`, and both sides are read back through
+##   the interpreter.
+## - **`fritz2`'s `mnv` lockstep is conserved but not observable.** Every motion
+##   arm in `1:10`, `1:11`, `foemov` and `throweron` pairs `set the memberNum of
+##   sprite ... + 1` with `setAt(mnv, i, ... - 1)`, so `memberNum + mnv[i]` really
+##   is a conserved quantity -- inside a burst. The burst boundaries are `the
+##   keyCode` polled at `exitFrame`, `soundBusy`, `random(3)` in `thrower`, and the
+##   `< 46`/`< 82` range guards that reset the member without touching `mnv`. A
+##   conserved quantity with unobservable reset points is the flake
+##   `docs/bugs-closed.md` 119 is the standing example of.
+## - **`fritz2`'s `foes[i]` is a band, and the bands overlap.** It holds the member
+##   number a foe was dressed from, but the walk animation advances the channel
+##   past it while `foes[i]` stays at `wlk` -- and for foe 1 `hit1` is 56, inside
+##   the walk range 44..60. There is no equality to assert.
+##
+## **One of the two is expensive rather than absent, and that is a different
+## answer.** `hatul2` has a real independent triple: `prise`, the visible channels
+## among `objc = [30, 31, 32, 33, 34, 35, 36]`, and `field "score"`, related by
+## `score = 10 * (7 - prise)` -- an interpreter global, channel `visible` state and
+## field text, three stores that can be pulled apart. It is not cheap: reaching it
+## needs a driven platformer traversal into a collectible under `keepv` gravity and
+## intersect tests rather than a click or a held key, and the init that seeds it
+## (`1:101`) branches on `soundBusy(4)` for `hatpwr`, `hatmen` and `field "score"`,
+## with `prise = 7` holding only `if stage = 1` across nine stage markers. Worth
+## building; not worth gating until the traversal is drivable.
+##
+## `fritz2` has nothing of that kind. Its candidates fail on independence or on
+## conservation rather than on cost, so no amount of driving makes one a gate.
+##
 ## Title-agnostic driving, title-specific scenario.
 
 const Harness := preload("res://tools/lib/harness.gd")
