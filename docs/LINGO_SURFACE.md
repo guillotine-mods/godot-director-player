@@ -598,8 +598,9 @@ two named predicates for that reason -- `hits_per_pixel` and `mattes_for_within`
 -- and `tools/collision_arms.gd` asserts that they disagree.
 
 How much of this the corpus exercises, measured by `tools/collision_ink.gd` over
-all six shipped roots: **82 of 156 resolvable literal operand pairs change arm,
-over 9,025 frames**, and every one of them is `matte-on-matte` or `box-on-matte`.
+all six shipped roots: **585 of 845 resolvable literal operand pairs change arm,
+over 94,193 frames** -- 512 of them in `rating` alone -- and every one of them is
+`matte-on-matte` or `box-on-matte`.
 `matte-within` has no witness in any title this engine runs, and neither does the
 one case where the reference and this port part company: `isMatteIntersect`,
 `isMatteBoxIntersect` and `isMatteWithin` each answer *false* when a matte they

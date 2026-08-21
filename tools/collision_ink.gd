@@ -55,6 +55,25 @@ extends SceneTree
 ## loudly as the resolved one, because "0 resolved pairs change arm" reads as "0
 ## pairs change arm" and is not the same statement.
 ##
+## ## What it measured, 2026-08-21, all six shipped roots
+##
+##     651 containers, 482 scores, 4,621 operator sites, 8,057,628 sprite records
+##     585 of 845 resolvable literal operand pairs change arm, over 94,193 frames
+##
+##       piposh 17    piposh-dream 18    piposh-en 17    piposh-ru 17
+##       piposh2 4    rating 512
+##
+## `rating` is most of it and it is not minigames: its 512 are spread eight to
+## twenty per *room* movie, which is the inventory-drop idiom `preview_lingo_host.gd`
+## names -- `sprite the clickOn intersects <slot>`. No `gate.sh` entry plays that
+## end to end in `rating`.
+##
+## **The first version of this file reported 82 and 1,104,672 unresolved members**,
+## and both were its own bug rather than the corpus's: see the comment beside
+## `load_config` in `_init`. `AGENTS.md`'s "a measured zero is usually a measurement
+## of Piposh 2" has a sibling, and this was it -- a measurement of *every* root that
+## resolved all six against Piposh 2's files.
+##
 ## Title-agnostic: it names no game and discovers its roots by listing them.
 
 const Harness := preload("res://tools/lib/harness.gd")
@@ -117,9 +136,9 @@ class Row extends RefCounted:
 	## **Matte records whose member did not resolve at all**, and the guard on the
 	## whole `intersects` half of this survey. `is_bitmap` is what selects the arm,
 	## and for an unresolved member it is false *by failure* rather than by fact --
-	## so a container with a high count here reports a floor and not a count. The
-	## `master.cst is ambiguous` warning in `piposh2` is what makes this real
-	## rather than theoretical.
+	## so a container with a nonzero count here reports a floor and not a count.
+	## It is 0 over all six roots, and it was 1,104,672 for one commit -- see the
+	## comment beside `load_config` in `_init` for what that was.
 	var matte_unresolved := 0
 	## channel -> true, for channels a literal operand names.
 	var operand_channels: Dictionary = {}
@@ -203,9 +222,21 @@ func _init() -> void:
 		# A survey is asked across titles, and the configured root is a working
 		# file `gate.sh` and other sessions share -- so the root is overridden in
 		# memory rather than written back out.
+		#
+		# **Through `force_root`, not by assigning `.root` afterwards**, and the
+		# difference is not stylistic. `load_config` ends by asking whether the
+		# root holds its boot movie, which calls `resolve` (`boot_path`), which
+		# builds the path index **from `root` as it stands at that moment** and
+		# latches `_indexed`. Assigning `.root` after that leaves every later
+		# `resolve` answering out of the *configured* root's index -- so on a
+		# `--all` run every one of the six roots resolved its linked casts against
+		# `piposh2`'s files. It was not a silent nothing: it reported 82 pairs
+		# changing arm against 585 for the same six roots run one at a time, and
+		# 1,104,702 Matte records with an unresolved member against **0**. The
+		# other surveys in `tools/` that assign `.root` after `load_config`
+		# (`hilite_survey.gd` among them) have the same latent defect.
 		var root_paths := Paths.new()
-		root_paths.load_config()
-		root_paths.root = root
+		root_paths.load_config(Paths.CONFIG_PATH, root)
 		var targets: Array[String] = []
 		if only_file != "":
 			var resolved: String = root_paths.resolve(only_file)
@@ -486,12 +517,24 @@ func _init() -> void:
 		"%d Matte records" % total_matte)
 	h.check("the sprite-type byte is live", not sprite_types.is_empty(),
 		"%d distinct values" % sprite_types.size())
-	# **The second guard, and the one this survey did not have at first.**
+	# **The second guard, and the one this survey shipped without.**
+	#
 	# `is_bitmap` selects the `intersects` arm, and for a member the cast table
-	# cannot resolve it is false by failure. A run where most Matte records are
-	# unresolved is reporting a floor and must say so rather than a count.
-	h.check("member resolution is live -- most Matte records resolve",
-		total_matte == 0 or total_matte_unresolved * 2 < total_matte,
+	# cannot resolve it is false *by failure* rather than by fact -- so a run with
+	# unresolved members reports a floor and not a count. **Zero, not "most",** and
+	# the difference is the whole reason this paragraph is here: the first version
+	# of this check asked `unresolved * 2 < total` and passed at 1,104,702 of
+	# 3,175,532, which is exactly the run that reported 82 pairs changing arm where
+	# the truth is 585. A threshold generous enough to pass the broken run is a
+	# guard that only fires when nobody needs it.
+	#
+	# Zero is what this port achieves over 651 containers of six titles, so it is a
+	# claim about the port and not about the data (`AGENTS.md`, "a harness must
+	# assert what this port controls"). If it fires, suspect cast-path resolution
+	# before suspecting the containers -- and read the comment beside
+	# `load_config` above first.
+	h.check("member resolution is live -- every Matte record resolves",
+		total_matte_unresolved == 0,
 		"%d of %d Matte records unresolved" % [total_matte_unresolved, total_matte])
 	h.complete("the survey ran")
 	quit(h.finish("how many operand pairs would change arm"))

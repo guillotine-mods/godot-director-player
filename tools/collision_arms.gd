@@ -12,14 +12,14 @@ extends SceneTree
 ##
 ## ## Why every arm is asserted, including the ones the corpus cannot reach
 ##
-## `tools/collision_ink.gd` measured the corpus before this was written: over all
-## six shipped roots, **82 operand pairs change arm** and every one of them is
-## `matte-on-matte` or `box-on-matte`. Nothing measured reaches `matte-within`, and
-## nothing reaches the null-matte fallback. So two of the four arms have no witness
-## in any title this engine runs, and `AGENTS.md` is explicit that this is a reason
-## to build them from the reference and say they are unverified -- not a reason to
-## leave them unasserted. The scans therefore take masks and rects rather than a
-## host (`scenes/preview/collision.gd`), and the cases below build the holes.
+## `tools/collision_ink.gd` measures the corpus: over all six shipped roots, **585
+## operand pairs change arm**, and every one of them is `matte-on-matte` or
+## `box-on-matte`. Nothing measured reaches `matte-within`, and nothing reaches the
+## null-matte fallback. So two of the four arms have no witness in any title this
+## engine runs, and `AGENTS.md` is explicit that this is a reason to build them from
+## the reference and say they are unverified -- not a reason to leave them
+## unasserted. The scans therefore take masks and rects rather than a host
+## (`scenes/preview/collision.gd`), and the cases below build the holes.
 ##
 ## ## The rule the cases are shaped by
 ##

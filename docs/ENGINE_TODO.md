@@ -1147,16 +1147,19 @@ member, which is `c_intersects`) and `mattes_for_within` (Matte and not a
 QuickDraw shape *sprite*, which is `c_within`), kept apart because the reference
 keeps them apart. `tools/collision_arms.gd` asserts all four arms and
 `tools/collision_ink.gd` measured the corpus first: over all six shipped roots,
-**82 of 156 resolvable literal operand pairs change arm, across 9,025 frames** --
-17 in `piposh`, 17 in `piposh-dream`, 17 in `piposh-en`, 17 in `piposh-ru`, 4 in
-`piposh2`, 10 in `rating`. Every one of the 82 is `matte-on-matte` or
-`box-on-matte`; `piposh-dream`'s are `sprite 15 intersects <terrain>` in
-`hatul1/2/3`, the platformer's own ground and ladder test.
+**585 of 845 resolvable literal operand pairs change arm, over 94,193 frames** --
+17 in `piposh`, 18 in `piposh-dream`, 17 in `piposh-en`, 17 in `piposh-ru`, 4 in
+`piposh2` and **512 in `rating`**. Every one is `matte-on-matte` (411) or
+`box-on-matte` (314, which is 725 pair/arm combinations over 585 pairs -- a pair can
+take different arms on different frames). `piposh-dream`'s are `sprite 15 intersects
+<terrain>` in `hatul1/2/3`, the platformer's own ground and ladder test;
+`rating`'s are eight to twenty per *room* movie and are the inventory-drop idiom,
+`sprite the clickOn intersects <slot>`, which no `gate.sh` entry plays end to end.
 
 *What is unverified, and it is two arms rather than an edge.* **Nothing in any of
 the six titles reaches `matte-within` or the null-matte fallback.** The first
 needs both operands Matte, and the second needs a matte arm to want a matte from
-an operand that has none -- 0 of the 82 pairs. Both are implemented from the
+an operand that has none -- 0 of the 585 pairs. Both are implemented from the
 reference and asserted against masks `collision_arms` builds, each negative case
 paired with the box test that answers the other way, which is as far as this
 corpus can take them.

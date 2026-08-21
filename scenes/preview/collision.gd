@@ -79,9 +79,10 @@ extends RefCounted
 ##    false for every matte-inked non-bitmap — an invariant no Director title
 ##    could have been authored against.
 ##
-## Measured before it was written, by `tools/collision_ink.gd` over all six
-## shipped roots: of the 82 operand pairs that change arm, **0 reach a null matte
-## by member type.** Every one of them is `matte-on-matte` or `box-on-matte`, and
+## Measured, by `tools/collision_ink.gd` over all six shipped roots: of the 585
+## operand pairs that change arm, **0 reach a null matte by member type.** Every one
+## is `matte-on-matte` (411) or `box-on-matte` (314 -- 725 pair/arm combinations
+## over 585 pairs, since a pair can take different arms on different frames), and
 ## both of those demanded a bitmap of the operand whose matte they scan. So the
 ## deviation is unobservable on this corpus and is here for the model, which is
 ## the state `AGENTS.md` asks to be said out loud rather than left implicit. The
