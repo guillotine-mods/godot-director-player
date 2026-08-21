@@ -172,6 +172,8 @@ const ACCOUNTED := {
 	"_stage_preview": "rebuilt: a window is re-parented to the stage that restores it",
 	"_textures": "rebuilt: a decoded Texture2D is a slower copy of bytes already on disk",
 	"_hit_images": "rebuilt: decoded with the textures",
+	"_matte_masks": "rebuilt: one byte per pixel, derived from `_hit_images` the"
+		+ " first time §2.7's operators are asked about the member",
 	"_hilite_textures": "rebuilt: derived from `_hit_images` on the first press",
 	"_loops": "rebuilt: a film loop is parsed on first draw",
 	"_text_drawn": "rebuilt: what the last paint laid out; the next paint writes it",
@@ -565,6 +567,7 @@ static func restore(host, data: Dictionary, shared: bool = false) -> String:
 	# thing, which reads as corruption rather than as an error.
 	host._textures.clear()
 	host._hit_images.clear()
+	host._matte_masks.clear()
 	host._hilite_textures.clear()
 	host._loops.clear()
 	host._cursor_applied = "?none"

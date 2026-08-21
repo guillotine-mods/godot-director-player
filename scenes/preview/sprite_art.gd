@@ -246,17 +246,107 @@ static func sample_opaque(image: Image, rect: Rect2, sprite: Dictionary,
 		at: Vector2) -> bool:
 	if image == null:
 		return false
-	var local := (at - rect.position).floor()
-	if local.x < 0 or local.y < 0 \
-			or local.x >= image.get_width() or local.y >= image.get_height():
+	var local := local_point(image.get_width(), image.get_height(), rect, sprite, at)
+	if local.x < 0:
 		return false
+	return image.get_pixel(local.x, local.y).a > OPAQUE_ALPHA
+
+
+## Where a stage point lands inside a sprite's artwork, or `(-1, -1)` for outside.
+##
+## Extracted so that the mouse's point sample above and the collision operators'
+## area scan (`mask_opaque`) share **one** copy of the mirroring rule. Two copies
+## is how `channel_at` and `draw_hotspots` came to disagree over
+## `hits_per_pixel`'s arguments; this is the same shape of hazard one level down,
+## and a flip applied in one reader and not the other is invisible except on the
+## handful of records that carry the bit.
+static func local_point(width: int, height: int, rect: Rect2, sprite: Dictionary,
+		at: Vector2) -> Vector2i:
+	var local := (at - rect.position).floor()
+	if local.x < 0 or local.y < 0 or local.x >= width or local.y >= height:
+		return Vector2i(-1, -1)
 	# The artwork is mirrored inside the rect when the score asks for a flip
 	# (`draw`), so the sample point has to be mirrored with it or the clickable
 	# pixels are the mirror image of the visible ones. The *rect* is deliberately
 	# not mirrored: flip lives in a rendering attribute byte and leaves the
 	# geometry alone.
 	if bool(sprite.get("flip_h", false)):
-		local.x = image.get_width() - 1 - local.x
+		local.x = width - 1 - local.x
 	if bool(sprite.get("flip_v", false)):
-		local.y = image.get_height() - 1 - local.y
-	return image.get_pixel(int(local.x), int(local.y)).a > 0.1
+		local.y = height - 1 - local.y
+	return Vector2i(int(local.x), int(local.y))
+
+
+## `sample_opaque`, asked of a prebuilt `matte_mask` instead of the Image.
+##
+## The same question and the same geometry — `local_point` above — with the pixel
+## read replaced by a byte index. `mask` must be `matte_mask`'s output for an image
+## of `width` x `height`; an empty mask answers false, which is the caller's cue
+## that there was nothing to ask.
+static func mask_opaque(mask: PackedByteArray, width: int, height: int,
+		rect: Rect2, sprite: Dictionary, at: Vector2) -> bool:
+	if mask.size() < width * height:
+		return false
+	var local := local_point(width, height, rect, sprite, at)
+	if local.x < 0:
+		return false
+	return mask[local.y * width + local.x] != 0
+
+
+## Above what alpha a keyed pixel counts as artwork.
+##
+## Named because there are now two readers of it — the mouse's point sample above
+## and the collision operators' area scan through `matte_mask` — and a threshold
+## written twice is a threshold that drifts. §2.7's operators and §4.5's hit test
+## must agree on which pixels exist; they may disagree about *whether to ask*, and
+## `director_ink.gd` holds that difference in two named predicates.
+const OPAQUE_ALPHA := 0.1
+
+
+## An image's artwork as one byte per pixel, 1 where `sample_opaque` would answer
+## true and 0 where it would not.
+##
+## **Why a mask rather than sampling the image directly.** `intersects` is asked
+## inside a per-tick `repeat` loop in `piposh-dream`'s platformer, and the matte
+## arms are O(overlap area) — a `get_pixel` call per pixel per operand, in
+## GDScript, on every one of those calls. A slow operator does not merely cost
+## frames: it changes how many score ticks fit inside a harness's awaited frame,
+## and then `west_walk`, `plane_heading` and `frame_reentry` move with no logic
+## change and the move gets attributed to the arms. The mask is built once per
+## (member, ink, drawn size) — the same key the artwork is cached under — and the
+## scan after that is byte indexing.
+##
+## Built *from* `sample_opaque`'s own threshold rather than from a second reading
+## of the pixels, so the mouse and the operators cannot disagree about which
+## pixels are artwork. That is the `hits_per_pixel` lesson in `interaction.gd`'s
+## header, applied before it could happen again.
+##
+## Flip is deliberately **not** applied here. The mask is in the image's own
+## coordinates and the mirroring belongs to the lookup, exactly as it does in
+## `sample_opaque` — a mask built mirrored would then be mirrored twice.
+static func matte_mask(image: Image) -> PackedByteArray:
+	var out := PackedByteArray()
+	if image == null:
+		return out
+	var w := image.get_width()
+	var h := image.get_height()
+	out.resize(w * h)
+	# The build itself is O(w x h), and a terrain member in `hatul3.dir` is a few
+	# hundred thousand pixels -- so on the tick that first touches it, a
+	# `get_pixel` per pixel is a few hundred thousand GDScript calls inside the
+	# score tick this whole cache exists to keep cheap. `get_data` is the same
+	# pixels as one buffer; the alpha byte is the fourth of each group of four.
+	if image.get_format() == Image.FORMAT_RGBA8:
+		var data := image.get_data()
+		var cut := int(OPAQUE_ALPHA * 255.0)
+		for i in w * h:
+			out[i] = 1 if data[i * 4 + 3] > cut else 0
+		return out
+	# Any other format, and there are several in this corpus's decode paths, goes
+	# the slow way rather than through a conversion: `Image.convert` mutates the
+	# Image, and this one is the cached artwork the renderer draws from.
+	for y in h:
+		var row := y * w
+		for x in w:
+			out[row + x] = 1 if image.get_pixel(x, y).a > OPAQUE_ALPHA else 0
+	return out

@@ -211,6 +211,28 @@ static func hits_per_pixel(ink: int, member_type: int = TYPE_BITMAP) -> bool:
 	return (ink & INK_MASK) == MATTE and member_type == TYPE_BITMAP
 
 
+## Does `sprite A within B` compare mattes rather than boxes, for one operand?
+##
+## **This is deliberately not `hits_per_pixel`, and the difference is the
+## reference's rather than an oversight here.** `LC::c_intersects` tests
+## `_cast->_type == kCastBitmap` of each operand; `LC::c_within` tests
+## `!isQDShape()` — the sprite-type byte (`sprite.cpp:189`), not the cast type. So
+## a matte-inked *shape cast member* on a `kCastMemberSprite` record is compared as
+## a matte by `within` and as a box by `intersects`, and there is nothing tidy
+## about it. Two predicates because the reference has two; collapsing them would
+## make the asymmetry invisible in the code, and the next reader would "fix" the
+## port back to disagreeing with `c_within`.
+##
+## Measured over all six shipped roots by `tools/collision_ink.gd`: the sprite-type
+## byte is **16 in all 8,057,628 records**, so on this data the clause reduces to
+## the ink alone and `within` is the wider of the two tests. That is a fact about
+## the corpus and not about Director -- a D3-era container with a QuickDraw shape
+## *sprite* is exactly what the clause is for, and `director_score.gd` refuses the
+## 24-byte record layout such a container would use.
+static func mattes_for_within(ink: int, sprite_type: int) -> bool:
+	return (ink & INK_MASK) == MATTE and not QD_SHAPE_SPRITE_TYPES.has(sprite_type)
+
+
 ## `CASt` type codes this file needs to tell apart. Plain ints for the same
 ## reason the keying constants are: an enum does not survive a `preload`.
 const TYPE_BITMAP := 1

@@ -46,6 +46,7 @@ const MovieSave := preload("res://scenes/preview/movie_save.gd")
 const SpriteArt := preload("res://scenes/preview/sprite_art.gd")
 const FilmLoopView := preload("res://scenes/preview/film_loop_view.gd")
 const Interaction := preload("res://scenes/preview/interaction.gd")
+const Collision := preload("res://scenes/preview/collision.gd")
 const Cursor := preload("res://scenes/preview/cursor.gd")
 const Windows := preload("res://scenes/preview/windows.gd")
 const Sound := preload("res://scenes/preview/sound.gd")
@@ -257,6 +258,12 @@ var _textures: Dictionary = {}
 ## Same keys as `_textures`, holding the decoded Image so a click can be tested
 ## against the artwork rather than against its bounding box.
 var _hit_images: Dictionary = {}
+## Same keys again, holding §2.7's matte as one byte per pixel. Separate from
+## `_hit_images` because the two are asked different ways: the mouse samples one
+## point of the Image, and `intersects`/`within` scan an area, per tick, inside
+## the platformer's own `repeat` loop. See `scenes/preview/sprite_art.gd`'s
+## `matte_mask` for why the area scan cannot afford `get_pixel`.
+var _matte_masks: Dictionary = {}
 ## Same keys again, holding the inverted artwork a sprite draws with while it is
 ## being pressed (§4.6, `preview/hilite.gd`). Kept rather than derived per paint:
 ## a held button would otherwise cost a full per-pixel pass over its member every
@@ -1549,6 +1556,7 @@ func _palette_applied() -> void:
 	_palette = _palette_state.table
 	_textures.clear()
 	_hit_images.clear()
+	_matte_masks.clear()
 	_hilite_textures.clear()
 	queue_redraw()
 
@@ -2212,6 +2220,38 @@ func _opaque_at(sprite: Dictionary, at: Vector2) -> bool:
 		_hit_images.get(key), _sprite_rect(sprite), sprite, at)
 
 
+## This sprite's artwork as a per-pixel matte, or `{}` when it has none.
+##
+## `{"mask": PackedByteArray, "width": int, "height": int}`. Cached under the
+## artwork's own key, so a member that several channels share is masked once, and
+## thrown away with `_hit_images` whenever the palette moves under it.
+##
+## **`{}` is "no matte", and the operators read it as "solid" rather than as
+## "misses everything"** -- the reasoning, and the one place this port
+## deliberately parts from the reference, is at the head of
+## `scenes/preview/collision.gd`.
+func _matte_mask(sprite: Dictionary) -> Dictionary:
+	var m: Dictionary = _table.get_member(int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	var key := _texture_key(sprite, _drawn_size(sprite, m))
+	if _matte_masks.has(key):
+		return _matte_masks[key]
+	if not _hit_images.has(key):
+		# Populates both caches as a side effect, exactly as `_opaque_at` relies on.
+		if _texture_for(sprite) == null:
+			_matte_masks[key] = {}
+			return {}
+	var image: Image = _hit_images.get(key)
+	if image == null:
+		_matte_masks[key] = {}
+		return {}
+	_matte_masks[key] = {
+		"mask": SpriteArt.matte_mask(image),
+		"width": image.get_width(),
+		"height": image.get_height(),
+	}
+	return _matte_masks[key]
+
+
 ## Draw a field member's text, and say whether this sprite was one.
 ##
 ## True even when there was nothing to draw: the sprite *is* a field, and falling
@@ -2709,13 +2749,31 @@ func note_collision_channel(channel: int) -> void:
 
 
 func lingo_sprite_rect(channel: int) -> Rect2:
+	var live := lingo_sprite_record(channel)
+	return Rect2() if live.is_empty() else _sprite_rect(live)
+
+
+## The sprite record the operators above measure, or `{}` for an empty channel.
+##
+## Split out of `lingo_sprite_rect` when the operators stopped being
+## bounding-box-only: the matte arms need the record's ink, sprite type and flip
+## bits as well as its rect, and re-walking the frame for each would ask
+## `_effective` twice for the same channel in one operator call. `_effective(...,
+## true)` is the whole of the visibility rule this function's docstring is about --
+## the second argument is what makes a hidden sprite keep its record.
+func lingo_sprite_record(channel: int) -> Dictionary:
 	if _score == null or channel <= 0:
-		return Rect2()
+		return {}
 	for sprite in frame_sprites():
 		if int(sprite["channel"]) == channel:
-			var live: Dictionary = _effective(sprite, true)
-			return Rect2() if live.is_empty() else _sprite_rect(live)
-	return Rect2()
+			return _effective(sprite, true)
+	return {}
+
+
+## §2.7's matte arms, asked only after the caller's box test has already answered
+## true. See `scenes/preview/collision.gd`, which is where the arms live.
+func lingo_matte_collision(first: int, second: int, want_within: bool) -> bool:
+	return Collision.refine(self, first, second, want_within)
 
 
 ## The playhead, in the runtime's own **0-based** index space.

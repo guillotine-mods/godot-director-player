@@ -102,6 +102,7 @@ static func adopt(host) -> void:
 static func forget_previous(host, previous_path: String) -> void:
 	host._textures.clear()
 	host._hit_images.clear()
+	host._matte_masks.clear()
 	host._clear_trails()
 	host._forget_field_text_of(previous_path)
 	host._loops.clear()

@@ -337,6 +337,8 @@ godot --headless --script tools/sprite_size_survey.gd -- --all  # score rect ver
 godot --headless --script tools/tween_survey.gd -- --all  # whether a tweened span carries a value per frame or only keyframes
 godot --script tools/sprite_flip.gd -- --file PIPDATA/OPENING.dir  # a flipped sprite is mirrored inside its own rect, pass/fail — NOT --headless
 godot --headless --script tools/sprite_collision.gd  # `intersects`/`within` measure a hidden sprite, the mouse does not, pass/fail
+godot --headless --script tools/collision_arms.gd  # the *ink* half of the same two operators: which of the four arms a pair takes, and what each answers where a box says yes, pass/fail
+godot --headless --script tools/collision_ink.gd -- --all  # survey, no verdict: the ink of every `intersects`/`within` operand channel, and how many operand pairs would change arm per root
 godot --headless --script tools/cannon_hit.gd -- --root piposh  # the same rule played: piposh 1's cannon round sinks a ship, pass/fail
 godot --headless --script tools/pause_holds.gd -- --file PIP2DATA/SAVELOAD.dir --label savegame2 --hotspot  # `pause` holds the frame that paused, keeps its hotspots, and `continue` does not re-run the handler that paused, pass/fail
 godot --headless --script tools/idle_clock.gd -- --root rating --boot NAVIGATE.dir  # `idle` is sent once per step to the movie, and the title's clock advances because of it, pass/fail

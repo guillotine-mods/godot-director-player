@@ -1029,20 +1029,37 @@ func call_builtin(name: String, args: Array) -> Variant:
 			# on -- and answers 0 rather than overlapping everything at the
 			# origin. Not a hidden one: `lingo_sprite_rect` measures a sprite a
 			# script has hidden, because the reference does. See that function.
+			#
+			# **Both operators are ink-aware past this box test** (§2.7). The box
+			# is the first thing every arm of `c_intersects`/`c_within` tests --
+			# `findIntersectingRect().isEmpty()` and `myBbox.contains(yourBbox)`
+			# open the matte helpers themselves -- so it stays here, in front, and
+			# `lingo_matte_collision` only ever narrows a `true`. The arms are in
+			# `scenes/preview/collision.gd`; a box-only answer was `bugs.md` 126
+			# and is *more* permissive, so what it cost was hits registering where
+			# the artwork has a hole.
 			if preview == null or args.size() < 2:
 				return 0
 			# Both operands are noted for the collision overlay before either is
 			# measured, so a zone appears the first time a script asks about it
 			# even when the answer is 0.
-			preview.note_collision_channel(LingoValue.to_int(args[0]))
-			preview.note_collision_channel(LingoValue.to_int(args[1]))
-			var first: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[0]))
-			var second: Rect2 = preview.lingo_sprite_rect(LingoValue.to_int(args[1]))
+			var left_channel := LingoValue.to_int(args[0])
+			var right_channel := LingoValue.to_int(args[1])
+			preview.note_collision_channel(left_channel)
+			preview.note_collision_channel(right_channel)
+			var first: Rect2 = preview.lingo_sprite_rect(left_channel)
+			var second: Rect2 = preview.lingo_sprite_rect(right_channel)
 			if first.size == Vector2.ZERO or second.size == Vector2.ZERO:
 				return 0
 			if low == "intersects":
-				return 1 if first.intersects(second) else 0
-			return 1 if second.encloses(first) else 0
+				if not first.intersects(second):
+					return 0
+				return 1 if preview.lingo_matte_collision(
+					left_channel, right_channel, false) else 0
+			if not second.encloses(first):
+				return 0
+			return 1 if preview.lingo_matte_collision(
+				left_channel, right_channel, true) else 0
 		"soundbusy":
 			# Scripts wait on this before speaking. Unbound it answers 0, which
 			# reads as "nothing is playing" and lets a room talk over itself.

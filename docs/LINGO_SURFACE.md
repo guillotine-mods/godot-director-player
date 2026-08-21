@@ -575,7 +575,12 @@ that will simply never be found.
 answer a boolean. In Director they are ink-aware: a matte-ink bitmap tests
 against its transparency mask, not its bounding box. A bounding-box-only
 implementation is *more* permissive, so hotspots become larger than they were,
-which reads as sloppy hit detection rather than as a bug.
+which reads as sloppy hit detection rather than as a bug. **This port was
+bounding-box-only until 2026-08-21** (`bugs.md` 126); the arms are in
+`scenes/preview/collision.gd` now, behind the box test, which is the reference's
+own order -- every matte helper in `channel.cpp` opens by rejecting an empty
+`findIntersectingRect` or a failed `contains`, so a matte arm can only narrow a
+box "yes" and never create one.
 
 The ink-awareness is narrower than it sounds, and the reference is precise about
 when it applies. `c_within` compares mattes only when **both** operands are
@@ -583,6 +588,25 @@ non-QD-shape with `kInkTypeMatte`, and otherwise takes
 `getBbox().contains(getBbox())`; `c_intersects` has a third case, box-on-matte,
 when only the second operand qualifies. A shape is never a matte however it is
 inked, so a bitmap tested against a shape is always plain rects.
+
+**The two predicates are not the same test and the difference is not cosmetic.**
+`c_intersects` asks `_cast->_type == kCastBitmap` of each operand; `c_within` asks
+`!isQDShape()`, which reads the *sprite-type* byte (`sprite.cpp:189`). So a
+matte-inked shape *cast member* on a `kCastMemberSprite` record is compared per
+pixel by `within` and as a box by `intersects`. `director_ink.gd` carries them as
+two named predicates for that reason -- `hits_per_pixel` and `mattes_for_within`
+-- and `tools/collision_arms.gd` asserts that they disagree.
+
+How much of this the corpus exercises, measured by `tools/collision_ink.gd` over
+all six shipped roots: **82 of 156 resolvable literal operand pairs change arm,
+over 9,025 frames**, and every one of them is `matte-on-matte` or `box-on-matte`.
+`matte-within` has no witness in any title this engine runs, and neither does the
+one case where the reference and this port part company: `isMatteIntersect`,
+`isMatteBoxIntersect` and `isMatteWithin` each answer *false* when a matte they
+wanted is null, where this port treats such an operand as opaque and lets that
+side fall back to its box. The reasoning is at the head of `collision.gd`; the
+short form is that `BitmapCastMember::isWithin` -- the reference's own other
+reader of the same matte -- is `matte ? sample : true`.
 
 **Neither operator consults `the visible of sprite`,** and that is the difference
 between them and the mouse rather than an omission. `channel.cpp:isMouseIn` opens

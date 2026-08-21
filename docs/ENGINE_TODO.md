@@ -11,7 +11,10 @@ been deleted.** A note here saying the two agreed is still evidence about
 Director, and is not a statement about the live code; several such notes turned
 out not to hold once checked against `scenes/preview/`. Two cost real debugging
 time: `intersects` was listed as implemented while only the retired host bound
-it, so every inventory drop in every title silently evaluated to nothing.
+it, so every inventory drop in every title silently evaluated to nothing. The
+*second* thing wrong with these two operators -- that they read no ink at all --
+was absent from this file entirely until 2026-08-21 and has its own entry under
+"What is genuinely still missing".
 
 This is a work queue, not a bug list — nothing here is a mystery. Each item says
 what Director does, what happens without it, and where the change goes. Ordered
@@ -1124,6 +1127,54 @@ this.
 **Dirty rects.** §6.3. Acceptable to omit, but it forecloses
 destination-reading inks and leaves one known trails divergence: a sprite in
 front of an old mark that has not moved should occlude it and does not.
+
+**`intersects` and `within` are ink-aware now; two things about them are not.**
+§2.7. **This list had no entry for these operators at all** until 2026-08-21,
+while `preview_lingo_host.gd` answered `first.intersects(second)` /
+`second.encloses(first)` unconditionally and `LINGO_SURFACE.md` §2.7 already
+recorded, correctly, that the reference chooses between three arms for
+`intersects` and two for `within` off the operands' ink. This file's only mention
+of the pair was the warning at its head about a *different* defect, so the queue
+read as though the ink half were finished. `bugs.md` 126, and the same failure
+mode the transitions entry above is about.
+
+*What landed.* `scenes/preview/collision.gd` holds all four arms behind the box
+test the host arm still does first, which is the reference's own order --
+`findIntersectingRect().isEmpty()` and `myBbox.contains(yourBbox)` open the matte
+helpers themselves, so a matte arm can only ever narrow a box "yes". The two
+predicates are `director_ink.gd`'s `hits_per_pixel` (Matte **and** a bitmap
+member, which is `c_intersects`) and `mattes_for_within` (Matte and not a
+QuickDraw shape *sprite*, which is `c_within`), kept apart because the reference
+keeps them apart. `tools/collision_arms.gd` asserts all four arms and
+`tools/collision_ink.gd` measured the corpus first: over all six shipped roots,
+**82 of 156 resolvable literal operand pairs change arm, across 9,025 frames** --
+17 in `piposh`, 17 in `piposh-dream`, 17 in `piposh-en`, 17 in `piposh-ru`, 4 in
+`piposh2`, 10 in `rating`. Every one of the 82 is `matte-on-matte` or
+`box-on-matte`; `piposh-dream`'s are `sprite 15 intersects <terrain>` in
+`hatul1/2/3`, the platformer's own ground and ladder test.
+
+*What is unverified, and it is two arms rather than an edge.* **Nothing in any of
+the six titles reaches `matte-within` or the null-matte fallback.** The first
+needs both operands Matte, and the second needs a matte arm to want a matte from
+an operand that has none -- 0 of the 82 pairs. Both are implemented from the
+reference and asserted against masks `collision_arms` builds, each negative case
+paired with the box test that answers the other way, which is as far as this
+corpus can take them.
+
+*What is a deliberate divergence.* `isMatteIntersect`, `isMatteBoxIntersect` and
+`isMatteWithin` each `return false` when a matte they wanted is null; this port
+treats such an operand as opaque instead, so that side degrades to its box. The
+argument is at the head of `collision.gd` and rests on the reference disagreeing
+with itself -- `BitmapCastMember::isWithin`, the mouse's reader of the same
+matte, is `matte ? sample : true` (`castmember/bitmap.cpp:926`).
+
+*What is genuinely missing.* `Sprite::getQDMatte` (`sprite.cpp:257`) builds a
+matte for a QuickDraw shape *sprite* with Matte ink, and nothing here calls it or
+can: `director_score.gd` refuses the 24-byte record layout such a container
+would use, and `tools/channel_occupancy.gd` measured **0 QuickDraw shape sprite
+records in 65.9M** over eight roots. So it is unreachable rather than skipped,
+and it is the same hole as the QuickDraw shape *renderer* named in that tool's
+docstring -- one container format away, not one function.
 
 **Score recording.** Rarely needed.
 
