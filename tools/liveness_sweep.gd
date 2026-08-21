@@ -88,17 +88,73 @@ extends SceneTree
 ##                 places for a reason the player is waiting on.
 ##   `blank-cycle` two to four revisited states in one movie, at least one of which
 ##                 draws nothing. The screen alternating with black.
-##   `trap`        two to four revisited states in one movie, all of them drawn. The
+##   `trap`        two to four revisited states in one movie, all of them drawn,
+##                 **and nothing on any of them answers the mouse**. The
 ##                 `playhead_escape` shape (DAY1's `<character>clicktalk` pair).
-##                 **Low confidence and not a failure unless `--strict`**: a
-##                 two-frame animation loop that a room holds itself in is the
-##                 same shape and is legitimate. Reported so a human can look.
+##                 Still low confidence and still not a failure unless
+##                 `--strict`, because the sweep drives no keyboard and a room
+##                 that only a keystroke leaves is the same shape.
 ##   `sound-park`  the whole watch was excused by the `soundBusy` clause and the
 ##                 playhead never left four states. `reached` cannot say *which*
 ##                 channel was polled, so a loop waiting on a channel that never
 ##                 falls silent is excused for ever; this is that blind spot
 ##                 reported instead of hidden. **Not a failure** -- an
 ##                 uninterruptible cut scene is the same shape.
+##
+## ## Why `trap` needs a second source, and why that source is the mouse
+##
+## **The playhead alone cannot tell an authored idle loop from a confinement**, and
+## every `trap` this file has ever reported was the former. `SACHROOM.dir` was a
+## walk that parked (`docs/bugs-closed.md` 69, fixed by the arrivals rule below);
+## nine `<character>clicktalk` pairs were two-frame loops on a cold entry
+## (`bugs.md` 36); and `piposh-dream/puzzle.dir` is a 4x4 sliding puzzle whose
+## `exitFrame` on the last frame of its four is `go("start")`, for ever, by
+## design -- the very property `tools/puzzle_board.gd` is built on. All three are
+## "two to four revisited drawn states with no hold", so no rule about *where the
+## playhead went* can separate them. Widening the excuse to "a backward `go`
+## happened during the window" would be worse than reporting them: a `play` is
+## exactly what parked the `ques.dir`/`Saves.dir` bug this file was written from,
+## so that excuse disables the detector for its founding case.
+##
+## What separates the two is not the playhead, it is **whether the player has
+## anything to do**. Director gives a room three ways out -- the score, a click, a
+## keystroke -- so a loop the score will not leave and that offers no click is one
+## the player cannot leave either, and one that offers a click is a room *waiting*
+## (`director-qa-playthrough`: "waiting for input is recurrence, not stillness").
+## So the trap arm asks the engine's own `respondsToMouse` (§4.3, through
+## `_responds_to_mouse`) and withholds the verdict when any state in the cycle
+## carries an eligible sprite. Measured on the case above:
+## `tools/click_eligibility.gd --root piposh-dream --file puzzle.dir` reports
+## **13 of 13 frames** with at least one eligible sprite, 259 of 301 sprite
+## records answering a click -- an independent reading, from a cold score walk
+## rather than from this sampler.
+##
+## Three properties of that rule, each load-bearing:
+##
+##   * **It is granted per cycle, never per movie or per tick.** `ping-pong` and
+##     `blank-cycle` are decided above the trap arm and are deliberately *not*
+##     excused by it: two containers trading places is a finding whoever can be
+##     clicked, and a frame drawing nothing is a black stage whoever can be
+##     clicked. `_assert_rules` pins both with all-clickable windows, because an
+##     excuse that reaches them is how this change would go wrong.
+##   * **Eligibility is asked once per state, and only on a revisit.** See
+##     `_watch`: the answer is cached per `(movie, frame)` and computed the second
+##     time the playhead arrives there, so a movie walking through 120 frames pays
+##     nothing and a movie in a four-state loop pays four questions. That is not
+##     only cost -- asking it of every sprite of every sample cost a factor of nine
+##     and aliased the sampler into blindness once already (see `_sample`).
+##   * **An unprobed state reads as "not clickable", and that cannot invent a
+##     finding.** A window only reaches the trap arm when it has strictly more
+##     arrivals than states, which means it contains a revisit, which is exactly
+##     where the probe fires -- so every window that can be called a trap carries
+##     at least one real eligibility answer. Keep that ordering if this is ever
+##     moved.
+##
+## What the rule does not claim is that the click *works*: eligibility says a
+## sprite answers the mouse, not that its handler leads anywhere, and the sweep
+## enters every container cold so a gate on a global may make every hotspot inert.
+## A cycle cleared this way is therefore reported as a counted `idle loops` line
+## rather than dropped silently, so a human can still look at the list.
 ##
 ## Two more findings come from outside the playhead:
 ##
@@ -397,6 +453,12 @@ func _sweep(h: Harness) -> bool:
 	var covered := 0.0
 	var thin: Array[String] = []
 	var unjudged: Array[String] = []
+	# Cycles the trap arm declined because the player had something to click.
+	# Counted and named rather than dropped, so a rule that starts excusing the
+	# whole corpus is visible as a number instead of as a quiet green run --
+	# `porting-fidelity-verification`'s "make forgiven visibly distinct from
+	# resolved".
+	var idle_loops: Array[String] = []
 
 	for movie in movies:
 		if limit > 0 and visited >= limit:
@@ -419,6 +481,10 @@ func _sweep(h: Harness) -> bool:
 		if int(seen.get("watched", 0)) < window and not _clock_stopped(preview):
 			unjudged.append("%s %d/%d" % [
 				movie.get_file(), int(seen.get("watched", 0)), window])
+		# Read off the first watch, before `--click` can replace the verdict: a
+		# poke that finds something must not also erase what the watch cleared.
+		if str(seen.get("idle", "")) != "":
+			idle_loops.append(movie.get_file())
 		if clicking and str(seen["verdict"]) == "":
 			var poked: Dictionary = await _poke(
 				preview, audio, movie, clicks, ticks, window)
@@ -451,6 +517,12 @@ func _sweep(h: Harness) -> bool:
 		print("unjudged  : %d watched fewer than %d tick(s), so no window was read: %s%s" % [
 			unjudged.size(), window, ", ".join(unjudged.slice(0, 6)),
 			", ..." if unjudged.size() > 6 else ""])
+	if not idle_loops.is_empty():
+		print("idle loops: %d cycled inside %d or fewer drawn state(s) with a hotspot "
+			% [idle_loops.size(), CYCLE_MAX]
+			+ "on the loop, so `trap` was withheld: %s%s" % [
+				", ".join(idle_loops.slice(0, 8)),
+				", ..." if idle_loops.size() > 8 else ""])
 	if not skipped.is_empty():
 		# Logged rather than silently truncated: a sweep that covered a third of
 		# the corpus and said "all clear" is worse than one that did not run.
@@ -498,10 +570,19 @@ func _sweep(h: Harness) -> bool:
 ## that paragraph applied to a rule instead of to a subject.
 ##
 ## So each verdict is made to fire once from a synthetic window, and — as
-## important — the three shapes that must *not* fire are checked too: a park with
+## important — the shapes that must *not* fire are checked too: a park with
 ## artwork on it (`go to the frame`, the most common state in the corpus), a bare
-## stage under an open Movie-In-A-Window, and a playhead moving through more
-## states than `CYCLE_MAX`. Costs milliseconds and needs no movie.
+## stage under an open Movie-In-A-Window, a playhead moving through more states
+## than `CYCLE_MAX`, a walk that parks, a cycle with a hold on every tick, and a
+## cycle whose loop offers the player a click. Costs milliseconds and needs no
+## movie.
+##
+## **Every excuse is paired with the shape it must not reach.** An excuse checked
+## only in the direction that clears something is a rule nobody has tested; the
+## clickable-cycle excuse is therefore asserted three times over -- once clearing
+## a one-movie cycle, once *not* clearing two movies trading places, and once not
+## clearing a cycle through an empty frame. The middle one is the founding bug of
+## this whole file, which no longer exists to be reproduced live.
 func _assert_rules(h: Harness) -> void:
 	var name := "the rules fire on the shapes they are for, and on no others"
 	h.begin(name)
@@ -562,16 +643,57 @@ func _assert_rules(h: Harness) -> void:
 	var excused := str(_judge("x.dir", {"errors": {}, "samples": held}, WINDOW)["verdict"])
 	h.check("the same shape with a hold on every tick is not a finding",
 		excused == "", excused)
+
+	# The trap arm's own excuse, and the two shapes it must not reach. Every one of
+	# these three windows carries a hotspot on every state; without that they would
+	# pass for the wrong reason, by never asking the question under test.
+	#
+	# `piposh-dream/puzzle.dir` is the first of them in the corpus: four drawn
+	# states, sixteen clickable tiles, and an authored `go("start")` on the last
+	# frame. It read as a `trap` under `--strict` until this rule existed.
+	var idling := _read_window(_window_of([["a.dir", 5, 3], ["a.dir", 6, 4]], true))
+	h.check("a cycle of drawn states with a hotspot on the loop is not a trap",
+		not idling.is_empty() and str(idling["verdict"]) == "",
+		"got `%s`" % str(idling.get("verdict", "<no window read at all>")))
+
+	# **The negative control this change exists to survive.** The bug this file was
+	# written from -- `ques.dir` f803 and `Saves.dir` f27 trading places -- is two
+	# containers alternating, and the excuse above must not reach it however
+	# clickable either of them is. Read through `_judge` rather than
+	# `_read_window`, so the run-building and window-sliding are exercised too:
+	# the founding bug cannot be reproduced live any more, and this is what stands
+	# in for it.
+	var trading: Array = []
+	for i in WINDOW * 2:
+		trading.append({"movie": "ques.dir" if i % 2 == 0 else "Saves.dir",
+			"frame": 803 if i % 2 == 0 else 27, "drawn": 4, "hold": "",
+			"stride": 1, "windowed": false, "clickable": true})
+	var still := str(_judge("ques.dir", {"errors": {}, "samples": trading},
+		WINDOW)["verdict"])
+	h.check("two movies trading places is a ping-pong with a hotspot on both",
+		still == "ping-pong", "got `%s`" % still)
+
+	# And a black stage in the cycle stays a finding too: a frame drawing nothing
+	# is a frame drawing nothing, whoever can be clicked on the other one.
+	var flashing := str(_read_window(
+		_window_of([["a.dir", 5, 3], ["a.dir", 6, 0]], true)).get("verdict", ""))
+	h.check("a cycle through an empty frame is a blank cycle with a hotspot on it",
+		flashing == "blank-cycle", "got `%s`" % flashing)
 	h.complete(name)
 
 
 ## `WINDOW` samples cycling through `states`, each `[movie, frame, drawn]`.
-static func _window_of(states: Array) -> Array:
+##
+## `clickable` is a parameter and not a constant because the pair of runs -- the
+## same window read once with a hotspot on it and once without -- is what pins
+## the trap arm's excuse to the trap arm.
+static func _window_of(states: Array, clickable: bool = false) -> Array:
 	var out: Array = []
 	for i in WINDOW:
 		var state: Array = states[i % states.size()]
 		out.append({"movie": str(state[0]), "frame": int(state[1]),
-			"drawn": int(state[2]), "hold": "", "stride": 1, "windowed": false})
+			"drawn": int(state[2]), "hold": "", "stride": 1, "windowed": false,
+			"clickable": clickable})
 	return out
 
 
@@ -786,6 +908,13 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 		else int((host.reached as Dictionary).get("soundbusy", 0))
 	var rate := _ff
 	var clean := 0
+	# `(movie, frame)` the playhead has stood on, and the eligibility answer for
+	# the ones it has come *back* to. Two dictionaries rather than one because
+	# "seen once" and "probed" are different states: the probe is what costs, and
+	# it is spent only on a state that has recurred, which is the only kind any
+	# cycle verdict is read over.
+	var arrived: Dictionary = {}
+	var eligible: Dictionary = {}
 	preview.set("_fast_forward_fps", rate)
 	while int(preview.get("_ticks")) - began < budget \
 			and Time.get_ticks_msec() - start < cap_ms:
@@ -813,7 +942,18 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 		last = now
 		var asked := 0 if host == null \
 			else int((host.reached as Dictionary).get("soundbusy", 0))
-		samples.append(_sample(preview, audio, clock, host, step, asked - polls))
+		var sample := _sample(preview, audio, clock, host, step, asked - polls)
+		# Asked here, in the same process frame the sample was taken in, so the
+		# answer is about the stage that sample describes. The order matters and
+		# is the header's third property: the probe fires on the second arrival at
+		# a state, a cycle window necessarily contains a second arrival, so no
+		# window that can be called a trap is built out of unprobed samples.
+		var key := "%s:%d" % [str(sample["movie"]).get_file(), int(sample["frame"])]
+		if not eligible.has(key) and arrived.has(key):
+			eligible[key] = _any_clickable(preview)
+		arrived[key] = true
+		sample["clickable"] = bool(eligible.get(key, false))
+		samples.append(sample)
 		polls = asked
 		# The control loop. Down hard on any skipped tick, up gently while none
 		# is skipped, so a movie that is only briefly expensive -- one cold
@@ -879,7 +1019,32 @@ static func _sample(preview: Node, audio: Node, clock, host, stride: int,
 		"hold": reason,
 		"stride": stride,
 		"windowed": windows != null and not windows.is_empty(),
+		# Filled in by `_watch` on the states it probes, and left false everywhere
+		# else. False means "no eligible sprite was found here", which is the
+		# reading that keeps a finding rather than the one that excuses it.
+		"clickable": false,
 	}
+
+
+## Does anything on the stage right now answer the mouse?
+##
+## The engine's own §4.3 eligibility (`_responds_to_mouse`), asked of the drawn
+## sprites in channel order and stopped at the first yes -- which in a room with a
+## clickable backdrop is the first question. `_poke`'s extra `_reachable_point`
+## scan is deliberately **not** done here: it costs up to 45 `_channel_at`
+## descents a sprite, and the claim this answer supports is "the player has
+## something to click", not "this exact pixel routes there".
+##
+## `{}` from `_effective` is a sprite a script has hidden, and a hidden sprite is
+## not a hotspot -- the same reading `_sample` takes for the drawn count.
+static func _any_clickable(preview: Node) -> bool:
+	for raw in preview.call("frame_sprites"):
+		var sprite: Dictionary = preview.call("_effective", raw)
+		if sprite.is_empty():
+			continue
+		if bool(preview.call("_responds_to_mouse", sprite)):
+			return true
+	return false
 
 
 ## Turn a watch into a verdict.
@@ -893,6 +1058,11 @@ static func _judge(movie: String, trace: Dictionary, window: int) -> Dictionary:
 	var samples: Array = trace["samples"]
 	var run: Array = []
 	var worst: Dictionary = {}
+	# A cycle the trap arm declined because the player has something to click.
+	# It is not a finding and it is not nothing either, so it is carried out
+	# separately rather than through `worst`: routing it through there would let a
+	# verdict-less window outrank -- and therefore hide -- a `lingo` finding.
+	var idle := ""
 	for sample_value in samples:
 		var sample: Dictionary = sample_value
 		# A hold is an answer, and a *skipped* tick is an unknown -- the playhead
@@ -906,26 +1076,38 @@ static func _judge(movie: String, trace: Dictionary, window: int) -> Dictionary:
 		if run.size() < window:
 			continue
 		var found := _read_window(run.slice(run.size() - window))
-		if not found.is_empty() and (worst.is_empty()
-				or int(SEVERITY.get(found["verdict"], 0))
-					> int(SEVERITY.get(worst["verdict"], 0))):
-			worst = found
+		if not found.is_empty():
+			if str(found["verdict"]) == "":
+				if idle == "":
+					idle = str(found["detail"])
+			elif worst.is_empty() or int(SEVERITY.get(found["verdict"], 0)) \
+					> int(SEVERITY.get(worst["verdict"], 0)):
+				worst = found
 		run.remove_at(0)
 
 	if not worst.is_empty():
 		var seen := _finding(movie, str(worst["verdict"]), str(worst["detail"]))
 		if not errors.is_empty():
 			seen["detail"] = "%s; lingo: %s" % [seen["detail"], _errors(errors)]
+		seen["idle"] = idle
 		return seen
 	# A Lingo error on a movie that is otherwise well behaved is still a finding:
 	# "step budget exhausted" means a handler was cut off part-way, and what it
 	# did not get to do is invisible until something else goes wrong.
 	if not errors.is_empty():
-		return _finding(movie, "lingo", _errors(errors))
+		var faulty := _finding(movie, "lingo", _errors(errors))
+		faulty["idle"] = idle
+		return faulty
 	var stuck := _sound_park(samples, window)
 	if stuck != "":
-		return _finding(movie, "sound-park", stuck)
-	return _finding(movie, "", _healthy(samples))
+		var parked := _finding(movie, "sound-park", stuck)
+		parked["idle"] = idle
+		return parked
+	var told := _healthy(samples)
+	var clean := _finding(movie, "",
+		told if idle == "" else "%s; idle loop: %s" % [told, idle])
+	clean["idle"] = idle
+	return clean
 
 
 ## The `soundBusy` clause's own blind spot, reported rather than left silent.
@@ -994,6 +1176,9 @@ static func _read_window(w: Array) -> Dictionary:
 	var movies: Dictionary = {}
 	var blank: Dictionary = {}
 	var windowed := false
+	# Whether any state in this window carries a sprite that answers the mouse.
+	# Only the trap arm reads it; see the header for why not the others.
+	var clickable := false
 	# How many times the playhead *arrived* somewhere, counting a stay as one
 	# arrival. Compared against the number of distinct states below, this is the
 	# difference between a cycle and a walk; see the guard for why a set cannot
@@ -1009,6 +1194,8 @@ static func _read_window(w: Array) -> Dictionary:
 			blank[key] = true
 		if bool(sample["windowed"]):
 			windowed = true
+		if bool(sample.get("clickable", false)):
+			clickable = true
 		if key != previous:
 			arrivals += 1
 			previous = key
@@ -1062,9 +1249,20 @@ static func _read_window(w: Array) -> Dictionary:
 		return {"verdict": "blank-cycle",
 			"detail": "cycling for %d tick(s) through a frame with nothing drawn: %s"
 				% [w.size(), where]}
+	# **The one thing that separates an authored idle loop from a confinement**,
+	# and it is not a fact about the playhead -- see the header. A room whose loop
+	# offers a click is a room waiting for one; a room whose loop offers none is
+	# one the player has no move in. Reported rather than dropped: the empty
+	# verdict is what makes this a counted `idle loops` line instead of silence.
+	if clickable:
+		return {"verdict": "",
+			"detail": "cycling through %d state(s) for %d tick(s) with a sprite that "
+				% [states.size(), w.size()]
+				+ "answers the mouse, so not a trap: %s" % where}
 	return {"verdict": "trap",
-		"detail": "confined to %d state(s) for %d tick(s) with no hold: %s"
-			% [states.size(), w.size(), where]}
+		"detail": "confined to %d state(s) for %d tick(s) with no hold and nothing "
+			% [states.size(), w.size()]
+			+ "that answers the mouse: %s" % where}
 
 
 ## `movie:frame(drawn)` for each state, sorted, so two runs print the same line.
