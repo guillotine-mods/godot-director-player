@@ -9809,3 +9809,91 @@ anyone.** `ch26` carries `1:31`, `on mouseDown: sound stop 2; go("afterpazzel",
 "dinner2.dir")` — an unconditional exit, hidden at f0 by `1:28` and revealed by
 `1:3` at `ohcounter = 100`. `ch20` restarts. The win check is inside `refreshpaz`
 (`winnum = 15` and `item 4 of line 4 = "x"`, then `go("win")`).
+
+---
+
+## 122. NOT A BUG. Piposh Dream's western duels resolve with no player, because `manleft` is a spawn budget and not a body count
+
+**Status:** NOT A BUG — ruled out · **Area:** `piposh-dream` `WEST1.dir` / `WEST2.dir` /
+`WEST3.dir`, authored 1997 data · raised as a candidate defect by three separate sweeps
+(day 1, day 2 and day 3 of 2026-08-14), settled 2026-08-21
+
+The observation, reported three times and never filed: under `--no-input` the global
+`manleft` counts down to 0, the playhead leaves the action span for the marker `win`,
+and `put "done" into item 6 of advancekeeper` is never reached. Day 1 could not choose
+between "the enemies are authored to walk off the far side" and "something is killing
+them that should not", and reserved a bug number for it.
+
+**`manleft` is the spawn budget.** Two members write it in each container and nothing
+else does — `script_placement --match manleft` gives **2** frame-script placements per
+container, **0** sprite behaviours, 0 shadowed, 0 sourceless scripts in the two casts
+scanned, and a `--match '(^|\s)do\s'` run places 0 `do` statements, so no assembled
+write can hide. `1:140` sets it:
+
+    sound playFile 4, effectspath & "1234.aif"
+    if not soundBusy(4) then
+      manleft = 25
+    else
+      manleft = 5
+    end if
+
+and `1:151` decrements it behind `if (manleft > 0) and (random(4) = 1)`, then scans
+`trgt` for a slot in state `"d"` and places a new man at one of six stage-edge points
+from the `hh`/`yy` tables. **No hit test, no `intersects`, no `within`, and no
+reference to the player** in either the guard or the body. It counts men left to
+*send*, not men left alive. Slots also free themselves with no player: `brain()`
+(`1:149`) retires a man who reaches his waypoints with `setAt(trgt, i, "d")` and
+`put value(the text of field "stole") + 1 into field "stole"`.
+
+**Marker `win` is not the outcome, which is what made the observation look like a
+fault.** It is the end of the shooting phase. `1:283` sits on it (WEST1 f210) and reads
+`sound stop 3` then `if value(the text of field "stole") > 3 then go("gamelost")`
+(`WEST2 1:248`, `WEST3 1:291`, same threshold). The outcome is a **`mouseUp` inside an
+eight-frame window**: `1:303`, a sprite behaviour on ch5 over f257..f264 under the
+marker `fire`, whose entire body is `go("draw")` (`WEST2 1:251`, `WEST3 1:294`
+identical). Miss the window and f291's `1:306` runs `go("lost")`. The checklist write
+(`WEST1 1:308` f322, `WEST2 1:256`, `WEST3 1:299`, all slot 6) is reachable only
+through `draw`, paced into f322 by `sherd`'s `sndbusy1`/`sndbusy2` over f310..f321. **A
+no-input run cannot tick the hub slot, by design**, so day 1's "reaches `win` but never
+f322" is the losing path working as written.
+
+Both authored loss routes were measured, cold and through `strtgame.dir`: cold WEST1
+drains with `stole` = 1, passes 283, loses the quickdraw to f291 `go("lost")` → f371 and
+parks in the f382..f399 loop waiting for a click on ch10 (`1:296` → `mainmenu`) or ch11
+(`1:297` → `again` f446 → `1:293` `go("actionbegins")`, the retry); entered through
+`strtgame.dir` it drains with `stole` = 4 and 283 itself fires `go("gamelost")`.
+
+**`WEST2`'s day-2 non-reproduction was frame budget, not behaviour**, and this corrects
+that sweep. Members 140 and 151 are identical there apart from the coordinate tables and
+the `"a"`-slot recycle roll, which only a player's own bullet can set (`1:152`), so a
+passive run cannot produce one. Cold, all three take the `manleft = 5` branch and drain
+to 0 with no input in **595 / 413 / 231** score ticks — one random variable, five spawns
+each gated on `random(4) = 1` once per 26-frame score loop, mean near 500. Day 2 allowed
+3,000 *process* frames, which at the 8 fps clock against a 60 fps loop is roughly 400
+*score* ticks: one spawn short of WEST2's 413. It also corrects day 3, whose "reached 1
+in 6,000 frames" was 4 of 5 spawns rather than 24 of 25.
+
+Verified independently before filing: `script_placement --match manleft --root
+piposh-dream --file WEST1.dir` reports 2 placed, both frame scripts, at f338 under
+`actionbegins` f329 and f364 under `start` f339, with 0 sprite-behaviour spans.
+
+**Two open items, neither affecting this verdict.**
+
+1. **`1234.aif` is not where `1:140` looks for it.** `effectspath` resolves to
+   `res://games/piposh-dream/fx\` on the authored path (set by `strtgame.dir` `1:234`, a
+   movie script no score places — and `WEST1.dir` does not even link that cast, so a cold
+   entry leaves it unset), while the file exists only at
+   `games/piposh-dream/CFILES/SUEME/1234.AIF`. The port plays it regardless because the
+   audio index tail-matches filenames (`autoload/audio_director.gd:405`). That tail match
+   is therefore **the sole input to `soundBusy(4)`, which is the sole input to a five-man
+   duel versus a twenty-five-man one.** Whether the original resolved `FX\1234.AIF` at all
+   is unchecked. Design evidence leans to 5 being intended — `psila = 5` is the next line,
+   and `stole > 3` is lenient against five spawns and unwinnable against twenty-five — but
+   that is inference.
+2. **`psila` never moved off 5** in four runs across three movies. `brain()` spawns enemy
+   bullets and `1:152` tests `sprite(getAt(bltsprite, i)).within(getAt(ppl, 1))`,
+   decrementing `psila` on a hit, and it never fired once. Not investigated, and not
+   claimed as a defect — but it is geometry evaluated per score tick, so it is not a
+   fast-forward artifact, and it is the one quantity in this investigation that could
+   still be this port's. The hidden-sprite rule for `within`/`intersects` is the first
+   place to look.
