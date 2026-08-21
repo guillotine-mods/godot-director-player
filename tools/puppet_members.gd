@@ -441,30 +441,49 @@ extends SceneTree
 ## the *movie's* init, not the scene's — and the reason `stage1psila` (landing f178, two
 ## frames before `newgame`) is the only hatul2 scene that gets its globals honestly.
 ##
-## ### fritz2: one scene of six is measured, and the other five are the same fight
+## ### fritz2: five scenes of six were one recording of the same fight, and are not now
 ##
-## Every fritz2 scene lands at **f252** and every one of them plays f252..f300 (f255..f300
-## before the settle frames were recorded; the span is the same walk). That is
-## `_landing` above working as written and collapsing: the rule takes the latest `action*`
-## marker at or before the init, `fritz2.dir` has exactly one (`actionbegins`, f254), and
-## the inits are at f254, f273, f425, f517, f591 and f703. So `endstage1`..`endstage4` are
-## landed 173 to 451 frames short of themselves and none is entered.
+## As this section first read it, every fritz2 scene landed at **f252** and every one of
+## them played f252..f300 — `_landing` taking the latest `action*` marker at or before the
+## init, `fritz2.dir` having exactly one (`actionbegins`, f254), and the inits sitting at
+## f254, f273, f425, f517, f591 and f703. `endstage1`..`endstage4` were landed 173 to 451
+## frames short of themselves, so four of the six reported rows were four more recordings
+## of the f273 fight and the ch12 difference they all carried was one finding printed five
+## times.
 ##
-## They are not entered by a longer run either, and the movie says why: the fight holds on
+## The rule is bounded now — no other scene's init may lie between the marker and this one,
+## which `_landing` argues — and the four move to f423, f515, f589 and f701. All four
+## report `init ran : yes`, `builtins unbound : {}` and no Lingo error, and each plays its
+## own frames: f423..f495, f515..f749, f589..f748 and f701..f730 over 600 ticks.
+##
+## **`endstage1` is a scene that takes input, and nothing had ever measured it.** At 4,000
+## ticks against `--no-input` at the same landing, both runs visiting f423..f780:
+##
+##     ch      with input                          no input
+##     13      **25 distinct members**, MOVED       **2**, MOVED
+##     12      8, 165, 166                         8, 166
+##     11      8, 166                              8, 166
+##     1, 6    1/470/477 and 337/474               the same members, the same order
+##
+## ch13 is the fighter — `getAt(ppl, 1)`, the channel the position section above explains
+## `_operand` cannot spell — and 25 members against 2 is the walk cycle running only where
+## something pressed a key. Ch1 and ch6 are the score's own backdrop swap and read the same
+## in both, which is the control doing its job.
+##
+## What has *not* changed is why the chain cannot be walked: the fight holds on
 ## `go(marker(0))` and leaves for `endstage1` only when
-## `sprite(30).visible = 1 and sprite getAt(ppl, 1) intersects 30`. Winning is the entry.
-## `endstage1` then leaves for `endstage2` on its own copy of the same test, and so on to
+## `sprite(30).visible = 1 and sprite getAt(ppl, 1) intersects 30`. Winning is the entry,
+## `endstage1` leaves for `endstage2` on its own copy of the same test, and so on to
 ## `endstage5`, so the container is a five-link chain each of whose links is a won fight.
-## **A key driver that rotates through ten keys cannot win it**, and the reason is the one
-## the position section above records: the player's own motion is behind
-## `if getAt(mnv, 1) > 1`, which only a hit raises.
+## **A key driver that rotates through ten keys cannot win it** — the player's own motion
+## is behind `if getAt(mnv, 1) > 1`, which only a hit raises. So these five rows are five
+## scenes entered cold and driven, which is a different claim from five scenes reached the
+## way a player reaches them, and the second is still not measured.
 ##
-## So the only fritz2 row that is a measurement of its own scene is `actionbegins@f273`,
-## and it reproduces `606a2a15` to the channel: ch12's membership is the whole difference,
-## **34 distinct members against the control's 14** (35 when that commit measured it — the
-## throw picks with `random`), every other watched channel identical on both signals. The
-## five other rows carry that same ch12 difference because they are five recordings of the
-## same fight, which is worth knowing before quoting them as five findings.
+## `actionbegins@f273` is unmoved and still reproduces `606a2a15` to the channel: ch12's
+## membership is the whole difference, **34 distinct members against the control's 14**
+## (35 when that commit measured it — the throw picks with `random`), every other watched
+## channel identical on both signals.
 ##
 ## ### `init ran` said NO about inits the playhead had run, and now does not
 ##
@@ -498,19 +517,39 @@ extends SceneTree
 ## `actionbegins` at f254, so f253 ran no `exitFrame`. `_note_frame` records why that is
 ## a property of `frame_loop.gd` rather than a hope.
 ##
-## ### The defect left in this file, found by pointing it at a container it had not seen
+## ### `_landing`'s `action*` rule had no bound, and the bound is the score's own
 ##
-## Not fixed here. The reproducing command is `--root piposh-dream --file fritz2.dir
-## --play <scene>`:
+## The rule took the latest `action*` marker at or before the init with nothing to say how
+## far back that marker may be, so a movie with one such marker and several scenes after it
+## landed all of them on the first. `fritz2.dir` is that movie: `endstage4` was landed at
+## f252 for an init at f703, which is 451 frames short of the scene it is a landing for
+## and 449 back from the marker it came off — the report's own line states the second.
+## The section on fritz2 above is what that cost.
 ##
-## **`_landing`'s `action*` rule has no distance bound.** It is right where the marker is
-## in or beside the scene's own run (`actionbegins@f273`, measured) and wrong where the
-## movie has one such marker and several scenes after it, which is fritz2 exactly. A
-## landing 451 frames early is not a landing. Note before changing it that landing
-## `LEAD_IN` before an `endstage` init instead runs that init with `ppl`, `foes`, `mnv`
-## and `advance` unassigned, which is what `stage8water@f982` above shows costs a
-## 70-frame jump to `gameover` — so the rule exists for a reason and both arms are wrong
-## for this container.
+## The bound is **no other scene's init between the marker and this one**, argued at
+## `_landing` and read off the score rather than chosen as a distance. It is not a
+## distance: f273 is 19 frames past `actionbegins` and reachable, f425 is 171 past it and
+## not, and what separates them is f273 sitting in the way rather than the gap.
+##
+## Measured across the containers that have an `action*` marker at all, which are the only
+## ones the rule can move. **Nine are unmoved**, each a single-scene container where the
+## marker is the movie's own statement of where its game begins and nothing is between:
+## `MAZE1` f115, `MAZE2` f220, `maze3` f207, `plane1` f153, `plane2`/`plane3` f18, `WEST1`
+## f327, `WEST2` f265, `WEST3` f222. `MAZE1.dir --play loose` still reports
+## `init ran : yes` at f123 from the f115 landing, which is the case the arm exists for and
+## the one a bound could have broken. **Eleven move**, all in the three `fritz` containers
+## and all of them an `endstage` link: 4 in `fritz2`, 4 in `fritz3`, 3 in `fritz1`.
+## `eat.dir`, `piposh2/ARCADE1.dir` and `rating/ARCADE1.dir` never took the arm and are
+## untouched.
+##
+## **What the bound does not fix**, because the other arm has its own defect and this
+## moves scenes onto it: `LEAD_IN` before the init runs that init with whatever the movie
+## sets up earlier unset. `hatul2.dir`'s `stage8water@f982` above is the standing example,
+## landing f980 and jumping to `gameover` because `newgame` at f179 was skipped and
+## `hatmen` is VOID. It does *not* bite fritz2's four — all four report
+## `builtins unbound : {}`, no Lingo error, and a `getAt(ppl, 1)` that resolves — but it is
+## the risk the arm carries and the reason the fritz2 section says these are scenes entered
+## cold rather than scenes reached the way a player reaches them.
 ##
 ## ### hatul2's stage chain: the mechanism is in the scripts, and nothing drove it
 ##
@@ -1701,15 +1740,27 @@ func _scenes(table, score, labels, cover: Dictionary, runs: Array,
 		may_dress: bool) -> Dictionary:
 	var claim_sites := 0
 	var by_rule := {"claim": 0, "dress": 0}
-	var list: Array = []
+	# **Two passes, because one scene's landing depends on where the others are.**
+	# `_landing` may walk in from a marker earlier in the movie, and it may not walk in
+	# across another scene's init -- so the whole set of inits has to be known before the
+	# first landing is decided. Nothing else here is order-dependent; the split is for
+	# that one question.
+	var found_per_run: Array = []
+	var inits := {}
 	for run in runs:
 		var found := _init_of(table, cover, run, may_dress)
+		found_per_run.append(found)
 		claim_sites += int(found["claim_sites"])
+		if int(found["frame"]) >= 0:
+			inits[int(found["frame"])] = true
+	var list: Array = []
+	for index in runs.size():
+		var found: Dictionary = found_per_run[index]
 		if int(found["frame"]) < 0:
 			continue
 		by_rule[str(found["rule"])] = int(by_rule[str(found["rule"])]) + 1
-		list.append(_scene(table, score, labels, cover, run, int(found["frame"]),
-			str(found["script"]), found["claimed"], str(found["rule"])))
+		list.append(_scene(table, score, labels, cover, runs[index], int(found["frame"]),
+			str(found["script"]), found["claimed"], str(found["rule"]), inits))
 	_disambiguate(list)
 	return {"list": list, "claim_sites": claim_sites, "by_rule": by_rule}
 
@@ -1787,7 +1838,7 @@ static func _rule_word(scene: Dictionary) -> String:
 
 ## One scene, filled in: its scripts, the members they assign, and its entry.
 func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
-		init_script: String, claimed: Array, rule: String) -> Dictionary:
+		init_script: String, claimed: Array, rule: String, inits: Dictionary) -> Dictionary:
 	var set_re := RegEx.create_from_string(SET_MEMBER)
 	var dot_re := RegEx.create_from_string(DOT_MEMBER)
 	var member_re := RegEx.create_from_string(MEMBER_OF)
@@ -1889,7 +1940,7 @@ func _scene(table, score, labels, cover: Dictionary, run: Array, init: int,
 
 	var exits := _exits(sources, labels, int(run[0]), int(run[-1]))
 	var hotspots := _hotspots(table, score, run)
-	var landing := _landing(labels, run, init)
+	var landing := _landing(labels, init, inits)
 	var controls := _controls(table, _source(table, int(init_script.split(":")[0]),
 		int(init_script.split(":")[1])))
 	return {
@@ -1958,7 +2009,40 @@ func _hotspots(table, score, run: Array) -> Dictionary:
 ## begins), else `LEAD_IN` before the init. `tools/cast_script_sprite.gd` reached the same
 ## number for `hex1` by hand and measured that it produces the same board as walking the
 ## whole intro.
-func _landing(labels, run: Array, init: int) -> Dictionary:
+##
+## **And the marker is only a way in if the walk can get here from it**, which is the bound
+## this rule went without and the reason it collapsed on `fritz2.dir`. That movie has
+## exactly one `action*` marker, `actionbegins` at f254, and six inits -- f254, f273, f425,
+## f517, f591 and f703. Unbounded, all six landed at f252 and all six played f252..f300, so
+## four of the six reported rows were four more recordings of the f273 fight. `endstage4`
+## was landed **451 frames** short of itself — landing f252, init f703 — which the
+## report's own line states from the *marker* instead, as `449 frames back`.
+##
+## The bound is read off the score rather than being a distance: **no other scene's init may
+## lie between the marker and this one.** An init is where a scene claims its channels and
+## the frame it sits on is the first frame of a game that then holds -- `fritz2`'s f273 run
+## is `go(marker(0))` until `sprite(30).visible = 1 and sprite getAt(ppl, 1) intersects 30`,
+## which is winning -- so a walk-in that crosses one arrives in *that* scene and stops
+## there. Nothing about the distance says this: f273 is 19 frames past the marker and is
+## reachable, because the frames between are uncovered and the playhead simply advances
+## through them; f425 is 171 past it and is not, because f273 is in the way.
+##
+## Measured, `--play all --ticks 600`: f273 keeps f252 and still reports `init ran : yes`,
+## and `endstage1`..`endstage4` move from f252 to f423, f515, f589 and f701. `MAZE1.dir`,
+## the container the rule exists for, is unmoved -- its `actionbegins` at f117 has no other
+## init between it and f123, so the landing stays f115.
+##
+## **What the bound does not fix, said out loud because the header used to imply it did**:
+## the other arm is wrong in its own way, and moving a scene onto it does not make that
+## scene measurable. `hatul2.dir`'s `stage8water@f982` is the standing example — landing
+## f980, and because that landing skips the movie's own `newgame` at f179 the global
+## `hatmen` is never assigned and a script takes its `go("gameover")` branch. An
+## `endstage` init landed cold has `ppl`, `foes`, `mnv` and `advance` unassigned for the
+## same reason. So the four rows this changes are honest about which scene they are
+## *about* where before they were not; whether they enter it is the section on fritz2 in
+## the header, and the answer there is that winning the previous fight is the only entry
+## the movie has.
+func _landing(labels, init: int, inits: Dictionary) -> Dictionary:
 	var action := -1
 	var re := RegEx.create_from_string("(?i)action")
 	for marker in labels.markers:
@@ -1968,9 +2052,23 @@ func _landing(labels, run: Array, init: int) -> Dictionary:
 		if frame > action:
 			action = frame
 	if action >= 0 and action < init:
-		return {"frame": maxi(0, action - LEAD_IN),
-			"why": "%d before the movie's own `action*` marker at f%d, and left to walk in"
-				% [LEAD_IN, action]}
+		# Strictly between, at both ends. The marker's own frame is very often an init --
+		# `actionbegins` at f254 is one -- and landing before it is the whole point of the
+		# rule: that init is the setup the walk-in exists to run. It is a *later* one that
+		# swallows the playhead.
+		var blocked := -1
+		for frame in inits:
+			if int(frame) > action and int(frame) < init and int(frame) > blocked:
+				blocked = int(frame)
+		if blocked < 0:
+			return {"frame": maxi(0, action - LEAD_IN),
+				"why": "%d before the movie's own `action*` marker at f%d, and left to walk in"
+					% [LEAD_IN, action]}
+		return {"frame": maxi(0, init - LEAD_IN),
+			"why": "%d before the init — the movie's `action*` marker at f%d is %d frames"
+					% [LEAD_IN, action, init - action]
+				+ " back with another scene's init (f%d) between, so a walk-in from there" % blocked
+				+ " arrives in that scene instead"}
 	return {"frame": maxi(0, init - LEAD_IN),
 		"why": "%d before the init, and left to walk in" % LEAD_IN}
 
