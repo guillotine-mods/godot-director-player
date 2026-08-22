@@ -15,6 +15,13 @@ extends SceneTree
 ##   --play S     after the static report, enter scene S the way the movie does and
 ##                say what drew. `--play all` walks every scene it derived.
 ##   --ticks N    process frames to give one played scene (default 4000)
+##   --via L      reach `--file` **warm**, along a comma-separated chain of hops: `M:C`
+##                clicks channel C of movie M, `M@F` puts M's playhead on frame F. Only
+##                the first hop is opened by this file; every later one has to be
+##                arrived at by the movie before it, or the run refuses. Which
+##                container loads is then decided by the movie being clicked and never
+##                by `--file`. See the `--via` section below.
+##                  --via "dinner2.dir@4412,mainmenu.dir:5" --file hex2.dir
 ##   --no-input   press nothing: the control run every input claim needs
 ##   --avoid L    channels `--play` must not click, comma-separated, on top of the ones
 ##                derived. The derivation reads sprite behaviours *and* the cast scripts of
@@ -695,6 +702,12 @@ const NAMES_CONTAINER := "(?i)\\.(dxr|dir)\""
 const KEY_INSTALL := "(?i)set\\s+the\\s+key(?:down|up)script\\s+to\\s+\"([^\"]+)\""
 const KEYCODE_TEST := "(?i)the\\s+keycode\\s*=\\s*([0-9]+)"
 const KEYCODE_CASE := "(?i)case\\s+the\\s+keycode\\s+of"
+## Ceiling, in process frames, on each of `--via`'s waits. Measured on the
+## `dinner2.dir@4412,mainmenu.dir:5` chain: the first movie opens in 2, the placement
+## reaches the hub in 2 more, the slot is drawn in 1, and the click's `go` takes
+## effect inside `route_release`. The budget is for the case where one of them does
+## not happen at all.
+const VIA_BUDGET := 900
 
 var _verbose := false
 var _show_source := false
@@ -706,12 +719,16 @@ var _avoid := {}
 ## are strings; the test runs once per sprite record per frame of every run.
 var _mouse_re: RegEx = null
 var _container_re: RegEx = null
+## `--via`'s hops in order, each `{movie, channel}` or `{movie, frame}`. Empty is the
+## cold entry, which is still the default: this flag is for the movies that need it.
+var _via: Array = []
 
 
 func _init() -> void:
 	var args := Args.parse()
 	_verbose = Args.flag(args, "verbose")
 	_show_source = Args.flag(args, "source")
+	_via = _parse_via(Args.text(args, "via", ""))
 	for text in Args.text(args, "avoid", "").split(",", false):
 		_avoid[int(text)] = true
 
@@ -958,7 +975,11 @@ func _play(rel: String, scene: Dictionary, table, ticks: int, no_input: bool) ->
 	var preview: Node = load("res://scenes/director_preview.tscn").instantiate()
 	root.add_child(preview)
 	await process_frame
-	preview.call("lingo_go_movie", rel, null)
+	if _via.is_empty():
+		preview.call("lingo_go_movie", rel, null)
+	elif not await _enter_via(preview, rel):
+		preview.queue_free()
+		return
 	for i in 8:
 		await process_frame
 	if preview.get("_score") == null:
@@ -1581,6 +1602,193 @@ func _live_hotspots(preview: Node, scene: Dictionary) -> Array:
 
 ## The middle of what a channel is drawing, so a click lands on the artwork rather than on
 ## the corner of a score rect a swapped member does not fill.
+## `--via "M@F,M:C"` -> a list of hops, or empty.
+##
+## Empty on anything malformed, and **loudly**: a mistyped `--via` that silently
+## became a cold entry is the one failure this flag exists to prevent, so the parse
+## error is printed and `--play` then says which entry it took anyway.
+func _parse_via(text: String) -> Array:
+	var out: Array = []
+	for piece in text.split(",", false):
+		var hop := str(piece).strip_edges()
+		if hop == "":
+			continue
+		var click := hop.rsplit(":", true, 1)
+		var place := hop.rsplit("@", true, 1)
+		if hop.contains("@") and place.size() == 2 and str(place[1]).is_valid_int():
+			out.append({"movie": str(place[0]), "frame": int(place[1])})
+		elif hop.contains(":") and click.size() == 2 and str(click[1]).is_valid_int():
+			out.append({"movie": str(click[0]), "channel": int(click[1])})
+		else:
+			print("--via hop wants <movie>:<channel> or <movie>@<frame> (got %s)" % hop)
+			return []
+	return out
+
+
+## Reach `rel` the way a player does: open the movie that links to it and click a
+## channel, letting *that movie's* behaviour decide which container loads.
+##
+## ## Why this is not the same as `lingo_go_movie(rel)`
+##
+## A `--play` entry is a landing inside a movie this file opened, and it is right for
+## what it was built for: a scene of a movie whose own init the landing crosses. It is
+## wrong the moment the movie's behaviour depends on **state another movie wrote**,
+## and the minigames of a title with a day structure all do. Two measured shapes:
+##
+## - `piposh-dream/hatul2.dir --play "stage8water@f982"` lands past `newgame` at
+##   f179, so `hatmen` is never assigned and a script takes its `go("gameover")`
+##   branch (`f204444d`). The scene reads as broken and is not.
+## - `piposh-dream/mainmenu.dir`'s slots are `go(1, "hex" & globalday & ".dxr")`, so
+##   the container that loads is chosen by a global. A harness that names `hex2.dir`
+##   itself has decided the thing the movie was supposed to decide, and can no longer
+##   observe whether the global reached the decision at all.
+##
+## So the click is the point. `route_release` dispatches the `mouseUp` and the `go`
+## takes effect inside the same call, which is why the press must happen **before**
+## `_play`'s sampling loop rather than inside it: that loop breaks out the moment
+## `movie_name()` changes, so a click made inside it would end the run it started.
+##
+## ## Why it is a chain and not one hop
+##
+## One hop was the first shape and it does not work, which is the useful measurement
+## here. `--via mainmenu.dir:5 --file hex1.dir` from a cold boot reports
+##
+##     ENTERED  : no — clicking ch5 of mainmenu.dir at (525, 248) on f1 went nowhere
+##
+## and it is right to: nothing had set `globalday`, so `1:24` composed `"hex.dxr"`,
+## no such container exists and the `go` did nothing. **The state the hub reads has
+## its own authored source, one movie earlier**, and a warm entry that stops at the
+## hub is only a colder cold entry. So the flag takes a list, and the hop that fixes
+## that case is `dinner2.dir@4412` — one frame short of `1:298`, which is
+## `globalday = 2` / `advancekeeper = ...` / `go(1, "mainmenu.dxr")`, so the state is
+## set by the *movie's* own step out of the frame.
+##
+## **Only the first hop is opened by this file.** Every later one has to be arrived at
+## by the hop before it, and a hop whose movie does not turn up is a refusal rather
+## than a `lingo_go_movie` that quietly repairs the chain — a repaired chain is a cold
+## entry wearing this flag's name, and it would report the entry as warm.
+##
+## ## What it refuses
+##
+## Every failure names its own hop: a movie that never arrived, a channel that is
+## never drawn to click, a click or a placement that led nowhere, and a chain that
+## ended in a container other than `--file`. That last one matters most: carrying on
+## would sample another container's channels under this scene's name and the frame
+## numbers would silently be someone else's, which is the sampling loop's own
+## `left_for` guard one step earlier.
+##
+## The click point is the centre of the channel's **live** rect off the frame the
+## playhead is on, so a slot the score moved is followed rather than a coordinate
+## frozen into this file. `tools/day_checklist.gd` is the gated harness that asserts
+## one such round trip end to end, with the write at the far end of it; this is the
+## same entry as a survey flag, and it asserts nothing.
+func _enter_via(preview: Node, rel: String) -> bool:
+	var trail: Array[String] = []
+	for index in _via.size():
+		var hop: Dictionary = _via[index]
+		var movie := str(hop["movie"])
+		if index == 0:
+			preview.call("lingo_go_movie", movie, null)
+		if not await _via_wait_movie(preview, movie):
+			print("  ENTERED  : no — hop %d wanted %s and it never arrived (in %s)%s" % [
+				index + 1, movie, str(preview.call("movie_name")), _trail(trail)])
+			return false
+		var did := ""
+		if hop.has("channel"):
+			did = await _via_click(preview, movie, int(hop["channel"]))
+		else:
+			did = await _via_place(preview, movie, int(hop["frame"]))
+		if did == "":
+			print("  ENTERED  : no — hop %d in %s led nowhere%s" % [
+				index + 1, movie, _trail(trail)])
+			return false
+		trail.append(did)
+	var went := str(preview.call("movie_name"))
+	if not _same_movie(went, rel):
+		print("  ENTERED  : no — the chain chose %s, not %s; refusing to sample it%s" % [
+			went, rel, _trail(trail)])
+		return false
+	print("  via      : %s" % " -> ".join(trail))
+	return true
+
+
+## Wait for `movie` to be the current one, however it is reached.
+func _via_wait_movie(preview: Node, movie: String) -> bool:
+	for i in VIA_BUDGET:
+		if _same_movie(str(preview.call("movie_name")), movie):
+			return true
+		await process_frame
+	return false
+
+
+## Click a channel and wait for the movie to change. Returns a description of the hop,
+## or "" if nothing happened.
+##
+## The channel has to be **offered and drawn** before the press, and on an arrival it
+## usually is not: a movie entered by `go(1, ...)` lands on engine index 0, and a hub's
+## clickable slots are typically placed on the frames after it — `mainmenu.dir`'s are
+## on f1..f27. Waited for rather than settled for, so a slow arrival is not a silent
+## miss and a channel the movie never draws is reported as itself.
+func _via_click(preview: Node, movie: String, channel: int) -> String:
+	var at := Vector2.ZERO
+	for i in VIA_BUDGET:
+		at = _centre_of_channel(preview, channel)
+		if at != Vector2.ZERO:
+			break
+		await process_frame
+	if at == Vector2.ZERO:
+		print("  ENTERED  : no — ch%d of %s is never drawn to click (f%d)" % [
+			channel, movie, int(preview.call("current_frame"))])
+		return ""
+	var on := int(preview.call("current_frame"))
+	preview.call("route_press", at)
+	preview.call("route_release", at)
+	if not await _via_left(preview, movie):
+		print("  ENTERED  : no — clicking ch%d of %s at (%d, %d) on f%d went nowhere" % [
+			channel, movie, int(at.x), int(at.y), on])
+		return ""
+	return "%s ch%d at (%d,%d) on f%d -> %s" % [
+		movie, channel, int(at.x), int(at.y), on, str(preview.call("movie_name"))]
+
+
+## Put the playhead on a frame and let the movie take itself out of the movie.
+##
+## Four fields and not one, for the reason `tools/day_checklist.gd:_place` records:
+## `_index` alone leaves an abandoned tempo or sound hold in the clock, the
+## `enterFrame` owed to the frame being left would be dispatched against the arriving
+## one (`frame_loop.gd:advance`), and the `exitFrame` latch — which is what runs the
+## frame script a hop like this exists to reach — is cleared only by a frame entry.
+func _via_place(preview: Node, movie: String, frame: int) -> String:
+	preview.set("_index", frame)
+	preview.set("_pending_enter", null)
+	preview.set("_exit_frame_called", false)
+	var clock = preview.get("_clock")
+	if clock != null:
+		clock.reset()
+	if not await _via_left(preview, movie):
+		print("  ENTERED  : no — %s f%d never left the movie" % [movie, frame])
+		return ""
+	return "%s f%d -> %s" % [movie, frame, str(preview.call("movie_name"))]
+
+
+func _via_left(preview: Node, movie: String) -> bool:
+	for i in VIA_BUDGET:
+		if not _same_movie(str(preview.call("movie_name")), movie):
+			return true
+		await process_frame
+	return false
+
+
+func _trail(trail: Array[String]) -> String:
+	return "" if trail.is_empty() else "  (after %s)" % " -> ".join(trail)
+
+
+## Two container references name the same movie. Compared on the basename because
+## `--file` may carry a folder and `movie_name()` never does.
+func _same_movie(a: String, b: String) -> bool:
+	return a.get_file().to_lower() == b.get_file().to_lower()
+
+
 func _centre_of_channel(preview: Node, channel: int) -> Vector2:
 	for value in preview.call("frame_sprites"):
 		var raw: Dictionary = value
