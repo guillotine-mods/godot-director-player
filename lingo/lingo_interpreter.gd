@@ -2983,6 +2983,65 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 		# themselves missing.
 		if _host_answered_builtin():
 			return null
+		# **Nothing anywhere answered this name**, and the two things that can
+		# mean are not the same fault. `lingo_reference_names.gd` is what tells
+		# them apart -- see that file for why the reference's own four tables are
+		# the discriminator and `bugs.md` 123 for the divergence.
+		#
+		#   *A builtin this port has not bound.* The reference resolves it out of
+		#   `_builtinFuncs`, `_builtinCmds`, `_theEntities` or an object method
+		#   table and returns normally, so the hole is ours and answering is the
+		#   only safe thing to do. This is the work list, and it is what
+		#   `BUILTIN` has always meant.
+		#
+		#   *A handler the movie does not define.* `LC::call` ends this one with
+		#   `lingoError("Call to undefined handler '%s'...")`
+		#   (`lingo-code.cpp:1770`), which sets `_abort`, which is
+		#   `Lingo::execute`'s loop condition and also pops **every** frame on
+		#   the callstack in that function's epilogue
+		#   (`lingo.cpp:634` and `742-748`). So in Director the statement after
+		#   the call does not run, and neither does anything left in any caller:
+		#   the dispatch ends. `_aborting` is this port's word for the same flag
+		#   and expresses it -- `_exec_from` tests it per statement and
+		#   `reset_steps` clears it where a dispatch begins, which is what
+		#   `_abort` and `execute`'s epilogue do between them.
+		#
+		#   **"The dispatch" is one `execute()` call, not the event.** `_abort`
+		#   is cleared unconditionally at the end of whichever `execute()` saw
+		#   it, and there are *nested* ones: `b_call`, `callBehaviorHandler` and
+		#   `sendAllSprites` each note the callstack depth and re-enter
+		#   `execute(frame)` (`lingo-builtins.cpp:1891`, `3486`, `3545`), so an
+		#   abort raised inside `call(#msg, obj)` unwinds only as far as that
+		#   builtin and the caller carries on. Nothing here has that boundary --
+		#   `_broadcast` is an ordinary GDScript call -- so a port that turned
+		#   this on would abort *further* than the reference in exactly those
+		#   three places, and that is a second thing to get right first rather
+		#   than a detail. `_abort` is also set by `LC::procret` on the ordinary
+		#   return from the outermost handler (`lingo-code.cpp:1901`, `1909`):
+		#   it is "stop the loop", not "an error happened".
+		#
+		# **It is deliberately not set here**, and the measurement is the reason.
+		# `tools/undefined_calls.gd --all` puts 19 call sites in the second bucket
+		# across 91,737 in the six shipped roots, and two of them are
+		# `gotoNetPage` -- Director 5 NetLingo, which the reference does not
+		# implement *at all* (no `netpage`, `netDone` or `getNetText` anywhere in
+		# `reference/scummvm/lingo/`). So the reference aborts on a name Director
+		# answers, and copying that would truncate a handler because of a hole in
+		# ScummVM rather than a fault in the movie. One name in seven, measured,
+		# is enough to say the discriminator cannot carry a control-flow decision:
+		# the reference's builtin table is a port's surface, not Director's.
+		# What is recorded instead is the divergence itself, under its own
+		# category, so `debug_report` names it on the player's path and a future
+		# abort has a set to be right about first.
+		if not RefNames.knows(name):
+			report(LingoDiagnostics.UNDEFINED_HANDLER, name)
+			# Through `_fail` as well, because the sink is read by harnesses and
+			# the entry's whole complaint is that a running game gives no sign.
+			# Director prints "Handler not defined" in the message window and
+			# stops; this port prints and carries on, and the print is the half
+			# it can have without deciding the other question.
+			_fail("call to undefined handler %s" % name)
+			return result if result != null else 0
 		report(LingoDiagnostics.BUILTIN, name)
 	return result if result != null else 0
 
@@ -3012,6 +3071,10 @@ const LingoObject := preload("res://lingo/lingo_object.gd")
 ## for the reason above; only `is_native` is reached from here, because the
 ## whole point of the protocol is that this file does not know what an Xtra is.
 const LingoXtra := preload("res://lingo/lingo_xtra.gd")
+## Every name the reference resolves without aborting. Read at exactly one site,
+## `_call`'s fall-through, to tell a builtin this port has not bound from a
+## handler the movie does not define. Preloaded for the reason above.
+const RefNames := preload("res://lingo/lingo_reference_names.gd")
 ## For `do`. Preloaded here rather than at the top for the same reason `Builtins`
 ## is: a headless `--script` run resolves global class names out of the editor's
 ## cache, which a fresh checkout has not built.

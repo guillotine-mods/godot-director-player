@@ -22,6 +22,17 @@ const UNBOUND_NAME := "unbound_name"
 ## business, not a missing binding, and mixing the two buries a real gap list
 ## under hundreds of uninitialised loop counters.
 const UNSET_VARIABLE := "unset_variable"
+## A **call** that resolved nowhere at all: no handler in the movie declares it
+## and the reference has no table entry for it either
+## (`lingo_reference_names.gd`). Director ends one of these with "Handler not
+## defined" and aborts the whole dispatch, so this is the one category that says
+## the port and the reference part company on *control flow* rather than on a
+## value. Split out of `BUILTIN` for the reason `UNSET_VARIABLE` is split out of
+## `UNBOUND_NAME`: `BUILTIN` means "the port owes a binding" and is a work list,
+## and an undefined call is the movie's own, so mixing them buries the work list.
+## Measured across all six roots in `games/`: 19 call sites, 7 names, against
+## 77,556 sites that the reference does have a table entry for.
+const UNDEFINED_HANDLER := "undefined_handler"
 
 ## A runaway script must not turn the sink into the leak it exists to find.
 const MAX_ENTRIES := 2000

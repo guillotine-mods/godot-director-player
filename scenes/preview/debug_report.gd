@@ -74,3 +74,17 @@ static func emit(host) -> void:
 			print("interpreter errors (%d):" % errors.size())
 			for line in errors.slice(0, 8):
 				print("   %s" % line)
+		# **The diagnostics sink was read by six harnesses and by nothing here**,
+		# which is how `bugs.md` 123 stayed silent in both directions: a call that
+		# resolved nowhere answered 0, and a 0 is indistinguishable from a handler
+		# that returned 0. This is the one category worth a line of its own,
+		# because it is not a binding the port owes -- it is a place where
+		# Director stops the whole dispatch ("Handler not defined", `LC::call` ->
+		# `lingoError` -> `_abort`) and this port runs on. `builtins unbound`
+		# above is the other bucket and stays a work list; see
+		# `lingo/lingo_reference_names.gd` for the split.
+		var undefined: PackedStringArray = host._interpreter.diagnostics \
+			.names_in(LingoDiagnostics.UNDEFINED_HANDLER)
+		if not undefined.is_empty():
+			print("undefined handlers: %d  %s  (Director aborts the dispatch here)"
+				% [undefined.size(), ", ".join(undefined)])

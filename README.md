@@ -423,6 +423,8 @@ godot --headless --script tools/lingo_compile_check.gd -- --file PIP2DATA/DAY1.D
 godot --headless --script tools/lingo_builtins_check.gd     # the engine-free builtins, §1
 godot --headless --script tools/lingo_logic_check.gd        # `and`/`or` evaluate both operands, §13/§17
 godot --headless --script tools/lingo_designator_check.gd   # designator suffixes survive the parser, §16.4
+godot --headless --script tools/undefined_handler.gd        # a call nothing defines is told apart from a builtin the port has not bound, and says so, pass/fail
+godot --headless --script tools/undefined_calls.gd -- --all # survey: which calls in the corpus resolve nowhere at all, per root
 ```
 
 `script_compile_check.gd` is the corpus-wide one and the one to reach for first
