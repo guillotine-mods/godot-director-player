@@ -3923,9 +3923,28 @@ func _return_from_play_stack() -> bool:
 ## leave the frame entry that follows with the `exitFrame` latch still raised.
 func _pop_play_stack() -> void:
 	var back: Dictionary = _play_stack.pop_back()
+	var frame := int(back["frame"])
 	if str(back["movie"]) != str(_movie.path):
-		lingo_go_movie(str(back["movie"]).get_file(), null)
-	_index = clampi(int(back["frame"]), 0, maxi(_score.frame_count - 1, 0))
+		# **The frame travels with the movie**, because in the reference the return
+		# is one `goto` and not two steps: `func_play` hands the popped entry
+		# straight to `func_goto(ref.frameI, ref.movie)` (`lingo-funcs.cpp:181-194`),
+		# which writes the frame into `_nextMovie.frameI` (`:107-112`) so the caller
+		# arrives *standing on* its return address.
+		#
+		# Passing null here and assigning `_index` afterwards is the same
+		# destination reached one frame entry too late, and the entry in between is
+		# not free. `MovieSession.adopt` zeroes `_index` on every movie load, so
+		# `lingo_go_movie` sent `prepareFrame` and `enterFrame` for the caller's
+		# **frame 0** -- its scripts, its score sound, its palette and its
+		# transition -- and only then was the playhead moved to the return. In
+		# Rating's save/load office that frame opens the scene with `sound playFile
+		# 1, soundspath & "Mena1.aif"`, so every open of the save list and of the
+		# load list replayed the manager's greeting over the line already playing;
+		# the same return is taken by Piposh Dream's three save screens.
+		# `docs/bugs-closed.md` 133, and `tools/play_return_frame.gd` is the
+		# assertion.
+		lingo_go_movie(str(back["movie"]).get_file(), lingo_frame_number(frame))
+	_index = clampi(frame, 0, maxi(_score.frame_count - 1, 0))
 	# **Nothing is suppressed here, because there is nothing to suppress.**
 	# `lingo_play_push` recorded the frame *after* the caller's when the `play`
 	# came from a frame or movie script, so the entry this return lands on is an

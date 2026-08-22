@@ -10378,3 +10378,106 @@ Gate **143 of 143**, exit 0, count unchanged, with `game_config`, `export_preset
 `hint` has the identical dead shape and is *implementable*, because the retired `hint()`
 asked the frame rather than the title. Deleting it by analogy with skip would be the wrong
 move.
+
+## 133. FIXED. A `play` interlude in another movie returned to its caller's frame 0 first, so Rating's save/load office replayed its opening line every time the list opened
+
+**Status:** FIXED · **Area:** `scenes/director_preview.gd` (`_pop_play_stack`),
+`tools/play_return_frame.gd` · filed and closed 2026-08-22
+
+Reported from QA on Rating, in these words: "every time you bring up the save/load
+menu, you hear the same clip from the start of the conversation." Rating's save and
+load screens are a scene, not a dialog — `MANAEGOZ.dir`, the manager's office, whose
+frame 0 opens with `sound playFile 1, soundspath & "Mena1.aif"` ("please wait, we are
+dealing with earlier enquiries") — so "the start of the conversation" is a literal
+description of which frame ran.
+
+**The report was pinned to a frame off the video before any code was read**, and that
+is the only reason the first hypothesis did not survive. `silencedetect` gives four
+speech segments; the debug overlay burns `frame N/684 <marker>` into every frame, so
+each segment's onset names a playhead position; and an envelope cross-correlation
+against the 28 files in `SOUNDS/MENAGOZ/` names the clip:
+
+| segment | onset | frame | clip | correct? |
+|---|---|---|---|---|
+| A | 0.44s | f289 `manaload` | `MENA5.AIF` 0.99 | yes, the load menu's own line |
+| B | 4.65s | f303 `manaload` | `MENA1.AIF` 0.98 | **no** |
+| C | 10.49s | f96 `manasave` | `MENA2.AIF` 0.98 | yes, the save menu's own line |
+| D | 16.20s | f158 `manasave` | `MENA1.AIF` 0.98 | **no** |
+
+B and D correlate 1.00 with each other and land on the two frames where the slot list
+appears. `MENA1.AIF` is 4.88s and `MENA2.AIF` is 4.97s — duration alone cannot tell
+them apart, and the guess that fitted the frame numbers was the wrong one of the two.
+
+### The mechanism
+
+`MANAEGOZ.dir` f156 and f302 are frame scripts whose `on exitFrame` runs
+`play frame "fillnames" of movie "egozsave.dir"` — an errand into the data movie that
+holds the eight slots' fields, which answers `play done`. In the reference that return
+is **one** `goto`: `Lingo::func_play` hands the popped `{movie, frameI}` straight to
+`func_goto(ref.frameI, ref.movie)` (`lingo-funcs.cpp:181-194`), and `func_goto` writes
+the frame into `_nextMovie.frameI` (`:107-112`), so the caller arrives standing on its
+return address.
+
+`_pop_play_stack` did it in two steps instead:
+
+    if str(back["movie"]) != str(_movie.path):
+        lingo_go_movie(str(back["movie"]).get_file(), null)
+    _index = clampi(int(back["frame"]), 0, ...)
+
+`MovieSession.adopt` zeroes `_index` on every movie load, and `lingo_go_movie` ends by
+sending `prepareFrame` and `enterFrame` for whatever frame that is. So the caller was
+re-entered at **frame 0** — its scripts, its score sound, its palette and its
+transition — and only then was the playhead moved to f157/f303. One frame entry, in a
+room the player is not in.
+
+The fix is the reference's shape: the return address travels *into* the load,
+`lingo_go_movie(..., lingo_frame_number(frame))`.
+
+### Two things this entry is not
+
+**Not the stale-index bug it looks like.** The first reading was that `_index` survives
+the movie switch and indexes the *caller's* score with the *interlude's* number — 27
+for `fillnames`. It does not: `adopt` zeroes it. Had it survived, MANAEGOZ frames 1-27
+all carry `BehaviorScript 2`, which is `on exitFrame` only, and nothing would have
+sounded.
+
+**Not one title's save screen.** `tools/script_placement.gd -- --match 'play
++(frame +)?[^\n]*of +movie' --all` finds 20 score-placed cross-movie `play` sites over
+the six roots, and every one of them took this return: Rating's save and load buttons
+and its twelve locked doors in `navigat2.dir`/`navigat3.dir`, and Piposh Dream's three
+save screens (`mainmenu.dir` f108, `ques.dir` f803, `strtgame.dir` f823). Piposh
+Dream's is the same screen `docs/bugs-closed.md` 54 already visited: that entry took
+`frameI++` and dropped an `exitFrame` latch, which stopped the *caller's own frame*
+re-running. It never asked which frame the return entered.
+
+### The assertion
+
+`tools/play_return_frame.gd`, two gate entries (`--root rating`, `--root piposh-dream`).
+It discovers its own sites rather than naming them — every frame script under the root
+whose source matches the pattern above — and prints the sprite-behaviour count it left
+alone, because a behaviour needs the click that fires it. Five sites are drivable; all
+five were red on the same check and are green.
+
+The check is `_entered_index == current_frame` on the tick the caller comes back,
+which is deliberately **not** about sound: the last frame entered and the frame the
+playhead is on agree on every ordinary step, and a return that crossed a container
+boundary without carrying its frame is exactly where they do not. Before the fix all
+five printed `playhead f157, but the last frame entered was f0`. A root with no such
+site — `piposh2`, the configured corpus, has none — asserts that it swept its
+containers and passes, so the zero is a measurement rather than a silent green.
+
+**The arm the player clicks is a sprite behaviour, and it was driven separately.** The
+five green sites are all frame scripts; `MANAEGOZ.dir` f158 ch11 (`play frame "dosave"`)
+is a `from_sprite` push, so `lingo_play_push` records `_index` rather than `_index + 1`
+— a different return address through the same line. Driven by hand: pre-fix the trace
+holds **two** `f0 play ch1 menagoz\Mena1.aif`, the boot and the replay; after, **one**,
+and the return prints `go movie -> MANAEGOZ.dir frame 158` rather than frame 0. It then
+leaves for f159 on the requeued `go("aftersave")`, which is the handler resuming and not
+the return.
+
+**Fallibility was re-proved on the code that ships, not on the code that had the bug.**
+After the fix `_index` and `_entered_index` are written from the same variable inside
+`lingo_go_movie`, so a check comparing them could be structurally unable to disagree —
+`docs/bugs-closed.md` 106's shape. Reverting only the `lingo_frame_number(frame)`
+argument to `null` reds both `rating` cases and restoring it greens them, so the
+comparison is live. Full gate: 146 of 146.
