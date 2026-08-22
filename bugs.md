@@ -74,66 +74,75 @@ on both sides and a bare citation resolves to two entries in one file.
 
 ---
 
-## 123. A call to a handler nothing defines returns 0 and the rest of the handler runs; the reference aborts it
+## 123. NARROWED. The abort is not implementable from the call site, because the only discriminator available is a statement about ScummVM's coverage rather than about Director's language
 
-**Status:** open · **Area:** `lingo/lingo_interpreter.gd:_call` · found 2026-08-21 while
-refuting a day-3 finding that turned on what an undefined call does
+**Status:** open as a divergence, **measured and made visible at `f3bbd036`**; the
+control-flow change deliberately not made · **Area:**
+`lingo/lingo_interpreter.gd:_call`, `lingo/lingo_reference_names.gd` · filed
+2026-08-21, narrowed 2026-08-22
 
-`LC::call` in the reference ends an undefined call by aborting:
+A call to a handler nothing defines: the reference aborts, this port returns
+`result if result != null else 0` and the enclosing handler runs to its end. **The
+difference is not the return value, it is the statements after it**, and it is silent
+in both directions.
 
-    g_lingo->lingoError("Call to undefined handler '%s'. Dropping %d stack items",
-                        funcSym.name->c_str(), nargs);
+### What `_abort` actually unwinds — this entry understated it
 
-and `lingoError` (`reference/scummvm/lingo/lingo.cpp:792`) sets **`_abort = true`** — it
-also calls `error()` under `kDebugLingoStrict`, but the plain path aborts. So in the
-reference, **no statement after an undefined call runs.**
+Not just the statement after the call. `_abort` is `Lingo::execute`'s loop condition
+*and* the flag whose epilogue pops **every remaining `CFrame`**
+(`reference/scummvm/lingo/lingo.cpp:634`, `742-748`), so Director drops everything left
+in every caller too. It is cleared at the end of whichever `execute()` saw it — not at a
+frame boundary, not at the next event. And `LC::procret` sets the *same* flag on the
+ordinary return from the outermost handler (`lingo-code.cpp:1901`, `1909`), so `_abort`
+means **"stop the loop"**, not "an error happened".
 
-This port falls through every resolution arm — native handlers, `new`, user handlers,
-`_own_builtin`, the engine-free builtins, the host — and then:
+**"The dispatch" is one `execute()` call and not one event**, which is the part that
+decides the shape of any fix: `b_call`, `callBehaviorHandler` and `sendAllSprites` each
+re-enter `execute(frame)` (`lingo-builtins.cpp:1891`, `3486`, `3545`), so an abort inside
+`call(#msg, obj)` unwinds only as far as that builtin. **This port has no such boundary
+at all**, so implementing the abort naively would unwind further than Director does.
 
-    		report(LingoDiagnostics.BUILTIN, name)
-    	return result if result != null else 0
+### The measurement, and why it stops the fix rather than sizing it
 
-The call yields **0** and the enclosing handler continues to its end. This file's own
-comment at `lingo_interpreter.gd:2836` already calls the silent-drop shape "the state
-§19 calls the worst one".
+`tools/undefined_calls.gd --all`, 651 containers over six roots: **91,737 call sites —
+14,162 resolved by a handler, 77,556 held by the reference's four name tables, and 19 in
+neither, across 7 distinct names.** Per root: piposh 0, piposh2 6, piposh-en 3,
+piposh-ru 2, piposh-dream 3, rating 5.
 
-**What a player sees: nothing.** The diagnostics sink is read by six harnesses
-(`lingo_local_diagnosis`, `lingo_scope_check`, `property_surface`,
-`lingo_surface_audit`, `lingo_movie_surface`, `buddyapi_xtra`) and by **nothing on the
-player's path** — `debug_report.gd` does not read it. The name does reach the F3/exit
-report's `builtins unbound` line through `preview_lingo_host`, and
-`scenes/preview/boot.gd:322` names that symptom, but a running game gives no sign.
+Nineteen sites is small enough that an abort would not truncate the corpus, so the risk
+this entry was written around is not what stops it. **What stops it is that one of the
+seven names is `gotoNetPage`** (2 sites) — real Director NetLingo, and absent from all of
+`reference/scummvm/lingo/`. So the discriminator available at the call site is
+structurally a statement about *ScummVM's coverage of Director*, not about Director's
+language, and one name in seven would abort a call the original resolved fine.
 
-**Why it matters beyond fidelity.** The difference is not the return value, it is the
-statements after it. A movie whose author relied on an abort — a guard clause calling a
-handler that exists only in some containers, for instance — gets its whole handler body
-executed here where Director stopped at the call. That is a behavioural divergence with
-no upper bound on its effects, and it is silent in both directions: nothing warns, and
-the 0 is indistinguishable from a handler that returned 0.
+The mirror case is real and in the same measurement, which is what makes this a genuine
+bind rather than a reason to relax: **`rating`'s `mraker`** (2 sites) is `go(mraker(1))`
+sitting directly above a correct `go(marker(0))` — an authoring typo, exactly the case
+the reference aborts and should. **Nothing at the call site separates it from
+`gotoNetPage`.** This is also the reproducing case the entry said it lacked.
 
-**Reproducing it** is the awkward part and is why this is filed rather than fixed. No
-container in the corpus is currently known to make an undefined call — the day-3 finding
-that prompted this (`hatul2.dir` calling `wlkleftintersects()` with nothing defining it)
-turned out to be **false**: `hatul2` defines it in its own internal cast at `1:10`, and a
-played run of the arm that calls it leaves `builtins unbound` empty after 46 `exitFrame`
-dispatches. So the divergence is established from the two implementations rather than
-from a movie that trips it, and the fix needs a synthetic case:
+### What landed instead
 
-    godot --headless --path . --script tools/puppet_members.gd -- \
-        --root piposh-dream --file hatul2.dir --play stage4 --ticks 6000
+Outcome: make the divergence **visible** without changing control flow. A new
+`UNDEFINED_HANDLER` diagnostic category; `_call` splits on
+`lingo/lingo_reference_names.gd` (360 names); the undefined case goes through `_fail` so
+it prints; `scenes/preview/debug_report.gd` names it. **Reference-known names answer
+exactly as before**, so `getPref`, `externalParamName` and `externalParamValue` — the
+fall-through's load-bearing consumers — are untouched.
 
-prints `builtins unbound : {}` today, which is the negative control — the tally an
-undefined call would appear in.
+`tools/undefined_handler.gd` (12 checks, in `ALL`) asserts the split. Confirmed able to
+fail: reporting `BUILTIN` at the fall-through reds two checks, `_aborting = true` there
+reds the third. Its "port hole" case **first passed vacuously** on `getPref`, which the
+host actually binds, so it never reached the fall-through; it now asserts a probe got
+there first.
 
-**Before changing it**, note what the current behaviour is load-bearing for. The comment
-above the fall-through records that `externalParamName` and `externalParamValue` answer
-VOID past the end of a list and that "all three came back as 0 *and* reported themselves
-missing" — so some callers depend on a value coming back rather than on an abort.
-Aborting unconditionally would need those cases separated first, which is why this is an
-entry and not a one-line change.
+### What would settle it
 
----
+A name table sourced from Director's own documented vocabulary rather than from
+ScummVM's implemented subset. With that, `gotoNetPage` is known-and-unimplemented and
+`mraker` is undefined, the two cases separate, and the abort becomes implementable —
+with the `execute()`-boundary caveat above, which is its own piece of work.
 
 ## 128. PARTLY FIXED. The sweep's budget no longer pays for held ticks; its wall-clock ceiling now binds instead, and two thirds of Piposh Dream still cannot be judged
 
