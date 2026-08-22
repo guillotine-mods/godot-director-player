@@ -10908,3 +10908,114 @@ Exempted, with the reference cited at the exemption and the teeth kept for the
 other properties, which are a number or a string in every state. Fixing this in
 the *binding* instead — answering 0 or "" over nothing to keep the harness quiet —
 is exactly the shape `porting-fidelity-verification` warns about.
+## 134. NOT A BUG. Rating's pool music plays once because the original's score puts it in the room's setup, not in the room's loop
+
+**Status:** NOT A BUG · **Area:** `games/rating/NAVIGATE.dir`, `NAVIGAT2.dir`,
+`NAVIGAT3.dir` (the movies, not the engine) · filed and closed 2026-08-22
+
+Reported from QA: "the sound in various places stops after playing once, and then
+plays again only if another sound plays first — for example if the user clicks
+something." The recording is 28s standing in the day-1 pool with one click in it.
+
+**What the recording actually contains**, from its own two channels of ground
+truth — `silencedetect` for the audio, the debug overlay's burned-in
+`frame N/2159 <marker>` for the playhead:
+
+| | audio | playhead |
+|---|---|---|
+| 0.00–1.78s | a sound ending | `thepool`, looping |
+| 1.78–3.90s | silence | `thepool`, frames 542-555 (1-based) |
+| 3.85s | — | `bubble` f603 |
+| 3.90–4.66s | `BUBBLE.AIF` | `bubble` f605 |
+| 4.66–23.33s | `POOLMUS.AIF`, all 18.67s of it | back in `thepool` |
+| 23.33–28.52s | silence | `thepool`, frames 542-555 |
+
+`POOLMUS.AIF` is identified by envelope cross-correlation at **0.959**, and it
+starts 0.76s into the second block and runs its full stated length. So the music
+is not being cut: it plays whole, ends, and nothing restarts it while the
+playhead loops.
+
+### Why nothing restarts it
+
+Every room in this movie plays its ambient the same way — a one-frame frame
+script `if not soundBusy(2) then sound playFile 2, <room>mus.aif`. Seven of them
+— pool, sea, arcade, club, oo, blue, red — loop with the *same* script, member
+1:67, `on exitFrame / go(marker(0) + 2)`, read at each of their seven loop-back
+frames. (`TheLoby` is the eighth looping room and does not: its loop returns to
+its own marker frame, which is why its ambient repeats.) Director's idiom, already
+written down in `tools/frame_reentry.gd`'s header for Piposh 1: **the marker frame
+sets the room up once and the loop is the span after it.** So under member 1:67 an
+ambient repeats only if its frame is at or past `marker + 2`.
+
+Driven with `frame_reentry.gd`, 1-based, one run per row — measured, not inferred
+from the arithmetic:
+
+| room | marker | loop returns to | ambient script | repeats |
+|---|---|---|---|---|
+| `NAVIGATE.dir` `TheLoby` | 101 | 101 | 101 | yes |
+| `NAVIGATE.dir` `thepool` | 540 | 542 | **541** | **no** |
+| `NAVIGATE.dir` `thesea` | 727 | 729 | 729 | yes |
+| `NAVIGAT2.dir` `thepool` | 541 | 543 | **542** | **no** |
+| `NAVIGAT2.dir` `thesea` | 729 | 731 | **730** | **no** |
+| `NAVIGAT3.dir` `thepool` | 546 | 548 | 548 | yes |
+
+**`thesea` is the entry's own control.** Same room, same `seamus.aif`, same
+loop-back script: it repeats on days 1 and 3 and does not on day 2. `thepool` is
+the mirror image — silent on days 1 and 2, repeating on day 3. Nobody designs a
+room whose music loops except on Tuesday; this is a frame of authoring slippage
+in the original, and the port reproduces it because it reproduces the score.
+
+QA's "plays again only if another sound plays first" is the same fact seen from
+the player's chair: clicking Bubu goes to `bubble` and its handler `go`es back to
+`thepool`, which re-enters the setup frame, which is what restarts the music. The
+other sound is a coincidence of the route, not the cause.
+
+### The engine half was measured too, and it is right
+
+The mechanism QA suspected — a channel that stops answering `soundBusy` honestly,
+so the guard never fires again — was checked rather than assumed. At
+`NAVIGATE.dir` `thered`, whose `clubmus2.aif` **is** inside its loop, with
+`clockspeed` set to the 630 the game's own save carries: the loop polls
+`soundBusy ch2 -> true` thirteen times, then `false`, then replays `clubmus2.aif`,
+and does it again. Thirteen passes at ~1.05s each against a 14.02s clip is the
+sound ending when it ends and the very next pass picking it up.
+
+That half is also already gated three ways and needs no fourth harness:
+`sound_wait` (busy iff a requested sound is playing), `sound_rate` (it stops
+being busy in about its own length) and `sound_replay_guard` (the same file
+replays afterwards).
+
+Two things ruled out along the way, both by the same method:
+
+- **The first 1.78s is not `POOLMUS.AIF` cut short.** Calibration says a genuine
+  1.77s window scores 0.87–0.99 against its source; this one scores 0.651 against
+  the file and 0.615 against the recording's own later poolmus play — a
+  same-encode comparison, so encoder mismatch is not the explanation. It is
+  unidentified, and it does not matter: its last 400ms decay smoothly
+  (1396 → 987 → 608 → 274 → 32), which is a sound ending, not a channel being
+  stopped.
+- **The 0.76s sound is the right take of `BUBBLE.AIF`.** Three files share that
+  name in a corpus with 352 ambiguous tails; it matches the two identical 0.605s
+  takes at 0.801 and the 3.723s `SOUNDS/PLATGOZ3` take at **−0.029**. The
+  resolver picked correctly.
+
+### Confirmed against the bytecode, not just the stored source
+
+Director keeps a member's source text in its info block, so `go(marker(0) + 2)`
+is the author's own typing rather than anything this port reconstructed. Read a
+second way with `tools/lscr_dump.gd`, the compiled form agrees: the pool's
+loop-back (member 1:67) is `pushzero / extcall marker / pushint 2 / add /
+extcall go`, and the lobby's (member 1:14) is the same without the `pushint`
+and `add` — offset zero. Two different loop-back scripts, two different offsets,
+both as read.
+
+### What this closes with
+
+No engine change. Three `frame_reentry` gate entries — two new ones on Rating
+and `--loop-to` added to the existing Piposh 1 case — which is the gap
+this report exposed: the harness that decides whether a room's setup frame is
+re-entered was gated on one Piposh 1 room only, and both of its arms now have a
+Rating case — `thepool` for a setup frame entered once per visit, `TheLoby` for a
+marker frame that re-runs on every pass. A regression in `marker(0)` or in `go`'s
+frame arithmetic would move a room from one arm to the other, and that regression
+is exactly what this report would look like if it ever were the engine's fault.

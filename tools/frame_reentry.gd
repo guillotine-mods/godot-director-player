@@ -9,6 +9,10 @@ extends SceneTree
 ##   --label L       the marker whose span to drive and watch
 ##   --from/--to N   the 1-based frame range to print the score of
 ##   --ticks N       awaited frames to watch after arriving (default 1400)
+##   --loop-to N     the 1-based frame the loop must go back to. Without it the
+##                   two arms below both derive their branch from the measured
+##                   target, so a loop that moved by one frame passes on the other
+##                   arm -- see the comment beside the check
 ##   --score-only    print the score's own answer and drive nothing
 ##
 ## ## Why this exists: `bugs.md` 45
@@ -245,6 +249,20 @@ func _drive(h: Harness, args: Dictionary, file: String, label: String,
 	h.check("every pass of the loop goes back to the same frame", targets.size() == 1,
 		"targets %s" % str(shown))
 	var loop_target: int = int(targets[0]) + 1
+	# **`--loop-to N` pins the frame, and without it nothing here does.** The two
+	# arms below both read `loop_target` and then assert against the marker frame,
+	# so a loop that moved by one frame would swap which arm runs and pass on the
+	# other one -- and a one-frame move is the whole of what `marker(0)` and `go`
+	# can get wrong. `docs/bugs-closed.md` 134 is the report that shape produces:
+	# an ambient `if not soundBusy(2) then sound playFile 2, X` on `marker + 1`
+	# repeats or does not repeat entirely according to whether the loop returns to
+	# `marker + 1` or `marker + 2`, and the player hears a room that has music or
+	# a room that goes silent after one play. The number is the caller's, like
+	# `--label`, so nothing about a game is written down here.
+	var expected := int(Args.number(args, "loop-to", 0))
+	if expected > 0:
+		h.check("the loop returns to the frame it is expected to",
+			loop_target == expected, "returns to %d, expected %d" % [loop_target, expected])
 	# The entry's actual question, and the assertion its premise fails: a frame
 	# the loop does not return to is entered once, however many passes there are.
 	# Derived from the trace rather than written down -- the marker frame is
