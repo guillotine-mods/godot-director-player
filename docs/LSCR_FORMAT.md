@@ -256,6 +256,19 @@ because the chunk is stale.
 Neither reference handles this: [SV] only ever reaches `addCodeV4` from
 `loadLingoContext`, so a container without an `Lctx` yields no scripts.
 
+> **RETRACTED 2026-08-16, and the cause is a `grep` typo in this paragraph.**
+> `games/piposh2/MASTER.CST` **does** carry an `Lctx` — spelled `LctX`, and
+> therefore stored reversed as **`XtcL`** in that little-endian file. The search
+> below looks for `xtcL`, which is the reversal of the *lower-case* spelling, in
+> the same section that says two paragraphs above that `LctX` is the **commoner**
+> spelling in this corpus. So the one MEASURED-ONLY claim in §2 has no instance,
+> and the mmap-order fallback it justifies is **dead code**: `tools/lscr_layout.gd
+> --all` reports `no Lctx (mmap order): 0` over **651 containers**.
+>
+> The 46-byte handler stride derived from this same file still stands — that
+> arithmetic is internal to the chunk and does not depend on how the container was
+> reached.
+
 MEASURED: `games/piposh2/MASTER.CST` is an `XFIR` (little-endian) container with
 **40 `Lscr` chunks and one `Lnam` (chunk 527) but no `Lctx` in either tag
 spelling** (`grep` finds 80 `rcsL` and 2 `manL`, zero `xtcL`). Its 40 members
@@ -597,8 +610,8 @@ that is not a guarantee.
 | **0x21** | **`swap`** | **absent in [SV]** | 2 → 2 | no source form |
 
 `0x20` is not assigned in either source. `0x21` is [PR]-only: **[SV] would decode
-it as an unimplemented 1-byte instruction and warn**. Not observed in this
-corpus.
+it as an unimplemented 1-byte instruction and warn**. ~~Not observed in this
+corpus.~~ **It occurs 16 times** (`tools/lscr_disasm_sweep.gd --all`, 2026-08-16).
 
 ### Multi-byte opcodes (canonical `0x40`+)
 
@@ -643,11 +656,19 @@ Widths: `0x4x` = 1-byte operand, `0x8x` = 2-byte, `0xCx` = 4-byte.
 | 0x66 | `thebuiltin` | `cb_v4theentitynamepush` `"bN"` | name index | argc+1 → 1 |
 | 0x67 | `objcall` | `cb_call` `"bN"` | name index | argc+1 → 0 or 1. [SV]: "D5+ objcall" |
 | **0x6d** | **`pushchunkvarref`** | **absent in [SV]** | ? | ? |
-| **0x6e** | **`pushint16`** | **absent in [SV]** | signed | → 1 |
+| **0x6e** | **`pushint16`** | **absent in [SV]** | signed | → 1 | **exercised 24,905 times** — see the note below |
 | **0x6f** | **`pushint32`** | **absent in [SV]** | signed | → 1 |
 | **0x70** | **`getchainedprop`** | **absent in [SV]** | name index | 1 → 1 |
 | **0x71** | **`pushfloat32`** | **absent in [SV]** | float bits | → 1 |
 | **0x72** | **`gettoplevelprop`** | **absent in [SV]** | name index | → 1 |
+
+> **`pushint16` (0x6e) is not ProjectorRays-only in practice, and this table's
+> "unexercised by this corpus" is wrong about it by 24,905 instructions.**
+> Measured 2026-08-16 by `tools/lscr_disasm_sweep.gd --all` over all six roots.
+> [SV] has no row for it, so **a decoder transcribed from [SV] alone mis-decodes
+> 24,905 instructions in this corpus** — it would read the opcode as unknown and
+> take the wrong operand width, desynchronising the rest of the handler. That is
+> the single most load-bearing correction on this page.
 | **0x73** | **`newobj`** | **absent in [SV]** | name index | argc+1 → 1 |
 
 `0x47`, `0x4d`, `0x5e`, `0x68`–`0x6c` are unassigned in both sources.
@@ -1190,7 +1211,7 @@ Sections 1–4 are mechanical and can be written directly from this document.
 | §3.1 line table | MEASURED-ONLY, decoded in neither reference; >255-byte lines untested |
 | §4 size-class rule | CONFIRMED ([PR]); note [SV] cannot decode the `0xC0`+ forms |
 | §4 opcode numbers 0x01–0x67 | CONFIRMED where both agree; 12 opcodes measured end to end |
-| §4 opcodes 0x21, 0x6d–0x73 | [PR]-only, UNVERIFIED, unexercised |
+| §4 opcodes 0x21, 0x6d–0x73 | [PR]-only, UNVERIFIED — **but 0x21 occurs 16 times and 0x6e 24,905 times**; only 0x6d/0x6f/0x71/0x72/0x73 are genuinely unexercised |
 | §4.1 `pushcons` divisor | CONFIRMED + measured at both 700 (÷8) and 850 (÷1) |
 | §4.1 literal *table* stride at 850 | **UNVERIFIED** — 8 from [PR]; the ÷1 divisor means operands cannot reveal it |
 | §4.2 arg/local multiplier | CONFIRMED + measured at both 700 (÷8) and 850 (÷1). **This section was wrong before it was measured** |
