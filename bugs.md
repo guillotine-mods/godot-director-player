@@ -316,8 +316,12 @@ not comparable across the change; that is why the third row is a fraction.
 120 asked. So two thirds of the title still has no window any rule was read over —
 the sweep now *says so*, which it did not before, and that is the whole of the
 improvement in coverage honesty. Raising the cap is the obvious next move and it
-multiplies a corpus cost that is already 2.5x (`piposh-dream` 946 s against a 379 s
-baseline on one machine) to 4.3x (`piposh` 99 of 99 in 2,557 s).
+multiplies a corpus cost that is already **2.5x** — `piposh-dream` 946 s against a
+379 s baseline, both on one machine, which is the only ratio here worth quoting.
+`piposh` ran 99 of 99 in 2,557 s and its 589 s "before" was measured on a different
+machine, so **there is no 4.3x**: that figure appeared in an earlier draft of this
+entry and in the report it came from, and it divides one machine's number by
+another's. The absolute 2,557 s stands; the ratio does not.
 
 The suite is not what pays: the `ALL` entry is `liveness_sweep:--limit@12` and it
 went 72 s -> 92 s, 20 s on a 1,918 s run. Which is why the fix landed unconditionally
