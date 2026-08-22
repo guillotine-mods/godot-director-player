@@ -275,68 +275,82 @@ either side. Anyone who instead wants `whichsnd` to *work* should note that Pipo
 Dream's own `Hquest.dir` keeps its own `global whichsnd` in Lingo and compares it
 itself -- the interpreter already holds that state, which is where it belongs.
 
-## 128. A corpus sweep of Piposh Dream spends 46 of 51 watches inside an opening speech, so `52 of 52 ok` is close to vacuous
+## 128. PARTLY FIXED. The sweep's budget no longer pays for held ticks; its wall-clock ceiling now binds instead, and two thirds of Piposh Dream still cannot be judged
 
-**Status:** open · **Area:** `tools/liveness_sweep.gd`, its watch budget · measured
-2026-08-21 during a QA pass over Piposh Dream
+**Status:** budgeting half **FIXED at `8370533e`**; the ceiling half open ·
+**Area:** `tools/liveness_sweep.gd`, `WATCH_CAP_MS` · filed and half-closed
+2026-08-21
 
-**The mechanism is the tool's own documented caveat, not a discovery.** Its header
-already says it: "Sound is the one thing fast-forward cannot scale -- the mixer runs
-on the audio server's clock -- so a `soundBusy` wait takes as long as the sound does
-however fast the score runs. That makes sound-excused ticks *over*-represented at
-high `--ff`, which can only hide a finding, never invent one." What had never been
-measured is **how much** it hides, and on this title the caveat is not a caveat, it
-is the result.
+The entry as filed: the watch budget was spent in score ticks and a held tick cost
+the same as a live one, so the sweep paid its whole watch for a hold it had already
+excused, and `visited: 52 of 52` covered almost no gameplay. `--ticks` now buys
+**unexcused** ticks only, through one predicate (`hold == "" and stride <= 1`) shared
+by the budget, the run building and a new `_longest_run`.
 
-    godot --headless --path . --script tools/liveness_sweep.gd -- \
-        --root piposh-dream --click --strict --verbose
+**The control that should have been run before the entry was written, and was run
+before the fix.** The same command at `--ff 8` — the movie's own rate — moves movies
+held on *every* watched tick from 19 to 1 and distinct states summed over 52 watches
+from 1,851 to 2,954, for 3.4x the wall clock. So the reading was right.
 
-52 movies in 324 s, one finding, and the `ok` lines say:
+**What the fix bought, with the unit change stated because the denominator moved from
+120 ticks to 550+:**
 
-    46 of the 51 judged movies end held on `wait for sound 1`
-    39 of them for 100 or more of the 120 sampled ticks, 22 for all 120
-    9 clicks landed across the 51 movies `--click` poked
-    `cursors: 0 channel(s) [], global 0` over the whole corpus
+| | before | after |
+|---|---|---|
+| held on every watched tick | 19 | **0** |
+| held on wait-for-sound at all | 42 | 42 |
+| >= 83% of that movie's *own* ticks | 32 | 27 |
+| clicks landed | 20 | 26 |
+| `go` / `marker` / `sound` / `soundbusy` | 5/4/2/136 | **41/39/7/580** |
+| cursors installed | 0 | **0** |
+| wall clock | 379 s | 946 s |
 
-The arithmetic is in the tool's own two numbers. Its clock line says `8 fps`; each
-per-movie line says `120 tick(s)` in about `4.2s` of wall clock, so the score ran at
-roughly 28 ticks a second while the mixer ran at one. A four-second opening line --
-34 ticks at the movie's own rate -- holds the playhead for about 115 of a 120-tick
-watch. Every excuse is granted correctly, the playhead really is held, the verdict
-really is `ok`, and the watch never reaches the frame the room's hotspots are on.
+`go` 5 -> 41 and `marker` 4 -> 39 is the sweep reaching the frames where rooms decide
+things. **">= 100 of 120" from the original entry no longer means anything** and is
+not comparable across the change; that is why the third row is a fraction.
 
-The other three numbers are that same fact seen from elsewhere, and each would
-otherwise read as a separate defect:
+### What is still open, and it is the same defect one layer out
 
-  * Nine clicks over 51 poked movies is **not** an eligibility bug. `_poke` is
-    looking at an intro frame with nothing on it to click.
-  * Zero cursors installed across a corpus whose `Hquest.dir` alone holds 61
-    mentions of `cursor` and a literal `set the cursor of sprite 2 to [3, 4]` is
-    `cursorfunk()` living on frames the sweep never reaches.
-  * `builtins reached` totals `go: 5, marker: 4, sound: 2, soundbusy: 134` for a
-    whole corpus, which is the shape of 52 movies each opening and then waiting.
+`WATCH_CAP_MS` now binds where `--ticks` used to. On `piposh-dream`,
+**`unjudged: 34 of 52`** and 28 of 52 watches hit the 20 s ceiling, depth mean 62 of
+120 asked. So two thirds of the title still has no window any rule was read over —
+the sweep now *says so*, which it did not before, and that is the whole of the
+improvement in coverage honesty. Raising the cap is the obvious next move and it
+multiplies a corpus cost that is already 2.5x (`piposh-dream` 946 s against a 379 s
+baseline on one machine) to 4.3x (`piposh` 99 of 99 in 2,557 s).
 
-**Why it is worth an entry rather than a header line.** The summary prints
-`visited: 52 of 52` and `FAIL ... (15 checks, 1 failed)`, and coverage is asserted
-at 100% -- correctly, because coverage measures *contiguously sampled ticks over
-ticks watched* and every held tick is a sampled one. So the one number designed to
-stop a thin sweep reading as a clean one says 100% for a sweep that watched almost
-no gameplay. `unjudged` does not catch it either: these watches filled their
-windows.
+The suite is not what pays: the `ALL` entry is `liveness_sweep:--limit@12` and it
+went 72 s -> 92 s, 20 s on a 1,918 s run. Which is why the fix landed unconditionally
+rather than behind a flag — a flag defaults one way and whichever way it defaults is
+what everybody measures.
 
-**The shape of a fix, and it is not "turn `--ff` off".** The budget is spent in
-ticks and a held tick costs the same as a live one, so the sweep pays its whole
-watch for a hold it has already excused. Spending `--ticks` on *unexcused* ticks
-only -- the same ticks the window is read over -- would let a movie's watch continue
-past its opening line, bounded by `WATCH_CAP_MS` as it already is. That is a change
-to a `gate.sh` entry (`liveness_sweep:--limit@12`) and it will change what the sweep
-finds, so it wants its own before/after over all six roots.
+### Two of this entry's own numbers did not reproduce, and both readings were mine
 
-The cheap confirmation of the mechanism, which nobody has run: the same command with
-`--ff 8` -- the movie's own rate, and `--ff` is a *ceiling* on an adaptive rate, so 8
-is how to ask for no fast-forward -- comparing the `wait for sound 1 x<n>` tail of
-each `ok` line. If the reading above is right the counts fall by roughly the ratio
-of the rates and the click total rises.
+Recorded because both are the shape this file's header warns about — a number that
+reads as measured, carrying no note of what it was measured at.
+
+**The clicks and held-movie figures were measured before `1e760a51`.** That commit
+stopped a failed `playFile` from holding `soundBusy`, and `git log -S "is on the disc
+elsewhere"` returns it and nothing else, so a run printing that diagnostic is
+post-fix — the re-measured baseline prints it for **59 distinct requests** over
+`piposh-dream`. Fifty-nine requests that used to resolve to a wrong take and *play*
+now play nothing, so `soundBusy` is false where it was true: fewer held ticks, more
+live ones, more eligible clicks. Direction and sign both match this entry's 46 -> 42
+held and 9 -> 20 clicks. **Unproven**, only because the original run cannot be dated
+from its text; the experiment that settles it is the same sweep at `1e760a51~1`, and
+it wants a separate worktree (a `.godot` seed plus a pack build) rather than a
+checkout of a tree two sessions share.
+
+**The cursor reading's cause was wrong.** This entry said `cursors: 0` was
+`cursorfunk()` living on frames the sweep never reached. `Hquest.dir` was **never
+held** — 4 held ticks, ended on budget in 4.3 s, walked 30 states to f34 — and
+cursors are still **0** after the fix. So the zero is not a depth problem and the
+explanation offered here is refuted. Why a corpus containing `set the cursor of
+sprite 2 to [3, 4]` installs no cursor is an open question and a separate one.
+
+**Zero new findings** came out of the deeper watches, on `piposh-dream` or on
+`piposh`. What is new is output rather than verdicts: the `depth` line, `unjudged`,
+and `stalled: saves.dir`, which is Director's `pause` correctly named.
 
 ---
 
