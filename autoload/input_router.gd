@@ -9,7 +9,15 @@ signal stage_press(stage_pos: Vector2)
 signal stage_drag(stage_pos: Vector2)
 signal stage_release(stage_pos: Vector2)
 signal hint_requested
-signal skip_requested
+## There is no `skip_requested` beside it any more, and the asymmetry is
+## deliberate rather than an oversight (`bugs.md` 129). It carried Escape to the
+## retired renderer's `skip_current()`, which decided "is this a skippable
+## minigame" from a table of Piposh 2 titles and then walked to the next marker
+## -- and `scenes/director_preview.gd`'s comment on `skip_release` records why
+## no title-agnostic version of that walk exists: a marker labels a position,
+## and nothing in a `VWLB` says which positions are scenes. So the signal had no
+## reachable destination, not merely no listener. `hint_requested` is a
+## different feature in the same shape -- also unconnected -- and stays.
 
 var virtual_cursor: Vector2 = Vector2(320, 240)
 var using_gamepad: bool = false
@@ -43,8 +51,6 @@ func _process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("hint"):
 		hint_requested.emit()
-	if Input.is_action_just_pressed("skip_minigame"):
-		skip_requested.emit()
 
 
 func _input(event: InputEvent) -> void:

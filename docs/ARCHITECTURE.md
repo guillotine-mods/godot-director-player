@@ -50,17 +50,26 @@ its field list here; the last copy outlived its subject.
 
 - `AppSettings.upscale_mode` — scale factor + filter
 - `AppSettings.test_mode_enhanced_graphics` — switch to smooth filtering; later: alternate texture root
-- ~~`GameState.MINIGAME_MOVIES`~~ — **gone** with the rest of `GameState`'s model
-  (`bugs.md` 127). `AppSettings.allow_minigame_skip` still loads from
-  `director_game.cfg`'s `qol/minigame_skip` and the launcher still shows the
-  checkbox, but **nothing reads the flag** -- `grep -rn allow_minigame_skip
-  --include='*.gd' .` returns its declaration and its config load and no reader.
-  The reader was the retired renderer: at `b04e5596`,
-  `director/director_runtime.gd:704` tested the flag and `:718` called
+- ~~`GameState.MINIGAME_MOVIES`~~ and ~~`AppSettings.allow_minigame_skip`~~ —
+  **both gone, and the second is not a hook waiting to be wired: the feature is
+  ruled out** (`bugs.md` 127, then 129). `MINIGAME_MOVIES` went with the rest of
+  `GameState`'s model. The flag outlived it as a toggle with no effect — the
+  launcher offered the checkbox, `director_game.cfg` persisted `qol/minigame_skip`
+  and nothing read either. Its reader had been the retired renderer: at
+  `b04e5596`, `director/director_runtime.gd:704` tested the flag and `:718` called
   `GameState.is_minigame_movie` fourteen lines later in the same Esc-skip path,
-  and both went at `cb7fe815`. So it is a user-visible toggle with no effect, and
-  a defect in its own right rather than something this hook list should imply
-  works.
+  and both went at `cb7fe815`.
+  It was removed rather than reimplemented because the general form of the
+  question has no answer. Deciding "is this a skippable minigame, and where does
+  skipping land" from the movie means reading a `VWLB`, and
+  `scenes/director_preview.gd`'s comment on `skip_release` is the record of that
+  attempt: a marker labels a position, nothing says which positions are scenes,
+  and the marker walk cost four reports (`bugs.md` 32, 37, 96 and
+  `docs/bugs-closed.md` 42) before it was deleted. A per-title list of minigame
+  movies is what `AGENTS.md` forbids and what 127 was about. The `skip_minigame`
+  input action and `InputRouter.skip_requested` went with the flag; what a debug
+  build has instead is `skip_release`, which drops the frame's holds and cuts the
+  voice and moves the playhead nowhere.
 - ~~`data/movie_context.json`~~ — **gone.** It held hubs, transition
   destinations, sprite gates and an inferred progression spine, and `GameState`
   took its trigger table from `MovieContext` at boot. Both the file and

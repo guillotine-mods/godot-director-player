@@ -355,7 +355,7 @@ text = "עזרים"
 [node name="QolHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "נשמרים עם ההגדרות שלך. מהירות הסמן היא היחידה שהמנוע קורא כיום; ארבעת שמעליה מחכים למנוע הגרפי ונשמרים כדי ששמירה שנעשית עכשיו תמשיך להיות תקפה כשהם ינחתו."
+text = "נשמרים עם ההגדרות שלך. מהירות הסמן היא היחידה שהמנוע קורא כיום; שלושת שמעליה עדיין אינם מחוברים לכלום, ונשמרים כדי ששמירה שנעשית עכשיו תמשיך להיות תקפה כשהם ינחתו."
 autowrap_mode = 2
 
 [node name="HotspotHints" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
@@ -363,12 +363,6 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 0
 text = "סימון מה שהעכבר יכול להגיע אליו"
-
-[node name="MinigameSkip" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 0
-text = "אפשרות לדלג על משחקי ביניים"
 
 [node name="EdgeHotspots" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 unique_name_in_owner = true

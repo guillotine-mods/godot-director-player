@@ -63,7 +63,6 @@ const SURFACE := {
 	"BindingsStatus": "Label",
 	"Bindings": "VBoxContainer",
 	"HotspotHints": "CheckBox",
-	"MinigameSkip": "CheckBox",
 	"EdgeHotspots": "CheckBox",
 	"EnhancedGraphics": "CheckBox",
 	"CursorSpeed": "HSlider",
@@ -96,6 +95,39 @@ func _run() -> void:
 			continue
 		h.check("  and is a %s" % SURFACE[name], node.is_class(str(SURFACE[name])),
 			node.get_class())
+	h.complete(case)
+
+	# The table above is only as good as its completeness, and it is written by
+	# hand: a toggle added to the QoL card and not to `SURFACE` is a control
+	# `launcher_shot.gd` cannot reach, and the loop above cannot notice a name it
+	# was never given. `bugs.md` 129 is the far side of the same gap --
+	# `%MinigameSkip` sat in this table, in the scene and in `launcher.gd`'s
+	# read/write for weeks after its only reader went with the renderer.
+	#
+	# **This guards the table, not the defect class.** "A toggle nothing reads"
+	# cannot be gated from here without encoding which of the remaining toggles
+	# are wired and which are disclosed-pending, and that list is a separate
+	# subject with its own entry. What this asserts is narrower and still worth
+	# having: the card and the table agree on which controls exist.
+	#
+	# Found by name and not by path, so re-parenting the card into a different
+	# tab is not a failure. `owned = false`: the checkboxes are owned by the
+	# scene root rather than by the card, so the default would find none of them
+	# and the case would pass on an empty list -- which is why the count is
+	# asserted beside the set.
+	case = "the QoL card holds no toggle this table has never heard of"
+	h.begin(case)
+	var card := scene.find_child("AssistCard", true, false)
+	if h.check("there is a QoL card to look at", card != null):
+		var boxes := card.find_children("*", "CheckBox", true, false)
+		var unlisted: Array[String] = []
+		for node in boxes:
+			if not SURFACE.has(str((node as Node).name)):
+				unlisted.append(str((node as Node).name))
+		h.check("it still holds toggles at all", not boxes.is_empty(),
+			"%d checkbox(es)" % boxes.size())
+		h.check("and every one of them is a name in SURFACE", unlisted.is_empty(),
+			", ".join(unlisted))
 	h.complete(case)
 
 	_overrides(h, scene)

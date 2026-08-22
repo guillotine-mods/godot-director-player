@@ -481,7 +481,6 @@ func _fill_developer() -> void:
 	%Debug.selected = maxi(DEBUG_VALUES.find(
 		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
 	%HotspotHints.button_pressed = bool(cfg.get_value("qol", "hotspot_hints", false))
-	%MinigameSkip.button_pressed = bool(cfg.get_value("qol", "minigame_skip", true))
 	%EdgeHotspots.button_pressed = bool(cfg.get_value("qol", "expand_edge_hotspots", true))
 	%EnhancedGraphics.button_pressed = bool(cfg.get_value("qol", "enhanced_graphics", false))
 	%CursorSpeed.value = float(cfg.get_value("qol", "cursor_speed", 420.0))
@@ -873,7 +872,6 @@ func _on_play() -> void:
 				str((_binding_fields[command] as LineEdit).text).strip_edges(),
 				str(DebugKeys.DEFAULTS[command]))
 		overlay.set_value("qol", "hotspot_hints", %HotspotHints.button_pressed)
-		overlay.set_value("qol", "minigame_skip", %MinigameSkip.button_pressed)
 		overlay.set_value("qol", "expand_edge_hotspots", %EdgeHotspots.button_pressed)
 		overlay.set_value("qol", "enhanced_graphics", %EnhancedGraphics.button_pressed)
 		overlay.set_value("qol", "cursor_speed", float(%CursorSpeed.value))

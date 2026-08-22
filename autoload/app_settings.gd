@@ -13,6 +13,18 @@ extends Node
 ## them yet -- wiring each to the renderer or the input path is a separate piece
 ## of work per toggle. The launcher labels them as such, so the first report is
 ## not "hotspot hints is broken".
+##
+## **`allow_minigame_skip` is not on that list, because it is not pending: it is
+## gone** (`bugs.md` 129). It was the flag on the retired renderer's
+## `skip_current()`, which asked `GameState.is_minigame_movie` -- a table of
+## Piposh 2 titles -- and then walked to the next marker. That walk is the one
+## the engine deleted after four reports, and `scenes/director_preview.gd`'s
+## comment on `skip_release` says why it cannot come back in any form: a marker
+## labels a position, and nothing in a `VWLB` says which positions are scenes.
+## "Which movie is a skippable minigame, and where does skipping it land" is not
+## answerable from a container, so there is nothing here for a flag to gate.
+## Do not re-add the field. What a debug build has instead is `skip_release`,
+## which releases the frame's holds and moves the playhead nowhere.
 
 const GameConfig := preload("res://director/game_config.gd")
 
@@ -23,7 +35,6 @@ var upscale_mode: int = 1
 var enhanced_graphics: bool = false
 var expand_edge_hotspots: bool = true
 var show_hotspot_hints: bool = false
-var allow_minigame_skip: bool = true
 var controller_cursor_speed: float = 420.0
 var dev_warp_movie: String = "MURDER1"
 var dev_warp_label: String = ""
@@ -48,7 +59,6 @@ func load_settings() -> void:
 	enhanced_graphics = bool(cfg.get_value("qol", "enhanced_graphics", enhanced_graphics))
 	expand_edge_hotspots = bool(cfg.get_value("qol", "expand_edge_hotspots", expand_edge_hotspots))
 	show_hotspot_hints = bool(cfg.get_value("qol", "hotspot_hints", show_hotspot_hints))
-	allow_minigame_skip = bool(cfg.get_value("qol", "minigame_skip", allow_minigame_skip))
 	controller_cursor_speed = float(cfg.get_value("qol", "cursor_speed", _migrated_speed()))
 	dev_warp_movie = str(cfg.get_value("debug", "warp_movie", dev_warp_movie))
 	dev_warp_label = str(cfg.get_value("debug", "warp_label", dev_warp_label))
