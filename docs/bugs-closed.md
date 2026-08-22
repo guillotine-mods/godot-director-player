@@ -10145,3 +10145,64 @@ Verified independently of the agent that wrote it: `collision_arms` 23 checks PA
 both roots, `sprite_collision` 8 checks PASS, `cannon_hit` 5 checks PASS, and
 `bash gate.sh` green at **141** entries (137 + three `collision_arms` + one
 `collision_ink`).
+
+---
+
+## 127. FIXED. The retired renderer's Piposh 2 game model was reachable from nowhere but itself, and its one live field fed the audio resolver
+
+**Status:** FIXED in `0adffcf8`, docs corrected in `80476186` · **Area:**
+`autoload/game_state.gd`, `autoload/audio_director.gd` · filed and closed 2026-08-21/22
+
+`GameState` was registered as an autoload and held Piposh 2's game model: `HUB_MOVIES`
+`["DAY1", "HOTEL1", "NIGHT1"]`, `MINIGAME_MOVIES` naming eight titles, a day counter, a
+meetings table and `people_funk`, an inventory with slot channels, story flags, a route
+stack, a four-function save-slot API, and `current_movie` defaulting to `"strtgame"`.
+`HUB_MOVIES`' own comment said it mirrored `data/movie_context.json`, a file deleted with
+the renderer that read it. `AGENTS.md`'s third standing rule — no per-title mapping in
+engine code — as plainly broken as it gets.
+
+**The whole-tree re-measurement agreed with the original one, and that was the
+load-bearing check** rather than a formality: the entry was filed off
+`grep --include='*.gd'`, which cannot see `project.godot`, a `.tscn`, a `.tres` or a
+`.json`. `GameState` is reachable from four code locations only — `project.godot:27`,
+`tools/qa_walk.gd:195-199`, `autoload/audio_director.gd`, and itself. No scene names it,
+nothing `preload`s it, no `get_node` by string outside `qa_walk`, and
+`state_changed`/`movie_requested` have **no consumer anywhere**. `$whichsnd` occurs at
+its reading sites and nowhere else in the tree.
+
+**No harness parsed the strings the file printed, only the signal.** Searched `tools/`,
+`scenes/`, `.github/`, `gate.sh` and `check.sh` for `New game globals`, `Saved slot`,
+`Loaded slot`, `Inventory +/-`, `Meeting triggers`, `Day N begins`, `Story flag`,
+`Meeting done` and `Hub:` — zero hits. Worth recording because `new_game_reset` sounds
+like it covers this node and does not: it is about `rating`'s `timebasebackup` fields and
+never touches it.
+
+**340 lines to 48.** Deleted: the whole model, both `$whichsnd` arms, the channel-2
+write-back and the `var stem` that existed only to feed it. Kept: `emit_log` and
+`log_message`, unchanged in shape, still fanning out to the signal and to
+`[player:<level>]` on stdout — the sink `tools/audio_misses.gd` and `tools/qa_walk.gd`
+read, which is why this is a deletion inside the node rather than a removal of it.
+
+**The file kept its misleading name and path on purpose**, and the header now says so:
+`audio_director.gd` binds `GameState` as a parse-time identifier, `qa_walk.gd` reaches it
+by string, and the piposh-3d embedding spec's `res://` collision analysis is written
+against this exact path and its `.uid`. `GameState` is now a misnomer for a log bus; the
+rename is a separate three-site change.
+
+**No save format changed.** `save_state.gd`'s `ACCOUNTED` table is over
+`scenes/director_preview.gd`'s own fields and never read this node, and
+`save_files.gd:directory()` does its own recursive mkdir, so dropping `SAVE_DIR` and
+`_ready()`'s mkdir cost nothing. No file on disk ever had the shape `to_dict` wrote.
+
+Gate **141 of 141, exit 0**, `ALL` unchanged. Verified independently of the agent that
+wrote it: `save_state` 139 checks PASS, `snapshot_check` 19 PASS, `audio_misses` 10 PASS
+(still collecting through the surviving signal), `preview_surface` 2 PASS.
+
+**Two corrections to the entry as filed.** The second `$whichsnd` arm was at
+`audio_director.gd:686`, not `:603`, and there were **three** sites in `play_file` rather
+than two — `var stem` had no other reader. Both were mine, from reading a grep's line
+numbers after the file had moved under them.
+
+**It also turned up a live defect**, now `bugs.md` 129: `AppSettings.allow_minigame_skip`
+is a user-visible toggle whose last reader was this model's `is_minigame_movie`. The
+launcher still shows the checkbox and CI still gates on the config key.

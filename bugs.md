@@ -222,59 +222,6 @@ entry and not a one-line change.
 
 ---
 
-## 127. The retired renderer's game-state autoload survives whole, and one of its dead fields reaches the live audio resolver
-
-**Status:** open · **Area:** `autoload/game_state.gd`, and `autoload/audio_director.gd:346`
-and `:603` · found 2026-08-21 during a QA pass over Piposh Dream
-
-`GameState` is registered as an autoload (`project.godot:27`) and holds Piposh 2's
-game model: `HUB_MOVIES` is `["DAY1", "HOTEL1", "NIGHT1"]`, `MINIGAME_MOVIES` names
-`CHESS`, `TENNIS`, `SHUFFLE`, `ARCADE1`, `ARCADE2`, `PPTSHOW`, `SEA1`, `AIR1`,
-`current_movie` defaults to `"strtgame"`, `current_label` to `"mainmenu"`, and
-`from_dict` defaults a load to `DAY1` at `shore2`. Beside them are a day counter, a
-meetings list, an inventory with slot channels, story flags, a route stack and a
-four-function save-slot API. `HUB_MOVIES`' own comment says it mirrors
-`data/movie_context.json`, a file deleted with the renderer that read it.
-
-**Every one of those is referenced only from inside the file that declares it.**
-
-    grep -rln "GameState" --include='*.gd' .
-
-answers with three paths: `autoload/game_state.gd`, `autoload/audio_director.gd`
-and `tools/qa_walk.gd`. The tool takes the node for `emit_log` alone, and
-`audio_director` takes `emit_log` and one field. So the live engine's whole use of
-this autoload is a **log signal bus** plus `whichsnd`; the day, the meetings, the
-inventory, the hub, the flags, the route stack and the save slots are the retired
-renderer's, and nothing has called them since it was deleted. The real save path is
-`scenes/preview/save_state.gd`, `save_files.gd` and `movie_save.gd`.
-
-**The field that is not dead is the one that matters.** `audio_director.gd` rewrites
-a request spelled exactly `$whichsnd` into `GameState.whichsnd`, which **defaults to
-the string `"sea"`** -- Piposh 2's `SEA.AIF`, present under `games/piposh2/FX/` and
-absent from Piposh Dream under any name. And every `sound playFile` on channel 2
-whose stem does not begin with `$` writes the field back, in every title, so a
-general engine is keeping one title's "which sound is playing" bookkeeping.
-
-Both readers are unreachable:
-
-    grep -rn '\$whichsnd' . --exclude-dir=.git --exclude-dir=.godot
-
-answers with those two sites and nothing else in the tree. `$whichsnd` was a token
-of the deleted declarative sound scaffolding; no container, no data file and no
-script writes it. So the branches cannot fire, the channel-2 write feeds only them,
-and what is left is `AGENTS.md`'s third standing rule broken in the plainest way --
-a per-title mapping in engine code -- with no player-visible symptom to notice it
-by.
-
-**Why it is filed rather than deleted on sight.** `emit_log` is the sink six
-harnesses read for `Audio miss` and friends, so the node has to stay and the
-deletion is a careful one, not a `git rm`. The cheap shape is one commit: strip the
-model, keep the bus, drop the two `$whichsnd` arms and the channel-2 write, and run
-`tools/preview_surface.gd` and the `save_state` and `audio_misses` gate entries
-either side. Anyone who instead wants `whichsnd` to *work* should note that Piposh
-Dream's own `Hquest.dir` keeps its own `global whichsnd` in Lingo and compares it
-itself -- the interpreter already holds that state, which is where it belongs.
-
 ## 128. PARTLY FIXED. The sweep's budget no longer pays for held ticks; its wall-clock ceiling now binds instead, and two thirds of Piposh Dream still cannot be judged
 
 **Status:** budgeting half **FIXED at `8370533e`**; the ceiling half open ·
@@ -358,6 +305,44 @@ and `stalled: saves.dir`, which is Director's `pause` correctly named.
 
 ---
 
+## 129. `AppSettings.allow_minigame_skip` is a user-visible toggle with no reader
+
+**Status:** open · **Area:** `autoload/app_settings.gd:26` and `:51`, and the launcher's
+`%MinigameSkip` checkbox · found 2026-08-22 while deleting 127, whose own code was the
+flag's last consumer
+
+    grep -rn allow_minigame_skip --include='*.gd' .
+
+returns the declaration and the config load and **no reader**. Meanwhile the launcher
+shows the checkbox (`launcher.gd:484` and `:876`), `director_game.cfg:277` persists it,
+and `tools/ci/stamp_debug_ui_test.sh:48` and `:84` gate on the config key. So a player
+can tick a box that has done nothing since the renderer was retired, and CI asserts the
+key is carried.
+
+**The reader was the retired renderer, and it died in two halves.** At `b04e5596`,
+`director_runtime.gd:704` tested the flag and `:718` called
+`GameState.is_minigame_movie` fourteen lines later in the same Esc-skip path. `cb7fe815`
+deleted both; `0adffcf8` — this session, closing 127 — deleted the second half's remains
+along with the rest of that model.
+
+**This is a decision, not a deletion**, which is why it is an entry. Three options and
+they are not equivalent:
+
+  * implement Esc-skip against the interpreter rather than a hardcoded movie list, which
+    is the only version compatible with `AGENTS.md`'s "the engine is agnostic to the
+    game" — the retired one asked `GameState.is_minigame_movie`, a table of Piposh 2
+    titles, which is exactly what 127 was about;
+  * remove the toggle, the checkbox and the CI gate together, and accept that a QoL
+    feature the launcher advertises is gone;
+  * leave it and say so in the launcher, which is the worst of the three and is what the
+    tree does today by accident.
+
+Worth knowing before picking: `skip_state` and `key_overlay` are in `ALL` and are about
+the *movie's own* SKIP affordances, not this flag, so nothing in the suite goes red
+whichever way this goes.
+
+---
+
 ## Coverage debt — harnesses deleted with the retired renderer
 
 These asserted rules that still matter, through an engine that no longer exists.
@@ -388,4 +373,3 @@ nothing.** Its oracle was `data/lingo/`, deleted; it prints
 parser change". It was left in the tree because it gates the parser rather than
 the renderer and comes back if `data/lingo/` does, but its green means nothing
 today.
-
