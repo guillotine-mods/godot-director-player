@@ -10206,3 +10206,99 @@ numbers after the file had moved under them.
 **It also turned up a live defect**, now `bugs.md` 129: `AppSettings.allow_minigame_skip`
 is a user-visible toggle whose last reader was this model's `is_minigame_movie`. The
 launcher still shows the checkbox and CI still gates on the config key.
+
+---
+
+## 121. FIXED. Piposh Dream's day-2 checklist does tick — and the cold probe this entry warned about would have reported it working too, which is the opposite of what the entry predicted
+
+**Status:** FIXED at `3afa9e9a` · **Area:** `tools/day_checklist.gd`,
+`tools/puppet_members.gd --via` · filed 2026-08-21, closed 2026-08-22
+
+The mechanism is now observed running rather than derived from container text.
+`tools/day_checklist.gd` drives item 2 end to end, 15 checks, and each of the three
+steps this entry named holds:
+
+  * **the write runs.** `dinner2.dir` entered at **f4412** sets `globalday = 2` and
+    `advancekeeper = "hez,ish,hat,poz,krp,mus,psy"` as the movie's own step out of the
+    frame, and reaches the hub in 2 process frames. A press on ch5's live rect at
+    (525, 248) runs `1:24`, `go(1, "hex" & globalday & ".dxr")`, and **the engine
+    composes `hex2.dxr` and loads it** — the harness never names it. Landing f344 runs
+    `1:138`, whose `go` in the same handler is the witness that the `put` on the line
+    above executed;
+  * **it survives `go movie`.** `advancekeeper` reads `"hez,done,hat,poz,krp,mus,psy"`
+    on the far side, other six items untouched;
+  * **the hub reads it.** `1:13` on f0 hides ch5 and draws ch14, all fourteen slot
+    channels agreeing.
+
+f4412 rather than the f4411 this entry named: `1:298` covers f4413, so 4412 is the
+frame entry that makes the assignment the movie's own.
+
+### This entry's trap paragraph was wrong, and wrong in the dangerous direction
+
+It said a cold entry gives a **false negative**, because "a VOID global aborts the
+handler rather than reading as empty", so the write could not land and a probe would
+report the checklist broken about a game that is fine.
+
+**Measured with the harness's own `--cold` control: it gives a false _pass_.** With
+`advancekeeper` VOID, `put "done" into item 2 of advancekeeper` does not abort — the
+global comes back **`",done"`**, two items where there were seven, the `go` fires
+normally, `item 2 of ",done"` *is* `"done"`, and so `1:13` hides ch5 and draws ch14
+exactly as on the warm path. A cold probe therefore reports the checklist working
+**on a global from which the day can never advance**, because `1:15` needs all seven
+items to read `done`. Worse than what this entry feared, and invisible.
+
+**And it is not a port defect — the reference does the same, so do not "fix" it.**
+`chunkRef` (`lingo-code.cpp:1102`) calls `evalChunkRef`, which for a `GLOBALREF` takes
+`varFetch(var).asString()`, and `lingo.cpp:1213` gives VOID the **empty string** when
+not print-only. So `item 2 of ""` in the reference is the same empty chunk this port
+computes, and `",done"` is Director's answer too. Recorded at this length precisely
+because it is the shape `AGENTS.md` warns about: a later session reads the old trap
+paragraph, "fixes" the interpreter to abort, cites the reference, and calls it a
+fidelity repair.
+
+### Read this before simplifying the harness
+
+**`--cold` passes both crux checks** — "item 2 reads `done`" and "`1:13` hides slot 2".
+Those two cannot discriminate warm from cold at all. The discrimination is carried
+entirely by the five that look like setup and are not: `globalday`, the reset, the
+click, the movie name composed from `globalday`, and the six untouched items.
+
+    --root piposh-dream           PASS  15 checks, 0 failed
+    --root piposh-dream --cold    FAIL  12 checks, 5 failed
+
+### `--via` is a chain, and one hop is only a colder cold entry
+
+`--via mainmenu.dir:5` from a cold boot correctly reports `clicking ch5 of
+mainmenu.dir at (525, 248) on f1 went nowhere`: nothing had set `globalday`, so `1:24`
+composed `"hex.dxr"` and no such container exists. **The state the hub reads has its own
+authored source one movie earlier.** So `--via` takes a comma-separated chain — `M:C`
+clicks a channel, `M@F` places a playhead — and
+`--via "dinner2.dir@4412,mainmenu.dir:5" --file hex2.dir` arrives. Only the first hop is
+opened by the tool; every later one must be arrived at by the one before, because a
+`lingo_go_movie` repairing a broken chain would be a cold entry wearing the flag's name.
+The entry's stated blocker held: the press goes before `_play`'s sampling loop, which
+breaks out the moment `movie_name()` changes.
+
+### What the work-in-progress had right, and its one central defect
+
+`tools/day_checklist.gd` was left untracked for this and most of its reasoning survived:
+the four-field `_place`; that f0 is crossed once per visit and never inside the f1..f27
+idle loop; the `_drawn`/`_placed` split and why `lingo_sprite_prop(ch, "visible")` cannot
+tell hidden from absent; all three channel bank bases (3, 12, 26), checked against
+`1:13`'s own text; and `ENTRY_FRAME`.
+
+Its per-item entry was `lingo_go_movie(movie)` then `_place(frame)` — **a cold entry, and
+by naming the movie itself it threw away the half that tests whether `globalday` survived
+at all.** It never clicked the hub, had no negative control, and drove all seven items
+plus the day advance, which this entry had ruled out of scope.
+
+### What remains
+
+Six items and the day advance are still undriven, by design — one gate entry over one
+game. `1:15`'s "all seven then advance" is therefore still unobserved, and the `",done"`
+finding above says why that matters: the seven-item shape is what the advance depends on,
+and a probe that does not carry it can pass without it.
+
+Gate **142 of 142**, exit 0, `day_checklist` PASS. Verified independently of the agent
+that wrote it: warm 15/15 PASS, `--cold` 12 checks with 5 failed, and the `",done"`
+reading reproduced.
