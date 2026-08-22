@@ -134,6 +134,62 @@ static func decode(member: Dictionary, chunk: PackedByteArray, palette: PackedBy
 	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA8, pixels)
 
 
+## A 1-bit member's bits as one byte per pixel: 255 where the bit is set, 0 where
+## it is clear. Empty when the member is not 1-bit or the chunk will not unpack.
+##
+## **This is Mask ink's mask (§2.6), and it deliberately does not go through
+## `decode`.** `decode` turns a 1-bit member into RGBA through the palette, and
+## the mask is not a picture: `Channel::getMask`'s Mask arm copies the mask
+## bitmap's *surface* into a scratch surface and `DirectorPlotData::inkBlitSurface`
+## then draws a pixel wherever that byte is **non-zero**
+## (`graphics.cpp:806`, `if (!(mask || srfMask) || (msk && (*msk++)))`). Reading it
+## as colour instead would make the answer depend on which palette the mask member
+## happens to name -- entry 255 is black in the port's own table and is whatever
+## the cast says in a member that names its own -- and the mask would silently
+## invert on any member whose palette does not put black at 255.
+##
+## **The polarity is settled from the reference and is not a guess.**
+## `BITDDecoder::loadStream`'s `case 1` writes `0xff` for a set bit and `0x00` for
+## a clear one (ScummVM `engines/director/images.cpp` @ 805f259a), and the blit
+## draws on non-zero. So **a set bit shows the sprite and a clear bit hides it**,
+## which in Director's 1-bit convention means the mask member's *black* pixels are
+## the ones the artwork comes through. `ENGINE_TODO.md` recorded the polarity as
+## "undecidable" with 0 records of ink 9 in the corpus; it is undecidable from the
+## *data*, and the decoder and the blitter between them decide it exactly.
+##
+## The bit order is MSB-first within each byte, the same as `_blit_1` -- one rule,
+## written twice because the two produce different things, and any disagreement
+## between them would show as a mask mirrored inside every group of eight pixels.
+static func mask_bits(member: Dictionary, chunk: PackedByteArray, error: Array) -> PackedByteArray:
+	var out := PackedByteArray()
+	if int(member.get("bits_per_pixel", 8)) != 1:
+		error.append("mask member is %d-bit, not 1-bit"
+			% int(member.get("bits_per_pixel", 8)))
+		return out
+	var width := int(member.get("width", 0))
+	var height := int(member.get("height", 0))
+	var stride := int(member.get("row_stride", 0))
+	if width <= 0 or height <= 0:
+		error.append("zero-area mask member")
+		return out
+	var row := int(ceili(float(width) / 8.0))
+	if stride < row:
+		error.append("row stride %d is shorter than the %d byte(s) a %d-pixel 1-bit row needs"
+			% [stride, row, width])
+		return out
+	var buffer := unpack(chunk, stride, height, error)
+	if buffer.is_empty():
+		return out
+	out.resize(width * height)
+	var at := 0
+	for y in height:
+		var base := y * stride
+		for x in width:
+			out[at] = 255 if ((buffer[base + (x >> 3)] >> (7 - (x & 7))) & 1) == 1 else 0
+			at += 1
+	return out
+
+
 ## The palette expanded to 256 opaque RGBA entries, so the inner loop reads four
 ## adjacent bytes instead of doing three multiplies and an alpha store.
 static func _rgba_table(palette: PackedByteArray) -> PackedByteArray:

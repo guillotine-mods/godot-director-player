@@ -52,8 +52,220 @@ const DOUBLE_CLICK_MS := 500
 const FILE_VERSION_D6 := 0x4C2
 
 
+## `Channel::isMouseIn` answers **three** things, and the third is not a shade of
+## either other one.
+##
+## `channel.cpp:344` returns a `CollisionTest`, and all three of `score.cpp`'s
+## descents (`getSpriteIDFromPos`, `getMouseSpriteIDFromPos`,
+## `getActiveSpriteIDFromPos`) read it the same way:
+##
+##   Yes, and the tier's predicate passes -> return this channel. Done.
+##   Yes, predicate fails, or No       -> keep descending.
+##   Hole                              -> `break`. The whole search answers 0.
+##
+## **A Hole is not "this sprite is transparent here".** Transparent means "not
+## this sprite" and the descent carries on to what is underneath; a Hole means
+## nothing under this point is clickable at all, including the backdrop, including
+## the sprite the player can plainly see behind the field. Collapsing the two --
+## which this module did until the three-way landed -- is not a near-miss, it
+## routes the click to a *different sprite* rather than to none.
+##
+## This port modelled two values for as long as the loop was written with a
+## `continue` and a `return`: a miss and an ineligible sprite both continued and
+## nothing aborted. §4.2 has said to write the loop with three since it was
+## written, on the grounds that adding scrolling fields later would silently
+## change click routing everywhere rather than in the fields.
+const HIT_NO := 0
+const HIT_YES := 1
+const HIT_HOLE := 2
+
+## The width of the scrollbar strip a text member holes out, in pixels.
+##
+## `graphics/macgui/mactext.cpp:MacText::isInScrollBar` measures the strip from
+## the scroll border's own offsets and falls back to `kBorderWidth` --
+## `graphics/macgui/macwindow.h:48`, **17** -- for a widget whose border has none.
+## Those offsets come from a border resource loaded at runtime and are in no
+## container, so 17 is the only value reachable from the data this engine reads,
+## and it is what the reference uses for every text widget that has not had a
+## scrollbar border loaded into it.
+##
+## All three edges take the same number in the reference (`bTop`, `bRight`,
+## `bBottom` are each initialised to it), which is why this is one constant and
+## not three.
+const SCROLLBAR_BORDER := 17
+
+
+## Could a sprite this size have a scrollbar strip at all?
+##
+## The strip is the rightmost `SCROLLBAR_BORDER` columns **minus** the top and
+## bottom `SCROLLBAR_BORDER` rows, so a box 34 pixels tall or less has an empty
+## strip whatever the pointer does, and one 17 wide or less has no columns. That
+## is not a micro-optimisation -- it is the whole reason this feature is nearly
+## invisible on these titles. Measured by `tools/hole_survey.gd`: the fields these
+## six titles are built out of are 120x19 save-slot and score boxes, and not one
+## of them can produce a Hole.
+##
+## Public because the survey asks exactly this question of a score record with no
+## player standing, and a survey that re-derived the threshold from the same two
+## sentences is how a measurement and the code it describes come apart.
+static func scrollbar_strip_exists(drawn: Vector2) -> bool:
+	return drawn.x > float(SCROLLBAR_BORDER) and drawn.y > float(SCROLLBAR_BORDER * 2)
+
+
+## Does this text member's widget have a scrollbar at all?
+##
+## **This is a named divergence from a literal transcription of the reference, and
+## it is the only one in this file.** `castmember/text.cpp:TextCastMember::isWithin`
+## calls `isInScrollBar` on the widget without first asking whether the widget has
+## a scrollbar, so read line by line it holes out the strip on **every** text
+## member big enough to have one. Measured by `tools/hole_survey.gd` over all
+## eight roots: that is **10,495 of 8,057,628 sprite records** -- 9,045 `adjust`,
+## 1,356 `fixed`, 94 `limit` -- and **0 of box type `scroll`**. Every one of them
+## would grow a 17-pixel column down its right edge that swallows the click *and
+## everything beneath it*: `CAPROOM.dir`'s five memo pages, `rating`'s 4,030
+## dialogue fields, `TENNIS.dir`'s two score boxes.
+##
+## The reference's own model says those have no scrollbar, and says it in three
+## places that are not this one:
+##
+##   `castmember/text.cpp:createWindowOrWidget` constructs MacText with
+##   `scrollBar = (_textType == kTextTypeScrolling)` -- the last argument;
+##   `graphics/macgui/mactext.cpp:MacText::processEvent` guards its own use of
+##   `isInScrollBar` with `if (... && _scrollBar)`, so a click on the strip of a
+##   non-scrolling widget scrolls nothing;
+##   `MacText::draw` (`:950`) guards the same way, so nothing is drawn there
+##   either, and `setScrollBar` is what loads the border whose offsets
+##   `isInScrollBar` reads at all.
+##
+## So `isWithin` is the one caller that omits the guard, `isInScrollBar` itself is
+## a pure geometry helper with no notion of whether the widget it measures has a
+## scrollbar, and this port applies the guard the widget applies everywhere else.
+## `DIRECTOR_ENGINE.md` §4.2 states the rule the same way -- "a text member
+## returns it when the point is over its **scrollbar arrows**" -- and a field with
+## no scrollbar has no arrows.
+##
+## The direction is the safe one and it is §4.2's own default: without the guard
+## a click that Director delivers is swallowed, with it a click that Director
+## swallows is delivered. Reversing the decision is deleting this predicate from
+## one `if`, which is why it is a named function rather than a condition inlined
+## at the call site.
+##
+## `the boxType of member` is byte 3 of the field's specific block
+## (`director_cast.gd`'s type-3 arm, `text_type`), and `kTextTypeScrolling` is 1
+## (`types.h:124`).
+static func has_scrollbar(member: Dictionary) -> bool:
+	return int(member.get("text_type", 0)) == BOX_SCROLL
+
+## Director's `kTextTypeScrolling`. `sprite_geometry.gd` names the same four box
+## types for the sizing rules; this file needs the one that decides a scrollbar.
+const BOX_SCROLL := 1
+
+
+## Is a stage point inside a text widget's scrollbar, i.e. on one of its arrows?
+##
+## `MacText::isInScrollBar` transcribed as geometry: the rightmost `bRight`
+## columns of the widget's own dims, with the top `bTop` rows and the bottom
+## `bBottom` rows excluded -- those two corners answer `kBorderBorder`, which is
+## **not** a Hole -- and the remainder split at half height into the up arrow and
+## the down arrow. Both arrows are Holes and nothing else in the rect is.
+##
+## The split is not modelled here because both halves have the same answer. The
+## reference distinguishes them so that a real click can scroll the widget by two
+## lines in one direction or the other; `isWithin` throws that away and asks only
+## whether the result was one of the two. When this port grows a scrolling widget
+## the split will matter for the scroll and still not for the hit test.
+##
+## `rect` is the sprite's stage rect, which for a text member **is** the widget's
+## dims: `sprite_geometry.drawn_size` already reproduces
+## `castmember/text.cpp:createWidget`'s box arithmetic, and
+## `channel.cpp:774-779` writes the widget's dimensions back onto the sprite every
+## frame, so the reference's two rectangles are one rectangle here by
+## construction rather than by coincidence.
+static func in_scrollbar(rect: Rect2, at: Vector2) -> bool:
+	var border := float(SCROLLBAR_BORDER)
+	if at.x < rect.end.x - border or at.x >= rect.end.x:
+		return false
+	if at.y < rect.position.y + border:
+		return false
+	if at.y >= rect.end.y - border:
+		return false
+	return true
+
+
+## `Channel::isMouseIn` for one sprite: No, Yes or Hole.
+##
+## The reference's own two steps, in its order (`channel.cpp:344-357`):
+## `_visible` false answers No before anything else is computed; then the bbox;
+## then the *member* decides, through `CastMember::isWithin`, with a plain rect
+## test standing in when the sprite names no member at all.
+##
+## The three overrides that exist, and what each is:
+##
+##   bitmap  `castmember/bitmap.cpp:920` -- rect, then the matte, and **only**
+##           when the ink is Matte. Every other ink is the whole rectangle even
+##           when it renders per-pixel (§2.1); `director_ink.gd:hits_per_pixel`
+##           holds that asymmetry and is asked here rather than restated.
+##   text    `castmember/text.cpp:392` -- rect, then the scrollbar Hole. The only
+##           producer of a Hole there is.
+##   default `castmember/castmember.h:104` -- `bbox.contains(pos)`, which is what
+##           a shape, a film loop, a video and an Xtra all get.
+##
+## **`hit_pixels` is this port's debug toggle and is not the reference's.** It
+## exists so `M` can turn the artwork sample off and see what a box-only engine
+## would answer; with it off a Matte bitmap answers Yes across its whole rect. It
+## deliberately does **not** gate the text arm: a Hole is not a per-pixel test and
+## turning off "sample the artwork" must not silently change which sprite answers
+## a click.
+static func is_mouse_in(host, sprite: Dictionary, at: Vector2, hit_pixels: bool,
+		table) -> int:
+	# `_effective` answers `{}` for a sprite a script has hidden, which is the
+	# reference's `if (!_visible) return kCollisionNo` -- first thing, before the
+	# bbox is computed. The caller has already applied it.
+	if sprite.is_empty():
+		return HIT_NO
+	var rect: Rect2 = host._sprite_rect(sprite)
+	if not rect.has_point(at):
+		return HIT_NO
+	var member: Dictionary = table.get_member(
+		int(sprite["cast_lib"]), int(sprite["cast_id"]))
+	# No member resolves: `isMouseIn`'s `else if (!bbox.contains(pos))` arm, which
+	# is the bare rectangle. §3 is explicit that an unresolvable member leaves the
+	# sprite clickable rather than making it disappear from the mouse.
+	if member.is_empty():
+		return HIT_YES
+	if TEXT_MEMBER_TYPES.has(int(member.get("type", 0))):
+		return HIT_HOLE if has_scrollbar(member) and in_scrollbar(rect, at) \
+			else HIT_YES
+	if hit_pixels \
+			and Ink.hits_per_pixel(int(sprite["ink"]), int(member.get("type", 0))) \
+			and not host._opaque_at(sprite, at):
+		return HIT_NO
+	return HIT_YES
+
+
+## The cast types whose member overrides `isWithin` with the text arm.
+##
+## `ButtonCastMember` derives from `TextCastMember` in the reference
+## (`castmember/text.h`) and does not override `isWithin`, so a button member
+## takes the same three-way test a field does -- including the scrollbar, which a
+## button widget does not draw and which `isInScrollBar` does not ask about
+## before answering. **0 of the 51,350 members across the six titles is of type
+## `button`** (§4.3), so the second entry is unexercised here and is in the list
+## because the reference's class hierarchy puts it there.
+const TEXT_MEMBER_TYPES := [Ink.TYPE_FIELD, TYPE_BUTTON]
+
+## Director's `kCastButton`. Named here rather than reached through
+## `director_ink.gd`, which holds only the three type codes its own rules need.
+const TYPE_BUTTON := 7
+
+
 ## The topmost sprite whose rect contains a point, or 0. Highest channel first,
 ## which is Director's stacking order and therefore its hit order.
+##
+## `score.cpp:getMouseSpriteIDFromPos`, whose loop body is three cases and not
+## two -- see `HIT_HOLE`. The eligibility filter is this query's; the geometry and
+## the Hole are `is_mouse_in`'s and are shared with the other two descents the
+## reference has.
 static func channel_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
 		table) -> int:
 	# Highest channel first, since channel number is depth -- but a sprite drawn
@@ -79,6 +291,12 @@ static func channel_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
 	# It is still the honest answer for a Matte sprite, which Director does
 	# hit-test per pixel (§2.5), so both remain available and `M` switches
 	# between them.
+	#
+	# **Director does have a result that ends the search, and it is not
+	# transparency**: `HIT_HOLE`, which only a text member's scrollbar produces.
+	# The two paragraphs above are about a keyed-out *pixel* and stay true; the
+	# arm below is about a region the widget owns and answers for. That they are
+	# different is the whole of §4.2.
 	for i in range(sprites.size() - 1, -1, -1):
 		# Puppet state, not the raw score record. The descent used to read the
 		# score directly, which meant a sprite a script had hidden still absorbed
@@ -94,30 +312,57 @@ static func channel_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
 		# not drawn *and* not hit-tested, and it is the first thing `isMouseIn`
 		# checks. `effective` answers `{}` for it.
 		var sprite: Dictionary = host._effective(sprites[i])
-		if sprite.is_empty():
-			continue
-		if not host._sprite_rect(sprite).has_point(at):
-			continue
-		# Only Matte samples the artwork, and only on a bitmap. Every other ink is
-		# a plain rectangle for hit-testing even when it renders per-pixel -- the
-		# asymmetry is deliberate in Director and easy to get wrong in both
-		# directions. The cast type is the other half of the same rule: a matte is
-		# flooded in from the border of the *member's image*, and a shape has no
-		# image, so a matte-inked shape hit-tests as its box. Without that, this
-		# game's invisible shape hotspots that happen to carry Matte answered no
-		# click at all (`director/director_ink.gd:hits_per_pixel`).
-		var member: Dictionary = table.get_member(
-			int(sprite["cast_lib"]), int(sprite["cast_id"]))
-		if hit_pixels \
-				and Ink.hits_per_pixel(int(sprite["ink"]), int(member.get("type", 0))) \
-				and not host._opaque_at(sprite, at):
-			continue
+		# The geometry, the artwork sample and the scrollbar Hole are all
+		# `is_mouse_in`'s -- one copy, because this port has three callers that
+		# each want the same question with a different filter on the answer, and
+		# the reference's own three descents differ in exactly that one line.
+		match is_mouse_in(host, sprite, at, hit_pixels, table):
+			HIT_NO:
+				continue
+			HIT_HOLE:
+				# **Abort, do not continue.** The sprite under the pointer swallows
+				# the click without being a target: nothing below it is reached and
+				# the query answers 0. `score.cpp:1671` is a `break`, not the
+				# `continue` an ineligible sprite gets four lines down, and reading
+				# the two as the same thing routes the click to whatever is behind
+				# the field instead of to nothing.
+				return 0
 		# Eligibility is tested HERE, inside the descent, not applied to the
 		# answer afterwards. A sprite the point is over but which cannot respond
 		# does not absorb the click: the search carries on to what is beneath.
 		# That is the whole reason a backdrop was taking every click.
 		if responds_to_mouse(host, sprite, table):
 			return int(sprite["channel"])
+	return 0
+
+
+## `score.cpp:getSpriteIDFromPos`: the same descent with **no** eligibility
+## filter. The topmost sprite the pointer is over at all, or 0.
+##
+## §4.1's first row, and the query this port does not maintain a channel for.
+## Director reads it for `the rollOver` **the property**, `the mouseCast`, `the
+## mouseMember` and the D3 `the mouseChar`/`Word`/`Line`/`Item` -- all of which
+## are currently answered here by `rollover_channel`, a plain rect descent over
+## the rollOver bbox, which is a different question and answers differently.
+## Rebinding them is a `preview_lingo_host.gd` change and `ENGINE_TODO.md` carries
+## it; this is the descent that will be underneath it, written where the other two
+## live so that the three cannot drift.
+##
+## It exists now rather than with the rebinding because it is the query the Hole
+## is *visible* in: this one has no filter, so every sprite the pointer is over
+## answers, and the difference between "the search aborted" and "the search
+## carried on to the sprite behind" is observable on any frame with two
+## overlapping sprites. `tools/hit_hole.gd` is its reader.
+static func sprite_at(host, at: Vector2, sprites: Array, hit_pixels: bool,
+		table) -> int:
+	for i in range(sprites.size() - 1, -1, -1):
+		var sprite: Dictionary = host._effective(sprites[i])
+		match is_mouse_in(host, sprite, at, hit_pixels, table):
+			HIT_NO:
+				continue
+			HIT_HOLE:
+				return 0
+		return int(sprite["channel"])
 	return 0
 
 

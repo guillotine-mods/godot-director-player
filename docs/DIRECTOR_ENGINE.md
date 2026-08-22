@@ -602,9 +602,17 @@ surface the size of the channel, aligned by registration offset and clipped.
 This is a genuine authoring idiom. A port that ignores it will render the mask
 member as a stray sprite somewhere in the cast, or drop the masked sprite.
 
-*This port:* `director/render_model_loader.gd:23` lumps ink 9 in with Matte.
-Harmless if nothing uses it; wrong in kind if anything does. Worth a grep of the
-score data for ink 9 before deciding.
+*This port:* **implemented 2026-08-22.** `director_ink.gd:key_for` answers
+`KEY_MASK` in `getMask`'s own precedence and `preview/sprite_art.gd` resolves the
+next member, aligns it by registration point at its natural size and crops. The
+polarity is **set bit shows** — `images.cpp:BITDDecoder::loadStream` case 1 writes
+`0xff` and `graphics.cpp:806` draws on non-zero.
+
+The grep this paragraph asked for has been run, over all eight roots and
+8,079,420 sprite records: **0 carry ink 9**, so the ink byte is composed for the
+harness on a real member pair. (It also turned up **73 records of ink 41**, which
+is at no position in `types.h`'s `InkType` — it stops at 39 — and falls through to
+Copy. Nobody has looked at those 73.)
 
 ### 2.7 Blend and alpha
 

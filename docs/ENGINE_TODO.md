@@ -820,14 +820,27 @@ skip it. The clock now decodes and holds for one in both numberings and releases
 it through `FrameClock.video_probe`; what is missing is a decoder to install as
 that probe, which is the digital-video entry above and not this one.
 
-**Mask ink (9).** §2.6. Uses the *next* cast member as a 1-bit mask. No member
-in this corpus carries it; it currently falls through to **Copy**. It used to fall
-through to Matte, which was wrong in kind rather than by a degree -- flooding this
-member's own paper is not the same mechanism as reading the next member as a mask
-(`reference/scummvm/channel.cpp:228`) -- and `bugs.md` 50 moved it. The mask path
-itself is still unbuilt, deliberately: with 0 records of ink 9 anywhere in the
-corpus the polarity is undecidable, and guessing it backwards makes a sprite
-invisible rather than merely wrong.
+**Mask ink (9) -- BUILT 2026-08-22.** §2.6. `Ink.KEY_MASK` is the fourth branch
+of `key_for`, in `getMask`'s own precedence, and `SpriteArt.apply_mask_member`
+resolves `castId + 1` in the same library, aligns it by registration point at the
+mask's **natural** size and crops -- a mask smaller than the sprite hides the
+remainder, because the reference zeroes the scratch surface first. A refusal
+(absent, not a bitmap, not 1-bit) draws **unmasked** and warns which, as the
+reference does. The hit test stays **rect**: `hits_per_pixel` is Matte-only, which
+makes this the sharpest instance of §2.1's asymmetry.
+
+**"The polarity is undecidable" was wrong, and worth recording why.** It is
+undecidable from the *data* -- 0 records of ink 9 in 8,079,420 across all eight
+roots -- and decided exactly by two lines of the reference:
+`images.cpp:BITDDecoder::loadStream` case 1 writes `0xff` for a set bit, and
+`graphics.cpp:806` draws on non-zero. **Set bit shows.** A zero in the corpus is a
+reason to look somewhere else for the answer, not a reason to call the question
+unanswerable.
+
+Unverified and unverifiable here: no sprite record in any root carries ink 9, so
+`tools/mask_ink.gd` composes the ink byte on a real member pair with real `BITD`
+bytes, real registration and the real cast table -- the `sprite_flip.gd`
+precedent.
 
 **`the clickOn` on mouse-up, and the recipient with it -- done, both halves.**
 §15. Director rewrites `the clickOn` on the mouse-up when the release was over a
@@ -901,14 +914,33 @@ under the left events and gives the right button no property to install.
 0 of the 51,350 members is of type `button`, so the right pair and the flip are
 unexercised: built because Director has them.
 
-**The hit test has no Hole.** §4.2. `isMouseIn` returns three values and
-`Interaction.channel_at` models two: a miss and an ineligible sprite both
-continue the descent, and there is no result that *aborts* it. The only producer
-of a Hole is a text member whose point is over its scrollbar arrows — a scrollbar
-swallows the click without being a target. This port draws no scrollbars, so
-nothing can produce one today; §4.2 still says to write the loop with three
-results, because adding scrolling fields later silently changes click routing
-everywhere rather than in the fields.
+**The hit test's Hole -- BUILT 2026-08-22.** §4.2. `Interaction.is_mouse_in` is
+`Channel::isMouseIn` with three results, shared by `channel_at`
+(`getMouseSpriteIDFromPos`) and a new `sprite_at` (`getSpriteIDFromPos`, §4.1's
+first row, which this port had no descent for at all). `HIT_HOLE` **returns 0**,
+because `score.cpp:1671` is a `break` and not the `continue` an ineligible sprite
+gets -- that difference is the entire feature, and it is asserted on a real
+fixture where the three readings give three different answers: no Hole -> channel
+6, Hole-as-Outside -> channel 4 (the sprite *behind* the field), the reference's
+break -> 0.
+
+**One named divergence, and it wants review.** `isWithin` calls `isInScrollBar`
+without asking whether the widget has a scrollbar. Taken literally that holes
+**10,495 records** -- CAPROOM's memo pages, Rating's 4,030 dialogue fields -- none
+of which scrolls. The reference gates it three other ways
+(`createWindowOrWidget` passes `scrollBar = (_textType == kTextTypeScrolling)`,
+and `MacText::processEvent` and `::draw` both guard on `_scrollBar`), so this port
+applies the guard the widget applies everywhere else. Reversing it is deleting one
+predicate from one `if`.
+
+Unverifiable here: **0 members of box type `scroll` in any of the eight roots**
+(6,312 `adjust`, 93 `fixed`, 82 `limit`) and 0 button members, so no title in reach
+can author a Hole. `tools/hit_hole.gd` writes one authoring byte -- `the boxType`,
+the author's own Field-dialog choice -- to the in-memory member and restores it.
+
+Still two-valued and recorded here rather than left to be rediscovered:
+`preview/cursor.gd`'s descent, which `score.cpp:1445-1470` also gates on
+`kCollisionHole`.
 
 **Cast-script targeting on mouse-up -- done.** §15.
 `director_preview.gd:_press_member` latches the member under the pointer at the

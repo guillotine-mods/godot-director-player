@@ -33,6 +33,21 @@ extends RefCounted
 ## reference anyway and marked unverified where they land, because "0 uses in this
 ## corpus" is a fact about the corpus.
 ##
+## **That last sentence used to be a fact about Piposh 2 wearing "this corpus" as
+## a disguise**, which is the failure `AGENTS.md` names as this repository's most
+## repeated. `tools/ink_survey.gd` walked the *configured* root under `--all` and
+## nothing else, so every ink number ever printed from it -- including the zero
+## for Mask that `ENGINE_TODO.md` recorded as "no member in this corpus" -- was
+## one title. Re-measured over all eight roots after the tool was fixed:
+## **8,079,420 sprite records in 491 scores across `games/` and `test-games/`,
+## and 0 of them carry ink 9.** The zero survived; the sentence had not been
+## entitled to it. The ink numbers that do appear across all eight are 0, 1, 8,
+## 32, 36 and **41**, the last on 73 records -- and 41 sits at no position in
+## Director's own table, which stops at 39 (`types.h`, `enum InkType`). It falls
+## through every rule in this file to Copy, which is the honest answer for a
+## number the format does not define; it is recorded here rather than explained
+## because nobody has looked at those 73 records yet.
+##
 ## The distribution is also why this file's one real defect hid for so long. Of
 ## those 88,095 Copy records in Piposh 2, only 209 carry the blend flag that makes
 ## Director matte them; in *Rating* it is 27,914 of 148,747. A port measured
@@ -75,6 +90,14 @@ const INK_MASK := 0x3F
 const KEY_NONE := 0   ## Copy: every pixel is drawn.
 const KEY_PAPER := 1  ## Background Transparent: every pixel equal to backColor goes.
 const KEY_MATTE := 2  ## Only the paper a flood fill reaches from the border goes.
+## Mask: the *next cast member* is a 1-bit stencil over this sprite's artwork.
+##
+## Not a keying rule at all in the sense the other three are -- it looks at no
+## pixel of this member. It is here because it is the fourth branch of the one
+## decision `Channel::getMask` makes, and splitting it out into a second question
+## asked somewhere else is how a renderer ends up asking about the ink twice and
+## getting two answers (§2.6, `bugs.md` 50).
+const KEY_MASK := 3
 
 
 ## The twelve inks Director builds a matte for on their ink number alone —
@@ -85,7 +108,9 @@ const KEY_MATTE := 2  ## Only the paper a flood fill reaches from the border goe
 ## either**, and does not belong: `getMask`'s `else if` arm (`channel.cpp:228`)
 ## takes the *next cast member* as a separate 1-bit mask surface, which is a
 ## different mechanism from flooding this member's own paper. `key_for` used to
-## answer `KEY_MATTE` for Mask, which was wrong in kind rather than by a degree.
+## answer `KEY_MATTE` for Mask, which was wrong in kind rather than by a degree
+## (`bugs.md` 50), then answered `KEY_NONE`, which was Copy -- honest, and still
+## not the mechanism. It answers `KEY_MASK` now and `apply_mask` is behind it.
 ##
 ## **Ten of these twelve are unverified against any data.** Over all three game
 ## roots — 3,550,111 sprite records in 241 scores — the only inks that ever appear
@@ -148,6 +173,14 @@ static func key_for(sprite: Dictionary, member: Dictionary) -> int:
 		if int(member.get("bits_per_pixel", 8)) == 1 and ink != MATTE:
 			return KEY_NONE
 		return KEY_MATTE
+	# `channel.cpp:228`'s `else if`, and the `else if` is the whole shape of it:
+	# Mask is reached **only when no matte was wanted**. A Mask-ink sprite that
+	# also carries the blend flag with a non-zero amount takes the matte arm above
+	# and never gets here, which is the reference's own precedence and not a
+	# simplification. Nothing in any corpus can tell the two apart -- there are no
+	# ink-9 records at all -- so the ordering is here because it is the reference's.
+	if ink == MASK:
+		return KEY_MASK
 	# Transparent is here rather than under Copy because in 8-bit index space
 	# its bitwise-OR against a white paper of index 0 leaves the destination
 	# untouched, which is the same observable result as keying the paper.
@@ -182,6 +215,16 @@ static func _needs_matte(sprite: Dictionary, ink: int) -> bool:
 ## single rule most worth not "tidying up" later: Background Transparent is 68% of
 ## this corpus and every one of those sprites catches clicks across its full
 ## rectangle.
+##
+## **Mask (9) is the sharpest instance of the asymmetry now that it is built.** A
+## Mask sprite is stencilled by another member's bits and can be invisible over
+## most of its rect, and it still hit-tests as the **whole rectangle**:
+## `BitmapCastMember::isWithin` (`castmember/bitmap.cpp:920-928`) tests
+## `ink == kInkTypeMatte` and nothing else, and §2.1's table says rect for ink 9.
+## So the picture and the hotspot legitimately disagree, exactly as they do for
+## the Copy-with-blend case two paragraphs down. Routing the two through one
+## predicate to make the hotspot overlay agree with the artwork is the mistake
+## this whole docstring exists to prevent.
 ##
 ## **This deliberately disagrees with `key_for`, and the disagreement is the
 ## reference's.** `key_for` mattes a Copy sprite that carries the blend flag —
@@ -517,6 +560,74 @@ static func key_matte(image: Image) -> bool:
 		stack.append(Vector2i(p.x, p.y + 1))
 		stack.append(Vector2i(p.x, p.y - 1))
 	return true
+
+
+## Apply Mask ink (§2.6): a 1-bit stencil from the **next cast member**.
+##
+## `image` is the sprite's artwork at its drawn size and is modified in place;
+## `bits` is `director_bitmap.gd:mask_bits`'s output for a `mask_w` x `mask_h`
+## 1-bit member; `at` is where that member's top-left corner sits inside the
+## image. Returns how many pixels the mask cleared.
+##
+## ## This is a different mechanism from every other ink, and the differences are
+## the point
+##
+## Matte floods *this* member's own paper in from its border. Mask reads a
+## *second member's bits* and cares nothing for this one's colours. `bugs.md` 50
+## moved ink 9 out of the matte bucket for exactly that reason -- it was wrong in
+## kind rather than by a degree -- and this is the mechanism that was missing
+## behind it. What the sprite draws *through* the stencil is Copy
+## (`graphics.cpp`'s ink switch has no Mask case; §2.4's fallback chain).
+##
+## ## Three rules, each from `channel.cpp:getMask`'s Mask arm and each easy to
+## get backwards
+##
+## 1. **Alignment is by registration point, at the mask's natural size.** The
+##    reference takes `bitmap->getBbox()` -- the mask member's rect moved so its
+##    own registration point is the origin -- and translates it by the channel's
+##    registration offset. So the two members' registration points coincide and
+##    the mask is **not** scaled to the sprite: a stretched sprite gets a mask of
+##    the mask member's own size. It is `getBbox()` with no arguments, where
+##    `getBbox(w, h)` exists one line away in the same class and would have
+##    scaled it.
+## 2. **The surface is created at the channel's size and zeroed**, and only then
+##    is the mask copied into it. Every pixel the mask member does not reach is
+##    therefore 0, and 0 is hidden -- so a mask smaller than the sprite **crops**
+##    the sprite to itself rather than leaving the remainder visible. Getting this
+##    backwards is the difference between a stencil and a hole punch.
+## 3. **Non-zero shows.** `inkBlitSurface` draws where the mask byte is non-zero
+##    (`graphics.cpp:806`); `mask_bits` writes 255 for a set bit, which is what
+##    `BITDDecoder`'s 1-bit case produces. `ENGINE_TODO.md` called the polarity
+##    undecidable because no record in the corpus carries ink 9; it is undecidable
+##    from the data and decided exactly by those two lines.
+##
+## **Unverified against any real sprite, because there is none.** 0 of 8,079,420
+## sprite records across all eight roots carry ink 9 (`tools/ink_survey.gd --all`,
+## 491 scores). Built because Director has it: `tools/mask_ink.gd` drives it from a
+## real 1-bit member's real `BITD` bytes and a sprite record this port composes.
+static func apply_mask(image: Image, bits: PackedByteArray, mask_w: int,
+		mask_h: int, at: Vector2i) -> int:
+	var cleared := 0
+	var w := image.get_width()
+	var h := image.get_height()
+	if bits.size() < mask_w * mask_h:
+		return 0
+	for y in h:
+		var my := y - at.y
+		for x in w:
+			var mx := x - at.x
+			# Outside the mask member's own rect is outside the scratch surface's
+			# copied region, which was zeroed at creation: hidden, not kept.
+			var show := mx >= 0 and my >= 0 and mx < mask_w and my < mask_h \
+				and bits[my * mask_w + mx] != 0
+			if show:
+				continue
+			var c := image.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			image.set_pixel(x, y, Color(c.r, c.g, c.b, 0.0))
+			cleared += 1
+	return cleared
 
 
 ## Is there an exactly-white pixel anywhere on the border ring?

@@ -122,6 +122,16 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 			Ink.key_matte(image)
 		Ink.KEY_PAPER:
 			Ink.key_paper(image, back)
+		Ink.KEY_MASK:
+			# The refusal is reported, not swallowed. `Channel::getMask` calls
+			# `warning()` on each of its three and carries on with no stencil, and
+			# a Mask sprite whose mask is missing draws as an ordinary Copy sprite
+			# -- which looks exactly like a port that has not implemented Mask ink.
+			# Once per cache entry rather than once per repaint, since the keyed
+			# image is what is cached.
+			var refused := apply_mask_member(sprite, m, image, drawn, table)
+			if refused != "":
+				push_warning("mask ink on sprite %d:%d: %s" % [lib, id, refused])
 	# Colourisation last, and after keying rather than before it, which is not an
 	# arbitrary order. A matte is built by flooding *white* in from the border,
 	# and Director builds it from the member's own image; repainting the whites
@@ -138,6 +148,61 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	hit_images[key] = image
 	textures[key] = ImageTexture.create_from_image(image)
 	return textures[key]
+
+
+## Mask ink (§2.6): stencil this sprite's artwork with the **next cast member**.
+##
+## Returns "" when the mask was applied and the reason it was not otherwise. The
+## reason is a string rather than a bool because all three refusals are real
+## Director behaviours with the *same* outcome -- the sprite draws unmasked -- and
+## a caller that could not tell them apart could not report which one happened.
+## `Channel::getMask` warns and returns null for each:
+##
+##   the member `castId + 1` is absent
+##   it is not a bitmap
+##   it is a bitmap of more than one bit
+##
+## **Unmasked, not invisible**, and that direction is the whole risk of this
+## feature. A null mask in the reference means the blit runs with no stencil at
+## all, so a mask this port cannot resolve leaves a sprite fully drawn; guessing
+## the other way -- treating a missing mask as "mask everything" -- makes the
+## sprite disappear, which is the failure `ENGINE_TODO.md` names as the reason
+## nobody built this from a coin flip.
+##
+## `castId + 1` is in the **same cast library**: the reference builds
+## `CastMemberID(_castId.member + 1, _castId.castLib)`, so the mask is the next
+## member of the sprite's own library and never the first member of the next one.
+##
+## The mask member's own registration point is what aligns it (`Ink.apply_mask`
+## rule 1), and this is the one place the two members' geometry meets: `reg` is
+## the sprite's registration point inside its drawn artwork -- scaled with the
+## drawn size, because the *sprite* may be stretched -- and the mask's own offset
+## is taken raw, because the reference asks `getBbox()` and not `getBbox(w, h)`.
+static func apply_mask_member(sprite: Dictionary, member: Dictionary, image: Image,
+		drawn: Vector2, table) -> String:
+	var lib := int(sprite["cast_lib"])
+	var mask_id := int(sprite["cast_id"]) + 1
+	var mask: Dictionary = table.get_member(lib, mask_id)
+	if mask.is_empty():
+		return "mask member %d:%d is not in the cast" % [lib, mask_id]
+	if int(mask.get("type", 0)) != Ink.TYPE_BITMAP:
+		return "mask member %d:%d is %s, not a bitmap" % [
+			lib, mask_id, str(mask.get("type_name", "type%d" % int(mask.get("type", 0))))]
+	var f = table.file_for(lib)
+	if f == null:
+		return "no container for cast library %d" % lib
+	var error: Array = []
+	var bits := Bitmap.mask_bits(
+		mask, f.read_chunk(int(mask.get("data_chunk_id", -1))), error)
+	if bits.is_empty():
+		return "mask member %d:%d: %s" % [
+			lib, mask_id, "" if error.is_empty() else str(error[0])]
+	var reg := Geometry.scaled_reg(member, drawn)
+	var mask_reg := Vector2(
+		float(mask.get("reg_offset_x", 0)), float(mask.get("reg_offset_y", 0)))
+	Ink.apply_mask(image, bits, int(mask.get("width", 0)), int(mask.get("height", 0)),
+		Vector2i((reg - mask_reg).round()))
+	return ""
 
 
 ## Why `texture_for` answered null, in the words a report can print.
