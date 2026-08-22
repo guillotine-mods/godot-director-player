@@ -39,13 +39,44 @@ var factory: GDScript = null
 ## Handed to every instance so it can reach the movie -- paths, the search list,
 ## the write guard. Null in a harness that builds an Xtra on its own, and every
 ## instance method has to survive that.
-var host: Object = null
+##
+## **Weak, and that is the whole of the fix for the leak every run used to
+## print.** The host builds this registry in its own `_init` and passes `self`
+## (`preview_lingo_host.gd:438`), so a strong field here is a two-object
+## `RefCounted` cycle -- the host owns the Xtra, the Xtra owns the host -- and
+## Godot has no cycle collector. Neither side was ever freed, which pinned four
+## GDScripts (this one, the host, and the two `factory` scripts) and made every
+## clean exit end with `4 resources still in use` plus three leaked instances
+## *per host constructed*. `boot.gd:start_lingo` builds a fresh host per movie,
+## which is why the leak count grew with the length of the run.
+##
+## Weak rather than a teardown call, because the direction of ownership is a
+## permanent fact and not a moment: the preview node owns the interpreter and the
+## host, the host owns this registry, and the registry must not own the host
+## back. A teardown re-asserts that at one point in time, and the points it would
+## have to be reached from include a `tools/` harness that never adds the preview
+## to the tree and `lingo_quit`, which does not take the tree down under
+## `--script`. `NOTIFICATION_PREDELETE` cannot help either: it does not fire for
+## an object that is leaked, which is the thing being fixed.
+##
+## The *instance's* `host` stays strong (`make_xtra_instance` below) and is not
+## part of any cycle: nothing in the host holds an instance, and a FileIO
+## instance parked in a Lingo global -- which `start_lingo` carries across movie
+## boundaries -- then keeps the host that made it alive for exactly as long as
+## the script can still reach it, and both die together afterwards.
+var _host_ref: WeakRef = null
 
 
 func _init(xtra_name: String = "", from: GDScript = null, for_host: Object = null) -> void:
 	name = xtra_name
 	factory = from
-	host = for_host
+	_host_ref = weakref(for_host) if for_host != null else null
+
+
+## The host, or null once it has gone. Every reader has to handle the null, which
+## was already true of the no-host harness case this field documents.
+func host_object() -> Object:
+	return null if _host_ref == null else _host_ref.get_ref() as Object
 
 
 func xtra_name() -> String:
@@ -58,7 +89,7 @@ func make_xtra_instance(args: Array) -> Variant:
 	if factory == null:
 		return null
 	var instance = factory.new()
-	instance.set("host", host)
+	instance.set("host", host_object())
 	# Director's `new` on an Xtra runs the Xtra's own constructor, and FileIO's
 	# takes no arguments. An Xtra that wants them reads them here.
 	if instance.has_method("xtra_new"):
