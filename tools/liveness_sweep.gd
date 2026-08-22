@@ -10,7 +10,7 @@ extends SceneTree
 ##   --only S      visit only containers whose path contains S
 ##   --limit N     visit at most N containers, in sorted order (0 = all)
 ##   --budget-ms N stop starting new containers after N ms of wall clock (0 = none)
-##   --ticks N     score ticks to watch each container for (default 120)
+##   --ticks N     unexcused score ticks to watch each container for (default 120)
 ##   --window N    score ticks a verdict is read over (default 60)
 ##   --settle N    score ticks to let a container open in (default 24)
 ##   --click       after the watch, click each eligible sprite and watch again
@@ -213,12 +213,56 @@ extends SceneTree
 ## so aliasing can cost a finding and can never invent one. What it cannot do is
 ## go unnoticed: the coverage (contiguously sampled ticks over ticks watched) is
 ## printed and asserted, because a sweep that saw a third of the movie and
-## reported it clean is the dark-harness failure with extra steps.
+## reported it clean is the dark-harness failure with extra steps. What coverage
+## does **not** answer is how much *movie* was watched -- that is the section
+## below, and trusting the one number for both questions is `bugs.md` 128.
+##
+## ## The watch is paid for in ticks a rule can be read over
 ##
 ## Sound is the one thing fast-forward cannot scale -- the mixer runs on the audio
 ## server's clock -- so a `soundBusy` wait takes as long as the sound does however
-## fast the score runs. That makes sound-excused ticks *over*-represented at high
-## `--ff`, which can only hide a finding, never invent one.
+## fast the score runs. At `--ff 30` the score runs about 28 ticks a second while
+## the mixer runs at one, so a four-second opening line -- 34 ticks at the movie's
+## own authored rate -- costs about 115 ticks of watch.
+##
+## **That used to be charged to the same budget as a live tick**, and on a talkative
+## title it was the whole budget. Measured over `piposh-dream` with
+## `--click --strict --verbose`, at 52 movies in 371 s: 42 of the 52 ended their
+## watch with a `wait for sound` hold on it, **19 of them held on every single
+## watched tick**, and every one of the 52 read `ok`. `bugs.md` 128 measured the
+## same command at 46 of 51 held, 39 of those for 100 or more of the 120 ticks and
+## 22 for all 120, with 9 clicks landing across 51 poked movies -- the two runs
+## differ because containers share one session and leak state in visit order, which
+## is this file's second documented caveat, and they agree on the shape. Every
+## excuse was granted correctly and every verdict was right; the watch simply never
+## reached the frame the room's hotspots are on.
+##
+## So `--ticks` buys **unexcused** ticks -- exactly the ticks `_judge` builds a
+## window out of, and the predicate is `_judgeable` in one place for all three
+## readers of it. A held or skipped tick is watched, sampled, counted in the
+## report and **not charged**, so what bounds a watch is `WATCH_CAP_MS`, which is
+## what already bounded every art-heavy movie in this corpus. Two numbers say how
+## that went and are printed every run: the `depth` line (unexcused ticks obtained
+## per watch, and how many watches the wall-clock ceiling cut short) and
+## `unjudged`.
+##
+## Two things this deliberately does not change. A hold still *clears* the window
+## rather than annotating it, so nothing about what counts as a finding moved --
+## only how long the sweep is willing to wait for one. And a skipped tick is
+## uncharged and still clearing, so **aliasing can still cost a finding and can
+## still never invent one**; `_assert_rules` pins that with the founding ping-pong
+## every one of whose samples carries a stride of 2.
+##
+## What it does change is what `coverage` is for, and the split is worth stating
+## because the old number was trusted for both halves while it could only ever
+## answer one. Coverage is contiguously sampled ticks over ticks run: it answers
+## **"did the sampler see the ticks that happened"**, which is the aliasing
+## question, and it read 100% for the sweep above because a held tick is a sampled
+## one. It was never a measure of how much *movie* was watched. That question is
+## `unjudged`'s, and it is asked properly now: a movie whose longest run of
+## judgeable ticks never reached `--window` is named, so a watch that spent its
+## whole wall clock inside a cut scene reads as unlooked-at rather than as clean.
+## Neither number is higher-is-better and neither substitutes for the other.
 ##
 ## ## What this sweep does not cover
 ##
@@ -262,6 +306,12 @@ extends SceneTree
 ##     not look". A run with many of them was measured on a busy machine and is a
 ##     run to repeat, not a result.
 ##
+##     **Since the budget moved to unexcused ticks, that ceiling is the ordinary
+##     bound rather than the exception**, so this bullet now describes most of the
+##     corpus and not only its expensive rooms. The `depth` line is where a run
+##     says how much movie it saw, and a loaded machine costs depth rather than
+##     coverage -- the tick stream stays fully sampled either way.
+##
 ## Title-agnostic: the rules below know tempo holds, sound channels and sprite
 ## counts, and no movie, room, channel or member.
 
@@ -270,9 +320,14 @@ const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
 const ContainerName := preload("res://director/director_container.gd")
 
-## Score ticks watched per container, and the length of the window a verdict is
-## read over. `WATCH` is two windows so that a movie has room to settle and still
-## be judged over a full one afterwards.
+## Unexcused score ticks watched per container, and the length of the window a
+## verdict is read over. `WATCH` is two windows so that `_judge`'s sliding window
+## has somewhere to slide; one window exactly would give it a single position.
+##
+## It buys **unexcused** ticks -- see the header. A hold or a skipped tick is
+## watched and reported and not charged, so a movie with a four-second opening line
+## no longer spends its whole watch on it, and what bounds a watch in practice is
+## `WATCH_CAP_MS`.
 ##
 ## **This length is not what keeps a walk from reading as a trap**, and saying so
 ## here was wrong for as long as the claim stood: `_judge` slides the window one
@@ -459,6 +514,15 @@ func _sweep(h: Harness) -> bool:
 	# `porting-fidelity-verification`'s "make forgiven visibly distinct from
 	# resolved".
 	var idle_loops: Array[String] = []
+	# The budget's own accounting. `live` is the unexcused ticks the run obtained
+	# across every first watch; `capped` and `stalled` are the watches the wall
+	# clock and the stall backstop ended; `short` is the ones that ended on their
+	# tick budget having spent it on something else, which is the defect
+	# `bugs.md` 128 describes and the only one of the four that is asserted.
+	var live := 0
+	var capped: Array[String] = []
+	var stalled: Array[String] = []
+	var short: Array[String] = []
 
 	for movie in movies:
 		if limit > 0 and visited >= limit:
@@ -474,15 +538,44 @@ func _sweep(h: Harness) -> bool:
 		if float(seen.get("coverage", 1.0)) < MIN_COVERAGE:
 			thin.append("%s %d%%" % [movie.get_file(),
 				int(round(float(seen["coverage"]) * 100.0))])
-		# A movie whose watch never reached `window` samples was never judged by
-		# any of the rules -- there was no window to read one over. It is not a
-		# finding and it is not a clean bill of health either, and the difference
-		# is only visible if it is counted.
-		if int(seen.get("watched", 0)) < window and not _clock_stopped(preview):
+		# Everything from here to the `--click` block is read off the **first**
+		# watch, before a poke can replace the verdict: a poke that finds
+		# something must not also erase what the watch measured.
+		#
+		# A movie whose longest run of judgeable ticks never reached `window` was
+		# never judged by any of the rules -- there was no window to read one
+		# over. It is not a finding and it is not a clean bill of health either,
+		# and the difference is only visible if it is counted. **This used to ask
+		# how many ticks were sampled**, a question a movie held on a sound for
+		# its whole watch answers with the full number while offering no window at
+		# all, so the counter read clean over exactly the movies `bugs.md` 128 is
+		# about.
+		if int(seen.get("judged", 0)) < window and not _clock_stopped(preview):
 			unjudged.append("%s %d/%d" % [
-				movie.get_file(), int(seen.get("watched", 0)), window])
-		# Read off the first watch, before `--click` can replace the verdict: a
-		# poke that finds something must not also erase what the watch cleared.
+				movie.get_file(), int(seen.get("judged", 0)), window])
+		live += int(seen.get("live", 0))
+		match str(seen.get("ended", "")):
+			"capped":
+				capped.append(movie.get_file())
+			"stalled":
+				stalled.append(movie.get_file())
+			"short":
+				# The pinning check for the budgeting rule, and the one thing in
+				# this block that is asserted. A watch may stop because it spent
+				# its unexcused-tick budget, because the wall clock ran out or
+				# because the score's clock stopped; there is no fourth reason, so
+				# one is a budget being charged for something other than the ticks
+				# a rule can be read over. That is what `bugs.md` 128 is, and it
+				# is what reverting `_watch`'s loop condition to raw score ticks
+				# produces -- verified by doing exactly that and watching this go
+				# red over `piposh-dream`.
+				#
+				# Read off the first watch of each container only. `_poke` runs the
+				# same `_watch` with the same budget, so a rule broken there is
+				# broken here too, and plumbing per-click accounting out of a
+				# function that returns one verdict buys nothing.
+				short.append("%s %d/%d" % [
+					movie.get_file(), int(seen.get("live", 0)), ticks])
 		if str(seen.get("idle", "")) != "":
 			idle_loops.append(movie.get_file())
 		if clicking and str(seen["verdict"]) == "":
@@ -510,13 +603,47 @@ func _sweep(h: Harness) -> bool:
 		"lower --ff; thinnest: %s" % ", ".join(thin.slice(0, 6))
 			if not thin.is_empty() else "")
 
+	# Coverage above answers "did the sampler see the ticks that happened". This
+	# answers the other half -- "was the watch spent on ticks a rule can be read
+	# over" -- and the two are different questions with different failure modes,
+	# which is the whole of `bugs.md` 128: coverage was 100% for a sweep that
+	# watched no gameplay, correctly, because a held tick is a sampled one.
+	#
+	# Only the budget's own arithmetic is asserted here, never a depth threshold.
+	# How much of a corpus is cut scene is a property of the title, so a run over
+	# an all-cut-scene root would go red for being honest; `depth`, `unjudged`,
+	# `idle loops` and `skipped` are counted and named instead, the way this file
+	# already treats every other number that is not higher-is-better.
+	h.check("every watch ended on its unexcused ticks, the wall clock or a stopped clock",
+		short.is_empty(),
+		"%d watch(es) stopped for none of the three, with this many unexcused "
+			% short.size()
+			+ "tick(s) of the %d asked: %s%s" % [ticks, ", ".join(short.slice(0, 6)),
+				", ..." if short.size() > 6 else ""])
+
 	print("")
 	print("visited   : %d of %d movie(s) in %.1f s" % [
 		visited, movies.size(), (Time.get_ticks_msec() - started) / 1000.0])
+	print("depth     : %d unexcused tick(s) watched, mean %.0f of the %d asked; "
+			% [live, 0.0 if visited == 0 else float(live) / float(visited), ticks]
+		+ "%d watch(es) hit the %.0fs ceiling first" % [
+			capped.size(), WATCH_CAP_MS / 1000.0])
+	if not stalled.is_empty():
+		# Two thresholds, not one, and the line says so rather than naming the
+		# larger: `QUIET_FRAMES` applies while the clock is legitimately stopped
+		# (Director's `pause`, or a movie that halted) and `QUIET_STALL` to
+		# anything else, which is why a paused save panel is on this line after a
+		# fifth of a second and a genuine stall is not.
+		print("stalled   : %d gave up on a clock that stopped counting (%d frame(s) "
+				% [stalled.size(), QUIET_FRAMES]
+			+ "under `pause`/`halt`, %d otherwise): %s%s" % [
+				QUIET_STALL, ", ".join(stalled.slice(0, 6)),
+				", ..." if stalled.size() > 6 else ""])
 	if not unjudged.is_empty():
-		print("unjudged  : %d watched fewer than %d tick(s), so no window was read: %s%s" % [
-			unjudged.size(), window, ", ".join(unjudged.slice(0, 6)),
-			", ..." if unjudged.size() > 6 else ""])
+		print("unjudged  : %d never ran %d unexcused tick(s) together, so no window was "
+				% [unjudged.size(), window]
+			+ "read: %s%s" % [", ".join(unjudged.slice(0, 6)),
+				", ..." if unjudged.size() > 6 else ""])
 	if not idle_loops.is_empty():
 		print("idle loops: %d cycled inside %d or fewer drawn state(s) with a hotspot "
 			% [idle_loops.size(), CYCLE_MAX]
@@ -679,6 +806,71 @@ func _assert_rules(h: Harness) -> void:
 		_window_of([["a.dir", 5, 3], ["a.dir", 6, 0]], true)).get("verdict", ""))
 	h.check("a cycle through an empty frame is a blank cycle with a hotspot on it",
 		flashing == "blank-cycle", "got `%s`" % flashing)
+
+	# The budgeting rule. `_judgeable` is what `_watch` charges the tick budget
+	# for, what `_judge` builds a window out of and what `_longest_run` measures,
+	# so it is asserted in both directions and then as an *equivalence* against
+	# `_judge` -- three statements that agree are not the same thing as one rule.
+	var live_tick := {"movie": "a.dir", "frame": 1, "drawn": 4, "hold": "",
+		"stride": 1, "windowed": false}
+	var held_tick := {"movie": "a.dir", "frame": 1, "drawn": 4,
+		"hold": "wait for sound 1", "stride": 1, "windowed": false}
+	var skipped_tick := {"movie": "a.dir", "frame": 1, "drawn": 4, "hold": "",
+		"stride": 2, "windowed": false}
+	h.check("an unexplained, fully-sampled tick is one the budget pays for",
+		_judgeable(live_tick))
+	h.check("a tick the engine can explain is not",
+		not _judgeable(held_tick), str(held_tick["hold"]))
+	h.check("a tick that skipped one is not either",
+		not _judgeable(skipped_tick), "stride %d" % int(skipped_tick["stride"]))
+
+	# The equivalence, over the founding shape and at the two lengths that
+	# straddle the window: `_longest_run` must say exactly what `_judge` could
+	# read, or `unjudged` is counting something the rules do not use.
+	#
+	# **A held stretch is prepended, and that is what makes this able to fail in
+	# both directions.** Without it every sample in the trace is judgeable, so
+	# `samples.size()` and the longest run are the same number and a
+	# `_longest_run` that counted every sample -- which is the movie held on a
+	# sound for its whole watch, reporting the full tick count and offering no
+	# window, `bugs.md` 128's `unjudged` -- would pass. With it the trace is
+	# `WINDOW` held ticks and `length` live ones, and the two answers differ.
+	for length in [WINDOW - 1, WINDOW]:
+		var pinging: Array = []
+		for i in WINDOW:
+			pinging.append({"movie": "ques.dir" if i % 2 == 0 else "Saves.dir",
+				"frame": 803 if i % 2 == 0 else 27, "drawn": 4,
+				"hold": "wait for sound 1", "stride": 1, "windowed": false,
+				"clickable": false})
+		for i in length:
+			pinging.append({"movie": "ques.dir" if i % 2 == 0 else "Saves.dir",
+				"frame": 803 if i % 2 == 0 else 27, "drawn": 4, "hold": "",
+				"stride": 1, "windowed": false, "clickable": false})
+		var reading := str(_judge("ques.dir", {"errors": {}, "samples": pinging},
+			WINDOW)["verdict"])
+		var wanted := "ping-pong" if length >= WINDOW else ""
+		h.check("%d held tick(s) then %d judgeable ones of the founding ping-pong read as `%s`, over a run of %d"
+				% [WINDOW, length, wanted if wanted != "" else "healthy", length],
+			reading == wanted and _longest_run(pinging) == length,
+			"got `%s` over a run of %d" % [reading, _longest_run(pinging)])
+
+	# **The aliasing guarantee, pinned.** The same shape with every tick a skipped
+	# one must produce nothing at all, because a skipped tick clears the window
+	# exactly as a hold does. That is what makes aliasing able to cost a finding
+	# and unable to invent one -- the property the header has claimed since this
+	# file was written and nothing asserted until the budget started depending on
+	# it.
+	var aliased: Array = []
+	for i in WINDOW * 4:
+		aliased.append({"movie": "ques.dir" if i % 2 == 0 else "Saves.dir",
+			"frame": 803 if i % 2 == 0 else 27, "drawn": 4, "hold": "",
+			"stride": 2, "windowed": false, "clickable": false})
+	var blind := str(_judge("ques.dir", {"errors": {}, "samples": aliased},
+		WINDOW)["verdict"])
+	h.check("the same shape sampled every other tick is not a finding", blind == "",
+		blind)
+	h.check("and it offers no run for a rule to be read over",
+		_longest_run(aliased) == 0, "%d tick(s)" % _longest_run(aliased))
 	h.complete(name)
 
 
@@ -735,6 +927,8 @@ func _visit(preview: Node, audio: Node, movie: String, settle: int, ticks: int,
 	if preview.get("_score") == null:
 		var absent := _finding(movie, "no-open", "no score loaded after `go to movie`")
 		absent["stride"] = 0
+		# No watch ran, so it must not read as one that ended short of its budget.
+		absent["ended"] = "no-open"
 		return absent
 	await _run_ticks(preview, settle, OPEN_CAP_MS)
 	var watching := Time.get_ticks_msec()
@@ -743,6 +937,12 @@ func _visit(preview: Node, audio: Node, movie: String, settle: int, ticks: int,
 	seen["stride"] = int(trace["stride"])
 	seen["coverage"] = coverage(trace)
 	seen["watched"] = (trace["samples"] as Array).size()
+	# What the watch cost and what it bought, separately: `watched` above is every
+	# tick it sampled, `judged` is the longest window a rule could have been read
+	# over, and they are wildly different on a movie that opens with a speech.
+	seen["judged"] = _longest_run(trace["samples"])
+	seen["live"] = int(trace["live"])
+	seen["ended"] = str(trace["ended"])
 	seen["open_ms"] = watching - opening
 	seen["watch_ms"] = Time.get_ticks_msec() - watching
 	return seen
@@ -889,7 +1089,14 @@ func _run_ticks(preview: Node, count: int, cap_ms: int) -> void:
 ## which is below the rate every movie in these corpora is authored at and
 ## therefore asks the clock for less than one step per process frame.
 ##
-## Returns `{samples, stride, errors, movies, ticks}`.
+## `budget` is spent on **unexcused** ticks -- what `_judgeable` accepts -- so a
+## hold or a skipped tick is sampled and reported without being charged, and the
+## real bound on a watch is `cap_ms`. See the header for why, and `bugs.md` 128 for
+## what it was before.
+##
+## Returns `{samples, stride, errors, movies, ticks, live, ended}`, where `live` is
+## the unexcused ticks obtained and `ended` is which of the three bounds stopped
+## it: `budget`, `capped` or `stalled`.
 func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 	var samples: Array[Dictionary] = []
 	var errors: Dictionary = {}
@@ -915,9 +1122,11 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 	# cycle verdict is read over.
 	var arrived: Dictionary = {}
 	var eligible: Dictionary = {}
+	# Unexcused ticks obtained, which is what `budget` buys.
+	var live := 0
+	var ended := ""
 	preview.set("_fast_forward_fps", rate)
-	while int(preview.get("_ticks")) - began < budget \
-			and Time.get_ticks_msec() - start < cap_ms:
+	while live < budget and Time.get_ticks_msec() - start < cap_ms:
 		await process_frame
 		# Polled every process frame rather than every score tick: the interpreter
 		# clears `errors` at the start of every dispatch, so a failure recorded
@@ -934,6 +1143,7 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 			# reporting the empty set as "nothing observed".
 			if quiet >= (QUIET_FRAMES if _clock_stopped(preview) else QUIET_STALL):
 				samples.append(_sample(preview, audio, clock, host, 1, polls))
+				ended = "stalled"
 				break
 			continue
 		quiet = 0
@@ -954,6 +1164,8 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 		arrived[key] = true
 		sample["clickable"] = bool(eligible.get(key, false))
 		samples.append(sample)
+		if _judgeable(sample):
+			live += 1
 		polls = asked
 		# The control loop. Down hard on any skipped tick, up gently while none
 		# is skipped, so a movie that is only briefly expensive -- one cold
@@ -971,8 +1183,24 @@ func _watch(preview: Node, audio: Node, budget: int, cap_ms: int) -> Dictionary:
 	var movies: Dictionary = {}
 	for sample in samples:
 		movies[str(sample["movie"])] = true
+	# Which of the three bounds stopped the watch, decided from the state rather
+	# than from the exit path. **That distinction is the difference between a
+	# control and a decoration**: the first version of this inferred "the ceiling"
+	# from `live < budget`, so putting the budget back on raw score ticks -- the
+	# defect this change removes -- relabelled every watch as capped and the
+	# assertion below passed over it. `short` is the fourth answer, meaning the
+	# loop stopped for a reason this function cannot name, and it is what a budget
+	# charged for holds looks like from here.
+	if ended != "stalled":
+		if live >= budget:
+			ended = "budget"
+		elif Time.get_ticks_msec() - start >= cap_ms:
+			ended = "capped"
+		else:
+			ended = "short"
 	return {"samples": samples, "stride": stride, "errors": errors,
-		"movies": movies.keys(), "ticks": int(preview.get("_ticks")) - began}
+		"movies": movies.keys(), "ticks": int(preview.get("_ticks")) - began,
+		"live": live, "ended": ended}
 
 
 ## What the player is looking at, and whether anything can say why.
@@ -1047,6 +1275,38 @@ static func _any_clickable(preview: Node) -> bool:
 	return false
 
 
+## Is this tick one a verdict can be read over, and therefore one the watch pays
+## for?
+##
+## **One predicate, three readers**, which is the point of it being a function: the
+## budget in `_watch` charges for exactly the ticks `_judge` builds a window out of
+## and `_longest_run` measures. The way this goes wrong is one of the three
+## drifting from the other two, so `_assert_rules` asserts the equivalence rather
+## than the three statements.
+##
+## A hold is an *answer* to "why is the playhead not moving" and a skipped tick is
+## an *unknown* -- the playhead went somewhere this sampler never saw. Neither can
+## carry a finding, so neither is charged and both clear the window.
+static func _judgeable(sample: Dictionary) -> bool:
+	return str(sample["hold"]) == "" and int(sample["stride"]) <= 1
+
+
+## The longest stretch of consecutive judgeable ticks in a watch: the longest
+## window any rule could have been read over. Below `--window` there was none, and
+## that is what `unjudged` counts -- not how many ticks were sampled, which a movie
+## held on a sound for its whole watch answers with the full number.
+static func _longest_run(samples: Array) -> int:
+	var best := 0
+	var run := 0
+	for sample_value in samples:
+		if _judgeable(sample_value as Dictionary):
+			run += 1
+			best = maxi(best, run)
+		else:
+			run = 0
+	return best
+
+
 ## Turn a watch into a verdict.
 ##
 ## The window is *cleared* by an excused tick rather than annotated, so what is
@@ -1068,8 +1328,10 @@ static func _judge(movie: String, trace: Dictionary, window: int) -> Dictionary:
 		# A hold is an answer, and a *skipped* tick is an unknown -- the playhead
 		# moved somewhere this sampler never saw. Both break the run, because a
 		# window is only evidence if it is `window` consecutive ticks that were
-		# both watched and unexplained.
-		if str(sample["hold"]) != "" or int(sample["stride"]) > 1:
+		# both watched and unexplained. `_judgeable` is the same predicate the
+		# watch's tick budget is charged against, deliberately: the ticks paid for
+		# are the ticks a verdict can be read over and no others.
+		if not _judgeable(sample):
 			run.clear()
 			continue
 		run.append(sample)
