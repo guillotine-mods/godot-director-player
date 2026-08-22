@@ -10648,3 +10648,159 @@ nothing.** Its oracle was `data/lingo/`, deleted; it prints
 parser change". It was left in the tree because it gates the parser rather than
 the renderer and comes back if `data/lingo/` does, but its green means nothing
 today.
+---
+
+## 128. PARTLY FIXED. The sweep's budget no longer pays for held ticks; its wall-clock ceiling now binds instead, and two thirds of Piposh Dream still cannot be judged
+
+**Status:** budgeting half **FIXED at `8370533e`**; the ceiling half open ·
+**Area:** `tools/liveness_sweep.gd`, `WATCH_CAP_MS` · filed and half-closed
+2026-08-21
+
+The entry as filed: the watch budget was spent in score ticks and a held tick cost
+the same as a live one, so the sweep paid its whole watch for a hold it had already
+excused, and `visited: 52 of 52` covered almost no gameplay. `--ticks` now buys
+**unexcused** ticks only, through one predicate (`hold == "" and stride <= 1`) shared
+by the budget, the run building and a new `_longest_run`.
+
+**The control that should have been run before the entry was written, and was run
+before the fix.** The same command at `--ff 8` — the movie's own rate — moves movies
+held on *every* watched tick from 19 to 1 and distinct states summed over 52 watches
+from 1,851 to 2,954, for 3.4x the wall clock. So the reading was right.
+
+**What the fix bought, with the unit change stated because the denominator moved from
+120 ticks to 550+:**
+
+| | before | after |
+|---|---|---|
+| held on every watched tick | 19 | **0** |
+| held on wait-for-sound at all | 42 | 42 |
+| >= 83% of that movie's *own* ticks | 32 | 27 |
+| clicks landed | 20 | 26 |
+| `go` / `marker` / `sound` / `soundbusy` | 5/4/2/136 | **41/39/7/580** |
+| cursors installed | 0 | **0** |
+| wall clock | 379 s | 946 s |
+
+`go` 5 -> 41 and `marker` 4 -> 39 is the sweep reaching the frames where rooms decide
+things. **">= 100 of 120" from the original entry no longer means anything** and is
+not comparable across the change; that is why the third row is a fraction.
+
+### What is still open, and it is the same defect one layer out
+
+`WATCH_CAP_MS` now binds where `--ticks` used to. On `piposh-dream`,
+**`unjudged: 34 of 52`** and 28 of 52 watches hit the 20 s ceiling, depth mean 62 of
+120 asked. So two thirds of the title still has no window any rule was read over —
+the sweep now *says so*, which it did not before, and that is the whole of the
+improvement in coverage honesty. Raising the cap is the obvious next move and it
+multiplies a corpus cost that is already **2.5x** — `piposh-dream` 946 s against a
+379 s baseline, both on one machine, which is the only ratio here worth quoting.
+`piposh` ran 99 of 99 in 2,557 s and its 589 s "before" was measured on a different
+machine, so **there is no 4.3x**: that figure appeared in an earlier draft of this
+entry and in the report it came from, and it divides one machine's number by
+another's. The absolute 2,557 s stands; the ratio does not.
+
+The suite is not what pays: the `ALL` entry is `liveness_sweep:--limit@12` and it
+went 72 s -> 92 s, 20 s on a 1,918 s run. Which is why the fix landed unconditionally
+rather than behind a flag — a flag defaults one way and whichever way it defaults is
+what everybody measures.
+
+### Two of this entry's own numbers did not reproduce, and both readings were mine
+
+Recorded because both are the shape this file's header warns about — a number that
+reads as measured, carrying no note of what it was measured at.
+
+**The clicks and held-movie figures were measured before `1e760a51`.** That commit
+stopped a failed `playFile` from holding `soundBusy`, and `git log -S "is on the disc
+elsewhere"` returns it and nothing else, so a run printing that diagnostic is
+post-fix — the re-measured baseline prints it for **59 distinct requests** over
+`piposh-dream`. Fifty-nine requests that used to resolve to a wrong take and *play*
+now play nothing, so `soundBusy` is false where it was true: fewer held ticks, more
+live ones, more eligible clicks. Direction and sign both match this entry's 46 -> 42
+held and 9 -> 20 clicks. **Unproven**, only because the original run cannot be dated
+from its text; the experiment that settles it is the same sweep at `1e760a51~1`, and
+it wants a separate worktree (a `.godot` seed plus a pack build) rather than a
+checkout of a tree two sessions share.
+
+**The cursor reading's cause was wrong.** This entry said `cursors: 0` was
+`cursorfunk()` living on frames the sweep never reached. `Hquest.dir` was **never
+held** — 4 held ticks, ended on budget in 4.3 s, walked 30 states to f34 — and
+cursors are still **0** after the fix. So the zero is not a depth problem and the
+explanation offered here is refuted. Why a corpus containing `set the cursor of
+sprite 2 to [3, 4]` installs no cursor is an open question and a separate one.
+
+**Zero new findings** came out of the deeper watches, on `piposh-dream` or on
+`piposh`. What is new is output rather than verdicts: the `depth` line, `unjudged`,
+and `stalled: saves.dir`, which is Director's `pause` correctly named.
+**Resolved 2026-08-22. Four fifths of the ceiling was the title's own speech, and
+`visited: 52 of 52` was never a coverage figure.**
+
+Measured before anything changed, and the baseline reproduces this entry exactly
+on this machine — 52 of 52 in 974.8 s, depth mean 62 of 120, 28 watches on the
+20 s ceiling, `unjudged: 34 of 52`. Its 19,177 watched ticks were:
+
+| | ticks | |
+|---|---|---|
+| **wait for sound** | **15,435** | **80.5%** |
+| wait for click | 515 | 2.7% |
+| transition | 24 | 0.1% |
+| pause | 1 | – |
+| judgeable | 3,202 | 16.7% |
+
+**Not decode and not paint**, which is what everyone assumed: `tools/sweep_cost.gd`
+puts 98–99% of every watch inside `await process_frame` and the sampler's own
+questions at ~1%. Idle, the process loop ran **117 frames/s** while `--ff 30` drew
+**26 score ticks/s** out of it — four frames of paint per tick watched.
+
+**The fix follows from the measurement.** `--ff` scales the frame clock; sound
+runs on the **audio server's** clock, which has a multiplier of its own.
+`--speech` (default 8) is `AudioServer.playback_speed_scale`, so `soundBusy`
+retires N× sooner and cue points pass N× sooner in wall clock and at the same
+place in the sound. **A speed-up, not a thirteenth excuse** — same handlers, same
+order, same frames — and at `--ff 120` against 8–15 fps authoring the sweep still
+sits out proportionally *more* of a wait than the original, which is the direction
+that cannot invent a finding.
+
+**`--ff`'s own default was stale too.** Its aliasing justification does not hold:
+`director_frame_clock.gd:tick` takes at most one step per call and re-arms `_due_in`
+absolutely, and the sampler awaits every frame, so a stride above 1 is structurally
+unreachable. Measured at `--ff` 30/60/120/240: **0 skipped ticks at every one**,
+`tick/frame` pinned at 1.00 from 60 up. Default moved 30 → 120.
+
+Full corpus, paired A/B, same code and machine:
+
+| | before | after |
+|---|---|---|
+| wall clock | 984.9 s | **869.2 s** |
+| depth mean | 62 of 120 | **115 of 120** |
+| watches on the ceiling | 28 of 52 | **3 of 52** |
+| movies with no window at all | 34 of 52 | **17 of 52** |
+| **marker regions judged** | **212 of 2,732** | **743 of 2,732** |
+| findings | 0 | 0 |
+
+**Findings 0 → 0 is the load-bearing row**: the deeper watches produced no new
+verdicts, which is the evidence that `--speech` changed how long the sweep waits
+and not what it sees.
+
+**`visited: 52 of 52` counted containers, and a container is not a scene.** The
+coverage line now comes from the containers' own `VWLB`, with the denominator read
+*before* the sweep starts, and keeps three claims apart: **entered**, **judged by a
+full window**, and **judged by the playhead leaving**. Counting only the first
+credited 1 region of 42 stood in — a movie walking its rooms straddles every window
+across a boundary.
+
+**The open number for a later session to beat: `piposh-dream` judges 743 of its
+2,732 marker regions.** `--scenes` walks the rest at roughly 4 s a marker, entering
+each by the movie's own `go`; on `MAINMENU.dir` that takes 1 of 12 to **11 of 12**
+in 16.6 s. Its verdicts are reported and never asserted, because a marker reached
+out of its own chain is a cold entry — `qa_walk` leads, not filed bugs.
+
+Guards against this entry recurring: judged ⊆ entered; every visited movie had its
+regions read; under `--scenes`, every marker counted was one the playhead was
+actually placed on, read **before the first await** so the movie cannot answer it —
+that is `6b42a128`'s guard. Plus five synthetic credit checks that run before any
+movie opens, because a coverage counter nobody exercises is exactly what
+`6b42a128` was.
+
+**One instrument error recorded rather than quietly fixed**: the first profiler run
+reported **zero** sound holds over twelve movies. `_start_lingo` builds a new
+`_host` per movie, so a counter read off the pre-jump host never moves. The trap is
+in `tools/sweep_cost.gd`'s header.

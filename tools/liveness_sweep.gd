@@ -5,17 +5,25 @@ extends SceneTree
 ##   godot --headless --path . --script tools/liveness_sweep.gd -- --root piposh-dream
 ##   godot --headless --path . --script tools/liveness_sweep.gd -- --limit 12
 ##   godot --headless --path . --script tools/liveness_sweep.gd -- --only ques.dir --click
+##   godot --headless --path . --script tools/liveness_sweep.gd -- --only mainmenu.dir --scenes
 ##
 ##   --root R      the corpus (`DirectorPaths` honours it; default the config's)
 ##   --only S      visit only containers whose path contains S
 ##   --limit N     visit at most N containers, in sorted order (0 = all)
+##   --start N     skip the first N containers, so two runs can split a corpus
 ##   --budget-ms N stop starting new containers after N ms of wall clock (0 = none)
 ##   --ticks N     unexcused score ticks to watch each container for (default 120)
 ##   --window N    score ticks a verdict is read over (default 60)
 ##   --settle N    score ticks to let a container open in (default 24)
 ##   --click       after the watch, click each eligible sprite and watch again
 ##   --clicks N    how many hotspots to try per container (default 3)
-##   --ff N        ceiling for the adaptive fast-forward rate (default 30)
+##   --ff N        ceiling for the adaptive fast-forward rate (default 120)
+##   --speech N    mix every sound N times faster, so a `soundBusy` wait costs a
+##                 fraction of the wall clock it used to (default 8; 1 is real time)
+##   --scenes      after the container watch, enter every marker of the movie in
+##                 turn and judge each one
+##   --scene S     with --scenes, walk only markers whose name contains S
+##   --scene-ticks N unexcused ticks bought per scene (default 90)
 ##   --strict      make the low-confidence `trap` verdict a failure too
 ##   --verbose     print a line for every container, not only the findings
 ##
@@ -225,6 +233,13 @@ extends SceneTree
 ## the mixer runs at one, so a four-second opening line -- 34 ticks at the movie's
 ## own authored rate -- costs about 115 ticks of watch.
 ##
+## **`--ff` still cannot scale it and `--speech` now does**, through the audio
+## server's own multiplier rather than the frame clock's; the section below this
+## one is the measurement that made it necessary, and `SPEECH` is why it is a
+## speed-up rather than a thirteenth excuse. Everything in the rest of this section
+## stands: the budget still buys unexcused ticks, and the reason a sound wait is
+## expensive has not changed, only how much of it there is to sit through.
+##
 ## **That used to be charged to the same budget as a live tick**, and on a talkative
 ## title it was the whole budget. Measured over `piposh-dream` with
 ## `--click --strict --verbose`, at 52 movies in 371 s: 42 of the 52 ended their
@@ -264,6 +279,93 @@ extends SceneTree
 ## whole wall clock inside a cut scene reads as unlooked-at rather than as clean.
 ## Neither number is higher-is-better and neither substitutes for the other.
 ##
+## ## What was eating the ceiling: the movie's own speech, and nothing else
+##
+## `bugs.md` 128 left `WATCH_CAP_MS` binding where `--ticks` used to, and the
+## obvious next move -- raise the ceiling -- multiplies a corpus cost that was
+## already 2.5x. So the cost was measured first, with `tools/scratch/watch_cost.gd`
+## and with this sweep's own hold histogram, and it is not where the entry's
+## remaining suspects put it.
+##
+## Over `piposh-dream`, `--click --strict --verbose` at the old `--ff 30`, 52 of 52
+## movies in **974.8 s** (the entry's 946 s, reproduced), the 52 first watches
+## sampled **19,177** score ticks and this is what they were:
+##
+##   | wait for sound | 15,435 | 80.5% |
+##   | wait for click |    515 |  2.7% |
+##   | transition     |     24 |  0.1% |
+##   | pause          |      1 |     - |
+##   | **judgeable**  |  3,202 | 16.7% |
+##
+## 3,202 is `depth`'s own figure to the tick. **Four fifths of the sweep's wall
+## clock is spent watching the title talk.** It is not decode and it is not paint:
+## the profiler puts 98-99% of every watch inside `await process_frame` and the
+## sampler's own questions at about 1%, and on an idle machine the process loop
+## ran at 117 frames a second -- 8.5 ms a frame -- while `--ff 30` drew 26 score
+## ticks out of it.
+##
+## Sound is the one hold `--ff` cannot scale, because the mixer runs on the audio
+## server's clock and not on the one the fast-forward multiplies. But that clock
+## has a multiplier of its own: `AudioServer.playback_speed_scale`, which is what
+## `--speech` sets. A `soundBusy` poll then retires N times sooner, every cue
+## point inside the sound passes N times sooner in wall clock and at the same
+## place in the sound, and the frame the movie moves on at is the frame it always
+## moved on at.
+##
+## **It is a speed-up and not an excuse, and that is what makes it safe.** Every
+## other mechanism in this file *forgives* a tick; this one makes the tick that
+## was being forgiven arrive sooner. The movie runs the same handlers in the same
+## order at the same frames, so a window read after a line of speech is a window a
+## player also reaches -- later.
+##
+## Where it is unfaithful it is unfaithful in the conservative direction. At
+## `--ff 120` against a corpus authored at 8-15 fps the score runs 8 to 15 times
+## real time and speech runs 8, so the sweep still sits out proportionally *more*
+## of a wait than the original did. Nothing is reached earlier in the movie's own
+## time than the original reaches it, which is the direction that cannot invent a
+## finding. `--speech 1` restores real time and is what to re-read a finding at.
+##
+## **What it bought, paired.** All 52 containers of `piposh-dream` with
+## `--click --strict --verbose`, the two arms the same code and the same machine,
+## `--ff 30 --speech 1` against the new defaults `--ff 120 --speech 8`. The control
+## arm reproduces the pre-change baseline on every line it shares with it
+## (974.8 s / mean 62 / 28 capped / 34 unjudged), which is what makes it a control:
+##
+##   |                                   | before   | after |
+##   |-----------------------------------|----------|-------|
+##   | wall clock                        | 984.9 s  | **869.2 s** |
+##   | unexcused ticks watched           | 3,227    | **5,962** |
+##   | mean depth, of the 120 asked      | 62       | **115** |
+##   | watches that hit the 20 s ceiling | 28 of 52 | **3 of 52** |
+##   | movies with no window at all      | 34 of 52 | **17 of 52** |
+##   | **marker regions judged**         | **212 of 2,732** | **743 of 2,732** |
+##   | marker regions entered            | 300      | **826** |
+##   | findings                          | 0        | 0 |
+##
+## Nearly twice the depth and three and a half times the rooms, in *less* wall
+## clock, and **the same verdicts** -- which is the row that says the speed-up did
+## not change what the sweep is looking at. The same pair over the first twelve
+## containers, run back to back on a contended machine, moved 476.3 s to 262.7 s
+## and 42 regions to 244.
+##
+## The seventeen that still have no window are the dinner-table scenes, which are
+## dialogue end to end: at `--speech 8` they now *move* (`dinner1.dir` went from 88
+## states over 523 ticks to 419 over 430) and still never offer sixty consecutive
+## unexcused ticks, because a line of speech lands every few ticks for the length
+## of the scene. That is an honest reading of a cut scene and not a defect left
+## over; what reaches those rooms is `--scenes`, which enters the markers *after*
+## the dialogue directly.
+##
+## **What every absolute number above was measured on.** Two to six other headless
+## Godot processes shared this machine for most of these runs, which is the
+## condition `AGENTS.md` and this file's own last bullet both warn about, and it
+## moved the frame time from 8.5 ms to as much as 530 ms. So the *ratios* here are
+## the result -- the hold histogram, which is load-independent because a sound
+## takes as long as it takes whatever the machine is doing, and the paired A/B
+## below, where both arms ran back to back through the same contention. The wall
+## clocks are this machine on that afternoon and are not a baseline anybody should
+## compare a different day against; re-measure both arms rather than one.
+##
 ## ## What this sweep does not cover
 ##
 ## Stated here rather than discovered later:
@@ -288,6 +390,12 @@ extends SceneTree
 ##     three clicks deep into a dialogue is not reachable from here.
 ##   * **A movie that needs a keystroke is never woken.** `key_chain` and
 ##     `cannon_hit` drive keys; this drives none.
+##   * **Every entry is cold, and `--scenes` makes that true per marker rather
+##     than per container.** A marker reached by `go` has the movie open and the
+##     globals the session has accumulated, and *not* whatever the room that
+##     normally jumps there set on its way out. So a scene verdict is a lead for
+##     `qa_walk`, never a filed bug, and it is reported outside the assertions for
+##     that reason.
 ##   * **Nothing is asserted about what is drawn being *right*.** A frame that
 ##     draws fifteen sprites of the wrong artwork is `parked` and healthy here.
 ##   * **An art-heavy movie is watched for less movie than a light one, and a
@@ -312,6 +420,60 @@ extends SceneTree
 ##     says how much movie it saw, and a loaded machine costs depth rather than
 ##     coverage -- the tick stream stays fully sampled either way.
 ##
+##     **The paint reading above is about the `open`, and the `watch` is a
+##     different question with a different answer.** Both are in the same seconds
+##     column on the verbose line, which is how they came to be read as one cost.
+##     Opening a `dinner` room is decode and paint; the twenty seconds after it
+##     were four fifths `soundBusy`, which no amount of painting faster would have
+##     bought back. See the section above.
+##
+## ## `visited: 52 of 52` was never a coverage figure, and now there is one
+##
+## A room in these titles is a **marker** and the frames under it are its
+## animation, which is `director-qa-playthrough`'s rule and the reason the
+## container is the wrong unit. `piposh-dream` ships 52 movies and declares
+## **2,732 marker regions** across them; a sweep that opens each container and
+## watches wherever its first frame parks has been reporting `visited: 52 of 52`
+## over 52 of those 2,732, and the line reads like completeness.
+##
+## `6b42a128` is the same mistake with a number attached: a walk that played one
+## scene per container reported eighteen day-2 scenes as covered when they had
+## never been entered. So the `scenes` line counts regions, from the containers'
+## own `VWLB` (`_marker_frames`), with the denominator read **before** the sweep
+## starts -- a total that shrinks when a run is cut short is a total that always
+## looks good -- and it separates three claims that are easy to run together:
+##
+##   * **entered**: a sample landed in the region.
+##   * **judged by a full window**: `--window` consecutive judgeable ticks fitted
+##     inside one region, which is exactly what `_read_window` reads a verdict
+##     off. A rule could have fired here and did not.
+##   * **judged by the playhead leaving**: the region carried a judgeable tick and
+##     the playhead then went somewhere else and did not come back inside that
+##     watch. The movie answered this file's own question -- *am I stuck?* -- in
+##     the negative, about that room, itself.
+##
+## Both count as judged and the split is printed, because they are different
+## evidence. Counting only the first credited **1 region of the 42 it had stood
+## in** over two movies: a movie walking through its rooms straddles every window
+## across a region boundary, and a straddling window is credited to neither side.
+##
+## `--scenes` then goes and gets the rest, by entering every marker with the
+## movie's own `go` rather than replaying everything before it; see `_scenes` for
+## why those verdicts are reported and never asserted. Measured on
+## `MAINMENU.dir`, twelve markers: the container watch alone credits **1** of
+## them, and the walk credits **11 of 12** -- ten of those by a full window -- in
+## 16.6 s with no container reopened. It credited 10 before the settle was watched
+## rather than waited out; the two it was missing sit on frames the playhead is
+## past within eight ticks, so nothing had ever sampled them, and one of the two is
+## reachable now. See `_scenes`.
+##
+## The walk is the expensive mode and the arithmetic is worth having before
+## reaching for it: a title's markers outnumber its containers by roughly fifty to
+## one here, and `COMEIN.dir` alone -- 83 markers -- took 426 s on a contended
+## machine at `--scene-ticks 90`. So `--scenes` is a survey to point at a title or
+## a container, `--start` and `--budget-ms` are how it is split across runs, and
+## the cheap `scenes` line on an ordinary sweep is what every run prints.
+##
 ## Title-agnostic: the rules below know tempo holds, sound channels and sprite
 ## counts, and no movie, room, channel or member.
 
@@ -319,6 +481,8 @@ const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Paths := preload("res://director/director_paths.gd")
 const ContainerName := preload("res://director/director_container.gd")
+const ContainerFile := preload("res://director/director_file.gd")
+const Labels := preload("res://director/director_labels.gd")
 
 ## Unexcused score ticks watched per container, and the length of the window a
 ## verdict is read over. `WATCH` is two windows so that `_judge`'s sliding window
@@ -354,9 +518,30 @@ const SETTLE := 24
 const CYCLE_MAX := 4
 ## Director has eight sound channels; this corpus uses four.
 const SOUND_CHANNELS := 8
-## The fast-forward rate the sweep runs at. See the header for why it is not
-## higher: four score steps per tick is where sampling starts to alias.
-const FF := 30.0
+## The fast-forward rate the sweep runs at, as a ceiling on the adaptive rate.
+##
+## **This was 30 on the grounds that four score steps per tick is where sampling
+## starts to alias, and that reason no longer holds.**
+## `director_frame_clock.gd:tick` takes at most **one** step per call and re-arms
+## `_due_in` absolutely rather than by `+=`, dropping whatever it could not
+## afford -- `Score::updateNextFrameTime`'s behaviour -- and this sampler awaits
+## every process frame, so a stride above 1 is structurally unreachable however
+## high this number is. Measured over four `piposh-dream` movies at `--ff` 30, 60,
+## 120 and 240: **0 ticks skipped at every one of them**, and `tick/frame` pinned
+## at 1.00 from 60 upward, which is the process loop and not this constant.
+##
+## So what `--ff` buys is only the ticks the machine can paint, and 30 was leaving
+## most of them on the table: measured idle, the process loop ran at 117 frames a
+## second while `--ff 30` drew 26 score ticks out of it -- 0.23 ticks per frame,
+## four frames of paint per tick watched. 120 asks for one step per frame at that
+## rate and asks for nothing extra on a machine that cannot keep up, because the
+## clock drops what it cannot afford.
+##
+## The adaptive halving in `_watch` is kept exactly as it was. It is now a
+## backstop for a sampler that misses a frame rather than the mechanism the rate
+## depends on, and `porting-fidelity-verification`'s rule about harnesses that can
+## only be right while another file behaves is why it stays.
+const FF := 120.0
 ## The slowest the adaptive rate will go. Below every movie's authored rate in
 ## these corpora (8-15 fps), so at the floor the clock is asked for less than one
 ## score step per process frame however long a frame takes to paint.
@@ -383,6 +568,43 @@ const OPEN_FRAMES := 8
 const OPEN_CAP_MS := 8000
 const WATCH_CAP_MS := 20000
 const CLICK_CAP_MS := 12000
+## How much faster than real time sounds are mixed.
+##
+## `--ff` scales the frames and every hold counted off the frame clock, and the
+## header says sound is the one exception because the mixer runs on the audio
+## server's clock. `AudioServer.playback_speed_scale` is that clock's own
+## multiplier, so it is the same trick applied to the one hold `--ff` cannot
+## reach: `soundBusy` retires N times sooner, every cue point inside the sound
+## passes N times sooner in wall clock and at the same place in the sound, and a
+## `play done` after a line of speech happens at the frame it always did.
+##
+## **This is a speed-up, not an excuse**, which is the distinction that decides
+## whether it can invent a finding. The excuses in this file *forgive* a tick; this
+## makes the tick that was being forgiven arrive sooner. What the movie does is
+## unchanged -- the same handlers run in the same order at the same frames -- so a
+## window built after a sound finished is a window a real player also reaches, just
+## later.
+##
+## Eight because it is a whole number of poll intervals and because the corpus's
+## own numbers say the wait, not the mixer, is what binds: measured over
+## `piposh-dream` at `--speech 1`, `dinner1.dir` spent 512 of 523 watched ticks
+## held on `wait for sound 1`. See the header section for the run-level figures.
+const SPEECH := 8.0
+## The scene walk's budget, in the same unit as `--ticks`: unexcused ticks.
+##
+## `WATCH` is two windows so `_judge`'s window has somewhere to slide; a scene
+## gets one and a half, which is thirty positions rather than sixty. That is a
+## deliberately cheaper reading and the trade is the whole reason the walk is
+## affordable: a title's markers outnumber its containers by roughly an order of
+## magnitude, so a scene costing what a container costs makes the walk one nobody
+## runs. `--scene-ticks 120` buys the container's reading back.
+const SCENE_WATCH := 90
+## Score ticks a marker is given to arrive before it is judged. Far below
+## `SETTLE`, and for a reason rather than for economy: `SETTLE` covers a *movie*
+## opening -- `prepareMovie`, `startMovie` and a first frame that initialises the
+## room -- while a marker jump inside an open movie is one frame entry.
+const SCENE_SETTLE := 8
+const SCENE_CAP_MS := 8000
 ## Consecutive process frames without a score tick that end a watch early, and
 ## what has to be true for the short one to apply.
 ##
@@ -421,6 +643,27 @@ const FAILING := ["no-open", "ping-pong", "blank-park", "blank-cycle", "lingo"]
 ## allowed back up to; reading it off the node instead would let one slow movie
 ## pin every movie after it at the floor.
 var _ff := FF
+## The audio-server multiplier this run is mixing at, carried so the report can
+## say it. A run that says `speech x8` and one that says `x1` are two different
+## experiments and the number belongs next to the depth figures, not only in the
+## command line somebody has since lost.
+var _speech := SPEECH
+## `<movie file, lower case>` -> the frame each of its marker regions starts at,
+## in order, read from the containers' own `VWLB` before anything is opened.
+##
+## **A movie with no `VWLB` has one region and not none.** A room in these titles
+## is a marker (`director-qa-playthrough`), so the marker count is the scene count
+## -- but a movie that declares no marker still has a score somebody can be stuck
+## in, and giving it zero scenes would make it the one movie a coverage number
+## cannot fail to cover.
+var _regions: Dictionary = {}
+## `"<movie>:<region index>"` for every region a sample landed in, and for every
+## region a whole window of judgeable ticks fitted inside. The first is "we were
+## there", the second is "a rule was read over it", and the gap between them is
+## the honest coverage figure -- `6b42a128` is what happens when the first is
+## printed as if it were the second.
+var _touched: Dictionary = {}
+var _scenes_judged: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -447,6 +690,11 @@ func _sweep(h: Harness) -> bool:
 
 	var only := Args.text(args, "only", "").to_lower()
 	var limit := Args.number(args, "limit", 0)
+	# Where in the sorted list to begin. `--limit` alone can only ever cut the
+	# corpus from the same end, so two runs of half a title cover the same half
+	# twice; with this they cover it once each, which is what "split the work
+	# across runs" needs to mean. `--start 26 --limit 26` is the second half.
+	var start_at := Args.number(args, "start", 0)
 	var budget_ms := Args.number(args, "budget-ms", 0)
 	var ticks := Args.number(args, "ticks", WATCH)
 	var window := Args.number(args, "window", WINDOW)
@@ -455,7 +703,16 @@ func _sweep(h: Harness) -> bool:
 	var clicks := Args.number(args, "clicks", 3)
 	var strict := Args.flag(args, "strict")
 	var verbose := Args.flag(args, "verbose")
+	var scenes := Args.flag(args, "scenes")
+	var scene_only := Args.text(args, "scene", "").to_lower()
+	var scene_ticks := Args.number(args, "scene-ticks", SCENE_WATCH)
 	_ff = float(Args.number(args, "ff", int(FF)))
+	# Set once for the whole run, before a preview exists, because it is a property
+	# of the audio server rather than of a movie. `--speech 1` restores real time
+	# and is what to reach for when a finding needs to be re-read at the rate a
+	# player hears.
+	_speech = maxf(float(Args.number(args, "speech", int(SPEECH))), 0.01)
+	AudioServer.playback_speed_scale = _speech
 
 	# Movies only. A cast is a container and is in the index, and `go to movie` on
 	# one loads no score -- the picker refuses them for the same reason.
@@ -466,6 +723,17 @@ func _sweep(h: Harness) -> bool:
 		if only != "" and not str(entry).to_lower().contains(only):
 			continue
 		movies.append(str(entry))
+	if start_at > 0:
+		movies = movies.slice(mini(start_at, movies.size())) as Array[String]
+
+	# Read before a preview exists, from the containers rather than from anything
+	# the sweep does, so the denominator of the coverage figure is a property of
+	# the title and not of how far this run got. A movie skipped by `--limit` still
+	# counts its scenes against the total, which is the whole point of having one.
+	for movie in movies:
+		var resolved := paths.resolve(movie)
+		if resolved != "":
+			_regions[movie.get_file().to_lower()] = _marker_frames(resolved)
 
 	_assert_rules(h)
 
@@ -497,8 +765,10 @@ func _sweep(h: Harness) -> bool:
 	print("")
 	print("root      : %s" % paths.root)
 	print("movies    : %d" % movies.size())
-	print("watch     : %d score ticks each, verdict over %d, settle %d, ff <= %.0f" % [
-		ticks, window, settle, _ff])
+	print("watch     : %d score ticks each, verdict over %d, settle %d, ff <= %.0f, "
+			% [ticks, window, settle, _ff]
+		+ "speech x%.0f%s" % [_speech,
+			"" if not scenes else ", scenes %d tick(s) each" % scene_ticks])
 	print("")
 
 	var findings: Array[Dictionary] = []
@@ -523,6 +793,19 @@ func _sweep(h: Harness) -> bool:
 	var capped: Array[String] = []
 	var stalled: Array[String] = []
 	var short: Array[String] = []
+	# The scene walk's own accounting. `walked` is markers jumped to, `reopened` is
+	# how often a scene left the container and had to be brought back, and the
+	# coverage figures themselves live in `_touched`/`_scenes_judged` because the
+	# container watch fills them too.
+	var walked := 0
+	var reopened := 0
+	var missed := 0
+	var scene_findings: Array[Dictionary] = []
+	# Movies whose `VWLB` could not be read before the sweep started. Their regions
+	# are missing from the denominator *and* from `_region_at`, so their samples
+	# are credited to nothing -- a coverage figure that silently drops a container
+	# is the one failure this number must not have.
+	var no_index: Array[String] = []
 
 	for movie in movies:
 		if limit > 0 and visited >= limit:
@@ -532,6 +815,8 @@ func _sweep(h: Harness) -> bool:
 			skipped.append(movie)
 			continue
 		visited += 1
+		if not _regions.has(movie.get_file().to_lower()):
+			no_index.append(movie.get_file())
 		var seen: Dictionary = await _visit(
 			preview, audio, movie, settle, ticks, window)
 		covered += float(seen.get("coverage", 1.0))
@@ -587,6 +872,14 @@ func _sweep(h: Harness) -> bool:
 			findings.append(seen)
 		if verbose or str(seen["verdict"]) != "":
 			print(_line(seen))
+		if scenes and str(seen["verdict"]) != "no-open":
+			var walk: Dictionary = await _scenes(
+				preview, audio, movie, scene_ticks, window, scene_only, verbose)
+			walked += int(walk["walked"])
+			reopened += int(walk["reopened"])
+			missed += int(walk["missed"])
+			for found in walk["findings"]:
+				scene_findings.append(found)
 
 	# Coverage is the sampler's own honesty check. A verdict is only read over
 	# consecutive *observed* ticks, so a run that keeps aliasing produces no window
@@ -639,6 +932,35 @@ func _sweep(h: Harness) -> bool:
 			+ "under `pause`/`halt`, %d otherwise): %s%s" % [
 				QUIET_STALL, ", ".join(stalled.slice(0, 6)),
 				", ..." if stalled.size() > 6 else ""])
+	# The coverage figure the container-level `visited` line was being read as, and
+	# never was. A marker region is a room; `judged` is a region some window of
+	# `--window` consecutive unexcused ticks fitted inside, which is the input a
+	# verdict is read off, and `entered` is one the playhead merely stood in.
+	# Neither is higher-is-better on its own -- a title is as coverable as its
+	# rooms let a cold entry be -- but the *gap* is, and it is the number
+	# `bugs.md` 128 asks a later session to compare against.
+	#
+	# **The denominator is the sweep's subject, not the run's reach**, and the
+	# three flags that narrow things divide on exactly that line. `--only` and
+	# `--start` choose a subject, so they shrink it and two `--start` halves sum to
+	# the title. `--limit` is a budget that ran out, so it does not: the movies it
+	# skipped are named on the `skipped` line and still counted here, because a
+	# coverage total that shrinks with the budget is a total that always looks
+	# good, which is the whole reason this figure is read off the containers before
+	# the sweep starts.
+	var declared := 0
+	for key in _regions.keys():
+		declared += (_regions[key] as PackedInt32Array).size()
+	var by_window := 0
+	for key in _scenes_judged.keys():
+		if str(_scenes_judged[key]) == "window":
+			by_window += 1
+	print("scenes    : judged %d of %d marker region(s) the corpus declares "
+			% [_scenes_judged.size(), declared]
+		+ "(%d entered; %d by a full window, %d by the playhead leaving)%s" % [
+			_touched.size(), by_window, _scenes_judged.size() - by_window,
+			"" if not scenes else "; the walk jumped to %d marker(s) and reopened %d"
+				% [walked, reopened]])
 	if not unjudged.is_empty():
 		print("unjudged  : %d never ran %d unexcused tick(s) together, so no window was "
 				% [unjudged.size(), window]
@@ -676,6 +998,40 @@ func _sweep(h: Harness) -> bool:
 				" --click" if bool(finding.get("clicked", false)) else ""])
 		print("")
 
+	# Two things about the coverage figure, and neither is a threshold on it. How
+	# much of a title a cold entry can reach is a property of the title; what this
+	# port controls is whether the number means what it says.
+	h.check("every region counted as judged was one the sweep stood in",
+		_judged_are_touched(), "a window was credited to a region no sample landed in")
+	if scenes:
+		# The one thing the scene walk asserts, and it is about the walk rather
+		# than about the title: a marker counted as walked is one the playhead was
+		# actually placed on. `6b42a128` reported eighteen scenes as covered
+		# without ever entering them, and the shape of that failure is a counter
+		# incremented beside a jump nobody checked.
+		h.check("every marker the walk counted was one it put the playhead on",
+			missed == 0,
+			"%d of %d jump(s) did not land" % [missed, walked])
+	h.check("every movie visited had its marker regions read",
+		no_index.is_empty(),
+		"%d container(s) contributed samples to no region: %s" % [
+			no_index.size(), ", ".join(no_index.slice(0, 6))])
+
+	if not scene_findings.is_empty():
+		# Printed with the same shape as the container findings and deliberately
+		# **not** added to `failing`: a marker entered by `go` is a cold entry
+		# without the room chain that would normally set the globals it reads, so
+		# these are leads for `qa_walk` rather than filed bugs. See `_scenes`.
+		print("scene findings (cold marker entries -- reported, not asserted):")
+		scene_findings.sort_custom(func(a, b):
+			return int(SEVERITY.get(a["verdict"], 0)) > int(SEVERITY.get(b["verdict"], 0)))
+		for found in scene_findings.slice(0, 20):
+			print("  %-11s %s" % [str(found["verdict"]), str(found["movie"])])
+			print("      %s" % str(found["detail"]))
+		if scene_findings.size() > 20:
+			print("  ... and %d more" % (scene_findings.size() - 20))
+		print("")
+
 	h.check("no movie is stuck, blank or trading places with another",
 		failing.is_empty(),
 		"%d finding(s) over %d movie(s)" % [failing.size(), visited])
@@ -684,6 +1040,16 @@ func _sweep(h: Harness) -> bool:
 			% (findings.size() - failing.size()))
 		print("       asserted -- `trap` and `sound-park`; --strict fails on `trap`)")
 	h.complete(case)
+	return true
+
+
+## Can a region be judged without having been stood in? Only if `_credit` has
+## drifted, and the answer would be a coverage figure larger than the evidence for
+## it -- which is the direction that flatters, so it is the direction to check.
+func _judged_are_touched() -> bool:
+	for key in _scenes_judged.keys():
+		if not _touched.has(key):
+			return false
 	return true
 
 
@@ -871,7 +1237,66 @@ func _assert_rules(h: Harness) -> void:
 		blind)
 	h.check("and it offers no run for a rule to be read over",
 		_longest_run(aliased) == 0, "%d tick(s)" % _longest_run(aliased))
+
+	# **The coverage figure's own rules, over synthetic traces, before a movie is
+	# opened**, for the reason the whole of this function exists: `scenes` prints a
+	# number on every run, and a number is exactly the kind of output that reads as
+	# measured whether or not the code behind it works. `6b42a128` is a coverage
+	# counter nobody exercised.
+	#
+	# The three dictionaries are instance state the real sweep fills, so they are
+	# swapped out and back rather than written to -- a check that inflated the run's
+	# own coverage would be the failure it is checking for.
+	var saved_regions := _regions
+	var saved_touched := _touched
+	var saved_judged := _scenes_judged
+	_regions = {"m.dir": PackedInt32Array([0, 100])}
+	_touched = {}
+	_scenes_judged = {}
+	_credit({"samples": _ticks_at("m.dir", 5, WINDOW, "")}, WINDOW)
+	h.check("a whole window inside one region credits that region by window",
+		str(_scenes_judged.get("m.dir:0", "")) == "window",
+		str(_scenes_judged.get("m.dir:0", "<none>")))
+	_touched = {}
+	_scenes_judged = {}
+	# Half a window in region 0, then half in region 1: neither side can carry a
+	# window, and the playhead visibly left the first one.
+	var crossing: Array = _ticks_at("m.dir", 5, WINDOW / 2, "")
+	crossing.append_array(_ticks_at("m.dir", 150, WINDOW / 2, ""))
+	_credit({"samples": crossing}, WINDOW)
+	h.check("a run that crosses a region boundary credits the one it left, by exit",
+		str(_scenes_judged.get("m.dir:0", "")) == "left"
+			and not _scenes_judged.has("m.dir:1"),
+		"%s / %s" % [str(_scenes_judged.get("m.dir:0", "<none>")),
+			str(_scenes_judged.get("m.dir:1", "<none>"))])
+	h.check("and the region it ended in is entered without being judged",
+		_touched.has("m.dir:1"), "not even entered")
+	_touched = {}
+	_scenes_judged = {}
+	# Every tick excused. The playhead was there and left, and nobody looked.
+	var muted: Array = _ticks_at("m.dir", 5, WINDOW, "wait for sound 1")
+	muted.append_array(_ticks_at("m.dir", 150, 4, "wait for sound 1"))
+	_credit({"samples": muted}, WINDOW)
+	h.check("a region traversed entirely under a hold is entered and not judged",
+		_touched.has("m.dir:0") and _scenes_judged.is_empty(),
+		"%d entered, %d judged" % [_touched.size(), _scenes_judged.size()])
+	h.check("and nothing is ever credited to a movie with no region index",
+		_region_at("elsewhere.dir", 3) == -1, "%d" % _region_at("elsewhere.dir", 3))
+	_regions = saved_regions
+	_touched = saved_touched
+	_scenes_judged = saved_judged
 	h.complete(name)
+
+
+## `count` samples standing on one frame, for the coverage checks above. A hold
+## makes every one of them unjudgeable, which is the half of `_credit` that has to
+## be checked in the direction that credits nothing.
+static func _ticks_at(movie: String, frame: int, count: int, hold: String) -> Array:
+	var out: Array = []
+	for _i in count:
+		out.append({"movie": movie, "frame": frame, "drawn": 4, "hold": hold,
+			"stride": 1, "windowed": false, "clickable": false})
+	return out
 
 
 ## `WINDOW` samples cycling through `states`, each `[movie, frame, drawn]`.
@@ -933,6 +1358,7 @@ func _visit(preview: Node, audio: Node, movie: String, settle: int, ticks: int,
 	await _run_ticks(preview, settle, OPEN_CAP_MS)
 	var watching := Time.get_ticks_msec()
 	var trace: Dictionary = await _watch(preview, audio, ticks, WATCH_CAP_MS)
+	_credit(trace, window)
 	var seen := _judge(movie, trace, window)
 	seen["stride"] = int(trace["stride"])
 	seen["coverage"] = coverage(trace)
@@ -998,6 +1424,7 @@ func _poke(preview: Node, audio: Node, movie: String, budget: int, ticks: int,
 		# form, and `window` ticks exactly would be destroyed by a single held one
 		# -- but a third of the wall clock, which is what actually bounds it.
 		var trace: Dictionary = await _watch(preview, audio, ticks, CLICK_CAP_MS)
+		_credit(trace, window)
 		var seen := _judge(movie, trace, window)
 		seen["clicked"] = true
 		seen["stride"] = int(trace["stride"])
@@ -1007,6 +1434,265 @@ func _poke(preview: Node, audio: Node, movie: String, budget: int, ticks: int,
 				str(seen["detail"])]
 			return seen
 	return {"verdict": "", "movie": movie, "detail": "", "clicked": true, "stride": 0}
+
+
+## The frame each marker region of a container starts at, from its own `VWLB`.
+##
+## Read with `DirectorFile`/`DirectorLabels` rather than through an opened preview
+## because the denominator has to exist for movies this run never opens -- a
+## coverage figure whose total shrinks when the sweep is cut short is a figure
+## that always looks good.
+##
+## `[0]` when the container declares no marker: see `_regions`. A chunk that
+## refuses to parse is treated the same way, because "this movie has one region
+## the sweep will judge or fail to judge" is true either way and a refused chunk
+## is `label_index`'s finding to report, not this file's.
+static func _marker_frames(path: String) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var f := ContainerFile.new()
+	if not f.open(path):
+		return PackedInt32Array([0])
+	for id in f.ids_of("VWLB"):
+		var labels := Labels.new()
+		if not labels.parse(f.read_chunk(id)):
+			continue
+		for marker in labels.markers:
+			out.append(int(marker["frame"]))
+	f.close()
+	if out.is_empty():
+		return PackedInt32Array([0])
+	out.sort()
+	# Two markers on one frame are two entries in `marker(n)`'s index space and one
+	# region on the stage, and this array is the second thing rather than the
+	# first: `label_index.gd` is where the index space is asserted, and keeping a
+	# duplicate here would create a region `_region_at` can never return -- an
+	# unreachable slot in the denominator that no run could ever cover.
+	var unique := PackedInt32Array([out[0]])
+	for i in range(1, out.size()):
+		if int(out[i]) != int(out[i - 1]):
+			unique.append(int(out[i]))
+	return unique
+
+
+## Which marker region a frame of a movie belongs to, or -1 for a movie the sweep
+## has no index for -- a container it was never asked to visit, which a `go to
+## movie` can still land it in.
+func _region_at(movie_file: String, frame: int) -> int:
+	var frames: Variant = _regions.get(movie_file.to_lower())
+	if frames == null:
+		return -1
+	# Frames before the first marker belong to region 0. Director would answer
+	# `marker(0)` with nothing there, but this array is regions of the stage and
+	# not the index space, and a movie's head is part of whatever its first marker
+	# names -- the alternative is a slice of every score that no run can cover and
+	# that is not a room either.
+	var out := 0
+	for i in (frames as PackedInt32Array).size():
+		if int(frames[i]) <= frame:
+			out = i
+		else:
+			break
+	return out
+
+
+## Credit one watch's samples to the marker regions they landed in.
+##
+## Three different claims, kept apart on purpose.
+##
+##   **touched**  one sample landed in the region. The playhead was there, and
+##                that is all it says.
+##   **windowed** `window` consecutive judgeable samples, *all inside one region*
+##                -- exactly the input `_read_window` reads a verdict off, so a
+##                region credited this way is one some rule in this file could
+##                have fired on and did not.
+##   **left**     at least one judgeable sample in the region, and a later sample
+##                somewhere else with no return inside this watch. The playhead
+##                went in unexcused and came out, which is the sweep's own
+##                question -- *am I stuck?* -- answered in the negative by the
+##                movie itself.
+##
+## **A region needs `windowed` or `left`, and the second is the majority.** The
+## first version of this counted only `windowed`, and over two movies of
+## `piposh-dream` it credited **1** region of the 42 it had stood in: a movie
+## walking through its rooms straddles every window across a region boundary, and
+## a straddling window is credited to neither side. That is the conservative
+## direction for a *finding* and the wrong one for a coverage figure, because the
+## playhead visibly leaving a room is stronger evidence the room is not a trap
+## than sixty ticks of sitting in it.
+##
+## The alternative -- crediting a region because the watch that mentioned it
+## produced a window somewhere -- is `6b42a128` written again: that sweep played
+## one scene per container and reported eighteen day-2 scenes as covered when they
+## had never been entered. Every credit here is per region and per sample.
+##
+## A held or skipped tick carries no credit of any kind, which is the same
+## predicate (`_judgeable`) the watch budget is charged against and `_judge` builds
+## windows from. A room traversed entirely under a `soundBusy` wait is therefore
+## *not* credited, even though the playhead did leave it: the excuse means nobody
+## looked, and this file's whole design is that an excused tick is evidence of
+## nothing.
+func _credit(trace: Dictionary, window: int) -> void:
+	var samples: Array = trace["samples"]
+	# Region key per sample, "" for a movie with no index, plus where each region
+	# was last seen and whether it ever carried a judgeable tick.
+	var last_at: Dictionary = {}
+	var live_in: Dictionary = {}
+	var run: Array[String] = []
+	for i in samples.size():
+		var sample: Dictionary = samples[i]
+		var file := str(sample["movie"]).get_file()
+		var region := _region_at(file, int(sample["frame"]))
+		var key := "" if region < 0 else "%s:%d" % [file.to_lower(), region]
+		if key == "":
+			run.clear()
+			continue
+		_touched[key] = true
+		last_at[key] = i
+		if not _judgeable(sample):
+			run.clear()
+			continue
+		live_in[key] = true
+		run.append(key)
+		if run.size() < window:
+			continue
+		var first := run[run.size() - window]
+		var uniform := true
+		for j in range(run.size() - window, run.size()):
+			if run[j] != first:
+				uniform = false
+				break
+		if uniform:
+			_scenes_judged[first] = "window"
+		# Kept at exactly one window, the way `_judge` keeps its own: the run only
+		# ever needs its last `window` entries, and a trace of 550 samples would
+		# otherwise carry all of them for the whole scan.
+		run.remove_at(0)
+	# The exit rule, read after the fact because "and never came back" is a
+	# statement about the whole watch.
+	for key in live_in.keys():
+		if int(last_at[key]) < samples.size() - 1 and not _scenes_judged.has(key):
+			_scenes_judged[key] = "left"
+
+
+## Enter every marker of the movie in turn and judge each one.
+##
+## ## Why a container is the wrong unit
+##
+## A room in these titles is a **marker**, and the frames under it are its
+## animation (`director-qa-playthrough`). The sweep above opens a container and
+## watches wherever its first frame parks, which is one room of the ten or twenty
+## a container holds -- so `visited: 52 of 52` has always described 52 entries into
+## a title that declares **2,732** marker regions, and no line said so.
+## `6b42a128` is the same mistake with the number printed: a walk that played one
+## scene per container reported eighteen day-2 scenes as covered when they had
+## never been entered.
+##
+## ## Why the jump is `go`, and what it does not carry
+##
+## `lingo_go_frame` is the movie's own mechanism -- `go("shore2")` is how the title
+## moves between rooms of one container -- so a marker entered this way is entered
+## by the same path the game uses, with the same movie open, the same casts loaded
+## and the same globals in scope. It is **not** the same as arriving through the
+## room that jumps: whatever that room's handler set before it jumped is missing,
+## exactly as the container-level sweep arrives without the globals a room chain
+## would have set. So this widens the existing cold-entry caveat from one entry per
+## container to one per marker; it does not remove it, and the skill's rule still
+## holds -- a scene finding is a lead to re-reach with `qa_walk`, not a filed bug.
+##
+## That is why scene verdicts are **reported and counted and never asserted**. The
+## container-level assertions above are unchanged, and a mode that could turn the
+## suite red on a room reached out of its own order would be a mode whose reds
+## nobody trusts.
+##
+## Returns `{walked, findings, reopened, missed}`, where `missed` is jumps that
+## did not put the playhead on the marker -- the one thing this mode asserts.
+## Coverage is credited through `_credit`, the same path the container watch uses,
+## so a scene the walk entered and could not judge is counted the same way
+## whichever watch reached it.
+func _scenes(preview: Node, audio: Node, movie: String, ticks: int, window: int,
+		only: String, verbose: bool) -> Dictionary:
+	var findings: Array[Dictionary] = []
+	var file := movie.get_file()
+	var frames: PackedInt32Array = _regions.get(file.to_lower(), PackedInt32Array())
+	var walked := 0
+	var reopened := 0
+	var missed := 0
+	if frames.size() <= 1:
+		# One region is the container watch's own subject; walking it again buys
+		# nothing but the wall clock it costs.
+		return {"walked": 0, "findings": findings, "reopened": 0, "missed": 0}
+	for index in frames.size():
+		var at := int(frames[index])
+		var labels = preview.get("_labels")
+		var named := ""
+		if labels != null:
+			for marker in labels.markers:
+				if int(marker["frame"]) == at:
+					named = str(marker["name"])
+					break
+		if only != "" and not named.to_lower().contains(only):
+			continue
+		# The movie under the playhead is what `lingo_go_frame` moves, so a scene
+		# that left for another container -- or a click that did, before the walk
+		# started -- has to be undone before the next marker or the walk drives
+		# somebody else's score. Counted, because a movie that leaves on every
+		# marker is a result and not an overhead.
+		if str(preview.call("movie_name")).to_lower() != file.to_lower():
+			_reset_between(preview)
+			preview.call("lingo_go_movie", movie, null)
+			for _i in OPEN_FRAMES:
+				await process_frame
+			reopened += 1
+			if preview.get("_score") == null:
+				break
+		preview.call("lingo_go_frame", at)
+		# The anti-`6b42a128` reading, and it is taken **before the first await**
+		# on purpose. `lingo_go_frame` sets `_index` itself and queues the frame
+		# entry, so this asks only "did the playhead go where the walk sent it" --
+		# a question about this file and the call it makes, with no room for the
+		# movie to answer it. One frame later is a different question with a
+		# different answer, because a room whose `enterFrame` jumps away has
+		# already moved by then and would read as a walk that never arrived.
+		var landed := int(preview.call("current_frame")) == at \
+			and str(preview.call("movie_name")).to_lower() == file.to_lower()
+		if not landed:
+			missed += 1
+		await process_frame
+		# Where the movie put the playhead once it had a frame to do it in. Printed
+		# rather than counted: a room that jumps out of itself on entry is the
+		# movie's business, and it is also the case the line above must not be
+		# read as.
+		var stayed := int(preview.call("current_frame")) == at \
+			and str(preview.call("movie_name")).to_lower() == file.to_lower()
+		walked += 1
+		# The settle is **watched and credited**, not merely waited out, and the
+		# difference is a whole class of region. `MAINMENU.dir` declares a marker on
+		# frame 0 and another on frame 1; the playhead is past the first before
+		# eight ticks are up, so a settle that only counted ticks left that region
+		# with no sample at all and the walk credited 10 of 12 markers while
+		# entering all 12. A one-frame room the playhead demonstrably passes
+		# through and leaves is exactly what the exit rule in `_credit` is for.
+		#
+		# A quarter of the wall ceiling, because this is eight ticks and not
+		# ninety, and because a settle that sat out its full budget on a sound
+		# would spend the scene's whole clock before the watch began.
+		var settling: Dictionary = await _watch(
+			preview, audio, SCENE_SETTLE, SCENE_CAP_MS / 4)
+		_credit(settling, window)
+		var trace: Dictionary = await _watch(preview, audio, ticks, SCENE_CAP_MS)
+		_credit(trace, window)
+		var seen := _judge("%s@%s" % [movie, named if named != "" else "f%d" % at],
+			trace, window)
+		seen["scene"] = named
+		if str(seen["verdict"]) != "":
+			findings.append(seen)
+		if verbose or str(seen["verdict"]) != "":
+			print("    %-9s %-24s f%-5d %s%s" % [
+				"ok" if str(seen["verdict"]) == "" else str(seen["verdict"]),
+				named if named != "" else "<unnamed>", at,
+				"" if stayed else "(left on entry) ", str(seen["detail"])])
+	return {"walked": walked, "findings": findings, "reopened": reopened,
+		"missed": missed}
 
 
 ## A point the mouse can actually reach this sprite at, or null. The same scan

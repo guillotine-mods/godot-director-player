@@ -1288,6 +1288,18 @@ func _playback_watches() -> Array[WeakRef]:
 func _watch_player(player: AudioStreamPlayer, out: Array[WeakRef]) -> void:
 	if player == null or not is_instance_valid(player):
 		return
+	# **Not `playing`** -- teardown pauses the playback while the object is still
+	# there to wait for, which is the whole trap this function's header records.
+	# This asks the other question: does the player hold a playback at all.
+	#
+	# Without it `get_stream_playback()` prints `Player is inactive. Call play()
+	# before requesting get_stream_playback()` once per finished channel, at exit,
+	# in a suite whose entire job is to say which entries are clean. Found by
+	# `tools/liveness_sweep.gd --scenes`, which exits with three channels done:
+	# three engine ERROR lines that mean nothing and that a reader has to learn to
+	# ignore, which is how a real one gets ignored with them.
+	if not player.has_stream_playback():
+		return
 	var live: AudioStreamPlayback = player.get_stream_playback()
 	if live != null:
 		out.append(weakref(live))
