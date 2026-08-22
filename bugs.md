@@ -308,6 +308,51 @@ stays uncovered.
 
 ---
 
+## 131. `lingo_system_builtins` measures a fixed half-second window, so it reds under load — the flake shape `play_suspends` already cost this project
+
+**Status:** open · **Area:** `tools/lingo_system_builtins.gd`, its first check · found
+2026-08-22 in a whole-suite run
+
+Its opening check, `the movie is stepping to begin with (N exitFrames in half a
+second)`, measures a **fixed wall-clock window** — `_steps(10)` is ten
+`create_timer(0.05)` awaits — and headless painting at a few score ticks a second can
+put **0** dispatches inside it. Measured: **1 red in a 144-entry run** under load, and
+3 of 3 passes run alone.
+
+    bash gate.sh                                              # 1 red in 144, under load
+    godot --headless --path . --script tools/lingo_system_builtins.gd   # passes alone
+
+**This is the shape `AGENTS.md` says cost three sessions**, surviving at a second
+harness. `bugs.md` 41's second half was `play_suspends` doing exactly this, and
+`b8466abb` fixed it by replacing a six-frame budget with **a wait on the condition
+under a ceiling** and tightening the assertion in the same commit. The same fix applies
+here. Until it lands, a red on this entry means "the machine was busy", which is the
+worst possible thing for an entry to mean — it is indistinguishable from a real
+regression and it teaches the reader to re-run rather than to look.
+
+## 132. `movie_churn` leaks an audio stream and its playback at exit
+
+**Status:** open, cause not investigated · **Area:** `tools/movie_churn.gd`, or whatever
+starts a sound during it · found 2026-08-22 while closing the exit-leak cycle
+
+After `efde7406` removed the host/Xtra cycle, `movie_churn` still exits with **2 leaked
+objects** — an `AudioStreamWAV` and its `AudioStreamPlaybackWAV`. No `ERROR` line
+accompanies them, because neither has a resource path, so this is quieter than what
+`efde7406` fixed and correspondingly easier to leave.
+
+    godot --headless --verbose --path . --script tools/movie_churn.gd
+
+**Cause deliberately not guessed.** "It exits mid-playback" is the obvious candidate and
+it was not verified, so nothing is claimed. Two objects and no error line is a small
+enough prize that measuring first is cheaper than fixing.
+
+`tools/exit_leaks.gd` **would** go red on this if `GATE_ROOT` pointed at a title whose
+first frames start a sound, which is noted beside its entry in `gate.sh`. So the guard
+already exists and is simply aimed elsewhere — worth knowing before anyone concludes
+the suite cannot see this class.
+
+---
+
 ## Coverage debt — harnesses deleted with the retired renderer
 
 These asserted rules that still matter, through an engine that no longer exists.
