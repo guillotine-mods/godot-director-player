@@ -137,6 +137,46 @@ reds the third. Its "port hole" case **first passed vacuously** on `getPref`, wh
 host actually binds, so it never reached the fall-through; it now asserts a probe got
 there first.
 
+### The nineteen, read by hand, and where the divergence would actually bite
+
+  * **`mraker`** (rating, 2) — the typo case above.
+  * **`gotoNetPage`** (2) — the blocker above.
+  * **`dont(pass)`** (5) — last statement in its handler, so an abort would be **inert**.
+  * **`www` / `setmoviepath`** (8) — the jokes path, a shipped data gap.
+  * **`displayobject` / `gamad`** (2) — and `displayobject()` **has two statements after
+    it**, which makes this the one site in the corpus where the divergence changes what
+    runs rather than only what is returned.
+
+So of nineteen sites, the abort is inert at five, wrong at two, and consequential at
+about two. That distribution is the argument against implementing it, more than the
+count is.
+
+### Three scope notes, so the next session does not re-derive them
+
+**`_aborting` already exists and is otherwise an exact match** — `_exec_from` tests it
+per statement and `reset_steps` clears it where a dispatch begins. What is missing is
+only the nested-`execute()` boundary: `_broadcast` is an ordinary GDScript call, so the
+three re-entering builtins have nothing to stop at.
+
+**The fall-through's consumers are a class, not a list.** Beyond `getPref`,
+`externalParamName` and `externalParamValue`, four more were found reaching it live just
+by asking — `xFactoryList`, `idleLoadDone`, `showXlib`, `showResFile`. The class is
+"every reference-known name this port has not bound yet", which is why the split is on
+the reference table rather than on an enumeration.
+
+**Bare-word statements are a separate, untouched half: 218 of them.** They go through a
+`_read_var` path that has no abort in it at all, so nothing above applies to them and
+nobody has looked.
+
+### Honest coverage gap in what landed
+
+**No corpus site fired at runtime in any run driven.** `liveness_sweep --only
+NAVIGATE.dir --click` and `--only BATZROOM.dir --click` both stayed silent, because the
+`mraker` arm sits behind `if not soundBusy(1)`. So the new `UNDEFINED_HANDLER` print is
+exercised by the synthetic harness only — consistent with this entry's standing note that
+no container is *known* to trip this at runtime, but it means the diagnostic itself has
+never been seen firing on real data.
+
 ### What would settle it
 
 A name table sourced from Director's own documented vocabulary rather than from
