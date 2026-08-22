@@ -10481,3 +10481,170 @@ After the fix `_index` and `_entered_index` are written from the same variable i
 `docs/bugs-closed.md` 106's shape. Reverting only the `lingo_frame_number(frame)`
 argument to `null` reds both `rating` cases and restoring it greens them, so the
 comparison is live. Full gate: 146 of 146.
+
+---
+
+# 131 and 132, closed 2026-08-16
+
+Two harness-integrity entries, and each was larger than it was filed as.
+
+| # | Verdict | What settled it |
+|---|---|---|
+| 131 | **Fixed, and it was three flakes in one file, not one** | `lingo_system_builtins` measured a fixed **500 ms** window. Under load the movie's own step period measures **584–2994 ms** — the window was routinely *shorter than a single step of the thing it was watching*. |
+| 132 | **Fixed** | `AudioStreamPlayer.playing` does not mean "holds a playback". Godot **pauses** a playback when its player leaves the tree, so at teardown every channel reads `playing = false, in_tree = false` while its playback is still registered with the `AudioServer`. `stop_channel` was guarded `if player and player.playing` — so `stop_all()` was a no-op at exactly the moment it had to work. |
+
+## 131 is `bugs-closed` 119's *first* fault, and explicitly not its second
+
+119 was two faults: a window measured in something other than the movie's own
+events, and a comparison against a captured reference. Only the first applies
+here — the subject is a monotonic `exitFrame` counter re-read at comparison time,
+so there is no captured identity to go stale and no straddle to discard. That is
+said in the code rather than left implied, because the next reader will arrive
+carrying 119.
+
+The load rig built for the reported check found two more of the same family in the
+same file, each of which would have broken a 20-run bar on its own:
+
+| check | was | now |
+|---|---|---|
+| `the movie is stepping to begin with` | fixed 0.5 s | waits for 3 `exitFrame`s, 30 s ceiling |
+| `and the movie steps again` | fixed 0.3 s | waits for 1 `exitFrame` |
+| paused / post-`quit` quiet windows | fixed 0.4 s | 4x the **measured** step period, bounded 200 ms–12 s |
+
+**And the file's two genuinely time-based rules kept a tolerance rather than a
+window** — a 120 ms beep and `startTimer` — because some rules really are about
+elapsed time. Those tolerances are derived from what actually elapsed between the
+write and the read, and are still orders of magnitude away from the answers they
+exist to catch: a milliseconds read that is ~60x high, and a fixed origin that
+reads the age of the process.
+
+Counts, same load and same session: **old 9 green / 1 red in 10** (reproducing the
+filed symptom verbatim — `0 exitFrames in half a second`), **new 20 green / 0 red
+in 20**. A first attempt at that comparison was thrown away rather than reported:
+a stopped batch was still copying the file, and an "OLD" run printed the new
+code's message.
+
+Two controls, and the second is the one that matters: disabling the `exitFrame`
+dispatch makes the wait spend its ceiling and report **0**, so the wait does not
+mask a broken engine; and `continue` leaving the movie paused gives
+`ok the movie is stepping to begin with (3 exitFrames, 389 ms a step)` with only
+the resume checks red — **a clean window and a wrong answer**, which is the only
+shape in which a harness may blame the engine.
+
+## 132: reference count 1 is the whole diagnosis
+
+The player is gone and the server list is the last owner. One pair per sounding
+channel — 2 objects in 4 of 6 `movie_churn` runs, 6 on a probe exiting with three
+channels up — so this was never about `movie_churn` at all. **It is about exiting
+mid-sentence**, and `movie_churn` is simply a harness that does.
+
+Ruled out rather than assumed: the obvious "audio-thread race" reading. Holding
+the main thread 1.5 s across 15 observed mixes still leaked 2 of 3.
+
+`stop_channel` stops unconditionally now — stopping a player that holds nothing is
+free, so the guard bought nothing — and `_exit_tree` calls `release_playbacks()`,
+which stops the channels and the beep and then **waits, bounded at 250 ms, on the
+playbacks actually being released**. Stopping only *asks*: with the stop alone, a
+child spawned from a busy parent still leaked in 1 of 4.
+
+### The trap, which cost two rounds
+
+A `Ref` returned by `get_stream_playback()` — **including one formatted into a
+`"%s" % [...]` detail string** — lands in the calling frame's temporary slot and
+**pins the object**, so the `WeakRef` watching it can never clear. The first
+harness therefore reported that the server never let go after ten seconds, which
+was false and was the harness. Every capture and poll now happens in a function of
+its own. Then the same mistake recurred one function deeper: the wait's own watch
+list was gated on `player.playing`, captured nothing, and leaked in 1 of 6.
+
+*Distrust the harness before the code* — twice, in one entry.
+
+`tools/sound_exit_leak.gd` has two arms because they fail differently: the
+in-process mechanism arm fails **deterministically** when the guard is restored,
+while the child-process arm's leak appears in only 1 of 3 runs. The child is the
+only place the invariant is really observable, and it is guarded by its exit code
+*and* a marker naming how many channels were sounding, so it cannot pass
+vacuously. Its probe stream is zero-filled, so the entry is silent even under a
+real audio driver.
+
+**A cost worth stating**: `lingo_system_builtins` now takes ~22 s under heavy load
+against ~13 s before, because the derived quiet windows are real time. That is the
+price of the windows meaning something, bounded at 12 s each.
+
+## 131. `lingo_system_builtins` measures a fixed half-second window, so it reds under load — the flake shape `play_suspends` already cost this project
+
+**Status:** open · **Area:** `tools/lingo_system_builtins.gd`, its first check · found
+2026-08-22 in a whole-suite run
+
+Its opening check, `the movie is stepping to begin with (N exitFrames in half a
+second)`, measures a **fixed wall-clock window** — `_steps(10)` is ten
+`create_timer(0.05)` awaits — and headless painting at a few score ticks a second can
+put **0** dispatches inside it. Measured: **1 red in a 144-entry run** under load, and
+3 of 3 passes run alone.
+
+    bash gate.sh                                              # 1 red in 144, under load
+    godot --headless --path . --script tools/lingo_system_builtins.gd   # passes alone
+
+**This is the shape `AGENTS.md` says cost three sessions**, surviving at a second
+harness. `bugs.md` 41's second half was `play_suspends` doing exactly this, and
+`b8466abb` fixed it by replacing a six-frame budget with **a wait on the condition
+under a ceiling** and tightening the assertion in the same commit. The same fix applies
+here. Until it lands, a red on this entry means "the machine was busy", which is the
+worst possible thing for an entry to mean — it is indistinguishable from a real
+regression and it teaches the reader to re-run rather than to look.
+
+---
+
+## 132. `movie_churn` leaks an audio stream and its playback at exit
+
+**Status:** open, cause not investigated · **Area:** `tools/movie_churn.gd`, or whatever
+starts a sound during it · found 2026-08-22 while closing the exit-leak cycle
+
+After `efde7406` removed the host/Xtra cycle, `movie_churn` still exits with **2 leaked
+objects** — an `AudioStreamWAV` and its `AudioStreamPlaybackWAV`. No `ERROR` line
+accompanies them, because neither has a resource path, so this is quieter than what
+`efde7406` fixed and correspondingly easier to leave.
+
+    godot --headless --verbose --path . --script tools/movie_churn.gd
+
+**Cause deliberately not guessed.** "It exits mid-playback" is the obvious candidate and
+it was not verified, so nothing is claimed. Two objects and no error line is a small
+enough prize that measuring first is cheaper than fixing.
+
+`tools/exit_leaks.gd` **would** go red on this if `GATE_ROOT` pointed at a title whose
+first frames start a sound, which is noted beside its entry in `gate.sh`. So the guard
+already exists and is simply aimed elsewhere — worth knowing before anyone concludes
+the suite cannot see this class.
+
+---
+
+## Coverage debt — harnesses deleted with the retired renderer
+
+These asserted rules that still matter, through an engine that no longer exists.
+Nothing replaced them. Listed worst first, so that "we have no coverage of X" is
+written down rather than remembered.
+
+| Was | Asserted | Live equivalent |
+|---|---|---|
+| `tools/smoke.gd` | The first minute of play, end to end: menu, new game, opening sequence advances rather than loops, an item is picked up *and* leaves the room | **none.** `gate.sh` tests mechanisms one at a time and nothing walks a playthrough. The biggest hole |
+| `tools/check_surface_coverage.gd` | Which Lingo names the host actually binds, against `docs/LINGO_SURFACE.md` | **none.** This is the tool that would have caught the `intersects` hole and could not, because it audited the retired host. Rebuilding it against `scenes/preview_lingo_host.gd` is the highest-value port on this list |
+| `tools/probe.gd` | Not pass/fail: where the playhead went, what it repeated, where it stopped, in real time | **partly.** `tools/liveness_sweep.gd` records `(movie, frame, sprites drawn, what is holding)` per score tick off real awaited frames, and prints the state set and the holds for every movie of a corpus. It is a sweep and not an interactive probe: no `--marker`, no stepping, no arbitrary breakpoint, and it drives clicks only with `--click`. "Where did the playhead go in *this* situation" still has no tool |
+| `tools/sprite_channels.gd` | A Lingo sprite write reaches the stage — not that a setter and getter agree | **none.** `preview_surface` proves the surface resolves, not that a write is consumed. This is the exact shape of the `moveableSprite` bug |
+| `tools/lingo_handler_scope.gd` | Which script receives a message, in which order | **none.** `scenes/preview/scripts.gd` is unharnessed |
+| `tools/sound_state.gd` | `soundBusy`, volume and `soundLevel` as a script sees them | **none.** `scenes/preview/sound.gd` is unharnessed |
+| `tools/puppet_visibility.gd` | A puppeted sprite's visibility survives a transition | **none** |
+| `tools/room_names.gd` | `nof` resolves to the room, and no two rooms share a key | **none.** It also printed "0 failure(s)" over 0 rooms, so it had stopped asserting anything long before it was deleted |
+| `tools/collectables.gd`, `cliff_meeting.gd`, `wandering_characters.gd` | Scenario coverage: items reveal/stay/take, a dialogue runs to its end, guests are placed once | **none** |
+| `tools/cursors.gd` | cursorfunk's cursor per channel | `tools/cursor_preview.gd`, in `gate.sh`, green |
+| `tools/sprite_stretch.gd` | A sprite draws at its member's size | `tools/drawn_size_stability.gd`, in `gate.sh`, green |
+| `tools/verify_film_loops.gd`, `film_loop_stretch.gd` | Film loops resolve to children, at the child's size | `tools/film_loop_cast.gd`, in `gate.sh`, green — the size half is not covered |
+| `tools/score_diff.gd`, `place_diff.gd`, `member_diff.gd` | The container reader against the exported JSON | `tools/container_equality_check.gd`, in `gate.sh`, green, against the ProjectorRays dumps instead. The export oracle is gone for good |
+| `tools/lingo_converge.gd`, `lingo_frames.gd`, `lingo_walk_diff.gd` | Interpreted clicks / frames / walks against the export | **unportable** — the oracle was the export |
+
+Separately: **`tools/lingo_compile_check.gd` still exists and reports `PASS` over
+nothing.** Its oracle was `data/lingo/`, deleted; it prints
+`containers with no bundle under res://data/lingo (1)` and then
+`PASS (11 checks, 0 failed)`. `README.md` called it "the regression gate for any
+parser change". It was left in the tree because it gates the parser rather than
+the renderer and comes back if `data/lingo/` does, but its green means nothing
+today.

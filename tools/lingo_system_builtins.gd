@@ -31,9 +31,54 @@ const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 ## agreeing with a copy.
 const Host := preload("res://scenes/preview_lingo_host.gd")
 
+## `exitFrame` dispatches that satisfy a "the movie is stepping" wait.
+##
+## Three rather than one, so what the wait measures on its way past is a *period*
+## and not a single latency: the first dispatch can land anywhere inside the
+## current score tick, and one sample of that is not a rate.
+const STEPPING_SAMPLE := 3
+
+## Seconds a wait on a condition may take before it gives up and lets the check
+## fail. **Not a budget.** The wait ends the instant the condition holds, so this
+## only decides how long a genuinely stopped movie takes to be reported, and a
+## number this large costs nothing on a run where the engine is right.
+const WAIT_CEILING := 30.0
+
+## How many of the movie's own steps a "nothing happened" window is worth.
+##
+## The two negative checks here -- nothing dispatched while paused, nothing
+## dispatched after `quit` -- cannot go red under load, but they *can* go quietly
+## vacuous: a fixed 0.4 s window on a machine running eight Godots is not eight
+## score ticks, it is one, and a guard that had come loose would still have had
+## nothing to dispatch inside it. Measuring the window in the period the check
+## above it just measured keeps the negative assertion the same size in the unit
+## that matters however busy the machine is.
+##
+## Four rather than more because a guard that has come loose dispatches on *every*
+## step, so four is already four chances to catch it, and the window is real time
+## this harness spends twice.
+const QUIET_STEPS := 4
+
+## How many times a 120 ms beep may be re-played before "it is playing" is
+## believed to be a statement about the engine rather than about the scheduler.
+const BEEP_ATTEMPTS := 3
+
+## The floor and ceiling on a derived window, in milliseconds. The floor stops a
+## freakishly fast measurement collapsing the window to nothing; the ceiling stops
+## a freakishly slow one turning two windows into a gate timeout. Both are bounds
+## on a measurement, not the window itself -- between them the window is whatever
+## this machine's step period says it should be.
+const WINDOW_FLOOR_MS := 200.0
+const WINDOW_CEILING_MS := 12000.0
+
 var _preview: Node = null
 var _host = null
 var _interp = null
+
+## Milliseconds per `exitFrame` dispatch, as `_await_exit_frames` last measured
+## it. Seeded at a Director-ish 15 fps so that a window derived from it is still
+## a window if the movie never stepped at all and the check above already failed.
+var _step_ms := 66.0
 
 
 func _init() -> void:
@@ -87,11 +132,21 @@ func _init() -> void:
 ## one of those tests fired on every frame.
 func _timer_checks(h) -> void:
 	h.begin("`the timer` is ticks since its last reset (§3)")
+	# **Against the time that actually passed between the write and the read**,
+	# not against a constant. `bugs.md` 131 again: two ticks is 33 ms, and a
+	# deschedule between two statements on a saturated machine is longer than
+	# that, so a fixed bound here fails for the same reason the half-second
+	# window did. The measured bound is still orders of magnitude away from both
+	# ways this was wrong -- milliseconds reads ~60x high, and an origin that
+	# never moved reads the age of the process.
+	var reset_at := Time.get_ticks_msec()
 	_run("set the timer to 0")
 	var immediately := int(_value("the timer"))
+	var reset_took := Time.get_ticks_msec() - reset_at
 	h.check(
-		"a reset reads back near zero (got %d)" % immediately,
-		immediately >= 0 and immediately <= 2,
+		"a reset reads back near zero (got %d, %d ms passed between the write and "
+			% [immediately, reset_took] + "the read)",
+		immediately >= 0 and immediately <= _ticks_in(reset_took),
 		"the write half did not exist; `set the timer to 0` reached nothing and "
 		+ "the read answered the age of the process")
 	# Real elapsed time, not frames: the unit under test is a clock.
@@ -124,11 +179,14 @@ func _timer_checks(h) -> void:
 		later < int(_value("the milliseconds")),
 		"`the milliseconds` is since the machine started and `the timer` is since "
 		+ "the last reset; answering one for both is what was happening")
+	var start_at := Time.get_ticks_msec()
 	_run("startTimer")
 	var restarted := int(_value("the timer"))
+	var start_took := Time.get_ticks_msec() - start_at
 	h.check(
-		"`startTimer` moves the origin to now (got %d)" % restarted,
-		restarted >= 0 and restarted <= 2,
+		"`startTimer` moves the origin to now (got %d, %d ms between the call and "
+			% [restarted, start_took] + "the read)",
+		restarted >= 0 and restarted <= _ticks_in(start_took),
 		"0 sites in this corpus, which resets through the property instead; bound "
 		+ "because Director has it")
 	h.complete("`the timer` is ticks since its last reset (§3)")
@@ -234,23 +292,24 @@ func _exit_lock_checks(h) -> void:
 ## running handlers.
 func _pause_checks(h) -> void:
 	h.begin("`pause` stops the frame step and `continue` restarts it (§1.4)")
-	var before := _exit_frames()
-	await _steps(10)
-	var running := _exit_frames() - before
+	var running := await _await_exit_frames(STEPPING_SAMPLE)
 	h.check(
-		"the movie is stepping to begin with (%d exitFrames in half a second)" % running,
-		running > 0,
+		"the movie is stepping to begin with (%d exitFrames, %s)"
+			% [running, _step_note()],
+		running >= STEPPING_SAMPLE,
 		"a paused-versus-running check over a movie that was never running proves "
-		+ "nothing, which is why this is asserted first")
+		+ "nothing, which is why this is asserted first. It waits on the "
+		+ "dispatches rather than on a clock, so a busy machine makes it slower "
+		+ "and never makes it wrong -- `bugs.md` 131")
 
 	_run("pause")
 	h.check("`pause` sets the flag", bool(_host.playback_paused))
-	var at_pause := _exit_frames()
 	var frame_at_pause := int(_preview.get("_index"))
-	await _steps(8)
+	var while_paused := await _quiet_steps(QUIET_STEPS)
 	h.check(
-		"no `exitFrame` is dispatched while paused (%d)" % (_exit_frames() - at_pause),
-		_exit_frames() == at_pause,
+		"no `exitFrame` is dispatched in a window %d of this movie's own steps "
+			% QUIET_STEPS + "long (%d dispatched, %s)" % [while_paused, _step_note()],
+		while_paused == 0,
 		"the reference guards exitFrame, the playhead move, prepareFrame and "
 		+ "enterFrame separately on `_playbackPaused`; one guard in `_advance` is "
 		+ "the same set")
@@ -260,11 +319,10 @@ func _pause_checks(h) -> void:
 
 	_run("continue")
 	h.check("`continue` clears the flag", not bool(_host.playback_paused))
-	var at_continue := _exit_frames()
-	await _steps(6)
+	var resumed := await _await_exit_frames(1)
 	h.check(
-		"and the movie steps again (%d exitFrames)" % (_exit_frames() - at_continue),
-		_exit_frames() > at_continue,
+		"and the movie steps again (%d exitFrames)" % resumed,
+		resumed >= 1,
 		"this is the half that was in the host's IGNORED list: a movie that "
 		+ "paused stayed paused for ever")
 
@@ -296,8 +354,26 @@ func _beep_checks(h) -> void:
 		h.check("the audio director is attached", false, "nothing to beep with")
 		h.complete("`beep` produces an audible stream, off the numbered channels")
 		return
-	_run("beep")
-	var player: AudioStreamPlayer = audio.get("_beep") as AudioStreamPlayer
+	# **`playing` is read before anything prints, and a miss is retried.**
+	# `bugs.md` 131's family, found by the load test written for it: the beep is
+	# 120 ms long, and the read used to sit after two `h.check`s -- which print,
+	# and a print into a captured pipe on a saturated box is not free -- and a
+	# `get_length()`. Under 22 busy workers the tone had finished before anybody
+	# asked, and the entry went red saying the beep never started. Reading first
+	# shrinks the window to two statements; retrying discards the run where even
+	# that was descheduled, which is `docs/bugs-closed.md` 119's straddle-and-retry
+	# with a stopwatch instead of an object. A beep that genuinely never plays
+	# misses all `BEEP_ATTEMPTS` and fails exactly as before.
+	var started := false
+	var attempts := 0
+	var player: AudioStreamPlayer = null
+	for _attempt in BEEP_ATTEMPTS:
+		attempts += 1
+		_run("beep")
+		player = audio.get("_beep") as AudioStreamPlayer
+		if player != null and player.playing:
+			started = true
+			break
 	h.check("a beep player exists", player != null)
 	if player == null:
 		h.complete("`beep` produces an audible stream, off the numbered channels")
@@ -307,7 +383,10 @@ func _beep_checks(h) -> void:
 		"with a stream about 120 ms long (got %.3f s)" % one,
 		one > 0.09 and one < 0.2,
 		"synthesised: there is no beep on the disc, it is the machine's own sound")
-	h.check("and it is playing", player.playing)
+	h.check("and it is playing (caught on attempt %d of %d)" % [attempts, BEEP_ATTEMPTS],
+		started,
+		"a 120 ms tone, so this is read before the checks above print; three "
+		+ "misses in a row is a beep that is not being played, not a slow machine")
 	_run("beep(3)")
 	var three := player.stream.get_length() if player.stream != null else 0.0
 	h.check(
@@ -393,14 +472,13 @@ func _quit_checks(h) -> void:
 		"this preview is not the running main scene",
 		current_scene != _preview,
 		"the gate on the application half, and the reason it is safe to bind")
-	var before := _exit_frames()
 	_run("quit")
 	h.check("the movie is stopped", bool(_host.stopped))
-	await _steps(8)
+	var after_quit := await _quiet_steps(QUIET_STEPS)
 	h.check(
-		"and takes no further steps (%d exitFrames in 8 ticks)"
-			% (_exit_frames() - before),
-		_exit_frames() == before,
+		"and takes no further steps (%d exitFrames in a window %d of this "
+			% [after_quit, QUIET_STEPS] + "movie's own steps long, %s)" % _step_note(),
+		after_quit == 0,
 		"102 sites across every title, and every 'quit game' path did nothing")
 	h.check(
 		"this process is still running, which is the whole point",
@@ -510,12 +588,86 @@ func _exit_frames() -> int:
 	return int(sent.get("exitFrame", 0))
 
 
+## Wait until the movie has dispatched `count` more `exitFrame`s, and answer how
+## many actually arrived. Records the observed period in `_step_ms` on the way.
+##
+## **This is `bugs.md` 131, and it is `docs/bugs-closed.md` 119's first fault
+## wearing a different harness.** What stood here was `_steps(10)` -- ten
+## `create_timer(0.05)` awaits, a fixed half-second of wall clock -- and the
+## check it fed asked whether the movie had stepped inside it. Headless painting
+## runs the score at a few ticks a second, and under a whole-suite run with other
+## agents on the machine that window has held **0** dispatches: 1 red in a
+## 144-entry run, 3 of 3 passing run alone (`efde7406`'s message records both
+## numbers). A red that means "the machine was busy" is indistinguishable from a
+## regression and teaches the reader to re-run instead of to look, which is the
+## damage `AGENTS.md` describes `play_suspends` doing to this project once
+## already.
+##
+## 119's medicine was to count the window in the movie's own events instead of in
+## the harness's, and that is the whole of what this does: the loop ends on the
+## dispatch, so a busy machine makes the check slower and cannot make it wrong.
+## 119's *second* fault -- comparing against a captured reference that had gone
+## stale -- has no counterpart here and needs none: the subject is a monotonic
+## counter re-read at comparison time, so there is no identity to go stale and no
+## straddled window to discard.
+##
+## **The assertion is not weakened by waiting.** A movie that is not stepping
+## never reaches `count`, the loop runs out at the ceiling and the check fails
+## exactly as it did before; all the wait removes is the reading where a slow
+## machine is reported as a broken engine.
+##
 ## Real frames, not a synthetic loop. `AGENTS.md`: a `for i in N: tick()` loop
 ## advances the runtime's clock and not the audio server's, and the score's own
 ## step is paced off real time here.
-func _steps(count: int) -> void:
-	for _i in count:
-		await create_timer(0.05).timeout
+func _await_exit_frames(count: int, ceiling: float = WAIT_CEILING) -> int:
+	var before := _exit_frames()
+	var started := Time.get_ticks_msec()
+	var deadline := started + int(ceiling * 1000.0)
+	while _exit_frames() - before < count and Time.get_ticks_msec() < deadline:
+		await process_frame
+	var seen := _exit_frames() - before
+	# **Only a sample worth calling a rate.** The resume wait asks for one
+	# dispatch and usually gets it at once, because the movie was already due a
+	# step -- measured at 4 ms, against 395 ms for the same movie over three. A
+	# one-event sample is a latency, and letting it overwrite the period made the
+	# two windows derived from it collapse onto their floor.
+	if seen >= STEPPING_SAMPLE:
+		_step_ms = float(Time.get_ticks_msec() - started) / float(seen)
+	return seen
+
+
+## Watch for `steps` of the movie's own steps' worth of time and answer how many
+## `exitFrame`s were dispatched in it -- which the caller expects to be none.
+##
+## The span is the period `_await_exit_frames` measured multiplied by `steps`,
+## bounded at both ends so that neither a freakishly fast measurement nor a
+## freakishly slow one can turn the window into something it is not. That is the "tolerance derived from a measurement rather than a fixed
+## window" half of `bugs.md` 131: this one really is a question about elapsed
+## time -- *nothing happened for a while* has no event to wait on -- so the
+## window is scaled by what a step costs on this machine, today, rather than by a
+## constant somebody measured on theirs.
+func _quiet_steps(steps: int) -> int:
+	var before := _exit_frames()
+	var span := int(clampf(_step_ms * float(steps), WINDOW_FLOOR_MS, WINDOW_CEILING_MS))
+	var deadline := Time.get_ticks_msec() + span
+	while Time.get_ticks_msec() < deadline:
+		await process_frame
+	return _exit_frames() - before
+
+
+## The most `the timer` may legitimately read after `ms` of real time, plus the
+## one tick of rounding a 60 Hz counter is entitled to. The bound every
+## "reads back near zero" check is measured against, so that none of them is a
+## constant somebody guessed on an idle machine.
+func _ticks_in(ms: int) -> int:
+	return int(ceilf(float(ms) * 60.0 / 1000.0)) + 1
+
+
+## The measured step period, for the detail line of every check that used one.
+## Printed rather than kept private because it is the number that decides whether
+## a window was long enough, and a red nobody can size is a red nobody can act on.
+func _step_note() -> String:
+	return "%.0f ms a step, measured" % _step_ms
 
 
 ## The dialog `alert` raised, found by type rather than by name so the harness

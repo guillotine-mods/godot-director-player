@@ -1205,9 +1205,103 @@ func miss_report() -> String:
 ## sinks are being torn down alongside this node and the whole point is that the
 ## statement survives.
 func _exit_tree() -> void:
+	release_playbacks()
 	var report := miss_report()
 	if report != "":
 		print(report)
+
+
+## Give every playback this node started back to the `AudioServer` before the
+## tree finishes taking its players down. `bugs.md` 132.
+##
+## The exit path is the only one that needs telling. While the movie runs, a
+## channel is stopped by the next sound on it, by `sound stop`, or by the stream
+## ending, and all three release the playback in the normal way. What has no
+## owner is the last moment: a title that quits mid-sentence -- which is every
+## `quit` in every one of these titles, since the speech is longer than the click
+## that ends the room -- left one `AudioStreamWAV` and its playback alive past the
+## ObjectDB check, and the engine reported them on the way out of every such run.
+##
+## Two objects and no `ERROR` line is a small prize on its own. It is worth the
+## call for the reason `efde7406` gives about the constant `4 resources still in
+## use`: this suite's job is to say which entries are clean, and a `WARNING` that
+## everybody has learned to read past costs more than the bytes it leaks.
+##
+## The beep is stopped beside the channels rather than through `stop_all`,
+## because it is deliberately off the numbered channels -- `soundBusy(1)` is what
+## every line of speech in this corpus waits on, and a beep that claimed a channel
+## would make a room wait for it.
+func release_playbacks() -> void:
+	var watching := _playback_watches()
+	stop_all()
+	if _beep != null and is_instance_valid(_beep):
+		_beep.stop()
+	# Stopping only *asks*. The `AudioServer` marks the playback for deletion and
+	# drops it on a later mix of its own thread, so whether the object is gone by
+	# the time the engine counts leaked instances is a race with that thread --
+	# measured, a child spawned from a busy parent still leaked the pair in 1 of 4
+	# runs with the stop in place and nothing waiting on it. Waiting on the
+	# condition under a ceiling is `bugs.md` 131's medicine applied to the same
+	# shape one file over: the loop ends the moment the last playback is gone, so
+	# a quiet machine pays nothing and a busy one pays what it has to.
+	var deadline := Time.get_ticks_msec() + RELEASE_CEILING_MS
+	while not _all_released(watching) and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(1)
+
+
+## Milliseconds `release_playbacks` will block the main thread waiting for the
+## audio thread. Reached only when the server is genuinely slow to let go, and
+## only on the way out of the process -- there is nothing left to be responsive
+## for. Measured: the wait normally ends on the first or second poll.
+const RELEASE_CEILING_MS := 250
+
+
+## A `WeakRef` to every playback the numbered channels and the beep are holding.
+##
+## **Captured in a function of its own, and this is not style.** A `Ref` returned
+## by `get_stream_playback()` also lands in the calling frame's temporary stack
+## slot, and a slot that is not written again keeps the object alive for as long
+## as the frame does -- long enough for a `WeakRef` beside it to never clear and
+## for the caller to conclude the `AudioServer` never let go. That misreading
+## cost this fix an afternoon: the harness written to prove the release said the
+## playback was still held after ten seconds, and what was holding it was the
+## harness's own `"%s" % [..., watch.get_ref()]` detail string. Returning from a
+## function drops the frame and every temporary in it, which is the only way to
+## be sure the reference under test is the one the engine holds.
+func _playback_watches() -> Array[WeakRef]:
+	var out: Array[WeakRef] = []
+	for key in _channels.keys():
+		_watch_player(_channels[key], out)
+	_watch_player(_beep, out)
+	return out
+
+
+## One player's playback onto the watch list, if it has one.
+##
+## **Never gated on `player.playing`**, which is the trap this whole fix is about
+## and which this function got wrong first time round: teardown pauses the
+## playback before any of this runs, so `playing` is already false while the
+## object is still there to wait for. Gating on it captured an empty list, the
+## wait below returned instantly, and the pair still leaked in 1 of 6 runs --
+## the same symptom as before the fix, from the same mistaken reading of the same
+## property, one function further in.
+func _watch_player(player: AudioStreamPlayer, out: Array[WeakRef]) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var live: AudioStreamPlayback = player.get_stream_playback()
+	if live != null:
+		out.append(weakref(live))
+
+
+## Whether every watched playback has been released. Its own function for the
+## reason `_playback_watches` documents: the `get_ref()` result lives in this
+## frame's temporaries and dies with the frame, so polling cannot pin the very
+## object it is polling for.
+func _all_released(watching: Array[WeakRef]) -> bool:
+	for watch in watching:
+		if watch.get_ref() != null:
+			return false
+	return true
 
 
 func sound_busy(channel: int) -> bool:
@@ -1233,10 +1327,36 @@ func stop_all() -> void:
 		stop_channel(int(key))
 
 
+## **Unconditionally, and never `if player.playing`** -- `bugs.md` 132.
+##
+## `AudioStreamPlayer.playing` is not "this player holds a playback". Godot
+## *pauses* a playback when its player leaves the tree rather than stopping it,
+## so during teardown every channel reads `playing=false, in_tree=false` while
+## its `AudioStreamPlaybackWAV` is still registered with the `AudioServer` --
+## measured, printed from this node's own `_exit_tree`. A guard on `playing`
+## therefore skipped the one call that had to happen, and the paused playback,
+## which nothing ever mixes again, kept its stream alive past the ObjectDB check:
+##
+##   Leaked instance: AudioStreamWAV:...          - Reference count: 1
+##   Leaked instance: AudioStreamPlaybackWAV:...  - Reference count: 1
+##
+## one pair per channel still sounding, in 4 of 6 `movie_churn` runs and in 3
+## pairs at once on a probe that exited with three channels up. Reference count 1
+## on both is the whole diagnosis: the player is gone and the server list is the
+## last owner.
+##
+## Stopping a player that holds nothing is free -- `stop()` iterates an empty
+## playback vector -- so the guard was never buying anything, and the whole of
+## what it cost was the case it was reached in.
+##
+## Not a mix-timing race, which was the obvious candidate and is ruled out rather
+## than assumed: holding the main thread in `_exit_tree` for 1.5 s, over 15
+## observed `AudioServer` mixes, left 2 of 3 runs still leaking. It is the state
+## the playback is parked in, not the time it is given.
 func stop_channel(channel: int) -> void:
 	var ch := maxi(1, channel)
 	var player: AudioStreamPlayer = _channels.get(ch)
-	if player and player.playing:
+	if player != null and is_instance_valid(player):
 		player.stop()
 	_channel_file[ch] = ""
 	_channel_failed[ch] = false
