@@ -105,8 +105,13 @@ rewrite the constants, not the file:
 | `autoload/app_settings.gd` | Config filename and the dev warp default |
 | `director_game.cfg` | Which folder under `games/` and which boot movie |
 
-**Title-specific.** `autoload/game_state.gd` (inventory, day, meetings, save
-slots) and everything under `games/` and `reference/`.
+**Title-specific.** Everything under `games/` and `reference/`. This line used to
+name `autoload/game_state.gd` (inventory, day, meetings, save slots) as well;
+that model was the retired renderer's Piposh 2 one, was called from nowhere but
+itself, and is deleted (`bugs.md` 127). The file survives as the player half's
+log bus — `emit_log` plus its `log_message` signal, which is what `qa_walk` and
+the audio harnesses read — and is title-agnostic now, so it belongs in the
+reusable table above rather than here.
 
 One call here is contestable, so it is stated rather than smoothed:
 

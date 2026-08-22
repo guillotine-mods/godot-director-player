@@ -19,28 +19,21 @@ That output *was* mirrored into `assets/render_model/` and loaded from the sourc
 files at runtime, with no Godot import step. Recovering `PIP2DATA` from the
 installer is [`EXTRACT_FROM_INSTALLER.md`](EXTRACT_FROM_INSTALLER.md).
 
-## Save format (`user://saves/slot_XX.json`)
+## Save format
 
-```json
-{
-  "version": 1,
-  "globalday": 1,
-  "meetings": ["murder1", "hatday1", "..."],
-  "objects_field": ["shovel", "empty", "..."],
-  "current_movie": "DAY1",
-  "current_label": "shore2",
-  "current_frame": 120,
-  "whichsnd": "sea",
-  "current_hub": "DAY1",
-  "story_flags": ["..."],
-  "route_stack": [],
-  "note": "optional",
-  "saved_at": "..."
-}
-```
+**Not here, and not `GameState`'s any more.** This section used to document a
+`user://saves/slot_XX.json` written by `GameState.to_dict` — a Piposh 2 record of
+day, meetings, an eight-slot inventory, hub and `whichsnd`. That whole model was
+the retired renderer's, was referenced only from the file that declared it, and
+is deleted (`bugs.md` 127). No save file has that shape.
 
-`GameState.to_dict` writes everything but `note` and `saved_at`, which the slot
-writer stamps on.
+The live save is an emulator-style save state of the whole session, and it lives
+where the player half does: `scenes/preview/save_state.gd` is the format and the
+`ACCOUNTED` table that keeps it honest, `scenes/preview/save_files.gd` is the
+paths (`res://saves/<game>/`, falling back to `user://saves/<game>/` when the
+checkout is read-only) and the quick-save, and `scenes/preview/movie_save.gd` is
+Director's own `saveMovie`. Read `save_state.gd`'s header rather than a copy of
+its field list here; the last copy outlived its subject.
 
 ## Widescreen test modes
 
@@ -57,11 +50,15 @@ writer stamps on.
 
 - `AppSettings.upscale_mode` — scale factor + filter
 - `AppSettings.test_mode_enhanced_graphics` — switch to smooth filtering; later: alternate texture root
-- `GameState.MINIGAME_MOVIES` — Esc skip targets
+- ~~`GameState.MINIGAME_MOVIES`~~ — **gone** with the rest of `GameState`'s model
+  (`bugs.md` 127). `AppSettings.allow_minigame_skip` still loads from
+  `director_game.cfg`'s `qol/minigame_skip` and the launcher still shows the
+  checkbox, but nothing reads the flag: `GameState.is_minigame_movie` was its
+  only consumer. A user-visible toggle with no effect, and a defect in its own
+  right rather than something this hook list should imply works.
 - ~~`data/movie_context.json`~~ — **gone.** It held hubs, transition
   destinations, sprite gates and an inferred progression spine, and `GameState`
   took its trigger table from `MovieContext` at boot. Both the file and
   `MovieContext` are deleted; the engine reads the movie's own scripts instead,
-  which is what `AGENTS.md` asks for. `GameState` now boots with an empty
-  trigger table (`Meeting triggers loaded: 0`).
+  which is what `AGENTS.md` asks for.
 - `InputRouter` — single place to extend remapping / accessibility

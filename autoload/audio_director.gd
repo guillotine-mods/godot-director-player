@@ -343,8 +343,6 @@ func resolve_path(file_name: String) -> String:
 	var raw := file_name.to_lower().strip_edges()
 	if raw.is_empty():
 		return ""
-	if raw == "$whichsnd":
-		raw = str(GameState.whichsnd).to_lower()
 	return _resolve_normalised(raw)
 
 
@@ -683,12 +681,6 @@ func play_file(channel: int, file_name: String) -> void:
 		# nothing ever replaced it, waited for ever. See `_fail` below.
 		_fail(ch, "", "sound playFile named nothing")
 		return
-	if raw == "$whichsnd":
-		raw = "%s.aif" % str(GameState.whichsnd).to_lower()
-	var stem := raw.get_file().get_basename()
-	if ch == 2 and not stem.begins_with("$"):
-		GameState.whichsnd = stem
-
 	# Idempotent: the same file already playing on this channel is left alone.
 	#
 	# A knowing deviation. Director's `sound playFile` restarts unconditionally,
