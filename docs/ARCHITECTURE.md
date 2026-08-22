@@ -53,9 +53,14 @@ its field list here; the last copy outlived its subject.
 - ~~`GameState.MINIGAME_MOVIES`~~ — **gone** with the rest of `GameState`'s model
   (`bugs.md` 127). `AppSettings.allow_minigame_skip` still loads from
   `director_game.cfg`'s `qol/minigame_skip` and the launcher still shows the
-  checkbox, but nothing reads the flag: `GameState.is_minigame_movie` was its
-  only consumer. A user-visible toggle with no effect, and a defect in its own
-  right rather than something this hook list should imply works.
+  checkbox, but **nothing reads the flag** -- `grep -rn allow_minigame_skip
+  --include='*.gd' .` returns its declaration and its config load and no reader.
+  The reader was the retired renderer: at `b04e5596`,
+  `director/director_runtime.gd:704` tested the flag and `:718` called
+  `GameState.is_minigame_movie` fourteen lines later in the same Esc-skip path,
+  and both went at `cb7fe815`. So it is a user-visible toggle with no effect, and
+  a defect in its own right rather than something this hook list should imply
+  works.
 - ~~`data/movie_context.json`~~ — **gone.** It held hubs, transition
   destinations, sprite gates and an inferred progression spine, and `GameState`
   took its trigger table from `MovieContext` at boot. Both the file and

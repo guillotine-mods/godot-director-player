@@ -95,6 +95,7 @@ transfer to another Director port unchanged:
 | `director/score_sound.gd`, `director/director_sound.gd` | The score's own sound channels, and a sound cast member decoded to a stream |
 | `autoload/input_router.gd` | Mouse and gamepad virtual cursor |
 | `tools/lib/harness.gd`, `args.gd` | Headless assert, command line |
+| `autoload/game_state.gd` | The player half's log bus: `emit_log`, to the `log_message` signal and to stdout. Named for the game model it used to hold, which is gone |
 
 **The seam.** The structure transfers, the contents are per-title. Expect to
 rewrite the constants, not the file:
