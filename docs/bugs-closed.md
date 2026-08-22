@@ -10302,3 +10302,79 @@ and a probe that does not carry it can pass without it.
 Gate **142 of 142**, exit 0, `day_checklist` PASS. Verified independently of the agent
 that wrote it: warm 15/15 PASS, `--cold` 12 checks with 5 failed, and the `",done"`
 reading reproduced.
+
+---
+
+## 129. FIXED. The minigame-skip toggle is removed rather than deferred, because no `VWLB` says which markers are scenes
+
+**Status:** FIXED at `fbb90195` · **Area:** `autoload/app_settings.gd`, `launcher.tscn`,
+`project.godot`, `autoload/input_router.gd`, `director_game.cfg` · filed and closed
+2026-08-22
+
+`AppSettings.allow_minigame_skip` was a user-visible checkbox with no reader. Verified
+across `.gd`, `.tscn`, `.tres`, `.json`, `.cfg`, `.godot`, `.sh`, `.yml` and
+`project.godot` — not just GDScript, which is the mistake that filed it. Its reader died
+in two halves: `b04e5596:director/director_runtime.gd:704` tested the flag and `:718`
+asked `GameState.is_minigame_movie` fourteen lines later; `cb7fe815` took both and
+`0adffcf8` took that model's remains.
+
+**The dead surface was bigger than the flag.** `project.godot` bound `skip_minigame` to
+Escape and `input_router.gd:46` emitted `skip_requested`, connected to nothing — the
+flag's input half, still wired to a deleted function. All of it is gone, along with
+`%MinigameSkip`, its two launcher sites, and `[qol] minigame_skip`.
+
+**Option 1 is impossible, not expensive**, and that is the whole verdict.
+`director_preview.gd`'s comment on `skip_release` is this project's own recorded finding:
+"a marker labels a position, and nothing in a `VWLB` says which positions are scenes. No
+title-agnostic rule can recover that." It cost four reports — MURDER1 jumping backwards
+into the tail being skipped, DAY1 parking the playhead permanently (32), Rating's
+drive-probe cycle (37), COMEIN landing past the frame that puppets its channels (96).
+Implementing skip needs exactly the capability that sentence denies; the only alternative
+is the hardcoded movie list `bugs.md` 127 was about.
+
+**Does the movie's own SKIP cover it? Half, and for developers only.** `skip_release`
+cuts the voice on channel 1, drops every clock hold and moves the playhead nowhere —
+genuinely title-agnostic. But `input_router.gd:216-226` hands it `Rect2()` when
+`DebugKeys.enabled()` is false, so a release build has no SKIP affordance at all. Not
+rounded up to "SKIP already does this".
+
+### Three corrections to the entry as filed, and the first would have caused damage
+
+1. **The CI gate does not exist.** The entry said
+   `tools/ci/stamp_debug_ui_test.sh:48` and `:84` gate on the config key. They use
+   `minigame_skip_enabled`, which occurs three times, all inside that one file, and
+   nowhere else in the repo. It is a **fixture**: a key that merely *ends* in `enabled`,
+   there to prove the stamp's `^` anchor works — its own comment says so, "confirmed by
+   dropping the anchor and watching only this case go red". Editing it to match the
+   removal would have silently weakened a working anchor test.
+2. **Option 3 was not what the tree did by accident — it did it deliberately, in
+   writing.** `launcher.tscn`'s `QolHint` immediately above the card already told the
+   player which toggles the engine reads, and `app_settings.gd`'s header says why. The
+   "cheap half" this entry demanded was already done. What was wrong with it was
+   precision, not honesty: the hint said "waiting for the graphics engine", which was
+   never true of a skip.
+3. **Four orphan toggles of five, not one.** `upscale_mode`, `enhanced_graphics`,
+   `expand_edge_hotspots` and `hotspot_hints` have no reader either; only
+   `controller_cursor_speed` reaches anything. Carried forward as `bugs.md` 130.
+
+A player now sees nothing where the checkbox was — removed from the scene, not disabled —
+and the `QolHint` says three rather than four and says they are unwired. Escape is
+unaffected elsewhere: `container_picker.gd:69` and `text_focus.gd:428` read raw
+`KEY_ESCAPE` and never went through the InputMap, `ui_cancel` appears only in
+`launcher.gd`, and the root `pause_menu` binding the piposh-3d embed needs is untouched.
+
+`tools/launcher_surface.gd` grows a case: every `CheckBox` under `AssistCard` must be a
+name its `SURFACE` table carries. **Confirmed fallible** by dropping the `EdgeHotspots`
+row while leaving the node in the scene — 46 checks, 1 failed, exit 1 — and green after
+restoring, in both of the file's modes. It guards the table's completeness, not the defect
+class: "a toggle nothing reads" cannot be gated from there without encoding which toggles
+are wired.
+
+Gate **143 of 143**, exit 0, count unchanged, with `game_config`, `export_presets_check`,
+`debug_bindings`, `skip_state`, `key_polling`, all four `key_overlay`s, `key_chain`,
+`launcher_keys` and `launcher_surface` among them. `preview_surface` PASS.
+
+**The sibling is the reason this entry matters beyond one checkbox**, now `bugs.md` 130:
+`hint` has the identical dead shape and is *implementable*, because the retired `hint()`
+asked the frame rather than the title. Deleting it by analogy with skip would be the wrong
+move.

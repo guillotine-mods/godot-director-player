@@ -267,41 +267,44 @@ and `stalled: saves.dir`, which is Director's `pause` correctly named.
 
 ---
 
-## 129. `AppSettings.allow_minigame_skip` is a user-visible toggle with no reader
+## 130. `hint` is skip's tractable sibling: bound to a key, emitted, connected to nothing — and unlike skip it is implementable
 
-**Status:** open · **Area:** `autoload/app_settings.gd:26` and `:51`, and the launcher's
-`%MinigameSkip` checkbox · found 2026-08-22 while deleting 127, whose own code was the
-flag's last consumer
+**Status:** open · **Area:** `autoload/input_router.gd:11` and `:53`, `project.godot`'s
+`hint` action, and three disclosed-pending launcher toggles · found 2026-08-22 while
+closing 129
 
-    grep -rn allow_minigame_skip --include='*.gd' .
+`project.godot` binds `hint` to **H** (`physical_keycode: 72`) and joypad button 3,
+`input_router.gd:53` emits `hint_requested`, and **nothing connects it** — the signal
+appears three times, all inside the file that declares it. Identical shape to the
+`skip_minigame` action that 129 removed.
 
-returns the declaration and the config load and **no reader**. Meanwhile the launcher
-shows the checkbox (`launcher.gd:484` and `:876`), `director_game.cfg:277` persists it,
-and `tools/ci/stamp_debug_ui_test.sh:48` and `:84` gate on the config key. So a player
-can tick a box that has done nothing since the renderer was retired, and CI asserts the
-key is carried.
+**Written down because the obvious move is to delete it by analogy, and that would be
+wrong.** Skip was removed because it is *impossible* in a title-agnostic engine:
+`director_preview.gd`'s own comment on `skip_release` records the verdict — "a marker
+labels a position, and nothing in a `VWLB` says which positions are scenes. No
+title-agnostic rule can recover that" — bought with four reports (MURDER1 jumping
+backwards, DAY1 parking the playhead at 32, Rating's drive-probe cycle at 37, COMEIN
+landing past the frame that puppets its channels at 96).
 
-**The reader was the retired renderer, and it died in two halves.** At `b04e5596`,
-`director_runtime.gd:704` tested the flag and `:718` called
-`GameState.is_minigame_movie` fourteen lines later in the same Esc-skip path. `cb7fe815`
-deleted both; `0adffcf8` — this session, closing 127 — deleted the second half's remains
-along with the rest of that model.
+**`hint` has no such problem.** The retired implementation
+(`b04e5596:director/director_runtime.gd:725`) read
+`clickable_sprites(loader.get_frame(frame_index))` and named the first — it asked the
+**frame**, never the title. So it is answerable from the movie, which is exactly the
+property skip lacks, and the live engine already computes that set for the cursor and
+the click router. `hint` is a cheap option 1; skip was not an expensive one.
 
-**This is a decision, not a deletion**, which is why it is an entry. Three options and
-they are not equivalent:
+**Also open, and the only launcher controls left that do nothing:** `upscale_mode`,
+`enhanced_graphics`, `expand_edge_hotspots` and `hotspot_hints` have no reader either —
+only `controller_cursor_speed` reaches anything. Unlike 129's case these are *disclosed*:
+`launcher.tscn`'s `QolHint` above the card says which toggles the engine reads, and
+`app_settings.gd`'s header says why the disclosure exists ("so the first report is not
+'hotspot hints is broken'"). So this is honest and not a defect — it is a list of what to
+implement, and the disclosure has to be kept accurate as each lands.
 
-  * implement Esc-skip against the interpreter rather than a hardcoded movie list, which
-    is the only version compatible with `AGENTS.md`'s "the engine is agnostic to the
-    game" — the retired one asked `GameState.is_minigame_movie`, a table of Piposh 2
-    titles, which is exactly what 127 was about;
-  * remove the toggle, the checkbox and the CI gate together, and accept that a QoL
-    feature the launcher advertises is gone;
-  * leave it and say so in the launcher, which is the worst of the three and is what the
-    tree does today by accident.
-
-Worth knowing before picking: `skip_state` and `key_overlay` are in `ALL` and are about
-the *movie's own* SKIP affordances, not this flag, so nothing in the suite goes red
-whichever way this goes.
+`tools/launcher_surface.gd` now asserts every `CheckBox` under `AssistCard` is a name its
+`SURFACE` table carries, which catches a control added without disclosure. It cannot
+catch "a toggle nothing reads" without encoding which toggles are wired, so that class
+stays uncovered.
 
 ---
 
