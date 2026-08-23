@@ -93,6 +93,24 @@ FILES=(
   "castmember/transition.h"       # TransParams field names and the TransitionType enum
 )
 
+# Mac GUI widgets. **A question about the hit test was unanswerable without
+# these**: `TextCastMember::isWithin` calls `isInScrollBar` with no `_scrollBar`
+# test, and whether that holes 10,495 records in this corpus or none of them turns
+# entirely on what `MacText`'s constructor writes into the border geometry of a
+# *non*-scrolling widget. The answer is four files deep -- `setScrollBar` ->
+# `disableBorder` -> `addBorder`/`setOffsets` -> the nine-patch parse -- and none
+# of it is in `engines/director/`.
+MACGUI=(
+  "graphics/macgui/mactext.cpp"      # setScrollBar, isInScrollBar, the three constructors
+  "graphics/macgui/mactext.h"        # the scrollBar = false default a MacButton takes
+  "graphics/macgui/macwindowborder.cpp"  # disableBorder, addBorder, setOffsets, hasOffsets
+  "graphics/macgui/macwindowborder.h"
+  "graphics/macgui/macbutton.cpp"    # the MacText base a button route builds
+  "graphics/macgui/datafiles.cpp"    # MacOSNoBorderScrollbar's actual offsets
+  "graphics/nine_patch.cpp"          # the 3x3 no-border surface -> padding 0,0,0,0
+  "graphics/nine_patch.h"
+)
+
 # The same revision, from outside engines/director/. These three are ScummVM's
 # shared video and image code rather than the Director engine's, so they take a
 # different prefix and cannot go in the list above.
@@ -113,6 +131,17 @@ for entry in "${FILES[@]}"; do
   mkdir -p "$(dirname "$out")"
   if ! curl -fsSL "$BASE/engines/director/$rel" -o "$out"; then
     echo "FAILED: engines/director/$rel at $SCUMMVM_REV" >&2
+    exit 1
+  fi
+  count=$((count + 1))
+done
+
+for rel in "${MACGUI[@]}"; do
+  rel="${rel%% *}"
+  out="$DEST/$rel"
+  mkdir -p "$(dirname "$out")"
+  if ! curl -fsSL "$BASE/$rel" -o "$out"; then
+    echo "FAILED: $rel at $SCUMMVM_REV" >&2
     exit 1
   fi
   count=$((count + 1))

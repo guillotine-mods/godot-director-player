@@ -623,6 +623,15 @@ grids blend the *bits of a palette index* inside one byte and this port composes
 32-bit RGBA, where a byte is not a pixel. The corpus asks for chunk 8 and chunk 1
 and nothing between.
 
+> **DECODED at `be57d1dc`, and this entry is kept for its measurement rather than
+> its verdict.** `director/director_lscr.gd` reads `Lnam`, `Lctx` and the `Lscr`
+> tables; `lingo/compile/lscr_lower.gd` lowers the bytecode to this port's own AST.
+> Over 38,813 handlers carrying both forms: **81.27% exact, 94.80% once command
+> syntax is set aside** -- the gap being unrecoverable, since Director's compiler
+> resolves `go to movie "x"` into `go(1, "x")` at compile time. The census below
+> stands and is still the reason it costs nothing *today*; the reason it was built
+> is the last paragraph, and `jokes.dxr` has not stopped being named.
+
 **Compiled Lingo (`Lscr`) is not decoded, and the corpus proves it costs nothing.**
 The port runs Lingo from the **source text** stored in each cast member's info
 block (`director_cast.gd`, info item 0); nothing reads the `Lscr` bytecode
@@ -812,13 +821,30 @@ property now reports on a write attempt, because this port has no read-only list
 for `the X`; that is an honest over-report rather than a wrong one, and inventing
 the list is the hand-written table this whole entry argues against.
 
-**Digital video.** §13. No decoder, no sync, no `the movieRate`.
+**Digital video -- BUILT, and this line was stale for a day.** §13. It said "No
+decoder, no sync, no `the movieRate`", and by the time anyone read it there were
+**three** decoders: `director/director_avi.gd` (MS-RLE), an Ogg Theora sidecar
+path, and `director/director_mpeg1_{ps,video,audio}.gd` -- a program-stream
+demuxer, an 11172-2 video decoder and an 11172-3 Layer I/II audio decoder, all in
+GDScript, playing Magic Hat's 22 clips from the original bytes at 8-42% of real
+time with sound. `docs/DIGITAL_VIDEO.md` §4C2 and §9 are the account.
+
+What is genuinely left here: **`the movieRate`** as a *driven* rate rather than a
+stored one, and MPEG-1 Layer III (named and refused rather than decoded to noise).
 
 **Wait-for-video tempo -- the clock half is built.** §9. The tempo cell never
 holds one in this corpus, which was a reason to build it last and not a reason to
 skip it. The clock now decodes and holds for one in both numberings and releases
 it through `FrameClock.video_probe`; what is missing is a decoder to install as
 that probe, which is the digital-video entry above and not this one.
+
+> **The decoder arrived on 2026-08-22 and the probe is still not installed**, so
+> this is now the whole of the entry rather than half of it. `video_probe` is
+> declared at `director_frame_clock.gd:234` and polled at `:689`, and **nothing
+> anywhere calls it** -- so a wait-for-video tempo cell reports *finished* on its
+> first poll, which was the only safe answer for a port with no decoder and is now
+> simply wrong. Installing it is `preview/video.gd` answering "is channel N still
+> playing", and the clock side needs nothing further.
 
 **Mask ink (9) -- BUILT 2026-08-22.** §2.6. `Ink.KEY_MASK` is the fourth branch
 of `key_for`, in `getMask`'s own precedence, and `SpriteArt.apply_mask_member`
@@ -924,14 +950,49 @@ fixture where the three readings give three different answers: no Hole -> channe
 6, Hole-as-Outside -> channel 4 (the sprite *behind* the field), the reference's
 break -> 0.
 
-**One named divergence, and it wants review.** `isWithin` calls `isInScrollBar`
-without asking whether the widget has a scrollbar. Taken literally that holes
-**10,495 records** -- CAPROOM's memo pages, Rating's 4,030 dialogue fields -- none
-of which scrolls. The reference gates it three other ways
-(`createWindowOrWidget` passes `scrollBar = (_textType == kTextTypeScrolling)`,
-and `MacText::processEvent` and `::draw` both guard on `_scrollBar`), so this port
-applies the guard the widget applies everywhere else. Reversing it is deleting one
-predicate from one `if`.
+**The named divergence was reviewed and is not one.** `isWithin` calls
+`isInScrollBar` with no `_scrollBar` test, and taken literally that holes **10,495
+records** -- CAPROOM's memo pages, Rating's 4,030 dialogue fields -- none of which
+scrolls. **The literal reading is a mis-transcription**, and the reason is in the
+geometry rather than the control flow: on a non-scrolling widget the scrollbar
+rectangle is *degenerate*, not absent.
+
+All three `MacText` constructors call `setScrollBar` unconditionally
+(`mactext.cpp:132`, `:162`, `:192`); for a non-scrolling widget it takes the
+`else` arm and calls `_scrollBorder.disableBorder()` (`:337`);
+`MacWindowBorder::disableBorder` builds a **3x3** surface from `noborderData` and
+`setBorder`s it (`macwindowborder.cpp:88`); `addBorder` calls
+`setOffsets(getPadding())` (`:121`); and `nine_patch.cpp:239-270` parses that 3x3
+to padding **`0,0,0,0`**. So `hasOffsets()` is *true* -- it tests `> -1` -- with
+every offset zero, and `isInScrollBar`'s one test,
+`x >= _dims.right - bRight && x < _dims.right` (`mactext.cpp:322`), becomes the
+empty interval. **The reference leaves the `if` bare because its constructor
+already wrote the guard into the data.**
+
+So this port's `has_scrollbar` is a correct reimplementation of an implicit
+invariant, and the three gates previously cited for it -- `createWindowOrWidget`'s
+argument, `processEvent` and `draw` -- are all real and **none of them is the
+reason**: they say a non-scrolling widget does not *scroll* and does not *draw* a
+scrollbar, not that it has no scrollbar *rectangle*.
+
+**Neither `click_eligibility` nor `hotspots` would have caught a flip**: both are
+byte-identical under the literal reading, because eligibility is per-record and
+independent of `is_mouse_in`. `hit_hole`'s two predicate blocks are the only thing
+between a flipped predicate and 10,495 silently holed records, which is why they
+are six rows chosen so that neither an inversion nor an always-false passes.
+
+**Second clause, provably inert here and built anyway**: `scrollBar` is false for
+**button** routes too, whatever the box type -- `createWidget`'s `kCastButton` arm
+builds a `MacButton` whose `MacText` base takes `mactext.h:49`'s
+`scrollBar = false`, and `text.cpp:320`'s D2/D3 workaround routes a *text* member
+on sprite type 8/9/10 through that same arm. 0 button members in eight roots.
+
+**Left open, and it is a number rather than a rule**: `datafiles.cpp:65` gives
+`MacOSNoBorderScrollbar` as `{left 1, right 17, top 1, bottom 1}`, so a *real*
+scrolling widget with `macgui.dat` present has top and bottom offsets of **1**,
+not 17. The port's `SCROLLBAR_BORDER` is 17/17/17, which is the no-bundle
+fallback. Correcting it would move the published 10,495 and change **no click at
+all**, because every affected record is box type `scroll` and there are none.
 
 Unverifiable here: **0 members of box type `scroll` in any of the eight roots**
 (6,312 `adjust`, 93 `fixed`, 82 `limit`) and 0 button members, so no title in reach

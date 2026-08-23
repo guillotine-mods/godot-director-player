@@ -20,10 +20,18 @@ extends SceneTree
 ## pure rectangle over the widget's own dims: the rightmost `bRight` columns, minus
 ## the top `bTop` rows and the bottom `bBottom` rows, split at half height into the
 ## up and the down arrow. Both arrows are Holes; everything else, including the two
-## corners it excludes, is not. With no scroll border loaded all three offsets are
-## `kBorderWidth` = 17 (`graphics/macgui/macwindow.h`), and that is the only value
-## reachable from a container -- the offsets come from a border resource ScummVM
-## loads at runtime.
+## corners it excludes, is not. On a border nothing has written to, all three
+## offsets fall back to `kBorderWidth` = 17 (`graphics/macgui/macwindow.h:48`),
+## and that is the number counted here.
+##
+## **The count below is therefore of the literal reading, and the literal reading
+## is settled as wrong** -- see `Interaction.has_scrollbar`. A widget built with
+## `scrollBar = false` does not have *no* offsets, it has offsets `0,0,0,0`
+## (`MacText::setScrollBar` -> `MacWindowBorder::disableBorder` -> the 3x3
+## nine-patch whose padding parses to zero), so its strip is the empty interval
+## and it cannot produce a Hole at any size. What this survey measures is the size
+## of the hole that reading *would* have opened, which is why the number is worth
+## having and why nothing in the engine is driven from it.
 ##
 ## So a sprite only has a Hole at all when its **drawn** rect is wider than 17 and
 ## taller than 34, and that is what this counts. A field 120x19 -- which is what

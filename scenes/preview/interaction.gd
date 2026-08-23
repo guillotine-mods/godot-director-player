@@ -82,16 +82,30 @@ const HIT_HOLE := 2
 ## The width of the scrollbar strip a text member holes out, in pixels.
 ##
 ## `graphics/macgui/mactext.cpp:MacText::isInScrollBar` measures the strip from
-## the scroll border's own offsets and falls back to `kBorderWidth` --
-## `graphics/macgui/macwindow.h:48`, **17** -- for a widget whose border has none.
-## Those offsets come from a border resource loaded at runtime and are in no
-## container, so 17 is the only value reachable from the data this engine reads,
-## and it is what the reference uses for every text widget that has not had a
-## scrollbar border loaded into it.
+## `_scrollBorder`'s own offsets and falls back to `kBorderWidth` --
+## `graphics/macgui/macwindow.h:48`, **17** -- only when `hasOffsets()` is false,
+## i.e. only on a border nothing has ever written to. All three edges take that
+## same number there (`bTop`, `bRight`, `bBottom` are each initialised to it),
+## which is why this is one constant and not three.
 ##
-## All three edges take the same number in the reference (`bTop`, `bRight`,
-## `bBottom` are each initialised to it), which is why this is one constant and
-## not three.
+## **That fallback is the widget's state before a scroll border loads, and it is
+## the state a scrolling widget is left in when ScummVM's `macgui.dat` is
+## absent.** It is *not* the state of a non-scrolling widget -- see
+## `has_scrollbar`, where the whole verdict of this file's one predicate lives:
+## a widget built with `scrollBar = false` has offsets `0,0,0,0`, not none.
+##
+## Recorded and deliberately not acted on, because it moves a measured number and
+## nothing in reach exercises it: when the bundle **is** present the offsets a
+## real scrolling widget ends up with are not 17/17/17.
+## `graphics/macgui/datafiles.cpp:65` gives `MacOSNoBorderScrollbar` as
+## `{left 1, right 17, top 1, bottom 1}`, so `bRight` is 17 and `bTop`/`bBottom`
+## are **1** -- the strip is the same 17 columns but excludes one row at each end
+## rather than seventeen, and `scrollbar_strip_exists` would become "taller than
+## 2" rather than "taller than 34". Every record that would change is of box type
+## `scroll`, of which there are **0 in all eight roots**, so no click in this
+## corpus moves either way; what does move is the 10,495 `hole_survey` counts as
+## strip-sized, which is a published figure. Left at 17 with this note rather
+## than changed quietly.
 const SCROLLBAR_BORDER := 17
 
 
@@ -114,51 +128,105 @@ static func scrollbar_strip_exists(drawn: Vector2) -> bool:
 
 ## Does this text member's widget have a scrollbar at all?
 ##
-## **This is a named divergence from a literal transcription of the reference, and
-## it is the only one in this file.** `castmember/text.cpp:TextCastMember::isWithin`
-## calls `isInScrollBar` on the widget without first asking whether the widget has
-## a scrollbar, so read line by line it holes out the strip on **every** text
-## member big enough to have one. Measured by `tools/hole_survey.gd` over all
-## eight roots: that is **10,495 of 8,057,628 sprite records** -- 9,045 `adjust`,
-## 1,356 `fixed`, 94 `limit` -- and **0 of box type `scroll`**. Every one of them
-## would grow a 17-pixel column down its right edge that swallows the click *and
-## everything beneath it*: `CAPROOM.dir`'s five memo pages, `rating`'s 4,030
-## dialogue fields, `TENNIS.dir`'s two score boxes.
+## **This was carried as a named divergence and it is not one.** It is the
+## reference's own invariant, supplied by the widget's constructor instead of by
+## the `if` -- which is why the reference gets to leave the `if` bare. Settled
+## 2026-08-23 by following the object rather than the control flow; the chain
+## below is the citation, and it is the reason this is a function with a
+## docstring rather than a condition inlined at the call site.
 ##
-## The reference's own model says those have no scrollbar, and says it in three
-## places that are not this one:
+## ## The literal reading, and what it would cost
 ##
-##   `castmember/text.cpp:createWindowOrWidget` constructs MacText with
-##   `scrollBar = (_textType == kTextTypeScrolling)` -- the last argument;
-##   `graphics/macgui/mactext.cpp:MacText::processEvent` guards its own use of
-##   `isInScrollBar` with `if (... && _scrollBar)`, so a click on the strip of a
-##   non-scrolling widget scrolls nothing;
-##   `MacText::draw` (`:950`) guards the same way, so nothing is drawn there
-##   either, and `setScrollBar` is what loads the border whose offsets
-##   `isInScrollBar` reads at all.
+## `castmember/text.cpp:TextCastMember::isWithin` (`:400`) calls `isInScrollBar`
+## without first asking whether the widget has a scrollbar. Transcribed line by
+## line that holes out the strip on **every** text member big enough to have one:
+## measured by `tools/hole_survey.gd` over all eight roots, **10,495 of 8,057,628
+## sprite records** -- 9,045 `adjust`, 1,356 `fixed`, 94 `limit`, and **0 of box
+## type `scroll`**. Each would grow a 17-pixel column down its right edge that
+## swallows the click *and everything beneath it*: `CAPROOM.dir`'s five memo
+## pages, `rating`'s 4,030 dialogue fields, `TENNIS.dir`'s two score boxes. So the
+## literal reading is not a shrug -- it is the claim that Director eats clicks
+## over the right-hand strip of nearly every caption in the corpus.
 ##
-## So `isWithin` is the one caller that omits the guard, `isInScrollBar` itself is
-## a pure geometry helper with no notion of whether the widget it measures has a
-## scrollbar, and this port applies the guard the widget applies everywhere else.
-## `DIRECTOR_ENGINE.md` §4.2 states the rule the same way -- "a text member
-## returns it when the point is over its **scrollbar arrows**" -- and a field with
-## no scrollbar has no arrows.
+## ## Why it does not: the geometry is degenerate, not absent
 ##
-## The direction is the safe one and it is §4.2's own default: without the guard
-## a click that Director delivers is swallowed, with it a click that Director
-## swallows is delivered. Reversing the decision is deleting this predicate from
-## one `if`, which is why it is a named function rather than a condition inlined
-## at the call site.
+## `isInScrollBar` is pure geometry over `_dims` and `_scrollBorder`'s offsets,
+## and has no notion of `_scrollBar`. Follow `_scrollBorder`:
+##
+##   `graphics/macgui/mactext.cpp:132`, `:162`, `:192` -- **all three** MacText
+##   constructors call `setScrollBar(scrollBar)` unconditionally, so no Director
+##   text widget ever reaches `isInScrollBar` with an untouched border;
+##   `mactext.cpp:MacText::setScrollBar` (`:337`) takes the `else` arm for every
+##   non-scrolling widget and calls `_scrollBorder.disableBorder()`;
+##   `graphics/macgui/macwindowborder.cpp:disableBorder` (`:88`) builds a **3x3**
+##   surface from `noborderData` -- transparent corners, one black pixel mid-edge
+##   -- and `setBorder`s it, which reaches `addBorder` (`:111`);
+##   `addBorder` calls `setOffsets(getPadding())` whenever the nine-patch's
+##   padding is a valid rect (`:121-122`), and
+##   `graphics/nine_patch.cpp:239-270` parses that 3x3's markers to padding
+##   **`left 0, right 0, top 0, bottom 0`** -- the black pixel at index 1 sets
+##   each near edge to `i - 1 = 0` and the key pixel at index 2 sets each far edge
+##   to `w - i - 1 = 0`;
+##   so `macwindowborder.cpp:hasOffsets` (`:125`) is **true** -- it tests
+##   `> -1`, and 0 clears that -- with every offset **0**.
+##
+## `isInScrollBar` therefore takes its offsets branch, not the `kBorderWidth`
+## fallback, and computes `bRight = bTop = bBottom = 0`. Its one test is
+## `if (x >= _dims.right - bRight && x < _dims.right)` (`mactext.cpp:322`), which
+## with `bRight = 0` is `x >= right && x < right`: the empty interval. **A
+## non-scrolling widget can only ever return `kBorderBorder`**, `isWithin` can
+## only ever return `kCollisionYes`, and the guard the reference does not write at
+## `:400` is one its constructor already wrote. This predicate is that invariant
+## restated where this port keeps its geometry, not a decision this port made.
+##
+## The three gates the previous reading cited -- `createWindowOrWidget` passing
+## `scrollBar = (_textType == kTextTypeScrolling)` (`text.cpp:303`),
+## `MacText::processEvent` (`:1548`) and `MacText::draw` (`:950`) both guarding on
+## `_scrollBar` -- are all real and none of them is the answer. They say a
+## non-scrolling widget does not *scroll* and does not *draw* a scrollbar. What
+## settles the hit test is that it has no scrollbar **rectangle**.
+##
+## ## Two members, one rule
+##
+## `scrollBar` is false for more than the three non-scrolling box types, and this
+## is the second clause below:
+##
+##   a **button** member is built as a `MacButton`
+##   (`castmember/text.cpp:createWidget` `kCastButton` arm, `:353`), whose base
+##   `MacText` is constructed without the last two arguments
+##   (`graphics/macgui/macbutton.cpp:36`), so it takes `mactext.h:49`'s defaults
+##   -- `scrollBar = false` -- **whatever its own box-type byte says**;
+##   a **text** member drawn on a button sprite type is turned into that same
+##   `kCastButton` arm by the D2/D3 workaround at `text.cpp:320`,
+##   `isButtonSprite` being sprite types 8, 9 and 10 (`util.cpp:1361`,
+##   `types.h:163-165`).
+##
+## `ButtonCastMember` still inherits `TextCastMember::isWithin` -- see
+## `TEXT_MEMBER_TYPES` -- so a button takes the same three-way test; it just
+## cannot supply the Hole. Both clauses are inert on this corpus twice over (0
+## button members of 51,350, and 0 members of box type `scroll` at all), and they
+## are here because Director has them.
 ##
 ## `the boxType of member` is byte 3 of the field's specific block
 ## (`director_cast.gd`'s type-3 arm, `text_type`), and `kTextTypeScrolling` is 1
-## (`types.h:124`).
-static func has_scrollbar(member: Dictionary) -> bool:
+## (`types.h:124`). `tools/hit_hole.gd` asserts all four box types and the button
+## clause against the live descent, so flipping or widening this predicate fails
+## the gate rather than changing click routing silently.
+static func has_scrollbar(member: Dictionary, sprite: Dictionary) -> bool:
+	if int(member.get("type", 0)) == TYPE_BUTTON:
+		return false
+	if BUTTON_SPRITE_TYPES.has(int(sprite.get("sprite_type", 0))):
+		return false
 	return int(member.get("text_type", 0)) == BOX_SCROLL
 
 ## Director's `kTextTypeScrolling`. `sprite_geometry.gd` names the same four box
 ## types for the sizing rules; this file needs the one that decides a scrollbar.
 const BOX_SCROLL := 1
+
+## `util.cpp:isButtonSprite` -- `kButtonSprite`, `kCheckboxSprite` and
+## `kRadioButtonSprite`, `types.h:163-165`. A sprite of one of these types routes
+## its member through `createWidget`'s button arm even when the member is a field.
+const BUTTON_SPRITE_TYPES := [8, 9, 10]
 
 
 ## Is a stage point inside a text widget's scrollbar, i.e. on one of its arrows?
@@ -234,7 +302,7 @@ static func is_mouse_in(host, sprite: Dictionary, at: Vector2, hit_pixels: bool,
 	if member.is_empty():
 		return HIT_YES
 	if TEXT_MEMBER_TYPES.has(int(member.get("type", 0))):
-		return HIT_HOLE if has_scrollbar(member) and in_scrollbar(rect, at) \
+		return HIT_HOLE if has_scrollbar(member, sprite) and in_scrollbar(rect, at) \
 			else HIT_YES
 	if hit_pixels \
 			and Ink.hits_per_pixel(int(sprite["ink"]), int(member.get("type", 0))) \
@@ -247,11 +315,13 @@ static func is_mouse_in(host, sprite: Dictionary, at: Vector2, hit_pixels: bool,
 ##
 ## `ButtonCastMember` derives from `TextCastMember` in the reference
 ## (`castmember/text.h`) and does not override `isWithin`, so a button member
-## takes the same three-way test a field does -- including the scrollbar, which a
-## button widget does not draw and which `isInScrollBar` does not ask about
-## before answering. **0 of the 51,350 members across the six titles is of type
-## `button`** (§4.3), so the second entry is unexercised here and is in the list
-## because the reference's class hierarchy puts it there.
+## takes the same three-way test a field does -- rect, then the scrollbar arm.
+## It reaches that arm and can never answer a Hole in it: `createWidget` builds a
+## `MacButton`, which passes `scrollBar = false` whatever the member's box-type
+## byte says, so the strip is the degenerate rectangle `has_scrollbar` documents.
+## **0 of the 51,350 members across the six titles is of type `button`** (§4.3),
+## so the second entry is unexercised here and is in the list because the
+## reference's class hierarchy puts it there.
 const TEXT_MEMBER_TYPES := [Ink.TYPE_FIELD, TYPE_BUTTON]
 
 ## Director's `kCastButton`. Named here rather than reached through

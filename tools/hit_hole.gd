@@ -50,6 +50,22 @@ extends SceneTree
 ## Without those a rule that holed the whole right edge, or the whole rect, would
 ## pass the first two checks.
 ##
+## ## And which widgets have a strip at all
+##
+## `TextCastMember::isWithin` calls `isInScrollBar` without asking whether the
+## widget has a scrollbar. Settled 2026-08-23: it does not need to, because
+## `MacText`'s constructor always calls `setScrollBar`, and the `false` arm's
+## `disableBorder()` leaves the border with offsets `0,0,0,0` rather than with
+## none -- so the strip is the empty interval and a non-scrolling widget cannot
+## answer an arrow. The full chain and its citations are in
+## `scenes/preview/interaction.gd:has_scrollbar`; the port states that invariant
+## as a predicate, and **`_predicate_table` and `_box_type_sweep` below are what
+## fail if anyone flips or widens it.** The first is the rule on synthesised
+## members over all four box types plus the two button routes, the second is the
+## same question put to the live descent on the real sprite. Between them,
+## restoring the literal reading turns this entry red instead of quietly holing
+## 10,495 records.
+##
 ## ## The one thing that is synthesised, and what it is
 ##
 ## **The movie, the sprite, the geometry, the cast and the descent are all real.**
@@ -80,6 +96,14 @@ const Paths := preload("res://director/director_paths.gd")
 ## the same four and this file needs only the one it writes, so it is named here
 ## rather than reaching across for a constant whose module is about sizing.
 const BOX_SCROLL := 1
+
+## For the messages the box-type sweep prints. Same four names `hole_survey.gd`
+## reports under, so a red here and a survey row read as the same thing.
+const BOX_NAMES := {0: "adjust", 1: "scroll", 2: "fixed", 3: "limit"}
+
+## Director's `kCastButton`, for the predicate row that asserts a button member
+## has no scrollbar whatever its box-type byte says.
+const TYPE_BUTTON := 7
 
 const TEXT_TYPES := [3, 7]
 
@@ -171,6 +195,9 @@ func _init() -> void:
 		answered == channel,
 		"channel %d, wanted the field's own %d" % [answered, channel])
 	h.complete("the authored member is not a Hole")
+
+	_predicate_table(h)
+	_box_type_sweep(h, preview, table, lib, id, channel, at, pixels)
 
 	# What a Hole read as an ordinary miss would answer instead: the highest
 	# sprite *below* the field whose rect covers the same point. This is the whole
@@ -265,6 +292,95 @@ func _init() -> void:
 
 	quit(h.finish("the hit test's third answer, on a real sprite"))
 
+
+
+## The predicate itself, on synthesised members, over every value it distinguishes.
+##
+## `Interaction.has_scrollbar` is the port's restatement of an invariant the
+## reference supplies from `MacText`'s constructor rather than from `isWithin`'s
+## `if` -- a widget built with `scrollBar = false` gets `disableBorder()`, whose
+## 3x3 nine-patch parses to offsets `0,0,0,0`, so `isInScrollBar`'s strip test is
+## the empty interval and cannot answer an arrow. The whole verdict rests on that
+## chain, and the chain is settled in `interaction.gd:has_scrollbar`'s docstring
+## with its citations; **this table is what makes flipping it a red gate.**
+##
+## Six rows, and each is false for a different way of getting it wrong:
+##
+##   box 0 / 2 / 3 -> false    inverting or dropping the predicate holes 10,495
+##                             records; three rows so "== scroll" cannot be
+##                             mistyped as "!= adjust"
+##   box 1 -> true             a predicate that answered false for everything
+##                             would pass the three above and delete the feature
+##   button member -> false    `createWidget`'s `kCastButton` arm builds a
+##                             `MacButton`, whose `MacText` base takes
+##                             `scrollBar = false` by default whatever the box
+##                             type byte says (`macbutton.cpp:36`, `mactext.h:49`)
+##   button sprite -> false    `text.cpp:320`'s D2/D3 workaround routes a *text*
+##                             member on sprite type 8/9/10 through that same arm
+##
+## Synthesised on purpose: these are statements about Director's rule, not about
+## this corpus, which has 0 members of box type `scroll` and 0 of type `button`
+## and so cannot express any of the four rows that matter. The two behavioural
+## sweeps around this one are the ones driven from real sprites.
+func _predicate_table(h) -> void:
+	var plain := {"sprite_type": 0}
+	h.begin("the scrollbar predicate is kTextTypeScrolling and nothing else")
+	for box in [0, 2, 3]:
+		h.check("boxType %d has no scrollbar" % box,
+			not Interaction.has_scrollbar({"type": 3, "text_type": box}, plain),
+			"%s" % BOX_NAMES.get(box, box))
+	h.check("boxType 1 has a scrollbar, so the feature still exists",
+		Interaction.has_scrollbar({"type": 3, "text_type": BOX_SCROLL}, plain),
+		"scroll")
+	h.check("a button MEMBER has none even when its box type says scroll",
+		not Interaction.has_scrollbar(
+			{"type": TYPE_BUTTON, "text_type": BOX_SCROLL}, plain),
+		"kCastButton -> MacButton -> scrollBar = false")
+	var button_sprites := true
+	for sprite_type in Interaction.BUTTON_SPRITE_TYPES:
+		if Interaction.has_scrollbar({"type": 3, "text_type": BOX_SCROLL},
+				{"sprite_type": sprite_type}):
+			button_sprites = false
+	h.check("a text member on a button SPRITE type has none either",
+		button_sprites, "sprite types %s" % str(Interaction.BUTTON_SPRITE_TYPES))
+	h.complete("the scrollbar predicate is kTextTypeScrolling and nothing else")
+
+
+## The same question asked of the live descent, one authored box type at a time.
+##
+## The table above proves the predicate; this proves the predicate is the thing
+## the descent consults. Each of the three non-scrolling box types is written to
+## the real member, the sprite's rect is re-read (`drawn_size` reads the box type,
+## so the rect moves), and the probe point is asked of `sprite_at`.
+##
+## A box type whose rect no longer contains the probe point **says so and asserts
+## nothing** rather than being scored either way: `adjust` shrinks the box to the
+## laid-out text and can pull the strip out from under the point, and a check that
+## read that as "no Hole" would pass for the wrong reason. Same shape as the
+## `beneath`-less branch further up.
+func _box_type_sweep(h, preview: Node, table, lib: int, id: int, channel: int,
+		at: Vector2, pixels: bool) -> void:
+	var cast = table.cast_for(lib)
+	var member: Dictionary = cast.member(id)
+	var authored := int(member.get("text_type", 0))
+	h.begin("every non-scrolling box type answers the field, on the live descent")
+	for box in [0, 2, 3]:
+		member["text_type"] = box
+		var sprites: Array = preview.call("frame_sprites")
+		var rect: Rect2 = _rect_of(preview, channel)
+		if not rect.has_point(at):
+			h.check("boxType %d (%s) resizes the box off the probe point, so it"
+				% [box, BOX_NAMES.get(box, box)]
+				+ " is not comparable here", true,
+				"rect (%d,%d) %dx%d" % [int(rect.position.x),
+					int(rect.position.y), int(rect.size.x), int(rect.size.y)])
+			continue
+		var got := Interaction.sprite_at(preview, at, sprites, pixels, table)
+		h.check("boxType %d (%s) still answers the field's own channel"
+			% [box, BOX_NAMES.get(box, box)], got == channel,
+			"channel %d, wanted %d" % [got, channel])
+	member["text_type"] = authored
+	h.complete("every non-scrolling box type answers the field, on the live descent")
 
 
 ## Is any channel above `below` covering this point?
