@@ -691,6 +691,169 @@ static func member_of_channel(host, channel: int) -> Array:
 	return [maxi(lib, 1), slot]
 
 
+# ==================================================== the wait-for-video probe
+#
+# §9.1's fifth tempo instruction is "hold this frame until the digital video in
+# sprite channel N finishes", and `director/director_frame_clock.gd` has had the
+# whole of the clock half of it since the tempo cell was decoded: both
+# numberings, `_waiting_video`, `_video_holds()` and the release. What it has
+# never had is anything to ask. `FrameClock.video_probe` was declared at :234 and
+# polled at :689 with **no caller anywhere in the repository**, so every
+# wait-for-video cell reported *finished* on its first poll.
+#
+# That was the correct degrade for a port with no decoder -- it is the same
+# answer Director gives for a channel holding no video, and it is the only answer
+# that cannot strand a movie on a frame nothing will release. It stopped being
+# correct on 2026-08-22, when the third decoder landed: this port now plays
+# MS-RLE AVI, an Ogg Theora sidecar and MPEG-1 (video and Layer I/II audio) from
+# the original bytes, so "no video is ever playing" is no longer a statement
+# about the port's capabilities. It is just wrong.
+#
+# The reference's condition is `Score::isWaitingForNextFrame`'s: keep waiting
+# while the channel `isActiveVideo()` **and** its `_movieRate` is non-zero. This
+# section is that condition, negated once -- the probe answers "still running"
+# and the clock releases when it answers no -- and split into the five facts this
+# file can check rather than assume.
+
+
+## Give the frame clock something to ask about channel N. Idempotent.
+##
+## Called once per tick from `preview/frame_loop.gd:tick` rather than at boot,
+## because this module has no boot: `preview/boot.gd` calls `Video.release(host)`
+## on a movie change and nothing else, and that file has another owner. A guard
+## that is one `Callable.is_valid()` per tick, against a wiring bug that costs a
+## title, is the right trade -- and the clock outlives every movie in the session
+## (`director_preview.gd:135` constructs it once and never reassigns it), so in
+## practice this binds on the first tick of the process and never again.
+##
+## A lambda over `host` rather than a `Callable` on a method, because everything
+## in this file is `static func f(host, ...)` and the probe has to arrive at the
+## clock as a one-argument `func(channel) -> bool`. Capturing the preview node is
+## safe: a `Node` is not reference-counted, so this cannot make the cycle
+## `exit_leaks` gates against, and the clock's reference dies with the node that
+## owns it.
+static func install_probe(host) -> void:
+	if host == null or host._clock == null:
+		return
+	if host._clock.video_probe.is_valid():
+		return
+	host._clock.video_probe = func(channel: int) -> bool:
+		return channel_playing(host, channel)
+
+
+## Is the digital video in sprite channel N still running? The whole of what
+## `FrameClock.video_probe` is.
+##
+## **Every arm that cannot prove a video is playing answers `false`, and `false`
+## means "finished" -- it releases the playhead.** That polarity is the safety
+## property of this function and it is why it is written as a chain of refusals
+## rather than as one condition: a probe that answers `true` because it could not
+## work out the answer is a movie stopped for ever on a frame, and there is no
+## symmetric failure -- answering `false` wrongly costs the wait, which is what
+## every wait-for-video frame in this tree already gets today.
+##
+## The five refusals, in the order they are cheapest:
+##
+##   1. **No playhead for the channel.** `media_channels` gets an entry the first
+##      time anything reads or writes one of the ~20 sprite properties a
+##      time-based member has (`media.gd:channel_state`), so a channel nothing
+##      has ever driven has none. This is the common case and it is the one
+##      Director answers the same way: a tempo cell naming a channel that holds
+##      no video at all does not hold the frame.
+##   2. **`the movieRate` is 0.** The reference tests `_movieRate != 0.0` beside
+##      `isActiveVideo()`, so a *paused* video does not hold the playhead --
+##      which also means a video sprite nobody has started does not, since this
+##      port seeds the rate at 0 and Lingo has to write it.
+##   3. **The channel is not showing a video member.** `isActiveVideo()`'s type
+##      test. A stale playhead left behind by a `puppetSprite` member swap must
+##      not make a bitmap answer for a video.
+##   4. **No open reader, or one that failed to open.** `docs/DIGITAL_VIDEO.md`
+##      §3 states the rule for `the duration` and it is the same rule here: a
+##      member whose media will not open answers *no media*. `logo.dir` #27
+##      `prelogo` names a `prelogo.avi` that was never shipped, and a playhead
+##      held for it would be held until the process ended.
+##   5. **The playhead has reached the end.** `advance` clamps `the movieTime` to
+##      `MIN(stopTime, duration)` and stops there, so this is the same comparison
+##      `getPlaybackEvent` makes one section below -- deliberately, because a
+##      movie polling the Xtra property and a movie using the tempo channel must
+##      not get two different answers about the same clip.
+##
+## ## It reads state and it decodes nothing
+##
+## This is polled from inside `FrameClock.playhead_held()`, which
+## `frame_loop.gd:tick` calls once per engine tick, so it must not open a file,
+## seek, start playback or advance anything. It does not: every line is a
+## dictionary read or an integer comparison, and the reader is looked up through
+## `_cached_reader` -- which peeks at `video_readers` -- rather than through
+## `reader_for`, which *opens* on a miss and would put an MPEG-1 program-stream
+## demux inside the clock's tick.
+##
+## Losing nothing by that is not luck, it is the tick order.
+## `frame_loop.gd:tick` runs `Video.advance` **before** it asks the clock
+## anything, and `advance` calls `reader_for` for every channel in
+## `media_channels`; so on the tick this is polled the cache was refreshed a few
+## lines earlier in the same tick, by the code whose job that is. A channel the
+## cache has nothing for is a channel `advance` did not drive, which is refusal 1
+## or 2 arriving one step later.
+##
+## ## A looping video never finishes, and that is the reference's answer
+##
+## `the loop of member` makes `advance` rewind to the in point instead of
+## clamping, so `time < last` stays true and this stays `true` for as long as the
+## rate is non-zero. A wait-for-video cell on a looping clip therefore holds the
+## playhead until a script writes `the movieRate` to 0 or a queued `go to`
+## cancels the wait (`FrameClock.release`). That is what `isActiveVideo() &&
+## _movieRate != 0` does in the reference too -- it is a property of the movie's
+## own authoring, not a hang this port invented -- and the escape hatches are the
+## same ones.
+static func channel_playing(host, channel: int) -> bool:
+	if host == null or host._host == null or host._table == null or channel <= 0:
+		return false
+	var state: Dictionary = host._host.media_channels.get(channel, {})
+	if state.is_empty():
+		return false
+	if is_zero_approx(float(state.get("rate", 0.0))):
+		return false
+	var where := member_of_channel(host, channel)
+	if where.size() != 2:
+		return false
+	var member: Dictionary = host._table.get_member(int(where[0]), int(where[1]))
+	if not VideoXtra.is_video(member):
+		return false
+	var reader = _cached_reader(host, where)
+	if reader == null:
+		return false
+	var total := to_units(reader.duration_ms)
+	var stop := int(state.get("stop", 0))
+	var last: int = stop if stop > 0 and stop < total else total
+	return int(state.get("time", 0)) < last
+
+
+## The reader already open for a member, or null -- `reader_for` with the opening
+## taken out.
+##
+## Two callers' worth of difference in one word: `reader_for` answers "the reader
+## for this member, opening it if necessary", and this answers "the reader for
+## this member, if one is already open". The probe needs the second because it
+## runs inside the clock's tick, and it needs the `wanted` comparison for the
+## same reason `reader_for` has one -- `the fileName of member` is writable and
+## Magic Hat's album repoints one member at twenty clips, so an entry keyed by
+## the member alone would vouch for the previous file.
+##
+## A cached **failure** is an entry whose `reader` is null, and it answers null
+## here exactly as an absent entry does. That is refusal 4 above and it is the
+## rule `docs/DIGITAL_VIDEO.md` §3 states for `the duration`: no media, no claim.
+static func _cached_reader(host, where: Array):
+	var store: Dictionary = host._host.video_readers
+	var entry: Dictionary = store.get("%d:%d" % [int(where[0]), int(where[1])], {})
+	if entry.is_empty():
+		return null
+	var member: Dictionary = host._table.get_member(int(where[0]), int(where[1]))
+	if entry.get("wanted", null) != _wanted_file(host, where, member):
+		return null
+	return entry.get("reader", null)
+
+
 # ================================================================== the picture
 
 

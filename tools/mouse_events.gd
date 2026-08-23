@@ -53,9 +53,9 @@ const Snapshot := preload("res://scenes/preview/snapshot.gd")
 ## by one so that adding a name to the engine without adding it here is visible
 ## as a shorter list, not as a silently absent check.
 const MOUSE_PROPS := [
-	"mouseh", "mousev", "clickon", "clickloc", "mousedown", "mouseup",
+	"mouseh", "mousev", "mouseloc", "clickon", "clickloc", "mousedown", "mouseup",
 	"rightmousedown", "rightmouseup", "stilldown", "doubleclick",
-	"lastclick", "lastroll", "mousecast", "mousemember",
+	"lastclick", "lastroll", "lastevent", "lastkey", "mousecast", "mousemember",
 	"shiftdown", "optiondown", "commanddown", "controldown",
 	"mousedownscript", "mouseupscript",
 ]
@@ -910,7 +910,28 @@ func _init() -> void:
 	h.check("a press after the interval is not",
 		int(host.call("get_system_prop", "doubleclick")) == 0)
 	preview.call("route_release", inside)
+	# The pair the answer is made of, asserted directly, because the two checks
+	# above pass against a latched boolean as happily as against the pair and so
+	# say nothing about which one is being read. `last_click_ms`'s setter is what
+	# fills `last_click_ms2` (`preview_lingo_host.gd`), so a press path that
+	# stopped going through the setter would show up here and nowhere else.
+	var first := Time.get_ticks_msec()
+	preview.call("route_press", inside)
+	preview.call("route_release", inside)
+	var second := Time.get_ticks_msec()
+	preview.call("route_press", inside)
+	preview.call("route_release", inside)
+	h.check("two presses leave the *pair* of press times, not just the last one",
+		int(host.get("last_click_ms2")) >= first
+		and int(host.get("last_click_ms2")) <= second
+		and int(host.get("last_click_ms")) >= second,
+		"pair (%d, %d), presses at %d and >=%d" % [
+			int(host.get("last_click_ms2")), int(host.get("last_click_ms")),
+			first, second])
 	h.complete("§6: the click clock — clickLoc, lastClick, doubleClick")
+
+	_check_double_click(host, h)
+	_check_last_event(host, h)
 
 	# The drop check goes **last**, after the real-pointer section below rather
 	# than before it, and that ordering is load-bearing: staging a drop is
@@ -990,8 +1011,366 @@ func _init() -> void:
 		await _drop_over_a_higher_channel(preview, h, host, channel, true)
 		h.complete("a real drop over a higher channel leaves `the clickOn` alone")
 
+	await _check_live_button(preview, host, h)
 	_check_authored_recipient(preview, h)
 	quit(h.finish("Director's mouse event vocabulary"))
+
+
+## **§4.5 row 1: `the doubleClick` is the last two press times compared on read,
+## at 25 ticks.** `lingo-the.cpp:619-621`.
+##
+## The two checks in the click-clock section above pass against a latched boolean
+## exactly as happily as against the pair, because both stage a *fresh* press and
+## then read. These stage the states where the two readings disagree, which is
+## the only way a check about this row can have teeth:
+##
+##   450 ms apart   27 ticks. Past the reference's 25, inside the 500 ms latch
+##                  this replaced -- the whole band the port answered backwards.
+##   400 ms apart,  24 ticks, asked 300 ms after the *second* press. The
+##   asked late   answer stands until the next press in both engines, and this
+##                  is the case the entry describes.
+##   no press yet   0. A bare subtraction of two zeroed stamps is `0 <= 25` and
+##                  reports a double-click into a session nobody has touched.
+##   one press      0. The reference gets this from seeding `_lastClickTime` at
+##                  load time; this port says it with -1.
+##
+## The timestamps are written straight into the host rather than produced by
+## sleeping, which is the convention the section above already uses and the
+## reason it is legitimate here: `last_click_ms`'s setter is the *only* way
+## `last_click_ms2` is ever written, so a harness that sets the field exercises
+## the same shift a press does. `double_click` -- the superseded latch -- is set
+## to the *opposite* of the expected answer before each one, so a port still
+## reading it fails rather than agreeing by luck.
+func _check_double_click(host: Object, h) -> void:
+	var case := "§4.5: `the doubleClick` is the last two press times, at 25 ticks"
+	h.begin(case)
+
+	var now := Time.get_ticks_msec()
+	host.set("double_click", true)
+	host.set("last_click_ms", now - 450)
+	host.set("last_click_ms", now)
+	h.check("450 ms apart is 27 ticks, so it is not a double click",
+		int(host.call("get_system_prop", "doubleclick")) == 0,
+		"doubleClick %s (latch says %s)" % [
+			str(host.call("get_system_prop", "doubleclick")),
+			str(host.get("double_click"))])
+
+	now = Time.get_ticks_msec()
+	host.set("double_click", false)
+	host.set("last_click_ms", now - 700)
+	host.set("last_click_ms", now - 300)
+	h.check("400 ms apart is 24 ticks, and still answers 1 asked 300 ms later",
+		int(host.call("get_system_prop", "doubleclick")) == 1,
+		"doubleClick %s (latch says %s)" % [
+			str(host.call("get_system_prop", "doubleclick")),
+			str(host.get("double_click"))])
+
+	host.set("double_click", true)
+	host.set("last_click_ms", -1)
+	host.set("last_click_ms2", -1)
+	h.check("a session with no press in it is not in a double click",
+		int(host.call("get_system_prop", "doubleclick")) == 0,
+		"doubleClick %s" % str(host.call("get_system_prop", "doubleclick")))
+
+	host.set("last_click_ms", Time.get_ticks_msec())
+	host.set("last_click_ms2", -1)
+	h.check("and neither is the first press of one",
+		int(host.call("get_system_prop", "doubleclick")) == 0,
+		"doubleClick %s" % str(host.call("get_system_prop", "doubleclick")))
+
+	host.set("double_click", false)
+	h.complete(case)
+
+
+## **§4.5 row 4: `the lastEvent` counts the keyboard**, and row 5: `the lastKey`
+## is bound and stamped.
+##
+## `events.cpp` writes `_lastEventTime` in three arms and only three -- the
+## pointer move at `:185`, the button-down at `:266`, the key-down at `:369` --
+## so the property is the smallest of three elapsed times and this port was
+## taking the smallest of two. A title asking "has the player done anything" to
+## drive an attract loop or a demo timer started it while somebody was typing.
+##
+## Row 5 is asserted **beside** it rather than on its own because the two share a
+## timestamp: `the lastKey` reads `last_key_ms`, and the row above is that same
+## number reaching `the lastEvent`. §4.5's table calls `the lastKey` unbound and
+## reading VOID; it has been bound since `d9bc27e3`, the stamp rides on
+## `key_code`'s setter, and this is where that stops being something a reader has
+## to take on trust. `tools/key_polling.gd` pins the three *rules* about which
+## keys stamp it.
+##
+## All three stamps are written directly. A harness that produced a ten-second
+## gap by waiting ten seconds is a harness nobody runs, and the fields are the
+## same ones a press and a roll write.
+func _check_last_event(host: Object, h) -> void:
+	var case := "§4.5: `the lastEvent` is the mouse *and* the keyboard"
+	h.begin(case)
+
+	# Ten seconds is 600 ticks: far enough outside the "just happened" window
+	# below that no clock skew between the two reads can close the gap.
+	#
+	# **Clamped at 0, and the clamp is not cosmetic.** `Time.get_ticks_msec()` is
+	# milliseconds since *this process* started, and a harness reaches here about
+	# six seconds in -- so `now - 10000` is negative, and a negative
+	# `last_click_ms` is this port's "no click has ever happened" sentinel. The
+	# first version of these checks staged that by accident: `the lastClick` read
+	# 2147483647 rather than 600, three of the four assertions passed through the
+	# sentinel's arm instead of through the arithmetic they are about, and the
+	# check that matters -- the keyboard reaching `the lastEvent` -- was the one
+	# still doing real work only because `the lastRoll` has no such guard. 0 is a
+	# real timestamp (the process starting), so the clamp stages a stale clock
+	# rather than an absent one.
+	const STALE_MS := 10000
+	const RECENT_TICKS := 30
+	var now := Time.get_ticks_msec()
+	var stale := maxi(now - STALE_MS, 0)
+	if not h.check("the session is old enough to stage a stale clock",
+			int((now - stale) * 60.0 / 1000.0) > RECENT_TICKS,
+			"%d ms of uptime is under %d ticks" % [now, RECENT_TICKS]):
+		h.complete(case)
+		return
+	host.set("last_click_ms", stale)
+	host.set("last_click_ms2", stale)
+	host.set("last_roll_ms", stale)
+	# The setter on `key_code` is the stamp -- see `preview_lingo_host.gd`. Going
+	# through it rather than writing `last_key_ms` is deliberate: it is the wiring
+	# a real keypress uses, and a port that moved the stamp elsewhere would pass a
+	# direct write and fail here.
+	host.set("key_code", 4)
+
+	var last_key: Variant = host.call("get_system_prop", "lastkey")
+	h.check("`the lastKey` answers ticks, not VOID",
+		last_key != null and int(last_key) < RECENT_TICKS,
+		"lastKey %s" % str(last_key))
+	# The staleness is asserted in the same check as the answer. Without it a
+	# `the lastClick` that had quietly become 0 -- or the sentinel, which is how
+	# the first version of this passed -- would make "the key is the most recent
+	# event" true of a clock where nothing was stale at all.
+	h.check("a keypress is the most recent event, with the mouse stale",
+		int(host.call("get_system_prop", "lastevent")) < RECENT_TICKS
+		and int(host.call("get_system_prop", "lastclick")) > RECENT_TICKS
+		and int(host.call("get_system_prop", "lastroll")) > RECENT_TICKS,
+		"lastEvent %s, lastClick %s, lastRoll %s, lastKey %s" % [
+			str(host.call("get_system_prop", "lastevent")),
+			str(host.call("get_system_prop", "lastclick")),
+			str(host.call("get_system_prop", "lastroll")), str(last_key)])
+	# Not merely small -- the key's own age. A `the lastEvent` bound to a third
+	# clock of its own would pass the check above and drift from every property
+	# it is supposed to be the minimum of.
+	h.check("...and it reads as the key's own age",
+		absi(int(host.call("get_system_prop", "lastevent")) - int(last_key)) <= 1,
+		"lastEvent %s, lastKey %s" % [
+			str(host.call("get_system_prop", "lastevent")), str(last_key)])
+
+	# The two arms that were already there, so that adding the third cannot have
+	# been done by replacing one of them.
+	now = Time.get_ticks_msec()
+	host.set("last_key_ms", stale)
+	host.set("last_roll_ms", now)
+	h.check("a pointer move is still an event",
+		int(host.call("get_system_prop", "lastevent")) < RECENT_TICKS,
+		"lastEvent %s" % str(host.call("get_system_prop", "lastevent")))
+	now = Time.get_ticks_msec()
+	host.set("last_roll_ms", stale)
+	host.set("last_click_ms", now)
+	h.check("and so is a press",
+		int(host.call("get_system_prop", "lastevent")) < RECENT_TICKS,
+		"lastEvent %s" % str(host.call("get_system_prop", "lastevent")))
+	h.complete(case)
+
+
+## **§4.5 rows 2 and 3: what the two "is the button down" properties read.**
+##
+## They are one function because the assertion that separates them is the same
+## staged state read twice, and because a port that binds them to one expression
+## -- which this one did -- passes every check that reads only one of them.
+##
+##   `the mouseDown`   `getButtonState() & (LEFT | RIGHT)` (`lingo-the.cpp:865-871`).
+##                     D5 splits the *messages* so a right press raises only
+##                     `rightMouseDown`; it does not split the property.
+##   `the stillDown`   `_vm->_wm->_mouseDown` (`:1135-1141`) -- the window
+##                     manager's tracked down-state, left button, and **not** the
+##                     score-step latch, because this is the property a
+##                     `repeat while` inside a handler spins on.
+##
+## Three states, each of which one binding gets wrong:
+##
+##   latch set, no live button   `the mouseDown` 1 (the click-to-skip idiom this
+##                               port added the latch for), `the stillDown` 0.
+##   right button live           `the mouseDown` 1, `the mouseUp` 0. This is the
+##                               row: the port read the left button alone.
+##   nothing down                both 0, which is the state a green run would
+##                               otherwise report by accident.
+##
+## **And the loop, which is the reason row 3 is the one to think hardest about.**
+## `repeat while the stillDown` does not yield -- `lingo_interpreter.gd`'s
+## `_repeat_while` runs to completion inside the frame that entered it -- so what
+## moves the answer is `_breathe()`, once per iteration, reaching
+## `director_preview.gd:lingo_breathe` and `DisplayServer.process_events()`. That
+## is what writes `Input.is_mouse_button_pressed`, which is what the property now
+## reads, so the two are the same read and the loop ends when the button does.
+## Bound to the latch instead, the loop runs 31 spurious iterations before the
+## first breathe clears `_mouse_down_seen` out from under it -- measured, not
+## reasoned; see `_check_still_down_loop`, which is the assertion at the end here
+## and which says why the number is 31 rather than the 400,000 it looks like.
+func _check_live_button(preview: Node, host: Object, h) -> void:
+	var case := "§4.5: `the mouseDown` takes either button, `the stillDown` takes no latch"
+	h.begin(case)
+
+	preview.set("_mouse_down_seen", false)
+	await process_frame
+	var live_left := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var live_right := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if not h.check("no button is physically down to start with",
+			not live_left and not live_right,
+			"left %s, right %s -- let go of the mouse" % [str(live_left), str(live_right)]):
+		h.complete(case)
+		return
+	h.check("nothing down: mouseDown 0, mouseUp 1, stillDown 0",
+		int(host.call("get_system_prop", "mousedown")) == 0
+		and int(host.call("get_system_prop", "mouseup")) == 1
+		and int(host.call("get_system_prop", "stilldown")) == 0,
+		_button_state(host))
+
+	# The score-step latch on its own. `preview/frame_loop.gd:359` sets it from
+	# the live left button once per engine tick and the score clears it a step
+	# later, so this is the state a click shorter than one score step leaves
+	# behind -- the whole reason the latch exists.
+	preview.set("_mouse_down_seen", true)
+	h.check("the score-step latch is `the mouseDown`, and is not `the stillDown`",
+		int(host.call("get_system_prop", "mousedown")) == 1
+		and int(host.call("get_system_prop", "mouseup")) == 0
+		and int(host.call("get_system_prop", "stilldown")) == 0,
+		_button_state(host))
+	preview.set("_mouse_down_seen", false)
+
+	# The right button, live, through the Input singleton -- which is where the
+	# properties read it from, and which works headless (measured: the mask goes
+	# to 2 and `is_mouse_button_pressed(RIGHT)` to true with no window at all).
+	# The event is routed as well as recorded, exactly as a real right click is,
+	# so the release below is not optional housekeeping.
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_RIGHT
+	down.pressed = true
+	down.button_mask = MOUSE_BUTTON_MASK_RIGHT
+	_send(preview, Vector2(1.0, 1.0), down)
+	await process_frame
+	if h.check("the right button reads as physically down",
+			Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+			and int(host.call("get_system_prop", "rightmousedown")) == 1,
+			_button_state(host)):
+		h.check("the right button alone answers `the mouseDown`",
+			int(host.call("get_system_prop", "mousedown")) == 1,
+			_button_state(host))
+		h.check("...and `the mouseUp` with it, as the exact negation",
+			int(host.call("get_system_prop", "mouseup")) == 0,
+			_button_state(host))
+		# The reference's mask for `the stillDown` names no button at all; it
+		# reads a Mac window manager's tracked flag, and the `LEFT | RIGHT` mask
+		# is on `the mouseDown` and on nothing else.
+		h.check("...and `the stillDown` does not, which is the left-only read",
+			int(host.call("get_system_prop", "stilldown")) == 0,
+			_button_state(host))
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_RIGHT
+	up.pressed = false
+	_send(preview, Vector2(1.0, 1.0), up)
+	await process_frame
+	h.check("the release puts all three back",
+		int(host.call("get_system_prop", "mousedown")) == 0
+		and int(host.call("get_system_prop", "mouseup")) == 1
+		and int(host.call("get_system_prop", "rightmousedown")) == 0,
+		_button_state(host))
+
+	_check_still_down_loop(preview, h)
+	h.complete(case)
+
+
+## `mouseDown/mouseUp/stillDown/rightMouseDown` and the two things underneath
+## them, as one line. Every failure message in `_check_live_button` is this,
+## because "stillDown 1" alone never says which of the three inputs produced it.
+func _button_state(host: Object) -> String:
+	return "mouseDown %s  mouseUp %s  stillDown %s  rightMouseDown %s  (latch %s, live L %s R %s)" % [
+		str(host.call("get_system_prop", "mousedown")),
+		str(host.call("get_system_prop", "mouseup")),
+		str(host.call("get_system_prop", "stilldown")),
+		str(host.call("get_system_prop", "rightmousedown")),
+		str(host.get("preview").get("_mouse_down_seen")) if host.get("preview") != null else "?",
+		str(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)),
+		str(Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT))]
+
+
+## The player-visible half of row 3: **`repeat while the stillDown` terminates.**
+##
+## Staged in the state that separates the two readings -- the score-step latch
+## set, no live button -- and run as real compiled Lingo through the movie's own
+## interpreter, because the property being right in isolation is not the claim.
+## The claim is that Director's drag idiom
+##
+##     on mouseDown
+##       repeat while the stillDown
+##         set the loc of sprite ... to the mouseLoc
+##       end repeat
+##     end
+##
+## is a loop over a live button and not a loop over a stale one.
+##
+## **It was worth measuring what the latched binding actually did, because the
+## obvious answer is wrong.** No iteration of the loop can clear
+## `_mouse_down_seen`, so the expectation is `MAX_STEPS` (400,000), an abort, and
+## sixteen seconds with the message pump dead -- the failure
+## `lingo_interpreter.gd:BREATHE_MS` was written about. Run with the arm
+## reverted, it is **31 iterations, 0 faults, 1 ms**: `lingo_breathe` clears the
+## latch on the same line it pumps the queue, so the loop leaves on the first
+## test after the first breathe. The cost of the old binding was 31 spurious
+## steps of a drag loop for a button that was never down, plus a silent
+## dependence on that one courtesy line in a file this change does not own.
+##
+## So **only the counter discriminates**, and it is the check that matters: 0
+## against 31. The two below it pass on the reverted arm as well and are said to
+## be what they are -- a guard against the hang this turned out not to be, kept
+## because a future edit to `lingo_breathe` or to `BREATHE_EVERY` is exactly what
+## would turn 31 into 400,000, and because a harness that only counts iterations
+## cannot tell "left on its own" from "was cut off".
+func _check_still_down_loop(preview: Node, h) -> void:
+	var interp = preview.get("_interpreter")
+	if interp == null:
+		print("      no interpreter on this movie; the stillDown loop is not staged")
+		return
+	preview.set("_mouse_down_seen", true)
+	var errors: Array = []
+	var code = interp.compile_statements(
+		"global gStillSpins\n"
+		+ "gStillSpins = 0\n"
+		+ "repeat while the stillDown\n"
+		+ "  gStillSpins = gStillSpins + 1\n"
+		+ "end repeat\n", "mouse_events", errors)
+	if not h.check("the `repeat while the stillDown` probe compiles",
+			errors.is_empty(), str(errors)):
+		preview.set("_mouse_down_seen", false)
+		return
+	var faults_before: int = int(interp.get("error_total"))
+	var began := Time.get_ticks_msec()
+	interp.reset_steps()
+	interp.run_compiled(code)
+	var took := Time.get_ticks_msec() - began
+	preview.set("_mouse_down_seen", false)
+	var spins: Variant = null
+	for store in [interp.globals, (preview.get("_host") as Object).globals]:
+		for key in (store as Dictionary).keys():
+			if str(key).to_lower() == "gstillspins":
+				spins = (store as Dictionary)[key]
+	h.check("`repeat while the stillDown` exits on its first test with the latch set",
+		spins != null and int(spins) == 0,
+		"spun %s times (the latched binding spins 31)" % str(spins))
+	# The two below do not discriminate -- see this function's note. They are the
+	# hang guard, and they are here because the counter alone cannot tell a loop
+	# that left from a loop that was cut off at `MAX_STEPS`.
+	h.check("...raising no fault, so it left rather than being cut off (hang guard)",
+		int(interp.get("error_total")) == faults_before,
+		"faults %d, were %d" % [int(interp.get("error_total")), faults_before])
+	h.check("...and inside a second, which a 400,000-step walk is not (hang guard)",
+		took < 1000, "%d ms" % took)
 
 
 ## **The player-visible invariant: a click on a sprite whose behaviour declares

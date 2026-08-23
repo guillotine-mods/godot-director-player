@@ -97,15 +97,64 @@ var click_sprite := 0
 var current_sprite_num := 0
 ## `the clickLoc` — the stage point of the last mouse-down.
 var click_loc := Vector2.ZERO
+## Director's double-click interval, in ticks. `lingo-the.cpp:619-621` compares
+## the last two press times against a literal 25 with the comment "25 ticks seems
+## to be the threshold for a double click"; 25 ticks is 416 ms.
+##
+## Named here rather than taken from `preview/interaction.gd:DOUBLE_CLICK_MS`,
+## which is 500 and is that file's own press latch. The two are not the same
+## number and must not be made to look like one -- see the `"doubleclick"` arm.
+const DOUBLE_CLICK_TICKS := 25
+
+## The press *before* the last one, in engine milliseconds, and the second half
+## of what `the doubleClick` is made of.
+##
+## `-1` for "there has not been one". The reference gets the same guard for free
+## from `_lastClickTime2 = 0` against a `_lastClickTime` seeded at load time
+## (`movie.cpp:56-57`), so its very first press is not a double-click either; -1
+## says it here rather than relying on the session having been running for more
+## than 25 ticks.
+##
+## Declared **before** `last_click_ms`, because that field's setter writes this
+## one. GDScript does not run a setter for a declaration's own initial value, so
+## the order is not load-bearing today -- but a pair whose correctness depends on
+## knowing that is a pair that reads wrong.
+var last_click_ms2 := -1
 ## When the last press and the last pointer move happened, in engine
 ## milliseconds. `the lastClick` and `the lastRoll` are Director's "how long ago"
-## forms of the same two facts, reported in ticks, and `the doubleClick` is the
-## first of them compared against the system interval.
+## forms of the same two facts, reported in ticks.
 ##
 ## -1 rather than 0 for the click, because 0 is a real timestamp at boot and
 ## would make the very first press of a session read as a double-click.
-var last_click_ms := -1
+##
+## **The setter shifts the old value into `last_click_ms2`**, which is
+## `events.cpp:267-268`'s update written once:
+##
+##     _lastClickTime2 = _lastClickTime;
+##     _lastClickTime  = _lastEventTime;
+##
+## A setter rather than two lines at the press site, because the press site is
+## `preview/interaction.gd:857` and the two numbers `the doubleClick` is made of
+## must not be able to come from two different files. Every writer gets the shift
+## for free -- the press, `preview/save_state.gd`'s restore, and the harnesses
+## that back-date the clock to fake an interval rather than sleeping for one.
+var last_click_ms := -1:
+	set(value):
+		last_click_ms2 = last_click_ms
+		last_click_ms = value
 var last_roll_ms := 0
+## **Superseded, and deliberately still here.** This was what `the doubleClick`
+## answered: a boolean latched at the press by `preview/interaction.gd:856`
+## against its own 500 ms `DOUBLE_CLICK_MS`. The property now derives from
+## `last_click_ms` and `last_click_ms2` at 25 ticks, which is the reference's
+## `lingo-the.cpp:619-621`; see the `"doubleclick"` arm for what the two
+## differences cost.
+##
+## The field stays because two files outside this change still write it --
+## `interaction.gd` at the press and `preview/save_state.gd:431,633` in the save
+## record -- and a field removed from under them is a compile error in files this
+## change does not own. **Nothing reads it.** Retiring it is one edit to each of
+## those two, and it should take the save record with it.
 var double_click := false
 ## Director's movie-wide key handler: **a string of Lingo**, compiled the moment
 ## it is assigned and run ahead of everything else on a keypress (§6.3 tier 1).
@@ -2248,20 +2297,148 @@ func get_system_prop(prop: String) -> Variant:
 		# `exitFrame`, which runs at the score's rate, and a click is shorter than
 		# one score step. Asking the live button alone made the click-to-skip
 		# idiom answer false for most real clicks --
-		# `director_preview.gd:_mouse_down_seen` has the measurements. Nothing in
-		# either corpus spins on `the stillDown` or `the mouseUp` inside a repeat
-		# loop, which is what would make holding a press for one step visible as a
-		# hang rather than as the fix.
-		"mousedown", "stilldown":
-			return 1 if preview.mouse_button_down() else 0
+		# `director_preview.gd:_mouse_down_seen` has the measurements.
+		#
+		# **`the mouseDown` is `left OR right`, not left**, and the reference
+		# spells the mask out (`lingo-the.cpp:865-871`, and `:909-914` for the
+		# negation):
+		#
+		#     getButtonState() & (1 << MOUSE_BUTTON_LEFT | 1 << MOUSE_BUTTON_RIGHT)
+		#
+		# So D5's split of the *messages* -- a right press raises
+		# `rightMouseDown` and never `mouseDown` (`events.cpp:283-286`) -- is not
+		# a split of the *property*: a title polling `if the mouseDown then` from
+		# `exitFrame` for a click-to-skip is answered by either button, and this
+		# port answered only one of them. `the rightMouseDown` below stays the
+		# narrow read, which is what makes the pair usable to tell them apart.
+		#
+		# The right half is the live button alone and the left half keeps the
+		# score-step latch, which is an asymmetry rather than a decision: the
+		# latch is `preview/frame_loop.gd:359`, it is set from
+		# `Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)` only, and that file
+		# is not this one. So a right click shorter than one score step is still
+		# invisible to an `exitFrame` poll here where a left one is not. Written
+		# down rather than smoothed over; the fix is one line in `frame_loop.gd`,
+		# and the reference has the matching `FIXME` at `events.cpp:264` about
+		# whether its own click clock tracks the right button at all.
+		#
+		# The latch stays on this pair and comes off `the stillDown` below on a
+		# measurement as well as on the reference. Over `reference/lingo/` --
+		# **Piposh 2's decompile, which is one root and not the corpus** -- `the
+		# mouseDown` has 4 sites and `the mouseUp`, `the stillDown` and `the
+		# doubleClick` have none. All 4 are `if the mouseDown then` at the head of
+		# an `on exitFrame`, and all 4 are one movie's:
+		# `CHESS/master/BehaviorScript 81, 82, 86, 87`. That is the score-rate
+		# poll the latch exists for, and **not one is inside a repeat** -- which
+		# is the only place holding a press visible for one score step reads as a
+		# hang rather than as the fix. The other five roots have no decompile
+		# here, so this says nothing whatever about them.
+		"mousedown":
+			return 1 if (preview.mouse_button_down()
+				or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)) else 0
 		"mouseup":
-			return 0 if preview.mouse_button_down() else 1
+			return 0 if (preview.mouse_button_down()
+				or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)) else 1
+		# **Not `the mouseDown` by another name, and this is the one row in §4.5
+		# where reading them alike is a hang.**
+		#
+		# The reference reads two different things two dozen lines apart.
+		# `kTheMouseDown` polls the hardware through the event *manager*
+		# (`getButtonState()`, above); `kTheStillDown` reads
+		# `_vm->_wm->_mouseDown` (`lingo-the.cpp:1135-1141`) -- the window
+		# manager's own tracked down-state, written where the WM *processes* a
+		# button event rather than by asking the hardware. Left button only: the
+		# mask that spells out `LEFT | RIGHT` is on `the mouseDown` and on
+		# nothing else, and the tracked flag belongs to a Mac window manager.
+		#
+		# What that difference is *for* is the Director idiom this property
+		# exists to serve:
+		#
+		#     on mouseDown
+		#       repeat while the stillDown
+		#         set the loc of sprite ... to the mouseLoc
+		#       end repeat
+		#     end
+		#
+		# The loop runs **inside** a handler, so the value it spins on has to be
+		# the button's live state and not one latched when the handler was
+		# entered. `preview.mouse_button_down()` is exactly such a latch: it ORs
+		# in `_mouse_down_seen`, which is a press held visible to the score for
+		# one step so that a click shorter than a score step is not missed
+		# (`director_preview.gd:mouse_button_down`). That is the right answer for
+		# a property polled once per `exitFrame` and the wrong one for a property
+		# polled ten thousand times inside one handler: the loop's own first
+		# iteration cannot clear it, so a released button keeps reading down.
+		#
+		# **The suspension model is what makes the live read safe here**, and it
+		# was checked before this line moved rather than after. A `repeat while`
+		# does not yield -- `lingo_interpreter.gd:_repeat_while` runs to
+		# completion inside the frame that entered it -- so nothing about the
+		# score can move the answer. What moves it is `_breathe()`, called once
+		# per iteration and rate-limited to `BREATHE_MS`, which reaches
+		# `breathe()` here and `director_preview.gd:lingo_breathe` under that:
+		# `DisplayServer.process_events()`, which is what writes
+		# `Input.is_mouse_button_pressed`. So the live read is precisely the read
+		# the breathe refreshes, and the loop ends when the player lets go.
+		#
+		# **The latched read was not a hang, and saying so was worth measuring
+		# rather than asserting.** The obvious reading -- no iteration of the loop
+		# can clear `_mouse_down_seen`, so the handler spins to `MAX_STEPS` and
+		# aborts -- is wrong, because `lingo_breathe` clears the latch on the same
+		# line it pumps the queue. Measured with this arm reverted and the latch
+		# set with no live button: **31 iterations, 0 faults, 1 ms**, the loop
+		# leaving on the first test after the first breathe. So what the old
+		# binding cost was 31 spurious steps of a drag loop for a button that was
+		# never down -- and a dependence on one courtesy line in a file this one
+		# does not own, which is the part that would have become a hang quietly.
+		# `tools/mouse_events.gd` asserts the 0 against that 31.
+		#
+		# Headless, `Input.is_mouse_button_pressed` is false and stays false, so
+		# such a loop exits on its first test rather than hanging a harness --
+		# which is the same reason a harness has to force the state to assert
+		# anything about it (`tools/mouse_events.gd`).
+		"stilldown":
+			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0
 		"rightmousedown":
 			return 1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0
 		"rightmouseup":
 			return 0 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 1
+		# **The last two press times, compared on read.** `lingo-the.cpp:619-621`,
+		# and it is one line of the reference:
+		#
+		#     d = (movie->_lastClickTime - movie->_lastClickTime2) <= 25 ? 1 : 0;
+		#
+		# 25 *ticks* -- 416 ms -- against the 500 ms this port latched at the
+		# press, so the whole band from 417 to 500 ms answered the wrong way: a
+		# deliberate slow double-click, which is the interval a player who has
+		# turned their system's setting down produces, was a double-click here and
+		# is not one in Director.
+		#
+		# Converted per timestamp rather than once on the difference, because the
+		# reference compares two already-quantised tick counts and flooring twice
+		# is not flooring once. It costs a tick at the boundary and it is the
+		# boundary this row is about.
+		#
+		# **`the doubleClick` is not a decaying flag**, in either engine: the two
+		# stamps do not move until the next press, so the answer stands until then
+		# and a handler that asks 300 ms after the second of two presses 400 ms
+		# apart gets 1. That was already true of the latch this replaces; what was
+		# not is that the latch belonged to `preview/interaction.gd` and could
+		# only ever be as right as the press path that set it, while these are the
+		# same two numbers `the lastClick` is read from.
+		#
+		# Both guards are needed and neither is the reference's. `last_click_ms2 <
+		# 0` is "there has been only one press ever", which the reference gets
+		# from seeding `_lastClickTime` at load time so that the first press is
+		# always further than 25 ticks from `_lastClickTime2 = 0`; -1 says it
+		# outright. `last_click_ms < 0` is "no press at all", where a bare
+		# subtraction would answer 0 <= 25 and report a double-click into an
+		# untouched session.
 		"doubleclick":
-			return 1 if double_click else 0
+			if last_click_ms < 0 or last_click_ms2 < 0:
+				return 0
+			return 1 if _ticks_at(last_click_ms) - _ticks_at(last_click_ms2) \
+				<= DOUBLE_CLICK_TICKS else 0
 		"clickloc":
 			# A point, which the interpreter's `point()` values are two-element
 			# lists of -- so `the locH of the clickLoc` reads the way a script
@@ -2275,10 +2452,29 @@ func get_system_prop(prop: String) -> Variant:
 			return 0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms)
 		"lastroll":
 			return _ticks_since(last_roll_ms)
+		# **A keypress is an event.** `events.cpp` stamps `_lastEventTime` in three
+		# arms and only three: the pointer move at `:185`, the button-down at
+		# `:266` -- left *and* right, they share the arm -- and the key-down at
+		# `:369`. There is no key-*up* stamp and no mouse-up stamp, so this is
+		# `max(roll, click, key)` expressed as the smallest elapsed time of the
+		# three, and the key was the one this port left out.
+		#
+		# What that cost is the idiom the property exists for: `the lastEvent` is
+		# how a title asks "has the player done anything", and an attract loop or
+		# a demo timer driven by it started running while somebody was typing.
+		# `the timeoutLapsed` is the same question asked of a resettable clock and
+		# it has had the keyboard arm all along (`director_preview.gd:_dispatch_key`
+		# resets it when `the timeoutKeyDown`), which is what made the gap here
+		# easy to miss.
+		#
+		# `last_key_ms` needs no "never" guard: it is 0 at boot and a session that
+		# has seen no key reports the age of the session, which is what the
+		# reference reports too (`movie.cpp:55` seeds it at load).
 		"lastevent":
 			return mini(
-				0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms),
-				_ticks_since(last_roll_ms))
+				mini(0x7FFFFFFF if last_click_ms < 0 else _ticks_since(last_click_ms),
+					_ticks_since(last_roll_ms)),
+				_ticks_since(last_key_ms))
 		"shiftdown":
 			return 1 if (key_flags & MOD_SHIFT) != 0 else 0
 		"optiondown":
@@ -2394,6 +2590,21 @@ func get_system_prop(prop: String) -> Variant:
 			# Ticks since the last keypress, as `the lastClick` is for the mouse.
 			# Both are elapsed times rather than timestamps, which is why the pair
 			# read alike and why a script can compare either against a constant.
+			#
+			# **The stamp is on the key going down and on nothing else**, which is
+			# `events.cpp:369-370` -- and it is *below* the modifier-key early
+			# return at `:359-365`, so shift, control, alt and command move `the
+			# shiftDown` and leave this alone. `EVENT_KEYUP` at `:378-381` writes
+			# `_keyFlags` and dispatches, and stamps nothing. This port gets all
+			# three for free from where the write lives: `last_key_ms` is written
+			# by `key_code`'s setter, `key_code` is assigned only in
+			# `director_preview.gd:_dispatch_key`, and `preview/input_router.gd`
+			# returns on a modifier before that function is reached.
+			#
+			# §4.5's table listed this row as unbound and reading VOID. It has
+			# been bound since `d9bc27e3` and the stamp with it; the row is stale
+			# rather than open, and `tools/key_polling.gd` now pins all three
+			# rules so a future reader does not have to take that on trust.
 			return _ticks_since(last_key_ms)
 		"pausestate":
 			# Whether `pause` is holding the playhead. The read half of the
@@ -2868,6 +3079,18 @@ func _frame_channel(prop: String) -> Variant:
 ## elapsed-time property in the language reports in.
 func _ticks_since(when_ms: int) -> int:
 	return int((Time.get_ticks_msec() - when_ms) * 60.0 / 1000.0)
+
+
+## An engine timestamp as the tick count the reference would have stored, so that
+## two of them can be subtracted the way `the doubleClick` subtracts them.
+##
+## The reference keeps `_lastClickTime` and `_lastClickTime2` in Mac ticks
+## already (`getMacTicks()`), and this port keeps milliseconds because that is
+## what the press path has. Quantising each one on the way out reproduces the
+## comparison; quantising the *difference* instead would be off by a tick at the
+## boundary, and 25 ticks is a boundary this port is measured against.
+func _ticks_at(when_ms: int) -> int:
+	return int(when_ms * 60.0 / 1000.0)
 
 
 func set_system_prop(prop: String, value: Variant) -> void:

@@ -838,13 +838,13 @@ skip it. The clock now decodes and holds for one in both numberings and releases
 it through `FrameClock.video_probe`; what is missing is a decoder to install as
 that probe, which is the digital-video entry above and not this one.
 
-> **The decoder arrived on 2026-08-22 and the probe is still not installed**, so
-> this is now the whole of the entry rather than half of it. `video_probe` is
-> declared at `director_frame_clock.gd:234` and polled at `:689`, and **nothing
-> anywhere calls it** -- so a wait-for-video tempo cell reports *finished* on its
-> first poll, which was the only safe answer for a port with no decoder and is now
-> simply wrong. Installing it is `preview/video.gd` answering "is channel N still
-> playing", and the clock side needs nothing further.
+> **INSTALLED 2026-08-22.** The decoder arrived and the probe followed the same
+> day. `tools/video_tempo_wait.gd` asserts the pair that matters -- it holds the
+> playhead **for a real video and for nothing else**, 8 checks -- because the
+> dangerous half is not the hold but the two cases that must *not* hold: a channel
+> carrying no video, and a video whose media will not open, both answer *finished*.
+> That is Director's own answer for a channel holding nothing, and a probe that
+> held a playhead it could not resolve would be a hang in movies that work today.
 
 **Mask ink (9) -- BUILT 2026-08-22.** §2.6. `Ink.KEY_MASK` is the fourth branch
 of `key_for`, in `getMask`'s own precedence, and `SpriteArt.apply_mask_member`
@@ -1053,6 +1053,13 @@ handler stays silent where a compiled bare word would report an unbound builtin
 on every single keypress -- `fromnow` sees every key in the game. A source that
 will not compile installs nothing and says so on the log, as Director does for a
 bad `do`.
+
+> **Five of the seven landed 2026-08-22 and the other two landed in `7d4e9c63`.**
+> `the mouseCast` and `the mouseMember` are bound to `Interaction.sprite_at`,
+> which *is* `getSpriteIDFromPos`, and answer `0` and VOID over nothing --
+> `lingo-the.cpp:898-907`. `tools/mouse_events.gd` went from 57 checks to **79**,
+> one per row and then some. The table below is kept as the statement of what each
+> was wrong about.
 
 **Seven mouse properties read something other than what the reference reads.**
 §4.5, §15. All seven are one-line changes in `scenes/preview_lingo_host.gd`'s

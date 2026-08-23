@@ -231,6 +231,22 @@ var _cached_tempo := 0
 ## channel `isActiveVideo()` **and** its `_movieRate` is non-zero, so a paused
 ## video does not hold the playhead and neither does a channel that is not a
 ## video at all. Installed from outside, by whatever owns digital video.
+##
+## **It is installed now**, and this paragraph is here because the four above
+## described a degrade that had quietly become the *only* behaviour. From the day
+## this variable was declared until 2026-08-23 nothing anywhere in the repository
+## assigned it: it was declared here and polled at `_video_holds` and had no
+## caller, so every wait-for-video cell in every movie took the `is_valid()` arm
+## and reported finished on its first poll. That was correct while the port had no
+## decoder and wrong from the moment it had three
+## (`docs/DIGITAL_VIDEO.md` §4C2, §8, §9). `scenes/preview/video.gd:channel_playing`
+## is the answer, `scenes/preview/video.gd:install_probe` binds it and
+## `scenes/preview/frame_loop.gd:tick` is the one place that holds this clock and
+## the video host at the same time. `tools/video_tempo_wait.gd` is the gate.
+##
+## The degrade above is still exactly what happens with no probe bound, and two
+## harnesses depend on that: `tools/frame_events.gd` constructs a bare clock to
+## assert it, and every clock built outside the preview gets it for free.
 var video_probe := Callable()
 
 

@@ -37,7 +37,8 @@ const Transition := preload("res://director/director_transition.gd")
 const Actors := preload("res://scenes/preview/actors.gd")
 ## The digital-video playheads, stepped once per engine tick beside the two
 ## above. See the call site in `tick` for why they cannot be stepped per score
-## step.
+## step. It is also what answers §9.1's wait-for-video tempo cell, through the
+## probe `tick` installs on the clock.
 const Video := preload("res://scenes/preview/video.gd")
 
 
@@ -347,6 +348,21 @@ static func advance_transition(host, delta: float) -> void:
 ## One tick of the movie: release what can be released, then take the one score
 ## step the clock owes, if it owes one.
 static func tick(host, delta: float) -> void:
+	# §9.1's wait-for-video, wired here because this is the one place that holds
+	# both halves of it: `host._clock` is the clock that arms and polls the wait,
+	# and `host` is what `preview/video.gd` needs to answer it.
+	#
+	# **Before anything in this function asks the clock a question**, and the order
+	# is the rule rather than tidiness. `FrameClock._video_holds()` *clears* the
+	# wait whenever the probe declines, and it is reached from `playhead_held()`
+	# and from `status()` alike -- so a tick that consulted the clock first would
+	# release the wait on the degrade path and then install a probe that had
+	# nothing left to vouch for. `tools/frame_events.gd` states the same ordering
+	# for its synthetic probe and fails if it arrives second.
+	#
+	# Idempotent and one `Callable.is_valid()` per tick; see `Video.install_probe`
+	# for why the binding lives on the tick at all rather than in `preview/boot.gd`.
+	Video.install_probe(host)
 	# The player's button, sampled at the *engine's* rate rather than the score's.
 	# A click is 40-100 ms and a score step here is 125-250 ms, so a movie that
 	# only looked at the button from inside `exitFrame` misses most of them --

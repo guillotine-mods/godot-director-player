@@ -55,6 +55,10 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const Keys := preload("res://director/director_keys.gd")
+## For the modifier case below, which has to go in at the routing rather than at
+## `_dispatch_key`: the early return that makes a modifier stamp nothing lives
+## here, and a check that called the dispatcher directly would jump over it.
+const InputRouter := preload("res://scenes/preview/input_router.gd")
 const KeySites := preload("res://tools/lib/key_sites.gd")
 const Paths := preload("res://director/director_paths.gd")
 
@@ -209,6 +213,74 @@ func _init() -> void:
 		h.check("%s reports key code %d" % [OS.get_keycode_string(pair[0]), pair[2]],
 			_the_code(host) == int(pair[2]), str(_the_code(host)))
 	h.complete("§8.3 the arrows substitute characters 28-31 into `the key`")
+
+	# ------------------------------------------------------------ `the lastKey`
+	# **Ticks since the last keypress, and it is `the lastClick`'s twin.** §4.5's
+	# table in `ENGINE_TODO.md` lists it as unbound and reading VOID. It has been
+	# bound since `d9bc27e3` and the row is stale -- which is worth *pinning*
+	# rather than merely correcting, because the thing that makes it work is
+	# invisible at the property: the stamp rides on `key_code`'s **setter**
+	# (`preview_lingo_host.gd`), so it is written by whoever assigns the key and
+	# by nobody who remembers to.
+	#
+	# Three rules, all of them about which keys do **not** stamp it, because that
+	# is where a port drifts and none of it is visible from the property alone:
+	#
+	#   the key going down    stamps. `events.cpp:369-370`.
+	#   a modifier key        does not. The stamp is *below* the early return at
+	#                         `events.cpp:359-365`, so shift, control, alt and
+	#                         command record `_keyFlags` and dispatch nothing --
+	#                         and here `preview/input_router.gd:note_modifiers`
+	#                         returns before `_dispatch_key` is reached.
+	#   the key coming up     does not. `EVENT_KEYUP` at `:378-381` writes
+	#                         `_keyFlags` and dispatches; there is no second stamp.
+	#
+	# Staged by back-dating the field rather than by sleeping, and the routing is
+	# driven through `InputRouter.key_event` rather than `_dispatch_key` for the
+	# modifier case **on purpose**: `_dispatch_key` is below the early return, so
+	# calling it directly would stamp for a modifier and prove nothing about the
+	# path a real shift key takes.
+	const STALE_MS := 4000
+	const RECENT_TICKS := 30
+	h.begin("`the lastKey` is stamped by the key going down, and by nothing else")
+	var uptime := Time.get_ticks_msec()
+	var stale := maxi(uptime - STALE_MS, 0)
+	if h.check("the session is old enough to stage a stale key clock",
+			int((uptime - stale) * 60.0 / 1000.0) > RECENT_TICKS,
+			"%d ms of uptime" % uptime):
+		preview.call("_dispatch_key", _key(KEY_H))
+		h.check("a keypress leaves `the lastKey` at a small number of ticks",
+			int(host.call("get_system_prop", "lastkey")) < RECENT_TICKS,
+			"lastKey %s" % str(host.call("get_system_prop", "lastkey")))
+		# The modifier. Through the router, so the early return is in the path.
+		host.set("last_key_ms", stale)
+		var shift := InputEventKey.new()
+		shift.keycode = KEY_SHIFT
+		shift.physical_keycode = KEY_SHIFT
+		shift.shift_pressed = true
+		shift.pressed = true
+		InputRouter.key_event(preview, shift)
+		h.check("a modifier key does not stamp it (§8.3: it raises no keyDown)",
+			int(host.call("get_system_prop", "lastkey")) > RECENT_TICKS,
+			"lastKey %s after shift" % str(host.call("get_system_prop", "lastkey")))
+		# ...but it *did* record the modifier word, or the check above would pass
+		# against a router that dropped the event on the floor.
+		h.check("...but it did record `the shiftDown`",
+			int(host.call("get_system_prop", "shiftdown")) == 1,
+			"shiftDown %s" % str(host.call("get_system_prop", "shiftdown")))
+		# The release.
+		host.set("last_key_ms", stale)
+		var release := _key(KEY_H)
+		release.pressed = false
+		preview.call("_dispatch_key_up", release)
+		h.check("a key coming up does not stamp it either",
+			int(host.call("get_system_prop", "lastkey")) > RECENT_TICKS,
+			"lastKey %s after keyUp" % str(host.call("get_system_prop", "lastkey")))
+		# The modifier word is left where a real shift release would leave it.
+		# Nothing below reads it, and a harness that leaves a chord held is a
+		# harness the next section has to know about.
+		host.set("key_flags", 0)
+	h.complete("`the lastKey` is stamped by the key going down, and by nothing else")
 
 	# ------------------------------------------- the movie's own polling sites
 	var paths := Paths.new()
