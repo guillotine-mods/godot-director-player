@@ -355,7 +355,7 @@ text = "עזרים"
 [node name="QolHint" type="Label" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]
 layout_mode = 2
 theme_type_variation = &"Hint"
-text = "נשמרים עם ההגדרות שלך. מהירות הסמן היא היחידה שהמנוע קורא כיום; שלושת שמעליה עדיין אינם מחוברים לכלום, ונשמרים כדי ששמירה שנעשית עכשיו תמשיך להיות תקפה כשהם ינחתו."
+text = "נשמרים עם ההגדרות שלך. סימון מה שהעכבר יכול להגיע אליו ומהירות הסמן הם מה שהמנוע קורא כיום; הרחבת אזורי הלחיצה והחלקת האיורים עדיין אינן מחוברות לכלום, ונשמרות כדי ששמירה שנעשית עכשיו תמשיך להיות תקפה כשהן ינחתו. בכל מקרה אפשר ללחוץ H לרמז חד-פעמי."
 autowrap_mode = 2
 
 [node name="HotspotHints" type="CheckBox" parent="Page/Column/Tabs/Developer/Pad/Scroll/Fields/AssistCard/Pad/Rows"]

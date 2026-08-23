@@ -15,6 +15,11 @@ extends RefCounted
 
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Members := preload("res://scenes/preview/members.gd")
+## `Channel::isMouseIn`, once. `Score::renderCursor`'s descent reads the same
+## three-valued test the three click descents read, and reading it from anywhere
+## else is how this file came to disagree with `interaction.gd` in three
+## different ways at once -- see `at`.
+const Interaction := preload("res://scenes/preview/interaction.gd")
 
 ## Fixed 16x16, cropped from the members' top-left: larger members are cropped,
 ## smaller ones padded transparent.
@@ -75,13 +80,57 @@ static func is_empty(value: Variant) -> bool:
 
 ## What the cursor should be at a stage point: a channel's pair, or the global.
 ##
-## Descend channels highest first, rect-test, and take the first channel whose
-## cursor is non-empty; if none supplies one, the global cursor stands. The
-## descent deliberately does NOT filter on responds-to-mouse: cursor eligibility
-## and click eligibility are different tests over the same stack, so a sprite
-## that cannot be clicked can still change the cursor over it. The score builds
-## its sprite array in ascending channel order, so walking it backwards is
+## `Score::renderCursor`'s descent (`score.cpp:1461-1470`), which is
+## `getSpriteIDFromPos` with one extra clause on the "take it" arm:
+##
+##     for (int i = _channels.size() - 1; i >= 0; i--) {
+##         CollisionTest test = _channels[i]->isMouseIn(pos);
+##         if (test == kCollisionYes && !_channels[i]->_cursor.isEmpty()) {
+##             spriteId = i;
+##             break;
+##         } else if (test == kCollisionHole) {
+##             break;
+##         }
+##     }
+##
+## **The test comes first and the cursor second**, and the loop reads
+## `isMouseIn`, not a rectangle. This port had all three of those wrong at once
+## and each cost something different, so each is written down:
+##
+##   *The geometry was a bare `rect.has_point`.* Matte transparency was ignored,
+##   so a channel carrying a cursor answered over its own transparent pixels --
+##   the arm of a keyed-out figure, the gap inside a ring -- where Director walks
+##   past it to whatever is behind. `Interaction.is_mouse_in` is the reference's
+##   `isWithin` chain and answers per pixel for exactly the inks
+##   `director_ink.gd:hits_per_pixel` names (§2.1), which is the same asymmetry
+##   the click descent honours.
+##
+##   *There was no Hole.* A text member holes out its scrollbar strip
+##   (`castmember/text.cpp:392`), and a Hole **ends** the descent: nothing
+##   underneath supplies a cursor and the global one stands. Without the arm the
+##   strip was transparent to the cursor and the sprite behind the field answered.
+##
+##   *The order was inverted.* This skipped a channel with no cursor of its own
+##   **before** testing the point, where the reference tests the point first. That
+##   is not a reordering of equals: in the reference a Hole breaks the descent
+##   **even on a sprite that names no cursor at all**, because the `isMouseIn`
+##   call happens whether or not the channel has one. Skipping first made every
+##   cursorless sprite invisible to the search, so a scrolling field with no
+##   cursor of its own could never stop the hand cursor of a hotspot behind it
+##   showing through its scrollbar.
+##
+## What stays deliberately different from the *click* descent: there is no
+## eligibility filter. Cursor eligibility and click eligibility are different
+## tests over the same stack (`getSpriteIDFromPos` has no filter either), so a
+## sprite that cannot be clicked can still change the cursor over it. The score
+## builds its sprite array in ascending channel order, so walking it backwards is
 ## highest-first.
+##
+## `host._hit_pixels` rather than a hard `true`: that is the `M` debug toggle, and
+## it must move the cursor and the click together. A toggle that turned artwork
+## sampling off for clicks and left it on for the cursor would make the hotspot
+## overlay and the pointer disagree about the same sprite, which is the one thing
+## the toggle exists to rule out.
 ##
 ## Separated from the recompute so the arbitration can be asked a question
 ## without a real pointer. Headless there is no mouse, so a check that drove the
@@ -112,16 +161,24 @@ static func at(host, point: Vector2, sprites: Array, channel_cursors: Dictionary
 		# (`the locH of sprite 15 to 1000`, `sprite(20).visible = 0`), so this is
 		# not a hypothetical shape.
 		var sprite: Dictionary = host._effective(sprites[i])
-		if sprite.is_empty():
+		# **Tested before the cursor is looked up**, which is the reference's
+		# order and the third of the three defects above. `is_mouse_in` already
+		# answers No for the `{}` an empty or hidden channel gives, which is
+		# `isMouseIn`'s own `if (!_visible) return kCollisionNo`.
+		var test := Interaction.is_mouse_in(
+			host, sprite, point, host._hit_pixels, host._table)
+		if test == Interaction.HIT_HOLE:
+			# `break`, not `continue`: the reference leaves `spriteId` at 0 and
+			# falls through to the default cursor, so a Hole means the global
+			# cursor and never the cursor of whatever is behind the field.
+			return global_cursor
+		if test != Interaction.HIT_YES:
 			continue
 		var channel := int(sprite["channel"])
 		if not channel_cursors.has(channel):
 			continue
 		var candidate: Variant = channel_cursors[channel]
 		if is_empty(candidate):
-			continue
-		var rect: Rect2 = host._sprite_rect(sprite)
-		if not rect.has_point(point):
 			continue
 		return candidate
 	return global_cursor

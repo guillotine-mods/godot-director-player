@@ -8,11 +8,22 @@ extends Node
 ## enabled`) or documented orphans of a renderer that was deleted. Two names for
 ## one question is how a setting starts disagreeing with itself.
 ##
-## **The values below are plumbing, and only `cursor_speed` reaches anything.**
-## The rest are read, written and offered by the launcher, and nothing acts on
-## them yet -- wiring each to the renderer or the input path is a separate piece
-## of work per toggle. The launcher labels them as such, so the first report is
-## not "hotspot hints is broken".
+## **Two of the values below reach something; the other two are plumbing.**
+## `cursor_speed` is read by `autoload/input_router.gd`, and `hotspot_hints` is
+## read by the same file and applied by `scenes/preview/hilite.gd`
+## (`bugs.md` 130): with it on, every sprite the click router can reach is
+## outlined for as long as it is on. `upscale_mode` and `enhanced_graphics` and
+## `expand_edge_hotspots` are read, written and offered by the launcher and
+## nothing acts on them yet -- wiring each to the renderer or the input path is a
+## separate piece of work per toggle.
+##
+## **The launcher's `QolHint` says which is which, and it has to be edited in the
+## same change as the wiring.** That is the whole reason the disclosure exists --
+## so the first report is not "hotspot hints is broken" -- and a disclosure that
+## still says a toggle does nothing after it started doing something is worse
+## than the unwired toggle was, because it is the sentence a reader trusts
+## instead of testing. It said "the cursor speed is the only one the engine reads
+## today" until `hotspot_hints` landed, and moved in the same commit.
 ##
 ## **`allow_minigame_skip` is not on that list, because it is not pending: it is
 ## gone** (`bugs.md` 129). It was the flag on the retired renderer's

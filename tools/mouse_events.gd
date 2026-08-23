@@ -612,12 +612,27 @@ func _init() -> void:
 	# The properties first, because they are the cheapest thing to get wrong and
 	# the hardest to notice: an unbound read is not an error, it is VOID, and VOID
 	# is falsy. Every guard written against one silently takes its other branch.
+	# **`the mouseMember` is exempt, and it is the reference's own answer.**
+	# `lingo-the.cpp:898-907` reads `getSpriteIDFromPos(pos)` and, when it is 0,
+	# assigns `getVoid()` -- so VOID is what Director answers for a pointer over
+	# nothing, not a symptom of an unbound name. This check could not tell those
+	# apart and asserted the wrong one for it; every *other* property here is a
+	# number or a string in every state, so the check keeps its teeth for them.
+	#
+	# It went red the day `the mouseMember` was bound to that descent
+	# (`getSpriteIDFromPos`) instead of the click descent, which is when it first
+	# became capable of answering VOID at all. A harness that reds for the arrival
+	# of correct behaviour is the shape `porting-fidelity-verification` warns
+	# about, so the fix is here rather than in the binding.
+	const VOID_WHEN_OVER_NOTHING := ["mousemember"]
 	h.begin("§6: every mouse property answers something")
 	var unbound: Array = []
 	for prop in MOUSE_PROPS:
+		if prop in VOID_WHEN_OVER_NOTHING:
+			continue
 		if host.call("get_system_prop", prop) == null:
 			unbound.append(prop)
-	h.check("no mouse property reads back VOID", unbound.is_empty(),
+	h.check("no mouse property but `the mouseMember` reads back VOID", unbound.is_empty(),
 		"unbound: %s" % str(unbound))
 	# Not merely bound -- bound to the right thing. `the mouseH` that answers a
 	# constant is bound, passes the check above, and is useless.

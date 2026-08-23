@@ -130,6 +130,36 @@ func _run() -> void:
 			", ".join(unlisted))
 	h.complete(case)
 
+	# **The disclosure has to name the toggle that works, in that toggle's own
+	# words.** `app_settings.gd`'s header says why the `QolHint` line exists: the
+	# QoL card offers settings the engine does not read yet, and the line above
+	# the card says which -- so the first report is not "hotspot hints is broken".
+	# A line that has gone stale in the other direction is worse than the unwired
+	# toggle it describes, because it is the sentence a reader trusts instead of
+	# testing. It read "the cursor speed is the only one the engine reads today"
+	# for as long as that was true, and `bugs.md` 130's `hotspot_hints` made it
+	# false.
+	#
+	# Asserted as **containment of one label in the other**, not against any
+	# wording of either. Nothing here is in Hebrew, nothing here knows what the
+	# toggle is called, and rewording the toggle without rewording the line --
+	# or the reverse -- is exactly the drift this catches. `HotspotHints` is
+	# named because it is the wired one; the pending toggles are deliberately not
+	# checked, since their disclosure is that they are *absent* from the wired
+	# list and an absence has no string to match.
+	case = "the QoL disclosure names the toggle that is wired"
+	h.begin(case)
+	var hint_label := scene.find_child("QolHint", true, false) as Label
+	var hotspot_box := scene.find_child("HotspotHints", true, false) as CheckBox
+	if h.check("the disclosure and the toggle are both there",
+			hint_label != null and hotspot_box != null):
+		h.check("the disclosure says something", hint_label.text.strip_edges() != "")
+		h.check("the toggle is labelled", hotspot_box.text.strip_edges() != "")
+		h.check("and the disclosure quotes the toggle's own label",
+			hint_label.text.contains(hotspot_box.text.strip_edges()),
+			"looked for '%s' in '%s'" % [hotspot_box.text, hint_label.text])
+	h.complete(case)
+
 	_overrides(h, scene)
 
 	if _game_named():

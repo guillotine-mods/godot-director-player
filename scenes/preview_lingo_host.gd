@@ -31,6 +31,14 @@ const Interpreter := preload("res://lingo/lingo_interpreter.gd")
 ## the reason `windows.gd` and `sound.gd` are theirs: it needs its own dispatch
 ## path, and the last entity that did not have one lost every write it was given.
 const CastLibs := preload("res://scenes/preview/cast_libs.gd")
+## `score.cpp:getSpriteIDFromPos`, for the three mouse properties that are asked
+## it. Reached from here because `_sprite_under_pointer` is the only caller and
+## the node has no method for this descent -- see that function.
+const Interaction := preload("res://scenes/preview/interaction.gd")
+## `resolve_ref`, for `the mouseMember`'s VOID: a packed reference has to be split
+## back into (library, slot) the same way `member()` splits it, or the check would
+## ask library 1 for a slot that belongs to another cast.
+const Members := preload("res://scenes/preview/members.gd")
 ## The window stack, for `moveToFront`/`moveToBack`. The lifecycle calls below
 ## (`window`, `open`, `forget`) go through the node because creating a window is
 ## node manipulation; ordering is a rule about the stack and lives in the module
@@ -2127,6 +2135,57 @@ static func _run_mode() -> String:
 	return _run_mode_cached
 
 
+## `score.cpp:getSpriteIDFromPos` at the live pointer: the topmost sprite the
+## mouse is over **at all**, 0 for none.
+##
+## Not `getMouseSpriteIDFromPos`, and the difference is the whole reason this
+## function exists. That one -- `preview._channel_at`, `Interaction.channel_at` --
+## filters the descent to sprites that can answer a mouse message (§4.3), so it
+## answers "what would a click reach". `the rollOver`, `the mouseCast` and `the
+## mouseMember` ask "what is under the pointer", which is a question about the
+## picture and not about the scripts, and every one of the three reads
+## `getSpriteIDFromPos` in `lingo-the.cpp` (`:848`, `:901`, `:1035`). Answering
+## them with the filtered descent under-reports silently: a backdrop, a caption or
+## a decorative figure with no behaviour is invisible to it, so a movie asking
+## what its pointer is over is told "nothing" while the player is looking at
+## something.
+##
+## **Computed on read, not cached.** The reference calls it inside the property
+## read with `getCurrentWindow()->getMousePos()`, so it is live by construction.
+## `ENGINE_TODO.md` recorded this rebinding as needing "a third channel this port
+## does not maintain"; it needs no channel at all, and a cached one would have
+## reintroduced the staleness `_hover_channel` has -- it is only recomputed on
+## motion, so on a touchscreen, where no motion arrives between taps, it answers
+## about the last drag.
+##
+## `_hit_pixels` is the `M` debug toggle, passed through so the property, the
+## click and the cursor all sample the artwork or all do not.
+## Does a packed member reference name a member that is actually there?
+##
+## `Sprite::_cast` is a resolved `CastMember *` and is null when the sprite names
+## a member the cast does not hold, which is the difference between `the
+## mouseCast` (a number, always) and `the mouseMember` (VOID in that case). §3
+## keeps such a sprite in the descent -- an unresolvable member leaves the sprite
+## clickable rather than making it disappear from the mouse -- so the pointer can
+## genuinely be over one.
+func _member_exists(packed: int) -> bool:
+	if preview == null or preview._table == null:
+		return false
+	var where: Array = Members.resolve_ref(packed, "", preview._table)
+	if int(where[1]) <= 0:
+		return false
+	return not (preview._table.get_member(
+		int(where[0]), int(where[1])) as Dictionary).is_empty()
+
+
+func _sprite_under_pointer() -> int:
+	if preview == null:
+		return 0
+	return Interaction.sprite_at(
+		preview, preview.stage_mouse(), preview.frame_sprites(),
+		preview._hit_pixels, preview._table)
+
+
 func get_system_prop(prop: String) -> Variant:
 	if preview == null:
 		return 0
@@ -2261,15 +2320,48 @@ func get_system_prop(prop: String) -> Variant:
 		"updatelock":
 			return 1 if update_lock else 0
 		"mousecast", "mousemember":
-			# The member displayed by the sprite the pointer is over, or -1 for
-			# "over nothing" -- which is Director's answer and not 0, because 0 is
-			# a real member slot.
-			if preview == null:
-				return -1
-			var rolled: int = preview.lingo_rollover_channel()
-			if rolled <= 0:
-				return -1
-			return preview.lingo_sprite_prop(rolled, "membernum")
+			# The member displayed by the sprite the pointer is over. **Two
+			# properties, one descent, two different answers for "over nothing"**
+			# -- `lingo-the.cpp:844-908`:
+			#
+			#     kTheMouseCast:   spriteId ? sprite->_castId.toMultiplex() : 0
+			#     kTheMouseMember: spriteId ? sprite->_cast              : VOID
+			#
+			# Both took `_rollover_channel` here, which is neither of the two
+			# descents the reference has: it is a bare rect walk over the
+			# **score's** geometry, kept that way on purpose so `rollOver(n)`
+			# cannot feed a menu's art swap back into its own question
+			# (`director_preview.gd:lingo_rollover`). Read for these it ignores
+			# matte transparency, ignores the Hole, and reports a sprite a script
+			# has moved at the rectangle it used to be in. `getSpriteIDFromPos` is
+			# the right descent for both and `_sprite_under_pointer` is it.
+			#
+			# **Both answered a bare member number and both answered -1.** The
+			# number is `membernum`, the per-library slot, where `toMultiplex` is
+			# the packed (library, slot) reference -- `castnum` here, and the same
+			# arithmetic (`types.h:451-455` against `members.gd:pack_ref`). So a
+			# movie whose pointer was over a sprite drawn from a linked cast was
+			# handed a slot number that resolves in library 1, which is
+			# `docs/bugs-closed.md`'s ship-map failure by another route. And -1 is
+			# not a Director answer at all: `the mouseCast` is **0** for nothing,
+			# which is why 0 is not a usable member number in the language, and
+			# `the mouseMember` is **VOID**, which is what an `if voidP(...)`
+			# guard is written against and what a -1 silently satisfies as a
+			# number.
+			var under := _sprite_under_pointer()
+			var wants_member := prop.to_lower() == "mousemember"
+			if under <= 0:
+				return null if wants_member else 0
+			var packed: int = LingoValue.to_int(
+				preview.lingo_sprite_prop(under, "castnum"))
+			if not wants_member:
+				return packed
+			# `Sprite::_cast` is the resolved member, not its id, so a sprite
+			# naming a member that is not there answers VOID even though the
+			# descent found the sprite -- §3 leaves such a sprite clickable, so
+			# this arm is reachable rather than theoretical. `the mouseCast` above
+			# still answers the number, which is the reference's own asymmetry.
+			return packed if _member_exists(packed) else null
 		"ticks":
 			return int(Time.get_ticks_msec() * 60.0 / 1000.0)
 		"milliseconds":
@@ -2563,12 +2655,25 @@ func get_system_prop(prop: String) -> Variant:
 		# of live state rather than a stored setting, which is the difference
 		# between this group and the one below it.
 		"rollover":
-			# **The no-argument form.** `rollOver(n)` is a different function --
-			# "is the mouse over channel n" -- and is a builtin; this is "which
-			# channel is the mouse over", 0 for none. §8.15 records that the two
-			# spellings are separate functions and this is the half that was
-			# missing.
-			return preview.lingo_rollover_channel()
+			# **`the rollOver` the property is not `rollOver()` the builtin**, and
+			# this is the half that reads a different descent. §8.15 records that
+			# the two spellings are separate functions; §4.5 records that they are
+			# separate *queries*. `lingo-the.cpp:1035` is one line --
+			# `d = score->getSpriteIDFromPos(getMousePos())` -- the ink-aware
+			# descent with no eligibility filter, which is `_sprite_under_pointer`.
+			# The builtin keeps `getRollOverSpriteIDFromPos`
+			# (`preview.lingo_rollover_channel`), a plain rect walk over the
+			# score's own geometry, because that is the function the reference
+			# gives it and because 94 corpus sites poll it from `exitFrame` to
+			# swap a button's art -- measuring the swapped art would feed the
+			# answer back into the question.
+			#
+			# So the two now answer differently wherever a matte sprite is
+			# transparent, wherever a field holes out its scrollbar, and wherever
+			# a script has moved a sprite away from its scored rectangle. That is
+			# not drift between two spellings of one thing; it is the two
+			# functions Director has.
+			return _sprite_under_pointer()
 		"selection":
 			# The text currently selected in whichever field holds focus. `the
 			# selStart` and `the selEnd` are the same range as two numbers and

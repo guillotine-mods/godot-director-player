@@ -10804,3 +10804,107 @@ movie opens, because a coverage counter nobody exercises is exactly what
 reported **zero** sound holds over twelve movies. `_start_lingo` builds a new
 `_host` per movie, so a counter read off the pre-jump host never moves. The trap is
 in `tools/sweep_cost.gd`'s header.
+
+---
+
+## 130. `hint` is skip's tractable sibling: bound to a key, emitted, connected to nothing — and unlike skip it is implementable
+
+**Status:** open · **Area:** `autoload/input_router.gd:11` and `:53`, `project.godot`'s
+`hint` action, and three disclosed-pending launcher toggles · found 2026-08-22 while
+closing 129
+
+`project.godot` binds `hint` to **H** (`physical_keycode: 72`) and joypad button 3,
+`input_router.gd:53` emits `hint_requested`, and **nothing connects it** — the signal
+appears three times, all inside the file that declares it. Identical shape to the
+`skip_minigame` action that 129 removed.
+
+**Written down because the obvious move is to delete it by analogy, and that would be
+wrong.** Skip was removed because it is *impossible* in a title-agnostic engine:
+`director_preview.gd`'s own comment on `skip_release` records the verdict — "a marker
+labels a position, and nothing in a `VWLB` says which positions are scenes. No
+title-agnostic rule can recover that" — bought with four reports (MURDER1 jumping
+backwards, DAY1 parking the playhead at 32, Rating's drive-probe cycle at 37, COMEIN
+landing past the frame that puppets its channels at 96).
+
+**`hint` has no such problem.** The retired implementation
+(`b04e5596:director/director_runtime.gd:725`) read
+`clickable_sprites(loader.get_frame(frame_index))` and named the first — it asked the
+**frame**, never the title. So it is answerable from the movie, which is exactly the
+property skip lacks, and the live engine already computes that set for the cursor and
+the click router. `hint` is a cheap option 1; skip was not an expensive one.
+
+**Also open, and the only launcher controls left that do nothing:** `upscale_mode`,
+`enhanced_graphics`, `expand_edge_hotspots` and `hotspot_hints` have no reader either —
+only `controller_cursor_speed` reaches anything. Unlike 129's case these are *disclosed*:
+`launcher.tscn`'s `QolHint` above the card says which toggles the engine reads, and
+`app_settings.gd`'s header says why the disclosure exists ("so the first report is not
+'hotspot hints is broken'"). So this is honest and not a defect — it is a list of what to
+implement, and the disclosure has to be kept accurate as each lands.
+
+`tools/launcher_surface.gd` now asserts every `CheckBox` under `AssistCard` is a name its
+`SURFACE` table carries, which catches a control added without disclosure. It cannot
+catch "a toggle nothing reads" without encoding which toggles are wired, so that class
+stays uncovered.
+**Resolved 2026-08-22.** `hint` is bound, connected and gated — `tools/hint.gd`,
+39 checks.
+
+The entry's central warning held: the analogy with the `skip_minigame` action
+`bugs.md` 129 removed is a false one. Skip is *impossible* in a title-agnostic
+engine because nothing in a `VWLB` says which markers are scenes; **`hint` asks
+the frame, never the title**, so it is answerable from the movie — and the engine
+already computes the clickable set for the cursor and the click router.
+
+The requirement that mattered more than the visual: **the hint must agree with the
+click router.** A hint pointing at something a click would not reach is a lie the
+player can act on, so what is asserted is that the sprite it names is one
+`interaction.gd`'s own eligibility answers yes for, rather than a second
+computation that could drift.
+
+**Landed with it, from the same session and the same descent work:** the cursor
+descent and the three sprite-under-the-pointer properties. See the entry below.
+
+---
+
+## The cursor descent and the sprite-under-the-pointer properties, 2026-08-22
+
+Not a filed entry — two `docs/ENGINE_TODO.md` items closed alongside `bugs.md`
+130, recorded here because each turned out larger than its note.
+
+**`preview/cursor.gd:at` differed from `Score::renderCursor` in three ways, not
+one.** It tested `rect.has_point(point)` where the reference tests `isMouseIn`, so
+**matte transparency was ignored** and a cursor answered over a transparent pixel
+of its own sprite. It had no Hole. And the **order was inverted** — it skipped a
+channel with no cursor *before* testing the point, where `score.cpp:1461-1470`
+tests the point first, which matters because in the reference a Hole breaks the
+descent **even when that sprite has no cursor of its own**.
+
+The difference is proved rather than the presence, on `PIP2DATA/SAVELOAD.dir`:
+a point where the sprite's rectangle contains it, its ink hit-tests per pixel, and
+the artwork is transparent there — the old descent answered that channel's own
+cursor `[10, 11]`, the reference's answers **0**, and where the same sprite has
+paint its cursor still answers. 14 checks.
+
+The wait-for-click short-circuit stays ahead of the descent, where its own comment
+already said it must be: `score.cpp:1454-1457` returns before walking the
+channels, and a descent a Hole can break must not be able to lose it.
+
+**`the rollOver`, `the mouseCast` and `the mouseMember` now take
+`getSpriteIDFromPos`**, which `Interaction.sprite_at` is — added by `383d0f98`
+with nothing calling it. The distinction is real: `channel_at` is
+`getMouseSpriteIDFromPos` and filters to sprites that can *answer a mouse
+message*; a movie asking "what is under the pointer" is asking the other question,
+and answering it with the first silently under-reports.
+
+### A harness went red for the arrival of correct behaviour
+
+`mouse_events` asserted **"no mouse property reads back VOID"**, treating VOID as
+the signature of an unbound name. That is right for every mouse property except
+one: `lingo-the.cpp:898-907` reads `getSpriteIDFromPos(pos)` and, when it is 0,
+assigns **`getVoid()`** — so VOID is Director's own answer for a pointer over
+nothing. The check could not tell an unbound name from a correct VOID, and it went
+red the moment `the mouseMember` was bound to the descent that can produce one.
+
+Exempted, with the reference cited at the exemption and the teeth kept for the
+other properties, which are a number or a string in every state. Fixing this in
+the *binding* instead — answering 0 or "" over nothing to keep the harness quiet —
+is exactly the shape `porting-fidelity-verification` warns about.

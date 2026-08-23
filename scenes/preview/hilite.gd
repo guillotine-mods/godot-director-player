@@ -59,9 +59,145 @@ extends RefCounted
 ## blended bar drew opaque (`stage_paint.gd`).
 ##
 ## Nothing here knows what game is loaded.
+##
+## ## The second trigger: `hint` (`bugs.md` 130)
+##
+## Everything above is feedback for a click the player has already made. The
+## bottom half of this file is the same mechanism reached from the other end --
+## the player asks "what *can* I click here", and the engine answers by marking
+## one thing the click router would actually reach.
+##
+## **It lives here rather than in a third overlay for the reason the header
+## above gives**: this is already the file that answers "which sprite is marked,
+## when, and what the mark looks like", and a second file answering the same
+## three questions is how `channel_at` and `draw_hotspots` came to disagree about
+## `hits_per_pixel`'s arguments. One mark, one place.
+##
+## **Three properties, and the second is the one worth the code.**
+##
+##   *title-agnostic*  the question is asked of the **frame**: which of the
+##                     sprites the score placed can answer a mouse message. No
+##                     room, no channel number and no title appears below, and
+##                     nothing here reads a marker -- which is the whole
+##                     difference between this and the `skip_minigame` action
+##                     `bugs.md` 129 deleted. Skip had to know which markers are
+##                     scenes and a `VWLB` does not say; this needs to know what
+##                     is clickable, and the score does say.
+##
+##   *it cannot lie*   a hint that points somewhere a click would not reach is
+##                     worse than no hint, because the player acts on it. So a
+##                     candidate is not merely "eligible": `reachable_point` runs
+##                     `interaction.gd:channel_at` -- the click router's **own**
+##                     descent, not a re-implementation of it -- at sample points
+##                     inside the sprite and keeps the first point the descent
+##                     resolves back to that same channel. A sprite that is
+##                     eligible but wholly covered by a higher eligible one is
+##                     skipped, because clicking it is not possible.
+##                     `tools/hint.gd` asserts both halves against the router.
+##
+##   *player-facing*   `debug_keys.gd:enabled()` gates what exists for **us**; an
+##                     accessibility affordance the player asked for is not that,
+##                     so the mark is drawn on the player side of the switch and
+##                     a shipped build still has it. Two consequences are
+##                     deliberate. `hint` is **not** a `DebugKeys` command -- it
+##                     is an `InputMap` action in `project.godot`, so nothing is
+##                     added to the map `tools/debug_bindings.gd` asserts is empty
+##                     when the layer is off. And the mark carries **no text**:
+##                     these titles are Hebrew and Russian, and an English word
+##                     painted over a 1997 stage is chrome, not help. The words go
+##                     in the debug toast, which is already behind the switch, and
+##                     the shape goes on the stage.
+##
+## ## Why the mark is drawn from `artwork`
+##
+## `artwork` is the only hook this change owns that runs on the player side of
+## every paint: `sprite_art.draw` calls it for every drawn sprite of every frame,
+## and `stage_paint.gd` reaches that unconditionally. `director_preview.gd:_paint`
+## has a second, tidier place to put an overlay and it is **below**
+## `DebugKeys.enabled()`, which is the wrong side of the switch for this.
+##
+## So the momentary hint is drawn from the **stored rect**, not from the sprite
+## being drawn, and it is drawn on *every* call rather than on the hinted
+## sprite's. Both follow from the hook:
+##
+##   - drawing from the stored rect means the hint works for a member type that
+##     never reaches `artwork` at all -- a field, a film loop, a digital video --
+##     each of which `stage_paint.gd` consumes before `_texture_for` is asked.
+##     Keying the draw on "is this the hinted sprite" would have silently made
+##     those three unhintable, which is a hole shaped exactly like the ones
+##     `AGENTS.md` warns about: from the chair it would look like the hint had
+##     chosen nothing.
+##   - drawing on every call puts the last copy immediately under the topmost
+##     sprite, so the outline reads as being *over* the stage rather than buried
+##     under whatever is painted after it. The stroke is opaque, so N copies of it
+##     are indistinguishable from one; the cost is two `Paint.rect` commands per
+##     sprite for the two and a half seconds a hint is up.
+##
+## The persistent form -- `qol/hotspot_hints`, `bugs.md` 130's secondary half --
+## is the exception and is drawn per sprite, because "outline everything
+## clickable" over the stored-rect route would be one rect list redrawn once per
+## sprite, which is quadratic. That narrows it to the sprites `artwork` sees, so
+## a clickable *field* is not outlined by the persistent toggle while it is by
+## the momentary hint. Recorded rather than smoothed over: it is the cost of the
+## hook, and it goes away the day the stage grows a player-side overlay pass.
 
 const Ink := preload("res://director/director_ink.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
+## Read, never written. The whole point of the hint is that it answers with the
+## click router's own eligibility and the click router's own descent rather than
+## with a second opinion about either -- `interaction.gd` is not this change's to
+## edit and does not need to be.
+const Interaction := preload("res://scenes/preview/interaction.gd")
+const Paint := preload("res://director/director_paint.gd")
+
+## The hint's whole state, as metadata on the preview node.
+##
+## **Metadata rather than a field on the node**, which is the one place this
+## departs from `preview/README.md`'s "state stays on the node". The node is
+## `scenes/director_preview.gd` and adding a `var` to it was not available to
+## this change; `set_meta` puts the state on the same object, where `tools/` can
+## read it by name exactly as it reads a field, and where a harness that reads
+## the wrong key gets `{}` and fails its assertion rather than reading a silent
+## zero. `hint_state` is the only reader and the only writer.
+##
+## Not a `static var`, and that is a measurement rather than a preference:
+## `director_preview.gd:_paint` records that Godot clears a script's statics
+## during engine teardown while `_draw` is still firing, which cost
+## `key_affordance.gd` 1,556 error lines in one gate log. A node's metadata is the
+## node's and outlives nothing.
+const HINT_META := "director_hint"
+
+## How long one press stays up. The toast's own `SECONDS`, deliberately: the two
+## are the same event seen twice -- the shape on the stage and the words in the
+## debug log -- and a mark that outlived its explanation would be the pair
+## disagreeing.
+const HINT_MS := 2500
+
+## The mark blinks rather than fading. A fade needs alpha, and alpha compounds
+## when the same stroke is drawn once per sprite (see the header); a blink is
+## expressible with an opaque stroke, and it is the louder of the two, which is
+## what an accessibility affordance wants.
+const HINT_BLINK_MS := 320
+
+## Outside the sprite's own rect, so the sprite's artwork -- drawn immediately
+## after this in `sprite_art.draw` -- cannot cover its own outline.
+const HINT_GROW := 2.0
+const HINT_WIDTH := 2.0
+
+## Amber. `interaction.gd:draw_hotspots` uses amber for "artwork only" and green
+## for "whole rect"; this is neither of those questions and it is not that
+## overlay -- it is one target rather than a survey, and it is on the player's
+## side of the debug switch where that overlay is not.
+const HINT_COLOUR := Color(1.0, 0.78, 0.12, 1.0)
+
+## How finely a candidate is probed for a point the click router agrees is its.
+##
+## The rect's centre is tried first and answers for almost everything; the grid is
+## what finds a foothold on a sprite whose middle is covered by a higher eligible
+## sprite, or on a Matte sprite whose middle is a transparent hole. 5x5 is 25
+## descents in the worst case for a candidate that has no reachable point at all,
+## and the whole search runs once per keypress.
+const HINT_SAMPLES := 5
 
 
 ## The artwork this sprite should draw with: the inverted copy while it is
@@ -78,6 +214,11 @@ const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
 static func artwork(canvas: CanvasItem, texture: Texture2D,
 		sprite: Dictionary) -> Texture2D:
 	var host = canvas
+	# **Ahead of the null guard and ahead of everything else**, because it is the
+	# player's half of this file and the rest is the movie's. It draws nothing at
+	# all unless a hint is up or `qol/hotspot_hints` is on, and the whole of the
+	# common path is one `has_meta` (see `mark`).
+	mark(host, sprite)
 	if texture == null:
 		return texture
 	# **`set the hilite of member` is the other hilite, and it comes first.**
@@ -319,3 +460,269 @@ static func _inverted(host, sprite: Dictionary) -> Texture2D:
 	var texture := ImageTexture.create_from_image(Ink.invert(source))
 	cache[key] = {"source": source, "texture": texture}
 	return texture
+
+
+# ---------------------------------------------------------------------------
+# `hint`: the mark the player asks for. `bugs.md` 130, and the header above for
+# why it is in this file rather than in a third overlay.
+# ---------------------------------------------------------------------------
+
+
+## The hint's state on `host`, as a dictionary that is safe to mutate in place.
+##
+## Always answers the same shape, so no caller has to test for a missing key --
+## `channel` 0 means "nothing is marked", and it survives the deadline on purpose
+## because it is also the cursor `request` cycles from.
+##
+##   channel  the channel the momentary hint named, 0 for none
+##   until    `Time.get_ticks_msec()` deadline for that mark
+##   rect     the marked sprite's stage rect **as it was when the hint was taken**
+##   point    the stage point a click has to land on to reach it
+##   reason   `interaction.gd:eligibility_reason`'s clause, for the debug toast
+##   all      `qol/hotspot_hints`: outline everything eligible, with no deadline
+static func hint_state(host) -> Dictionary:
+	if host == null:
+		return {"channel": 0, "until": 0, "rect": Rect2(), "point": Vector2.ZERO,
+			"reason": "", "all": false}
+	if host.has_meta(HINT_META):
+		return host.get_meta(HINT_META)
+	var fresh := {"channel": 0, "until": 0, "rect": Rect2(),
+		"point": Vector2.ZERO, "reason": "", "all": false}
+	host.set_meta(HINT_META, fresh)
+	return fresh
+
+
+## Is a momentary hint still up?
+static func hint_live(host) -> bool:
+	var state := hint_state(host)
+	return int(state["channel"]) > 0 and int(state["until"]) > Time.get_ticks_msec()
+
+
+## Turn the persistent form on or off. `qol/hotspot_hints`' only reader, reached
+## from `autoload/input_router.gd` -- which is where this engine's knowledge of
+## `AppSettings` lives, so that a preview module does not grow a second one.
+static func set_persistent(host, on: bool) -> void:
+	var state := hint_state(host)
+	if bool(state["all"]) == on:
+		return
+	state["all"] = on
+	host.set_meta(HINT_META, state)
+	host.queue_redraw()
+
+
+## Answer one press of `hint`: choose a target, store it, and ask for a paint.
+##
+## Returns the answer -- `{}` when the frame offers nothing -- so the caller can
+## say so in the debug toast without asking a second question and risking a
+## different answer.
+##
+## **Repeated presses cycle**, and that is a decision rather than a fallback. The
+## retired implementation (`b04e5596:director/director_runtime.gd:725`) named the
+## first clickable sprite and only ever that one; a frame with five doors then
+## answers one question once, and the player who presses again -- which is what a
+## player who has already seen the answer does -- is asking "what *else*". Cycling
+## costs the one integer that is already stored, and it is stable across a frame
+## change without storing an index into a list that may no longer exist: the
+## cursor is the previously named **channel**, and a channel that is no longer a
+## candidate simply falls back to the top of the list.
+static func request(host, table, hit_pixels: bool) -> Dictionary:
+	var state := hint_state(host)
+	var answer := aim(host, table, hit_pixels, int(state["channel"]))
+	if answer.is_empty():
+		# **The channel is cleared as well as the deadline.** Leaving it would make
+		# the next press on a frame that *does* offer something cycle from a
+		# channel nobody was shown.
+		state["channel"] = 0
+		state["until"] = 0
+		state["reason"] = ""
+		host.set_meta(HINT_META, state)
+		host.queue_redraw()
+		return answer
+	state["channel"] = int(answer["channel"])
+	state["until"] = Time.get_ticks_msec() + HINT_MS
+	state["rect"] = answer["rect"]
+	state["point"] = answer["point"]
+	state["reason"] = str(answer["reason"])
+	host.set_meta(HINT_META, state)
+	host.queue_redraw()
+	return answer
+
+
+## Every sprite on this frame a click can actually reach, topmost first.
+##
+## The order is `interaction.gd:channel_at`'s -- highest channel first, which is
+## Director's stacking order and therefore its hit order -- so "the first one" is
+## the thing nearest the player rather than the lowest-numbered channel.
+##
+## Two filters, and they are different questions:
+##
+##   1. `eligibility_reason` != "" -- §4.3, the router's own six clauses. Asked
+##      through `interaction.gd` rather than restated here; a second copy is the
+##      failure that file's own header is about.
+##   2. `reachable_point` finds a point the router's descent resolves back to
+##      this channel. Without it the list would include a sprite that is eligible
+##      and wholly covered, which is a hint the player cannot act on.
+##
+## `_effective` first, so a sprite a script has hidden or moved is judged where it
+## is rather than where the score last put it -- the same rule and the same reason
+## `channel_at` gives.
+static func candidates(host, table, hit_pixels: bool) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if host == null or table == null:
+		return out
+	var sprites: Array = host.frame_sprites()
+	for i in range(sprites.size() - 1, -1, -1):
+		var sprite: Dictionary = host._effective(sprites[i])
+		if sprite.is_empty():
+			continue
+		var reason: String = Interaction.eligibility_reason(host, sprite, table)
+		if reason == "":
+			continue
+		var rect: Rect2 = host._sprite_rect(sprite)
+		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+			continue
+		var at := reachable_point(host, sprite, sprites, hit_pixels, table)
+		if at.x < 0.0:
+			continue
+		out.append({
+			"channel": int(sprite["channel"]),
+			"cast_lib": int(sprite["cast_lib"]),
+			"cast_id": int(sprite["cast_id"]),
+			"rect": rect,
+			"point": at,
+			"reason": reason,
+		})
+	return out
+
+
+## The candidate after `after_channel`, or the first one. `{}` when the frame
+## offers none at all.
+##
+## **A frame with no clickable sprite is ordinary, not a failure.** MAP's frame 0
+## holds a backdrop, a panel and one off-stage sprite and none of them has a
+## behaviour, because the map's regions arrive a few frames later
+## (`tools/hotspots.gd` records the same case and refuses to assert against it).
+## So the honest player-side answer is that the stage does not change: there is
+## nothing to point at, and painting a "nothing here" badge over a movie would be
+## inventing the third overlay this file exists to avoid. The words are the debug
+## toast's, where they are already behind the switch and already in English --
+## see `autoload/input_router.gd:answer`.
+static func aim(host, table, hit_pixels: bool, after_channel: int) -> Dictionary:
+	var found := candidates(host, table, hit_pixels)
+	if found.is_empty():
+		return {}
+	var index := 0
+	for i in found.size():
+		if int(found[i]["channel"]) == after_channel:
+			index = (i + 1) % found.size()
+			break
+	return found[index]
+
+
+## A point inside `sprite` that the **click router's own descent** answers with
+## this sprite's channel, or `(-1, -1)` when there is none.
+##
+## This is the whole of "the hint cannot lie". `channel_at` is the function the
+## player's click goes through, called with the arguments
+## `director_preview.gd:_channel_at` calls it with, so a point that passes here is
+## a point that reaches this sprite -- not a point that would reach it if six
+## other rules agreed, and not a point a re-derived copy of those rules thinks
+## reaches it.
+##
+## The centre first, because it answers for almost every sprite in one descent.
+## The grid after it, because two ordinary cases have no reachable centre: a
+## sprite whose middle is covered by a higher eligible sprite, and a Matte-inked
+## bitmap whose middle is transparent -- for which the descent correctly walks
+## past to whatever is behind.
+static func reachable_point(host, sprite: Dictionary, sprites: Array,
+		hit_pixels: bool, table) -> Vector2:
+	var channel := int(sprite["channel"])
+	var rect: Rect2 = host._sprite_rect(sprite)
+	if Interaction.channel_at(host, rect.get_center(), sprites, hit_pixels,
+			table) == channel:
+		return rect.get_center()
+	for row in HINT_SAMPLES:
+		for column in HINT_SAMPLES:
+			var at := rect.position + Vector2(
+				rect.size.x * (float(column) + 0.5) / float(HINT_SAMPLES),
+				rect.size.y * (float(row) + 0.5) / float(HINT_SAMPLES))
+			if Interaction.channel_at(host, at, sprites, hit_pixels, table) == channel:
+				return at
+	return Vector2(-1, -1)
+
+
+## Draw whatever mark this sprite's turn owes, if any.
+##
+## Called from `artwork` for every drawn sprite of every frame, so the first line
+## is the whole of the common path: no metadata means no hint has ever been asked
+## for on this node and `qol/hotspot_hints` is off, which is every frame of every
+## run that does not use either.
+##
+## `sprite` is the sprite being drawn and is used **only** by the persistent arm.
+## The momentary hint draws from the stored rect and would draw the same thing on
+## any call -- see the header for why that is the point rather than an accident.
+static func mark(host, sprite: Dictionary) -> void:
+	if host == null or not host.has_meta(HINT_META):
+		return
+	var state: Dictionary = host.get_meta(HINT_META)
+	if bool(state["all"]):
+		mark_persistent(host, sprite)
+	if int(state["channel"]) <= 0:
+		return
+	if int(state["until"]) <= Time.get_ticks_msec():
+		return
+	# The blink. Integer division of the elapsed time by the half-period, so the
+	# stroke is on for `HINT_BLINK_MS` and off for `HINT_BLINK_MS`, from
+	# `Time.get_ticks_msec()` -- the only clock in this engine that always moves
+	# (`toast.gd` says why the score's does not).
+	var left := int(state["until"]) - Time.get_ticks_msec()
+	if int(float(left) / float(HINT_BLINK_MS)) % 2 == 1:
+		return
+	outline(host, state["rect"])
+
+
+## The persistent form: outline this sprite if the click router says a click can
+## reach it. `qol/hotspot_hints`, and the check is `interaction.gd`'s own, so the
+## toggle marks exactly the set the mouse can answer for and cannot drift from it.
+##
+static func mark_persistent(host, sprite: Dictionary) -> void:
+	if not marks_persistently(host, sprite):
+		return
+	outline(host, host._sprite_rect(sprite))
+
+
+## Would the persistent form outline this sprite?
+##
+## Split out from the draw for the reason `interaction.gd` splits
+## `responds_to_mouse` from `eligibility_reason`: the harness has to be able to
+## ask the question the drawing asks, and a harness that re-derived it would keep
+## passing after this drifted. `tools/hint.gd` compares this answer against
+## `Interaction.responds_to_mouse` sprite by sprite over a real frame, which is
+## how the toggle is held to "exactly what the mouse can reach".
+##
+## A film loop's children arrive at `artwork` carrying their own mini-score
+## channel numbers, which collide with the stage's; they are distinguishable
+## because a child names its cast by name and has no `cast_lib`
+## (`director/director_film_loop.gd`), and asking `responds_to_mouse` about one
+## would be asking about the stage channel that happens to share its number.
+static func marks_persistently(host, sprite: Dictionary) -> bool:
+	if host == null or not sprite.has("cast_lib") or host._table == null:
+		return false
+	return Interaction.responds_to_mouse(host, sprite, host._table)
+
+
+## The mark itself: an opaque stroke just outside the rect, with a dark one
+## outside that.
+##
+## Two strokes because one is invisible on about half the artwork in this corpus.
+## A single amber line disappears over sand, over a lit interior and over any
+## bright title screen, and "the hint did nothing" is exactly the report this
+## feature exists to stop; a dark outer stroke gives the amber one an edge to sit
+## against whatever is behind it. Both are opaque, which is what makes drawing
+## this once per sprite indistinguishable from drawing it once (see the header).
+static func outline(host, rect: Rect2) -> void:
+	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return
+	Paint.rect(host, rect.grow(HINT_GROW + HINT_WIDTH), Color(0, 0, 0, 1),
+		false, HINT_WIDTH)
+	Paint.rect(host, rect.grow(HINT_GROW), HINT_COLOUR, false, HINT_WIDTH)
