@@ -133,6 +133,45 @@ var _current_args: Array = []
 ## `abort` is unwinding. Cleared where a dispatch begins rather than where it
 ## ends, so a handler that aborts cannot leave the next one refusing to start.
 var _aborting := false
+## How many `Lingo::execute` loops are on the stack -- **the boundary an abort
+## unwinds to, and no further**.
+##
+## `bugs.md` 123's second half, and the piece without which the abort must not be
+## turned on. In the reference `_abort` is `Lingo::execute`'s loop condition *and*
+## the flag whose epilogue pops every remaining `CFrame`
+## (`reference/scummvm/lingo/lingo.cpp:634`, `742-748`), and the last line of that
+## epilogue is `_abort = false`. So the flag is scoped to **one `execute()` call**,
+## not to one event and not to one frame -- and `execute()` is re-entrant:
+##
+##   `b_call` / `b_sendSprite` / `b_sendAllSprites` reach `callBehaviorHandler`,
+##   which notes `_state->callstack.size()` and calls `execute(frame)`
+##   (`lingo-builtins.cpp:1880-1892`, `3470-3547`) -- **once per recipient**, so a
+##   `call(#msg, listOfObjects)` opens one scope per object in the list.
+##
+##   `Lingo::processEvent` calls `execute()` per queued element
+##   (`lingo-events.cpp:809`, `831`), and `processEvents` loops over the queue
+##   calling it -- so each tier of an event chain is its own scope too.
+##
+## The consequence, and it is the whole reason this exists: an abort raised inside
+## `call(#msg, obj)` stops that message and **the caller carries on with the
+## statement after the `call`**. A port that set the flag without this boundary
+## would unwind the caller as well, which is a worse bug than the divergence it
+## was fixing, because it is a truncation the reference does not perform.
+##
+## Counted rather than stacked because nothing needs to know *which* scope: the
+## question asked of it is "is this the outermost", and `end_execute` clearing the
+## flag unconditionally is exactly what the epilogue does. `_running` is a
+## different count and not a substitute -- it tracks whether any handler is on the
+## stack at all, so that `_park` can find the outermost one, and every handler call
+## bumps it. Only the three re-entering builtins and the dispatch entry points open
+## an execute scope, which is the distinction the reference draws and the one the
+## abort depends on.
+##
+## **`_abort` does not mean "an error happened".** `LC::procret` sets the same flag
+## on the ordinary return from the outermost handler (`lingo-code.cpp:1901`,
+## `1909`); it means "stop the loop". Anything reading this pair as an error
+## channel will get the control flow wrong.
+var _execute_depth: int = 0
 var _depth: int = 0
 ## Where execution is, for locating a diagnostic. Statement granularity: the
 ## line of the statement being run, not of the expression inside it.
@@ -290,7 +329,14 @@ func run_primary(event: String) -> bool:
 	if body.is_empty():
 		return false
 	_running += 1
+	# Tier 1 of the same queue -- `processEvent`'s `execute()` again. Without it an
+	# abort inside a `when ... then` fragment would unwind past the primary tier
+	# into whatever the player was doing, and a primary handler is the most likely
+	# place in the language to find a typo: it is authored as a *string*, so
+	# nothing compiles it until it is assigned.
+	var scope := begin_execute()
 	_exec_block(body, {})
+	end_execute(scope)
 	_running -= 1
 	if _running == 0:
 		_park()
@@ -582,7 +628,25 @@ func call_in_script(name: String, script: Dictionary, channel: int = 0,
 		# along rather than fixed.
 		if on_object == null:
 			on_object = live_behaviour(script, 0)
+		# **This function is the reference's `processEvent`, so it is an
+		# `execute()` scope** -- `bugs.md` 123's boundary, and `begin_execute` for
+		# the whole argument. Every caller is one of Director's per-element event
+		# deliveries: `event_chain.gd:run` walks the queued tiers, and
+		# `frame_loop.gd:send_sprite_message` delivers `beginSprite`, `endSprite`
+		# and `stepFrame`, which the reference queues through
+		# `Movie::processEvent(kEventBeginSprite, i)` (`lingo-events.cpp:866`,
+		# `992`) and runs through `execute()` (`809`, `831`).
+		#
+		# Placed here rather than at each caller because one of those callers is
+		# not in the files this change owns, and because the property is the
+		# callee's: an abort inside one element does not reach the next, and does
+		# not reach a handler that caused the element to run by calling
+		# `updateStage`. `call_handler` deliberately has no scope -- it is also
+		# `_call`'s ordinary in-language handler call, where the reference has no
+		# `execute()` either -- which is why the two are not folded together.
+		var scope := begin_execute()
 		_invoke(handler, [on_object] if on_object != null else [], script, on_object)
+		end_execute(scope)
 		_running -= 1
 		if _running == 0:
 			_park()
@@ -602,7 +666,11 @@ func call_movie_handler(name: String) -> bool:
 	var entry: Dictionary = _movie_handlers[key]
 	var owner := find_script(str(entry.get("cast", "")), str(entry.get("script", "")))
 	_running += 1
+	# The movie tier of the same queue, so the same `execute()` scope as
+	# `call_in_script` above and for the same reason.
+	var scope := begin_execute()
 	_invoke(entry["handler"], [], owner)
+	end_execute(scope)
 	_running -= 1
 	if _running == 0:
 		_park()
@@ -871,6 +939,15 @@ func resume_chain(chain: Array) -> void:
 	var outer_body := _current_handler
 	var outer_line := _line
 	_running += 1
+	# **A thaw is a fresh `Lingo::execute`**, so it is a scope like every other
+	# entry point -- `freezeState` parks the context and the resumption runs the
+	# loop again, with its own epilogue. Without it an abort inside a resumed
+	# statement would still be set when `resume_chain` returned, and the thing that
+	# thawed the chain is a frame loop rather than a Lingo statement, so nothing
+	# above would ever test it and the flag would sit there until the next
+	# `reset_steps`. The `Flow.ABORT` arm below is the *chain's* unwinding; this is
+	# the flag's, and they are two different jobs.
+	var scope := begin_execute()
 	var pending: Array = chain.duplicate()
 	while not pending.is_empty():
 		var entry: Dictionary = pending.pop_front()
@@ -898,6 +975,7 @@ func resume_chain(chain: Array) -> void:
 	_handler_name = outer_handler
 	_current_handler = outer_body
 	_line = outer_line
+	end_execute(scope)
 	_running -= 1
 	_park()
 
@@ -1175,6 +1253,11 @@ func _broadcast(target: Variant, message: String, args: Array,
 	if typeof(target) == TYPE_ARRAY:
 		var last: Variant = null
 		for item in (target as Array):
+			# One `execute()` scope per recipient, because `b_call`'s list arm
+			# calls `callBehaviorHandler` per element and that is where the
+			# re-entry is (`lingo-builtins.cpp:1915-1921`). The recursion gets the
+			# scope from the single-target path below, so an abort in the third
+			# object of a list does not stop the fourth.
 			last = _broadcast(item, message, args, from_ancestor)
 		return last
 	if not LingoObject.is_object(target):
@@ -1211,7 +1294,22 @@ func _broadcast(target: Variant, message: String, args: Array,
 	## now the offspring.
 	var full: Array = [recipient]
 	full.append_array(args)
-	return _invoke_on(entry[0], entry[1], full, recipient)
+	# **The `execute()` boundary, at the one site in this file that is a re-entry.**
+	# `callBehaviorHandler` records the callstack depth and calls `execute(frame)`
+	# around exactly this dispatch (`lingo-builtins.cpp:1880-1892`), so an abort
+	# raised anywhere inside the message -- an `abort` statement, or a call to a
+	# handler nothing defines -- stops the message and leaves the caller's next
+	# statement to run. Without it `call(#msg, obj)` would unwind the caller too,
+	# which the reference does not do: `bugs.md` 123's second half, and the reason
+	# the abort was not implementable from the call site alone.
+	#
+	# Wrapped rather than pushed into `_invoke_on`, which is also `new`'s
+	# constructor path: `LC::call` on a `new` is an ordinary call in the reference
+	# and opens no scope, so an abort inside a constructor must keep unwinding.
+	var scope := begin_execute()
+	var value: Variant = _invoke_on(entry[0], entry[1], full, recipient)
+	end_execute(scope)
+	return value
 
 
 ## Run one handler *on* an object, with the same `_running`/`_park` discipline
@@ -1263,6 +1361,49 @@ end
 		return null
 	_exec_block((handlers[0] as Dictionary).get("body", []), frame)
 	return null
+
+
+## Open one `Lingo::execute` scope. Returns the depth it opened at, which
+## `end_execute` takes back so a mismatched pair is a failed assertion rather than
+## a silently drifting counter.
+##
+## Every caller must pair this with `end_execute` on **every** path out, including
+## the early returns: an unclosed scope makes the next abort stop one level too
+## early, which is the same class of bug as no boundary at all and harder to see.
+## The three sites are `_broadcast` (the reference's `callBehaviorHandler`),
+## `preview/scripts.gd:dispatch` and `preview/event_chain.gd:run` (its
+## `processEvent`); `tools/lingo_execute_boundary.gd` asserts each of them and
+## asserts the depth returns to zero.
+func begin_execute() -> int:
+	_execute_depth += 1
+	return _execute_depth
+
+
+## Close the scope `token` opened, and **swallow an abort that reached it**.
+##
+## `Lingo::execute`'s epilogue pops every remaining frame and then clears `_abort`
+## unconditionally (`lingo.cpp:742-748`). The popping is implicit here -- an abort
+## has already unwound the GDScript stack back to this point through
+## `_exec_from`'s per-statement test -- so what is left is the clearing, and the
+## clearing is the boundary: the caller of this scope resumes with the statement
+## after whatever opened it.
+##
+## Answers whether an abort was swallowed, for a caller that wants to say so.
+func end_execute(token: int) -> bool:
+	var aborted := _aborting
+	# A defensive floor rather than an assert: a harness that leaks a scope must
+	# not leave the interpreter permanently one level deep for the rest of a
+	# session, because every later abort would then stop one frame short and the
+	# symptom would look like the abort not working.
+	_execute_depth = maxi(0, mini(_execute_depth, token) - 1)
+	_aborting = false
+	return aborted
+
+
+## How many `execute()` scopes are open. Read by harnesses; the interpreter's own
+## code asks the flag, not the depth.
+func execute_depth() -> int:
+	return _execute_depth
 
 
 func reset_steps() -> void:
@@ -3020,27 +3161,65 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 		#   return from the outermost handler (`lingo-code.cpp:1901`, `1909`):
 		#   it is "stop the loop", not "an error happened".
 		#
-		# **It is deliberately not set here**, and the measurement is the reason.
-		# `tools/undefined_calls.gd --all` puts 19 call sites in the second bucket
-		# across 91,737 in the six shipped roots, and two of them are
-		# `gotoNetPage` -- Director 5 NetLingo, which the reference does not
-		# implement *at all* (no `netpage`, `netDone` or `getNetText` anywhere in
-		# `reference/scummvm/lingo/`). So the reference aborts on a name Director
-		# answers, and copying that would truncate a handler because of a hole in
-		# ScummVM rather than a fault in the movie. One name in seven, measured,
-		# is enough to say the discriminator cannot carry a control-flow decision:
-		# the reference's builtin table is a port's surface, not Director's.
-		# What is recorded instead is the divergence itself, under its own
-		# category, so `debug_report` names it on the player's path and a future
-		# abort has a set to be right about first.
+		# **It is set here now, and it was not for a year.** What changed is the
+		# discriminator, and the history is worth the paragraph because the
+		# decision was correct both times.
+		#
+		# `tools/undefined_calls.gd --all` put **19 call sites over 7 names** in
+		# the undefined bucket, out of 91,737 in the six shipped roots -- and two
+		# of them were `gotoNetPage`, Director 5 NetLingo, which the reference
+		# does not implement *at all* (no `netpage`, `netDone` or `getNetText`
+		# anywhere in `reference/scummvm/lingo/`). So with the reference's tables
+		# as the only question, aborting would have truncated a handler because of
+		# a hole in ScummVM rather than a fault in the movie: one name in seven,
+		# measured, and enough to say a port's surface cannot carry a
+		# control-flow decision about Director's language.
+		#
+		# `lingo/lingo_director_names.gd` is the second question -- what
+		# *Director's own dictionary* documents, read family by family out of
+		# Macromedia's Lingo Dictionary -- and it separates the two cases. Same
+		# sweep after it: **17 sites over 6 names**, `gotoNetPage` moved to
+		# `DIRECTOR_ONLY` above, and `rating`'s `mraker` -- `go(mraker(1))`
+		# written directly above a correct `go(marker(0))` -- still here, which is
+		# exactly the case the reference aborts and should.
+		#
+		# The other half of the price is `begin_execute` / `end_execute`: the flag
+		# unwinds to the nearest `execute()` scope and no further, so an abort
+		# inside `call(#msg, obj)`, inside a `sendAllSprites` recipient or inside
+		# one tier of an event chain stops there rather than taking the caller
+		# with it. Without that this line would abort *further* than Director
+		# does, which is a worse bug than the one it fixes.
+		# `tools/lingo_execute_boundary.gd` is the harness on it.
+		if not RefNames.knows(name) and DirectorNames.knows(name):
+			# **Director documents it and the reference does not implement it.**
+			# `gotoNetPage` is the measured instance and the one that blocked the
+			# abort: real NetLingo, answered by every Director 5 projector, and
+			# absent from all of `reference/scummvm/lingo/`. Answering here is the
+			# only safe thing to do -- the movie did nothing wrong -- and it is
+			# recorded under its own category so the gap is a work list of its own
+			# rather than either an abort or a silence. See
+			# `lingo/lingo_director_names.gd` for where each family came from.
+			report(LingoDiagnostics.DIRECTOR_ONLY, name)
+			return result if result != null else 0
 		if not RefNames.knows(name):
 			report(LingoDiagnostics.UNDEFINED_HANDLER, name)
 			# Through `_fail` as well, because the sink is read by harnesses and
 			# the entry's whole complaint is that a running game gives no sign.
-			# Director prints "Handler not defined" in the message window and
-			# stops; this port prints and carries on, and the print is the half
-			# it can have without deciding the other question.
+			# Director prints "Handler not defined" in the message window; this
+			# now stops as well as printing.
 			_fail("call to undefined handler %s" % name)
+			# `LC::call` ends this one with `lingoError(...)`
+			# (`lingo-code.cpp:1770`), which sets `_abort`. `_exec_from` tests
+			# `_aborting` after every statement and `end_execute` clears it at the
+			# scope that caught it, which is between them what `Lingo::execute`'s
+			# loop condition and its epilogue do.
+			#
+			# The value still comes back rather than VOID, because the *expression*
+			# this call sits in finishes evaluating before the statement ends --
+			# the reference pushes nothing and the stack is discarded by the
+			# epilogue, and there is no observable difference once the statement
+			# is abandoned.
+			_aborting = true
 			return result if result != null else 0
 		report(LingoDiagnostics.BUILTIN, name)
 	return result if result != null else 0
@@ -3075,6 +3254,14 @@ const LingoXtra := preload("res://lingo/lingo_xtra.gd")
 ## `_call`'s fall-through, to tell a builtin this port has not bound from a
 ## handler the movie does not define. Preloaded for the reason above.
 const RefNames := preload("res://lingo/lingo_reference_names.gd")
+## Every name **Director** documents, family by family, out of Macromedia's own
+## Lingo Dictionary rather than out of ScummVM's implemented subset. The second
+## half of the same discriminator and read at the same one site: `RefNames` says
+## "the reference resolves this", this says "Director documents this", and only a
+## name in neither is a handler the movie failed to define. `bugs.md` 123 is the
+## entry that could not be closed while the first question was the only one that
+## could be asked. Preloaded for the reason above.
+const DirectorNames := preload("res://lingo/lingo_director_names.gd")
 ## For `do`. Preloaded here rather than at the top for the same reason `Builtins`
 ## is: a headless `--script` run resolves global class names out of the editor's
 ## cache, which a fresh checkout has not built.

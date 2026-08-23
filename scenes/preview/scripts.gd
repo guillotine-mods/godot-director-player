@@ -84,8 +84,28 @@ static func dispatch(host, interpreter, handler: String, script: Dictionary) -> 
 	var owns: bool = interpreter.call("_script_has_handler", script, key)
 	if owns or interpreter.has_handler(key):
 		host._tally(host._ran, handler)
+	# **One `Lingo::execute` scope per dispatch**, which is what `bugs.md` 123's
+	# second half is about. `Lingo::processEvent` calls `execute()` around each
+	# handler it delivers (`reference/scummvm/lingo/lingo-events.cpp:809`, `831`),
+	# and the flag an abort sets is cleared by that call's epilogue -- so a
+	# dispatch is where an abort stops.
+	#
+	# This is also the **nested** case, and it is why the line has to be here
+	# rather than only at the outermost entry point: `sendSprite` and
+	# `sendAllSprites` re-enter through `preview_lingo_host.gd` -> `_dispatch` ->
+	# here, once per channel, exactly as the reference re-enters through
+	# `callBehaviorHandler` once per instance (`lingo-builtins.cpp:3470-3547`). An
+	# abort inside a `sendAllSprites` recipient must stop that recipient and let
+	# the broadcast carry on to the next channel and then let its *caller* carry
+	# on, and without a scope here it would unwind all of them.
+	#
+	# `reset_steps` above already clears the flag on the way in; this clears it on
+	# the way out, which is the half the reference's epilogue performs and the half
+	# that decides how far an abort travels.
+	var scope: int = interpreter.begin_execute()
 	interpreter.call_handler(
 		handler, [], script, addressed_channel(host, interpreter, script))
+	interpreter.end_execute(scope)
 
 
 ## Which sprite this dispatch is for -- `the currentSpriteNum`, 0 for the frame.

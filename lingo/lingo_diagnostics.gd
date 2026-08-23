@@ -31,8 +31,25 @@ const UNSET_VARIABLE := "unset_variable"
 ## `UNBOUND_NAME`: `BUILTIN` means "the port owes a binding" and is a work list,
 ## and an undefined call is the movie's own, so mixing them buries the work list.
 ## Measured across all six roots in `games/`: 19 call sites, 7 names, against
-## 77,556 sites that the reference does have a table entry for.
+## 77,556 sites that the reference does have a table entry for. **17 sites over 6
+## names after `lingo_director_names.gd` landed**, because `gotoNetPage` moved to
+## `DIRECTOR_ONLY` below -- see that file, and `bugs.md` 123 for why the move is
+## what made the abort implementable.
 const UNDEFINED_HANDLER := "undefined_handler"
+## A name **Director documents and the reference does not implement**, reached at
+## the same fall-through. `lingo/lingo_director_names.gd` is the table, read out
+## of the Macromedia Director MX Lingo Dictionary's "Lingo by Feature" chapter.
+##
+## Split from `BUILTIN` and from `UNDEFINED_HANDLER` because it is a third thing
+## and each of the other two would be a lie about it. It is not `BUILTIN`, whose
+## sentence is "the reference answers this and we have not bound it yet" -- there
+## is no reference answer to copy, so the work is larger and differently shaped.
+## It is emphatically not `UNDEFINED_HANDLER`, which is now a control-flow
+## decision: `gotoNetPage` is real NetLingo, Director answers it, and aborting on
+## it would truncate a handler because of a gap in ScummVM rather than a fault in
+## the movie. That one name in seven is what stopped the abort being implementable
+## for as long as the reference's tables were the only discriminator.
+const DIRECTOR_ONLY := "director_only"
 
 ## A runaway script must not turn the sink into the leak it exists to find.
 const MAX_ENTRIES := 2000

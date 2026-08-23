@@ -82,10 +82,21 @@ static func run_primary_script(host, interpreter, compiled: Dictionary,
 	var tag := "%s:%s" % [label, name if name != "" else "<source>"]
 	host._tally(host._sent, tag)
 	host._tally(host._ran, tag)
+	# The primary handler is the first element of the same queue and gets the same
+	# `execute()` scope as the five tiers below (`lingo-events.cpp:809`, `831`, and
+	# `LingoInterpreter.begin_execute`). Without it an abort inside
+	# `the mouseDownScript` would unwind past the primary tier into whatever the
+	# player was doing, which is further than the reference goes -- and the primary
+	# tier is the one most likely to be a one-line fragment with a typo in it,
+	# because it is installed from a string.
+	var scope: int = interpreter.begin_execute()
 	if named:
 		interpreter.call_handler(name)
+		interpreter.end_execute(scope)
 		return true
-	return bool(interpreter.run_compiled(compiled))
+	var ran: bool = bool(interpreter.run_compiled(compiled))
+	interpreter.end_execute(scope)
+	return ran
 
 
 ## One element of the queue.
@@ -272,6 +283,23 @@ static func run(host, interpreter, handler: String, elements: Array) -> int:
 		if host._host != null:
 			outer = int(host._host.current_sprite_num)
 			host._host.current_sprite_num = int(el.get("sprite", 0))
+		# **One `Lingo::execute` scope per element**, not per chain, and it is
+		# opened by the two calls below rather than here. The reference's
+		# `processEvents` walks the queue calling `processEvent`
+		# (`lingo-events.cpp:723-786`), and `processEvent` calls `execute()` around
+		# the one handler it delivers (`809`, `831`) -- so the flag an abort sets is
+		# cleared between tiers, and a behaviour that aborts does not swallow the
+		# frame script's turn at the same event. `LingoInterpreter.call_in_script`
+		# and `call_movie_handler` carry the scope because they *are* that
+		# per-element delivery and they have a second caller --
+		# `frame_loop.gd:send_sprite_message`, for `beginSprite` / `endSprite` /
+		# `stepFrame` -- which needs the same boundary and would not get it from a
+		# line written here. `LingoInterpreter.begin_execute` is the whole argument.
+		#
+		# What stops a *chain* is a different flag: `stopEvent` / a missing `pass`,
+		# which is `_passEvent` and is tested at the bottom of this loop. Conflating
+		# the two would make a call to an undefined handler behave like a
+		# `stopEvent` nobody wrote.
 		if is_movie:
 			interpreter.call_movie_handler(handler)
 		else:

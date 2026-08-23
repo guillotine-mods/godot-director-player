@@ -36,6 +36,19 @@ extends RefCounted
 ## conservative direction here is the one that aborts less: a missed abort is a
 ## fidelity gap, a wrong abort truncates a handler.
 ##
+## **This table is half of the discriminator, and the half that cannot decide a
+## control-flow question on its own.** It is a statement about *ScummVM's coverage
+## of Director*, not about Director: `gotoNetPage` is real NetLingo that every
+## Director 5 projector answers, and it is absent from all of
+## `reference/scummvm/lingo/`, so "not in this table" once meant either "the movie
+## called a handler nobody defined" or "ScummVM has not implemented NetLingo".
+## `lingo/lingo_director_names.gd` is the other half -- what *Director's own
+## dictionary* documents, family by family -- and only a name in neither is the
+## movie's own fault. `bugs.md` 123 is the entry that was blocked on exactly that
+## and the two files together are what unblocked it. Do not fold them: this one
+## moves when `reference/scummvm/` does and that one moves when somebody reads more
+## of the dictionary, and a merged table could not say which happened.
+##
 ## Not the port's own surface. `lingo_builtins.gd`, `_own_builtin` and the host
 ## bindings are what the port answers, and a name any of them answers never
 ## reaches the fall-through at all -- so this list does not need to agree with

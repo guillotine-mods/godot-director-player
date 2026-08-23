@@ -88,3 +88,15 @@ static func emit(host) -> void:
 		if not undefined.is_empty():
 			print("undefined handlers: %d  %s  (Director aborts the dispatch here)"
 				% [undefined.size(), ", ".join(undefined)])
+		# The third bucket, and the one that made the second safe to act on:
+		# **Director documents this name and the reference does not implement it**
+		# (`lingo/lingo_director_names.gd`, read out of Macromedia's own Lingo
+		# Dictionary). `gotoNetPage` is the corpus instance. It is not an abort --
+		# the movie did nothing wrong -- and it is not `builtins unbound` either,
+		# because there is no reference implementation to read the answer off. Its
+		# own line so the two work lists stay separable.
+		var director_only: PackedStringArray = host._interpreter.diagnostics \
+			.names_in(LingoDiagnostics.DIRECTOR_ONLY)
+		if not director_only.is_empty():
+			print("Director-only Lingo: %d  %s  (documented, unimplemented here and in the reference)"
+				% [director_only.size(), ", ".join(director_only)])
