@@ -71,9 +71,29 @@ extends RefCounted
 ## pictures and keeps the clock — which is the behaviour a movie polling
 ## `the movieTime` needs, and is already what that file's header promises for the
 ## AVI backend.
+##
+## ## The sound track, and why it is the picture's opposite
+##
+## `director_mpeg1_audio.gd` decodes the MPEG-1 Layer II track these files carry,
+## and the thing worth knowing here is that it cannot be run the way the picture
+## is. **A dropped picture is invisible and a dropped sample is a hole**, so the
+## trade the paragraph above describes — decode what you can, keep the clock —
+## has no audio equivalent, and neither does decoding on demand: a polyphase
+## filterbank's 1,024 sample ring *is* its state, so there is no such thing as
+## starting in the middle.
+##
+## So the whole track is decoded once, on a `Thread` this file starts in `open`,
+## and `audio_stream` answers null until that finishes. Measured on
+## `heb/mainmenu/intro.mpg`: **5.4 s of one background thread for 87.3 s of
+## audio**, 15.7x real time, 15.0 MB of PCM. `preview/video.gd` polls once a tick
+## and starts the player at whatever `the movieTime` has reached, so the picture
+## never waits and a track that becomes ready late joins in sync rather than
+## restarting. `audio_stream`'s own comment is the long form, including what that
+## costs a clip played the instant it is opened.
 
 const Ps := preload("res://director/director_mpeg1_ps.gd")
 const Mpeg1Video := preload("res://director/director_mpeg1_video.gd")
+const Mp2 := preload("res://director/director_mpeg1_audio.gd")
 
 ## Which playback path `preview/video.gd` drives this reader with. Pull, like the
 ## AVI reader: this file hands over one `Image` per call and owns no clock.
@@ -97,21 +117,36 @@ var pel_aspect: float = 1.0
 var bit_rate: int = 0
 
 ## The sound track's own numbers, read out of the first MPEG audio frame header.
-## **There is no audio decoder here** and `audio_stream()` says so by answering
-## null; these are non-zero anyway because the track exists and a movie asking
-## `the sampleRate of member` deserves the file's answer rather than a zero that
-## reads as "no sound track". `director_mpeg1_video.gd`'s header states what
-## decoding them would cost.
+## These were the whole of the audio story when there was no decoder; they are
+## still read the same way, because `the sampleRate of member` is answered before
+## anything is decoded and must be the file's own number either way.
 var audio_rate: int = 0
-## Zero until a sound track is found, then 16 — which is what a Layer II decoder
-## would mix at and is what `director_ogg.gd` answers for Vorbis, a format with no
-## sample width of its own either. Left at zero for a file with no audio, because
-## `the sampleSize of member` claiming 16 bits for a track that is not there is
-## the kind of plausible invention `docs/DIGITAL_VIDEO.md` §3 forbids.
+## Zero until a sound track is found, then 16 — which is what the Layer II
+## decoder mixes at and is what `director_ogg.gd` answers for Vorbis, a format
+## with no sample width of its own either. Left at zero for a file with no audio,
+## because `the sampleSize of member` claiming 16 bits for a track that is not
+## there is the kind of plausible invention `docs/DIGITAL_VIDEO.md` §3 forbids.
 var audio_bits: int = 0
 var audio_channels: int = 0
 var audio_layer: int = 0
 var audio_bitrate: int = 0
+
+## What the frame walk found, for the harness and for the trace line. `audio_error`
+## is set and the rest left at zero for a track this cannot decode — Layer III,
+## free format — which is a different state from "there is no track" and reads
+## differently in a report.
+var audio_frames: int = 0
+var audio_resyncs: int = 0
+var audio_duration_ms: float = 0.0
+var audio_error: String = ""
+
+var _mp2: RefCounted = null
+var _audio_thread: Thread = null
+var _audio_mutex: Mutex = null
+var _audio_pcm: PackedByteArray = PackedByteArray()
+var _audio_done: bool = false
+var _audio_us: int = 0
+var _audio_wav: AudioStreamWAV = null
 
 var _ps: RefCounted = null
 var _video: RefCounted = null
@@ -189,12 +224,18 @@ func open(file_path: String) -> bool:
 
 
 func close() -> void:
+	_join_audio()
 	if _video != null:
 		_video.release()
 	if _ps != null:
 		_ps.close()
 	_ps = null
 	_video = null
+	_mp2 = null
+	_audio_mutex = null
+	_audio_pcm = PackedByteArray()
+	_audio_wav = null
+	_audio_done = false
 	_open = false
 	_cached_index = -1
 	_cached_image = null
@@ -256,14 +297,85 @@ func frame_at(index: int) -> Image:
 	return image
 
 
-## No audio decoder. Null rather than silence, so that `preview/video.gd` starts
-## no player and `the sound of member` has nothing to attenuate.
+## The whole sound track as one `AudioStreamWAV`, or **null while it is still
+## being decoded**.
 ##
-## `audio_rate`, `audio_bits` and `audio_channels` are still the file's own,
-## because they are facts about the media and not about this port's ability to
-## play it — `fill_facts` counts a sound track for them, which is true.
+## ## Why the whole track, and why not here
+##
+## Layer II costs about a sixth of real time to decode in GDScript
+## (`tools/mpeg1_audio.gd` measures it per clip), and `intro.mpg` is 87 seconds —
+## so this is fourteen seconds of arithmetic, and there is nowhere on the main
+## thread to put it. It cannot go in a property read: `docs/DIGITAL_VIDEO.md` §3
+## is the argument, and Magic Hat's `Check avi` reads `the duration of member`
+## before the first tick of playback. It cannot go in `the movieRate` being
+## written either, which is where `preview/video.gd` starts a soundtrack: that is
+## a Lingo statement, and freezing the movie inside one for fourteen seconds is
+## the hang §3 exists to prevent.
+##
+## And it cannot be decoded a piece at a time as the playhead reaches it. **Audio
+## cannot drop what it cannot afford**, which is the asymmetry with the picture:
+## `frame_at` drops pictures to keep the clock and nobody minds, while a
+## soundtrack that arrives late leaves a hole, and a filterbank restarted at a
+## chunk boundary leaves a click — its 1,024 sample ring *is* its state, so
+## decoding from the middle means having decoded what came before.
+##
+## So `open` starts a `Thread` and this answers null until it finishes. The
+## picture never waits for the sound. `preview/video.gd` polls once a tick and
+## starts the player at whatever `the movieTime` has reached, so a track that
+## became ready ten seconds in joins ten seconds in and in sync, rather than
+## restarting the clip or playing behind it.
+##
+## The cost of that decision, stated rather than implied: **for a clip that is
+## played the instant it is opened, the first sixth of it is silent.** In Magic
+## Hat it is not — `Check avi` opens the member and reads its duration well
+## before `the movieRate` is written — but that is this title's shape and not a
+## guarantee. The alternative was a frozen movie, and a clip whose sound starts
+## late is worth more than one that does not start at all, which is the same
+## trade `director_mpeg1_video.gd` made for the pictures.
+##
+## Memory: 16-bit stereo at the file's own rate, so 15.4 MB for `intro.mpg` and
+## 20.7 MB for `heb/album/magic5.mpg`, the longest in the corpus. Held for as
+## long as the reader is open, and released with it.
 func audio_stream() -> AudioStreamWAV:
-	return null
+	if _audio_wav != null:
+		return _audio_wav
+	if not audio_ready():
+		return null
+	if _audio_pcm.is_empty():
+		return null
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = audio_rate
+	stream.stereo = audio_channels >= 2
+	stream.data = _audio_pcm
+	_audio_wav = stream
+	return stream
+
+
+## Has the background decode finished? False while it is still running, and false
+## for a file with no decodable track at all.
+func audio_ready() -> bool:
+	if _audio_mutex == null:
+		return false
+	_audio_mutex.lock()
+	var done := _audio_done
+	_audio_mutex.unlock()
+	if done and _audio_thread != null:
+		# Join the moment it is known to be over, so the `Thread` is released here
+		# rather than at `close` — `exit_leaks` counts what is still alive.
+		_audio_thread.wait_to_finish()
+		_audio_thread = null
+	return done
+
+
+## Microseconds the background decode took, and how many bytes of PCM it made.
+## Read by `tools/mpeg1_audio.gd` and by nothing in the player.
+func audio_decode_us() -> int:
+	return _audio_us
+
+
+func audio_pcm_bytes() -> int:
+	return _audio_pcm.size()
 
 
 ## Microseconds spent inside `frame_at`, and the number of coded pictures that
@@ -406,43 +518,91 @@ func _restart_before(index: int) -> void:
 # ================================================================== the audio
 
 
-## The first MPEG audio frame header of the audio elementary stream.
+## Walk the audio elementary stream's frames, and start decoding them.
 ##
-## Eleven bits of sync, then version, layer, a bit rate index, a sampling rate
-## index and the channel mode — enough for `the sampleRate`, `the sampleSize` and
-## `the channelCount of member` to be the file's own numbers. Nothing here
-## decodes a sample; see this file's `audio_stream`.
+## The walk is cheap and the decode is not, so they are separated: the walk is
+## `director_mpeg1_audio.gd:scan`, which reads one header per frame — 3,343 of
+## them for `intro.mpg`, thousandths of a second — and it is what answers
+## `the sampleRate`, `the sampleSize` and `the channelCount of member` with the
+## file's own numbers. It also validates, and its result is the strongest check
+## either half of this decoder has: every frame's declared length must land on
+## the next sync word.
+##
+## The decode is the 512-tap filterbank, and it goes on a `Thread`. See
+## `audio_stream` for why it is here rather than at the first sample asked for.
+##
+## A track that walks but cannot be decoded — Layer III — still fills in the
+## facts, because `scan` reads the header before it refuses. `audio_error` then
+## says what it was, and `audio_stream` answers null for ever, which is the same
+## thing `preview/video.gd` already does with a video it cannot decode.
 func _read_audio_header(es: PackedByteArray) -> void:
-	var n := es.size()
-	var at := 0
-	while at + 4 <= n:
-		if es[at] != 0xFF or (es[at + 1] & 0xE0) != 0xE0:
-			at += 1
-			continue
-		var version := (es[at + 1] >> 3) & 0x03
-		var layer := (es[at + 1] >> 1) & 0x03
-		var rate_index := (es[at + 2] >> 2) & 0x03
-		var mode := (es[at + 3] >> 6) & 0x03
-		if version == 1 or layer == 0 or rate_index == 3:
-			at += 1
-			continue
-		# Layer bits: 3 = Layer I, 2 = Layer II, 1 = Layer III.
-		audio_layer = 4 - layer
-		var base: int = [44100, 48000, 32000][rate_index]
-		# Version bits: 3 = MPEG-1, 2 = MPEG-2 (half rate), 0 = MPEG-2.5 (quarter).
-		if version == 2:
-			base /= 2
-		elif version == 0:
-			base /= 4
-		audio_rate = base
-		audio_bits = 16
-		audio_channels = 1 if mode == 3 else 2
-		var index := (es[at + 2] >> 4) & 0x0F
-		if version == 3 and layer == 2 and index > 0 and index < 15:
-			audio_bitrate = int([
-				0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384,
-			][index]) * 1000
+	if es.is_empty():
 		return
+	var mp2 := Mp2.new()
+	var walked := mp2.scan(es)
+	if mp2.sample_rate <= 0:
+		audio_error = str(mp2.error)
+		return
+	audio_layer = mp2.layer
+	audio_rate = mp2.sample_rate
+	audio_bits = 16
+	audio_channels = mp2.channels
+	audio_bitrate = mp2.bit_rate
+	audio_frames = mp2.frame_count
+	audio_resyncs = mp2.resyncs
+	audio_duration_ms = mp2.duration_ms()
+	if not walked:
+		audio_error = str(mp2.error)
+		return
+	_mp2 = mp2
+	_audio_mutex = Mutex.new()
+	_audio_done = false
+	_audio_thread = Thread.new()
+	if _audio_thread.start(_decode_audio) != OK:
+		# No thread available. Decode inline rather than losing the sound track:
+		# a stall is worse than silence only while there is something else to do,
+		# and on a machine that will not start a thread there is not.
+		_audio_thread = null
+		_decode_audio()
+
+
+## The background decode, start to finish, in one call. Runs on `_audio_thread`.
+##
+## Nothing here touches anything the main thread reads except through the mutex,
+## and it reads `_mp2` — which nothing else writes once the thread has started,
+## and which `close` waits for before releasing.
+func _decode_audio() -> void:
+	var began := Time.get_ticks_usec()
+	var pcm: PackedByteArray = _mp2.decode()
+	var spent := Time.get_ticks_usec() - began
+	_audio_mutex.lock()
+	_audio_pcm = pcm
+	_audio_us = spent
+	_audio_done = true
+	_audio_mutex.unlock()
+
+
+## Wait for the background decode and release the thread.
+##
+## **A running `Thread` that is never joined is an error at exit and a leaked
+## object in `exit_leaks`'s count**, so this is not optional tidying: a movie
+## that changes while a clip is decoding drops the reader, and that is the
+## ordinary case rather than the unusual one. `audio_ready` joins as soon as the
+## decode is known to be over, and `close` joins whether it is or not, so the
+## only way to leak one is to drop a reader without closing it —
+## `preview/video.gd:release` closes every reader it holds, which is the one
+## place that happens.
+##
+## There was a `NOTIFICATION_PREDELETE` arm here as a second net and it is gone:
+## it fired with the script instance already detached and printed
+## `Attempt to call function '_join_audio' in base 'null instance'` on every run,
+## which is a standing error in a suite whose job is to say which runs are clean —
+## `AGENTS.md`'s argument about `exit_leaks`, applied to the thing that was meant
+## to prevent one.
+func _join_audio() -> void:
+	if _audio_thread != null:
+		_audio_thread.wait_to_finish()
+		_audio_thread = null
 
 
 ## Picture start codes in a bare elementary stream, for the one case with no

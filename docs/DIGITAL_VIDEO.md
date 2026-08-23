@@ -346,11 +346,32 @@ corpora are AVI**, so this alone closes the type-10 half.
 > than falling behind. The prediction was right about the cost and wrong about the
 > verdict, and a clip that plays slowly is worth more than one that does not play.
 >
-> What it does **not** buy: MPEG-1 Layer II audio, so the clips are silent. That
-> is a second decoder — a 512-tap polyphase filterbank, ~45 million multiplies for
-> `intro.mpg` — and it is a named gap rather than a claim the files have no sound.
-> The reader parses the audio frame header, so `the sampleRate`, `the sampleSize`
-> and `the channelCount` answer the file's own numbers.
+> **The audio gap closed on 2026-08-22.** `director/director_mpeg1_audio.gd` is a
+> complete Layer I + Layer II decoder — frame walk, allocation tables,
+> scalefactors, requantisation and the 512-tap polyphase synthesis filterbank.
+> **38,060 frames across all 22 clips, 0 resynchronisations, 0 rejected headers**;
+> every frame's declared length lands exactly on the next sync word, which is this
+> half's equivalent of the video half's `0 desynchronised slices`.
+>
+> **The whole track is decoded once on a background `Thread` started in `open()`**,
+> and `audio_stream()` answers null until it finishes: 87.33 s of audio in 5.45 s,
+> **15.7x real time**, 15.0 MB of PCM. Nothing runs in a property read. The
+> reasoning, which is not the video half's: a dropped picture is invisible and a
+> dropped sample is a hole, so "drop and keep the clock" has no audio equivalent;
+> and a filterbank's 1,024-sample ring *is* its state, so there is no starting in
+> the middle. The honest cost is that a clip played the instant it is opened is
+> silent for its first sixth.
+>
+> Verified against the Ogg sidecar's Vorbis track as an oracle: aligned to **2
+> samples**, **correlation 0.99745** over 262,760 samples, mean absolute difference
+> 6.7% of the oracle's own level — two independent decodes of one source.
+>
+> **And the oracle is not sufficient, which is worth knowing before trusting one.**
+> Reverting the requantiser to the minimal-decoder `/(steps+1)` form — wrong by up
+> to 0.167 of full scale — moved the comparison from 6.7% to 6.5% with the
+> correlation unchanged. At 224 kbit/s the low-level quantiser classes are barely
+> used, so a strong cross-check can be blind to a per-class gain error. That is why
+> the harness carries 23 corpus-independent format checks beside it.
 
 **C2 — the MPEG-1 half is not small.** MPEG-1 video is variable-length codes,
 inverse DCT and motion compensation; 352x288 at 25 fps is 2.5 Mpix/s of IDCT

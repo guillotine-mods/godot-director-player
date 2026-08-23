@@ -507,9 +507,15 @@ func _one(h: Harness, file_path: String, limit: int, from_frame: int,
 	print("  video : %dx%d  %.4f fps  %d frames  %.2f s  %d bit/s  pel aspect %.4f" % [
 		reader.width, reader.height, reader.fps, reader.frame_count,
 		reader.duration_ms / 1000.0, reader.bit_rate, reader.pel_aspect])
-	print("  audio : layer %d, %d Hz, %d channel(s), %d bit/s  (no decoder — silent)" % [
+	# The audio is `tools/mpeg1_audio.gd`'s subject and is only reported here, but
+	# it is reported *truthfully*: this line said "no decoder — silent" for as
+	# long as that was so, and a stale version of it would be the exact shape
+	# `AGENTS.md` warns about — a sentence that reads as measured because it used
+	# to be.
+	print("  audio : layer %d, %d Hz, %d channel(s), %d bit/s, %d frames%s" % [
 		reader.audio_layer, reader.audio_rate, reader.audio_channels,
-		reader.audio_bitrate])
+		reader.audio_bitrate, reader.audio_frames,
+		("  (%s)" % reader.audio_error) if str(reader.audio_error) != "" else ""])
 	h.check("%s: the sequence header states a picture size and a frame rate" % name,
 		reader.width > 0 and reader.height > 0 and reader.fps > 0.0,
 		"%dx%d at %.4f fps" % [reader.width, reader.height, reader.fps])

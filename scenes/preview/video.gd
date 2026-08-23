@@ -10,7 +10,7 @@ extends RefCounted
 ## Director has — `DigitalVideoCastMember` holds the decoder and `Channel` holds
 ## `_movieRate` / `_startTime` / `_stopTime` (`castmember/digitalvideo.cpp`,
 ## `channel.h`, ScummVM 805f259a) — and it is what keeps `media.gd` answerable
-## with no decoder at all, which is still the state for QuickTime and MPEG-1.
+## with no decoder at all, which is still the state for QuickTime.
 ##
 ## ## The one thing that must not regress
 ##
@@ -115,6 +115,15 @@ extends RefCounted
 ## dependency. It is a **pull** backend and is driven by exactly the code below
 ## that drives the AVI reader; `_is_push` does not name it, which is the whole of
 ## what that cost this file.
+##
+## Its sound track cost one more thing, and it is `_join_audio`. MPEG-1 audio is
+## Layer II, a second decoder and a second filterbank
+## (`director/director_mpeg1_audio.gd`), and it is far too slow to run on the main
+## thread — so that reader decodes the whole track on a background thread and
+## answers `audio_stream()` with null until it is done. That is a state no other
+## backend can be in, and without a poll the sound of a clip that started playing
+## before its decode finished would never start at all, because `rate_written`
+## asks exactly once.
 ##
 ## ## Three backends, one playhead
 ##
@@ -623,6 +632,47 @@ static func advance(host, delta: float) -> void:
 		# to it, which is the only arrangement where the number a script reads and
 		# the picture a player sees are the same position.
 		_sync_stream(host, channel, reader, moved)
+		# The soundtrack may not have existed when the rate was written. See
+		# `_join_audio`; for every backend but MPEG-1 this is one dictionary
+		# lookup and a return.
+		if moved < last:
+			_join_audio(host, channel, reader, member, moved)
+
+
+## Start a pull backend's soundtrack once it becomes available, at the position
+## the playhead has already reached.
+##
+## **Only the MPEG-1 backend needs this**, and it is here rather than in that
+## backend because the thing that has to happen — start the player at
+## `the movieTime`, not at zero — is this file's knowledge and not the decoder's.
+## `director_mpeg1.gd:audio_stream` answers null while its Layer II decode is
+## still running on a background thread, which is a state neither the AVI reader
+## nor the two push backends can be in: the one hands back an `AudioStreamWAV`
+## the instant it is asked and the others own their own audio entirely.
+##
+## Without this the sound of a clip that started playing before its decode
+## finished would never start at all, because `rate_written` asks exactly once.
+## With it the picture never waits and the sound joins in sync, because
+## `player.play(seconds)` seeks — the whole track is one `AudioStreamWAV`, which
+## is the property that makes late joining free and is half the reason that
+## backend decodes the track whole.
+##
+## Idempotent by the meta `_start_audio` already sets: once a player has been
+## given this file's stream, this never starts it again. A loop rewind and a
+## paused-then-resumed clip both go through `_begin_media` instead, so a
+## soundtrack that has finished on purpose is not restarted from here.
+static func _join_audio(host, channel: int, reader, member: Dictionary,
+		at_units: int) -> void:
+	if _is_push(reader):
+		return
+	if not bool(member.get("sound", true)):
+		return
+	var players: Dictionary = host._host.video_players
+	var existing = players.get(channel, null)
+	if existing != null and is_instance_valid(existing) \
+			and str(existing.get_meta("avi_path", "")) == str(reader.path):
+		return
+	_start_audio(host, channel, reader, member, at_units)
 
 
 ## `[library, slot]` for whatever a channel is showing, or `[]`.

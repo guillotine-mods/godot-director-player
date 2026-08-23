@@ -75,7 +75,10 @@ extends RefCounted
 ##
 ## No CRC, no system header validation, no STD buffer modelling, no more than one
 ## video stream, and no attempt to interleave audio and video by time — the two
-## come out as two flat buffers and the player is what re-synchronises them.
+## come out as two flat buffers and the player is what re-synchronises them. That
+## last one is not a shortcut the audio half exposed: the sound track is decoded
+## whole and played from `the movieTime`, so the picture and the sound are
+## synchronised by the playhead rather than by the multiplex.
 ## A file whose packets are damaged is not repaired: the walk stops at the first
 ## length that would run past the end of the file and reports what it had, which
 ## is the same rule `director_avi.gd:_walk` states for a truncated RIFF tail.
@@ -206,10 +209,11 @@ func video_elementary() -> PackedByteArray:
 
 ## The audio elementary stream, reassembled.
 ##
-## Kept even though nothing decodes it yet, because it is what
-## `director_mpeg1.gd` reads the audio *header* out of — a movie asking
-## `the sampleRate of member` gets the file's own answer rather than a zero that
-## reads as "there is no sound track" when there is one it cannot play.
+## `director_mpeg1_audio.gd` walks its frames and decodes them; `director_mpeg1.gd`
+## reads the first frame's *header* out of it before any of that, so that a movie
+## asking `the sampleRate of member` gets the file's own answer without waiting
+## for a sample. Both need exactly these bytes and neither needs to know a
+## container was involved, which is the same separation the video half has.
 func audio_elementary() -> PackedByteArray:
 	return _audio
 
