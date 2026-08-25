@@ -8210,6 +8210,26 @@ Director closes an unterminated final handler at EOF, and nobody has measured
 that. Guessing either way silently changes what every malformed script in the
 corpus does, so it stays open until it is answered from the reference.
 
+> **Settled 2026-08-22, from a source nobody had used.** The entry left open
+> "whether Director closes an unterminated final handler at EOF" as a *language*
+> question — and `lingo-gr.y` answered that half (two `handler` productions with no
+> `tENDCLAUSE`, commented `// D4. No 'end' clause`). What was never established is
+> whether the missing `end` was an **authoring truncation** or a decode artefact of
+> ours. It is authoring: **`piposh-ru/pipdata/textold.cst` carries the same member,
+> `day4doc2`, with its `end` present** —
+>
+> ```
+> Texts.cst   (en and ru)  … play frame "egozspeak" / go to frame "doc1b"      <- no end
+> textold.cst (ru only)    … play frame "egozspeak" / go("doc1b") / end
+> ```
+>
+> Same member name, same handler, same root, a container the shipped game never
+> names. So the truncation is in the cast the title ships, and the older copy
+> states what the handler was meant to do.
+>
+> **Both localisations now compile clean**: `piposh-en` **9,422 of 9,422**,
+> `piposh-ru` **9,726 of 9,726**, and both are gate entries.
+
 The Hebrew build is unaffected. The cost of the remaining two is that one click
 in the day-4 doctor dialogue is dead in both localisations.
 
