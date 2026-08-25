@@ -11118,6 +11118,28 @@ nobody has looked.
 
 ### Honest coverage gap in what landed
 
+> **CLOSED 2026-08-22. It fired.** `tools/undefined_live.gd` drives `rating`'s
+> `BATZROOM.dir` to frame 231 and gets the line the entry had never seen:
+>
+> ```
+> lingo: call to undefined handler mraker  (BehaviorScript 103 > exitFrame line 3)
+> ```
+>
+> What made the difference is the flag that did not exist when the earlier attempts
+> were made: the site sits behind `if not soundBusy(1)`, and `--speech` scales
+> `AudioServer.playback_speed_scale` so the wait retires sooner. **It needed x24**,
+> not the sweep's default of 8 — the harness waits on the channel actually falling
+> silent (158 ms) rather than on a tick budget, which is why it is repeatable.
+>
+> **And it exercised the abort on real data for the first time.** Across the
+> aborted statement the score kept running — `go 1->2` — and the frame loop
+> visited 16 further frames, so the abort unwound the dispatch and not the movie.
+> The harness asserts that as its own check rather than inferring it, and it
+> asserts that **no other name aborted in the same run**, so a blanket abort could
+> not pass as this one.
+>
+> 9 checks, gated as `undefined_live:--root@rating@--boot@MAINMENU.dir`.
+
 **No corpus site fired at runtime in any run driven.** `liveness_sweep --only
 NAVIGATE.dir --click` and `--only BATZROOM.dir --click` both stayed silent, because the
 `mraker` arm sits behind `if not soundBusy(1)`. So the new `UNDEFINED_HANDLER` print is
