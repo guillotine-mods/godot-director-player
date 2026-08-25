@@ -115,28 +115,46 @@ The store is the constraint, not the device: Google Play caps an AAB base module
 at 200 MB, so **any** Play build needs asset packs or a first-run download, even
 for a single title.
 
-## Saving does not work yet
+## Saving
 
 **The games save by rewriting their own container in place.** `saveMovie` writes
-the `.dir` back to disk — `HEZSAVE.DIR` in Piposh 2, `EGOZSAVE.DIR` in Rating,
+the `.dir` back to disk: `HEZSAVE.DIR` in Piposh 2, `EGOZSAVE.DIR` in Rating,
 `Saves.dir` in Dream are the games' own save files, not ours. Inside an APK
-`res://` is read-only, so every one of those writes fails.
+`res://` is read-only, so every one of those writes failed.
 
-What it needs, in the order it has to happen:
+**Fixed by a writable overlay.** A container write that the game root refuses is
+retried into `user://games/<root>/<relative>`, and `DirectorPaths.resolve` prefers
+that copy from then on, so the save is read back by the same reference the movie
+already uses. A title that has never been saved still opens straight out of the
+package. `tools/save_overlay.gd` is the proof, and it is in `gate.sh`: it builds a
+read-only fixture root, has a second Godot save into it, and reads the field back
+out of the overlay here.
 
-1. On first run, copy the containers a game writes into `user://`. Which ones can
-   be derived rather than listed — a container that carries a `saveMovie` site is
-   one, and `tools/save_movie.gd` already finds field-carrying containers.
-2. `DirectorPaths` resolves *writes* to the `user://` copy and reads to whichever
-   exists, so a saved game survives and an unsaved one still opens from the APK.
-3. `MovieSave.writes_allowed` currently answers "yes" whenever the process is not
-   headless, which on Android means yes — and then the write fails at the
-   filesystem. It should refuse or redirect when the target is not writable, the
-   same way it refuses a headless probe.
+This is not the first-run copy the plan above called for. Copy-on-write replaced
+it because `DirectorWriter.rewrite` already composes a whole container at any
+target, which is Director's own Save As, so nothing needs copying ahead of a
+write, no startup pass has to derive which containers a title saves into, and the
+unsaved case costs nothing.
+
+`MovieSave.writes_allowed` is unchanged and still asks only about the *run*, not
+the target: with copy-on-write there is always a writable target, so a probe there
+would have re-answered a question the redirect already settles.
+
+The same argument applies to desktop, which is why this is not an Android-only
+fix. Every preset in `export_presets.cfg` filters `games/*` into the `.pck`, and
+`release.yml` asserts that the multi-GB pack is where it lands, so an exported
+Windows, macOS or Linux build has no writable `games/` either.
+
+**Still read-only: the FileIO Xtra.** `lingo_fileio.gd` writes under the game root
+too (`createFile`, and `_flush` on an opened file) and keeps its own path index
+rather than `DirectorPaths`'s, so it needs the same overlay rule and does not have
+it. No title in this corpus places a FileIO write (measured: 0 sites across all
+six roots), and the titles that would need it are `itamar-park`'s `safari.ini` and
+`itamar-magichat`, which this engine does not yet run. Filed rather than done, and
+the note is here because the two index layers have to end up agreeing.
 
 The JSON quick-save layer (`save_files.gd`) already falls back from `res://saves`
-to `user://saves`, so **that** half works. It is the in-game save the movies do
-themselves that does not.
+to `user://saves`, so that half always worked.
 
 ## Unverified
 

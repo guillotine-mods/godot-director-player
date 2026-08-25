@@ -17,6 +17,8 @@ const CONFIG_PATH := "res://director_game.cfg"
 ## Where titles live when the export packaged them. `games_dir()` is what to
 ## ask; this is only the packaged half of its answer.
 const GAMES_DIR := "res://games"
+## Where a write goes when the game root refuses one. See `overlay_for`.
+const OVERLAY_DIR := "user://games"
 const ContainerName := preload("res://director/director_container.gd")
 const GameConfig := preload("res://director/game_config.gd")
 
@@ -179,16 +181,16 @@ static func _holds_a_title(where: String) -> bool:
 ## the executable they are ordinary folders -- drop one in, it appears in the
 ## launcher.
 ##
-## It also decides whether the movies can *save*. These games save by rewriting
-## their own container in place (`saveMovie` -> `HEZSAVE.DIR`, `EGOZSAVE.DIR`,
-## `Saves.dir`), and a `.pck` is read-only at runtime. Loose on disk they are
-## writable, so a saved game works on desktop exactly as it does from source.
-##
-## Android is the platform this cannot help: there is no folder beside an APK, so
-## `res://` stays and the games ride inside the package -- which is why the
-## Android preset still filters them in and the desktop one does not. Making the
-## games writable there means copying them to `user://`, which is filed on the
-## board rather than guessed at here.
+## It used to decide whether the movies could *save*, and no longer does. These
+## games save by rewriting their own container in place (`saveMovie` ->
+## `HEZSAVE.DIR`, `EGOZSAVE.DIR`, `Saves.dir`), and a `.pck` is read-only at
+## runtime, so a packaged root could not take the write. **All five presets in
+## `export_presets.cfg` filter `games/*` in** -- desktop included, and
+## `release.yml` asserts the multi-GB pack is where it lands -- so the loose
+## branch below is not what makes saving work on any shipped build. A write the
+## root refuses is redirected to `overlay_for` instead, which covers the packaged
+## desktop build and Android alike (there is no folder beside an APK to fall back
+## to at all).
 ## Rewritten against `games_dir()` rather than tested independently, for the same
 ## reason the launcher's enumeration goes through it: two functions each deciding
 ## where the games are is how a menu comes to offer a title the engine cannot
@@ -200,6 +202,39 @@ static func beside_the_executable(wanted: String) -> String:
 	if games == GAMES_DIR:
 		return wanted
 	return games.path_join(wanted.trim_prefix(GAMES_DIR + "/"))
+
+
+## Where a container goes when the game root cannot take a write, and the first
+## place a read looks for one.
+##
+## **A container has three possible homes, and this is the precedence.** The
+## writable overlay here, then the loose folder `beside_the_executable` finds,
+## then whatever `res://games` is — a real directory from source, the inside of
+## the `.pck` in an export. Reads take the first that has the file; a write that
+## the second or third refuses lands in the first.
+##
+## `user://games/<root>/<relative>`, keyed by the root's own folder name and the
+## container's path relative to that root — never by bare filename. Two titles
+## ship containers of the same name (this corpus ships `MASTER.CST` twice inside
+## one title), and `_lookup` below has a whole comment about what a tail-only
+## match gets wrong.
+##
+## Returns "" for a path that is not under the root, which is what makes this
+## safe to ask about any resolved path: an overlay is only ever offered for a
+## container the game owns.
+func overlay_for(container_path: String) -> String:
+	var base := root.trim_suffix("/")
+	var normalised := container_path.trim_suffix("/")
+	if base == "" or not normalised.begins_with(base + "/"):
+		return ""
+	return "%s/%s/%s" % [
+		OVERLAY_DIR, base.get_file(), normalised.substr(base.length() + 1)]
+
+
+## The overlay copy if there is one, else the path as resolved. See `overlay_for`.
+func _overlaid(hit: String) -> String:
+	var over := overlay_for(hit)
+	return over if over != "" and FileAccess.file_exists(over) else hit
 
 
 ## `--root <name>` on the command line beats the config, for every reader.
@@ -383,7 +418,7 @@ func resolve(name: String, from_dir: String = "") -> String:
 	for spelling in ContainerName.spellings(wanted):
 		var hit := _lookup(spelling, from_dir)
 		if hit != "":
-			return hit
+			return _overlaid(hit)
 	return ""
 
 

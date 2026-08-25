@@ -97,6 +97,35 @@ static func save(host, requested: String) -> Dictionary:
 	if in_place:
 		host._movie.close()
 	var failed: String = Writer.rewrite(host._movie, target, replacements)
+	# **A game root that refuses a write is the normal case off a source
+	# checkout**, not an error to report: every preset in `export_presets.cfg`
+	# filters `games/*` into the `.pck`, `release.yml` asserts the multi-GB pack is
+	# where it lands, and a `.pck` is read-only at runtime. Android has no folder
+	# beside the APK to fall back to either. So the write is retried into the
+	# writable overlay (`DirectorPaths.overlay_for`), and the game reads it back
+	# because `resolve` prefers that copy from then on.
+	#
+	# Attempted where the movie asked and redirected only on failure, rather than
+	# probing for writability first: a source checkout then keeps saving into its
+	# own corpus byte for byte as before, and there is no probe file appearing in
+	# a game folder on every save. `Writer.rewrite` re-reads the source by path
+	# rather than through the handle, so the retry has the same bytes to work from
+	# as the first attempt.
+	#
+	# `docs/ANDROID.md` files this as copying the writable containers on first
+	# run. Copy-on-write is done here instead: the writer already composes a whole
+	# container at any target (Director's Save As), so nothing has to be copied
+	# ahead of a write, no startup pass has to derive which containers a title
+	# saves into, and a title that is never saved still opens straight from the
+	# package.
+	if failed != "" and host._paths != null:
+		var overlay: String = host._paths.overlay_for(target)
+		if overlay != "" and DirAccess.make_dir_recursive_absolute(
+				ProjectSettings.globalize_path(overlay.get_base_dir())) == OK:
+			var redirected: String = Writer.rewrite(host._movie, overlay, replacements)
+			if redirected == "":
+				failed = ""
+				report["path"] = overlay
 	if in_place and not host._movie.open(source_path):
 		# The movie cannot be reopened, which is worse than a failed save: the
 		# player is left on a stage whose container is gone. Reported with the

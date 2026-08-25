@@ -110,3 +110,6 @@ tools/scratch/
 # Subagent-driven-development scratch: ledgers, briefs, review packages.
 # Per-plan working state, not a record -- git log is the record.
 .superpowers/
+
+# Harness fixtures: built and removed by tools/save_overlay.gd.
+.gate-fixtures/
