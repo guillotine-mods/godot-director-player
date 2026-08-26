@@ -38,25 +38,86 @@ const FIXTURE_PARENT := "res://.gate-fixtures"
 const FIXTURE_ROOT := FIXTURE_PARENT + "/save-overlay"
 const DEFAULT_SOURCE := "res://games/piposh-dream/Saves.dir"
 
+## The principal an ACL deny entry names on Windows: `Everyone`, by SID rather
+## than by name, because there is no shell here to expand `%USERNAME%` and no
+## reason to depend on how this Windows spells its groups. See `_deny_writes`.
+const DENY_SID := "*S-1-1-0"
+
 
 func _absolute(path: String) -> String:
 	return ProjectSettings.globalize_path(path)
 
 
-## `chmod` through the shell: Godot exposes no mode setter, and the reproduction
-## is specifically a directory that refuses a new file. A read-only *file* is not
-## the same thing and does not reproduce it — the writer replaces the target, so
-## an unwritable file inside a writable directory still saves.
-func _chmod(mode: String, path: String) -> int:
-	return OS.execute("/bin/chmod", [mode, _absolute(path)], [], true)
+## `%SystemRoot%` rather than a bare name: there is no shell to search `PATH`, and
+## `OS.execute` on a name it cannot resolve logs an engine `ERROR` before
+## returning -1 — the noise `tools/video_sidecar.gd:_find_converter` has its own
+## paragraph about avoiding.
+func _icacls() -> String:
+	var root := OS.get_environment("SystemRoot")
+	if root == "":
+		root = "C:/Windows"
+	return root.replace("\\", "/") + "/System32/icacls.exe"
 
 
-func _rm_rf(path: String) -> void:
+## `icacls` reads `/` as the start of an option, so the path has to be native.
+## Same conversion as `video_sidecar.gd:_native`, for the same reason.
+func _native(path: String) -> String:
 	var real := _absolute(path)
-	if DirAccess.dir_exists_absolute(real):
-		OS.execute("/bin/rm", ["-rf", real], [], true)
-	elif FileAccess.file_exists(real):
+	return real.replace("/", "\\") if OS.get_name() == "Windows" else real
+
+
+## The OS's own permission tool, because Godot exposes no mode setter on any
+## platform and the reproduction is specifically a directory that refuses a *new*
+## file: `director_writer.gd` composes `<target>.saving` beside the target and
+## renames it, so an unwritable file inside a writable directory still saves.
+##
+## Two spellings of one idea. Where there are modes, `chmod`. Where there are not,
+## an ACL deny entry on the two rights that create things in a directory — `WD`
+## (write data, i.e. a new file) and `AD` (append data, i.e. a new folder) — and
+## nothing else, so the container stays readable and the fixture stays deletable.
+## The owner keeps `WRITE_DAC` implicitly no matter what a deny entry says, which
+## is what lets `_allow_writes` undo this.
+##
+## Neither exit code is asserted on. What the subject depends on is whether a file
+## can be created, which is what the probe at the call site asks.
+func _deny_writes(path: String) -> int:
+	if OS.get_name() == "Windows":
+		return OS.execute(_icacls(),
+			[_native(path), "/deny", "%s:(WD,AD)" % DENY_SID], [], true)
+	return OS.execute("/bin/chmod", ["a-w", _absolute(path)], [], true)
+
+
+func _allow_writes(path: String) -> int:
+	if not DirAccess.dir_exists_absolute(_absolute(path)):
+		return 0
+	if OS.get_name() == "Windows":
+		return OS.execute(_icacls(),
+			[_native(path), "/remove:d", DENY_SID], [], true)
+	return OS.execute("/bin/chmod", ["u+w", _absolute(path)], [], true)
+
+
+## A dozen portable lines instead of `rm -rf`. The shell tool is not the same on
+## every platform this gate runs on, and `/bin/rm` is half of what failed the
+## nightly's Windows leg: the fixture was left behind for the next run to read as
+## the previous run's answer.
+func _remove_tree(path: String) -> void:
+	var real := _absolute(path)
+	if FileAccess.file_exists(real):
 		DirAccess.remove_absolute(real)
+		return
+	if not DirAccess.dir_exists_absolute(real):
+		return
+	var dir := DirAccess.open(real)
+	if dir == null:
+		return
+	# The probe is a dotfile, and a file left behind is a directory that will not
+	# remove.
+	dir.include_hidden = true
+	for name in dir.get_files():
+		DirAccess.remove_absolute(real.path_join(str(name)))
+	for name in dir.get_directories():
+		_remove_tree(real.path_join(str(name)))
+	DirAccess.remove_absolute(real)
 
 
 ## The overlay a redirected write is expected to land in. Keyed by the game root's
@@ -115,9 +176,13 @@ func _init() -> void:
 	var fixture := FIXTURE_ROOT.path_join(relative)
 
 	# Start from nothing: a fixture or overlay left by a killed run would make
-	# every assertion below read the previous run's answer.
-	_rm_rf(FIXTURE_PARENT)
-	_rm_rf(overlay.get_base_dir())
+	# every assertion below read the previous run's answer. The permission is
+	# lifted before the removal and not only in the teardown -- a run killed
+	# between the deny and its restore leaves a fixture root that cannot be
+	# emptied, and this checkout is shared with another session.
+	_allow_writes(FIXTURE_ROOT)
+	_remove_tree(FIXTURE_PARENT)
+	_remove_tree(overlay.get_base_dir())
 
 	h.begin("a container that cannot be written still saves")
 	if not h.check("the fixture source exists", FileAccess.file_exists(source), source):
@@ -132,8 +197,20 @@ func _init() -> void:
 	# Everything from here has to reach the restore, so the failures are collected
 	# and the teardown runs unconditionally below rather than behind an early
 	# return.
-	var chmodded := _chmod("a-w", FIXTURE_ROOT)
-	h.check("the fixture root is read-only", chmodded == 0, "chmod exit %d" % chmodded)
+	var denied := _deny_writes(FIXTURE_ROOT)
+	# Asked of the filesystem rather than of the tool. An exit code says whether
+	# `chmod` ran, and the thing the subject depends on is whether a new file can
+	# be created -- which is one question with one answer on every platform, where
+	# "did `chmod` run" is not a question Windows can be asked at all. Reading the
+	# exit code here is what turned one missing binary into five failures in the
+	# nightly, four of them consequences of this line.
+	var probe := FIXTURE_ROOT.path_join(".probe")
+	var opened := FileAccess.open(probe, FileAccess.WRITE)
+	if opened != null:
+		opened.close()
+		DirAccess.remove_absolute(_absolute(probe))
+	h.check("the fixture root refuses a new file", opened == null,
+		"deny exit %d" % denied)
 
 	var out: Array = []
 	var code := OS.execute(OS.get_executable_path(),
@@ -176,10 +253,11 @@ func _init() -> void:
 		resolved != "" and resolved.begins_with("user://"), resolved)
 	h.complete("a container that cannot be written still saves")
 
-	# `u+w` first: `rm -rf` cannot unlink out of a directory it cannot write.
-	_chmod("u+w", FIXTURE_ROOT)
-	_rm_rf(FIXTURE_PARENT)
-	_rm_rf(overlay.get_base_dir())
+	# The permission first: a delete cannot unlink out of a directory it cannot
+	# write.
+	_allow_writes(FIXTURE_ROOT)
+	_remove_tree(FIXTURE_PARENT)
+	_remove_tree(overlay.get_base_dir())
 	# The directories too, not only the files in them: `make_dir_recursive` created
 	# the fixture's *parent* and the overlay's own folder, and a check that only
 	# looked for the leaves passed while both were left behind on a gate run.
