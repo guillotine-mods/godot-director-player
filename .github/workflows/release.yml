@@ -110,9 +110,17 @@ jobs:
       # turns a broken guard or a missing secret into a ~30 second failure instead
       # of one that arrives after an 83s, 3.8 GB corpus fetch -- which is the
       # entire argument for this job existing separately from the exports.
+      # `fetch-depth: 0`, and it is the one thing in this job that is not free.
+      # `release_notes.sh` walks the commits between the previous tag and this
+      # one, so it needs the tags and the history between them; at depth 1 there
+      # is neither, and the notes would be empty. Measured: the superproject's
+      # own history is 369 MiB of objects over 619 commits, which is seconds on a
+      # runner and two orders of magnitude below the 3.8 GB corpus fetch the
+      # comment above is about. The script refuses a shallow clone rather than
+      # emitting an empty page, so this line going back to 1 fails loudly.
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       # Everything these suites guard -- the tag charset validation that stops a
@@ -132,6 +140,7 @@ jobs:
           bash tools/ci/stamp_debug_ui_test.sh
           bash tools/ci/check_asset_size_test.sh
           bash tools/ci/check_macho_signed_test.sh
+          bash tools/ci/release_notes_test.sh
           bash tools/ci/install_godot_test.sh "$GODOT_VERSION"
 
       # One canonical version string, resolved once and handed to every job below
@@ -181,6 +190,33 @@ jobs:
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
           echo "pre-1.0 channel: $prerelease"
 
+      # Generated here rather than inside the draft step, and unconditionally, so
+      # that a dispatch dry run -- which publishes nothing -- still renders the
+      # notes into its own step summary. The notes were previously one hardcoded
+      # sentence, and the failure mode of writing them by hand at tag time is that
+      # nobody does: `v0.3.1-alpha` shipped with "Assets are uploaded by the export
+      # jobs." as its entire description of 55 commits' worth of predecessor.
+      #
+      # Not `gh release create --generate-notes`: GitHub builds that from merged
+      # pull requests and this repo pushes to `main` directly, so for the two
+      # ranges it was asked about it returned a compare link and nothing else.
+      # `tools/ci/release_notes.sh` has the measurement in its header.
+      - name: Build the release notes
+        id: notes
+        env:
+          RELEASE_NAME: ${{ steps.version.outputs.release_name }}
+        run: |
+          bash tools/ci/release_notes.sh "$RELEASE_NAME" > "$RUNNER_TEMP/notes.md"
+          echo "path=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
+          # Into the summary either way. On a tag this is the record of what was
+          # published; on a dry run it is the whole point of the step, because
+          # there is no release page to read them on.
+          {
+            echo "### Release notes for \`$RELEASE_NAME\`"
+            echo ""
+            cat "$RUNNER_TEMP/notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # A draft, and that word is carrying the safety property that used to belong
       # to "publish at the very end". A draft release is not publicly visible and
       # its assets are not downloadable, so the window between the first upload and
@@ -205,6 +241,7 @@ jobs:
           # `Resolve the release version` above, because the same predicate now
           # also decides whether the export ships the debug layer.
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          NOTES: ${{ steps.notes.outputs.path }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; leaving it as it is"
@@ -215,7 +252,7 @@ jobs:
           # "Some" and the rest would arrive as positional arguments -- which `gh`
           # accepts silently enough to create a release with the wrong notes and
           # stray asset names. Arrays keep each argument whole.
-          args=(--draft --title "$TAG" --notes "Assets are uploaded by the export jobs.")
+          args=(--draft --title "$TAG" --notes-file "$NOTES")
           if [ "$PRERELEASE" = "true" ]; then
             args+=(--prerelease)
           fi
