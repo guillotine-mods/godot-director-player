@@ -391,17 +391,63 @@ func _resolve_normalised(raw: String) -> String:
 	for tail in tails:
 		if _path_index.has(tail):
 			return str(_path_index[tail])
-	# Then the other direction: the request may be a tail of a path on disc.
-	for tail in tails:
-		if not _tail_index.has(tail):
-			continue
-		if _ambiguous.has(tail):
-			push_warning(
-				"sound '%s' resolves only by '%s', which more than one file ends with"
-				% [raw, tail]
-			)
-		return str(_tail_index[tail])
+	# Then the other direction: the request may be a tail of a path on disc --
+	# but only where the request named a folder to be a tail *of*. See
+	# `_names_a_folder`.
+	if _names_a_folder(key):
+		for tail in tails:
+			if not _tail_index.has(tail):
+				continue
+			if _ambiguous.has(tail):
+				push_warning(
+					"sound '%s' resolves only by '%s', which more than one file ends with"
+					% [raw, tail]
+				)
+			return str(_tail_index[tail])
 	return _search_path_hit(raw)
+
+
+## Does this request name a folder at all, or is it a bare filename?
+##
+## **A bare filename is not a tail this index may answer**, and that is the half
+## of the rule `_request_tails` used to get wrong. Its header said a bare
+## filename "is the shortest **legal** tail, not a reduction", and treated that
+## as the one form the folder bound must not touch. The first clause is true --
+## a script really does compose one, and Director really does accept it -- and
+## the conclusion drawn from it is still wrong, because Director accepts it as a
+## **relative path**. `sound playFile 2, "319"` is resolved against the movie's
+## own folder and `the searchPath`; it is not a licence to walk the disc looking
+## for something called `319`. Answering it out of a subfolder is the same
+## wrong-take-of-a-line failure the trailing-folder bound exists to stop, reached
+## from a third side, and it is worse than either because the request carries no
+## folder to check the answer against.
+##
+## **`piposh-dream`'s fritz minigame is what that costs.** Its foe handlers play
+## enemy grunts as `sound playFile 2, fxpath & random(3) + 316` -- **17 such call
+## sites** over eight distinct expressions, reaching **29 distinct numbers**:
+## 264-274, 220-225, 314-319, 323-325 and 329-331. `fxpath` is `the moviePath &
+## "fx\"`, set by `strtgame.dir`'s drive probe, so an entry that skips the probe
+## composes a bare number -- and only the 11 in 264-274 are in `FX/`. The other
+## **18 of the 29** are on the disc only under `sounds/dream1`, `sounds/dream2`
+## and `sounds/dream3`, where they are not grunts at all but *speech*: this index
+## answered them, and the player heard a character from another chapter talking
+## over the fight. Reported by QA against `v0.4.0-alpha`.
+##
+## The 18 are silent now, and they were silent in the original too -- the grunt
+## they name is on no disc under any folder. That half is the game's own gap and
+## not this engine's to paper over, which is the whole of `bugs.md` 88's rule.
+##
+## What is left is the case Director actually has: a bare filename still resolves
+## against a file sitting at the game root, through `_path_index` and
+## `_exact_index` above, which is the movie's own folder for every root here. A
+## request that named a folder is unchanged in both directions -- leading
+## segments still go, the folder still does not.
+##
+## `the searchPath` is deliberately still allowed to reduce to a bare filename;
+## `_search_path_hit`'s header says why, and it is the one place in this file
+## where searching *is* the question being asked.
+func _names_a_folder(key: String) -> bool:
+	return _strip_root(key).split("/", false).size() > 1
 
 
 ## The tails of a request the lookup may try, longest first.
@@ -425,10 +471,17 @@ func _resolve_normalised(raw: String) -> String:
 ## eight different takes of `brj1` that disc carries, and `sounds\days\circ1.aif`
 ## out of `SOUNDS/NIGHTS`. Only 20 of the 52 printed anything at all -- the
 ## `push_warning` below, which nothing in this repository reads -- and the other 32
-## were silent, because the filename they crossed to happened to be unique. A
-## request that has no folder is untouched: a bare filename is the shortest
-## **legal** tail, not a reduction, and it is what every entry that skips a drive
-## probe composes.
+## were silent, because the filename they crossed to happened to be unique.
+##
+## **A request that has no folder used to be untouched here, and that was the
+## other half of the same defect.** The reasoning was that a bare filename is the
+## shortest *legal* tail rather than a reduction, being what every entry that
+## skips a drive probe composes. It is legal, and it is still not this index's to
+## answer: Director resolves a bare name against the movie's folder, not against
+## the disc. `_names_a_folder` is where that is now decided and why -- 18 of the
+## 29 numbers `piposh-dream`'s fritz minigame asks for came back as another
+## chapter's *speech*, over the fight, because the grunt they name is not in
+## `FX/` and something else on the disc ends with the same digits.
 ##
 ## **52 is a floor.** A sweep opens each container cold, so a request only becomes
 ## folder-qualified there if the movie sets its own path global; one whose global

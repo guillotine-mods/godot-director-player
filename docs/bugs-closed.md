@@ -11156,6 +11156,87 @@ is exactly what this report would look like if it ever were the engine's fault.
 
 ---
 
+## 135. FIXED. Piposh Dream's fritz minigame played another chapter's speech over the fight, because a sound request naming no folder was answered by a search of the whole disc
+
+**Status:** FIXED · **Area:** `autoload/audio_director.gd:_names_a_folder`,
+`tools/sound_folder_scope.gd` · reported by QA against `v0.4.0-alpha`, filed and
+closed 2026-08-28
+
+Characters who are not in the minigame could be heard talking during it. The
+report named the cutscene as *not* the place; it is the gameplay after
+`actionbegins`.
+
+**The mechanism.** `fritz2.dir`'s foe handlers -- `foedecide`, `foedecide2`,
+`foedecide3`, `foes4`, `foes5` and `chkhit`/`bchkhit`/`chkhitthrow` -- play enemy
+grunts as a number off `fxpath`:
+
+    sound playFile 2, fxpath & random(6) + 268
+    sound playFile 2, fxpath & 263 + random(5)
+    sound playFile 2, fxpath & random(3) + 316
+
+**17 call sites, eight distinct expressions, 29 distinct numbers**: 264-274,
+220-225, 314-319, 323-325, 329-331. `fxpath` is `the moviePath & "fx\"` and is
+written in exactly one place, `strtgame.dir`'s drive probe, so an entry that
+skips the probe composes a *bare number*. Only the 11 in 264-274 are in `FX/`.
+The other **18 are on the disc only under `sounds/dream1`, `dream2` and
+`dream3`** -- where they are not grunts but speech. `_tail_index` answered them
+by filename, and the player heard a line from another chapter over the fight.
+
+**What was falsified.** `_request_tails`'s header said a bare filename "is the
+shortest **legal** tail, not a reduction, and it is what every entry that skips a
+drive probe composes", and treated it as the one form `1e760a51`'s trailing-folder
+bound must not touch. The first clause is true. The conclusion is not: Director
+accepts a bare name as a **relative path**, resolved against the movie's own
+folder and `the searchPath`. It is not a licence to walk the disc. So this was the
+same wrong-take-of-a-line failure `1e760a51` is about, reached from a third side,
+and worse than either -- the request carries no folder to check the answer against.
+
+**The fix.** `_names_a_folder` gates the `_tail_index` fallback on the request
+having named a folder to be a tail *of*. A bare name still resolves against a file
+at the game root, through `_path_index`/`_exact_index`, which is the movie's own
+folder for every root here; no root in this corpus has one. `the searchPath` is
+deliberately unchanged and still reduces to a bare filename -- `_search_path_hit`'s
+header says why, and it is the one place in the file where searching is the
+question being asked.
+
+**Measured, before and after, over the 29 numbers:**
+
+| | before | after |
+|---|---|---|
+| resolve to the grunt in `FX/` | 11 | 0 bare, 11 as `fx\<n>` |
+| resolve to another chapter's **speech** | **18** | **0** |
+| silent | 0 | 18 bare |
+
+Driven through the movie as well as through `resolve_path`: entering `fritz2.dir`
+without the probe and playing stage 1, every request is now a miss and the
+playhead still advances (f257 -> f292, no hold). Entering through
+`strtgame.dir` -> `mainmenu.dir` -> `fritz2.dir`, every request is
+`fx\psymus.aif`, `fx\ene1hit.aif`, `fx\274` and resolves exactly as before.
+`gate.sh`: **175 of 175 PASS**, including all 14 sound and audio entries and both
+liveness sweeps.
+
+**The entry route matters and is not established.** With the probe run -- which is
+the launcher's normal boot for this root, and what a loaded save restores -- the
+bug does **not** reproduce, before or after. It needs `fxpath` empty, which is what
+entering a container directly gives you: the F12 container picker is the obvious
+candidate for QA testing one minigame, but which route was actually taken is not
+known. The fix closes it for every route regardless, and changes nothing on the
+normal one.
+
+**What is the original's and stays broken.** The 18 grunts are on no disc under
+any folder, so they were silent in 1997 too; `bugs.md` 88's rule says that is the
+game's gap and not this engine's to paper over, and the engine now reports it.
+Three more of the same shape, all found on the way and all left alone:
+`fritz1/2/3` overwrite `soundspath` with `the moviePath & "sounds/"` at
+`actionbegins`, dropping the chapter segment `setmoviepath` exists to supply and
+silencing their own end-of-stage lines 332-336 -- then restore
+`setmoviepath("dream3")` at `dead`/`endstage5`, which is the authors working
+around their own clobber; `effectspath & "Machak.aif"` names the FX folder for a
+file in `CFILES/FRITZ/`; and `mainmenu.dir`'s `soundspath & "arcmus.aif"` names
+the speech folder for a file in `FX/`.
+
+---
+
 ## 123. NARROWED. The abort is not implementable from the call site, because the only discriminator available is a statement about ScummVM's coverage rather than about Director's language
 
 **Status:** open as a divergence, **measured and made visible at `f3bbd036`**; the

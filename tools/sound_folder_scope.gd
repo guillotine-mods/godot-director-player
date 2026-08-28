@@ -26,9 +26,20 @@ extends SceneTree
 ## and the folder used as the counter-example is another real folder on the same
 ## disc that does not hold that filename. So the checks below are true of any
 ## Director corpus and name none of this one: a request keeps its folder, a
-## request whose folder does not hold the file **misses**, and a request that is a
-## bare filename still resolves, because that is the shortest legal tail and not a
-## reduction.
+## request whose folder does not hold the file **misses**, and a request stripped
+## all the way down to a bare filename misses too.
+##
+## **That last one used to assert the opposite** -- "a bare filename is still
+## answered", on the grounds that it is the shortest legal tail rather than a
+## reduction. Legal it is; answerable out of a subfolder it is not. Director
+## resolves a bare name against the movie's own folder and `the searchPath`, and
+## a disc-wide search for a matching filename is the same wrong-take failure the
+## other two checks are about, with no folder left in the request to catch it.
+## `piposh-dream`'s fritz minigame reaches 29 numbered enemy grunts from 17 call
+## sites, through an `fxpath` that only `strtgame.dir` sets; 11 are in `FX/`, and
+## the other **18** were coming back as another chapter's speech from
+## `sounds/dream1`, `dream2` and `dream3`, played over the fight. See
+## `audio_director._names_a_folder`.
 ##
 ## The refusal is asserted through the player-visible route -- `sound playFile`,
 ## the miss ledger, `soundBusy` -- and not through `resolve_path` alone. A
@@ -112,11 +123,14 @@ func _init() -> void:
 	h.check("a prefix the engine cannot see is still dropped",
 		str(audio.call("resolve_path", prefixed)) == expected,
 		"'%s' -> '%s'" % [prefixed, str(audio.call("resolve_path", prefixed))])
-	# And the shortest legal tail. A bare filename is what every entry that skips
-	# a drive probe composes, it is legal Director, and it is the one form this
-	# rule must not touch.
-	h.check("a bare filename is still answered",
-		str(audio.call("resolve_path", file_name)) != "",
+	# And the reduction all the way down. The subject sits at least one folder
+	# deep -- `_pick` guarantees it -- so its bare filename names no folder this
+	# index may answer from, and Director would resolve it against the movie's
+	# own folder and find nothing. A root that ever does sit a sound at its top
+	# level would resolve that one through `_path_index`, which is the movie's
+	# folder and is the case Director really has; no root here has one.
+	h.check("a bare filename is not answered out of a subfolder",
+		str(audio.call("resolve_path", file_name)) == "",
 		"'%s' -> '%s'" % [file_name, str(audio.call("resolve_path", file_name))])
 	h.complete(case)
 
