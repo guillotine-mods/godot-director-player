@@ -123,8 +123,14 @@ func _init() -> void:
 				if lib > 1 and probe.is_empty():
 					probe = {
 						"channel": int(sprite["channel"]), "lib": lib, "id": id,
-						"sprites": sprites, "where": path.get_file(),
+						"sprites": sprites, "where": path.get_file(), "other": 0,
 					}
+				# A second channel, in library 1, for the channel-to-channel hop
+				# below. It has to be a different channel of the *same* frame, so
+				# the value really crosses between two sprite records.
+				if lib == 1 and not probe.is_empty() and int(probe["other"]) == 0 \
+						and int(sprite["channel"]) != int(probe["channel"]):
+					probe["other"] = int(sprite["channel"])
 		f.close()
 
 	print("%s: %d movie(s), %d distinct sprite member(s), %d outside library 1"
@@ -195,6 +201,49 @@ func _init() -> void:
 			int(back_bare[0]) == lib and int(back_bare[1]) == id,
 			"wrote memberNum %d -> castNum %s -> %d:%d, wanted %d:%d" % [
 				id, str(ref_from_bare), int(back_bare[0]), int(back_bare[1]), lib, id])
+
+		# ------------------------------------ the third spelling, and the hop
+		# **`the member of sprite` is a reference too**, and it is the spelling a
+		# script swaps *between two channels* through a Lingo variable. Its row
+		# carried `memberNum`'s bare-slot kind on the reasoning that only the
+		# release rule separates them, so this read handed back a slot with no
+		# library and the write took a packed reference: a value that crossed
+		# channels lost its library on the way.
+		#
+		# `piposh-dream`'s `strata2` (`1:136`) is the site. It depth-sorts four
+		# fighters by exchanging the contents of their channels --
+		# `x = the member of sprite ppl[i]`, then the two writes -- so a fighter
+		# whose frame is in library 2 was re-seated as library 1's member of the
+		# same number. The sort runs when two fighters cross in depth, which is
+		# what a hit does, so it read as enemies turning into something else
+		# *sometimes*, on being hit.
+		var ref_member = SpriteProps.read(channel, "member", overrides, sprites, {})
+		var back_member: Array = Members.resolve_ref(ref_member, "", table_for_ref)
+		h.check("the member of sprite resolves to the member that was written",
+			int(back_member[0]) == lib and int(back_member[1]) == id,
+			"member %s -> %d:%d, wanted %d:%d" % [
+				str(ref_member), int(back_member[0]), int(back_member[1]), lib, id])
+		# The library half of the same write, which is a gate and not a display:
+		# `chkhit` in the Fritz duel branches on `the castLibNum of sprite = 2`.
+		var lib_after = SpriteProps.read(channel, "castlibnum", overrides, sprites, {})
+		h.check("the castLibNum of sprite follows a script's member write",
+			int(lib_after) == lib,
+			"wrote member(%d, %d) -> castLibNum %s, wanted %d" % [
+				id, lib, str(lib_after), lib])
+		if int(probe["other"]) == 0:
+			print("  note: this frame has no second library-1 channel, so the "
+				+ "channel-to-channel hop is skipped")
+		else:
+			var other := int(probe["other"])
+			var hop: Dictionary = {}
+			SpriteProps.write(other, "member", ref_member, hop, sprites, {})
+			var landed = SpriteProps.read(other, "castnum", hop, sprites, {})
+			var back_hop: Array = Members.resolve_ref(landed, "", table_for_ref)
+			h.check("a member read off one channel keeps its library when written to another",
+				int(back_hop[0]) == lib and int(back_hop[1]) == id,
+				"ch%d -> ch%d carried %s -> %d:%d, wanted %d:%d" % [
+					channel, other, str(ref_member),
+					int(back_hop[0]), int(back_hop[1]), lib, id])
 		h.complete("and it survives a script having written it")
 
 	quit(h.finish("member references across the corpus"))

@@ -183,11 +183,33 @@ const FIELDS := {
 	# behaviour), so *no* rule over the score can separate them. `tools/`
 	# harnesses hold both ends: `puzzle_board.gd` and `bag_close.gd`.
 	#
-	# Same `kind` as `membernum` deliberately: only the release rule differs, so
-	# the read and the merge stay one description and this cannot drift into a
-	# second answer for "what member is this sprite showing".
+	# **`member_ref` and not `member`, which is `castnum`'s kind and not
+	# `membernum`'s.** This entry carried `membernum`'s, on the reasoning that
+	# only the release rule differs so the read should stay one description. The
+	# release rule is indeed the only *authored* difference; the read is not free
+	# to follow it. `the member of sprite N` is Director's member **reference** --
+	# `sprite_props.gd:ALIASES` says so in as many words, and it is the whole
+	# reason the three spellings are three properties -- so it has to carry the
+	# library, exactly as `castnum` does and for exactly the reason quoted in
+	# `member_ref` below.
+	#
+	# **`piposh-dream`'s fritz duel is what the bare read cost.** `strata2`
+	# (`1:136`) depth-sorts the four fighters by swapping the *contents* of their
+	# channels, and it swaps the member through a Lingo variable:
+	#
+	#     x = the member of sprite getAt(ppl, i)
+	#     set the member of sprite getAt(ppl, i) to the member of sprite getAt(ppl, i + 1)
+	#     set the member of sprite getAt(ppl, i + 1) to x
+	#
+	# The write takes a packed reference -- `member(90, 2)` arrives packed -- and
+	# the read handed back a bare 90, so every swap of a fighter whose frame is in
+	# **library 2** re-seated it as library 1's member of the same number: a
+	# different picture entirely. The sort runs when two fighters cross in depth,
+	# which is what a hit does, so it showed up as enemies changing into something
+	# else *sometimes*, on being hit. `tools/member_ref_round_trip.gd` covers the
+	# read/write round trip for all three spellings now; it covered `castnum` only.
 	"member": {
-		"field": "cast_id", "kind": "member", "group": "cast",
+		"field": "cast_id", "kind": "member_ref", "group": "cast",
 		"released_by": [],
 	},
 	# `the castLibNum of sprite N` -- the library half of `the member of sprite`.
@@ -672,6 +694,31 @@ func read(prop: String, sprite: Dictionary) -> Variant:
 			if entry.has(other):
 				key = other
 				break
+	# **`the castLibNum of sprite N` after a script wrote the *member*.**
+	#
+	# The library half of a member write is still a member write, so a script that
+	# has said `set the member of sprite 10 to member(90, 2)` and nothing else has
+	# set this channel's library to 2 -- and reading it off the score's record
+	# answers the library the *score* put there, which the script has since
+	# replaced. Same layering as every member spelling above, one field along; the
+	# unpack is `_merge_one`'s and is not repeated here.
+	#
+	# `chkhit` in `piposh-dream`'s fritz duel is the site the `castlibnum` row
+	# already names, and it is a gate rather than a display: its ranged branch is
+	# `if ... and (the castLibNum of sprite getAt(ppl, 1) = 2)`, and the fighter's
+	# frames arrive by exactly the write above. Answering the score's 1 took that
+	# branch out of the game entirely -- the armed attack registered no hit and the
+	# melee arms ran in its place.
+	if prop == "castlibnum" and not entry.has("castlibnum"):
+		for other in MEMBER_KEYS:
+			if not entry.has(other):
+				continue
+			var from_member: Dictionary = {
+				"cast_lib": int(sprite.get("cast_lib", 1)) if not sprite.is_empty() else 1,
+				"cast_id": 0,
+			}
+			_merge_one(other, from_member)
+			return int(from_member.get("cast_lib", 1))
 	if entry.has(key):
 		# **A script's own write still has to be read back through the row's kind.**
 		# This returned the stored value raw, so the `member`/`member_ref` split

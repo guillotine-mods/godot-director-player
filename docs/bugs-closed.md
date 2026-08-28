@@ -11237,6 +11237,85 @@ the speech folder for a file in `FX/`.
 
 ---
 
+## 136. FIXED. Piposh Dream's fritz fighters turned into other artwork when hit, because `the member of sprite` read a bare slot where the write took a reference
+
+**Status:** FIXED · **Area:** `scenes/preview/channel.gd:FIELDS["member"]`,
+`channel.gd:read` (`castlibnum`), `tools/member_ref_round_trip.gd` · reported by
+the owner, filed and closed 2026-08-28
+
+Enemies in the fritz duel changed into something else *sometimes*, on being hit.
+
+**Two defects, both in the member property surface, found together.**
+
+### The member reference lost its library when it crossed a channel
+
+`FIELDS` gave `the member of sprite` **`"kind": "member"`** — `memberNum`'s
+bare-slot read — with a comment saying that was deliberate, since only the release
+rule separates the two. The release rule is indeed the only *authored* difference.
+The read is not free to follow it: `the member of sprite N` is Director's member
+**reference**, which `sprite_props.gd:ALIASES` already said in as many words, so it
+has to carry the library exactly as `castNum` does.
+
+The write took a packed reference — `member(90, 2)` arrives packed — and the read
+handed back a bare `90`. Read-then-write therefore dropped the library:
+
+    before   ch10  member=90        castnum=131162     <- member(90, 2)
+    after    ch11  member=90        castnum=90         <- became member 90 of library 1
+
+`fritz2.dir`'s `strata2` (`1:136`) is the site. It depth-sorts the four fighters by
+exchanging the *contents* of their channels, and it moves the member through a
+Lingo variable:
+
+    x = the member of sprite getAt(ppl, i)
+    set the member of sprite getAt(ppl, i) to the member of sprite getAt(ppl, i + 1)
+    set the member of sprite getAt(ppl, i + 1) to x
+
+So a fighter whose current frame is in **library 2** was re-seated as library 1's
+member of the same number — different artwork entirely. The sort fires when two
+fighters cross in depth, which is what a hit does, hence *sometimes, on being hit*.
+
+**Introduced by `e1753693`** (`bugs.md` 133), which split `member` off as its own
+field for its release rule and gave it `membernum`'s kind on the way past. It is
+therefore **not** in `v0.4.0-alpha`.
+
+### `the castLibNum of sprite` did not follow a script's member write
+
+Independent of the split and older: the read answered `cast_lib` off the *score's*
+record, so a channel whose library a script had replaced still reported the
+library the score put there. The renderer was never wrong — `merged()` unpacks
+correctly, so the artwork drew — but the script's *question* was.
+
+`chkhit` asks it as a gate rather than for display:
+
+    if (the memberNum of sprite getAt(ppl, 1) > 89) and ... and (the castLibNum of sprite getAt(ppl, 1) = 2) then
+
+The player's frames arrive by `set the member of sprite getAt(ppl, 1) to member(g, 2)`,
+so that test answered 1 and the whole ranged branch was dead: the armed attack
+registered no hit and the melee arms ran in its place. Measured after the fix, over
+400 ticks of the duel, a fighter reads library 2 on **400** of them.
+
+Answered through `_merge_one`, the same unpack the member read uses, rather than a
+second copy of the split.
+
+### The harness
+
+`tools/member_ref_round_trip.gd` covered `castNum` and `memberNum` and **not
+`member`**, which is why a spelling could be split off into a bare read without
+anything going red. It now carries three more checks: `the member of sprite`
+resolves to what was written, `the castLibNum of sprite` follows a member write,
+and — the one that is actually `strata2` — a member read off one channel keeps its
+library when written to **another**. 6 checks -> 9.
+
+Reverted, it fails: `piposh-dream` 1 of 9, `rating` 2 of 9. `gate.sh` green.
+
+**What the live run does not show, said rather than implied.** Driving the duel
+with scripted keys reproduced 0 `strata2` reorders — the input never made two
+fighters cross in depth — so the swap path is proved by the harness and by the
+revert, not by play. What the live run does show is the second half: fighters now
+read library 2 where they read 1 before.
+
+---
+
 ## 123. NARROWED. The abort is not implementable from the call site, because the only discriminator available is a statement about ScummVM's coverage rather than about Director's language
 
 **Status:** open as a divergence, **measured and made visible at `f3bbd036`**; the
