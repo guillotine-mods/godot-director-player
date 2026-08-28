@@ -253,6 +253,10 @@ var _keyframes: Dictionary = {}
 var _buffer_size := 0
 var _cached_index := -1
 var _cached: Dictionary = {}
+## channel -> the frames on which it carries a member, built on demand by
+## `_scan_occupancy` for `last_occupied`. Score data, so it is built once and
+## never invalidated.
+var _occupied: Dictionary = {}
 
 
 ## `file_version` is the movie's own, from its config chunk. It is a parameter
@@ -500,8 +504,24 @@ func _writes_into(index: int, out: Dictionary) -> void:
 		cursor += 4 + chunk_size
 		if chunk_size <= 0:
 			continue
-		var first := maxi(1, (offset - SPRITE_RECORD_SIZE * CHANNEL_BIAS) / SPRITE_RECORD_SIZE + 1)
-		var last := (offset + chunk_size - 1 - SPRITE_RECORD_SIZE * CHANNEL_BIAS) / SPRITE_RECORD_SIZE + 1
+		# Channel 1's record starts at `MAIN_CHANNEL_SIZE`, which is
+		# `SPRITE_RECORD_SIZE * (CHANNEL_BIAS + 1)` and not
+		# `SPRITE_RECORD_SIZE * CHANNEL_BIAS` -- the same base `_snapshot` reads
+		# from, and the reference's `kMainChannelSizeD7` in
+		# `frame.cpp:readChannelD7`'s `(offset - kMainChannelSizeD7) /
+		# kSprChannelSizeD7`. Subtracting one record too few named channel N+1 for
+		# a chunk that writes channel N, and the *whole* of the damage was hidden
+		# by the field test below: a chunk lying inside one record intersected no
+		# field of the record one channel further on, so it reported **nothing**,
+		# and a chunk spanning several records lost only its lowest channel.
+		# Director writes a channel's sub-ranges far more often than its whole
+		# record -- `rating/NAVIGATE.dir` f3 writes bytes 0-7 and 10-19 of
+		# nineteen channels in 34 such chunks, which is `sprite_type`, `ink`, both
+		# colours, `cast_lib` and `cast_id` -- so `writes_between` answered `{}`
+		# for a frame that rewrote every one of their members, and every
+		# auto-puppet those frames should have released survived.
+		var first := maxi(1, (offset - MAIN_CHANNEL_SIZE) / SPRITE_RECORD_SIZE + 1)
+		var last := (offset + chunk_size - 1 - MAIN_CHANNEL_SIZE) / SPRITE_RECORD_SIZE + 1
 		for channel in range(first, mini(last, channels_displayed) + 1):
 			var base := SPRITE_RECORD_SIZE * (channel + CHANNEL_BIAS)
 			var fields: Dictionary = out.get(channel, {})
@@ -542,6 +562,72 @@ func _buffer_at(index: int) -> PackedByteArray:
 	for i in range(from, index + 1):
 		_apply(_stream, _frame_at[i], buffer)
 	return buffer
+
+
+## The greatest frame at or before `index` on which `channel` carries a member,
+## or -1 when it never has.
+##
+## **What it is for.** `the constraint of sprite N` clamps against another
+## channel's box, and Director's own words for what that box is when the score
+## has since blanked the channel are in `channel.cpp:getRollOverBbox` --
+## "whatever the last contents of the sprite were, regardless of whether the
+## score has zeroed it out". `scenes/preview/interaction.gd:constraint_box` needs
+## that frame and nothing else about it.
+##
+## **Read off the delta stream, not off `frame()`.** Occupancy is `_snapshot`'s
+## own test -- the record's member word, bytes 6 and 7 -- so the two bytes are
+## tracked through the same chunk walk `_apply` performs and every frame is
+## classified in one pass over the stream. Asking `frame()` per frame would
+## decode up to 150 sprite records a frame to read one word, and would evict the
+## one-frame cache the runtime is using for the frame it is actually on.
+##
+## Built once per channel and kept, because a movie's score does not change under
+## it. Channels are asked for this only where a constraint names one, which is
+## `constraint_box`'s early return away from every sprite in every other movie.
+func last_occupied(channel: int, index: int) -> int:
+	if channel <= 0 or index < 0 or _frame_at.is_empty():
+		return -1
+	if not _occupied.has(channel):
+		_occupied[channel] = _scan_occupancy(channel)
+	var frames: PackedInt32Array = _occupied[channel]
+	var best := -1
+	for frame_index in frames:
+		if frame_index > index:
+			break
+		best = frame_index
+	return best
+
+
+## Every frame on which `channel`'s record names a member, in order.
+##
+## The member word is at `base + 6`, so only chunks overlapping those two bytes
+## can change it; everything else in the stream is skipped without being read.
+func _scan_occupancy(channel: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	var base := SPRITE_RECORD_SIZE * (channel + CHANNEL_BIAS)
+	var hi := 0
+	var lo := 0
+	for index in _frame_at.size():
+		var at: int = _frame_at[index]
+		if at + 2 > _stream.size():
+			break
+		var frame_end: int = at + _u16(_stream, at)
+		var cursor := at + 2
+		while cursor + 4 <= frame_end and cursor + 4 <= _stream.size():
+			var chunk_size := _u16(_stream, cursor)
+			var offset := _u16(_stream, cursor + 2)
+			cursor += 4
+			var payload := cursor
+			cursor += chunk_size
+			if chunk_size <= 0 or payload + chunk_size > _stream.size():
+				continue
+			if offset <= base + 6 and offset + chunk_size > base + 6:
+				hi = _stream[payload + (base + 6 - offset)]
+			if offset <= base + 7 and offset + chunk_size > base + 7:
+				lo = _stream[payload + (base + 7 - offset)]
+		if (hi << 8) | lo != 0:
+			out.append(index)
+	return out
 
 
 ## Frame N's tempo cell and its operand, as `(cell, operand)`, without decoding

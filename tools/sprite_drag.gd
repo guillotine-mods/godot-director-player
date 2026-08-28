@@ -142,15 +142,25 @@ func _fence(preview: Node, on_frame: int, not_channel: int) -> int:
 	return best
 
 
-## A channel number no sprite occupies on this frame, for the "constrained to an
-## empty channel" case.
+## A channel number for the "constrained to a channel with no box" case: one this
+## score has **never** filled at or before this frame, not merely one that is
+## empty right now.
+##
+## The difference is the rule `interaction.gd:constraint_box` states. A channel
+## the score filled earlier and has since blanked still constrains, to what it
+## last held (`channel.cpp:getRollOverBbox`); only a channel that has never held
+## anything has no box to clamp into. Asking for "empty on this frame" picked
+## channel 1 of `strtgame.dir` frame 123, which is filled on frames 0..122, and
+## the case below then asserted that a real fence does nothing.
 func _empty_channel(preview: Node, on_frame: int) -> int:
 	var score = preview.get("_score")
 	var taken: Dictionary = {}
 	for raw in score.frame(on_frame).get("sprites", []):
 		taken[int((raw as Dictionary)["channel"])] = true
 	for channel in range(1, 1000):
-		if not taken.has(channel):
+		if taken.has(channel):
+			continue
+		if int(score.last_occupied(channel, on_frame)) < 0:
 			return channel
 	return 0
 
@@ -444,11 +454,13 @@ func _init() -> void:
 		h.complete("a constrained position write is clamped into the constraint's box")
 
 	# The two answers that are not "clamp it": a constraint of 0 is Director's
-	# default and means unconstrained, and a constraint naming a channel with no
-	# sprite on it has no box to clamp into. The literal reading of the reference
-	# would ask the empty channel anyway, get an empty rect at the origin and
+	# default and means unconstrained, and a constraint naming a channel this
+	# score has never filled has no box to clamp into. The literal reading of the
+	# reference would ask that channel anyway, get an empty rect at the origin and
 	# teleport the sprite to (0, 0) the instant a script or a player moved it;
-	# `interaction.gd:constraint_box` says why this port refuses to.
+	# `interaction.gd:constraint_box` says why this port refuses to -- and why a
+	# channel that was filled *earlier* is a different case, which is the one
+	# `tools/sprite_constraint.gd` asserts.
 	h.begin("a constraint with no box does not move the sprite")
 	var away := Vector2(600.0, 400.0)
 	preview.call("lingo_set_sprite_prop", slot, "constraint", _empty_channel(preview, at_frame))

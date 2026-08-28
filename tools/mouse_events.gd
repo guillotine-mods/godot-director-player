@@ -604,7 +604,8 @@ func _init() -> void:
 		preview.call("lingo_go_movie", movie, null)
 		await process_frame
 
-	preview.set("_index", _busiest_frame(preview))
+	var staged_frame := _busiest_frame(preview)
+	preview.set("_index", staged_frame)
 	preview.set("_paused", true)
 	var host: Object = preview.get("_host")
 
@@ -833,6 +834,16 @@ func _init() -> void:
 	h.check("20 ticks over a sprite with no such behaviour send no mouseWithin",
 		_sent(preview, "mouseWithin") == within_before,
 		"mouseWithin %d, was %d" % [_sent(preview, "mouseWithin"), within_before])
+	# **Put the staged frame and the staged subject back.** Those twenty ticks are
+	# the only place this file lets the movie move, and the movie moves: the
+	# configured boot walks nine frames and rewrites the subject channel's whole
+	# score record on the way, which is the score taking a `moveableSprite`
+	# auto-puppet back -- §5.3, `Sprite::releaseAutoPuppet` on `kSCBMoveable`, and
+	# correct. Every block below is staged on *this* channel at *this* frame and
+	# read `pressed 0, wanted 8` without this: the subject is the harness's to
+	# maintain, and re-staging it is not the same as asserting the release away.
+	preview.set("_index", staged_frame)
+	preview.call("lingo_set_sprite_prop", channel, "moveablesprite", 1)
 	# The crossing itself still has to happen, or the absence above proves
 	# nothing. Driven through `track_rollover`, which is what a pointer move
 	# calls, and asserted on the channel rather than on a handler.

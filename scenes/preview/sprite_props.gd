@@ -182,17 +182,25 @@ static func canonical(prop: String) -> String:
 ## And putting it in `_overrides` anyway would be a bug with the corpus's own
 ## shape, not a matter of taste. `sprite_state.effective` discards a channel's
 ## overrides the moment the score moves that channel to a different member, and
-## all five of the corpus's constraint sites -- SHUFFLE's `BehaviorScript 9` and
-## `CastScript 169/170/197/198`, ten writes in five scripts, the only ones in
-## 3,349 decompiled scripts across 73 movies -- are
+## SHUFFLE's five sites -- `BehaviorScript 9` and `CastScript 169/170/197/198`,
+## ten writes in five scripts -- are
 ##
 ##     set the moveableSprite of sprite 6 to 1
 ##     set the constraint of sprite 6 to 2
 ##     go(marker(1))
 ##
 ## : set the constraint, then leave for the segment the drag actually happens in.
-## An override-backed constraint is discarded on arrival, every time, and the
-## only title that asks for the feature would never once see it applied.
+## An override-backed constraint is discarded on arrival, every time, and that
+## title would never once see the feature applied.
+##
+## **Those five are not "the only ones in the corpus", which is what this used to
+## say**, and the sentence carried the count that made it read as measured --
+## "the only ones in 3,349 decompiled scripts across 73 movies". 3,349 over 73 is
+## Piposh 2. `rating` has **three more**, all in `ARCADE2.dir` -- members 14, 46
+## and 55, each `set the constraint of sprite 10 to 11` from a race's setup
+## frame -- out of 5,441 scripts in 118 containers, and they are the sites that
+## found `bugs.md`'s car report. `AGENTS.md`'s rule, in its own words: a number is
+## about the roots it was run over, and the sentence must say which those were.
 static func write(channel: int, prop: String, value: Variant,
 		overrides: Dictionary, sprites: Array, constraints: Dictionary) -> void:
 	var key := canonical(prop)

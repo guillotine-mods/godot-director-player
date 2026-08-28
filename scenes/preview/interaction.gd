@@ -817,13 +817,35 @@ static func constrain(host, channel: int, to: Vector2) -> Vector2:
 ## and the position write that follows is byte-for-byte what it was before this
 ## existed.
 ##
-## **A constraint naming a channel with no sprite on it is also unconstrained,
-## and that is a deliberate divergence.** Read literally the reference would ask
-## an empty channel for its bbox, get an empty rect at the origin, and clamp the
-## dragged sprite onto (0, 0) -- a sprite that teleports into the top-left corner
-## the instant the player touches it. No author can have meant that, nothing in
-## the corpus would exercise it, and the failure it produces looks like a
-## rendering fault rather than a constraint.
+## **A constraint naming a channel the score has since blanked falls back to that
+## channel's last contents**, which is the reference's own rule and is not the
+## rule this used to state.
+##
+## It used to answer "unconstrained" for any empty channel, on the reasoning that
+## a literal reading would clamp the sprite onto a degenerate box at the origin,
+## that no author can have meant that, and that nothing in the corpus would
+## exercise it. The first two halves are right and the third was wrong, and it is
+## the whole of `bugs.md`'s car report: `rating/ARCADE2.dir` sets `the constraint
+## of sprite 10 to 11` from the `exitFrame` of each race's setup frame -- f48,
+## f361, f679, f998 -- and channel 11 carries its 231x230 shape (member 37, an
+## unnamed QuickDraw shape, which is what a Director constraint rectangle *is*)
+## on **6 of the movie's 1337 frames**: those setup frames and no others. So for
+## the whole of every race the fence channel is blank, this answered
+## "unconstrained", and the car drove off the track. Measured: locH 226 -> 466 in
+## 24 presses of the right arrow, unbounded.
+##
+## The reference does not have the ambiguity, because it does not ask the *frame*
+## for the box -- it asks the **channel**, which is a live object that outlives
+## the score record that filled it, and `channel.cpp:getRollOverBbox` says in as
+## many words that the answer is "whatever the last contents of the sprite were,
+## regardless of whether the score has zeroed it out". This port keeps no live
+## channel object, so the same answer is reconstructed from the score:
+## `director_score.last_occupied` names the last frame at or before the playhead
+## on which the channel carried a member, and that frame's record is measured.
+##
+## A channel that has **never** carried a member is still unconstrained, and that
+## is where the old reasoning survives: there are no last contents to fall back
+## to, and clamping onto the origin is the teleport nobody authored.
 ##
 ## **A *hidden* constraint channel still constrains**, because `lingo_sprite_rect`
 ## measures one: `channel.cpp:698` reaches the constraint through
@@ -841,7 +863,30 @@ static func constraint_box(host, channel: int) -> Rect2:
 	var onto: int = int(host.lingo_sprite_constraint(channel))
 	if onto <= 0:
 		return Rect2()
-	return host.lingo_sprite_rect(onto)
+	var box: Rect2 = host.lingo_sprite_rect(onto)
+	if box != Rect2():
+		return box
+	return _last_contents_box(host, onto)
+
+
+## The constraint channel's box as of the last frame at or before the playhead on
+## which it carried a member; an empty rect when it never has.
+##
+## Measured off the score record rather than through `_effective`, because there
+## is nothing to merge: a channel a script had puppeted or given a member would
+## have answered `lingo_sprite_rect` above and never reached here.
+static func _last_contents_box(host, onto: int) -> Rect2:
+	var score = host._score
+	if score == null:
+		return Rect2()
+	var at: int = int(score.last_occupied(onto, int(host._index)))
+	if at < 0:
+		return Rect2()
+	for value in (score.frame(at).get("sprites", []) as Array):
+		var sprite: Dictionary = value
+		if int(sprite["channel"]) == onto:
+			return host._sprite_rect(sprite)
+	return Rect2()
 
 
 ## The mouse-DOWN half of a click: what was hit, which script answers for it,
