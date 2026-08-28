@@ -9758,6 +9758,17 @@ releasing at all when the playhead has not moved (the reference's same-frame
 before the change: f6's own delta writes **no channel at all**, so the wrap now
 releases nothing and the overrides survive it.
 
+> **The fix described below has been replaced, and the symptom is still fixed.**
+> `bugs.md` **133** (closed above) found what actually separates this puzzle from
+> `rating`'s inventory bag: `puzzle.dir` writes `the member of sprite` and the bag
+> writes `the memberNum of sprite`, which are separate auto-puppet properties, and
+> only the latter has a row in `Sprite::releaseAutoPuppet`. `writes_between` now
+> carries the reference's all-ones rewind again; the tiles survive it because
+> nothing releases `kAPMember`. **The paragraph below saying the blanket "cannot
+> be the original behaviour" is wrong** -- it is the original behaviour, and it
+> never reached these tiles. `tools/puzzle_board.gd` still gates this entry and
+> still passes; what changed is why.
+
 Two traps in the fix, both paid for:
 
 * **Not the union over the rebuild path.** Replaying from frame 0 writes every
@@ -10928,6 +10939,109 @@ Exempted, with the reference cited at the exemption and the teeth kept for the
 other properties, which are a number or a string in every state. Fixing this in
 the *binding* instead — answering 0 or "" over nothing to keep the harness quiet —
 is exactly the shape `porting-fidelity-verification` warns about.
+## 133. Rating's suitcase icon stayed open and stopped answering clicks, because this port collapsed `the member of sprite` into `the memberNum of sprite`
+
+**Status:** FIXED · **Area:** `preview/sprite_props.gd:ALIASES`,
+`preview/channel.gd:FIELDS`, `director/director_score.gd:writes_between`,
+`director_preview.gd:lingo_set_sprite_prop` · reported by the owner 2026-08-27,
+fixed 2026-08-28
+
+`Panel.cst` 35 is the inventory bag. Its `mouseUp` swaps the sprite to `bagopen`
+and opens `inventor.dir`; **nothing ever swaps it back.** Exhaustive over the
+5,441 rating scripts: twelve `set the memberNum of sprite 45 ... "bagopen"`
+writes, no write back, and no closed-bag member by name. `bagopen` carries no
+script, so "it looks open" and "it cannot be clicked" are **one** symptom --
+click eligibility and the cast script both belong to the member.
+
+So the score has to hand the member back, and the entry sat open for a day
+because the only rule that did also destroyed another title.
+
+**What the previous diagnosis got wrong, and it was the framing rather than a
+measurement.** It offered two readings of the reference's rewind and asked which
+title to break: the target frame's own delta (bag dead) or `Score::loadFrame`'s
+literal all-ones (`score.cpp:2213-2215`, which re-solves
+`piposh-dream/puzzle.dir` -- entry **120**). Both were measured again and both
+still do exactly that. But the search was in the wrong place:
+
+**No rule over the score can separate the two movies.** Measured rather than
+argued: in `rating/BATZROOM.dir` channel 45 and in `puzzle.dir` channels 1-16,
+the score records are structurally identical -- one sprite span, established on
+frame 0, `sprite_list_idx` constant, no delta touching the channel anywhere in
+the movie's idle loop, no sprite behaviour. Every score-derived candidate was
+tried against both and each one answers the same for both: target-frame delta,
+all-ones, union over the replay path (per channel *and* per field), span change.
+`tools/scratch/delta_align.gd` also confirmed the decoder is not the problem --
+792 channel changes over `NAVIGATE.dir`, 0 attributed to the wrong frame.
+
+**The difference is the Lingo the two scripts write, and this port had erased
+it.** Rating writes `the memberNum of sprite`; `puzzle.dir` writes `the member of
+sprite`. Those are separate properties in Director -- separate bytecode ids
+(`lingo-bytecode.cpp:216`, `:218`), separate `kThe` fields
+(`lingo-the.cpp:228-229`) -- and separate auto-puppet properties: `sprite.h`
+declares `kAPCast` **and** `kAPMember`. `Sprite::releaseAutoPuppet`
+(`sprite.cpp:482-491`) carries a row for `kAPCast` and **none for `kAPMember`**,
+so the copy-back mask hands one of them back and never the other.
+
+The reference routes both spellings through `Channel::setCast` and sets
+`kAPCast` for each (`channel.cpp:511`), leaving `kAPMember` declared and unused.
+`preview/sprite_props.gd` copied that in one line -- `"member": "membernum"` --
+and that line is the whole bug. With the two collapsed there is nothing left to
+hang the split on, which is why the entry read as a choice between two titles.
+
+**Fixed** by giving `member` its own row in `channel.gd:FIELDS` with an empty
+`released_by`, and restoring the reference's rewind blanket in `writes_between`.
+Rating's bag is `kAPCast` and is handed back on the room's own backward wrap;
+the puzzle's tiles are `kAPMember` and are not. One rule, both titles, no version
+test and no per-title case.
+
+**Two faults the split exposed, both fixed with it**, and both are the same
+shape -- code that assumed the collapse:
+
+* `the memberNum of sprite` stopped reporting a member set via `the member`, so
+  `tools/film_loop_restart.gd` saw **0 drops** in `COMEIN.dir`'s flowerpot game
+  while it was still dropping pots. All three spellings now read the sprite's
+  current member; only the release rule differs, and `read` answers under the
+  asked-for row's `kind` so the shapes stay right.
+* The film-loop restart was gated on `SpriteProps.canonical(prop) ==
+  "membernum"`, so COMEIN's pots -- dressed with `set the member of sprite` --
+  stopped restarting their fall and six drops began mid-air. Any member spelling
+  restarts a loop now, through `SpriteProps.is_member_name`.
+
+**Measured.** `gate.sh`: all 174 passed. The bag reopens 8 of 8 cycles played in
+from the menu, and in `BATZROOM`, `BERAROOM` and `PLATROOM`, which the earlier
+candidate rules did not reach. `puzzle_board` 5/5, `film_loop_restart` 3/3. The
+one case that still misses is a re-click inside the same movie frame as the
+close, before the room's loop has wrapped -- an eighth of a second at 8 fps, and
+it corrects itself on the next wrap.
+
+**`kAPMember` is an inference, and the comment at the site says so.** It is read
+off a declared-and-unused enum entry, not transcribed from running code, and no
+Director was available to arbitrate. What supports it is that it is the only
+reading under which both titles behave, and **both ends are gated**:
+`tools/puzzle_board.gd` and `tools/inventory_bag.gd`, the second written with
+this fix and in `ALL` as `inventory_bag:--root@rating`.
+
+**Neither harness is sufficient alone**, which is the reason the second one
+exists rather than a comment. Re-collapse the two spellings while keeping the
+blanket and `puzzle_board` reds; re-collapse them *and* drop the blanket and
+`puzzle_board` goes green again with the suitcase silently broken -- which is the
+state the port shipped in. Verified by stashing this fix and running the new
+harness against it: **1 of 4 cycles opened, the other three reporting the click
+reaching the movie script with the bag on member 36.**
+
+The original entry's reproduce command named `tools/scratch/bag_close.gd`, under
+a git-ignored path, so it had already evaporated by the time anyone tried it.
+That is why the replacement is in `tools/`.
+
+**Two claims made while diagnosing this and withdrawn**, recorded because both
+were stated confidently off a truncated search and either would waste a session:
+`NAVIGATE.dir` *does* contain `go(marker(0) + 1)`, so the original entry quoted
+the hall loop correctly; and there is no `marker(0)` off-by-one -- `lingo_marker`
+returns a 1-based frame number that `go` converts back, and the hall's wrap to
+index 7 is right.
+
+---
+
 ## 134. NOT A BUG. Rating's pool music plays once because the original's score puts it in the room's setup, not in the room's loop
 
 **Status:** NOT A BUG · **Area:** `games/rating/NAVIGATE.dir`, `NAVIGAT2.dir`,

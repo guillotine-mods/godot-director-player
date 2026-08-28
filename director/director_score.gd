@@ -479,7 +479,30 @@ func writes_between(from: int, to: int) -> Dictionary:
 	if to == from:
 		return out
 	if to < from:
-		_writes_into(to, out)
+		# The reference's rewind blanket, restored. `Score::loadFrame` cannot walk
+		# a delta stream backwards, so it rebuilds from the start of the movie and
+		# sets the mask to all-ones for the whole rebuild (`score.cpp:2213-2215`,
+		# commented *"starting from rewind, copy back everything"*).
+		#
+		# **This was the port's one deliberate divergence and it is not needed.**
+		# It was taken because the blanket re-solved `piposh-dream/puzzle.dir`'s
+		# sliding board on the four-frame wrap its own idle loop drives
+		# (`docs/bugs-closed.md` 120) -- and it cost `rating` its inventory: with
+		# nothing releasing channel 45, the bag keeps the `bagopen` member the
+		# movie swaps in, and that member carries no script, so the suitcase both
+		# looks open and stops answering clicks (`bugs.md` 133).
+		#
+		# Neither title needed the divergence. The puzzle writes `the member of
+		# sprite`, whose auto-puppet the reference's release table never names, so
+		# the blanket does not reach it; the bag writes `the memberNum of sprite`,
+		# which the table does name. `preview/channel.gd:FIELDS` carries that
+		# split and the evidence for it. Both titles are green under one rule,
+		# with no version test and no per-title case.
+		for channel in range(1, channels_displayed + 1):
+			var every: Dictionary = {}
+			for field in FIELD_BYTES:
+				every[field] = true
+			out[channel] = every
 		return out
 	for index in range(from + 1, to + 1):
 		_writes_into(index, out)

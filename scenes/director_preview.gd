@@ -4486,7 +4486,13 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	# Compared before storing, so a script that assigns the same member every frame
 	# -- which is how this corpus walks its characters -- does not pin its loop at
 	# frame one.
-	if SpriteProps.canonical(prop) == "membernum":
+	# **Any of Director's three member spellings assigns the member**, so all
+	# three restart a film loop. This compared against `membernum` alone, which
+	# was correct only while `the member of sprite` was an alias of it; splitting
+	# the two for `bugs.md` 133 stopped `piposh-dream/COMEIN.dir`'s flowerpots --
+	# which are dressed with `set the member of sprite` -- restarting their fall,
+	# and `tools/film_loop_restart.gd` reported six drops beginning mid-air.
+	if SpriteProps.is_member_name(prop):
 		var slot := LingoValue.to_int(value) % Members.LIB_STRIDE
 		if int(_assigned_member.get(channel, -1)) != slot:
 			_assigned_member[channel] = slot

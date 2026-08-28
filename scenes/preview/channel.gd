@@ -68,6 +68,7 @@ extends RefCounted
 
 const LingoValue := preload("res://lingo/lingo_value.gd")
 const Members := preload("res://scenes/preview/members.gd")
+const SpriteProps := preload("res://scenes/preview/sprite_props.gd")
 
 ## `puppetSprite N, TRUE`. A **flag**, not merely an entry: an entry is what a
 ## property write makes too, and the two obey opposite rules about the score
@@ -101,6 +102,12 @@ const VISIBLE_KEY := "visible"
 ## state — but for every operation here the two behave the same way, and naming
 ## it is what stops a stale save resurrecting a puppet.
 const CHANNEL_KEYS := [VISIBLE_KEY, PUPPET_KEY, SCORE_KEY, "_member"]
+
+## Director's three spellings of a sprite's member. One field, three properties,
+## and **not one release rule**: see the `member` row in `FIELDS`. Kept as a
+## constant because `write` and `FIELDS` must agree about which keys collide, and
+## a hand-repeated list is how they stop agreeing.
+const MEMBER_KEYS := SpriteProps.MEMBER_NAMES
 
 ## Entry keys a spent channel may hold and still be spent. `_score` is here and
 ## `visible` is not: a carried score record means nothing once the puppet that
@@ -154,6 +161,34 @@ const FIELDS := {
 	"castnum": {
 		"field": "cast_id", "kind": "member_ref", "group": "cast",
 		"released_by": ["cast_lib", "cast_id"],
+	},
+	# `the member of sprite N` -- the third spelling, and **the one the score
+	# never takes back**.
+	#
+	# `sprite.h`'s `AutoPuppetProperty` declares `kAPCast` *and* `kAPMember`, and
+	# `Sprite::releaseAutoPuppet`'s table (`sprite.cpp:482-491`) has a row for
+	# `kAPCast` and none for `kAPMember`. A property with no row is never handed
+	# back by the copy-back mask, whatever the score writes. That is the whole of
+	# this entry, and `preview/sprite_props.gd:ALIASES` carries why it took so
+	# long to see: the reference routes both spellings through `Channel::setCast`
+	# and sets `kAPCast` for both, so `kAPMember` sits in its enum unused and the
+	# distinction is invisible unless you go looking for it.
+	#
+	# **Unverified against Director running**, and said plainly because it is an
+	# inference from a declared-and-unused enum rather than a transcription of
+	# running code. What supports it is that it is the only reading under which
+	# both `rating`'s inventory bag and `piposh-dream`'s sliding puzzle behave --
+	# two titles whose score records for these channels are structurally
+	# identical (one span, established on the first frame, no in-loop write, no
+	# behaviour), so *no* rule over the score can separate them. `tools/`
+	# harnesses hold both ends: `puzzle_board.gd` and `bag_close.gd`.
+	#
+	# Same `kind` as `membernum` deliberately: only the release rule differs, so
+	# the read and the merge stay one description and this cannot drift into a
+	# second answer for "what member is this sprite showing".
+	"member": {
+		"field": "cast_id", "kind": "member", "group": "cast",
+		"released_by": [],
 	},
 	# `the castLibNum of sprite N` -- the library half of `the member of sprite`.
 	# In the reference a write here is a `setCast` with the member number kept and
@@ -618,7 +653,26 @@ func _bare_sprite() -> Dictionary:
 ## round-trips; what it does not do is reach the screen, and
 ## `sprite_props.CONSUMED` is the list that says which those are.
 func read(prop: String, sprite: Dictionary) -> Variant:
-	if entry.has(prop):
+	# **All three member spellings read the sprite's current member**, whichever
+	# one wrote it. They differ only in what hands the value back to the score
+	# (the `member` row in `FIELDS`) and in the *shape* of the answer -- bare slot
+	# for `member`/`memberNum`, packed reference for `castNum` -- and the shape is
+	# the row's `kind`, applied below, not the key it was stored under.
+	#
+	# Without this, splitting the release rule silently split the *read*:
+	# `piposh-dream/COMEIN.dir` dresses its flowerpot channels with `set the
+	# member of sprite`, and `the memberNum of sprite` then answered the score's
+	# bitmap instead of the film loop the script had put there --
+	# `tools/film_loop_restart.gd` saw 0 drops in a game that was still dropping
+	# pots. A property that answers differently depending on which synonym set it
+	# is not one property, and Director has one member per sprite.
+	var key := prop
+	if MEMBER_KEYS.has(prop) and not entry.has(prop):
+		for other in MEMBER_KEYS:
+			if entry.has(other):
+				key = other
+				break
+	if entry.has(key):
 		# **A script's own write still has to be read back through the row's kind.**
 		# This returned the stored value raw, so the `member`/`member_ref` split
 		# below held only while the score owned the channel and collapsed the
@@ -652,11 +706,11 @@ func read(prop: String, sprite: Dictionary) -> Variant:
 			# for the same reason the merge lets it: it is the later statement.
 			if entry.has("castlibnum"):
 				_merge_one("castlibnum", split)
-			_merge_one(prop, split)
+			_merge_one(key, split)
 			if kind == "member":
 				return int(split["cast_id"])
 			return Members.pack_ref(int(split.get("cast_lib", 1)), int(split["cast_id"]))
-		return entry[prop]
+		return entry[key]
 	if sprite.is_empty():
 		return EMPTY_CHANNEL.get(prop, 0)
 	if prop == VISIBLE_KEY:
@@ -702,4 +756,14 @@ func read(prop: String, sprite: Dictionary) -> Variant:
 ## the wrong question whenever a clip and the room it was entered from put the
 ## same member on a channel (`bugs.md` 47).
 func write(prop: String, value: Variant) -> void:
+	# The three spellings of the member are three *properties* but one field, so
+	# a channel may hold only one of them at a time. Without this, `merged` walks
+	# `FIELDS` in declaration order and applies every one that is present, so a
+	# script that wrote `the memberNum` and later `the member` would have the
+	# score's `cast_id` decided by whichever happens to be declared last -- and
+	# the stale one would keep a released puppet alive under the other's name.
+	if MEMBER_KEYS.has(prop):
+		for other in MEMBER_KEYS:
+			if other != prop:
+				entry.erase(other)
 	entry[prop] = value

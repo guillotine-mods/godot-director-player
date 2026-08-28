@@ -71,11 +71,54 @@ const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 ## that compared a member reference against something that is not an integer.
 ## Unaliased, the read falls through to `EMPTY_CHANNEL`'s 0 and every one of those
 ## sites addresses member 0.
+## Director's three spellings of a sprite's member. One field, three property
+## names -- and, since `bugs.md` 133, **not one release rule**, which is why they
+## are a set here rather than three aliases of each other. Any caller asking "did
+## this write assign the sprite's member" must ask this and not compare against
+## one spelling: `director_preview.gd`'s film-loop restart compared against
+## `membernum` alone, and de-aliasing `member` stopped COMEIN's flowerpots
+## restarting their fall.
+##
+## `preview/channel.gd:MEMBER_KEYS` is the same list on the storage side and
+## defers to this one.
+const MEMBER_NAMES := ["membernum", "castnum", "member"]
+
+
+static func is_member_name(prop: String) -> bool:
+	return MEMBER_NAMES.has(canonical(prop))
+
+
 const ALIASES := {
 	"moveablesprite": "moveable",
 	"movablesprite": "moveable",
 	"editabletext": "editable",
-	"member": "membernum",
+	# **`the member of sprite` is NOT `the memberNum of sprite`**, and collapsing
+	# them is what made `bugs.md` 133 look unsolvable. They are separate
+	# properties in Director -- separate bytecode ids (`lingo-bytecode.cpp:216`
+	# and `:218`, 0x23 and 0x25), separate `kThe` fields
+	# (`lingo-the.cpp:228-229`), and separate auto-puppet properties: `sprite.h`
+	# declares **both** `kAPCast` and `kAPMember`. What matters is that
+	# `Sprite::releaseAutoPuppet`'s table carries a row for `kAPCast` and **none
+	# for `kAPMember`**, so the score hands one of them back and never the other.
+	#
+	# The reference routes both spellings through `Channel::setCast` and sets
+	# `kAPCast` for each (`channel.cpp:511`), leaving `kAPMember` declared and
+	# unused -- so in ScummVM they behave identically. This port copied that, and
+	# the two titles below then demanded opposite things from one rule with no
+	# score-derived difference to hang the split on. Their spellings *are* the
+	# difference, and they always were:
+	#
+	#   rating/Panel.cst 35   `set the memberNum of sprite 45 to "bagopen"`
+	#                         -- the inventory bag, which must be handed back or
+	#                         the suitcase stays open and stops answering clicks
+	#   piposh-dream/puzzle   `set the member of sprite gsnum to "paz" & n`
+	#                         -- the sliding tiles, which must survive the board's
+	#                         own backward idle loop or it shows solved
+	#
+	# So `member` is its own field with its own release rule (none), and the
+	# rewind blanket in `director_score.writes_between` is the reference's again.
+	# `channel.gd:FIELDS` carries the entry and the mutual exclusion.
+	"member": "member",
 	"fliph": "flip_h",
 	"flipv": "flip_v",
 	# Identity entries, listed rather than omitted. Each is its own field under
