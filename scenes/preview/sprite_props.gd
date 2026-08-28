@@ -72,7 +72,7 @@ const SpriteState := preload("res://scenes/preview/sprite_state.gd")
 ## Unaliased, the read falls through to `EMPTY_CHANNEL`'s 0 and every one of those
 ## sites addresses member 0.
 ## Director's three spellings of a sprite's member. One field, three property
-## names -- and, since `bugs.md` 133, **not one release rule**, which is why they
+## names -- and, since `bugs.md` 137, **not one release rule**, which is why they
 ## are a set here rather than three aliases of each other. Any caller asking "did
 ## this write assign the sprite's member" must ask this and not compare against
 ## one spelling: `director_preview.gd`'s film-loop restart compared against
@@ -93,7 +93,7 @@ const ALIASES := {
 	"movablesprite": "moveable",
 	"editabletext": "editable",
 	# **`the member of sprite` is NOT `the memberNum of sprite`**, and collapsing
-	# them is what made `bugs.md` 133 look unsolvable. They are separate
+	# them is what made `bugs.md` 137 look unsolvable. They are separate
 	# properties in Director -- separate bytecode ids (`lingo-bytecode.cpp:216`
 	# and `:218`, 0x23 and 0x25), separate `kThe` fields
 	# (`lingo-the.cpp:228-229`), and separate auto-puppet properties: `sprite.h`

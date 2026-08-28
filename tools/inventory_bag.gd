@@ -84,7 +84,7 @@ const PlayQueue := preload("res://tools/lib/play_queue.gd")
 ## Returns, and it passed alone and **failed inside `gate.sh`**: under the
 ## suite's load the boot movie had not loaded by tick 30, the jump ran against no
 ## movie, and all five later steps never fired. That is `docs/bugs-closed.md`
-## 119's shape and `bugs.md` 134's -- a window measured in something other than
+## 119's shape and `bugs.md` 138's -- a window measured in something other than
 ## the movie's own events -- committed in a harness written to close an entry
 ## that cites both.
 const PLAY_IN := "hedartzi=lingo:go(\"mainscreen\");mainscreen=ch9"

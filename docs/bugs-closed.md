@@ -28,6 +28,71 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 138. `wait_frames` picks its cursor probe from whatever sprite the movie has drifted to, so it fails about half the time
+
+**Status:** FIXED · **Area:** `tools/wait_frames.gd:_cursor_case` · found
+2026-08-27 while gating unrelated work, and **measured at HEAD before anything was
+blamed on it**
+
+Six runs each way, identical command line:
+
+```
+with the day's changes:   PASS FAIL PASS FAIL PASS FAIL   (3 of 6)
+with them reverted:       FAIL FAIL FAIL PASS FAIL PASS   (2 of 6)
+```
+
+so it is inert to the change that was in flight when it was noticed, and it was
+already flaking before it. It fails on `a sprite under the probe names a cursor of
+its own (probe (8.0, 8.0))`.
+
+`_cursor_case` takes its probe from whatever sprite happens to be on the frame the
+movie has reached by then. That is the **fixed-frame-count** shape `play_suspends`
+already cost this project once and `docs/bugs-closed.md` 119 cost it a second time
+— a window measured in something other than the movie's own events. The fix is
+119's: wait on the movie's own event rather than a tick or wall-clock budget, and
+re-read the subject at the moment of the assertion rather than capturing it.
+
+**A gate entry that fails one run in two does the same damage as a standing red**,
+because it teaches everyone to re-run rather than read.
+
+**Fixed** by choosing the frame instead of accepting it. `_cursor_case` now walks
+the loaded score for the first frame carrying a sprite at least 4x4, stands the
+playhead on it with `preview.set("_index", i)` -- `_rate_case`'s own idiom, and
+not `lingo_go_frame`, which queues a jump and releases the very clock this case is
+about to arm a wait on -- and probes that. No tick count is load-bearing any more,
+which is 119's rule applied to the fixture rather than to the window.
+
+**The evidence is that it names the same fixture every run, not that it passes.**
+Eight concurrent runs on the gate's own command line, all eight:
+
+    ok  a sprite under the probe names a cursor of its own  (probe (316.5, 243.0) on frame 3)
+
+Passing eight times could be luck on a probe that flakes one run in two; reporting
+an identical probe point and an identical frame number eight times cannot be.
+
+**The check is not vacuous and the precedence half is still real.** The stack
+genuinely answers under the probe -- `the click ends the wait and hands the cursor
+back to the stack (answered 260)` -- so the two readings the case compares can
+disagree, which is the property the original comment was protecting.
+
+Title-agnostic, measured on four roots rather than asserted: the cursor case picks
+`piposh2` f3, `piposh/PIPDATA/DAY1.dir`, `rating/mainmenu.dir` f0 probe
+(190.5, 195.0), and `piposh-dream/mainmenu.dir`, and passes on all four. (`rating`
+and `piposh-dream` still red on `_rate_case`'s **pre-existing and documented**
+"this movie carries a tempo delay to measure" -- those movies have no tempo cell,
+which is why `gate.sh` points this harness at `piposh2`. Unrelated to this entry
+and unchanged by it.)
+
+The flake was already latent at HEAD before the fix -- 14 runs, 14 passes -- because
+the three commits that landed between filing and fixing moved what `_effective`
+returns. That is exactly why it was worth fixing rather than closing as
+unreproducible: the drift that chose the frame was still there, and it would have
+come back the next time anything upstream of `_effective` moved.
+
+`gate.sh wait_frames cursor_preview cursor_hotspot cursor_descent play_suspends
+idle_clock movie_tempo`: all 7 passed.
+
+
 ## 53 and 35. A field designator threw away both of its halves: the library it named, and the property it asked for
 
 **Status:** FIXED · **Area:** `scenes/director_preview.gd:lingo_field` /
@@ -10939,7 +11004,7 @@ Exempted, with the reference cited at the exemption and the teeth kept for the
 other properties, which are a number or a string in every state. Fixing this in
 the *binding* instead — answering 0 or "" over nothing to keep the harness quiet —
 is exactly the shape `porting-fidelity-verification` warns about.
-## 133. Rating's suitcase icon stayed open and stopped answering clicks, because this port collapsed `the member of sprite` into `the memberNum of sprite`
+## 137. Rating's suitcase icon stayed open and stopped answering clicks, because this port collapsed `the member of sprite` into `the memberNum of sprite`
 
 **Status:** FIXED · **Area:** `preview/sprite_props.gd:ALIASES`,
 `preview/channel.gd:FIELDS`, `director/director_score.gd:writes_between`,
@@ -11274,7 +11339,7 @@ So a fighter whose current frame is in **library 2** was re-seated as library 1'
 member of the same number — different artwork entirely. The sort fires when two
 fighters cross in depth, which is what a hit does, hence *sometimes, on being hit*.
 
-**Introduced by `e1753693`** (`bugs.md` 133), which split `member` off as its own
+**Introduced by `e1753693`** (`bugs.md` 137, filed and cited as 133), which split `member` off as its own
 field for its release rule and gave it `membernum`'s kind on the way past. It is
 therefore **not** in `v0.4.0-alpha`.
 

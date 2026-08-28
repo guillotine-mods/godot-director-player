@@ -4489,7 +4489,7 @@ func lingo_set_sprite_prop(channel: int, prop: String, value: Variant) -> void:
 	# **Any of Director's three member spellings assigns the member**, so all
 	# three restart a film loop. This compared against `membernum` alone, which
 	# was correct only while `the member of sprite` was an alias of it; splitting
-	# the two for `bugs.md` 133 stopped `piposh-dream/COMEIN.dir`'s flowerpots --
+	# the two for `bugs.md` 137 stopped `piposh-dream/COMEIN.dir`'s flowerpots --
 	# which are dressed with `set the member of sprite` -- restarting their fall,
 	# and `tools/film_loop_restart.gd` reported six drops beginning mid-air.
 	if SpriteProps.is_member_name(prop):

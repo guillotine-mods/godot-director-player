@@ -490,7 +490,7 @@ func writes_between(from: int, to: int) -> Dictionary:
 		# (`docs/bugs-closed.md` 120) -- and it cost `rating` its inventory: with
 		# nothing releasing channel 45, the bag keeps the `bagopen` member the
 		# movie swaps in, and that member carries no script, so the suitcase both
-		# looks open and stops answering clicks (`bugs.md` 133).
+		# looks open and stops answering clicks (`bugs.md` 137).
 		#
 		# Neither title needed the divergence. The puzzle writes `the member of
 		# sprite`, whose auto-puppet the reference's release table never names, so

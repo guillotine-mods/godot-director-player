@@ -85,21 +85,60 @@ func _cursor_case(h: Harness, preview: Node) -> void:
 	# against a stack that genuinely wants to answer rather than against an empty
 	# one -- the shape `porting-fidelity-verification` calls a check whose two
 	# readings cannot disagree.
+	#
+	# **The frame is chosen, not accepted.** This used to read whatever frame the
+	# eight `process_frame`s in `_init` had left the boot movie on, and then
+	# assert that that frame happened to carry a sprite worth probing --
+	# a fixture measured in engine ticks rather than in the movie's own
+	# structure. `bugs.md` 138 filed it after six runs each way came back
+	# 3-of-6 and 2-of-6 on the same command line, and it is the same
+	# fixed-window shape as `play_suspends` and `docs/bugs-closed.md` 119.
+	# Under `gate.sh` it is worse than a standing red, because a check that
+	# fails one run in two teaches everyone to re-run rather than read.
+	#
+	# So the fixture is found the way `_rate_case` below finds its delay frame
+	# and the way this file's header says the whole harness works: by walking
+	# the loaded score for the first frame that carries one, going there, and
+	# probing that. No tick count is load-bearing, and a movie that genuinely
+	# carries no such sprite says which movie it was instead of failing with a
+	# probe point that reads like a coordinate bug.
+	var score = preview.get("_score")
+	if score == null:
+		h.check("a score is loaded", false, "no movie")
+		h.complete("the wait-for-click cursor")
+		return
 	var probe := Vector2(8, 8)
 	var covered := false
-	for sprite in preview.call("frame_sprites"):
-		var shown: Dictionary = preview.call("_effective", sprite)
-		if shown.is_empty():
-			continue
-		var rect: Rect2 = preview.call("_sprite_rect", shown)
-		if rect.size.x < 4.0 or rect.size.y < 4.0:
-			continue
-		probe = rect.get_center()
-		(preview.get("_channel_cursors") as Dictionary)[int(shown["channel"])] = 260
-		covered = true
-		break
+	var on_frame := -1
+	for i in int(score.frame_count):
+		# `_rate_case`'s idiom for standing the playhead on a chosen frame: set
+		# the index, do not `go` to it. A `go` queues a jump and releases the
+		# clock, and this case is about to arm a wait on that same clock.
+		preview.set("_index", i)
+		for sprite in preview.call("frame_sprites"):
+			var shown: Dictionary = preview.call("_effective", sprite)
+			if shown.is_empty():
+				continue
+			var rect: Rect2 = preview.call("_sprite_rect", shown)
+			if rect.size.x < 4.0 or rect.size.y < 4.0:
+				continue
+			probe = rect.get_center()
+			(preview.get("_channel_cursors") as Dictionary)[int(shown["channel"])] = 260
+			covered = true
+			on_frame = i
+			break
+		if covered:
+			break
+	# The `video_fallback` shape again: if no frame of this movie carries one,
+	# say so and assert nothing about the precedence rather than against an
+	# empty stack.
 	h.check("a sprite under the probe names a cursor of its own", covered,
-		"probe %s" % str(probe))
+		("probe %s on frame %d" % [str(probe), on_frame]) if covered
+		else "no frame of %s carries a sprite at least 4x4"
+			% preview.call("movie_path"))
+	if not covered:
+		h.complete("the wait-for-click cursor")
+		return
 	var without: Variant = preview.call("cursor_at", probe)
 	h.check("with no wait, the stack answers", str(without) != Cursor.WAIT_CLICK_UP
 		and str(without) != Cursor.WAIT_CLICK_DOWN, "answered %s" % str(without))

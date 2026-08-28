@@ -75,29 +75,38 @@ on both sides and a bare citation resolves to two entries in one file.
 
 ---
 
-## 134. `wait_frames` picks its cursor probe from whatever sprite the movie has drifted to, so it fails about half the time
+## 139. Three numbers in `docs/bugs-closed.md` name two different entries each, so a citation like "`bugs.md` 107" is ambiguous
 
-**Status:** OPEN · **Area:** `tools/wait_frames.gd:_cursor_case` · found
-2026-08-27 while gating unrelated work, and **measured at HEAD before anything was
-blamed on it**
+**Status:** OPEN · **Area:** `docs/bugs-closed.md` · found 2026-08-28 while closing
+138, after discovering that **two of the collisions were mine**
 
-Six runs each way, identical command line:
+`133` and `134` were already taken on 2026-08-22 (the `play`-interlude return frame
+and the pool's music) when entries filed on 2026-08-27 reused both. Those two are
+**fixed**: the suitcase is now `137` and the `wait_frames` flake `138`, with the
+five code comments that cited them updated. `e1753693`'s message still says 133,
+which cannot be changed, so the closed entry says so at the site.
 
-```
-with the day's changes:   PASS FAIL PASS FAIL PASS FAIL   (3 of 6)
-with them reverted:       FAIL FAIL FAIL PASS FAIL PASS   (2 of 6)
-```
+Three collisions remain and are **not** being renumbered:
 
-so it is inert to the change that was in flight when it was noticed, and it was
-already flaking before it. It fails on `a sprite under the probe names a cursor of
-its own (probe (8.0, 8.0))`.
+| n | | |
+|---|---|---|
+| 25 | `:1764` skipping the opening entered DAY1 past its init region | `:8189` a cold F6 warp lands in a hub with unset globals |
+| 88 | `:3386` Magic Hat's menu froze 16 s on a Lingo loop | `:7758` `GetLng()`/`SetLng()` are absent game data |
+| 107 | `:6790` `the memberNum of sprite` answered a packed reference | `:7236` `moveToFront`/`moveToBack` are unbound |
 
-`_cursor_case` takes its probe from whatever sprite happens to be on the frame the
-movie has reached by then. That is the **fixed-frame-count** shape `play_suspends`
-already cost this project once and `docs/bugs-closed.md` 119 cost it a second time
-— a window measured in something other than the movie's own events. The fix is
-119's: wait on the movie's own event rather than a tick or wall-clock budget, and
-re-read the subject at the moment of the assertion rather than capturing it.
+**Renumbering these would cost more than the ambiguity does.** Both members of each
+pair are closed, and their numbers are cited from code comments *and* from commit
+messages, which cannot be rewritten. Moving one side silently invalidates every
+citation that already resolved correctly for a reader who had the right entry in
+hand.
 
-**A gate entry that fails one run in two does the same damage as a standing red**,
-because it teaches everyone to re-run rather than read.
+What is worth doing is making the collision impossible to repeat, since it happened
+twice in one day between two sessions allocating numbers in parallel: the next
+number is `max()` over **both** files, and nothing checks that. A `check.sh` clause
+that reads both files and reports a reused number would have caught all five.
+
+**Counted correctly, which is the reason this entry is small.** A naive
+`grep '^## [0-9]'` reports twelve, because entry bodies use `## 1.`/`## 2.` as
+numbered sub-headings and some fenced traces begin with `#`. Requiring a
+`**Status:**` line within six lines of the heading separates real entries from both,
+and takes it from twelve to three.

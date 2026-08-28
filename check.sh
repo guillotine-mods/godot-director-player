@@ -40,4 +40,32 @@ printf '%s\n' "$result"
 if [ -n "$errors" ]; then exit 1; fi
 printf '%s\n' "$result" | grep -q '^FAIL' && exit 1
 printf '%s\n' "$result" | grep -q '^PASS' || exit 1
+
+# `bugs.md` 139: two sessions filing in parallel reused 133 and 134 in one day,
+# because "the next number" was read off one of the two files instead of both.
+# Nothing caught it, and a citation that names two entries is worse than a
+# missing one -- it resolves, to the wrong thing.
+#
+# Real entries only. Entry bodies use `## 1.`/`## 2.` as numbered sub-headings
+# and fenced traces begin with `#`, which is what makes a naive
+# `grep '^## [0-9]'` report twelve collisions where there are three; requiring a
+# `**Status:**` line within six lines of the heading separates them.
+#
+# The three that remain are listed in 139 and are deliberately not renumbered --
+# both members of each pair are closed and cited from commit messages, which
+# cannot be rewritten -- so they are allowed here by number. Anything else is a
+# new collision.
+dups=$(awk '
+  /^## [0-9]+\./ { n = $2; sub(/\.$/, "", n); pend = n; look = 6; next }
+  look > 0 {
+    look--
+    if ($0 ~ /\*\*Status:\*\*/) { count[pend]++; look = 0 }
+  }
+  END { for (k in count) if (count[k] > 1) print k }
+' bugs.md docs/bugs-closed.md | grep -vxE '25|88|107' | sort -n | tr '\n' ' ')
+if [ -n "$dups" ]; then
+  echo "check: bug number(s) used by more than one entry: $dups"
+  echo "check: give the newer entry the next free number (max over BOTH files)."
+  exit 1
+fi
 exit 0
