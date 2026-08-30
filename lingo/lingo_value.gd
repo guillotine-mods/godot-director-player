@@ -129,10 +129,83 @@ static func is_numeric(value: Variant) -> bool:
 const ContainerName := preload("res://director/director_container.gd")
 
 
+## A point, a rect or a list as the list Director treats it as, or an empty
+## array when this value is not one of those. `has_elements` tells the two apart,
+## because an empty Lingo list is a list.
+##
+## **A point reaches this file as two different Godot types**, and that is the
+## whole reason `elements` exists. `point()` builds a `Vector2`
+## (`lingo_builtins.gd:_geometry`); `the loc of sprite N` answers a two-element
+## array, deliberately and with 361 sites reading it that way. Both are the same
+## thing in Director, which has one point type, so anything comparing them has to
+## see through the representation rather than the type.
+static func elements(value: Variant) -> Array:
+	match typeof(value):
+		TYPE_ARRAY:
+			return value
+		TYPE_VECTOR2:
+			return [(value as Vector2).x, (value as Vector2).y]
+		TYPE_VECTOR2I:
+			return [(value as Vector2i).x, (value as Vector2i).y]
+		TYPE_RECT2:
+			var r: Rect2 = value
+			return [r.position.x, r.position.y, r.end.x, r.end.y]
+		TYPE_RECT2I:
+			var ri: Rect2i = value
+			return [ri.position.x, ri.position.y, ri.end.x, ri.end.y]
+	return []
+
+
+## Whether `value` is a Lingo list, point or rect -- something `=` compares
+## element by element rather than as a scalar.
+static func has_elements(value: Variant) -> bool:
+	var t := typeof(value)
+	return t == TYPE_ARRAY or t == TYPE_VECTOR2 or t == TYPE_VECTOR2I 		or t == TYPE_RECT2 or t == TYPE_RECT2I
+
+
 static func equal(a: Variant, b: Variant) -> bool:
 	## Lingo compares strings without regard to case.
 	if is_numeric(a) and is_numeric(b):
 		return is_equal_approx(float(to_num(a)), float(to_num(b)))
+
+	# **A list is compared element by element, not as text.**
+	#
+	# `LC::eqData` (ScummVM 805f259a) sends any comparison with a list on either
+	# side to `LC::compareArrays`, which walks the two in step and recurses
+	# through `eqData` for each pair. Two rules come out of it, and both are the
+	# arms this corpus takes:
+	#
+	#   * **two lists of different lengths are unequal** -- "D5 and up is fixed;
+	#     only check arrays if the sizes are the same";
+	#   * **a list and a scalar are unequal** -- `compareArrays` returns 0
+	#     outright for `getVersion() >= 600` when only one side is a list.
+	#
+	# The D4 arms are not implemented and are unreachable here: the reference
+	# gates both on `getVersion() < 500` (and a Windows/Mac split for the
+	# "only checks the elements on the left array" bug), and every container in
+	# every root states a file version of `0x57E` or `0x73A`, both far above D5's
+	# `0x4B1`. `director_config.gd` records the same survey for the same reason.
+	#
+	# **Without this the comparison fell through to a string compare of the two
+	# rendered values**, which is right whenever both sides happen to render the
+	# same way and wrong the moment they do not. `piposh-dream/WEST1.dir` is
+	# where that surfaced: the level parks fifteen bullet sprites with
+	# `set the loc of sprite i to point(690, 490)` and then finds a free one with
+	# `if the loc of sprite (49 + h) = point(690, 490)`. The left side is an
+	# array and the right is a `Vector2`, so the strings differ, no bullet was
+	# ever free, and the gun fired its sound and its animation and produced
+	# nothing. `tools/west_shoot.gd` holds it.
+	if has_elements(a) or has_elements(b):
+		if not (has_elements(a) and has_elements(b)):
+			return false
+		var ea := elements(a)
+		var eb := elements(b)
+		if ea.size() != eb.size():
+			return false
+		for i in ea.size():
+			if not equal(ea[i], eb[i]):
+				return false
+		return true
 	var sa := to_str(a).to_lower()
 	var sb := to_str(b).to_lower()
 	if sa == sb:

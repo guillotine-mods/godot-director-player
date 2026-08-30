@@ -110,3 +110,80 @@ that reads both files and reports a reused number would have caught all five.
 numbered sub-headings and some fenced traces begin with `#`. Requiring a
 `**Status:**` line within six lines of the heading separates real entries from both,
 and takes it from twelve to three.
+
+
+---
+
+## 140. Piposh Dream's Hatuli level enters a screen from the wrong side, and a player on the yellow rail cannot jump off it
+
+**Status:** OPEN · **Area:** `games/piposh-dream/hatul2.dir`, mechanism not yet
+established · reported by QA 2026-08-28 with a snapshot at frame 323 of 1283,
+marker `stage3`
+
+Two symptoms in one report, and they may or may not be one bug:
+
+> When entering this screen we enter from the right and not the left side.
+> Another issue is that when we're up on the yellow rail, we can't jump off to
+> the mountain side - only to fall and die.
+
+**What is established.** The level moves between screens in two handlers that are
+mirror images, `wlkleftintersects` and `wlkrightintersects` (`1:` scripts around
+byte 176 and 1206). Each is guarded by a collision against a thin vertical strip:
+
+    on wlkleftintersects  ... if sprite 15 intersects 6 then ... stage = stage - 1
+    on wlkrightintersects ... if sprite 15 intersects 5 then ... stage = stage + 1
+
+and each then seats the player at a hard-coded position per stage. **Backward
+places them on the right** (`locH` 640, 600, 620, 580, 560, 630, 535) and
+**forward on the left** (`locH` 10, 0, -30, 100). So "entered from the right"
+means the *backward* handler ran, which also decrements `stage` -- the player
+should have noticed going back a screen, and the report does not say they did.
+That is the first thing to pin down, and it needs the level played rather than
+read.
+
+At frame 323 the trigger channels are ch5 `(629,163) 11x268` on the right and
+ch6 `(-15,46) 22x346` on the left, so the two are far apart and a collision test
+that is merely imprecise would not confuse them.
+
+**Both handlers also write `set the constraint of sprite 15 to 2`, and channel 2
+carries a 639x403 box at that frame** -- the playable area. That is worth naming
+because `docs/bugs-closed.md`'s constraint work landed a `last_occupied` fallback
+on 2026-08-29 which makes a constraint naming a *momentarily* empty channel keep
+its last box. Channel 2 is occupied here, so that change is not implicated at
+frame 323 -- but the rail symptom is a vertical-movement complaint against a
+level that constrains vertical movement, and the two want checking together.
+
+**Not reproduced headlessly yet.** Both symptoms need the player walked into a
+trigger strip and then jumped, which no existing harness does for this level;
+`west_shoot.gd`'s shape -- drive the real key handlers, then read the movie's own
+globals -- is the one to copy.
+
+---
+
+## 141. Piposh Dream's fritz duel flickers for about a second when it moves between screens
+
+**Status:** OPEN · **Area:** `games/piposh-dream/fritz2.dir` · reported by QA
+2026-08-28, the second half of a report whose first half is closed
+
+The report was two sentences and they turned out to be two different things:
+
+> When fighting - sometimes Fritz character image would change to one of the
+> enemies for a split second.
+> When moving between screens - the screen flickers for a second and resumes.
+
+**The first is fixed** and was fixed about ten hours after it was filed, by
+`94038ec5` -- `strata2` depth-sorts the four fighters by moving members through a
+Lingo variable, and `the member of sprite` was handing back a bare slot number
+where the write had taken a packed reference, so a fighter whose artwork lived in
+library 2 was re-seated as library 1's member of the same number. "Sometimes, on
+being hit" is exactly when the sort fires.
+
+**The second is not obviously covered by it** and has no diagnosis yet. Worth
+ruling out first, because both were plausible and one has since been fixed for
+other reasons: the stage colour was `Color.BLACK` unconditionally until
+2026-08-29, so any moment where the movie had cleared its sprites but not yet
+drawn the next screen showed black regardless of what the movie asked for. That
+is a "flicker for a second and resumes" shape. `fritz1`-`fritz3` state their
+stage colour as a **palette index** (255) rather than an RGB, which is the one
+arm of `director_config.gd:_read_stage_colour` that this corpus exercises only
+here -- so it is both the likely cause and the least-tested path.
