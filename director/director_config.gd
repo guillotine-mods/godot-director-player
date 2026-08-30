@@ -131,11 +131,43 @@ var default_palette_lib := 0
 ## anything here exercises it, and `tools/cursor_hotspot.gd` says that out loud
 ## and asserts the branch against a synthetic D4 member instead.
 var platform_id := 0
+## The colour Director paints the stage before any sprite, and whether the movie
+## states it as a true colour or as an index into its palette.
+##
+## **Deliberately absent until 2026-08-29**, and the comment that stood here said
+## why: "the candidate offsets do not agree with anything measurable in this
+## corpus". Two things changed. The reference does spell the layout out
+## (`cast.cpp:Cast::loadConfig`, ScummVM 805f259a) -- byte 17 `_lightswitch`,
+## the `_unk1` int16 at 18, `commentFont`/`commentSize`/`commentStyle`, then
+## `_stageColor` at 26 -- and for a movie at file version 700 or above it splits
+## the two words into four bytes: **G at 18, B at 19, isRGB at 26, R at 27**.
+## Every container in every root here states `0x57E` or `0x73A`, both far above
+## D7's `0x4C8`, so that is the arm this corpus takes.
+##
+## And there is now something measurable to agree with. `piposh-dream`'s three
+## flying levels are the only containers in the title whose byte 27 is not 0 or
+## 255, and read this way they are `rgb(102,204,255)`, `rgb(204,204,204)` and
+## `rgb(153,204,255)` -- a sky blue, an overcast grey and a pale blue, in the
+## three movies where the player flies a carpet through the sky. The 46 movies
+## that state 0 are rooms with a background bitmap covering the stage, where the
+## colour never shows. A layout that were wrong by a byte would have to produce
+## that split by accident.
+var stage_colour := Color.BLACK
+## False when byte 26 says the movie stores a palette index instead, in which
+## case `stage_colour_index` is the field to resolve and this one is unusable.
+## `fritz1`-`fritz3` are the corpus's only such movies, at index 255.
+var stage_colour_is_rgb := false
+## The palette index form, for a movie that states one. Resolved by the caller,
+## because only it knows which palette is in force.
+var stage_colour_index := 0
 var error: String = ""
 
 ## D5 and later, from the reference's own table. Below this the config's tail is
 ## the D4 layout.
 const FILE_VERSION_D5 := 0x4B1
+## Where the reference's `humanVersion` puts Director 7, and the threshold its
+## `humanVer >= 700` stage-colour arm tests.
+const FILE_VERSION_D7 := 0x4C8
 
 
 func parse(payload: PackedByteArray) -> bool:
@@ -166,8 +198,37 @@ func parse(payload: PackedByteArray) -> bool:
 	# the honest reading of a field that is out of range either way.
 	default_tempo = _i16(payload, 54) if payload.size() >= 56 else 0
 	platform_id = _u16(payload, 56) if payload.size() >= 58 else 0
+	_read_stage_colour(payload)
 	_read_default_palette(payload)
 	return true
+
+
+## The stage colour, per `cast.cpp:Cast::loadConfig`'s D7 arm.
+##
+## The reference branches the byte split on `stream->isBE()` because it reads the
+## two fields as 16-bit words and then takes them apart; this chunk is big-endian
+## in both `RIFX` and `XFIR` containers (see the file comment), so only the
+## big-endian arm can be reached here and the bytes are indexed directly rather
+## than shifted back out of a word that was assembled only to be split again.
+##
+## Below D7 the movie states an index and nothing else, which is the same field
+## the reference keeps in `_stageColor`.
+func _read_stage_colour(payload: PackedByteArray) -> void:
+	stage_colour = Color.BLACK
+	stage_colour_is_rgb = false
+	stage_colour_index = 0
+	if payload.size() < 28:
+		return
+	stage_colour_index = _u16(payload, 26)
+	if version < FILE_VERSION_D7:
+		return
+	stage_colour_is_rgb = payload[26] != 0
+	if stage_colour_is_rgb:
+		stage_colour = Color8(payload[27], payload[18], payload[19])
+	else:
+		# `_stageColor` is the whole word when the movie is not stating RGB, and
+		# the index lives in the low byte the reference assigns to R.
+		stage_colour_index = payload[27]
 
 
 ## The tail of the chunk, per the version split described on `default_palette`.

@@ -25,6 +25,7 @@ extends RefCounted
 ## moment a palette effect changed it.
 
 const Ink := preload("res://director/director_ink.gd")
+const VectorShape := preload("res://director/director_vector_shape.gd")
 const Shape := preload("res://director/director_shape.gd")
 const Bitmap := preload("res://director/director_bitmap.gd")
 const Geometry := preload("res://scenes/preview/sprite_geometry.gd")
@@ -50,7 +51,12 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	if m.is_empty():
 		return null
 	var type_code := int(m.get("type", 0))
-	if type_code != Ink.TYPE_BITMAP and type_code != Ink.TYPE_SHAPE:
+	# A `vectorShape` Xtra is Director's own vector art and this engine draws it;
+	# every other Xtra symbol still has no renderer, which is the correct answer
+	# for one whose pixels only a native DLL ever produced. See
+	# `director/director_vector_shape.gd` for why the two are not the same case.
+	var is_vector := type_code == Ink.TYPE_XTRA 		and str(m.get("xtra_symbol", "")).to_lower() == VECTOR_SHAPE_SYMBOL
+	if type_code != Ink.TYPE_BITMAP and type_code != Ink.TYPE_SHAPE and not is_vector:
 		return null
 	var drawn := Geometry.drawn_size(sprite, m)
 	var key := Geometry.texture_key(sprite, drawn)
@@ -76,6 +82,21 @@ static func texture_for(sprite: Dictionary, table, palette: PackedByteArray,
 	# (`bugs.md` 30, `tools/sprite_rgb_colour.gd`).
 	var fore := Ink.fore_colour(sprite, palette)
 	var back := Ink.back_colour(sprite, palette)
+
+	if is_vector:
+		# The member's own box, then the sprite's drawn size -- the same two
+		# steps a bitmap takes, so a stretched vector stretches like stretched
+		# artwork rather than being re-rasterised at the new size. Director
+		# rasterises the vector at its authored size and scales the result too:
+		# `the width of sprite` on a vector shape does not re-flatten the path.
+		var art: Image = _vector_image(m)
+		if art == null:
+			return null
+		if drawn.x > 0 and drawn.y > 0 				and (int(drawn.x) != art.get_width() or int(drawn.y) != art.get_height()):
+			art.resize(int(drawn.x), int(drawn.y), Image.INTERPOLATE_NEAREST)
+		hit_images[key] = art
+		textures[key] = ImageTexture.create_from_image(art)
+		return textures[key]
 
 	if type_code == Ink.TYPE_SHAPE:
 		# A shape has no artwork and no registration point: its sprite rect is the
@@ -205,6 +226,24 @@ static func apply_mask_member(sprite: Dictionary, member: Dictionary, image: Ima
 	return ""
 
 
+## The symbol whose payload is artwork. Lower case: the corpus is inconsistent
+## about the capital, so nothing matches one case-sensitively.
+const VECTOR_SHAPE_SYMBOL := "vectorshape"
+
+
+## A `vectorShape` member's pixels at its own authored size, or null when the
+## payload is not one this reading understands -- in which case the member draws
+## nothing, exactly as every Xtra did before, rather than drawing a guess.
+static func _vector_image(m: Dictionary) -> Image:
+	var payload: PackedByteArray = m.get("xtra_data", PackedByteArray())
+	if payload.is_empty():
+		return null
+	var shape := VectorShape.decode(payload)
+	if shape.is_empty():
+		return null
+	return VectorShape.rasterise(shape)
+
+
 ## Why `texture_for` answered null, in the words a report can print.
 ##
 ## **`texture_for` returns null for two entirely different things and nothing
@@ -212,9 +251,9 @@ static func apply_mask_member(sprite: Dictionary, member: Dictionary, image: Ima
 ## flyer tallied `{"child drawn": 29, "child has no art": 8}` in two independent
 ## runs, and "no art" reads as artwork that failed — a decode bug, a cast-library
 ## bug, something to fix. It is neither. All eight are film-loop children whose
-## member is **type 15 with the Xtra symbol `vectorShape`**: Director 7 vector art
-## whose pixels are produced by a native Xtra, which this port does not draw and
-## `castmember/` in the reference does not draw either. Decoded off the disc:
+## member is **type 15 with the Xtra symbol `vectorShape`**: Director 7 vector
+## art, which at the time this port did not draw and `castmember/` in the
+## reference still does not. Decoded off the disc:
 ## `plane1.dir` holds 15 film loops whose children are 11 distinct type-15
 ## members (88, 103-105, 113-117, 132, 150), every one of them `vectorShape`, and
 ## no `ccl ` chunk at all — so cast resolution, the closed nested-loop cause and
@@ -225,6 +264,13 @@ static func apply_mask_member(sprite: Dictionary, member: Dictionary, image: Ima
 ## behaviour; not knowing what the member is, is not.* The engine now says which,
 ## and a member type that genuinely failed to decode no longer hides in the same
 ## bucket as one there was never anything to draw for.
+##
+## **Eight did become zero in the end, and naming them is what did it.** With the
+## symbol in the report it was plain that `vectorShape` was never an unregistered
+## Xtra: it is Director's own vector art, and `director/director_vector_shape.gd`
+## draws it. The sorting above is unchanged and still load-bearing -- `flash`,
+## `animGif` and `VisibleLightOnStageMedia` are still declined by symbol, and a
+## bitmap that fails to decode still has to be told apart from them.
 ##
 ## Empty when the member is one this renderer draws — in which case `texture_for`
 ## returning null is a real failure and the caller should say so.

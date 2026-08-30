@@ -48,9 +48,11 @@ extends RefCounted
 ## **Neither of them answers "no" here.** This port's artwork path does not split
 ## the same way, so it is worth spelling out as three cases rather than one:
 ##
-## 1. **No artwork at all** -- a film loop, a field, a video, a `vectorShape`
-##    Xtra. `_matte_mask` answers `{}` and that side of the test degrades to its
-##    box. This is the deviation proper.
+## 1. **No artwork at all** -- a film loop, a field, a video, an Xtra whose
+##    symbol this engine has no renderer for. `_matte_mask` answers `{}` and that
+##    side of the test degrades to its box. This is the deviation proper.
+##    (`vectorShape` used to be in this list and no longer is: it rasterises to a
+##    real image now, so it keys and hit-tests like any other artwork.)
 ## 2. **A bitmap whose border has no white.** `director_ink.gd:key_matte` builds
 ##    nothing and leaves the image opaque, so the mask is solid and the scan
 ##    reaches the same answer through the artwork rather than through a fallback.

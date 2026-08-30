@@ -32,6 +32,12 @@ const DRAWING_TYPES := ["bitmap", "filmLoop", "picture", "richText"]
 ## ASCII hex digits of run length, and a run is text when at least four fifths of
 ## its bytes are printable. Named rather than inlined because the fraction is the
 ## whole of the heuristic — see `decode_xmed`.
+## The one Xtra symbol whose payload this engine can read. Lower case because
+## the corpus spells symbols inconsistently -- `itamar-park` writes `animgif`
+## where `piposh-dream` writes `animGif` -- so nothing here matches one
+## case-sensitively.
+const VECTOR_SHAPE_SYMBOL := "vectorshape"
+
 const XMED_LEN_DIGITS := 6
 const XMED_PRINTABLE_OF := 5
 const XMED_PRINTABLE_IN := 4
@@ -936,9 +942,18 @@ func _parse_specific(spec: PackedByteArray, type_code: int, out: Dictionary) -> 
 			out["xtra_symbol"] = _text(spec.slice(4, 4 + symbol_len))
 			var data_len := _be_u32(spec, 4 + symbol_len)
 			out["xtra_data_size"] = mini(data_len, spec.size() - (8 + symbol_len))
-			_apply_text_xtra_rect(
-				out, spec.slice(8 + symbol_len,
-					mini(8 + symbol_len + data_len, spec.size())))
+			var xtra_payload := spec.slice(8 + symbol_len,
+				mini(8 + symbol_len + data_len, spec.size()))
+			_apply_text_xtra_rect(out, xtra_payload)
+			# **One symbol's payload is kept, against the rule two paragraphs up.**
+			# `vectorShape` is Director's own vector art and this engine draws it
+			# (`director/director_vector_shape.gd`), so for that symbol alone the
+			# bytes are the member's artwork and dropping them would be dropping
+			# the picture. Every other symbol still keeps only its length, because
+			# a Flash movie or a QuickTime path is still something nothing here
+			# reads and carrying it would be carrying a copy of nothing.
+			if str(out["xtra_symbol"]).to_lower() == VECTOR_SHAPE_SYMBOL:
+				out["xtra_data"] = xtra_payload
 			# The self-check, reported rather than asserted here so that
 			# `tools/xtra_members.gd` can assert it over the whole corpus at once:
 			# the two length words and the two runs they measure must account for

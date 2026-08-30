@@ -2101,6 +2101,27 @@ func stage_redraw() -> void:
 ## issues commands to this node's canvas item rather than through
 ## `CanvasItem.draw_*` -- those assert `drawing`, which is raised only inside
 ## `NOTIFICATION_DRAW`.
+## What the stage is painted before any sprite: the movie's own `stageColor`,
+## black when it states none.
+##
+## **This was `Color.BLACK` unconditionally, and the comment below it called that
+## "the stage colour" for months.** It cost `piposh-dream`'s three flying levels
+## their sky: `plane1.dir` states `rgb(102,204,255)` and drew black, so a carpet
+## flew through the night in a daytime game. Most rooms state 0 and are unchanged
+## by this, because a room covers its stage with a background bitmap and the
+## colour never shows -- which is exactly why nothing noticed.
+##
+## A movie stating a palette *index* rather than an RGB is resolved through the
+## palette in force, not through a guess: that is `fritz1`-`fritz3` here, all at
+## index 255.
+func stage_colour() -> Color:
+	if _config == null:
+		return Color.BLACK
+	if _config.stage_colour_is_rgb:
+		return _config.stage_colour
+	return Ink.colour_of(_palette, _config.stage_colour_index)
+
+
 func _paint() -> void:
 	_arm_paint_capture()
 	_clip_to_stage()
@@ -2110,7 +2131,7 @@ func _paint() -> void:
 	Paint.rect(self,
 		Rect2(Vector2.ZERO,
 			window_size() if _window_key != "" else Vector2(stage_size())),
-		Color.BLACK, true)
+		stage_colour(), true)
 	if _window_key != "":
 		_draw_window_chrome()
 	if _status != "":

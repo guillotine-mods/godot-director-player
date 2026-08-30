@@ -470,9 +470,15 @@ static func paint_loop(host, lib: int, id: int, member: Dictionary, origin: Vect
 			# missing. "No art" was one bucket holding two unrelated things: a
 			# member whose artwork failed to decode, which is a defect, and a
 			# member type this renderer is *right* not to draw, which is not.
-			# `plane1.dir`'s eight are all the second -- `vectorShape` Xtras --
-			# and there was nothing in the report able to say so, so the number
-			# read as eight broken animations for as long as it stood.
+			# `plane1.dir`'s eight were all called the second -- `vectorShape`
+			# Xtras -- and there was nothing in the report able to say so, so the
+			# number read as eight broken animations for as long as it stood.
+			#
+			# **Those eight are drawn now**, and the sorting is what made that
+			# possible: once the bucket named the member type, the type was one
+			# Director ships and builds itself, not a native DLL nobody has.
+			# `director/director_vector_shape.gd` draws it. The split still
+			# matters for every *other* Xtra symbol, which stays undrawn.
 			# `sprite_art.gd:decline_reason` carries the decode and the argument.
 			var reason: String = SpriteArt.decline_reason(record, table)
 			host._tally_loop("child not drawn: "

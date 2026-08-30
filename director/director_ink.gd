@@ -281,6 +281,7 @@ static func mattes_for_within(ink: int, sprite_type: int) -> bool:
 const TYPE_BITMAP := 1
 const TYPE_FIELD := 3
 const TYPE_SHAPE := 8
+const TYPE_XTRA := 15
 
 
 ## Does this sprite render in applyColor mode — its blacks repainted foreColor and

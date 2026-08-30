@@ -13,12 +13,16 @@ extends SceneTree
 ##
 ## `preview/sprite_art.gd:texture_for` answers null both when a bitmap failed to
 ## decode, which is a defect, and when the member is a type it is *right* not to
-## draw, which is not. All eight of `plane1.dir`'s are the second: film-loop
-## children whose member is type 15 with the Xtra symbol `vectorShape`, Director 7
-## vector art produced by a native Xtra that this port does not draw and that the
-## reference's `castmember/` does not draw either. `tools/xtra_members.gd` states
-## the rule -- *drawing nothing for an unregistered Xtra is correct behaviour; not
-## knowing what the member is, is not* -- and the second half is what was broken.
+## draw, which is not. All eight of `plane1.dir`'s were called the second:
+## film-loop children whose member is type 15 with the Xtra symbol `vectorShape`.
+## `tools/xtra_members.gd` states the rule -- *drawing nothing for an
+## unregistered Xtra is correct behaviour; not knowing what the member is, is
+## not* -- and the second half is what was broken.
+##
+## **The sorting then falsified the sorting's own example.** Once the report named
+## the symbol it was plain that `vectorShape` is not an unregistered Xtra at all:
+## it is Director's own vector art, and `director/director_vector_shape.gd` now
+## draws all eight. The rule stands for every other symbol; the example moved.
 ##
 ## So this harness does not assert that eight becomes zero. It asserts that **no
 ## child is dropped without the report naming the member type that dropped it**,

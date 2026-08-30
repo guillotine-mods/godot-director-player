@@ -14,6 +14,15 @@ extends SceneTree
 ## not a missing feature.** What is *not* correct is not knowing what the member
 ## is, and that is what this measures.
 ##
+## **One symbol turned out not to be an arbitrary Xtra**, and knowing what the
+## member was is what showed it: `vectorShape` is Director 7's own vector art,
+## built into the authoring tool rather than supplied by a DLL, and this engine
+## now draws all 94 of them (`director/director_vector_shape.gd`,
+## `tools/vector_shape.gd`). The rule above is unchanged for `flash`, `animGif`,
+## `text` and `VisibleLightOnStageMedia`. Worth noticing that this tool's own
+## census is what made the difference: the symbol had been sitting in its output
+## for weeks, filed under a rule that did not apply to it.
+##
 ## Three things are asserted, and all three are self-checks against the container
 ## rather than against a number written here:
 ##
