@@ -238,6 +238,7 @@ func _init() -> void:
 		"the overlay claimed a press at the top-left corner")
 
 	_restore(root)
+	_swallow_case(h, case_name)
 	_switch_case(h, case_name)
 	await _second_movie_case(h, case_name, preview)
 	h.complete(case_name)
@@ -888,3 +889,81 @@ func _labels_at(preview: Node, index: int) -> String:
 		names.append(KeyAffordance.label_of(a))
 	names.sort()
 	return ",".join(names)
+
+
+## A key a script tests only in order to throw away is not a key the scene wants.
+##
+## Synthetic, because what is asserted is `scan_source`'s branch rather than one
+## title's happening to be written a certain way -- the same argument
+## `cursor_hotspot.gd` makes for testing its rule against a dictionary.
+##
+## `rating/ARCADE2.dir` is the movie that produced these: `normalkeys` is
+## `if the keyCode = 53 then nothing() end if` and nothing else, Director's idiom
+## for keeping Escape away from the projector, and `normalkeysx` swallows 53 and
+## acts on 109 in consecutive guards.
+##
+## **The second and third checks are the ones that took two goes.** Suppressing
+## the group alone left `asks` true with nothing named, which `classify` calls
+## `Shape.ANY` -- so the Escape button became a generic KEY button, which claims
+## the scene wants a keypress when the only key it tests is discarded. The owner
+## saw both in turn: "i see escape -- why?", then "now instead of the escape i
+## see key. still doesn't do anything."
+func _swallow_case(h: Harness, case_name: String) -> void:
+	var swallow := "on normalkeys
+  if the keyCode = 53 then
+    nothing()
+  end if
+end
+"
+	var swallowed := KeyAffordance.demand_of(swallow)
+	h.check("%s: a guard whose body is `nothing()` names no key" % case_name,
+		(swallowed["groups"] as Array).is_empty(),
+		"groups %s" % str(swallowed["groups"]))
+	h.check("%s: and the scene does not ask at all" % case_name,
+		not bool(swallowed["asks"]),
+		("asks true, and with no group `classify` makes that a generic KEY button"
+			if bool(swallowed["asks"]) else "asks false"))
+
+	# The same movie's other handler: one guard swallowed, one real.
+	var mixed := "on normalkeysx
+  if the keyCode = 53 then
+    nothing()
+  end if
+" 		+ "  if the keyCode = 109 then
+    go(\"saveloadexit\")
+  end if
+end
+"
+	var mixed_d := KeyAffordance.demand_of(mixed)
+	var codes: Array = (mixed_d["codes"] as Dictionary).keys()
+	codes.sort()
+	h.check("%s: a swallowed guard beside a real one drops only itself" % case_name,
+		bool(mixed_d["asks"]) and codes == [109],
+		"asks %s, codes %s" % [str(mixed_d["asks"]), str(codes)])
+
+	# Installing a handler that wants nothing is not itself a demand.
+	var installer := "on exitFrame
+  set the keyDownScript to \"normalkeys\"
+end
+"
+	var resolved := KeyAffordance.resolve_installs(
+		KeyAffordance.demand_of(installer),
+		{"normalkeys": KeyAffordance.scan_source(swallow)["handlers"]["normalkeys"]})
+	h.check("%s: installing a handler that wants nothing asks for nothing"
+		% case_name,
+		not bool(resolved["asks"]),
+		"asks %s after resolving the install" % str(resolved["asks"]))
+
+	# And the shape this must not have broken: a key read with no literal to
+	# compare against is a scene that wants *some* key, which is the 46
+	# `fromnow` speech-skip scripts and 768 scenes in `piposh` alone.
+	var bare := "on fromnow
+  if the key <> EMPTY then
+    go(marker(1))
+  end if
+end
+"
+	var bare_d := KeyAffordance.demand_of(bare)
+	h.check("%s: a key read with no literal still asks" % case_name,
+		bool(bare_d["asks"]),
+		"asks %s -- this is the press-anything scene" % str(bare_d["asks"]))

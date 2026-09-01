@@ -346,6 +346,9 @@ static func scan_source(source: String) -> Dictionary:
 	var source_lines := source.split("\n")
 	var live := 0
 	var bare := 0
+	## Per handler, so a handler's `asks` is about the handler.
+	var handler_live: Dictionary = {}
+	var handler_bare: Dictionary = {}
 	for line_no in source_lines.size():
 		var line: String = source_lines[line_no]
 		var lowered_line := str(line).to_lower()
@@ -354,7 +357,12 @@ static func scan_source(source: String) -> Dictionary:
 			handler = opened.get_string(1)
 			if not (out["handlers"] as Dictionary).has(handler):
 				out["handlers"][handler] = empty()
-			out["handlers"][handler]["asks"] = true
+			# **Not `asks = true` here.** A handler that merely exists inside a
+			# script that mentions the keyboard somewhere was marked as asking,
+			# and `rating/ARCADE2.dir`'s `normalkeys` is nothing but a swallowed
+			# Escape -- so it asked, contributed no group, and the scene that
+			# installs it drew a generic KEY button. Set from its own content
+			# below, the same way the member's is.
 
 		var into: Array[Dictionary] = [out["member"]]
 		if handler == "" or handler == "keydown" or handler == "keyup":
@@ -398,13 +406,25 @@ static func scan_source(source: String) -> Dictionary:
 			group = []
 		elif not group.is_empty():
 			live += 1
+			if handler != "":
+				handler_live[handler] = int(handler_live.get(handler, 0)) + 1
 		if group.is_empty() 				and char_re.search(lowered_line) == null 				and code_re.search(lowered_line) == null:
 			# A key mentioned with no literal to compare against -- `put the key
 			# into x` -- is a scene that wants *some* key, and stays a reason to
 			# ask even though it names nothing.
 			for label in ASKS:
+				# **An install is not a demand of its own.** `set the keyDownScript
+				# to "normalkeys"` says the demand is *the handler's*, and counting
+				# the line itself is what kept a scene asking after its only key
+				# had been swallowed. `resolve_installs` puts the handler's demand
+				# back, and if the handler wants nothing then nothing is what the
+				# scene wants.
+				if label == "the keyDownScript" or label == "the keyUpScript":
+					continue
 				if _re(str(ASKS[label])).search(lowered_line) != null:
 					bare += 1
+					if handler != "":
+						handler_bare[handler] = int(handler_bare.get(handler, 0)) + 1
 					break
 
 		for target in into:
@@ -425,8 +445,13 @@ static func scan_source(source: String) -> Dictionary:
 	# and `classify` turns "asks, but names nothing" into `Shape.ANY`, a generic
 	# KEY button. That is worse than the Escape button it replaces: it claims the
 	# scene wants a keypress when the only key it tests is one it throws away.
-	if live == 0 and bare == 0 and not bool(out["member"]["installs"]):
-		out["member"]["asks"] = false
+	# `installs` is deliberately not a reason to keep asking: it is a pointer to a
+	# handler, and `resolve_installs` merges that handler's own answer -- which is
+	# true when the handler wants something and false when every key it names is
+	# thrown away.
+	out["member"]["asks"] = live > 0 or bare > 0
+	for name in out["handlers"]:
+		out["handlers"][name]["asks"] = 			int(handler_live.get(name, 0)) > 0 or int(handler_bare.get(name, 0)) > 0
 
 	# A member whose only keyboard mention is inside a named handler still `asks`
 	# at member level; `hooks` does not, and that is the whole point of the split.
