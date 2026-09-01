@@ -653,14 +653,20 @@ static func keycode_of(action: Dictionary) -> Key:
 
 ## What a button for this action says. The key's own name, with alternates joined
 ## by `/` -- "Up/W" rather than "Up", because a player who knows the game knows W.
+##
+## **Deduplicated by the printed name, not by the token.** A script that guards
+## one key both ways -- `if (the key = "h") or (the keyCode = 4)`, which is how
+## `rating/BATZEGOZ.dir` asks for each of H, J and Q -- contributes two tokens
+## that are the same key, and joining them gave a button reading `H/H`. The
+## alternates that are worth showing are the ones that *say* something different,
+## which is exactly the ones whose names differ.
 static func label_of(action: Dictionary) -> String:
 	var names: Array[String] = []
 	for token in _ordered(action):
 		var t := str(token)
-		if t.begins_with("code:"):
-			names.append(key_name(int(t.substr(5))))
-		else:
-			names.append(printable(t.substr(5)))
+		var name := key_name(int(t.substr(5))) if t.begins_with("code:") 			else printable(t.substr(5))
+		if not names.has(name):
+			names.append(name)
 	return "/".join(names)
 
 
@@ -727,8 +733,27 @@ static var _movies: Dictionary = {}
 ## Costs one pass over the movie's casts, which is the same walk
 ## `tools/key_demand.gd` makes and is seconds for the largest title in the corpus.
 ## It happens once per movie per session and never on a frame path.
+## The container this map belongs to.
+##
+## **Not `movie_path()`, and that mistake cost the whole feature on every title
+## that boots one movie and plays another.** `movie_path()` is Director's
+## `the moviePath`, which is the *folder* -- `res://games/rating/` for all 124 of
+## rating's containers. Used as a cache key it means the first movie a session
+## opens builds the map and **every movie after it is answered with that one's
+## keys**. `mainmenu.dir` needs none, so the overlay was blank for the rest of the
+## title no matter what the scene asked for; the owner found it on
+## `BATZEGOZ.dir`, whose members 6, 7 and 8 poll `the key = "h"`, `"j"` and `"q"`.
+##
+## It looked like it worked because every test booted straight into the movie it
+## was testing -- `--boot arcade1.dir` builds arcade1's map first, so arcade1 is
+## the movie the cache holds. A gate entry per movie could never see it; only
+## going somewhere *after* booting can.
+static func _movie_key(host) -> String:
+	return host.movie_path() + host.movie_name()
+
+
 static func map_for(host) -> Dictionary:
-	var path: String = host.movie_path()
+	var path: String = _movie_key(host)
 	if _movies.has(path):
 		return _movies[path]
 	var out := {"wide": empty(), "editable": {}, "spans": [] as Array[Dictionary]}
@@ -766,7 +791,7 @@ static var _at_frame_path := ""
 
 
 static func demand_at(host, index: int) -> Dictionary:
-	var path: String = host.movie_path()
+	var path: String = _movie_key(host)
 	if path != _at_frame_path:
 		_at_frame.clear()
 		_at_frame_path = path

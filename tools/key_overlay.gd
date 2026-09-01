@@ -239,6 +239,7 @@ func _init() -> void:
 
 	_restore(root)
 	_switch_case(h, case_name)
+	await _second_movie_case(h, case_name, preview)
 	h.complete(case_name)
 	quit(h.finish("the touch controls, on a scene that needs keys"))
 
@@ -706,3 +707,50 @@ func _switch_case(h: Harness, case_name: String) -> void:
 		"read %s" % KeyAffordance.config_switch(path))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	GameConfig.invalidate()
+
+
+## A movie reached by `go to movie` gets its **own** key map.
+##
+## **This is the check that was missing, and its absence hid the feature's worst
+## bug for as long as it existed.** `map_for` caches per movie, and the key it
+## cached under was `movie_path()` -- Director's `the moviePath`, which is the
+## *folder*. Every one of `rating`'s 124 containers shares one folder, so the
+## first movie a session opened built the map and every movie after it was
+## answered with that one's keys. `mainmenu.dir` needs none, so the overlay was
+## blank for the whole title.
+##
+## Every existing entry booted straight into the movie it tested -- `--boot
+## arcade1.dir` builds arcade1's map first -- so the cache always held the right
+## answer by accident. **A per-movie entry can never see this.** Only going
+## somewhere after booting can, which is what this does.
+##
+## Asserted as "the two maps differ", not as "the second has keys": a title where
+## both movies happen to want the same keys would be a fixture that proves
+## nothing, and this says so rather than passing quietly.
+func _second_movie_case(h: Harness, case_name: String, preview: Node) -> void:
+	var second: String = Args.text(Args.parse(), "second")
+	if second == "":
+		return
+	var first := str(preview.call("movie_name"))
+	var before: Dictionary = KeyAffordance.map_for(preview)
+	var before_spans := (before["spans"] as Array).size()
+	preview.call("lingo_go_movie", second, null)
+	var waited := 0
+	while waited < 600 and str(preview.call("movie_name")).to_lower() == first.to_lower():
+		await process_frame
+		waited += 1
+	for i in 20:
+		await process_frame
+	var now := str(preview.call("movie_name"))
+	h.check("%s: `go to movie %s` arrived" % [case_name, second],
+		now.to_lower() != first.to_lower(), "still on %s after %d ticks" % [now, waited])
+	if now.to_lower() == first.to_lower():
+		return
+	var after: Dictionary = KeyAffordance.map_for(preview)
+	var after_spans := (after["spans"] as Array).size()
+	h.check("%s: the second movie built its own key map" % case_name,
+		after_spans != before_spans,
+		"%s has %d span(s), %s has %d -- equal counts mean the cache answered "
+		% [first, before_spans, now, after_spans]
+		+ "for the wrong movie, or the two movies genuinely agree and this "
+		+ "fixture proves nothing")
