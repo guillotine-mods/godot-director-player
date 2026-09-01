@@ -47,6 +47,29 @@ const LOOKAHEAD := 24
 ## that runs long still leaves the frame its own budget.
 const BUDGET_MS := 4.0
 
+## Drawn area, in pixels, past which a member is warmed at movie load instead of
+## being left to the lookahead.
+##
+## **Derived from the measured decode rate, not chosen.** `_blit_8` is a GDScript
+## loop over the pixels, and `piposh-dream/fritz2.dir` frame 254 decodes
+## 2,150,000 of them in 417 ms -- about 5.2 megapixels a second. A 15 fps step is
+## 66 ms and this file's own ceiling is 60, so a step can afford roughly 310,000
+## pixels. Anything near that is what `LOOKAHEAD` is for. What it cannot help
+## with is a member several times the stage, because those are reached by a
+## **marker jump** -- `go("stage1")` -- and no linear window ahead of the playhead
+## covers a jump to an arbitrary label.
+##
+## Two stage-fulls is the line: it clears an ordinary 640x480 backdrop, which the
+## lookahead does hide, and catches the panoramas it cannot. `fritz2.dir`'s are
+## 3000x480 and 2196x323.
+const WARM_ABOVE_PIXELS := 640 * 480 * 2
+
+## Milliseconds `warm_large` may spend. Far above `BUDGET_MS` on purpose: this
+## runs once, when a movie is loading and a pause is already expected, and the
+## whole point is to move a stall out of gameplay and into a moment the player
+## reads as loading.
+const WARM_BUDGET_MS := 500.0
+
 var _score = null
 ## The next frame to consider, so a budgeted pass resumes rather than restarting
 ## and re-walking the frames it already paid for.
@@ -91,4 +114,58 @@ func run(from_frame: int, decode: Callable, effective: Callable = Callable()) ->
 			if Time.get_ticks_usec() >= deadline:
 				return decoded
 		_cursor += 1
+	return decoded
+
+
+## Decode the movie's oversized artwork now, before anything plays it.
+##
+## **The lookahead cannot cover a marker jump, and that is where this bites.**
+## `run` walks `LOOKAHEAD` frames ahead of the playhead, which hides art the movie
+## is about to scroll into. `piposh-dream/fritz2.dir` reaches its stages with
+## `go("stage1")`, `go("stage2")`, `go("endstage1")` -- 54 markers -- so the frame
+## that needs a 3000x480 panorama is entered from a frame 200 away and no window
+## ahead of the playhead ever saw it. The owner reported it as "the screen flickers
+## for a second when moving between stages"; `tools/decode_stall.gd` measures it as
+## one step of **417 ms** against a 60 ms ceiling, with every other step in the
+## movie under 27 ms.
+##
+## Walks the whole score once, offers only records past `WARM_ABOVE_PIXELS`, and
+## dedupes on what the renderer's own cache is keyed by -- library, member and
+## drawn size -- so the same panorama on two hundred frames is decoded once and
+## the pass is cheap even when the budget is not reached.
+##
+## Time-boxed like `run`, for the same reason, and the box is checked per record:
+## a single member can exceed the whole budget and there is nothing to be done
+## about that one, but the next one should not follow it.
+##
+## Returns how many records it decoded, so a caller can say so.
+func warm_large(decode: Callable, effective: Callable = Callable(),
+		above_pixels: int = WARM_ABOVE_PIXELS,
+		budget_ms: float = WARM_BUDGET_MS) -> int:
+	if _score == null:
+		return 0
+	var deadline := Time.get_ticks_usec() + int(budget_ms * 1000.0)
+	var seen := {}
+	var decoded := 0
+	for index in int(_score.frame_count):
+		var frame: Dictionary = _score.frame(index)
+		for raw in frame.get("sprites", []):
+			var sprite: Dictionary = raw
+			if effective.is_valid():
+				sprite = effective.call(raw)
+				if sprite.is_empty():
+					continue
+			var area := int(sprite.get("width", 0)) * int(sprite.get("height", 0))
+			if area < above_pixels:
+				continue
+			var key := "%d:%d:%dx%d" % [
+				int(sprite.get("cast_lib", 0)), int(sprite.get("cast_id", 0)),
+				int(sprite.get("width", 0)), int(sprite.get("height", 0))]
+			if seen.has(key):
+				continue
+			seen[key] = true
+			decode.call(sprite)
+			decoded += 1
+			if Time.get_ticks_usec() >= deadline:
+				return decoded
 	return decoded

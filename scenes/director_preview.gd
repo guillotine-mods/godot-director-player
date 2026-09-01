@@ -877,6 +877,8 @@ func _load_container(path: String) -> bool:
 		return false
 	_preloader = Preloader.new(_score)
 	MovieSession.adopt(self)
+	# After `adopt`, which is what builds the cast table this reads through.
+	_warm_oversized_art()
 	return true
 
 
@@ -937,6 +939,7 @@ func lingo_go_movie(name: String, where: Variant) -> void:
 	MovieSession.adopt(self)
 	MovieSession.forget_previous(self, previous_path)
 	_preloader = Preloader.new(_score)
+	_warm_oversized_art()
 	# The arriving movie brings its own stage rect, and Director resizes to it on
 	# every load rather than only the first (`stage_size`). A title whose rooms are
 	# all one size never notices; one that opens a 320x240 movie from a 640x480 one
@@ -2120,6 +2123,31 @@ func stage_colour() -> Color:
 	if _config.stage_colour_is_rgb:
 		return _config.stage_colour
 	return Ink.colour_of(_palette, _config.stage_colour_index)
+
+
+## Pay for the movie's oversized artwork now, while it is loading.
+##
+## **The frame lookahead cannot cover a marker jump.** `director_preloader.gd`
+## walks 24 frames ahead of the playhead, which hides art the movie scrolls into;
+## a title that reaches its levels with `go("stage1")` enters a frame 200 away and
+## no window ahead of the playhead ever saw it. `piposh-dream/fritz2.dir` is that
+## shape -- 54 markers, and a 3000x480 panorama on the frame `go("stage1")` lands
+## on -- and it cost one step of 417 ms against a 60 ms ceiling, which the owner
+## saw as the screen flickering for about a second on every stage change.
+##
+## Called on both movie-open paths, so a `go to movie` pays for its own panoramas
+## on arrival rather than on the frame that first draws them. Time-boxed inside
+## `warm_large`; a movie with none of this artwork walks its frames and returns 0.
+func _warm_oversized_art() -> void:
+	# The cast table is what `_preload_one` reads through, and on the first open
+	# path it does not exist until `MovieSession.adopt`. Guarded rather than
+	# ordered-and-hoped: both call sites are after adoption now, and a third that
+	# is not should decline rather than raise on every sprite it walks.
+	if _preloader == null or _table == null:
+		return
+	var decoded: int = _preloader.warm_large(_preload_one, _effective_ahead)
+	if decoded > 0:
+		_trace("preloaded %d oversized sprite record(s) at movie load" % decoded)
 
 
 func _paint() -> void:

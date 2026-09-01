@@ -160,119 +160,39 @@ globals -- is the one to copy.
 
 ---
 
-## 141. Piposh Dream's fritz duel flickers for about a second when it moves between screens
-
-**Status:** OPEN · **Area:** `games/piposh-dream/fritz2.dir` · reported by QA
-2026-08-28, the second half of a report whose first half is closed
-
-The report was two sentences and they turned out to be two different things:
-
-> When fighting - sometimes Fritz character image would change to one of the
-> enemies for a split second.
-> When moving between screens - the screen flickers for a second and resumes.
-
-**The first is fixed** and was fixed about ten hours after it was filed, by
-`94038ec5` -- `strata2` depth-sorts the four fighters by moving members through a
-Lingo variable, and `the member of sprite` was handing back a bare slot number
-where the write had taken a packed reference, so a fighter whose artwork lived in
-library 2 was re-seated as library 1's member of the same number. "Sometimes, on
-being hit" is exactly when the sort fires.
-
-**The second is not obviously covered by it** and has no diagnosis yet. Worth
-ruling out first, because both were plausible and one has since been fixed for
-other reasons: the stage colour was `Color.BLACK` unconditionally until
-2026-08-29, so any moment where the movie had cleared its sprites but not yet
-drawn the next screen showed black regardless of what the movie asked for. That
-is a "flicker for a second and resumes" shape. `fritz1`-`fritz3` state their
-stage colour as a **palette index** (255) rather than an RGB, which is the one
-arm of `director_config.gd:_read_stage_colour` that this corpus exercises only
-here -- so it is both the likely cause and the least-tested path.
-
+---
 
 ---
 
-## 142. FIXED. `sprite(a).within(b)` answered 0 where `sprite a within b` answered 1, so Somi's bullets were destroyed on the frame after they were fired
-
-**Status:** FIXED · **Area:** `lingo/lingo_interpreter.gd:_call` · found 2026-08-30
-after the owner played the build and said the bullets were still missing
-
-**The previous fix was necessary and not sufficient, and the harness said it was
-done.** `bugs-closed` 143's list-equality fix let the gun *find* a free bullet;
-this is why the bullet then vanished. `tools/west_shoot.gd` asserted only that a
-bullet appeared at some point during the press -- "peak >= 1" -- which a bullet
-that lives exactly one frame satisfies. It was green while the level was
-unplayable, and it took a person playing it to find that out.
-
-**Director spells the collision tests two ways and this port answered them
-differently.** `sprite a within b` is D4's operator and reaches `_binary`, which
-routes it to the host. `sprite(a).within(b)` is D5's dot notation for the same
-opcode; it compiles to `objcall`, which `lscr_lower.gd` lowers to a call, and the
-interpreter's dot arm excludes `sprite_ref` and `member_ref` receivers from every
-dispatch it has and falls through to `return _eval(callee, frame)` -- a **property
-read** of a property no sprite has. It answered 0, and the arguments were never
-evaluated. Measured on `WEST1.dir` frame 351, same two channels, same frame:
-
-    sprite 50 within 66        -> 1
-    sprite(50).within(66)      -> 0
-    sprite 50 intersects 66    -> 1
-    sprite(50).intersects(66)  -> 0
-
-`WEST1.dir`'s game loop recycles a bullet with `if not sprite(getAt(bltsprite,
-i)).within(66)`, so every bullet was destroyed one frame after it was fired --
-the sound, the firing pose and the cooldown all ran and nothing reached the
-street. Two lines further down, `sprite(...).intersects(...)` is how a bullet hits
-an enemy, so nothing could be shot either. Both are the method spelling.
-
-**Fixed** with a named set of the two sprite methods that take an argument, so a
-`sprite_ref` receiver with arguments dispatches to the host exactly as the
-operator does. Director defines no other sprite method of this shape; everything
-else `sprite(n).x` names is a property, and those still take the property read.
-
-Before: the bullet's list went `[50]` then `[]` on the next frame. After: alive on
-24 of 24 frames, travelling 460 -> 480 -> 500 -> 540 -> 580.
-
-**`tools/west_shoot.gd` now asserts the bullet travels** -- that it is alive
-several frames later *and* that its position changed -- and asserts the two
-spellings agree, which is the engine property underneath. The old check passes
-against the broken engine; both new ones fail against it.
-
-`gate.sh key_overlay west_shoot snapshot_check key_chain key_polling
-keyboard_check touch_input`: all 7 passed.
-
 ---
 
-## 143. FIXED. The touch controls may never have switched on on Android, because the only platform test was a feature tag nothing had read on a device
+## 145. Piposh Dream overruns the decode-step ceiling on several movies, and the vector rasteriser adds about 15 ms of it
 
-**Status:** FIXED · **Area:** `scenes/preview/key_affordance.gd:enabled` · found
-2026-08-30 from an owner report: `rating` on Android showed no on-screen controls
+**Status:** OPEN · **Area:** `director/director_vector_shape.gd`,
+`director/director_bitmap.gd:_blit_8` · found 2026-08-30 while fixing 141
 
-**The overlay's own logic is sound and was measured so.** `tools/key_overlay.gd`
-proves that on `rating/arcade1.dir` frame 63 it offers **three stick directions
-and one button**, that driving the stick sends `the keyCode` 126, and that tapping
-the button sends 53 and holds nothing -- 15 checks. So the question was never
-whether it can build the right controls; it is whether it was ever switched on.
+Measured with `tools/decode_stall.gd`, ceiling 60 ms:
 
-`enabled()` rested on `OS.has_feature("mobile")` (plus a mouseless-touchscreen
-fallback). That tag is false on Windows, which is right, and **nothing here has
-ever read it on a phone** -- `docs/MOBILE.md`'s "Not verified" list already says
-as much about the neighbouring `FEATURE_MOUSE`. `project.godot` also sets
-`renderer/rendering_method="mobile"`, which is the sort of thing that makes a tag
-spelled `mobile` worth not depending on alone.
+| movie | worst step | vector art |
+|---|---|---|
+| `WEST1.dir` | 62.1 ms | none |
+| `plane2.dir` | 74.3 ms | yes |
+| `plane3.dir` | 79.4 ms | yes |
 
-**Fixed** by putting `OS.get_name()` first in the disjunction, against `Android`
-and `iOS`. It is the platform rather than a feature tag, it needs no
-DisplayServer, and no project setting can move it. Additive, like the clause
-beside it: being wrong here costs a visible control on a desktop, and being wrong
-the other way costs an unplayable game on a phone.
+**The baseline is the story and the vector cost is the smaller half.** A movie
+with no vector members at all is already 2 ms over, so this is mostly `_blit_8`
+being a GDScript loop, and the ~15 ms difference on the two flying levels is
+`_fill`/`_stroke` scan-converting paths the same way.
 
-**Not confirmed on a device, and deliberately not claimed to be.** This removes a
-dependency that could not be checked from here; it does not prove the tag was the
-cause. The other candidate is that the tester was on one of the 88.9% of scenes
-that need no key, where showing nothing is correct -- and a screenshot cannot tell
-the two apart.
+Not a regression against a working state -- before 2026-08-29 those two movies
+drew no vector art at all and were a black stage. Worth fixing, not worth undoing.
 
-**So the snapshot now answers it.** `snapshot.gd` gained a `platform` line
-carrying `OS.get_name()`, whether the overlay is on, and what the current frame
-demanded. A report saying "touch overlay off" and one saying "touch overlay on,
-0 stick + 0 button(s)" send a reader to two different places, and the next device
-test settles this without another round trip.
+The obvious first move is a **member-level raster cache**: `sprite_art.texture_for`
+caches by drawn size, so a vector member placed at several sizes is rasterised
+once per size when the path only needs flattening once per member. It is not done
+here because the cache would have to be keyed by container as well as by member
+number -- ids repeat across movies -- and that wants doing deliberately rather
+than at the end of a session.
+
+`decode_stall` is gated only on `piposh2` and on `fritz2.dir`; adding the rest
+would gate the project on a number no change in this session can move.

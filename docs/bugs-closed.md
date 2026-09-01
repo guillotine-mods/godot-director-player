@@ -28,6 +28,162 @@ right all along" or "endianness was not the blocker" costs a session each.
 
 ---
 
+## 142. FIXED. `sprite(a).within(b)` answered 0 where `sprite a within b` answered 1, so Somi's bullets were destroyed on the frame after they were fired
+
+**Status:** FIXED · **Area:** `lingo/lingo_interpreter.gd:_call` · found 2026-08-30
+after the owner played the build and said the bullets were still missing
+
+**The previous fix was necessary and not sufficient, and the harness said it was
+done.** `bugs-closed` 143's list-equality fix let the gun *find* a free bullet;
+this is why the bullet then vanished. `tools/west_shoot.gd` asserted only that a
+bullet appeared at some point during the press -- "peak >= 1" -- which a bullet
+that lives exactly one frame satisfies. It was green while the level was
+unplayable, and it took a person playing it to find that out.
+
+**Director spells the collision tests two ways and this port answered them
+differently.** `sprite a within b` is D4's operator and reaches `_binary`, which
+routes it to the host. `sprite(a).within(b)` is D5's dot notation for the same
+opcode; it compiles to `objcall`, which `lscr_lower.gd` lowers to a call, and the
+interpreter's dot arm excludes `sprite_ref` and `member_ref` receivers from every
+dispatch it has and falls through to `return _eval(callee, frame)` -- a **property
+read** of a property no sprite has. It answered 0, and the arguments were never
+evaluated. Measured on `WEST1.dir` frame 351, same two channels, same frame:
+
+    sprite 50 within 66        -> 1
+    sprite(50).within(66)      -> 0
+    sprite 50 intersects 66    -> 1
+    sprite(50).intersects(66)  -> 0
+
+`WEST1.dir`'s game loop recycles a bullet with `if not sprite(getAt(bltsprite,
+i)).within(66)`, so every bullet was destroyed one frame after it was fired --
+the sound, the firing pose and the cooldown all ran and nothing reached the
+street. Two lines further down, `sprite(...).intersects(...)` is how a bullet hits
+an enemy, so nothing could be shot either. Both are the method spelling.
+
+**Fixed** with a named set of the two sprite methods that take an argument, so a
+`sprite_ref` receiver with arguments dispatches to the host exactly as the
+operator does. Director defines no other sprite method of this shape; everything
+else `sprite(n).x` names is a property, and those still take the property read.
+
+Before: the bullet's list went `[50]` then `[]` on the next frame. After: alive on
+24 of 24 frames, travelling 460 -> 480 -> 500 -> 540 -> 580.
+
+**`tools/west_shoot.gd` now asserts the bullet travels** -- that it is alive
+several frames later *and* that its position changed -- and asserts the two
+spellings agree, which is the engine property underneath. The old check passes
+against the broken engine; both new ones fail against it.
+
+`gate.sh key_overlay west_shoot snapshot_check key_chain key_polling
+keyboard_check touch_input`: all 7 passed.
+
+
+## 143. FIXED. The touch controls may never have switched on on Android, because the only platform test was a feature tag nothing had read on a device
+
+**Status:** FIXED · **Area:** `scenes/preview/key_affordance.gd:enabled` · found
+2026-08-30 from an owner report: `rating` on Android showed no on-screen controls
+
+**The overlay's own logic is sound and was measured so.** `tools/key_overlay.gd`
+proves that on `rating/arcade1.dir` frame 63 it offers **three stick directions
+and one button**, that driving the stick sends `the keyCode` 126, and that tapping
+the button sends 53 and holds nothing -- 15 checks. So the question was never
+whether it can build the right controls; it is whether it was ever switched on.
+
+`enabled()` rested on `OS.has_feature("mobile")` (plus a mouseless-touchscreen
+fallback). That tag is false on Windows, which is right, and **nothing here has
+ever read it on a phone** -- `docs/MOBILE.md`'s "Not verified" list already says
+as much about the neighbouring `FEATURE_MOUSE`. `project.godot` also sets
+`renderer/rendering_method="mobile"`, which is the sort of thing that makes a tag
+spelled `mobile` worth not depending on alone.
+
+**Fixed** by putting `OS.get_name()` first in the disjunction, against `Android`
+and `iOS`. It is the platform rather than a feature tag, it needs no
+DisplayServer, and no project setting can move it. Additive, like the clause
+beside it: being wrong here costs a visible control on a desktop, and being wrong
+the other way costs an unplayable game on a phone.
+
+**Not confirmed on a device, and deliberately not claimed to be.** This removes a
+dependency that could not be checked from here; it does not prove the tag was the
+cause. The other candidate is that the tester was on one of the 88.9% of scenes
+that need no key, where showing nothing is correct -- and a screenshot cannot tell
+the two apart.
+
+**So the snapshot now answers it.** `snapshot.gd` gained a `platform` line
+carrying `OS.get_name()`, whether the overlay is on, and what the current frame
+demanded. A report saying "touch overlay off" and one saying "touch overlay on,
+0 stick + 0 button(s)" send a reader to two different places, and the next device
+test settles this without another round trip.
+
+## 141. Piposh Dream's fritz duel flickers for about a second when it moves between screens
+
+**Status:** FIXED · **Area:** `games/piposh-dream/fritz2.dir` · reported by QA
+2026-08-28, the second half of a report whose first half is closed
+
+The report was two sentences and they turned out to be two different things:
+
+> When fighting - sometimes Fritz character image would change to one of the
+> enemies for a split second.
+> When moving between screens - the screen flickers for a second and resumes.
+
+**The first is fixed** and was fixed about ten hours after it was filed, by
+`94038ec5` -- `strata2` depth-sorts the four fighters by moving members through a
+Lingo variable, and `the member of sprite` was handing back a bare slot number
+where the write had taken a packed reference, so a fighter whose artwork lived in
+library 2 was re-seated as library 1's member of the same number. "Sometimes, on
+being hit" is exactly when the sort fires.
+
+**The second is not obviously covered by it** and has no diagnosis yet. Worth
+ruling out first, because both were plausible and one has since been fixed for
+other reasons: the stage colour was `Color.BLACK` unconditionally until
+2026-08-29, so any moment where the movie had cleared its sprites but not yet
+drawn the next screen showed black regardless of what the movie asked for. That
+is a "flicker for a second and resumes" shape. `fritz1`-`fritz3` state their
+stage colour as a **palette index** (255) rather than an RGB, which is the one
+arm of `director_config.gd:_read_stage_colour` that this corpus exercises only
+here -- so it is both the likely cause and the least-tested path.
+
+
+**Fixed** 2026-08-30, and it was never a rendering fault. `tools/decode_stall.gd`
+measures `fritz2.dir` at **417 ms in one step** against a 60 ms ceiling, with
+every other step in the movie under 27 ms. At 15 fps that is six dropped frames
+-- "flickers for a second and resumes", exactly.
+
+The step is frame 254, marker **`actionbegins`**, which is where a stage starts.
+It raises two bitmaps at once: member 1 `a1` at 3000x480 and member 2 at
+2196x323, about 2.15 million pixels of 8bpp blit in one step. `_blit_8` is a
+GDScript loop over the pixels and runs at roughly 5.2 megapixels a second, so the
+arithmetic is the whole of the symptom.
+
+**The lookahead could not have hidden it.** `director_preloader.gd` walks 24
+frames ahead of the playhead, which covers art a movie scrolls into; `fritz2.dir`
+reaches its stages with `go("stage1")` / `go("stage2")` / `go("endstage1")` --
+54 markers -- so the frame that needs the panorama is entered from one 200 frames
+away and no window ahead of the playhead ever saw it.
+
+So `warm_large` pays for it at movie load, where a pause is already expected and
+reads as loading rather than as a fault. It walks the score once, offers only
+records past two stage-fulls (`WARM_ABOVE_PIXELS`, derived from the measured
+decode rate against the step budget rather than picked), dedupes on the
+renderer's own cache key, and is time-boxed at 500 ms. Worst step after:
+**25.1 ms**, and the movie's total in-game texture work fell from 732 ms to 306.
+
+Two things this does not claim:
+
+* **The threshold leaves ordinary full-screen backdrops to the lookahead**, which
+  is what the lookahead is for. Lowering it would warm every 640x480 background
+  in every movie and spend the budget on art the existing mechanism already
+  hides.
+* **`piposh-dream` still overruns the 60 ms ceiling on other movies**, and this
+  did not cause that: `WEST1.dir`, which holds no vector art at all, measures
+  62.1 ms, so the ceiling is simply tight for this title. `plane2.dir` at 74.3 ms
+  and `plane3.dir` at 79.4 ms carry about 15 ms more than that, which is the
+  vector rasteriser added on 2026-08-29 (`director_vector_shape.gd` fills and
+  strokes in GDScript). Filed as **145** rather than folded in here, because it is
+  a different mechanism and a much smaller number.
+
+`decode_stall:--root@piposh-dream@--file@fritz2.dir` is now in `gate.sh`, because
+the fix is one call on a load path and nothing else would notice if it went away.
+
+
 ## 138. `wait_frames` picks its cursor probe from whatever sprite the movie has drifted to, so it fails about half the time
 
 **Status:** FIXED · **Area:** `tools/wait_frames.gd:_cursor_case` · found
