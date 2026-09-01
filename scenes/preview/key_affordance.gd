@@ -148,6 +148,7 @@ extends RefCounted
 
 const Paint := preload("res://director/director_paint.gd")
 const Keys := preload("res://director/director_keys.gd")
+const GameConfig := preload("res://director/game_config.gd")
 
 # ---------------------------------------------------------------- the patterns
 
@@ -826,6 +827,35 @@ static func _editable_on_stage(host, map: Dictionary, index: int) -> bool:
 ## and a button), so what was left to doubt is whether it was ever switched on.
 const TOUCH_PLATFORMS := ["Android", "iOS"]
 
+## `[qol] touch_controls`, spelled the way `[debug] enabled` is so the launcher
+## can present the two the same way and neither reads as the odd one out.
+const AUTO := "auto"
+const ON := "on"
+const OFF := "off"
+const SWITCH_VALUES := [AUTO, ON, OFF]
+const CONFIG_SECTION := "qol"
+const CONFIG_KEY := "touch_controls"
+
+
+## What the config says, or `AUTO` when it says nothing this understands.
+##
+## Read through `GameConfig.merged()` so the launcher's own overlay is what
+## answers -- the tracked `director_game.cfg` is inside the PCK in an export and
+## cannot be the place a person's choice is stored.
+##
+## `overlay_path` is `GameConfig.merged`'s own harness seam, passed straight
+## through: empty means "the real overlay, if `overlay_applies()`", and a named
+## file is applied whether or not there is a display. **A headless run ignores
+## the real overlay by design**, so a gate entry that wants to assert this branch
+## has to name a file it wrote itself -- and must not write the person's own
+## settings to do it.
+static func config_switch(overlay_path := "") -> String:
+	var cfg := GameConfig.merged(GameConfig.TRACKED_PATH, overlay_path)
+	if cfg == null:
+		return AUTO
+	var wanted := str(cfg.get_value(CONFIG_SECTION, CONFIG_KEY, AUTO)).strip_edges().to_lower()
+	return wanted if SWITCH_VALUES.has(wanted) else AUTO
+
 static var _forced := -1
 
 ## Which control the player last chose.
@@ -957,6 +987,22 @@ static func enabled() -> bool:
 	if _forced == 2:
 		_forced = 0
 		return false
+	# **The launcher's switch, between the flag and the device test.**
+	#
+	# `--touch-input` is the developer's answer and wins, because a flag typed on
+	# this run is a more specific statement than a setting left over from the
+	# last one. Below it, `[qol] touch_controls` is `on`, `off` or `auto`, exactly
+	# as `[debug] enabled` is -- the launcher writes it and a person testing the
+	# phone controls on a desktop reaches for it instead of a command line they
+	# cannot type from the launcher, which loads the preview in-process rather
+	# than spawning one.
+	match config_switch():
+		ON:
+			_forced = 1
+			return true
+		OFF:
+			_forced = 0
+			return false
 	var mouseless_touch := DisplayServer.is_touchscreen_available() \
 		and not DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE)
 	_forced = 1 if (TOUCH_PLATFORMS.has(OS.get_name())

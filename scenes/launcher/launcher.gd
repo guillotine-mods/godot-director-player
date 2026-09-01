@@ -21,6 +21,7 @@ const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
 const BindingRules := preload("res://scenes/launcher/binding_rules.gd")
 const LauncherTheme := preload("res://scenes/launcher/launcher_theme.gd")
 const GameTile := preload("res://scenes/launcher/game_tile.gd")
+const KeyAffordance := preload("res://scenes/preview/key_affordance.gd")
 
 const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
 
@@ -480,6 +481,12 @@ func _fill_developer() -> void:
 		%Debug.add_item(name)
 	%Debug.selected = maxi(DEBUG_VALUES.find(
 		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
+	%TouchControls.clear()
+	for name in KeyAffordance.SWITCH_VALUES:
+		%TouchControls.add_item(name)
+	%TouchControls.selected = maxi(KeyAffordance.SWITCH_VALUES.find(
+		str(cfg.get_value("qol", KeyAffordance.CONFIG_KEY,
+			KeyAffordance.AUTO)).strip_edges().to_lower()), 0)
 	%HotspotHints.button_pressed = bool(cfg.get_value("qol", "hotspot_hints", false))
 	%EdgeHotspots.button_pressed = bool(cfg.get_value("qol", "expand_edge_hotspots", true))
 	%EnhancedGraphics.button_pressed = bool(cfg.get_value("qol", "enhanced_graphics", false))
@@ -871,6 +878,13 @@ func _on_play() -> void:
 			_override(overlay, tracked, str(command),
 				str((_binding_fields[command] as LineEdit).text).strip_edges(),
 				str(DebugKeys.DEFAULTS[command]))
+		overlay.set_value("qol", KeyAffordance.CONFIG_KEY,
+			KeyAffordance.SWITCH_VALUES[%TouchControls.selected])
+		# `enabled()` caches its answer in a `static var`, and the preview is
+		# loaded into *this* process rather than spawned -- so a cache warmed
+		# before this write would outlive it and the switch would appear to do
+		# nothing until the launcher was restarted. -1 is the uncomputed state.
+		KeyAffordance.force(-1)
 		overlay.set_value("qol", "hotspot_hints", %HotspotHints.button_pressed)
 		overlay.set_value("qol", "expand_edge_hotspots", %EdgeHotspots.button_pressed)
 		overlay.set_value("qol", "enhanced_graphics", %EnhancedGraphics.button_pressed)

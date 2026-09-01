@@ -91,6 +91,7 @@ extends SceneTree
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const KeyAffordance := preload("res://scenes/preview/key_affordance.gd")
+const GameConfig := preload("res://director/game_config.gd")
 const Keys := preload("res://director/director_keys.gd")
 const Paths := preload("res://director/director_paths.gd")
 
@@ -237,6 +238,7 @@ func _init() -> void:
 		"the overlay claimed a press at the top-left corner")
 
 	_restore(root)
+	_switch_case(h, case_name)
 	h.complete(case_name)
 	quit(h.finish("the touch controls, on a scene that needs keys"))
 
@@ -657,3 +659,50 @@ func _busiest_frame(preview: Node, frame_count: int) -> int:
 			most = n
 			best = i
 	return best
+
+
+## The launcher's switch, which is the only way to reach these controls from a
+## desktop without a command line.
+##
+## **Written to a file of this harness's own and never to the person's overlay.**
+## `GameConfig.OVERLAY_PATH` is a real setting a real person edited from the
+## launcher, and a gate entry that rewrote it would silently change how their
+## next run behaves. `config_switch` takes `merged`'s own `overlay_path` seam for
+## exactly this, and an explicit path is applied whether or not there is a
+## display -- which matters, because a headless run ignores the real overlay by
+## design and this branch would otherwise be unassertable in the gate.
+##
+## Asserted on `config_switch` rather than on `enabled()`, because `enabled()`
+## caches in a `static var` and this harness has already forced it: re-deriving
+## it here would measure the cache, not the rule. The wiring from one to the
+## other is three lines in `enabled()` and is read there.
+func _switch_case(h: Harness, case_name: String) -> void:
+	var path := "user://key_overlay_switch_probe.cfg"
+	for wanted in KeyAffordance.SWITCH_VALUES:
+		var cfg := ConfigFile.new()
+		cfg.set_value(KeyAffordance.CONFIG_SECTION, KeyAffordance.CONFIG_KEY, wanted)
+		if cfg.save(path) != OK:
+			h.check("%s: the switch probe could write its own overlay" % case_name,
+				false, path)
+			return
+		GameConfig.invalidate()
+		h.check("%s: `[qol] touch_controls = %s` reads back as itself"
+			% [case_name, wanted],
+			KeyAffordance.config_switch(path) == wanted,
+			"read %s" % KeyAffordance.config_switch(path))
+	# A value nobody wrote, and a missing key, both mean "decide from the device".
+	var junk := ConfigFile.new()
+	junk.set_value(KeyAffordance.CONFIG_SECTION, KeyAffordance.CONFIG_KEY, "sometimes")
+	junk.save(path)
+	GameConfig.invalidate()
+	h.check("%s: an unknown value falls back to auto" % case_name,
+		KeyAffordance.config_switch(path) == KeyAffordance.AUTO,
+		"read %s" % KeyAffordance.config_switch(path))
+	var empty := ConfigFile.new()
+	empty.save(path)
+	GameConfig.invalidate()
+	h.check("%s: and so does an overlay that says nothing" % case_name,
+		KeyAffordance.config_switch(path) == KeyAffordance.AUTO,
+		"read %s" % KeyAffordance.config_switch(path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	GameConfig.invalidate()
