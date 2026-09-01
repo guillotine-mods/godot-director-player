@@ -53,10 +53,34 @@ extends SceneTree
 ## (`if not sprite(...).within(66)`), so sampling twelve frames after the press
 ## reads an empty list on a working engine too -- which is exactly what the first
 ## measurement of this bug did, and it would have called the fix a failure.
+##
+## ## The second defect, and why this harness did not catch it
+##
+## The list fix above was necessary and not sufficient, and **the first version
+## of this file passed anyway**. It asserted that a bullet appeared at any point
+## during the press -- "peak >= 1" -- which is true of a bullet that exists for
+## exactly one frame and is then destroyed, and that is precisely what was still
+## happening. The owner played the build and reported no bullets; the harness was
+## green. That is the failure `porting-fidelity-verification` names: an assertion
+## that passes without proving the thing anyone cares about.
+##
+## The second defect is that **Director spells `within` two ways and this port
+## answered them differently**. `sprite a within b` is an operator and reaches
+## `_binary`; `sprite(a).within(b)` is D5 dot notation that compiles to `objcall`
+## and, in this interpreter, fell through to a *property read* of a property no
+## sprite has -- answering 0 with the argument never evaluated. WEST1's loop
+## recycles with the method spelling, so every bullet was destroyed on the frame
+## after it was fired.
+##
+## So §2 now asserts that the bullet **travels**: that it is still alive several
+## frames later and that its position has changed. A one-frame bullet fails that,
+## and the previous engine fails it. §1 asserts the two spellings agree, which is
+## the engine property underneath and is what a future reader should keep.
 
 const Harness := preload("res://tools/lib/harness.gd")
 const Args := preload("res://tools/lib/args.gd")
 const LingoValue := preload("res://lingo/lingo_value.gd")
+const Compiler := preload("res://lingo/compile/lingo_compiler.gd")
 
 ## The channels the level parks, and where. Read from the movie's own init in
 ## `1:140`; spelled here so the check has something to be wrong about.
@@ -118,19 +142,42 @@ func _init() -> void:
 	h.complete("the level stands up")
 
 	h.begin("the gun puts a bullet in the street")
-	var fired := 0
-	var idle_peak := 0
-	for round in 2:
-		# The aim key, whose key-up sets the flag the fire branch requires.
-		idle_peak = maxi(idle_peak, await _press(preview, interp, AIM_KEY, ticks))
-		fired += 1 if await _press(preview, interp, FIRE_KEY, ticks) > 0 else 0
-	h.check("firing puts a bullet in flight", fired == 2,
-		"%d of 2 presses produced one" % fired)
-	# The control that keeps the check from passing against an engine that put a
-	# bullet in flight on every tick regardless.
-	h.check("and aiming alone does not", idle_peak == 0,
+	var idle_peak := await _press(preview, interp, AIM_KEY, ticks)
+	# The control that keeps the checks below from passing against an engine that
+	# put a bullet in flight on every tick regardless of the key.
+	h.check("aiming alone puts no bullet in flight", idle_peak == 0,
 		"an arrow press produced %d" % idle_peak)
+	var born := await _press(preview, interp, FIRE_KEY, ticks)
+	h.check("firing puts a bullet in flight", born > 0,
+		"the press produced %d" % born)
+
+	# **Where it travels, not merely that it appeared.** A bullet destroyed on
+	# the frame after it was fired satisfies "one appeared", and that was the
+	# state this file called green while the level was unplayable.
+	var track := PackedStringArray()
+	var moved := false
+	var alive := 0
+	var first := Vector2.INF
+	for i in ticks * 2:
+		await process_frame
+		var live: Variant = interp.globals.get("bltsprite", null)
+		if not (live is Array) or (live as Array).is_empty():
+			continue
+		alive += 1
+		var ch := int((live as Array)[0])
+		var at: Vector2 = preview.call("lingo_sprite_rect", ch).position
+		if first == Vector2.INF:
+			first = at
+		elif not at.is_equal_approx(first):
+			moved = true
+		if track.size() < 6:
+			track.append(str(at))
+	h.check("the bullet is still there several frames later", alive >= ticks,
+		"alive on %d of %d frames" % [alive, ticks * 2])
+	h.check("and it has moved", moved, "positions seen: %s" % ", ".join(track))
 	h.complete("the gun puts a bullet in the street")
+
+	_spelling_case(h, preview)
 
 	quit(h.finish("a point written to a sprite reads back equal"))
 
@@ -202,3 +249,66 @@ func _equality_case(h: Harness) -> void:
 	h.check("numbers still compare as numbers",
 		LingoValue.equal(3, "3") and LingoValue.equal(3, 3.0))
 	h.complete("`=` compares a list element by element")
+
+
+## The operator and the method spelling of one test answer the same thing.
+##
+## Compiled and run here rather than read off the corpus, because the two
+## spellings only diverge inside the interpreter and a corpus check would say
+## only that one title happens to use the one that works. Both channels are the
+## level's own, so the answer is a real geometric fact rather than a tautology:
+## channel 50 is a bullet parked inside channel 66, the street.
+func _spelling_case(h: Harness, preview: Node) -> void:
+	h.begin("both spellings of a collision test agree")
+	var c := Compiler.new()
+	var ast: Dictionary = c.compile_source(
+		"on probespelling
+"
+		+ "  global wop, wmeth, iop, imeth
+"
+		+ "  set the loc of sprite 50 to point(360, 200)
+"
+		+ "  wop = 0
+  if sprite 50 within 66 then
+    wop = 1
+  end if
+"
+		+ "  wmeth = 0
+  if sprite(50).within(66) then
+    wmeth = 1
+  end if
+"
+		+ "  iop = 0
+  if sprite 50 intersects 66 then
+    iop = 1
+  end if
+"
+		+ "  imeth = 0
+  if sprite(50).intersects(66) then
+    imeth = 1
+  end if
+"
+		+ "end
+", "MovieScript 9100")
+	if ast.is_empty():
+		h.check("the probe compiles", false, c.error)
+		h.complete("both spellings of a collision test agree")
+		return
+	var interp = preview.get("_interpreter")
+	interp.load_bundle({"movie": "WESTSHOOT", "cast": "harness",
+		"scripts": {"MovieScript 9100": ast}}, "WESTSHOOT")
+	interp.call_handler("probespelling", [])
+	var wop := int(LingoValue.to_int(interp.globals.get("wop", 0)))
+	var wmeth := int(LingoValue.to_int(interp.globals.get("wmeth", 0)))
+	var iop := int(LingoValue.to_int(interp.globals.get("iop", 0)))
+	var imeth := int(LingoValue.to_int(interp.globals.get("imeth", 0)))
+	# Asserted true rather than merely equal: two spellings that both answer 0
+	# agree and prove nothing, and 0 is what the broken engine answered.
+	h.check("`sprite a within b` is true for a bullet inside the street",
+		wop == 1, "answered %d" % wop)
+	h.check("and `sprite(a).within(b)` agrees", wmeth == wop,
+		"operator %d, method %d" % [wop, wmeth])
+	h.check("`sprite a intersects b` is true", iop == 1, "answered %d" % iop)
+	h.check("and `sprite(a).intersects(b)` agrees", imeth == iop,
+		"operator %d, method %d" % [iop, imeth])
+	h.complete("both spellings of a collision test agree")

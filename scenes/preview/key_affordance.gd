@@ -804,6 +804,28 @@ static func _editable_on_stage(host, map: Dictionary, index: int) -> bool:
 
 ## -1 not yet decided, 0 off, 1 on. Read once because the answer is about the
 ## machine and not about the frame.
+## The platforms with no hardware keyboard, by the name `OS.get_name()` returns.
+##
+## **First in the disjunction below, and it is there because the tag next to it
+## was never checked on a device.** `docs/MOBILE.md` lists "whether Android
+## reports `FEATURE_MOUSE`" among its unverified items and the same doubt applies
+## to `OS.has_feature("mobile")`: measured on Windows it is false, which is
+## right, but nothing here has ever read it on a phone. `OS.get_name()` is not a
+## feature tag at all -- it is the platform, it answers "Android" and "iOS"
+## exactly, it needs no DisplayServer, and it cannot be moved by a project
+## setting. `project.godot` sets `renderer/rendering_method="mobile"`, which is
+## the sort of thing that makes a tag spelled `mobile` worth not depending on
+## alone.
+##
+## Additive, like the mouseless-touch clause beside it and for the reason the
+## comment on `enabled()` gives: being wrong here costs a visible control on a
+## desktop, and being wrong the other way costs an unplayable game on a phone.
+## The owner reported exactly that -- no controls in `rating` on Android -- and
+## the overlay's own logic was measured sound on that title
+## (`tools/key_overlay.gd` proves `arcade1.dir` frame 63 offers three directions
+## and a button), so what was left to doubt is whether it was ever switched on.
+const TOUCH_PLATFORMS := ["Android", "iOS"]
+
 static var _forced := -1
 
 ## Which control the player last chose.
@@ -937,7 +959,8 @@ static func enabled() -> bool:
 		return false
 	var mouseless_touch := DisplayServer.is_touchscreen_available() \
 		and not DisplayServer.has_feature(DisplayServer.FEATURE_MOUSE)
-	_forced = 1 if (OS.has_feature("mobile") or mouseless_touch) else 0
+	_forced = 1 if (TOUCH_PLATFORMS.has(OS.get_name())
+		or OS.has_feature("mobile") or mouseless_touch) else 0
 	return _forced == 1
 
 

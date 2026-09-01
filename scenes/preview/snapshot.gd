@@ -21,6 +21,7 @@ extends RefCounted
 ## entirely different faults.
 
 const DebugKeys := preload("res://scenes/preview/debug_keys.gd")
+const KeyAffordance := preload("res://scenes/preview/key_affordance.gd")
 
 ## Where the images go. Gitignored: they are screenshots of somebody's session,
 ## the tree already keeps `.traces/` for the same kind of local output, and a
@@ -85,6 +86,7 @@ static func take(host) -> String:
 		"container : %s" % _container(host),
 		"frame     : %s" % _frame(host),
 		"last click: %s" % click_line(host._last_click),
+		"platform  : %s" % _platform(host),
 		"image     : %s" % (ProjectSettings.globalize_path(image_path) if saved
 			else "not saved (see the log)"),
 	]
@@ -92,6 +94,29 @@ static func take(host) -> String:
 	DisplayServer.clipboard_set(text)
 	print(text)
 	return text
+
+
+## The platform, and whether the touch controls are up.
+##
+## **Here because a device report could not answer the question it raised.** The
+## owner tested `rating` on Android and saw no on-screen controls, and from the
+## report alone there was no way to tell the two candidates apart: the overlay
+## was switched off on that device, or the frame they were on genuinely needs no
+## key -- which is 88.9% of the corpus's scenes and is the overlay working
+## correctly. Both look identical to a player and to a screenshot.
+##
+## So the snapshot now says which. `enabled()` is the switch, `demand` is what
+## this frame asked for, and a report carrying "overlay off" and one carrying
+## "overlay on, demand none" send a reader to two different places.
+static func _platform(host) -> String:
+	var enabled: bool = KeyAffordance.enabled()
+	var demand := "not asked"
+	if enabled and host != null:
+		var split: Dictionary = KeyAffordance.stick_actions(host)
+		demand = "%d stick + %d button(s)" % [
+			(split["stick"] as Array).size(), (split["buttons"] as Array).size()]
+	return "%s, touch overlay %s, %s" % [
+		OS.get_name(), "on" if enabled else "off", demand]
 
 
 ## The frame the player would quote, which is the one on the status line: the

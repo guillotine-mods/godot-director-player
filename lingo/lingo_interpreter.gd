@@ -2997,6 +2997,36 @@ func _call(expr: Dictionary, frame: Dictionary) -> Variant:
 			# Evaluated above; read the property off the value rather than
 			# re-entering `_eval`, which would evaluate the target a second time.
 			return _value_prop(receiver, dot_name)
+		# **`sprite(a).within(b)` and `sprite(a).intersects(b)`.**
+		#
+		# The two designators are excluded from every arm above, and the fall
+		# through evaluates the callee as a *property read* -- `the within of
+		# sprite 50` -- which no sprite has, so it answered 0 and **the arguments
+		# were never evaluated**. The flat spelling `sprite a within b` is an
+		# operator and reaches `_binary`, so the two spellings of one test
+		# disagreed: measured on `piposh-dream/WEST1.dir`, `sprite 50 within 66`
+		# answered 1 and `sprite(50).within(66)` answered 0 on the same two
+		# channels in the same frame.
+		#
+		# What it cost is a whole minigame. WEST1's game loop recycles a bullet
+		# with `if not sprite(getAt(bltsprite, i)).within(66)`, so every bullet
+		# was destroyed on the frame after it was fired -- the gun's sound, its
+		# animation and its cooldown all ran and nothing ever reached the street.
+		# `sprite(...).intersects(...)` two lines further down is how a bullet
+		# hits an enemy, so nothing could be shot either.
+		#
+		# Director spells both ways: the operator is D4's and the method is D5's
+		# dot notation for the same opcode (`objcall` lowers to a call named for
+		# the method, `lscr_lower.gd` 0x67). Both end at the same place now.
+		if target_node == "sprite_ref" and SPRITE_METHODS.has(
+				str((callee as Dictionary).get("prop", "")).to_lower()):
+			var method := str((callee as Dictionary).get("prop", "")).to_lower()
+			var subject: Variant = _eval((callee as Dictionary).get("target", {}), frame)
+			var operands: Array = [subject]
+			for arg in expr.get("args", []):
+				operands.append(_eval(arg, frame))
+			if operands.size() >= 2:
+				return _host_call("call_builtin", [method, operands])
 		return _eval(callee, frame)
 	var args: Array = []
 	for arg in expr.get("args", []):
@@ -3240,6 +3270,12 @@ func _host_answered_builtin() -> bool:
 ## resolves global classes out of the editor's script cache, so a class added
 ## since the last editor session fails with "not declared in the current scope"
 ## in a file nobody touched.
+## The sprite methods that take an argument, and therefore cannot be answered as
+## a property read. Both are the dot spelling of an operator `_binary` already
+## routes to the host, and Director defines no others of this shape: everything
+## else `sprite(n).x` names is a property.
+const SPRITE_METHODS := {"within": true, "intersects": true}
+
 const Builtins := preload("res://lingo/lingo_builtins.gd")
 ## §7.1's script object. Preloaded for the reason `Builtins` is, and with more
 ## force: this class was added after the last editor session on any checkout that
