@@ -33,6 +33,12 @@ const PREVIEW_SCENE := "res://scenes/director_preview.tscn"
 ## would have picked, so there is nothing to fall back to.
 const EMOJI_FONTS := ["Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"]
 
+## What each touch-switch value is called on screen. Keyed by the value, for the
+## reason `ASPECT_LABELS` gives about parallel lists: `KeyAffordance.SWITCH_VALUES`
+## stays the list of strings written into the config, and one reorder there cannot
+## silently relabel every entry as its neighbour.
+const TOUCH_LABELS := {"auto": "אוטומטי", "on": "דלוק", "off": "כבוי"}
+
 const ASPECTS := ["native_4_3", "wide_16_9", "ultra_21_9", "stretch_fill"]
 
 ## What each aspect is called on screen, while `ASPECTS` stays the list of
@@ -141,6 +147,14 @@ func _ready() -> void:
 	# current; the child's own `visible` stays under the container's control
 	# and only changes when a click -- or this same signal, later -- picks it.
 	tabs.set_tab_hidden(developer.get_index(), not _show_developer)
+	# **On the Player tab and filled unconditionally, unlike everything in
+	# `_fill_developer`.** The Developer tab is hidden whenever `[debug] enabled`
+	# resolves to off, which is what an *exported* build does -- so a control
+	# living there is reachable from a source checkout and invisible in the build
+	# a tester is actually handed. The touch switch exists for testing the phone
+	# controls on a desktop, so putting it behind that tab would have hidden it
+	# from precisely the person it is for.
+	_fill_touch()
 	if _show_developer:
 		_fill_developer()
 		%BindingsButton.pressed.connect(_on_bindings_pressed)
@@ -481,12 +495,6 @@ func _fill_developer() -> void:
 		%Debug.add_item(name)
 	%Debug.selected = maxi(DEBUG_VALUES.find(
 		str(cfg.get_value("debug", "enabled", DebugKeys.AUTO)).strip_edges().to_lower()), 0)
-	%TouchControls.clear()
-	for name in KeyAffordance.SWITCH_VALUES:
-		%TouchControls.add_item(name)
-	%TouchControls.selected = maxi(KeyAffordance.SWITCH_VALUES.find(
-		str(cfg.get_value("qol", KeyAffordance.CONFIG_KEY,
-			KeyAffordance.AUTO)).strip_edges().to_lower()), 0)
 	%HotspotHints.button_pressed = bool(cfg.get_value("qol", "hotspot_hints", false))
 	%EdgeHotspots.button_pressed = bool(cfg.get_value("qol", "expand_edge_hotspots", true))
 	%EnhancedGraphics.button_pressed = bool(cfg.get_value("qol", "enhanced_graphics", false))
@@ -494,6 +502,25 @@ func _fill_developer() -> void:
 	%CursorSpeed.value_changed.connect(_on_cursor_speed_changed)
 	_on_cursor_speed_changed(%CursorSpeed.value)
 	_ring_focus(%CursorSpeed, %SpeedRing)
+
+
+## The touch switch, on the Player tab where every build shows it.
+##
+## Three values rather than a checkbox, matching `[debug] enabled`: `auto` is the
+## device test, `on` forces the controls here so the phone layout can be driven
+## with a mouse, and `off` turns them off on a device that would otherwise get
+## them. The device test cannot be right for every machine -- Windows reports a
+## mouse whether or not a keyboard is attached, so a tablet and a detached 2-in-1
+## both look like a desktop to it -- and `on` is the answer for those as much as
+## it is for testing.
+func _fill_touch() -> void:
+	var cfg := GameConfig.merged()
+	%TouchControls.clear()
+	for name in KeyAffordance.SWITCH_VALUES:
+		%TouchControls.add_item(TOUCH_LABELS.get(name, name))
+	%TouchControls.selected = maxi(KeyAffordance.SWITCH_VALUES.find(
+		str(cfg.get_value("qol", KeyAffordance.CONFIG_KEY,
+			KeyAffordance.AUTO)).strip_edges().to_lower()), 0)
 
 
 func _on_cursor_speed_changed(value: float) -> void:
@@ -840,6 +867,13 @@ func _on_play() -> void:
 	overlay.set_value("game", "root", _root)
 	overlay.set_value("game", "boot_movie", _boot)
 	overlay.set_value("display", "aspect", ASPECTS[maxi(_aspect.selected, 0)])
+	overlay.set_value("qol", KeyAffordance.CONFIG_KEY,
+		KeyAffordance.SWITCH_VALUES[maxi(%TouchControls.selected, 0)])
+	# `enabled()` caches its answer in a `static var`, and the preview is loaded
+	# into *this* process rather than spawned -- so a cache warmed before this
+	# write would outlive it and the switch would appear to do nothing until the
+	# launcher was restarted. -1 is the uncomputed state.
+	KeyAffordance.force(-1)
 	if _show_developer:
 		# An empty boot override means "whatever the chosen game boots", which is
 		# a different statement from the empty string: the key is removed rather
@@ -878,13 +912,6 @@ func _on_play() -> void:
 			_override(overlay, tracked, str(command),
 				str((_binding_fields[command] as LineEdit).text).strip_edges(),
 				str(DebugKeys.DEFAULTS[command]))
-		overlay.set_value("qol", KeyAffordance.CONFIG_KEY,
-			KeyAffordance.SWITCH_VALUES[%TouchControls.selected])
-		# `enabled()` caches its answer in a `static var`, and the preview is
-		# loaded into *this* process rather than spawned -- so a cache warmed
-		# before this write would outlive it and the switch would appear to do
-		# nothing until the launcher was restarted. -1 is the uncomputed state.
-		KeyAffordance.force(-1)
 		overlay.set_value("qol", "hotspot_hints", %HotspotHints.button_pressed)
 		overlay.set_value("qol", "expand_edge_hotspots", %EdgeHotspots.button_pressed)
 		overlay.set_value("qol", "enhanced_graphics", %EnhancedGraphics.button_pressed)

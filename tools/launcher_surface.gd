@@ -66,7 +66,18 @@ const SURFACE := {
 	"EdgeHotspots": "CheckBox",
 	"EnhancedGraphics": "CheckBox",
 	"CursorSpeed": "HSlider",
+	"TouchControls": "OptionButton",
 }
+
+## Names that must sit **outside** the Developer tab.
+##
+## `_developer_visible()` reads `[debug] enabled` off the *tracked* config, which
+## resolves to off in an exported build -- so the whole tab is hidden in the
+## build a tester is handed. A control that only exists for testing on a machine
+## that is not a phone is therefore useless there, and that is where the touch
+## switch first went. The name resolving is not enough to catch that: it resolved
+## perfectly well while sitting where nobody could reach it.
+const OUTSIDE_DEVELOPER := ["TouchControls", "Aspect", "Games", "Play"]
 
 ## The same three the launcher treats as "a game is named", read the same way.
 ## Copied rather than called, because calling it would mean instantiating the
@@ -93,6 +104,16 @@ func _run() -> void:
 		var node := scene.get_node_or_null("%" + str(name))
 		if not h.check("%%%s resolves" % name, node != null):
 			continue
+		if OUTSIDE_DEVELOPER.has(name):
+			var developer := scene.get_node_or_null("%Developer")
+			var buried := developer != null and developer.is_ancestor_of(node)
+			# The detail says where it *is*, not what would be wrong with it:
+			# a `h.check` prints its detail on a pass too, and "X is inside
+			# %Developer" beside an `ok` reads as the opposite of the truth.
+			h.check("  and is reachable when the Developer tab is hidden",
+				not buried,
+				("inside %Developer, which an exported build hides"
+					if buried else "outside %Developer"))
 		h.check("  and is a %s" % SURFACE[name], node.is_class(str(SURFACE[name])),
 			node.get_class())
 	h.complete(case)
