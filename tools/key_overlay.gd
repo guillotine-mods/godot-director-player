@@ -490,6 +490,57 @@ func _both_case(h: Harness, case_name: String, preview: Node, split: Dictionary,
 		"pushed %s, expected the keyCode %d, read %d (the button is %d)" % [
 			first["label"], stick_code, drove_code, button_code])
 
+	# **Steer one way, then the other, without letting go.** The gesture crosses
+	# the dead zone on the way, and until `_drove` existed that made it look like
+	# a fresh gesture: `_held` is cleared inside the zone, `_down_ms` is long past,
+	# so the pick-up armed and the stick moved instead of the character. The owner
+	# reported both faces of it -- the second direction not working, and the whole
+	# control sliding away.
+	#
+	# Driven through `motion` in steps rather than teleported across, because a
+	# single jump from one side to the other never samples the middle and the bug
+	# lives in the middle.
+	var opposite: Dictionary = {}
+	for entry in stick:
+		if (entry as Dictionary)["dir"] == -((first["dir"]) as Vector2i):
+			opposite = entry
+			break
+	if not opposite.is_empty():
+		var where: Vector2 = KeyAffordance.stick_centre(preview)
+		KeyAffordance.pointer(preview, true, where)
+		KeyAffordance.motion(preview,
+			where + Vector2(first["dir"]) * (KeyAffordance.STICK_RADIUS - 4.0))
+		await _step(preview, frame)
+		KeyAffordance.tick(preview)
+		# Through the middle, one step at a time.
+		for t in 9:
+			var f := float(t) / 8.0
+			KeyAffordance.motion(preview, where
+				+ Vector2(first["dir"]).lerp(Vector2(opposite["dir"]), f)
+					* (KeyAffordance.STICK_RADIUS - 4.0))
+			KeyAffordance.tick(preview)
+			await _step(preview, frame)
+		preview._host.key_code = -1
+		KeyAffordance.motion(preview,
+			where + Vector2(opposite["dir"]) * (KeyAffordance.STICK_RADIUS - 4.0))
+		KeyAffordance.tick(preview)
+		await _step(preview, frame)
+		await _step(preview, frame)
+		var turned := int(preview._host.key_code)
+		var slid: bool = KeyAffordance.picked_up()
+		KeyAffordance.pointer(preview, false, where)
+		await _step(preview, frame)
+		# The Mac code, as `the keyCode` reports it -- `opposite["keycode"]` is
+		# Godot's, and the two are different numbering.
+		var turn_code := int(Keys.MAC_CODES.get(opposite["keycode"], -1))
+		h.check("%s: steering the other way without letting go sends the other key"
+			% case_name,
+			turned == turn_code and turn_code != stick_code,
+			"turned from %s to %s, expected the keyCode %d, read %d"
+				% [first["label"], opposite["label"], turn_code, turned])
+		h.check("%s: and the stick stays where it was" % case_name, not slid,
+			"the drag through the dead zone picked the stick up instead")
+
 	# ...and tapping the button must not leave a direction held. `picked_up` and the
 	# repeat both key off the same gesture state, so a button tap that latched one
 	# would keep steering after the finger had gone.

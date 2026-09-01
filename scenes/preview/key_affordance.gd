@@ -296,6 +296,28 @@ static func merge(into: Dictionary, from: Dictionary) -> void:
 ## Measured with the split: arcade1's `zigihelp` scene demands Escape alone while
 ## its play spans demand three directions and Escape. Without it every span reads
 ## the same and the derivation cannot tell a help screen from an arcade game.
+## Whether the guard opened on line `at` has a body of exactly `nothing()`.
+##
+## Conservative on purpose: only a single `nothing()` statement between the guard
+## and its `end if` counts. A guard that does that *and* something else is a guard
+## that does something, and a key it names is a key worth offering.
+static func _swallowed(lines: PackedStringArray, at: int) -> bool:
+	if not lines[at].to_lower().contains("then"):
+		return false
+	var body := 0
+	for i in range(at + 1, lines.size()):
+		var text := lines[i].strip_edges().to_lower()
+		if text == "" or text.begins_with("--"):
+			continue
+		if text.begins_with("end if") or text == "end":
+			return body == 1
+		if text.replace(" ", "") == "nothing()" or text == "nothing":
+			body += 1
+			continue
+		return false
+	return false
+
+
 static func scan_source(source: String) -> Dictionary:
 	if _source_cache.has(source):
 		return _source_cache[source]
@@ -321,7 +343,11 @@ static func scan_source(source: String) -> Dictionary:
 	var char_re := _re(CHAR_PATTERN)
 	var code_re := _re(CODE_PATTERN)
 	var install_re := _re(INSTALL_PATTERN)
-	for line in source.split("\n"):
+	var source_lines := source.split("\n")
+	var live := 0
+	var bare := 0
+	for line_no in source_lines.size():
+		var line: String = source_lines[line_no]
 		var lowered_line := str(line).to_lower()
 		var opened := open_re.search(lowered_line)
 		if opened != null:
@@ -357,6 +383,30 @@ static func scan_source(source: String) -> Dictionary:
 			if installed == "empty":
 				installed = ""
 
+		# **A guard whose whole body is `nothing()` is a key being swallowed.**
+		#
+		# `rating/ARCADE2.dir` installs `normalkeys`, which is
+		# `if the keyCode = 53 then nothing() end if` and nothing else: Director's
+		# idiom for keeping Escape away from the projector. The scene does test the
+		# key, so the scan was right that it is mentioned -- and offering a button
+		# for it is still wrong, because pressing it cannot do anything. The owner
+		# put it exactly that way: "i see escape -- why? it's not doing anything".
+		#
+		# Dropped per *line*, not per handler, because `normalkeysx` in the same
+		# movie swallows 53 and acts on 109 in consecutive guards.
+		if not group.is_empty() and _swallowed(source_lines, line_no):
+			group = []
+		elif not group.is_empty():
+			live += 1
+		if group.is_empty() 				and char_re.search(lowered_line) == null 				and code_re.search(lowered_line) == null:
+			# A key mentioned with no literal to compare against -- `put the key
+			# into x` -- is a scene that wants *some* key, and stays a reason to
+			# ask even though it names nothing.
+			for label in ASKS:
+				if _re(str(ASKS[label])).search(lowered_line) != null:
+					bare += 1
+					break
+
 		for target in into:
 			for token in group:
 				if str(token).begins_with("code:"):
@@ -369,6 +419,14 @@ static func scan_source(source: String) -> Dictionary:
 				target["installs"] = true
 				target["installs_named"][installed] = true
 				target["asks"] = true
+
+	# **Every mention swallowed is not a demand.** Without this the member still
+	# reported `asks` -- set from the pattern sweep before the lines were read --
+	# and `classify` turns "asks, but names nothing" into `Shape.ANY`, a generic
+	# KEY button. That is worse than the Escape button it replaces: it claims the
+	# scene wants a keypress when the only key it tests is one it throws away.
+	if live == 0 and bare == 0 and not bool(out["member"]["installs"]):
+		out["member"]["asks"] = false
 
 	# A member whose only keyboard mention is inside a named handler still `asks`
 	# at member level; `hooks` does not, and that is the whole point of the split.
@@ -1365,6 +1423,22 @@ static var _at := Vector2.ZERO
 static var _down_ms := 0
 ## True once the finger has been held still on the stick long enough to pick it up.
 static var _moving := false
+## Whether this gesture has ever driven a direction.
+##
+## **The file's own invariant, finally enforced.** The header says "once either
+## has started the other can no longer begin", and the pick-up arm tested
+## `_held == KEY_NONE` for the "has not driven" half. `_held` is *transient*: it
+## is cleared every time the finger crosses back into the dead zone, which is
+## exactly what a player does when they steer one way and then want the other. So
+## halfway through that drag the gesture looked untouched, `_down_ms` was already
+## `PICKUP_MS` in the past, and the stick was picked up instead. The owner saw
+## both halves: "if i moved right, and i change to left, it doesn't work" and
+## "sometimes if i try to drag to the other side it moves the whole stick".
+##
+## Latched for the life of the gesture and cleared only in `_end_gesture`, so the
+## separation the header claims is a fact about the gesture rather than about
+## where the finger happens to be this instant.
+static var _drove := false
 ## Which key the stick currently has held, which way, and when the next repeat is due.
 static var _held: Key = KEY_NONE
 static var _held_dir := Vector2i.ZERO
@@ -1436,7 +1510,7 @@ static func tick(host) -> void:
 	if not enabled():
 		return
 	var now := Time.get_ticks_msec()
-	if _down and not _moving and _held == KEY_NONE \
+	if _down and not _moving and not _drove \
 			and _origin.distance_to(_at) <= DEAD_ZONE and now - _down_ms >= PICKUP_MS:
 		# **Held still, so this is a pick-up and not a drive.** The two cannot be
 		# confused: a drive commits the moment the finger leaves the dead zone and
@@ -1477,6 +1551,7 @@ static func _aim(host) -> void:
 	_release_held()
 	_held = wanted
 	_held_dir = dir
+	_drove = true
 	_send(_held, true)
 	_repeat_at = Time.get_ticks_msec() + REPEAT_FIRST_MS
 
@@ -1493,6 +1568,7 @@ static func _end_gesture() -> void:
 	_release_held()
 	_down = false
 	_moving = false
+	_drove = false
 
 
 ## A button: one whole press and release, because Director has both (§8.1) and 205
@@ -1561,7 +1637,7 @@ static func _draw_stick(host, entries: Array) -> void:
 	# completes, so a player who rests a thumb on the stick sees something happen and
 	# can let go, and a player who wanted to move it gets told it worked.
 	var arming := 0.0
-	if _down and not _moving and _held == KEY_NONE:
+	if _down and not _moving and not _drove:
 		arming = clampf(float(Time.get_ticks_msec() - _down_ms) / float(PICKUP_MS), 0.0, 1.0)
 	_disc(host, centre, STICK_RADIUS, Color(0, 0, 0, 0.40))
 	_ring(host, centre, STICK_RADIUS, Color(1, 1, 1, 0.45 + 0.35 * arming), 1.0 + 2.5 * arming)
