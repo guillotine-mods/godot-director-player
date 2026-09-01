@@ -748,9 +748,92 @@ func _second_movie_case(h: Harness, case_name: String, preview: Node) -> void:
 		return
 	var after: Dictionary = KeyAffordance.map_for(preview)
 	var after_spans := (after["spans"] as Array).size()
+	_steady_case(h, case_name, preview)
 	h.check("%s: the second movie built its own key map" % case_name,
 		after_spans != before_spans,
 		"%s has %d span(s), %s has %d -- equal counts mean the cache answered "
 		% [first, before_spans, now, after_spans]
 		+ "for the wrong movie, or the two movies genuinely agree and this "
 		+ "fixture proves nothing")
+
+
+## A key a scene waits for is offered on **every** frame of the wait, not on the
+## one frame that happens to poll for it.
+##
+## The owner's second report on the same movie: "j is blinking". `BATZEGOZ.dir`'s
+## conversation asks for H, then J, then Q, and each is an `on exitFrame` on a
+## single frame -- 87, 91, 95 -- with `go(marker(0))` three frames later. The
+## playhead cycles four frames, the button existed on one, and it flashed at a
+## quarter duty.
+##
+## **Checked over every marker section, not over the first frame that asks.** The
+## first version of this looked at the first demanding frame and its section, and
+## passed with the fix disabled: that frame's script already spanned six frames on
+## its own, so the check never reached a single-frame poll and proved nothing. It
+## is the `porting-fidelity-verification` failure twice in one file -- an
+## assertion that holds for a reason unrelated to what it is named after.
+##
+## Reported as the count of sections that flicker, so the failure names them.
+func _steady_case(h: Harness, case_name: String, preview: Node) -> void:
+	var score = preview.get("_score")
+	var labels = preview.get("_labels")
+	if score == null or labels == null or labels.markers.is_empty():
+		return
+	var starts: Array[int] = []
+	for marker in labels.markers:
+		var at := int((marker as Dictionary).get("frame", -1))
+		if at >= 0:
+			starts.append(at)
+	starts.sort()
+	if starts.is_empty():
+		return
+	var last := int(score.frame_count) - 1
+	var uneven := PackedStringArray()
+	var asked := 0
+	for i in starts.size():
+		var begin: int = starts[i]
+		var finish: int = (starts[i + 1] - 1) if i + 1 < starts.size() else last
+		if finish <= begin or finish > last:
+			continue
+		# What the section offers, and whether it offers it throughout.
+		var seen := {}
+		for f in range(begin, finish + 1):
+			seen[_labels_at(preview, f)] = true
+		if seen.size() <= 1:
+			continue
+		# **Only a section that loops.** A section the movie plays straight
+		# through legitimately offers its key on the frame that polls for it and
+		# not afterwards: once the playhead is past, the key does nothing and
+		# advertising it would be worse than the flicker. The engine widens only
+		# looping sections and this asks the same question with the same
+		# function, so the two cannot drift apart.
+		if not KeyAffordance._section_loops(
+				score, preview.get("_table"), begin, finish):
+			continue
+		# More than one answer inside one section. Only a problem when one of
+		# them is "something" and another is "nothing": two *different* keys in
+		# one section is a section the author divided by something other than a
+		# marker, and this is not the check for that.
+		if not seen.has(""):
+			continue
+		asked += 1
+		var offered := PackedStringArray()
+		for k in seen:
+			if str(k) != "":
+				offered.append(str(k))
+		uneven.append("%d..%d offers %s on some frames and nothing on others"
+			% [begin, finish, "/".join(offered)])
+	h.check("%s: a key holds for the whole wait, not one frame of it" % case_name,
+		uneven.is_empty(),
+		"%d section(s) flicker: %s" % [uneven.size(), "; ".join(uneven)]
+			if not uneven.is_empty() else "no section offers a key on only part of itself")
+
+
+## The action labels a frame offers, joined, so two frames can be compared.
+func _labels_at(preview: Node, index: int) -> String:
+	var d: Dictionary = KeyAffordance.demand_at(preview, index)
+	var names := PackedStringArray()
+	for a in KeyAffordance.actions_of(d):
+		names.append(KeyAffordance.label_of(a))
+	names.sort()
+	return ",".join(names)

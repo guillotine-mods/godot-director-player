@@ -510,8 +510,114 @@ static func movie_wide(table, handlers: Dictionary) -> Dictionary:
 ## `score.intervals()` carries each frame script's and each sprite behaviour's own
 ## `start`/`end`, so a behaviour testing `the keyCode = 123` is demand on exactly
 ## those frames.
-static func spans(score, table, handlers: Dictionary) -> Array[Dictionary]:
+## A frame script that polls for a key holds for the **loop it sits in**, not for
+## the one frame it is written on.
+##
+## `rating/BATZEGOZ.dir` is the shape, and the owner found it by playing: its
+## conversation asks for H, then J, then Q, and each is an `on exitFrame` on a
+## single frame -- 87, 91, 95 -- with a `go(marker(0))` three frames later. So the
+## playhead cycles four frames and the button existed on one of them. It blinked
+## at a quarter duty and was unusable.
+##
+## Widened to the **marker section**, because that is what `go(marker(0))` loops
+## over: the section is the wait. `the key` is a latched value in Director and in
+## this port -- `preview_lingo_host.gd:key_char` is written on key-down and never
+## cleared -- so a press anywhere in the cycle is still there when the polling
+## frame comes round, which is what makes the wider offer *true* rather than
+## merely steadier.
+##
+## **Only when the section loops**, which is the guard that keeps this honest. A
+## one-frame poll inside a section the movie plays straight through is a key that
+## stops working the moment the playhead passes it, and advertising it for the
+## rest of the section would be offering a control that does nothing. So the
+## section is only widened over when something in it sends the playhead back.
+## What a frame script says when it sends the playhead back to where it started.
+##
+## Matched against the source with **every space removed**, which is why these
+## carry none: the corpus writes `go(marker(0))`, `go marker(0)` and
+## `go to the frame` and all three should count, and stripping is easier to read
+## than an escape-heavy pattern -- and easier to get right, since a GDScript
+## string swallows one level of backslash before RegEx ever sees it.
+## Both spellings of each, because Lingo takes a command with or without
+## parentheses and the corpus uses both. `BATZEGOZ.dir` writes `go(marker(0))`;
+## leaving that out is how the first version of this matched nothing at all.
+const LOOP_MARKS := [
+	"gomarker(0)", "go(marker(0)",
+	"gotheframe", "go(theframe",
+	"gototheframe", "goto(theframe",
+]
+
+
+## The marker section containing `frame`, as `[start, end]`, or `[]` when the
+## movie has no markers to divide itself by.
+static func _section(labels, frame: int, last_frame: int) -> Array:
+	if labels == null:
+		return []
+	var starts: Array[int] = []
+	for marker in labels.markers:
+		starts.append(int((marker as Dictionary).get("frame", -1)))
+	starts.sort()
+	if starts.is_empty():
+		return []
+	var begin := -1
+	var finish := last_frame
+	for at in starts:
+		if at <= frame and at > begin:
+			begin = at
+		if at > frame:
+			finish = at - 1
+			break
+	if begin < 0:
+		return []
+	return [begin, finish]
+
+
+## Whether this source sends the playhead back to where it is, rather than on.
+##
+## **`go(marker(0) + 1)` is not a loop and contains one as a substring**, which is
+## the trap this exists for: it means *the next section*, and a plain
+## `contains("go(marker(0)")` calls it a wait. `BATZEGOZ.dir` frame 58 writes
+## exactly that to leave its section, and reading it as a loop made the engine
+## widen a section the movie walks straight out of -- offering a key on frames
+## the playhead had already passed, which is the opposite of the bug being fixed.
+##
+## So a mark only counts when nothing arithmetic follows it. `marker(0)` on its
+## own is here; `marker(0) + 1` and `marker(0) - 1` are somewhere else.
+static func _loops_back(source: String) -> bool:
+	var flat := source.to_lower().replace(" ", "").replace("	", "")
+	for mark in LOOP_MARKS:
+		var at := flat.find(mark)
+		while at >= 0:
+			var after := flat.substr(at + mark.length(), 1)
+			if after != "+" and after != "-":
+				return true
+			at = flat.find(mark, at + 1)
+	return false
+
+
+## Whether any frame script inside `[begin, end]` sends the playhead back, which
+## is what makes the section a wait rather than a passage.
+static func _section_loops(score, table, begin: int, end: int) -> bool:
+	for interval in score.intervals():
+		if str(interval.get("kind", "")) != "frame":
+			continue
+		if int(interval["start"]) > end or int(interval["end"]) < begin:
+			continue
+		var lib := int(interval["script_cast_lib"])
+		if lib <= 0:
+			lib = 1
+		var m: Dictionary = table.get_member(lib, int(interval["script_member"]))
+		var source := str(m.get("source", ""))
+		if source.strip_edges() == "":
+			continue
+		if _loops_back(source):
+			return true
+	return false
+
+
+static func spans(score, table, handlers: Dictionary, labels = null) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	var last_frame := maxi(int(score.frame_count) - 1, 0)
 	for interval in score.intervals():
 		var lib := int(interval["script_cast_lib"])
 		# 0 and -1 both mean "this movie's own cast" in a score record; the table is
@@ -525,9 +631,17 @@ static func spans(score, table, handlers: Dictionary) -> Array[Dictionary]:
 		var d := resolve_installs(demand_of(source), handlers)
 		if not bool(d["asks"]):
 			continue
-		out.append({
-			"start": int(interval["start"]), "end": int(interval["end"]), "demand": d,
-		})
+		var start := int(interval["start"])
+		var finish := int(interval["end"])
+		# Frame scripts only. A sprite's interval already says exactly when the
+		# sprite is on the stage, and widening that to a marker section would
+		# offer its key after it had left.
+		if str(interval.get("kind", "")) == "frame":
+			var section := _section(labels, start, last_frame)
+			if not section.is_empty() 					and _section_loops(score, table, int(section[0]), int(section[1])):
+				start = mini(start, int(section[0]))
+				finish = maxi(finish, int(section[1]))
+		out.append({"start": start, "end": finish, "demand": d})
 	return out
 
 
@@ -767,7 +881,7 @@ static func map_for(host) -> Dictionary:
 	var wide := movie_wide(host._table, handlers)
 	out["wide"] = wide["demand"]
 	out["editable"] = wide["editable"]
-	out["spans"] = spans(host._score, host._table, handlers)
+	out["spans"] = spans(host._score, host._table, handlers, host._labels)
 	return out
 
 
